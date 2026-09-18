@@ -256,6 +256,7 @@ impl PriorityGate {
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(RECHECK_INTERVAL).await;
+                let _job = crate::client::activity::begin("media-gate-recheck", "Media", crate::client::activity::JobKind::Periodic);
                 let mut inner = gate.inner.lock();
                 inner.dispatch(Instant::now());
                 if inner.queue.is_empty() {

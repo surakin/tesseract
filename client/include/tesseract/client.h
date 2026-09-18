@@ -1334,6 +1334,10 @@ public:
     /// Settings panel opens — not on the 2-second poll tick.
     std::uint64_t search_index_size_bytes() const;
 
+    /// Snapshot of the Rust-side background jobs (Activity Monitor).
+    /// Cheap and non-blocking; safe to call from a worker thread.
+    std::vector<ActivityEntry> activity_snapshot() const;
+
     /// Load all persisted media-backoff entries from `app_cache.db`.
     /// Returns an empty vector when the DB is not open (before sync-start).
     std::vector<MediaBackoffEntry> load_media_backoff() const;

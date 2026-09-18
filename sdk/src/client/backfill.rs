@@ -75,6 +75,7 @@ impl ClientFfi {
         let abort = self
             .rt
             .spawn(async move {
+                let _job = super::activity::begin("inactive-room-timestamp-backfill", "Backfill", super::activity::JobKind::OneShot);
                 let mut joinset = tokio::task::JoinSet::new();
 
                 for rid in to_backfill {
@@ -299,6 +300,7 @@ impl ClientFfi {
         let abort = self
             .rt
             .spawn(async move {
+                let _job = super::activity::begin("uncached-room-backfill", "Backfill", super::activity::JobKind::OneShot);
                 // Process in batches of 50 so the event cache's internal broadcast
                 // channel is never overwhelmed. Subscribing all rooms at once
                 // produces a sync payload large enough to overflow the channel,
@@ -541,6 +543,7 @@ impl ClientFfi {
         let in_flight_urls = Arc::clone(&self.in_flight_urls);
 
         let handle = self.rt.spawn(async move {
+            let _job = super::activity::begin("bridge-status-check", "Backfill", super::activity::JobKind::OneShot);
             use matrix_sdk::ruma::api::client::state::get_state_events::v3 as state_api;
 
             // Fetch all rooms in parallel — room state is independent,
@@ -660,6 +663,7 @@ impl ClientFfi {
 
         self.rt
             .spawn(async move {
+                let _job = super::activity::begin("unread-prefetch", "Backfill", super::activity::JobKind::OneShot);
                 let mut batch = initial;
                 loop {
                     let mut joinset = tokio::task::JoinSet::new();

@@ -760,6 +760,22 @@ pub mod ffi {
         index_bytes: u64,
     }
 
+    /// One background job in the Activity Monitor snapshot.
+    struct ActivityEntry {
+        name: String,
+        group: String,
+        /// "loop", "periodic" or "one-shot".
+        kind: String,
+        /// 0 idle, 1 running, 2 error.
+        state: u8,
+        run_count: u64,
+        /// Unix epoch milliseconds; 0 if it has never run.
+        last_started_ms: i64,
+        last_finished_ms: i64,
+        /// Last error, else a short status string; may be empty.
+        detail: String,
+    }
+
     /// One row from the `media_backoff` table in `app_cache.db`.
     /// Loaded at sync-start and used to repopulate `ShellBase::media_fetch_failed_`.
     struct MediaBackoffEntry {
@@ -1977,6 +1993,7 @@ pub mod ffi {
         /// Load all rows from the `media_backoff` table in `app_cache.db`.
         /// Returns an empty vec when the DB is not yet open or on any error.
         fn load_media_backoff(self: &ClientFfi) -> Vec<MediaBackoffEntry>;
+        fn activity_snapshot(self: &ClientFfi) -> Vec<ActivityEntry>;
 
         /// Upsert a backoff entry for `url` (on fetch failure). No-op when the
         /// DB is not yet open.

@@ -45,6 +45,22 @@ inline SearchIndexStats from_ffi(const tesseract_ffi::SearchIndexStats& s)
     return {s.message_count, s.room_count, s.oldest_ts_ms, s.backfill_done, 0};
 }
 
+inline ActivityEntry from_ffi(const tesseract_ffi::ActivityEntry& e)
+{
+    return {
+        .name             = std::string(e.name),
+        .group            = std::string(e.group),
+        .kind             = std::string(e.kind),
+        .state            = e.state == 1   ? ActivityState::Running
+                            : e.state == 2 ? ActivityState::Error
+                                           : ActivityState::Idle,
+        .run_count        = e.run_count,
+        .last_started_ms  = e.last_started_ms,
+        .last_finished_ms = e.last_finished_ms,
+        .detail           = std::string(e.detail),
+    };
+}
+
 inline MediaBackoffEntry from_ffi(const tesseract_ffi::MediaBackoffEntry& e)
 {
     return {std::string(e.url), e.attempts, e.deadline_secs};

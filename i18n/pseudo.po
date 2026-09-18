@@ -2610,3 +2610,85 @@ msgstr "[Çöùld ñöt àdd kéywörd \"{0}\"xxxxx]"
 #: ui/shared/views/SettingsView.cpp
 msgid "Could not remove keyword \"{0}\""
 msgstr "[Çöùld ñöt rémövé kéywörd \"{0}\"xxxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/settings/AdvancedSection.cpp
+msgid "Open Activity Monitor"
+msgstr "[Öpéñ Àçtïvïty Möñïtörxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp
+msgid "Activity Monitor"
+msgstr "[Àçtïvïty Möñïtörxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp
+msgid "The Activity Monitor is not available on this platform yet."
+msgstr "[Thé Àçtïvïty Möñïtör ïs ñöt àvàïlàblé öñ thïs plàtförm yét.xxxxxxxxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ActivityMonitorView.cpp
+msgid "Runs continuously"
+msgstr "[Rùñs çöñtïñùöùslyxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ActivityMonitorView.cpp
+msgid "Periodic"
+msgstr "[Pérïödïçx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ActivityMonitorView.cpp
+msgid "On demand"
+msgstr "[Öñ démàñdx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ActivityMonitorView.cpp
+msgid "Thread pool"
+msgstr "[Thréàd pöölxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ActivityMonitorView.cpp
+#, c++-format
+msgid "{0}s"
+msgstr "[{0}sx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ActivityMonitorView.cpp
+#, c++-format
+msgid "{0}m"
+msgstr "[{0}mx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ActivityMonitorView.cpp
+#, c++-format
+msgid "{0}h"
+msgstr "[{0}hx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ActivityMonitorView.cpp
+#, c++-format
+msgid "{0}d"
+msgstr "[{0}dx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ActivityMonitorView.cpp
+#, c++-format
+msgid "{0} jobs · {1} running · {2} with errors"
+msgstr "[{0} jöbs · {1} rùññïñg · {2} wïth érrörsxxxxxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ActivityMonitorView.cpp
+msgid "Running"
+msgstr "[Rùññïñgx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ActivityMonitorView.cpp
+#, c++-format
+msgid "Running for {0}"
+msgstr "[Rùññïñg för {0}xxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ActivityMonitorView.cpp
+msgid "Error"
+msgstr "[Érrörx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ActivityMonitorView.cpp
+msgid "Not run yet"
+msgstr "[Ñöt rùñ yétxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ActivityMonitorView.cpp
+#, c++-format
+msgid "{0} ago"
+msgstr "[{0} àgöx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/ActivityMonitorView.cpp
+#, c++-format
+msgid "{0} run"
+msgid_plural "{0} runs"
+msgstr[0] "[{0} rùñx]"
+msgstr[1] "[{0} rùñsx]"

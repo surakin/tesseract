@@ -1536,6 +1536,21 @@ std::uint64_t Client::search_index_size_bytes() const
     return impl_->ffi->search_index_size_bytes();
 }
 
+std::vector<ActivityEntry> Client::activity_snapshot() const
+{
+    if (!impl_)
+    {
+        return {};
+    }
+    SH_FFI;
+    auto ffi_vec = impl_->ffi->activity_snapshot();
+    std::vector<ActivityEntry> out;
+    out.reserve(ffi_vec.size());
+    for (const auto& e : ffi_vec)
+        out.push_back(from_ffi(e));
+    return out;
+}
+
 std::vector<MediaBackoffEntry> Client::load_media_backoff() const
 {
     if (!impl_)

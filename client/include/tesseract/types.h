@@ -1109,6 +1109,30 @@ struct RoomSummaryBackoffEntry
     std::int64_t deadline_secs = 0;
 };
 
+enum class ActivityState : std::uint8_t
+{
+    Idle    = 0,
+    Running = 1,
+    Error   = 2,
+};
+
+/// One background job shown in the Activity Monitor. Rust-side jobs come from
+/// the `ActivityEntry` cxx bridge struct; C++ jobs are added by ShellBase.
+struct ActivityEntry
+{
+    std::string name;
+    std::string group;
+    /// "loop", "periodic" or "one-shot".
+    std::string kind;
+    ActivityState state = ActivityState::Idle;
+    std::uint64_t run_count = 0;
+    /// Unix epoch milliseconds; 0 if it has never run.
+    std::int64_t last_started_ms = 0;
+    std::int64_t last_finished_ms = 0;
+    /// Last error, else a short status string; may be empty.
+    std::string detail;
+};
+
 /// One persisted media-backoff entry loaded from `app_cache.db` at sync-start.
 /// Mirrors the `MediaBackoffEntry` cxx bridge struct.
 struct MediaBackoffEntry

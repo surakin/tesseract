@@ -103,6 +103,8 @@ add_executable(tesseract_win32 WIN32
 )
 
 target_sources(tesseract_win32 PRIVATE
+    src/AuxWindow.h
+    src/AuxWindow.cpp
     src/CallWindow.h
     src/CallWindow.cpp
     tk/screen_capture_win32.cpp

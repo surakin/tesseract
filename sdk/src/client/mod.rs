@@ -10,6 +10,7 @@ use crate::ffi::{BackupProgress, OAuthBegin, OpResult};
 use crate::oauth;
 
 mod account;
+pub(crate) mod activity;
 mod backfill;
 mod bot_commands;
 mod crypto_reset;

@@ -19,10 +19,11 @@ const PRESENCE_POLL_CONCURRENCY: usize = 4;
 impl ClientFfi {
     /// Spawn a long-lived sync task and record its abort handle so
     /// `stop_sync` can cancel it before the C++ handler is destroyed.
-    fn spawn_tracked<F>(&mut self, fut: F)
+    fn spawn_tracked<F>(&mut self, name: &'static str, fut: F)
     where
         F: std::future::Future<Output = ()> + Send + 'static,
     {
+        let fut = super::activity::track(name, "Sync", super::activity::JobKind::Loop, fut);
         // Keep the JoinHandle itself (not just an AbortHandle) — stop_sync
         // needs to await it after aborting, not just fire the abort and hope.
         let h = self.rt.spawn(fut);
@@ -61,7 +62,7 @@ impl ClientFfi {
         {
             let h = Arc::clone(&handler);
             let client_clone = client.clone();
-            self.spawn_tracked(watch_session_changes(h, client_clone, stop_tx_auth));
+            self.spawn_tracked("session-watcher", watch_session_changes(h, client_clone, stop_tx_auth));
         }
 
         // Wall-clock start of this sync session, used by the notification
@@ -135,7 +136,7 @@ impl ClientFfi {
             let dm_counterparts = Arc::clone(&self.dm_counterparts);
             let forbidden_presence = Arc::clone(&self.forbidden_presence);
             let app_cache_db_p = Arc::clone(&self.app_cache_db);
-            self.spawn_tracked(watch_presence(
+            self.spawn_tracked("presence-poller", watch_presence(
                 h,
                 client_p,
                 stop_rx_presence,
@@ -281,7 +282,7 @@ impl ClientFfi {
             let room_state_cache_rw = Arc::clone(&self.room_state_cache);
             let mut call_member_rx = call_member_rx;
 
-            self.spawn_tracked(async move {
+            self.spawn_tracked("room-list-cache-fill", async move {
                 use matrix_sdk::RoomState;
 
                 // Initial cache fill. `room_info_notable_update_receiver`
@@ -694,7 +695,7 @@ impl ClientFfi {
             let imported = Arc::clone(&self.imported_keys);
             let stop_rx = stop_rx.clone();
 
-            self.spawn_tracked(watch_recovery_state(
+            self.spawn_tracked("recovery-state-watcher", watch_recovery_state(
                 h,
                 client_clone,
                 state_code,
@@ -718,7 +719,7 @@ impl ClientFfi {
             let imported = Arc::clone(&self.imported_keys);
             let stop_rx = stop_rx.clone();
 
-            self.spawn_tracked(watch_backup_state(
+            self.spawn_tracked("backup-state-watcher", watch_backup_state(
                 h,
                 client_clone,
                 state_code,
@@ -745,7 +746,7 @@ impl ClientFfi {
             let imported = Arc::clone(&self.imported_keys);
             let stop_rx = stop_rx.clone();
 
-            self.spawn_tracked(watch_imported_keys(
+            self.spawn_tracked("imported-keys-watcher", watch_imported_keys(
                 h,
                 client_clone,
                 state_code,
@@ -771,7 +772,7 @@ impl ClientFfi {
             let svc_clone = Arc::clone(&sync_service);
             let stop_rx = stop_rx.clone();
 
-            self.spawn_tracked(watch_room_list_state(h, svc_clone, stop_rx));
+            self.spawn_tracked("room-list-state-watcher", watch_room_list_state(h, svc_clone, stop_rx));
         }
 
         // Verification state watcher.
@@ -785,7 +786,7 @@ impl ClientFfi {
             let client_clone = client.clone();
             let stop_rx = stop_rx.clone();
 
-            self.spawn_tracked(watch_verification_state(h, client_clone, stop_rx));
+            self.spawn_tracked("verification-state-watcher", watch_verification_state(h, client_clone, stop_rx));
         }
 
         // Incoming verification request handler.
@@ -944,7 +945,7 @@ impl ClientFfi {
             rtc::session::register_rtc_notification_handler(&client);
         }
 
-        self.spawn_tracked(async move {
+        self.spawn_tracked("sync-supervisor", async move {
             svc_clone.start().await;
 
             use matrix_sdk_ui::sync_service::State as SyncServiceState;
@@ -965,10 +966,13 @@ impl ClientFfi {
                         match state {
                             SyncServiceState::Running => {
                                 notified_offline = false;
+                                super::activity::set_error("sync-supervisor", None);
+                                super::activity::set_detail("sync-supervisor", "running");
                             }
                             SyncServiceState::Offline
                                 if !notified_offline => {
                                     notified_offline = true;
+                                    super::activity::set_detail("sync-supervisor", "offline, retrying");
                                     {
                                         let guard = h_state.lock();
                                         guard.on_error(
@@ -979,6 +983,7 @@ impl ClientFfi {
                                     }
                                 }
                             SyncServiceState::Error(e) => {
+                                super::activity::set_error("sync-supervisor", Some(e.to_string()));
                                 {
                                     let guard = h_state.lock();
                                     guard.on_error(
@@ -1647,6 +1652,7 @@ async fn watch_presence(
         if !presence_enabled.load(std::sync::atomic::Ordering::Relaxed) {
             continue;
         }
+        let _job = super::activity::begin("presence-poll", "Sync", super::activity::JobKind::Periodic);
         poll_presence_once(
             &client,
             &h,

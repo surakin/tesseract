@@ -400,6 +400,9 @@ public:
     // Fired when the user toggles "Enable developer mode".
     std::function<void(bool)> on_developer_mode_changed;
 
+    // Fired when the user clicks "Open Activity Monitor" (Advanced tab).
+    std::function<void()> on_open_activity_monitor;
+
 #ifdef TESSERACT_CRASH_HANDLER_ENABLED
     // Fired when the user toggles "Save a local crash report".
     std::function<void(bool)> on_crash_reporting_changed;

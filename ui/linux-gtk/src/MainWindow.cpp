@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "AuxWindow.h"
 #include "CallWindow.h"
 #include "LinuxNotifier.h"
 #include "LinuxUpConnectorGtk.h"
@@ -3218,6 +3219,13 @@ std::unique_ptr<tk::AudioPlayback> MainWindow::make_call_audio_output_()
 tesseract::CallWindowBase* MainWindow::create_call_window_()
 {
     return new gtk4::CallWindow(this);
+}
+
+tesseract::AuxWindowBase* MainWindow::create_aux_window_(std::string title,
+                                                         std::unique_ptr<tk::Widget> root,
+                                                         int width, int height)
+{
+    return new gtk4::AuxWindow(this, title, std::move(root), width, height, current_theme_);
 }
 
 void MainWindow::on_login_succeeded()

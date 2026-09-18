@@ -2535,3 +2535,85 @@ msgstr "No se pudo añadir la palabra clave «{0}»"
 #: ui/shared/views/SettingsView.cpp
 msgid "Could not remove keyword \"{0}\""
 msgstr "No se pudo quitar la palabra clave «{0}»"
+
+#: ui/shared/views/settings/AdvancedSection.cpp
+msgid "Open Activity Monitor"
+msgstr "Abrir el monitor de actividad"
+
+#: ui/shared/app/ShellBase.cpp
+msgid "Activity Monitor"
+msgstr "Monitor de actividad"
+
+#: ui/shared/app/ShellBase.cpp
+msgid "The Activity Monitor is not available on this platform yet."
+msgstr "El monitor de actividad aún no está disponible en esta plataforma."
+
+#: ui/shared/views/ActivityMonitorView.cpp
+msgid "Runs continuously"
+msgstr "Se ejecuta de forma continua"
+
+#: ui/shared/views/ActivityMonitorView.cpp
+msgid "Periodic"
+msgstr "Periódica"
+
+#: ui/shared/views/ActivityMonitorView.cpp
+msgid "On demand"
+msgstr "Bajo demanda"
+
+#: ui/shared/views/ActivityMonitorView.cpp
+msgid "Thread pool"
+msgstr "Grupo de hilos"
+
+#: ui/shared/views/ActivityMonitorView.cpp
+#, c++-format
+msgid "{0}s"
+msgstr "{0} s"
+
+#: ui/shared/views/ActivityMonitorView.cpp
+#, c++-format
+msgid "{0}m"
+msgstr "{0} min"
+
+#: ui/shared/views/ActivityMonitorView.cpp
+#, c++-format
+msgid "{0}h"
+msgstr "{0} h"
+
+#: ui/shared/views/ActivityMonitorView.cpp
+#, c++-format
+msgid "{0}d"
+msgstr "{0} d"
+
+#: ui/shared/views/ActivityMonitorView.cpp
+#, c++-format
+msgid "{0} jobs · {1} running · {2} with errors"
+msgstr "{0} tareas · {1} en ejecución · {2} con errores"
+
+#: ui/shared/views/ActivityMonitorView.cpp
+msgid "Running"
+msgstr "En ejecución"
+
+#: ui/shared/views/ActivityMonitorView.cpp
+#, c++-format
+msgid "Running for {0}"
+msgstr "En ejecución desde hace {0}"
+
+#: ui/shared/views/ActivityMonitorView.cpp
+msgid "Error"
+msgstr "Error"
+
+#: ui/shared/views/ActivityMonitorView.cpp
+msgid "Not run yet"
+msgstr "Aún sin ejecutar"
+
+#: ui/shared/views/ActivityMonitorView.cpp
+#, c++-format
+msgid "{0} ago"
+msgstr "hace {0}"
+
+#: ui/shared/views/ActivityMonitorView.cpp
+#, c++-format
+msgid "{0} run"
+msgid_plural "{0} runs"
+msgstr[0] "{0} ejecución"
+msgstr[1] "{0} ejecuciones"

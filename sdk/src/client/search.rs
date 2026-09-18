@@ -520,6 +520,7 @@ impl ClientFfi {
             // the indexing/search tasks) must not block the settings window.
             let db = Arc::clone(&self.search_db);
             self.rt.spawn(async move {
+                let _job = super::activity::begin("search-index-clear", "Search", super::activity::JobKind::OneShot);
                 let guard = db.lock();
                 if let Some(conn) = guard.as_ref() {
                     let _ = clear(conn);
@@ -589,6 +590,7 @@ impl ClientFfi {
             self.timelines.read().keys().cloned().collect();
 
         self.rt.spawn(async move {
+            let _job = super::activity::begin("search-index-backfill", "Search", super::activity::JobKind::Loop);
             // Completion check off the UI thread — skip a crawl that already
             // finished in a prior session.
             {

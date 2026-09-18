@@ -822,6 +822,7 @@ fn spawn_refresh_task(
         interval.tick().await; // skip the immediate 0-delay first tick
         loop {
             interval.tick().await;
+            let _job = crate::client::activity::begin("rtc-membership-refresh", "Calls", crate::client::activity::JobKind::Periodic);
             let _ = send_msc3401_member_join(
                 &room,
                 "",

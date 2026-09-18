@@ -45,6 +45,8 @@ add_executable(tesseract_gtk
 )
 
 target_sources(tesseract_gtk PRIVATE
+    src/AuxWindow.h
+    src/AuxWindow.cpp
     src/CallWindow.h
     src/CallWindow.cpp
 )

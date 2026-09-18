@@ -1,6 +1,22 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-18**. 1856 C++ + 673 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-18**. 1866 C++ + 676 Rust tests.
+
+> **Activity Monitor window (2026-09-18, v0.8.24-unreleased).**
+> Settings → Advanced → "Open Activity Monitor" opens a separate window
+> listing every background job grouped by area (Sync, Backfill, Media,
+> Search, Calls, Export, Workers, UI housekeeping): state, last run,
+> run count and last error, refreshed once a second while open (no cost
+> when closed). Rust jobs register in a process-wide registry
+> (`sdk/src/client/activity.rs`, pulled via `activity_snapshot()`); C++
+> jobs and the three worker pools register in `ActivityRegistry`, with
+> `run_async_(label, fn)` for labeled tasks. Hosted by a new generic
+> `AuxWindowBase` secondary window. Linux Qt6 build + full ctest
+> 1866/1866, +4 Rust tests; unverified live. GTK4/Windows/macOS windows
+> written by analogy, unbuilt; not all jobs are instrumented yet
+> (one-shot FFI calls, OS listeners).
+
+<!-- -->
 
 > **Image metadata stripped on upload; Compressed photos keep orientation (2026-09-18, v0.8.24-unreleased).**
 > Uploaded JPEG/PNG/WebP images now have EXIF/GPS, XMP, IPTC and text

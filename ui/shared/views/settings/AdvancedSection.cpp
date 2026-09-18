@@ -48,6 +48,12 @@ AdvancedSection::AdvancedSection()
         if (on_developer_mode_changed) on_developer_mode_changed(v);
     };
 
+    auto* activity_group = add_group(tk::tr("Activity"));
+    activity_group->add_widget(tk::create_widget<tk::Button>(
+        this, tk::tr("Open Activity Monitor"),
+        [this] { if (on_open_activity_monitor) on_open_activity_monitor(); },
+        tk::Button::Variant::Subtle));
+
 #ifdef TESSERACT_CRASH_HANDLER_ENABLED
     auto* diagnostics_group = add_group(tk::tr("Diagnostics"));
 

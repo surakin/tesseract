@@ -37,6 +37,7 @@
 #include <tesseract/settings.h>
 #include <tesseract/visual.h>
 #include <algorithm>
+#include <iterator>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -293,6 +294,61 @@ void ShellBase::run_async_(std::function<void()> fn)
     pool_.post(std::move(fn));
 }
 
+void ShellBase::run_async_(const char* label, std::function<void()> fn)
+{
+    pool_.post(
+        [this, label = std::string(label), fn = std::move(fn)]() mutable
+        {
+            auto scope = activity_.begin(label, "Workers", "one-shot");
+            fn();
+        });
+}
+
+void ShellBase::run_async_mut_(const char* label, std::function<void()> fn)
+{
+    mut_pool_.post(
+        [this, label = std::string(label), fn = std::move(fn)]() mutable
+        {
+            auto scope = activity_.begin(label, "Workers", "one-shot");
+            fn();
+        });
+}
+
+std::vector<tesseract::ActivityEntry> ShellBase::activity_snapshot_(tesseract::Client* client) const
+{
+    std::vector<tesseract::ActivityEntry> out = activity_.snapshot();
+    if (client)
+    {
+        auto rust = client->activity_snapshot();
+        out.insert(out.end(), std::make_move_iterator(rust.begin()),
+                   std::make_move_iterator(rust.end()));
+    }
+    const struct
+    {
+        const char*       name;
+        const WorkerPool& pool;
+    } pools[] = {{"pool (shared reads)", pool_},
+                 {"mut_pool (serialised writes)", mut_pool_},
+                 {"media_prefetch_pool", media_prefetch_pool_}};
+    for (const auto& p : pools)
+    {
+        const size_t queued = p.pool.pending_count();
+        const size_t total  = p.pool.in_flight_.load(std::memory_order_relaxed);
+        tesseract::ActivityEntry e;
+        e.name   = p.name;
+        e.group  = "Workers";
+        e.kind   = "pool";
+        e.state  = total > 0 ? tesseract::ActivityState::Running : tesseract::ActivityState::Idle;
+        e.detail = std::to_string(total - std::min(total, queued)) + " running, " +
+                   std::to_string(queued) + " queued";
+        out.push_back(std::move(e));
+    }
+    std::stable_sort(out.begin(), out.end(),
+                     [](const tesseract::ActivityEntry& a, const tesseract::ActivityEntry& b)
+                     { return a.group != b.group ? a.group < b.group : a.name < b.name; });
+    return out;
+}
+
 void ShellBase::run_async_mut_(std::function<void()> fn)
 {
     mut_pool_.post(std::move(fn));
@@ -318,6 +374,7 @@ void ShellBase::run_media_fetch_(MediaFetchSpec spec)
     // callbacks. The Phase-1 alive_-token guarding lives in post_to_ui_alive_.
     auto s = std::make_shared<MediaFetchSpec>(std::move(spec));
     run_async_(
+        "media-fetch-disk-read",
         [this, s]() mutable
         {
             // io pool: only the (fast, local) disk-cache read happens here.
@@ -3763,7 +3820,7 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
         tesseract::Settings::instance().group_inactive_rooms)
     {
         auto sess = active_account_;
-        run_async_mut_([sess]() {
+        run_async_mut_("backfill-uncached-rooms", [sess]() {
             if (sess && sess->client)
                 sess->client->start_background_backfill_all_uncached();
         });
@@ -3786,7 +3843,7 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
         {
             bridge_check_fingerprint_ = fp;
             auto sess = active_account_;
-            run_async_mut_([sess, ids = std::move(ids)]() mutable {
+            run_async_mut_("bridge-status-check", [sess, ids = std::move(ids)]() mutable {
                 if (sess && sess->client)
                     sess->client->start_bridge_status_check(ids);
             });
@@ -3818,6 +3875,7 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
                 // the Client alive for the call — same pattern as subscribe_room.
                 auto sess = active_account_;
                 run_async_mut_(
+                    "unread-prefetch",
                     [sess, ids = std::move(sel.ids)]() mutable
                     {
                         if (sess && sess->client)
@@ -4778,6 +4836,7 @@ void ShellBase::wire_settings_view_(views::SettingsView* view)
     {
         handle_developer_mode_toggle_(enabled);
     };
+    view->on_open_activity_monitor = [this] { open_activity_monitor_(); };
     view->on_message_layout_changed =
         [this](tesseract::Settings::MessageLayout layout)
     {
@@ -6833,6 +6892,77 @@ void ShellBase::thread_search_clear_()
     thread_search_current_ = -1;
 }
 
+void ShellBase::open_activity_monitor_()
+{
+    if (activity_window_)
+    {
+        activity_window_->bring_to_front();
+        return;
+    }
+    auto view     = std::make_unique<tesseract::views::ActivityMonitorView>();
+    activity_view_ = view.get();
+    auto* win = create_aux_window_(tk::tr("Activity Monitor"), std::move(view), 640, 560);
+    if (!win)
+    {
+        activity_view_ = nullptr;
+        show_status_message_(tk::tr("The Activity Monitor is not available on this platform yet."));
+        return;
+    }
+    activity_window_.reset(win);
+    activity_window_->on_window_closed = [this] { on_activity_window_closed_(); };
+    refresh_activity_monitor_();
+    activity_window_->bring_to_front();
+}
+
+void ShellBase::on_activity_window_closed_()
+{
+    cancel_debounce_(DebounceSlot::ActivityMonitor);
+    activity_view_ = nullptr;
+    // Runs from the native close handler: hand ownership to the platform's
+    // deferred delete instead of destroying the window mid-event.
+    if (activity_window_)
+        activity_window_.release()->schedule_delete();
+}
+
+void ShellBase::teardown_activity_monitor_()
+{
+    cancel_debounce_(DebounceSlot::ActivityMonitor);
+    activity_view_ = nullptr;
+    if (activity_window_)
+    {
+        activity_window_->on_window_closed = nullptr;
+        activity_window_->close_window();
+        activity_window_.reset();
+    }
+}
+
+void ShellBase::refresh_activity_monitor_()
+{
+    if (!activity_view_)
+        return;
+    auto sess = active_account_;
+    run_async_(
+        [this, sess]
+        {
+            auto entries = activity_snapshot_(sess && sess->client ? sess->client.get() : nullptr);
+            const auto now_ms =
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch())
+                    .count();
+            post_to_ui_alive_(
+                [this, entries = std::move(entries), now_ms]() mutable
+                {
+                    if (!activity_view_)
+                        return;
+                    activity_view_->set_snapshot(std::move(entries), now_ms);
+                    if (activity_window_)
+                        activity_window_->request_repaint();
+                    debounce_(DebounceSlot::ActivityMonitor, 1000,
+                              [this] { refresh_activity_monitor_(); });
+                });
+        });
+}
+
 void ShellBase::start_search_index_stats_poll_()
 {
     search_stats_panel_open_ = true;
@@ -7018,7 +7148,7 @@ void ShellBase::trigger_update_check_()
         return;
     update_checker_ = std::make_unique<AurUpdateChecker>(
         *client_,
-        [this](std::function<void()> fn) { run_async_(std::move(fn)); },
+        [this](std::function<void()> fn) { run_async_("update-check", std::move(fn)); },
         [this](std::function<void()> fn) { post_to_ui_(std::move(fn)); },
         TESSERACT_AUR_PACKAGE,
         kVersion);
@@ -7028,7 +7158,7 @@ void ShellBase::trigger_update_check_()
         return;
     update_checker_ = std::make_unique<GithubUpdateChecker>(
         *client_,
-        [this](std::function<void()> fn) { run_async_(std::move(fn)); },
+        [this](std::function<void()> fn) { run_async_("update-check", std::move(fn)); },
         [this](std::function<void()> fn) { post_to_ui_(std::move(fn)); },
         TESSERACT_GITHUB_REPO,
         kVersion);
@@ -8133,6 +8263,7 @@ ShellBase::~ShellBase()
     // release_room_subscription_() on already-freed maps, a use-after-free that
     // crashes on shutdown whenever a pop-out is open. Clearing here runs every
     // ~RoomWindowBase while those maps are intact.
+    teardown_activity_monitor_();
     owned_secondary_windows_.clear();
 }
 
@@ -9763,6 +9894,7 @@ void ShellBase::force_full_repaint_all_surfaces_()
 
 void ShellBase::run_image_gc_()
 {
+    auto activity_scope = activity_.begin("image-gc", "UI housekeeping", "periodic");
     // Generational mark-and-sweep of the decoded (L0) image caches. peek() (which
     // every image provider calls) stamps the current generation onto the touched
     // entry. Here we: gate on recent user activity (idle ⇒ no cycle ⇒ nothing
@@ -9829,6 +9961,7 @@ void ShellBase::run_image_gc_()
 
 void ShellBase::notify_presence_tick_()
 {
+    auto activity_scope = activity_.begin("housekeeping-tick", "UI housekeeping", "periodic");
     // Backstop GC tick (media_sweep_timer_ is the primary ~2 s driver).
     run_image_gc_();
     // Same 30 s cadence reclaims rooms/threads that haven't been on-screen in
@@ -10298,6 +10431,10 @@ void ShellBase::on_system_accent_changed_()
 
 void ShellBase::apply_theme_to_secondary_windows_(const tk::Theme& t)
 {
+    if (activity_window_)
+    {
+        activity_window_->apply_theme(t);
+    }
     for (auto& w : owned_secondary_windows_)
     {
         if (w)
@@ -10945,6 +11082,7 @@ void ShellBase::close_all_popouts_()
     // + remove_popout_from_settings_) while secondary_windows_ /
     // room_subscription_refs_ are still alive — the same ordering ~ShellBase
     // relies on.
+    teardown_activity_monitor_();
     owned_secondary_windows_.clear();
     secondary_windows_.clear(); // defensive; unregister already emptied it
     pending_restore_popouts_.clear();
@@ -11773,6 +11911,7 @@ ShellBase::select_idle_thread_evictions_(
 
 void ShellBase::sweep_idle_timelines_()
 {
+    auto activity_scope = activity_.begin("idle-timeline-eviction", "UI housekeeping", "periodic");
     const auto now = std::chrono::steady_clock::now();
 
     std::unordered_set<std::string> visible_rooms;
@@ -12508,7 +12647,12 @@ void ShellBase::schedule_sync_restart_(const std::string& user_id, int delay_ms)
     // The timer is native (post_to_ui_after_ → QTimer / g_timeout_add /
     // SetTimer / dispatch_after); the body is the shared restart helper.
     post_to_ui_after_(delay_ms,
-                      [this, user_id]() { restart_account_sync_(user_id); });
+                      [this, user_id]()
+                      {
+                          auto activity_scope =
+                              activity_.begin("sync-restart", "Sync", "one-shot");
+                          restart_account_sync_(user_id);
+                      });
 }
 
 void ShellBase::handle_sync_error_impl_(std::string context,

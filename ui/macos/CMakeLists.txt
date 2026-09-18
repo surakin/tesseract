@@ -76,6 +76,8 @@ add_executable(tesseract_macos MACOSX_BUNDLE
 )
 
 target_sources(tesseract_macos PRIVATE
+    src/AuxWindowController.h
+    src/AuxWindowController.mm
     src/CallWindowController.h
     src/CallWindowController.mm
     tk/screen_capture_macos.mm

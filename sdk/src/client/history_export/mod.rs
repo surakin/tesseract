@@ -281,6 +281,7 @@ impl ClientFfi {
         };
 
         let join = self.rt.spawn(async move {
+            let _job = crate::client::activity::begin("history-export", "Export", crate::client::activity::JobKind::OneShot);
             run_export(ctx).await;
         });
 

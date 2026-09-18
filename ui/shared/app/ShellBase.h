@@ -12,6 +12,7 @@
 #include <tesseract/visual.h>
 #include <tesseract/waveform_cache.h>
 #include "app/AccountManager.h"
+#include "app/ActivityRegistry.h"
 #include "app/AurUpdateChecker.h"
 #include "app/GithubUpdateChecker.h"
 #include "app/PresenceTracker.h"
@@ -28,7 +29,9 @@
 #include "tk/video_capture.h"
 #include "tk/screen_capture.h"
 #include "tk/location_provider.h"
+#include "app/AuxWindowBase.h"
 #include "app/CallWindowBase.h"
+#include "views/ActivityMonitorView.h"
 #include "views/CallOverlayWidget.h"
 #include "tk/canvas.h"
 #include "tk/inflight_dot.h"
@@ -286,6 +289,7 @@ public:
         AccountDataSave,
         ThreadSearch,
         RoomDirectorySearch,
+        ActivityMonitor,
     };
 
     // Run fn() on the UI thread `ms` after the most recent call on `slot`,
@@ -1386,6 +1390,9 @@ protected:
     // concurrency-unreported machine still gets more than the old fixed 2.
     // This upper bound is a starting guess, not a profiled number.
     static int pool_thread_count();
+    // Declared before the pools so it outlives their worker threads (joined in
+    // ~WorkerPool) — labeled tasks hold Scopes into it.
+    ActivityRegistry activity_;
     WorkerPool pool_{pool_thread_count()};
     WorkerPool mut_pool_{1};
     WorkerPool media_prefetch_pool_{2};
@@ -3329,6 +3336,15 @@ protected:
     // Returns nullptr on platforms where playback is not yet implemented.
     virtual std::unique_ptr<tk::AudioPlayback> make_call_audio_output_() = 0;
 
+    // Factory hook: each concrete shell creates a plain secondary top-level
+    // window hosting `root`. Default: null (feature unavailable on that shell).
+    virtual AuxWindowBase* create_aux_window_(std::string /*title*/,
+                                              std::unique_ptr<tk::Widget> /*root*/,
+                                              int /*width*/, int /*height*/)
+    {
+        return nullptr;
+    }
+
     // Factory hook: each concrete shell creates its call pop-out window.
     virtual CallWindowBase* create_call_window_() = 0;
 
@@ -3913,6 +3929,16 @@ protected:
     tesseract::views::SettingsView* stats_settings_view_ = nullptr;
     bool search_stats_panel_open_ = false;
 
+    // ── Activity Monitor window ──────────────────────────────────────────────
+    // Single instance; opened from Settings > Advanced. Polls while open.
+    void open_activity_monitor_();
+    void on_activity_window_closed_();
+    void teardown_activity_monitor_();
+    void refresh_activity_monitor_();
+    std::unique_ptr<AuxWindowBase> activity_window_;
+    // Owned by activity_window_'s surface; null whenever the window is closed.
+    tesseract::views::ActivityMonitorView* activity_view_ = nullptr;
+
     // ── Typing notification hooks ─────────────────────────────────────────────
     // Called on the UI thread by EventHandlerBase. Filters by current_room_id_,
     // formats the display text, and calls update_typing_bar_.
@@ -4009,6 +4035,15 @@ protected:
     // Enqueue fn() on the shared-read pool (pool_, 2 threads).
     // Use for &self FFI calls and CPU/disk work that holds no ffi_mu lock.
     void run_async_(std::function<void()> fn);
+    // Same, but the task shows up in the Activity Monitor under `label`.
+    void run_async_(const char* label, std::function<void()> fn);
+
+    // Labeled variant of run_async_mut_ (see run_async_(label, fn)).
+    void run_async_mut_(const char* label, std::function<void()> fn);
+
+    // Merged Rust + C++ + worker-pool job list for the Activity Monitor.
+    // Worker-thread safe (Client::activity_snapshot is a shared-lock read).
+    std::vector<tesseract::ActivityEntry> activity_snapshot_(tesseract::Client* client) const;
 
     // Enqueue fn() on the single-thread mutable pool (mut_pool_, 1 thread).
     // Use for every &mut ClientFfi call (anything that takes MUT_FFI in

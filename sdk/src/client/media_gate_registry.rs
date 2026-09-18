@@ -163,6 +163,7 @@ impl GateRegistry {
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(REAP_INTERVAL).await;
+                let _job = crate::client::activity::begin("media-origin-reaper", "Media", crate::client::activity::JobKind::Periodic);
                 let mut inner = registry.inner.lock();
                 let now = Instant::now();
                 inner.origins.retain(|_, entry| {

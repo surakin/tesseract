@@ -240,6 +240,10 @@ SettingsView::SettingsView()
     {
         if (on_developer_mode_changed) on_developer_mode_changed(v);
     };
+    advanced_->on_open_activity_monitor = [this]
+    {
+        if (on_open_activity_monitor) on_open_activity_monitor();
+    };
 #ifdef TESSERACT_CRASH_HANDLER_ENABLED
     advanced_->on_crash_reporting_changed = [this](bool v)
     {

@@ -83,6 +83,8 @@ qt_add_executable(tesseract_qt
 )
 
 target_sources(tesseract_qt PRIVATE
+    src/AuxWindow.h       # MOC input
+    src/AuxWindow.cpp
     src/CallWindow.h      # MOC input
     src/CallWindow.cpp
 )

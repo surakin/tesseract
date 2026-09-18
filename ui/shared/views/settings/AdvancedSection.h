@@ -41,6 +41,9 @@ public:
     // Fired with the new boolean state when the checkbox is toggled.
     std::function<void(bool)> on_developer_mode_changed;
 
+    // Fired by the "Open Activity Monitor" button.
+    std::function<void()> on_open_activity_monitor;
+
 #ifdef TESSERACT_CRASH_HANDLER_ENABLED
     // Silently update checkbox state without firing on_crash_reporting_changed.
     void set_crash_reporting_enabled(bool enabled);

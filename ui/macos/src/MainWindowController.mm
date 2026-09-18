@@ -8,6 +8,7 @@
 #import "MacPowerMonitor.h"
 #import "MacScreenLock.h"
 #import "RoomWindowController.h"
+#import "AuxWindowController.h"
 #import "CallWindowController.h"
 
 #include <tesseract/client.h>
@@ -263,6 +264,13 @@ protected:
         return tk::make_audio_playback_macos();
     }
     tesseract::CallWindowBase* create_call_window_() override;
+    tesseract::AuxWindowBase* create_aux_window_(std::string title,
+                                                 std::unique_ptr<tk::Widget> root,
+                                                 int width, int height) override
+    {
+        return tesseract::make_mac_aux_window(title, std::move(root), width, height,
+                                              current_theme_);
+    }
 
     // Tab management hooks.
     void on_tab_state_changed_ui_() override;

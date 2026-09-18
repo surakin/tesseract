@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 #include <shlobj.h> // SHBrowseForFolderW — native folder picker for history export
 #include "RoomWindow.h"
+#include "AuxWindow.h"
 #include "CallWindow.h"
 #include "views/BrandView.h"
 #include "views/media_drop.h"
@@ -4066,6 +4067,13 @@ std::unique_ptr<tk::AudioPlayback> MainWindow::make_call_audio_output_()
 tesseract::CallWindowBase* MainWindow::create_call_window_()
 {
     return new win32::CallWindow(this);
+}
+
+tesseract::AuxWindowBase* MainWindow::create_aux_window_(std::string title,
+                                                         std::unique_ptr<tk::Widget> root,
+                                                         int width, int height)
+{
+    return new win32::AuxWindow(this, title, std::move(root), width, height, current_theme_);
 }
 
 void MainWindow::finish_login_ui_(const std::string& uid)

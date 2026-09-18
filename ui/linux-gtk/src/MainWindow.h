@@ -385,6 +385,9 @@ private:
         tesseract::AccountSession& session) override;
     std::unique_ptr<tk::AudioPlayback> make_call_audio_output_() override;
     tesseract::CallWindowBase* create_call_window_() override;
+    tesseract::AuxWindowBase* create_aux_window_(std::string title,
+                                                 std::unique_ptr<tk::Widget> root,
+                                                 int width, int height) override;
 
     void start_anim_tick_if_needed_();
     void invalidate_anim_consumers_();

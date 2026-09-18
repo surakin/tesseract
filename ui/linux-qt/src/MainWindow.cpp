@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "AuxWindow.h"
 #include "CallWindow.h"
 #include "LinuxNotifier.h"
 #include "LinuxUpConnectorQt.h"
@@ -2403,6 +2404,13 @@ std::unique_ptr<tk::AudioPlayback> MainWindow::make_call_audio_output_()
 tesseract::CallWindowBase* MainWindow::create_call_window_()
 {
     return new qt6::CallWindow(this);
+}
+
+tesseract::AuxWindowBase* MainWindow::create_aux_window_(std::string title,
+                                                         std::unique_ptr<tk::Widget> root,
+                                                         int width, int height)
+{
+    return new qt6::AuxWindow(title, std::move(root), width, height, current_theme_);
 }
 
 std::function<void()> MainWindow::make_tray_show_callback_()
