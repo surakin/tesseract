@@ -81,7 +81,7 @@ version) are noted where relevant.
 - Room list with sections: Favorites, DMs, Rooms, Spaces (tag-aware: `m.favourite`); spaces show a collapsible "Not joined" sub-section for unjoined child rooms
 - The room-list/conversation divider is a drag handle: resize between an icon-only minimum (avatars only, with a hover flyout showing each room's full row) and a cap of half the window or the widest on-screen room row; width and collapsed state persist
 - A phone icon appears on rooms with an active call
-- A 🌉 Bridged badge appears in the room-info panel for rooms bridged to a third-party network (MSC2346)
+- A Bridged badge (with the bridged network's name, when known) appears in the room-info panel for rooms bridged to a third-party network (MSC2346), overridable per-room in room settings
 - Sticky section headers — the current section's header pins to the top while scrolling (interactive: click to collapse/expand)
 - Space navigation with drill-down and recursive subspace support; unjoined child rooms shown with a preview panel (name, avatar, topic, member count, Join button); selecting a joined space itself shows a summary panel (avatar, topic, joined/unjoined child counts)
 - Multiple rooms open in tabs

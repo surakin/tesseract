@@ -911,6 +911,12 @@ void RoomView::wire_internal_callbacks()
             [this]() { if (room_settings_view_) room_settings_view_->close(); },
             std::move(room_id));
     };
+    room_settings_view_->on_bridge_override_changed =
+        [this](std::string room_id, bool not_bridged)
+    {
+        if (on_bridge_override_changed)
+            on_bridge_override_changed(std::move(room_id), not_bridged);
+    };
 
     // Wire user profile panel callbacks.
     user_profile_panel_->on_close = [this]()

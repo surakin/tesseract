@@ -4,6 +4,7 @@
 #include "media_utils.h"
 
 #include "tk/i18n.h"
+#include "tk/pill.h" // tk::role_line_metrics
 #include "tk/theme.h"
 
 #include <algorithm>
@@ -130,7 +131,9 @@ void RoomInfoPanelBody::open(const tesseract::RoomInfo& info)
     topic_html_         = info.topic_html;
     is_encrypted_       = info.is_encrypted;
     history_visibility_ = info.history_visibility;
-    is_bridged_         = info.is_bridged;
+    is_bridged_         = info.is_bridged && !info.bridge_overridden;
+    bridge_network_name_       = info.bridge_network_name;
+    bridge_network_avatar_url_ = info.bridge_network_avatar_url;
 
     open_             = true;
     editing_topic_    = false;
@@ -145,6 +148,7 @@ void RoomInfoPanelBody::open(const tesseract::RoomInfo& info)
     name_layout_.reset();
     badge_enc_layout_.reset();
     badge_hist_layout_.reset();
+    badge_bridged_layout_.reset();
     topic_layout_.reset();
     topic_spans_ = topic_html_.empty() ? autolink_plain_to_spans(topic_) :
                                          std::vector<tk::TextSpan>{};
@@ -170,7 +174,9 @@ void RoomInfoPanelBody::refresh_info(const tesseract::RoomInfo& info)
     avatar_url_         = info.effective_avatar_url();
     is_encrypted_       = info.is_encrypted;
     history_visibility_ = info.history_visibility;
-    is_bridged_         = info.is_bridged;
+    is_bridged_         = info.is_bridged && !info.bridge_overridden;
+    bridge_network_name_       = info.bridge_network_name;
+    bridge_network_avatar_url_ = info.bridge_network_avatar_url;
     // Authoritative re-sync after a server-side tag change.
     if (favourite_btn_)    favourite_btn_->set_checked(info.is_favorite);
     if (low_priority_btn_) low_priority_btn_->set_checked(info.is_low_priority);
@@ -539,6 +545,20 @@ void RoomInfoPanelBody::paint_before_children(tk::PaintCtx& ctx)
     const float badge_y = name_y + 20.0f + 4.0f;
     float badge_x = bounds_.x + kPadX;
 
+    // Every badge is an icon+label pair drawn the same way: a real Lucide
+    // glyph (via IconCache, rasterized/tinted/cached) in a box the height of
+    // one Small-role text line, then the label immediately after it. Sharing
+    // one box height and one icon size across all three is what makes them
+    // line up with each other — no per-badge guessing.
+    constexpr float kBadgeIconPx  = 14.0f;
+    constexpr float kBadgeIconGap = 4.0f;
+    const tk::LineMetrics badge_lm =
+        tk::role_line_metrics(ctx.factory, tk::FontRole::Small);
+    const float badge_row_h =
+        (badge_lm.ascent + badge_lm.descent) > 0.0f
+            ? (badge_lm.ascent + badge_lm.descent)
+            : 16.0f;
+
     if (is_encrypted_)
     {
         if (!badge_enc_layout_)
@@ -548,9 +568,12 @@ void RoomInfoPanelBody::paint_before_children(tk::PaintCtx& ctx)
             st.halign    = tk::TextHAlign::Leading;
             st.trim      = tk::TextTrim::Ellipsis;
             st.max_width = text_max_w;
-            badge_enc_layout_ =
-                ctx.factory.build_text(tk::tr("\xF0\x9F\x94\x92 Encrypted"), st);
+            badge_enc_layout_ = ctx.factory.build_text(tk::tr("Encrypted"), st);
         }
+        badge_enc_icon_.draw(cv, ctx.factory, kLockKeyholeSvg,
+                             {badge_x, badge_y, kBadgeIconPx, badge_row_h},
+                             kBadgeIconPx, pal.text_muted);
+        badge_x += kBadgeIconPx + kBadgeIconGap;
         if (badge_enc_layout_)
         {
             cv.draw_text(*badge_enc_layout_, {badge_x, badge_y}, pal.text_muted);
@@ -567,10 +590,12 @@ void RoomInfoPanelBody::paint_before_children(tk::PaintCtx& ctx)
             st.halign    = tk::TextHAlign::Leading;
             st.trim      = tk::TextTrim::Ellipsis;
             st.max_width = text_max_w;
-            const std::string hist_text =
-                "\xF0\x9F\x91\x81 " + history_visibility_;
-            badge_hist_layout_ = ctx.factory.build_text(hist_text, st);
+            badge_hist_layout_ = ctx.factory.build_text(history_visibility_, st);
         }
+        badge_hist_icon_.draw(cv, ctx.factory, kEyeSvg,
+                              {badge_x, badge_y, kBadgeIconPx, badge_row_h},
+                              kBadgeIconPx, pal.text_muted);
+        badge_x += kBadgeIconPx + kBadgeIconGap;
         if (badge_hist_layout_)
         {
             cv.draw_text(*badge_hist_layout_, {badge_x, badge_y}, pal.text_muted);
@@ -587,9 +612,30 @@ void RoomInfoPanelBody::paint_before_children(tk::PaintCtx& ctx)
             st.halign    = tk::TextHAlign::Leading;
             st.trim      = tk::TextTrim::Ellipsis;
             st.max_width = text_max_w;
-            badge_bridged_layout_ =
-                ctx.factory.build_text(tk::tr("\xF0\x9F\x8C\x89 Bridged"), st);
+            badge_bridged_layout_ = ctx.factory.build_text(
+                bridge_network_name_.empty() ? tk::tr("Bridged") : bridge_network_name_, st);
         }
+        // Prefer the bridged network's own avatar (e.g. WhatsApp's logo)
+        // over the generic cable glyph when one's resolved — drawn in the
+        // exact same box the icon would occupy, so it lines up identically
+        // either way.
+        const tk::Image* network_img =
+            (image_provider_ && !bridge_network_avatar_url_.empty())
+                ? image_provider_(bridge_network_avatar_url_)
+                : nullptr;
+        if (network_img)
+        {
+            const tk::Point icon_centre{badge_x + kBadgeIconPx * 0.5f,
+                                        badge_y + badge_row_h * 0.5f};
+            cv.draw_circle_image(*network_img, icon_centre, kBadgeIconPx);
+        }
+        else
+        {
+            badge_bridged_icon_.draw(cv, ctx.factory, kCableSvg,
+                                     {badge_x, badge_y, kBadgeIconPx, badge_row_h},
+                                     kBadgeIconPx, pal.text_muted);
+        }
+        badge_x += kBadgeIconPx + kBadgeIconGap;
         if (badge_bridged_layout_)
             cv.draw_text(*badge_bridged_layout_, {badge_x, badge_y}, pal.text_muted);
     }

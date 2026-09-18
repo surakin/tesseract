@@ -183,6 +183,10 @@ RoomSettingsView::RoomSettingsView()
         if (on_copy_to_clipboard) on_copy_to_clipboard(room_id);
         if (host()) host()->show_toast(tk::tr("Copied to clipboard"));
     };
+    general_->on_bridge_override_changed = [this](bool not_bridged)
+    {
+        if (on_bridge_override_changed) on_bridge_override_changed(room_id_, not_bridged);
+    };
     if (auto* nf = general_->name_field())
     {
         // Live-typing path: update staged_name_ (used for Accept's diff) and
@@ -352,6 +356,10 @@ void RoomSettingsView::open(const tesseract::RoomInfo& info)
     general_->set_field_permissions(false, false, false);
     general_->set_committing(false);
     general_->reset();
+    // Local-only preference, not part of the staged/Accept flow — see
+    // on_bridge_override_changed's doc comment.
+    general_->set_bridge_override_visible(info.is_bridged);
+    general_->set_bridge_override(info.bridge_overridden);
 
     original_is_encrypted_       = info.is_encrypted;
     original_join_rule_          = info.join_rule;

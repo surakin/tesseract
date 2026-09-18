@@ -5,6 +5,7 @@
 #include "tk/controls.h"
 #include "tk/host.h"
 #include "tk/scrollable_base.h"
+#include "tk/svg.h"
 #include "tk/text_area.h"
 #include "tk/widget.h"
 
@@ -129,7 +130,9 @@ private:
     std::vector<tk::TextSpan> topic_spans_; // non-empty when plain topic has links
     bool        is_encrypted_      = false;
     std::string history_visibility_;
-    bool        is_bridged_        = false;
+    bool        is_bridged_        = false; // effective (raw && !overridden)
+    std::string bridge_network_name_;
+    std::string bridge_network_avatar_url_;
 
     // Members
     std::vector<tesseract::RoomMember> members_;
@@ -183,6 +186,14 @@ private:
     std::unique_ptr<tk::TextLayout> badge_hist_layout_;
     std::unique_ptr<tk::TextLayout> badge_bridged_layout_;
     std::unique_ptr<tk::TextLayout> topic_layout_;
+
+    // Badge-row leading icons — real Lucide glyphs (not emoji) drawn via
+    // IconCache so all three badges share one deterministic rendering path
+    // and line up with each other by construction, instead of guessing
+    // where a platform's colour-emoji renderer happens to place a glyph.
+    tk::IconCache badge_enc_icon_;
+    tk::IconCache badge_hist_icon_;
+    tk::IconCache badge_bridged_icon_;
     struct MemberLayout {
         std::unique_ptr<tk::TextLayout> name;
         std::unique_ptr<tk::TextLayout> uid;

@@ -1,5 +1,7 @@
 #include "RoomGeneralSection.h"
 
+#include "SettingsGroup.h"
+
 #include "tk/i18n.h"
 #include "tk/theme.h"
 #include "tk/widget.h"
@@ -527,6 +529,23 @@ RoomGeneralSection::RoomGeneralSection()
     {
         if (on_layout_changed) on_layout_changed();
     };
+
+    // ── Bridge override ──────────────────────────────────────────────────
+    // Local-only preference (im.gnomos.tesseract account data), not a room
+    // state event — RoomSettingsView applies it immediately on toggle rather
+    // than staging it with the rest of this dialog. Hidden until
+    // set_bridge_override_visible(true) confirms MSC2346 actually flagged
+    // this room as bridged.
+    auto* bridge_group = add_group(tk::tr("Bridge"));
+    bridge_group_ = bridge_group;
+    auto bridge_check = tk::create_widget<tk::CheckButton>(
+        this, tk::tr("This room isn't actually bridged"));
+    bridge_override_check_ = bridge_group->add_widget(std::move(bridge_check));
+    bridge_override_check_->on_change = [this](bool checked)
+    {
+        if (on_bridge_override_changed) on_bridge_override_changed(checked);
+    };
+    bridge_group_->set_visible(false);
 }
 
 RoomGeneralSection::~RoomGeneralSection() = default;
@@ -605,6 +624,21 @@ tk::TextArea* RoomGeneralSection::topic_field() const
 void RoomGeneralSection::reset()
 {
     content_->reset();
+}
+
+void RoomGeneralSection::set_bridge_override(bool not_bridged)
+{
+    bridge_override_check_->set_checked(not_bridged);
+}
+
+void RoomGeneralSection::set_bridge_override_visible(bool visible)
+{
+    const bool was_visible = bridge_group_->visible();
+    bridge_group_->set_visible(visible);
+    // See Content::on_layout_changed's callers — a widget that just became
+    // visible needs a fresh arrange() pass or it paints at stale bounds_.
+    if (was_visible != visible && on_layout_changed)
+        on_layout_changed();
 }
 
 } // namespace tesseract::views

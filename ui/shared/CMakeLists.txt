@@ -467,6 +467,10 @@ set(_icon_svgs
     "${_lucide_dir}/lucide-battery-low.svg"
     "${_lucide_dir}/lucide-list-checks.svg"
     "${_lucide_dir}/lucide-check-check.svg"
+    "${_lucide_dir}/lucide-lock-keyhole.svg"
+    "${_lucide_dir}/lucide-lock-keyhole-open.svg"
+    "${_lucide_dir}/lucide-eye.svg"
+    "${_lucide_dir}/lucide-cable.svg"
 )
 
 add_custom_command(

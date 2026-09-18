@@ -296,6 +296,14 @@ public:
     // of Accept/Cancel, same as it would for any other read-only value.)
     std::function<void(std::string)> on_copy_to_clipboard;
 
+    // Fired immediately when the General tab's bridge-override checkbox is
+    // toggled — unlike every other field here, this is a local-only account
+    // -data preference (see RoomGeneralSection::on_bridge_override_changed's
+    // doc comment), so the shell persists it right away instead of waiting
+    // for Accept.
+    std::function<void(std::string room_id, bool not_bridged)>
+        on_bridge_override_changed;
+
     // Fired when the view's own layout-affecting state changes (open/close,
     // permission changes affecting field rects, tab switches) so the shell
     // can relayout native overlays.

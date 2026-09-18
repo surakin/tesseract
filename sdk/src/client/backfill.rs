@@ -545,8 +545,13 @@ impl ClientFfi {
 
             // Fetch all rooms in parallel — room state is independent,
             // no ordering needed.
-            let mut joinset: tokio::task::JoinSet<(matrix_sdk::ruma::OwnedRoomId, bool)> =
-                tokio::task::JoinSet::new();
+            #[allow(clippy::type_complexity)]
+            let mut joinset: tokio::task::JoinSet<(
+                matrix_sdk::ruma::OwnedRoomId,
+                bool,
+                Option<String>,
+                Option<String>,
+            )> = tokio::task::JoinSet::new();
             for room_id in uncached {
                 let client = client.clone();
                 let in_flight = Arc::clone(&in_flight);
@@ -564,29 +569,45 @@ impl ClientFfi {
                         #[cfg(debug_assertions)]
                         label,
                     );
-                    let bridged = client
+                    let bridge_event = client
                         .send(state_api::Request::new(room_id.clone()))
                         .await
-                        .map(|resp| {
-                            resp.room_state.iter().any(|raw| {
+                        .ok()
+                        .and_then(|resp| {
+                            resp.room_state.into_iter().find(|raw| {
                                 raw.get_field::<String>("type").ok().flatten().as_deref()
                                     == Some("uk.half-shot.bridge")
                             })
-                        })
-                        .unwrap_or(false);
-                    (room_id, bridged)
+                        });
+                    let bridged = bridge_event.is_some();
+                    let bridge_content = bridge_event.as_ref().and_then(|raw| {
+                        raw.get_field::<serde_json::Value>("content").ok().flatten()
+                    });
+                    let (network_name, network_avatar_url) = bridge_content
+                        .as_ref()
+                        .map(super::parse_bridge_network_info)
+                        .unwrap_or((None, None));
+                    (room_id, bridged, network_name, network_avatar_url)
                 });
             }
 
             let mut any_bridged = false;
-            while let Some(Ok((room_id, bridged))) = joinset.join_next().await {
+            while let Some(Ok((room_id, bridged, network_name, network_avatar_url))) =
+                joinset.join_next().await
+            {
                 {
                     let guard = db_conn.lock();
                     if let Some(conn) = guard.as_ref() {
                         let _ = conn.execute(
                             "INSERT OR REPLACE INTO bridge_status \
-                             (room_id, is_bridged) VALUES (?1, ?2)",
-                            rusqlite::params![room_id.as_str(), bridged as i32],
+                             (room_id, is_bridged, network_name, network_avatar_url) \
+                             VALUES (?1, ?2, ?3, ?4)",
+                            rusqlite::params![
+                                room_id.as_str(),
+                                bridged as i32,
+                                network_name,
+                                network_avatar_url
+                            ],
                         );
                     }
                 }
@@ -1017,9 +1038,35 @@ pub(super) fn open_app_cache_db(data_dir: &std::path::Path) -> Option<rusqlite::
     .ok()?;
     conn.execute_batch(super::history_export::store::CREATE_TABLE_SQL).ok()?;
     super::history_export::store::ensure_stop_at_ts_column(&conn).ok()?;
+    ensure_bridge_network_columns(&conn).ok()?;
     conn.execute_batch(super::room_media_store::CREATE_TABLE_SQL).ok()?;
     prune_stale_backoff_and_cache_rows(&conn);
     Some(conn)
+}
+
+/// `bridge_status` shipped with only `is_bridged`; `network_name` and
+/// `network_avatar_url` were added later so the UI can show which platform a
+/// room is bridged to instead of a generic "Bridged" label. Same
+/// check-then-`ALTER TABLE` shape as `ensure_stop_at_ts_column` in
+/// `history_export::store`, since `ALTER TABLE ADD COLUMN` errors on a column
+/// that already exists.
+fn ensure_bridge_network_columns(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
+    let mut stmt = conn.prepare("PRAGMA table_info(bridge_status)")?;
+    let existing: std::collections::HashSet<String> = stmt
+        .query_map([], |row| row.get::<_, String>(1))?
+        .filter_map(Result::ok)
+        .collect();
+    drop(stmt);
+    if !existing.contains("network_name") {
+        conn.execute("ALTER TABLE bridge_status ADD COLUMN network_name TEXT", [])?;
+    }
+    if !existing.contains("network_avatar_url") {
+        conn.execute(
+            "ALTER TABLE bridge_status ADD COLUMN network_avatar_url TEXT",
+            [],
+        )?;
+    }
+    Ok(())
 }
 
 /// Deletes rows old enough that they're almost certainly abandoned rather

@@ -1910,6 +1910,7 @@ protected:
         std::string                 avatar_url;
         std::string                 last_room;
         std::vector<std::string>    open_rooms;
+        std::vector<std::string>    bridge_not_bridged_overrides;
     };
 
     // Output of the blocking half of startup restore.
@@ -4497,6 +4498,28 @@ protected:
 
     // Update the rooms cache and call on_rooms_updated_() for the active account.
     void push_rooms_(std::string user_id, std::vector<RoomInfo> rooms);
+
+    // Sets RoomInfo::bridge_overridden on every entry in `rooms` whose id is
+    // in `overrides` (the account's bridge_not_bridged_overrides prefs).
+    // Called once per push_rooms_ tick so every downstream consumer
+    // (call button, threads button, RoomInfoPanel via RoomView::set_room)
+    // sees a consistent view without each needing its own override lookup.
+    void apply_bridge_overrides_(std::vector<RoomInfo>&          rooms,
+                                 const std::vector<std::string>& overrides) const;
+
+    // Toggles the local "not actually bridged" override for `room_id`,
+    // persists it into the active account's im.gnomos.tesseract prefs, and
+    // immediately refreshes the in-memory rooms_ cache + dependent UI (call
+    // button, threads button, open info panels) without waiting for the next
+    // sync tick. Called from RoomGeneralSection's override checkbox.
+    void set_bridge_override_(const std::string& room_id, bool not_bridged);
+
+    // Re-evaluates call-button / threads-button visibility and refreshes any
+    // open info panel for `room_id` (main window + matching pop-outs) after
+    // its effective bridged state changed — shared by set_bridge_override_
+    // and the sync-echo path in handle_account_prefs_updated_ui_. Assumes
+    // rooms_ / per_account_rooms_ have already been updated (apply_bridge_overrides_).
+    void refresh_bridge_dependent_ui_(const std::string& room_id);
 
     // Update the invites cache and call on_invites_updated_() for the active account.
     void push_invites_(std::string user_id, std::vector<InviteInfo> invites);

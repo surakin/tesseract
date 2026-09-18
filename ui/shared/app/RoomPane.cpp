@@ -519,6 +519,10 @@ void RoomPane::wire_room_view_()
         [this, rv](std::string room_id) {
         shell_->stage_room_settings_avatar_upload_(room_id, rv->room_settings_view());
     };
+    rv->on_bridge_override_changed = [this](std::string room_id, bool not_bridged)
+    {
+        shell_->set_bridge_override_(room_id, not_bridged);
+    };
 
     // ── Requests to join (MSC2403, admin side) ──────────────────────────────
     // ShellBase's knock_requests_panel_room_id_/current_room_knock_requests_

@@ -1427,12 +1427,12 @@ msgid "When a composed message is nothing but a Google Maps or OpenStreetMap lin
 msgstr "Cuando un mensaje redactado no contiene más que un enlace de Google Maps u OpenStreetMap, se envía como una ubicación interactiva en lugar de texto sin formato. Resolver algunos formatos de enlace (enlaces cortos) requiere una solicitud de red saliente al proveedor de mapas antes de enviar."
 
 #: ui/shared/views/RoomInfoPanel.cpp
-msgid "🔒 Encrypted"
-msgstr "🔒 Cifrado"
+msgid "Encrypted"
+msgstr "Cifrado"
 
 #: ui/shared/views/RoomInfoPanel.cpp
-msgid "🌉 Bridged"
-msgstr "🌉 Con puente"
+msgid "Bridged"
+msgstr "Con puente"
 
 #: ui/shared/views/RoomInfoPanel.cpp
 msgid "Media ({0})"
@@ -1633,6 +1633,14 @@ msgstr "Dirección de la sala"
 #: ui/shared/views/settings/RoomGeneralSection.cpp
 msgid "Room ID"
 msgstr "ID de la sala"
+
+#: ui/shared/views/settings/RoomGeneralSection.cpp
+msgid "Bridge"
+msgstr "Puente"
+
+#: ui/shared/views/settings/RoomGeneralSection.cpp
+msgid "This room isn't actually bridged"
+msgstr "Esta sala no tiene puente en realidad"
 
 #: ui/shared/views/RoomSettingsView.cpp
 msgid "Copied to clipboard"

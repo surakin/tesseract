@@ -415,6 +415,8 @@ inline RoomInfo from_ffi(const tesseract_ffi::RoomInfo& r)
         .is_encrypted = r.is_encrypted,
         .has_active_call = r.has_active_call,
         .is_bridged = r.is_bridged,
+        .bridge_network_name = std::string(r.bridge_network_name),
+        .bridge_network_avatar_url = std::string(r.bridge_network_avatar_url),
         .history_visibility = std::string(r.history_visibility),
         .join_rule = std::string(r.join_rule),
         .guest_access = r.guest_access,

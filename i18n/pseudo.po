@@ -1346,12 +1346,12 @@ msgid "Jump to Date"
 msgstr "[Jùmp tö Dàtéxx]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/RoomInfoPanel.cpp:536
-msgid "🔒 Encrypted"
-msgstr "[🔒 Éñçryptédxx]"
+msgid "Encrypted"
+msgstr "[Éñçryptédxx]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/RoomInfoPanel.cpp:575
-msgid "🌉 Bridged"
-msgstr "[🌉 Brïdgédx]"
+msgid "Bridged"
+msgstr "[Brïdgédx]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/RoomInfoPanel.cpp:846
 #, c++-format
@@ -2053,6 +2053,14 @@ msgstr "[Rööm Àddréssxx]"
 #: /home/rayden/src/tesseract/ui/shared/views/settings/RoomGeneralSection.cpp:480
 msgid "Room ID"
 msgstr "[Rööm ÏDx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/settings/RoomGeneralSection.cpp:539
+msgid "Bridge"
+msgstr "[Brïdgéx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/settings/RoomGeneralSection.cpp:542
+msgid "This room isn't actually bridged"
+msgstr "[Thïs rööm ïsñ't àçtûàllý brïdgédxxxxxxx]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/settings/RoomMediaSection.cpp:44
 msgid "Media previews"

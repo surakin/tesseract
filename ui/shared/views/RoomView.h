@@ -553,6 +553,11 @@ public:
     // room_settings_view()->set_staged_avatar() — never commits directly.
     std::function<void(std::string room_id)>
         on_room_settings_avatar_upload_requested;
+    // Fired immediately when the room-settings General tab's bridge-override
+    // checkbox is toggled — see RoomSettingsView::on_bridge_override_changed's
+    // doc comment (local-only preference, applied right away, not staged).
+    std::function<void(std::string room_id, bool not_bridged)>
+        on_bridge_override_changed;
     std::function<void(std::string user_id)>                on_open_dm;
     // Predicate: return true when a DM with user_id already exists.
     // Set by the shell (ShellBase wires this to find_existing_dm_).

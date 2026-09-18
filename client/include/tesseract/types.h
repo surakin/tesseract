@@ -577,8 +577,25 @@ struct RoomInfo
     /// (`m.call.member` state events with non-empty content).
     bool has_active_call = false;
     /// True when the room has a `uk.half-shot.bridge` state event (MSC2346).
-    /// Calls and threads are suppressed for bridged rooms.
+    /// This is the raw detection result, unaffected by the local override
+    /// below — kept around so room settings can still offer the override
+    /// checkbox for a room the user has already overridden. Consumers that
+    /// want to know whether the room should currently be *treated* as
+    /// bridged (call button, threads, the info-panel badge) must check
+    /// `is_bridged && !bridge_overridden`.
     bool is_bridged = false;
+    /// True when the user has locally marked this room "not actually
+    /// bridged" (room settings checkbox), overriding `is_bridged` for display
+    /// / feature-gating purposes. Not part of the Rust FFI struct — set by
+    /// `ShellBase` from the account's `im.gnomos.tesseract` prefs after every
+    /// FFI conversion (see `ShellBase::apply_bridge_overrides_`).
+    bool bridge_overridden = false;
+    /// Display name of the bridged network/protocol (e.g. "WhatsApp"), parsed
+    /// from the bridge event's `network`/`protocol` content. Empty when not
+    /// bridged or the event has no displayname.
+    std::string bridge_network_name;
+    /// `mxc://` avatar URI of the bridged network/protocol. Empty when unavailable.
+    std::string bridge_network_avatar_url;
     /// Room history visibility: "world_readable" | "shared" | "invited" | "joined".
     std::string history_visibility;
     /// Room join rule: "public" | "invite" | "knock" | "restricted" |
@@ -626,6 +643,9 @@ struct RoomInfo
                is_encrypted == other.is_encrypted &&
                has_active_call == other.has_active_call &&
                is_bridged == other.is_bridged &&
+               bridge_overridden == other.bridge_overridden &&
+               bridge_network_name == other.bridge_network_name &&
+               bridge_network_avatar_url == other.bridge_network_avatar_url &&
                history_visibility == other.history_visibility &&
                join_rule == other.join_rule &&
                guest_access == other.guest_access &&

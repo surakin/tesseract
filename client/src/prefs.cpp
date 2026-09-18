@@ -30,6 +30,7 @@ PrefsData parse(const std::string& json_str)
         auto j    = nlohmann::json::parse(json_str);
         p.last_room  = j.value("last_room", std::string{});
         p.open_rooms = j.value("open_rooms", std::vector<std::string>{});
+        p.bridge_not_bridged_overrides = j.value("bridge_overrides", std::vector<std::string>{});
     }
     catch (...)
     {

@@ -13,11 +13,13 @@ struct PrefsData
     /// All open tab room IDs in visual order; includes last_room.
     /// Empty on first launch or when migrating from old prefs.
     std::vector<std::string> open_rooms;
+    /// Room IDs the user has locally marked "not actually bridged", overriding
+    /// the MSC2346 auto-detection (`RoomInfo::is_bridged`) for that room. See
+    /// `ShellBase::room_effectively_bridged_()`. Empty by default.
+    std::vector<std::string> bridge_not_bridged_overrides;
 };
 
 /// Parse / serialize helpers for the `im.gnomos.tesseract` JSON content object.
-/// Only needs to handle the simple `{"last_room":"!id:host"}` shape; no external
-/// JSON library is required because room IDs never contain `"` or `\`.
 namespace Prefs
 {
 

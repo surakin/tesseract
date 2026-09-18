@@ -2597,6 +2597,44 @@ async fn resolve_pinned_event(
     out
 }
 
+/// Extract the MSC2346 bridge-info network name and avatar (`mxc://` URI)
+/// from a `uk.half-shot.bridge` state event's `content` JSON, preferring the
+/// `network` object over `protocol` (the MSC uses `protocol` for the bridge
+/// software itself and `network` for the specific network/instance it's
+/// connected to, e.g. a particular IRC network, which is the more useful
+/// label to show). Takes the already-extracted `content` value (rather than
+/// the raw event envelope) since the local-store fast path here and the
+/// HTTP-fetch path in `backfill::start_bridge_status_check` each get there
+/// through differently-typed envelopes (`RawAnySyncOrStrippedState` vs.
+/// `Raw<AnyStateEvent>`).
+pub(super) fn parse_bridge_network_info(
+    content: &serde_json::Value,
+) -> (Option<String>, Option<String>) {
+    #[derive(serde::Deserialize, Default)]
+    struct NetworkOrProtocol {
+        displayname: Option<String>,
+        avatar_url: Option<String>,
+    }
+    #[derive(serde::Deserialize, Default)]
+    struct BridgeContent {
+        network: Option<NetworkOrProtocol>,
+        protocol: Option<NetworkOrProtocol>,
+    }
+    let content: BridgeContent =
+        serde_json::from_value(content.clone()).unwrap_or_default();
+    let name = content
+        .network
+        .as_ref()
+        .and_then(|n| n.displayname.clone())
+        .or_else(|| content.protocol.as_ref().and_then(|p| p.displayname.clone()));
+    let avatar = content
+        .network
+        .as_ref()
+        .and_then(|n| n.avatar_url.clone())
+        .or_else(|| content.protocol.as_ref().and_then(|p| p.avatar_url.clone()));
+    (name, avatar)
+}
+
 /// Build a single `RoomInfo` snapshot from a `Room`. Returns `None` for
 /// tombstoned rooms (filtered out of the UI list). Called both during the
 /// initial `joined_rooms()` walk in `build_room_infos` and per-room from the
@@ -2708,20 +2746,32 @@ pub(super) async fn build_room_info(
     // bridged to another platform. Calls and threads are suppressed for such rooms.
     // HTTP fetching is deferred to start_bridge_status_check (called on demand
     // when visible rooms change); here we only read the fast local sources.
-    let is_bridged = {
+    let (is_bridged, bridge_network_name, bridge_network_avatar_url) = {
+        use matrix_sdk::deserialized_responses::RawAnySyncOrStrippedState;
         use matrix_sdk::ruma::events::StateEventType;
         let room_id_str = room.room_id().to_string();
 
         // Fast path: local SSS state store (populated if the server ever
         // delivers the event via required_state — currently always empty).
-        let in_store = !room
+        let local_events = room
             .get_state_events(StateEventType::from("uk.half-shot.bridge"))
             .await
-            .unwrap_or_default()
-            .is_empty();
+            .unwrap_or_default();
 
-        if in_store {
-            true
+        if let Some(raw_state) = local_events.first() {
+            let content = match raw_state {
+                RawAnySyncOrStrippedState::Sync(raw) => {
+                    raw.get_field::<serde_json::Value>("content").ok().flatten()
+                }
+                RawAnySyncOrStrippedState::Stripped(raw) => {
+                    raw.get_field::<serde_json::Value>("content").ok().flatten()
+                }
+            };
+            let (name, avatar) = content
+                .as_ref()
+                .map(parse_bridge_network_info)
+                .unwrap_or((None, None));
+            (true, name.unwrap_or_default(), avatar.unwrap_or_default())
         } else {
             // Persistent cache from SQLite — written by start_bridge_status_check.
             let guard = app_cache_db.lock();
@@ -2729,13 +2779,20 @@ pub(super) async fn build_room_info(
                 .as_ref()
                 .and_then(|conn| {
                     conn.query_row(
-                        "SELECT is_bridged FROM bridge_status WHERE room_id = ?1",
+                        "SELECT is_bridged, network_name, network_avatar_url \
+                         FROM bridge_status WHERE room_id = ?1",
                         rusqlite::params![room_id_str],
-                        |row| row.get::<_, bool>(0),
+                        |row| {
+                            Ok((
+                                row.get::<_, bool>(0)?,
+                                row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                                row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                            ))
+                        },
                     )
                     .ok()
                 })
-                .unwrap_or(false)
+                .unwrap_or((false, String::new(), String::new()))
         }
     };
     let history_visibility = {
@@ -2837,6 +2894,8 @@ pub(super) async fn build_room_info(
         is_encrypted,
         has_active_call,
         is_bridged,
+        bridge_network_name,
+        bridge_network_avatar_url,
         history_visibility,
         join_rule,
         guest_access,

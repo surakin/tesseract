@@ -62,6 +62,12 @@ struct AccountSession
     /// `im.gnomos.tesseract` account-data event. Includes last_room.
     std::vector<std::string> open_rooms;
 
+    /// Room IDs the user has locally marked "not actually bridged", restored
+    /// from the `im.gnomos.tesseract` account-data event. Overrides
+    /// `RoomInfo::is_bridged` for that room — see
+    /// `ShellBase::room_effectively_bridged_()`.
+    std::vector<std::string> bridge_not_bridged_overrides;
+
     /// True once `client->start_sync(bridge.get())` has been called for this
     /// session — guards against double-starts and lets the destructor know to
     /// call `stop_sync` for clean shutdown.

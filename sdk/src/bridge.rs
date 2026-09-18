@@ -170,8 +170,17 @@ pub mod ffi {
         has_active_call: bool,
         /// True when the room has a `uk.half-shot.bridge` state event (MSC2346),
         /// indicating it is bridged to another platform. Used to suppress
-        /// features that bridges cannot relay (calls, threads).
+        /// features that bridges cannot relay (calls, threads). This is the
+        /// raw detection result — the C++ side may still show the room as
+        /// not-bridged if the user has locally overridden it.
         is_bridged: bool,
+        /// Display name of the bridged network/protocol (e.g. "WhatsApp"),
+        /// parsed from the `uk.half-shot.bridge` event's `network`/`protocol`
+        /// content. Empty when not bridged or the event has no displayname.
+        bridge_network_name: String,
+        /// `mxc://` avatar URI of the bridged network/protocol, parsed the
+        /// same way as `bridge_network_name`. Empty when unavailable.
+        bridge_network_avatar_url: String,
         /// Room history visibility: "world_readable" | "shared" | "invited" | "joined".
         history_visibility: String,
         /// Room join rule: "public" | "invite" | "knock" | "restricted" |
@@ -3915,6 +3924,8 @@ impl Clone for ffi::RoomInfo {
             is_encrypted: self.is_encrypted,
             has_active_call: self.has_active_call,
             is_bridged: self.is_bridged,
+            bridge_network_name: self.bridge_network_name.clone(),
+            bridge_network_avatar_url: self.bridge_network_avatar_url.clone(),
             history_visibility: self.history_visibility.clone(),
             join_rule: self.join_rule.clone(),
             guest_access: self.guest_access,

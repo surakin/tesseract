@@ -22,7 +22,9 @@ foreach(_entry
         "log-out|kLeaveRoomSvg" "battery-low|kBatteryLowSvg"
         "list-checks|kListChecksSvg" "check-check|kMarkReadSvg"
         "x|kTitlebarCloseSvg" "minus|kTitlebarMinimizeSvg"
-        "square|kTitlebarMaximizeSvg" "copy|kTitlebarRestoreSvg")
+        "square|kTitlebarMaximizeSvg" "copy|kTitlebarRestoreSvg"
+        "lock-keyhole|kLockKeyholeSvg" "lock-keyhole-open|kLockKeyholeOpenSvg"
+        "eye|kEyeSvg" "cable|kCableSvg")
     string(REPLACE "|" ";" _pair "${_entry}")
     list(GET _pair 0 _name)
     list(GET _pair 1 _var)

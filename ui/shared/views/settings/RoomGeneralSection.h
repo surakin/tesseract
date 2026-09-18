@@ -9,6 +9,7 @@
 #include "SettingsPage.h"
 
 #include "tk/canvas.h"
+#include "tk/controls.h"
 #include "tk/host.h"
 #include "tk/text_area.h"
 #include "tk/text_field.h"
@@ -58,6 +59,21 @@ public:
     void set_field_permissions(bool can_name, bool can_topic, bool can_avatar);
     void set_committing(bool committing);
 
+    // MSC2346 bridge-detection override. Unlike every other field on this
+    // tab, this isn't a room state event — it's a local-only account-data
+    // preference (im.gnomos.tesseract), so RoomSettingsView applies it
+    // immediately on toggle rather than staging it for Accept/Cancel. Hidden
+    // unless the room was actually auto-detected as bridged — no point
+    // offering an override for a room MSC2346 never flagged.
+    void set_bridge_override(bool not_bridged);     // checked state, silent seed
+    void set_bridge_override_visible(bool visible); // room's raw is_bridged
+
+    // Fired immediately on toggle (not staged) — see set_bridge_override's
+    // doc comment.
+    std::function<void(bool)> on_bridge_override_changed;
+
+    tk::CheckButton* bridge_override_checkbox() const { return bridge_override_check_; }
+
     void set_avatar_busy(bool busy);
     void set_avatar_error(std::string error);
 
@@ -96,6 +112,9 @@ public:
 private:
     class Content;
     Content* content_ = nullptr;
+
+    tk::Widget*      bridge_group_          = nullptr;
+    tk::CheckButton* bridge_override_check_ = nullptr;
 };
 
 } // namespace tesseract::views

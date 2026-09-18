@@ -3600,8 +3600,81 @@ void ShellBase::update_secondary_room_infos_()
     }
 }
 
+void ShellBase::apply_bridge_overrides_(std::vector<RoomInfo>&          rooms,
+                                        const std::vector<std::string>& overrides) const
+{
+    if (overrides.empty())
+        return;
+    for (auto& r : rooms)
+    {
+        r.bridge_overridden =
+            std::find(overrides.begin(), overrides.end(), r.id) != overrides.end();
+    }
+}
+
+void ShellBase::set_bridge_override_(const std::string& room_id, bool not_bridged)
+{
+    if (!active_account_ || room_id.empty())
+        return;
+
+    auto& overrides = active_account_->bridge_not_bridged_overrides;
+    auto  it        = std::find(overrides.begin(), overrides.end(), room_id);
+    if (not_bridged && it == overrides.end())
+    {
+        overrides.push_back(room_id);
+    }
+    else if (!not_bridged && it != overrides.end())
+    {
+        overrides.erase(it);
+    }
+    else
+    {
+        return; // no change
+    }
+
+    // Local-only preference — applies immediately rather than being staged
+    // with the rest of RoomSettingsView's fields (see Accept/Cancel there).
+    persist_room_layout_pref_();
+
+    // Refresh the in-memory cache + dependent UI without waiting for the next
+    // sync tick, so the badge/call-button/threads-button update right away.
+    apply_bridge_overrides_(rooms_, overrides);
+    if (auto it2 = per_account_rooms_.find(my_user_id_); it2 != per_account_rooms_.end())
+        apply_bridge_overrides_(it2->second, overrides);
+
+    refresh_bridge_dependent_ui_(room_id);
+}
+
+void ShellBase::refresh_bridge_dependent_ui_(const std::string& room_id)
+{
+    const auto* r = room_by_id_(room_id);
+    if (!r)
+        return;
+
+    if (room_id == current_room_id_ && room_view_)
+    {
+        if (auto* header = room_view_->header())
+            update_call_btn_visibility_(header, room_id);
+        if (client_)
+            apply_threads_list_(client_->list_room_threads(room_id));
+        room_view_->set_room(*r); // refreshes the info panel's badge if open
+    }
+    for (auto& [rid, w] : secondary_windows_)
+    {
+        if (rid != room_id || !w->room_view())
+            continue;
+        if (auto* h = w->room_view()->header())
+            update_call_btn_visibility_(h, rid);
+        w->room_view()->set_room(*r);
+    }
+}
+
 void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
 {
+    if (auto sess = account_manager_.find(user_id))
+    {
+        apply_bridge_overrides_(rooms, sess->bridge_not_bridged_overrides);
+    }
     per_account_rooms_[user_id] = rooms;
     // The tray aggregate covers every signed-in account, not just the active
     // one — recompute on every account's update, even if it isn't the one
@@ -7101,6 +7174,7 @@ ShellBase::RestoreIOResult ShellBase::restore_all_accounts_blocking_(bool networ
             auto prefs = tesseract::Prefs::parse(acc.client->load_prefs_json());
             acc.last_room  = prefs.last_room;
             acc.open_rooms = prefs.open_rooms;
+            acc.bridge_not_bridged_overrides = prefs.bridge_not_bridged_overrides;
         }
 
         // Bridge construction + start_sync are the expensive part of restore
@@ -7143,6 +7217,7 @@ ShellBase::finish_restore_accounts_ui_(RestoreIOResult&& io)
         session->avatar_url  = acc.avatar_url;
         session->last_room   = acc.last_room;
         session->open_rooms  = std::move(acc.open_rooms);
+        session->bridge_not_bridged_overrides = std::move(acc.bridge_not_bridged_overrides);
 
         // Bridge already built + sync already started on the worker thread
         // in restore_all_accounts_blocking_(), which also already applied the
@@ -7300,6 +7375,7 @@ ShellBase::FinalizeLoginIO ShellBase::finalize_login_blocking_(
         auto prefs = tesseract::Prefs::parse(session->client->load_prefs_json());
         session->last_room  = prefs.last_room;
         session->open_rooms = prefs.open_rooms;
+        session->bridge_not_bridged_overrides = prefs.bridge_not_bridged_overrides;
     }
 
     // Per-account event bridge (native type) + background sync. Both are
@@ -8353,6 +8429,20 @@ void ShellBase::handle_account_prefs_updated_ui_(std::string user_id,
         return;
     }
     auto prefs = tesseract::Prefs::parse(json);
+
+    // Bridge overrides can change from another device (or echo our own
+    // save); keep this account's copy and every room referencing it in sync,
+    // the same way a local toggle would via set_bridge_override_.
+    if (active_account_->bridge_not_bridged_overrides != prefs.bridge_not_bridged_overrides)
+    {
+        active_account_->bridge_not_bridged_overrides = prefs.bridge_not_bridged_overrides;
+        apply_bridge_overrides_(rooms_, active_account_->bridge_not_bridged_overrides);
+        if (auto it = per_account_rooms_.find(my_user_id_); it != per_account_rooms_.end())
+            apply_bridge_overrides_(it->second, active_account_->bridge_not_bridged_overrides);
+        if (!current_room_id_.empty())
+            refresh_bridge_dependent_ui_(current_room_id_);
+    }
+
     if (!prefs.open_rooms.empty() && pending_restore_rooms_.empty() &&
         current_room_id_.empty())
     {
@@ -11071,7 +11161,7 @@ void ShellBase::update_call_btn_visibility_(views::RoomHeader* header,
     if (!header)
         return;
     const auto* r = room_by_id_(room_id);
-    const bool room_is_bridged = r && r->is_bridged;
+    const bool room_is_bridged = r && r->is_bridged && !r->bridge_overridden;
     const bool in_call_room =
         call_session_ != nullptr && call_session_->room_id() == room_id;
     const bool can_call = client_ && client_->can_start_call_in_room(room_id);
@@ -11148,7 +11238,9 @@ void ShellBase::apply_threads_list_(std::vector<ThreadInfo> threads)
     // Bridged rooms (MSC2346) never show the threads button regardless of
     // thread count, because bridges cannot relay threads to the remote platform.
     const auto* cur_room = room_by_id_(current_room_id_);
-    const bool show_threads = !threads.empty() && !(cur_room && cur_room->is_bridged);
+    const bool cur_room_bridged =
+        cur_room && cur_room->is_bridged && !cur_room->bridge_overridden;
+    const bool show_threads = !threads.empty() && !cur_room_bridged;
     room_view_->set_show_threads_button(show_threads);
 
     // Unread-thread indicator: fold the per-thread flags into the header dot.
@@ -11493,8 +11585,12 @@ void ShellBase::persist_room_layout_pref_(bool blocking)
     open.reserve(tabs_.size());
     for (const auto& t : tabs_)
         open.push_back(t.room_id);
-    const std::string json = tesseract::Prefs::serialize(
-        tesseract::Prefs::room_layout(current_room_id_, open));
+    auto prefs_data = tesseract::Prefs::room_layout(current_room_id_, open);
+    // room_layout() only fills in the tab-layout fields; carry the bridge
+    // overrides through unchanged so a tab switch doesn't wipe them.
+    if (active_account_)
+        prefs_data.bridge_not_bridged_overrides = active_account_->bridge_not_bridged_overrides;
+    const std::string json = tesseract::Prefs::serialize(prefs_data);
 
     if (blocking)
     {
