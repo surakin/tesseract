@@ -1,6 +1,6 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-18**. 1855 C++ + 667 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-18**. 1856 C++ + 667 Rust tests.
 
 > **In-memory cache size accounting fixed (2026-09-18, v0.8.24-unreleased).**
 > Settings → About could show an absurd in-memory cache size (tens of

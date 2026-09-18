@@ -140,6 +140,26 @@ TEST_CASE("by_shortcode_prefix:alias match")
     REQUIRE(found);
 }
 
+TEST_CASE("by_shortcode_prefix:common gemoji names and spellings")
+{
+    auto has = [](std::string_view q, std::string_view glyph)
+    {
+        for (auto [entry, shortcode] : tesseract::emoji::by_shortcode_prefix(q))
+        {
+            if (entry->glyph == glyph)
+            {
+                return true;
+            }
+        }
+        return false;
+    };
+    REQUIRE(has("coffee", "☕"));
+    REQUIRE(has("coffe", "☕"));
+    REQUIRE(has("whiskey", "🥃"));
+    REQUIRE(has("whisky", "🥃"));
+    REQUIRE(has("thumbsup", "👍"));
+}
+
 TEST_CASE("by_shortcode_prefix:no partial match below 1 char")
 {
     // empty prefix returns everything; just verify it doesn't crash
