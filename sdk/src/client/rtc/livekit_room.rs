@@ -821,16 +821,16 @@ fn spawn_event_task(
                     let pid = participant.identity().as_str().to_owned();
                     match track {
                         RemoteTrack::Video(video_track) => {
-                            // Determine if this is a screen share track by inspecting
-                            // the publication source before the async stream starts.
-                            let is_screen = {
-                                let pubs = participant.track_publications();
-                                pubs.values().any(|p| {
-                                    p.source() == TrackSource::Screenshare
-                                        && p.kind() == TrackKind::Video
-                                        && !p.is_muted()
-                                })
-                            };
+                            // Which stream this is: ask the track itself, not
+                            // "does this participant have a screenshare
+                            // publication anywhere" — a participant who is
+                            // publishing both camera and screen at once (e.g.
+                            // screen share was already running when we joined,
+                            // so both TrackSubscribed events land close
+                            // together) would otherwise classify both tracks
+                            // the same way, sending both streams to one tile
+                            // while the other shows only an avatar.
+                            let is_screen = video_track.source() == TrackSource::Screenshare;
                             let sink2 = sink.clone();
                             let vif = if is_screen {
                                 Arc::clone(&screen_in_flight)
