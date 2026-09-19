@@ -1,0 +1,128 @@
+# ---------------------------------------------------------------------------
+# Builds the Microsoft Store MSIX edition and publishes it to Partner Center
+# via the Microsoft Store Developer CLI (msstore). Manual-only: this pushes a
+# real update to a live Store listing, so it never runs on a plain push.
+#
+# Requires one-time setup, none of it in this repo:
+#   - An Entra ID (Azure AD) app registered and given the Manager role on
+#     this Partner Center account (Partner Center > Account settings > Users
+#     > Microsoft Entra applications).
+#   - At least one submission for the app already published manually through
+#     Partner Center — msstore's update flow requires the app to already be
+#     live, it does not create the first submission.
+#
+# Repo configuration (Settings > Secrets and variables > Actions):
+#   Variables (not secret — these are the same values baked into every
+#   shipped AppxManifest.xml, so there is nothing to protect by hiding them):
+#     TESSERACT_MSIX_STORE_IDENTITY_NAME
+#     TESSERACT_MSIX_STORE_PUBLISHER
+#     TESSERACT_MSIX_PUBLISHER_DISPLAY_NAME
+#     TESSERACT_MSIX_STORE_PRODUCT_ID   (Partner Center's Store product ID)
+#   Secrets (real Partner Center API credentials):
+#     AZURE_AD_TENANT_ID
+#     AZURE_AD_APPLICATION_CLIENT_ID
+#     AZURE_AD_APPLICATION_SECRET
+#     SELLER_ID
+# ---------------------------------------------------------------------------
+
+name: MSIX Store Publish
+
+on:
+  workflow_dispatch:
+
+jobs:
+  publish:
+    name: Build and publish Store MSIX
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      actions: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> build/windows-release
+
+      # resvg-py 0.3.2 only ships wheels up to cp312, so pin Python 3.12.
+      # Pillow composites the non-square MSIX assets (wide tile, splash
+      # screen) — see ui/icons/generate_msix_assets.py.
+      - name: Set up Python (icon generation)
+        id: python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install resvg-py and Pillow
+        run: pip install resvg-py pillow
+
+      # The Ninja generator does not auto-activate MSVC like the Visual
+      # Studio generator does; this exports INCLUDE/LIB/PATH so Ninja picks
+      # MSVC instead of silently falling back to the runner's MinGW gcc.
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      # opus is required by matrix-sdk-ui (MSC3245 voice messages). Built
+      # from source so the CRT (/MD) and generator (Ninja+MSVC) match the
+      # rest of the project — same as the NSIS packaging job.
+      - name: Build opus from source
+        run: |
+          git clone --depth 1 --branch v1.5.2 https://github.com/xiph/opus.git opus-src
+          cmake -S opus-src -B opus-build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL `
+            -DOPUS_BUILD_SHARED_LIBRARY=OFF `
+            -DOPUS_BUILD_PROGRAMS=OFF `
+            -DOPUS_BUILD_TESTING=OFF
+          cmake --build opus-build
+          $lib = (Resolve-Path opus-build).Path
+          $inc = (Resolve-Path opus-src/include).Path
+          "OPUS_LIB_DIR=$lib" >> $env:GITHUB_ENV
+          "OPUS_INCLUDE_DIR=$inc" >> $env:GITHUB_ENV
+          "OPUS_STATIC=1" >> $env:GITHUB_ENV
+
+      # The Store identity values are not secret (they ship inside every
+      # installed AppxManifest.xml already) but still don't belong hardcoded
+      # in cmake/Msix.cmake — repo variables keep them out of source while
+      # keeping this workflow self-contained.
+      - name: Configure (Release)
+        run: |
+          cmake --preset windows-release `
+            "-DPython3_EXECUTABLE=${{ steps.python.outputs.python-path }}" `
+            "-DTESSERACT_GITHUB_REPO=${{ github.repository }}" `
+            "-DTESSERACT_MSIX_STORE_IDENTITY_NAME=${{ vars.TESSERACT_MSIX_STORE_IDENTITY_NAME }}" `
+            "-DTESSERACT_MSIX_STORE_PUBLISHER=${{ vars.TESSERACT_MSIX_STORE_PUBLISHER }}" `
+            "-DTESSERACT_MSIX_PUBLISHER_DISPLAY_NAME=${{ vars.TESSERACT_MSIX_PUBLISHER_DISPLAY_NAME }}"
+
+      - name: Build
+        run: cmake --build build/windows-release
+
+      # No signing here — Partner Center signs the Store edition itself on
+      # ingestion, same as a manual submission.
+      - name: Stage and pack Store MSIX
+        run: cmake --build build/windows-release --target msix-stage msix-pack msix-validate
+
+      - name: Configure Microsoft Store CLI
+        uses: microsoft/microsoft-store-apppublisher@v1.1
+
+      - name: Reconfigure store credentials
+        run: |
+          msstore reconfigure `
+            --tenantId ${{ secrets.AZURE_AD_TENANT_ID }} `
+            --sellerId ${{ secrets.SELLER_ID }} `
+            --clientId ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }} `
+            --clientSecret ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
+
+      - name: Publish to Store
+        run: msstore publish "${{ github.workspace }}/build/windows-release/msix/Tesseract-store-x64.msix" -id ${{ vars.TESSERACT_MSIX_STORE_PRODUCT_ID }}
+
+      - name: Cancel workflow run on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh run cancel ${{ github.run_id }} --repo ${{ github.repository }}
