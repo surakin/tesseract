@@ -78,9 +78,14 @@ signtool verify /pa "C:\Program Files\Tesseract\bin\Tesseract.exe"
 
 MSIX packaging is configured in [cmake/Msix.cmake](cmake/Msix.cmake) and only
 runs on MSVC builds (guarded off for MinGW, matching the existing WinRT-only
-toast notification code). It targets Windows 10 version 1903
-(`10.0.18362.0`) or newer as a full-trust Win32 app — no Windows App SDK
-dependency.
+toast notification code). It targets Windows 10 version 2004
+(`10.0.19041.0`) or newer as a full-trust Win32 app — no Windows App SDK
+dependency. The manifest declares `uap10:RuntimeBehavior="win32App"`
+(requires 2004+), which is required to opt the packaged app out of
+AppData/registry virtualization — without it, matrix-sdk's on-disk
+session/crypto store silently forks into a private per-package copy
+instead of the real `%APPDATA%\Tesseract`, breaking session restore and
+key-backup import.
 
 Two editions are built from the same binary with distinct package
 identities: a Store edition (uploaded unsigned — Partner Center signs it on
