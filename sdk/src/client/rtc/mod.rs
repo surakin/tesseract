@@ -4,8 +4,10 @@
 #![allow(dead_code, unused_imports)]
 
 pub mod e2ee;
+pub mod members;
 pub mod livekit_room;
 pub mod session;
+pub mod sfu_set;
 pub mod signaling;
 pub mod transport;
 

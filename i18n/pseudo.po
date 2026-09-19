@@ -738,28 +738,6 @@ msgstr "[Dröp ïmàgéxx]"
 msgid "Decline"
 msgstr "[Déçlïñéx]"
 
-#: /home/rayden/src/tesseract/ui/shared/views/IncomingCallBanner.cpp:29
-msgid "Answer"
-msgstr "[Àñswérx]"
-
-#: /home/rayden/src/tesseract/ui/shared/views/IncomingCallBanner.cpp:107
-msgid "Video call"
-msgstr "[Vïdéö çàllxx]"
-
-#: /home/rayden/src/tesseract/ui/shared/views/IncomingCallBanner.cpp:108
-msgid "Voice call"
-msgstr "[Vöïçé çàllxx]"
-
-#: /home/rayden/src/tesseract/ui/shared/views/IncomingCallBanner.cpp
-#, c++-format
-msgid "Incoming {0}"
-msgstr "[Ïñçömïñg {0}xx]"
-
-#: /home/rayden/src/tesseract/ui/shared/views/IncomingCallBanner.cpp
-#, c++-format
-msgid "Incoming {0} from {1}"
-msgstr "[Ïñçömïñg {0} fröm {1}xx]"
-
 #: /home/rayden/src/tesseract/ui/shared/views/InviteCard.cpp
 #, c++-format
 msgid "{0} invited you to a direct message"
@@ -2692,3 +2670,15 @@ msgid "{0} run"
 msgid_plural "{0} runs"
 msgstr[0] "[{0} rùñx]"
 msgstr[1] "[{0} rùñsx]"
+
+#: ui/shared/views/CallBanner.cpp
+msgid "Call in progress"
+msgstr "[Çàll ïñ prögréssxxx]"
+
+#: ui/shared/views/CallBanner.cpp
+msgid "Video call in progress"
+msgstr "[Vïdéö çàll ïñ prögréssxxxx]"
+
+#: ui/shared/views/CallBanner.cpp
+msgid "Voice call in progress"
+msgstr "[Vöïçé çàll ïñ prögréssxxxx]"

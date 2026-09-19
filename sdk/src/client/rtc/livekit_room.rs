@@ -36,6 +36,207 @@ use livekit::{
     RoomEvent, RoomOptions,
 };
 
+/// E2EE state shared by every LiveKit connection of one call: LiveKit's
+/// frame-key store and the peer keys received so far (Matrix user id ->
+/// key index -> raw key), which are applied to a participant when it appears
+/// on any SFU we are connected to.
+#[derive(Clone)]
+pub struct SharedKeys {
+    pub key_provider: KeyProvider,
+    pending: Arc<StdMutex<HashMap<String, HashMap<i32, Vec<u8>>>>>,
+}
+
+impl SharedKeys {
+    pub fn new() -> Self {
+        // Match Element Call's key provider: HKDF, ratchet window 10, keyring
+        // 256 (MSC4195 / Element's MatrixKeyProvider). PBKDF2 would derive a
+        // different key and frames could not be decrypted.
+        let key_provider = KeyProvider::new(KeyProviderOptions {
+            key_derivation_algorithm: KeyDerivationAlgorithm::HKDF,
+            ratchet_window_size: 10,
+            failure_tolerance: 10,
+            key_ring_size: 256,
+            ..KeyProviderOptions::default()
+        });
+        Self {
+            key_provider,
+            pending: Arc::new(StdMutex::new(HashMap::new())),
+        }
+    }
+
+    /// Remember a peer key (all indices are kept so frames encrypted before a
+    /// rotation can still be decrypted when the participant first appears).
+    pub fn store(&self, sender_user_id: &str, index: i32, raw_key: Vec<u8>) {
+        self.pending
+            .lock()
+            .unwrap()
+            .entry(sender_user_id.to_owned())
+            .or_default()
+            .insert(index, raw_key);
+    }
+
+    /// Apply every stored key to the participants currently in `room`.
+    fn apply_all_to(&self, room: &Room) {
+        let pending = self.pending.lock().unwrap();
+        for (identity, _) in room.remote_participants() {
+            apply_pending_for(&self.key_provider, &pending, &identity);
+        }
+    }
+
+    /// Apply one key to the matching participants currently in `room`.
+    fn apply_one_to(&self, room: &Room, sender_user_id: &str, index: i32, raw_key: &[u8]) -> usize {
+        let prefix = format!("{sender_user_id}:");
+        let mut applied = 0usize;
+        for (identity, _) in room.remote_participants() {
+            let id_str = identity.as_str();
+            if id_str.starts_with(&prefix) || id_str == sender_user_id {
+                info!("e2ee: set_key for participant {id_str} (from {sender_user_id} index={index})");
+                self.key_provider.set_key(&identity, index, raw_key.to_vec());
+                applied += 1;
+            }
+        }
+        applied
+    }
+}
+
+/// Set every stored key that belongs to `identity` (`{user_id}:{device}`).
+fn apply_pending_for(
+    key_provider: &KeyProvider,
+    pending: &HashMap<String, HashMap<i32, Vec<u8>>>,
+    identity: &ParticipantIdentity,
+) {
+    let id_str = identity.as_str();
+    for (user_id, keys_by_index) in pending {
+        if id_str.starts_with(&format!("{user_id}:")) || id_str == user_id.as_str() {
+            for (idx, raw_key) in keys_by_index {
+                key_provider.set_key(identity, *idx, raw_key.clone());
+            }
+        }
+    }
+}
+
+/// Which SFU each live call member publishes on (`(user_id, device_id)` ->
+/// JWT service URL), kept current by the session's member reconciler.
+#[derive(Clone, Default)]
+pub struct MemberTransports(Arc<parking_lot::Mutex<HashMap<(String, String), String>>>);
+
+impl MemberTransports {
+    pub fn replace(&self, map: HashMap<(String, String), String>) {
+        *self.0.lock() = map;
+    }
+
+    /// Whether a LiveKit participant seen on the SFU `sfu_url` is a real call
+    /// participant. Element also joins our SFU with a subscribe-only connection
+    /// (hashed identity, or the publisher's own identity) that publishes
+    /// nothing; showing it would add a phantom tile or clobber the real one.
+    /// So an identity must look like `@user:server:DEVICE`, and a known member
+    /// must actually publish on this SFU.
+    fn allows(&self, sfu_url: &str, identity: &str) -> bool {
+        let (user, device) = split_identity(identity);
+        if device.is_empty() {
+            return false;
+        }
+        match self.0.lock().get(&(user, device)) {
+            Some(published_on) => published_on == sfu_url,
+            None => true,
+        }
+    }
+}
+
+/// Forwards call events to the UI, dropping those of participants that are not
+/// real publishers on this SFU (see [`MemberTransports::allows`]).
+struct FilteredSink {
+    inner: Arc<dyn RtcEventSink>,
+    sfu_url: String,
+    members: MemberTransports,
+    /// Our own identity on this connection is always let through.
+    local_identity: String,
+}
+
+impl FilteredSink {
+    fn wrap(
+        inner: Option<Arc<dyn RtcEventSink>>,
+        sfu_url: &str,
+        members: &MemberTransports,
+        local_identity: String,
+    ) -> Option<Arc<dyn RtcEventSink>> {
+        inner.map(|inner| {
+            Arc::new(Self {
+                inner,
+                sfu_url: sfu_url.to_owned(),
+                members: members.clone(),
+                local_identity,
+            }) as Arc<dyn RtcEventSink>
+        })
+    }
+
+    fn ok(&self, participant_id: &str) -> bool {
+        participant_id == self.local_identity || self.members.allows(&self.sfu_url, participant_id)
+    }
+}
+
+impl RtcEventSink for FilteredSink {
+    fn on_invitation(
+        &self,
+        room_id: &str,
+        slot_id: &str,
+        caller_user_id: &str,
+        call_intent: &str,
+        lifetime_ms: u64,
+        notification_event_id: &str,
+    ) {
+        self.inner.on_invitation(
+            room_id,
+            slot_id,
+            caller_user_id,
+            call_intent,
+            lifetime_ms,
+            notification_event_id,
+        );
+    }
+    fn on_participant_joined(&self, session_id: u64, info: RtcParticipantInfo) {
+        if self.ok(&info.participant_id) {
+            self.inner.on_participant_joined(session_id, info);
+        }
+    }
+    fn on_participant_left(&self, session_id: u64, participant_id: &str) {
+        if self.ok(participant_id) {
+            self.inner.on_participant_left(session_id, participant_id);
+        }
+    }
+    fn on_participant_updated(&self, session_id: u64, info: RtcParticipantInfo) {
+        if self.ok(&info.participant_id) {
+            self.inner.on_participant_updated(session_id, info);
+        }
+    }
+    fn on_session_ended(&self, session_id: u64, reason: &str) {
+        self.inner.on_session_ended(session_id, reason);
+    }
+    fn on_video_frame(&self, session_id: u64, participant_id: &str, width: u32, height: u32, rgba: Vec<u8>) {
+        if self.ok(participant_id) {
+            self.inner.on_video_frame(session_id, participant_id, width, height, rgba);
+        }
+    }
+    fn on_screen_frame(&self, session_id: u64, participant_id: &str, width: u32, height: u32, rgba: Vec<u8>) {
+        if self.ok(participant_id) {
+            self.inner.on_screen_frame(session_id, participant_id, width, height, rgba);
+        }
+    }
+    fn on_audio_frame(
+        &self,
+        session_id: u64,
+        participant_id: &str,
+        samples: &[i16],
+        sample_rate: u32,
+        num_channels: u32,
+    ) {
+        if self.ok(participant_id) {
+            self.inner
+                .on_audio_frame(session_id, participant_id, samples, sample_rate, num_channels);
+        }
+    }
+}
+
 pub struct LiveKitRoom {
     room: Arc<Room>,
     platform_audio: PlatformAudio,
@@ -58,52 +259,32 @@ pub struct LiveKitRoom {
     sink: Option<Arc<dyn RtcEventSink>>,
     session_id: u64,
     event_task: AbortHandle,
-    key_provider: KeyProvider,
+    shared: SharedKeys,
     /// Monotonic start time used to generate RTP timestamps for video frames.
     call_start: std::time::Instant,
-    /// Pending peer keys keyed by Matrix user_id â†’ key index â†’ raw bytes.
-    /// All received indices are stored so frames encrypted before a rotation
-    /// can still be decrypted when the participant first appears in LiveKit.
-    pending_peer_keys: Arc<StdMutex<HashMap<String, HashMap<i32, Vec<u8>>>>>,
 }
 
 impl LiveKitRoom {
     /// Connect, publish local audio + video tracks, start the event loop.
-    ///
-    /// `rotate_tx`: when `Some`, the event loop fires a `()` message on every
-    /// `ParticipantDisconnected` event so the caller can rotate the frame key.
-    /// `rebroadcast_tx`: when `Some`, the event loop sends the participant's
-    /// Matrix user ID on every `ParticipantConnected` and for each participant
-    /// already present at `Connected`, so the caller can re-broadcast the
-    /// current key directly to that user bypassing the room member list cache.
+    /// This is the primary connection: it publishes on our own homeserver's
+    /// SFU, and its `Disconnected` event ends the call session.
     pub async fn connect(
         server_url: &str,
         jwt: &str,
         session_id: u64,
         sink: Option<Arc<dyn RtcEventSink>>,
         use_e2ee: bool,
-        rotate_tx: Option<tokio::sync::mpsc::Sender<()>>,
-        rebroadcast_tx: Option<tokio::sync::mpsc::Sender<String>>,
+        shared: SharedKeys,
+        sfu_url: &str,
+        members: MemberTransports,
     ) -> anyhow::Result<Self> {
-        // Match Element Call's key provider configuration exactly so both sides
-        // derive the same AES-128-GCM frame key from the exchanged key material:
-        //   - HKDF (not PBKDF2) with SHA-256, salt="LKFrameEncryptionKey"
-        //   - ratchetWindowSize=8, failureTolerance=10, keyringSize=16
-        // Using PBKDF2 produces a different derived key and frames can't decrypt.
-        let key_provider = KeyProvider::new(KeyProviderOptions {
-            key_derivation_algorithm: KeyDerivationAlgorithm::HKDF,
-            ratchet_window_size: 8,
-            failure_tolerance: 10,
-            key_ring_size: 16,
-            ..KeyProviderOptions::default()
-        });
-        // RoomOptions is #[non_exhaustive] in the external crate â€” must use
+        // RoomOptions is #[non_exhaustive] in the external crate — must use
         // Default::default() then field-assign rather than struct literal.
         let mut room_options = RoomOptions::default();
         if use_e2ee {
             room_options.encryption = Some(E2eeOptions {
                 encryption_type: EncryptionType::Gcm,
-                key_provider: key_provider.clone(),
+                key_provider: shared.key_provider.clone(),
             });
         }
         let (room, events) = Room::connect(server_url, jwt, room_options).await?;
@@ -203,19 +384,15 @@ impl LiveKitRoom {
         let local_video_in_flight = Arc::new(AtomicBool::new(false));
         let screen_frame_in_flight = Arc::new(AtomicBool::new(false));
         let local_screen_in_flight = Arc::new(AtomicBool::new(false));
-        let pending_peer_keys: Arc<StdMutex<HashMap<String, HashMap<i32, Vec<u8>>>>> =
-            Arc::new(StdMutex::new(HashMap::new()));
         let event_task = spawn_event_task(
             Arc::clone(&room),
             events,
             session_id,
             Arc::clone(&video_frame_in_flight),
             Arc::clone(&screen_frame_in_flight),
-            sink.clone(),
-            key_provider.clone(),
-            Arc::clone(&pending_peer_keys),
-            rotate_tx,
-            rebroadcast_tx,
+            FilteredSink::wrap(sink.clone(), sfu_url, &members, local_identity.clone()),
+            shared.clone(),
+            true,
         );
 
         info!("rtc: livekit connected (session {session_id}), local identity={local_identity}");
@@ -235,9 +412,8 @@ impl LiveKitRoom {
             sink,
             session_id,
             event_task,
-            key_provider,
+            shared,
             call_start: std::time::Instant::now(),
-            pending_peer_keys,
         })
     }
 
@@ -446,45 +622,89 @@ impl LiveKitRoom {
             self.local_identity
         );
         let identity: ParticipantIdentity = self.local_identity.clone().into();
-        self.key_provider
+        self.shared
+            .key_provider
             .set_key(&identity, index, raw_key.to_vec());
     }
 
-    /// Store a peer's raw key material so LiveKit can decrypt their incoming
-    /// tracks. Applies immediately to any connected participants whose LiveKit
-    /// identity starts with `{sender_user_id}:` (the format the JWT service
-    /// uses), and queues the key for participants who connect later.
-    pub fn queue_peer_key(&self, sender_user_id: &str, index: i32, raw_key: Vec<u8>) {
-        // Store this index; preserve all other indices so frames encrypted
-        // before a rotation can still be decrypted when the participant appears.
-        self.pending_peer_keys
-            .lock()
-            .unwrap()
-            .entry(sender_user_id.to_owned())
-            .or_default()
-            .insert(index, raw_key.clone());
+    /// Apply a peer's key to the matching participants of this connection.
+    pub fn apply_peer_key(&self, sender_user_id: &str, index: i32, raw_key: &[u8]) -> usize {
+        self.shared.apply_one_to(&self.room, sender_user_id, index, raw_key)
+    }
 
-        // Apply to any participant already in the room.
-        let prefix = format!("{}:", sender_user_id);
-        let mut applied = 0usize;
-        for (identity, _) in self.room.remote_participants() {
-            let id_str = identity.as_str();
-            if id_str.starts_with(&prefix) || id_str == sender_user_id {
-                info!(
-                    "e2ee: set_key for participant {id_str} (from {sender_user_id} index={index})"
-                );
-                self.key_provider.set_key(&identity, index, raw_key.clone());
-                applied += 1;
-            }
-        }
-        if applied == 0 {
-            info!(
-                "e2ee: queued key for {sender_user_id} index={index} (participant not yet connected)"
-            );
-        }
+    /// Apply every stored peer key to this connection's current participants.
+    pub fn apply_all_peer_keys(&self) {
+        self.shared.apply_all_to(&self.room);
     }
 
     pub async fn disconnect(&self) {
+        let _ = self.room.close().await;
+        self.event_task.abort();
+    }
+}
+
+/// A subscribe-only connection to another homeserver's SFU. Members on other
+/// SFUs publish there (multi-SFU); we never publish on it.
+pub struct RemoteSfuRoom {
+    room: Arc<Room>,
+    session_id: u64,
+    sink: Option<Arc<dyn RtcEventSink>>,
+    shared: SharedKeys,
+    event_task: AbortHandle,
+}
+
+impl RemoteSfuRoom {
+    pub async fn connect(
+        server_url: &str,
+        jwt: &str,
+        session_id: u64,
+        sink: Option<Arc<dyn RtcEventSink>>,
+        use_e2ee: bool,
+        shared: SharedKeys,
+        sfu_url: &str,
+        members: MemberTransports,
+    ) -> anyhow::Result<Self> {
+        let mut room_options = RoomOptions::default();
+        if use_e2ee {
+            room_options.encryption = Some(E2eeOptions {
+                encryption_type: EncryptionType::Gcm,
+                key_provider: shared.key_provider.clone(),
+            });
+        }
+        let (room, events) = Room::connect(server_url, jwt, room_options).await?;
+        let room = Arc::new(room);
+        let local_identity = room.local_participant().identity().as_str().to_owned();
+        let event_task = spawn_event_task(
+            Arc::clone(&room),
+            events,
+            session_id,
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicBool::new(false)),
+            FilteredSink::wrap(sink.clone(), sfu_url, &members, local_identity),
+            shared.clone(),
+            false,
+        );
+        info!("rtc: connected to remote SFU {server_url} (session {session_id})");
+        let sink = FilteredSink::wrap(sink, sfu_url, &members, String::new());
+        Ok(Self { room, session_id, sink, shared, event_task })
+    }
+
+    pub fn apply_peer_key(&self, sender_user_id: &str, index: i32, raw_key: &[u8]) -> usize {
+        self.shared.apply_one_to(&self.room, sender_user_id, index, raw_key)
+    }
+
+    pub fn apply_all_peer_keys(&self) {
+        self.shared.apply_all_to(&self.room);
+    }
+
+    /// Leave this SFU. Its participants vanish from the call, and LiveKit will
+    /// not report that once we are disconnected, so tell the UI ourselves.
+    pub async fn disconnect(&self) {
+        if let Some(ref s) = self.sink {
+            for (identity, _) in self.room.remote_participants() {
+                s.on_participant_left(self.session_id, identity.as_str());
+            }
+        }
         let _ = self.room.close().await;
         self.event_task.abort();
     }
@@ -523,10 +743,8 @@ fn spawn_event_task(
     video_in_flight: Arc<AtomicBool>,
     screen_in_flight: Arc<AtomicBool>,
     sink: Option<Arc<dyn RtcEventSink>>,
-    key_provider: KeyProvider,
-    pending_peer_keys: Arc<StdMutex<HashMap<String, HashMap<i32, Vec<u8>>>>>,
-    rotate_tx: Option<tokio::sync::mpsc::Sender<()>>,
-    rebroadcast_tx: Option<tokio::sync::mpsc::Sender<String>>,
+    shared: SharedKeys,
+    is_primary: bool,
 ) -> AbortHandle {
     tokio::spawn(async move {
         while let Some(event) = events.recv().await {
@@ -541,30 +759,12 @@ fn spawn_event_task(
                         if let Some(ref s) = sink {
                             s.on_participant_joined(session_id, participant_info(participant));
                         }
-                        // Apply any pending E2EE keys for this participant (all indices).
-                        let id = participant.identity();
-                        {
-                            let pending = pending_peer_keys.lock().unwrap();
-                            for (user_id_prefix, keys_by_index) in pending.iter() {
-                                let prefix = format!("{}:", user_id_prefix);
-                                let id_str = id.as_str();
-                                if id_str.starts_with(&prefix) || id_str == user_id_prefix.as_str()
-                                {
-                                    for (idx, raw_key) in keys_by_index {
-                                        key_provider.set_key(&id, *idx, raw_key.clone());
-                                    }
-                                }
-                            }
-                        }
-                        // Re-broadcast our key to each pre-existing participant
-                        // using their Matrix user ID (extracted from the LiveKit
-                        // identity) so the broadcast reaches them even when they
-                        // are not yet in the local room-member cache.
-                        if let Some(ref tx) = rebroadcast_tx {
-                            if let Some(uid) = matrix_user_id_from_lk_identity(id.as_str()) {
-                                let _ = tx.try_send(uid.to_owned());
-                            }
-                        }
+                        // Apply any stored E2EE keys for this participant.
+                        apply_pending_for(
+                            &shared.key_provider,
+                            &shared.pending.lock().unwrap(),
+                            &participant.identity(),
+                        );
                     }
                     // TrackSubscribed events for these participants' tracks will
                     // follow asynchronously once WebRTC subscription negotiation
@@ -591,37 +791,16 @@ fn spawn_event_task(
                     if let Some(ref s) = sink {
                         s.on_participant_joined(session_id, participant_info(&p));
                     }
-                    // Apply any pending peer keys for this participant (all indices).
-                    let id = p.identity();
-                    let pending = pending_peer_keys.lock().unwrap();
-                    for (user_id_prefix, keys_by_index) in pending.iter() {
-                        let prefix = format!("{}:", user_id_prefix);
-                        let id_str = id.as_str();
-                        if id_str.starts_with(&prefix) || id_str == user_id_prefix.as_str() {
-                            for (idx, raw_key) in keys_by_index {
-                                key_provider.set_key(&id, *idx, raw_key.clone());
-                            }
-                        }
-                    }
-                    // Re-broadcast our own key to this specific participant using
-                    // their Matrix user ID (extracted from the LiveKit identity).
-                    // This bypasses room.members() which may not include them yet.
-                    if let Some(ref tx) = rebroadcast_tx {
-                        let id = p.identity();
-                        if let Some(uid) = matrix_user_id_from_lk_identity(id.as_str()) {
-                            let _ = tx.try_send(uid.to_owned());
-                        }
-                    }
+                    apply_pending_for(
+                        &shared.key_provider,
+                        &shared.pending.lock().unwrap(),
+                        &p.identity(),
+                    );
                 }
                 RoomEvent::ParticipantDisconnected(p) => {
                     info!("rtc: participant disconnected: {}", p.identity());
                     if let Some(ref s) = sink {
                         s.on_participant_left(session_id, p.identity().as_str());
-                    }
-                    // Trigger a key rotation so the departed participant loses
-                    // the ability to decrypt future media (forward secrecy).
-                    if let Some(ref tx) = rotate_tx {
-                        let _ = tx.try_send(());
                     }
                 }
                 RoomEvent::TrackSubscribed {
@@ -757,8 +936,12 @@ fn spawn_event_task(
                 }
                 RoomEvent::Disconnected { reason } => {
                     info!("rtc: room disconnected: {reason:?}");
-                    if let Some(ref s) = sink {
-                        s.on_session_ended(session_id, &format!("{reason:?}"));
+                    // Only the primary (publishing) connection ends the call.
+                    // A dropped remote SFU is retried by the SFU reconciler.
+                    if is_primary {
+                        if let Some(ref s) = sink {
+                            s.on_session_ended(session_id, &format!("{reason:?}"));
+                        }
                     }
                     break;
                 }
@@ -925,4 +1108,39 @@ fn i420_to_rgba(frame: &BoxVideoFrame) -> Option<Vec<u8>> {
         }
     }
     Some(rgba)
+}
+
+#[cfg(test)]
+mod participant_filter_tests {
+    use super::*;
+
+    fn members(entries: &[(&str, &str, &str)]) -> MemberTransports {
+        let m = MemberTransports::default();
+        m.replace(
+            entries
+                .iter()
+                .map(|(u, d, url)| ((u.to_string(), d.to_string()), url.to_string()))
+                .collect(),
+        );
+        m
+    }
+
+    #[test]
+    fn hashed_identity_is_not_a_participant() {
+        let m = members(&[]);
+        assert!(!m.allows("https://sfu.a", "W9SGZNapjtEwbxf1GgfA6thQiWT4zZvHrJHxWIj/lJs"));
+    }
+
+    #[test]
+    fn member_only_counts_on_the_sfu_it_publishes_on() {
+        let m = members(&[("@b:matrix.org", "DEV", "https://sfu.matrix.org")]);
+        assert!(m.allows("https://sfu.matrix.org", "@b:matrix.org:DEV"));
+        // Element's subscribe-only connection to our SFU carries the same identity.
+        assert!(!m.allows("https://sfu.gnomos.org", "@b:matrix.org:DEV"));
+    }
+
+    #[test]
+    fn unknown_member_with_matrix_identity_is_allowed() {
+        assert!(members(&[]).allows("https://sfu.a", "@c:x.org:DEV"));
+    }
 }

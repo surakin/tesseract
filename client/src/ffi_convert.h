@@ -443,6 +443,12 @@ inline RoomInfo from_ffi(const tesseract_ffi::RoomInfo& r)
         out.pinned_events.push_back(from_ffi(p));
     }
     out.canonical_alias = std::string(r.canonical_alias);
+    out.call_members.reserve(r.call_members.size());
+    for (const auto& m : r.call_members)
+    {
+        out.call_members.emplace_back(std::string(m));
+    }
+    out.call_intent = std::string(r.call_intent);
     return out;
 }
 

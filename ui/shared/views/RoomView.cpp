@@ -272,7 +272,7 @@ RoomView::RoomView()
     if (header_)
         header_->on_search_requested = [this] { open_room_search(); };
 
-    auto banner = std::make_unique<IncomingCallBanner>();
+    auto banner = std::make_unique<CallBanner>();
     call_banner_ = add_child(std::move(banner));
 
     if (header_)
@@ -1392,59 +1392,36 @@ void RoomView::close_room_search()
         on_layout_changed();
 }
 
-void RoomView::show_call_banner(const std::string& room_id,
-                                 const std::string& slot_id,
-                                 const std::string& caller_display_name,
-                                 const std::string& call_intent,
-                                 std::uint64_t      lifetime_ms)
+void RoomView::set_call_banner(const std::string&              room_id,
+                               const std::string&              call_intent,
+                               std::vector<CallBanner::Member> members,
+                               bool                            join_enabled)
 {
     if (!call_banner_) return;
 
-    call_banner_room_id_ = room_id;
-    call_banner_slot_id_ = slot_id;
-
-    // Bump the generation counter so any in-flight auto-dismiss fires as a
-    // no-op if the user answers or declines before the timeout expires.
-    const auto gen = ++call_banner_dismiss_gen_;
-
-    const std::uint64_t effective_lifetime = (lifetime_ms > 0) ? lifetime_ms : 30000;
-
+    const bool was_visible = call_banner_->visible();
     call_banner_->set_call(
-        caller_display_name,
-        call_intent,
-        [this, room_id, slot_id] {       // on_answer
-            dismiss_call_banner();
-            if (on_start_call) on_start_call(room_id, slot_id, false);
+        call_intent, std::move(members),
+        [this, room_id] {
+            if (on_start_call) on_start_call(room_id, "call#default", false);
         },
-        [this] {                          // on_decline
-            dismiss_call_banner();
-            // The decline button is a focusable Button, so clicking it
-            // moved tk-level (and, via claim_native_focus_container_, real
-            // native) keyboard focus onto it — then dismiss_call_banner()
-            // hides the whole banner out from under that focus, with
-            // nothing left to hold it. Land back on the compose box,
-            // mirroring the reply/edit-flow refocus calls above.
-            compose_bar_->focus();
-        }
-    );
+        join_enabled);
 
-    // Auto-dismiss after the effective lifetime.
-    if (post_delayed_)
-    {
-        post_delayed_(static_cast<int>(effective_lifetime), [this, gen] {
-            if (gen != call_banner_dismiss_gen_) return;
-            dismiss_call_banner();
-        });
-    }
+    // The height only changes when the banner appears; member/avatar changes
+    // just need a repaint, which the caller's data path already triggers.
+    if (!was_visible && on_layout_changed) on_layout_changed();
+}
 
+void RoomView::clear_call_banner()
+{
+    if (!call_banner_ || !call_banner_->visible()) return;
+    call_banner_->clear();
     if (on_layout_changed) on_layout_changed();
 }
 
-void RoomView::dismiss_call_banner()
+void RoomView::set_call_banner_avatar_provider(CallBanner::AvatarProvider p)
 {
-    ++call_banner_dismiss_gen_;
-    if (call_banner_) call_banner_->clear();
-    if (on_layout_changed) on_layout_changed();
+    if (call_banner_) call_banner_->set_avatar_provider(std::move(p));
 }
 
 bool RoomView::call_banner_visible() const
@@ -2086,8 +2063,8 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     if (call_banner_ && call_banner_->visible())
     {
         call_banner_->arrange(ctx, {bounds.x, list_top, bounds.w,
-                                    IncomingCallBanner::kBannerH});
-        list_top += IncomingCallBanner::kBannerH;
+                                    CallBanner::kBannerH});
+        list_top += CallBanner::kBannerH;
     }
 
     // Docked call panel — occupies kDockedH between banners and message list.

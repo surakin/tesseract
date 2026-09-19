@@ -3725,6 +3725,7 @@ void ShellBase::refresh_bridge_dependent_ui_(const std::string& room_id)
             update_call_btn_visibility_(h, rid);
         w->room_view()->set_room(*r);
     }
+    refresh_call_banners_(); // calls are suppressed for bridged rooms
 }
 
 void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
@@ -3779,6 +3780,8 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
         if (client_ && room_view_)
             apply_threads_list_(client_->list_room_threads(current_room_id_));
     }
+    // Call members / bridge status may have changed with this update.
+    refresh_call_banners_();
     // Refresh the pinned-events banner from the now-updated cache. Picks up
     // both pin/unpin state-event changes and PL changes that flip can_pin
     // or the redact-others (delete-others'-messages) permission.
@@ -4657,6 +4660,7 @@ void ShellBase::handle_server_info_async_ready_ui_(std::uint64_t /*request_id*/,
         if (auto* rv = w->room_view())
             if (auto* h = rv->header())
                 update_call_btn_visibility_(h, rid);
+    refresh_call_banners_(); // depends on server_info_.supports_calls
     if (server_info_.supports_profile_fields &&
         server_info_.profile_fields_enabled)
         fetch_own_extended_profile_async_();
@@ -8400,6 +8404,7 @@ void ShellBase::open_room_in_new_window(const std::string& room_id_in)
             if (w->room_view() && w->room_view()->header())
                 w->room_view()->header()->set_call_active(true);
         }
+        refresh_call_banners_(); // the pop-out may show a room with a live call
 
         // Record that this room is now open as a popout so it can be
         // restored on the next launch. Geometry is written by the window
@@ -11632,6 +11637,7 @@ void ShellBase::after_active_room_changed_()
                                   call_session_->room_id() == current_room_id_;
         update_call_btn_visibility_(room_view_->header(), current_room_id_);
         room_view_->header()->set_call_active(in_call_room);
+        refresh_call_banners_();
         // Hide the docked panel when viewing a different room; show it again
         // when the user returns. Floating/Popout: call_panel() is nullptr,
         // so this block is a no-op for those modes.
@@ -12811,46 +12817,102 @@ views::RoomView* ShellBase::room_view_for_room_(const std::string& room_id) cons
     return it != secondary_windows_.end() ? it->second->room_view() : nullptr;
 }
 
-void ShellBase::handle_rtc_invitation_ui_(std::string room_id,
-                                           std::string slot_id,
-                                           std::string caller_user_id,
-                                           std::string call_intent,
-                                           std::uint64_t lifetime_ms,
-                                           std::string notification_event_id)
+void ShellBase::handle_rtc_invitation_ui_(std::string /*room_id*/,
+                                           std::string /*slot_id*/,
+                                           std::string /*caller_user_id*/,
+                                           std::string /*call_intent*/,
+                                           std::uint64_t /*lifetime_ms*/,
+                                           std::string /*notification_event_id*/)
 {
-    if (!server_info_.supports_calls) return;
+    // The banner follows the room's call state (RoomInfo::call_members), which
+    // the same sync tick updates; nothing event-specific to show here.
+    refresh_call_banners_();
+}
 
-    // Show the banner in whichever window (main window or a pop-out) is
-    // currently displaying this room — not just the main window.
-    auto* rv = room_view_for_room_(room_id);
-    if (!rv) return;
+void ShellBase::refresh_call_banners_()
+{
+    if (room_view_ && !current_room_id_.empty())
+        refresh_call_banner_(room_view_, current_room_id_);
+    for (auto& [rid, w] : secondary_windows_)
+        refresh_call_banner_(w->room_view(), rid);
+}
 
-    // Never show an incoming-call banner while a call is already active — sync
-    // can re-fire member-state invitation events after the call has started.
-    if (call_session_) return;
-
-    // If the banner was auto-dismissed (timeout), clear the pending ID so we
-    // don't suppress new invitations.
-    if (!rv->call_banner_visible())
-        rtc_pending_notification_id_.clear();
-
-    // Deduplication: if we already have a notification-path banner showing
-    // for this room, skip member-state-event triggers (notification_event_id is empty
-    // for the member-state path).
-    if (notification_event_id.empty() && !rtc_pending_notification_id_.empty())
+void ShellBase::refresh_call_banner_(views::RoomView* rv, const std::string& room_id)
+{
+    if (!rv)
         return;
+    const auto* r = room_by_id_(room_id);
+    const bool bridged = r && r->is_bridged && !r->bridge_overridden;
+    const bool joined_here = call_session_ && call_session_->room_id() == room_id;
+    if (!r || !server_info_.supports_calls || bridged || joined_here ||
+        r->call_members.empty())
+    {
+        rv->clear_call_banner();
+        call_banner_rosters_.erase(room_id);
+        return;
+    }
 
-    // Resolve a display name; fall back to the user-id localpart.
-    std::string display_name = caller_user_id;
-    auto it = known_users_.find(caller_user_id);
-    if (it != known_users_.end() && !it->second.display_name.empty())
-        display_name = it->second.display_name;
+    auto& roster = call_banner_rosters_[room_id];
+    if (roster.ids != r->call_members)
+    {
+        roster = {};
+        roster.ids = r->call_members;
+        std::unordered_map<std::string, tesseract::RoomMember> by_id;
+        if (client_)
+        {
+            for (auto& m : client_->get_room_members(room_id))
+            {
+                if (std::find(roster.ids.begin(), roster.ids.end(), m.user_id) !=
+                    roster.ids.end())
+                {
+                    by_id.emplace(m.user_id, std::move(m));
+                }
+            }
+        }
+        for (const auto& id : roster.ids)
+        {
+            std::string name;
+            auto it = by_id.find(id);
+            if (it != by_id.end())
+            {
+                name = it->second.display_name;
+                if (!it->second.avatar_url.empty())
+                    roster.avatar_urls[id] = it->second.avatar_url;
+            }
+            if (name.empty())
+            {
+                const auto colon = id.find(':');
+                name = (!id.empty() && id[0] == '@' && colon != std::string::npos)
+                           ? id.substr(1, colon - 1)
+                           : id;
+            }
+            roster.names.emplace_back(id, std::move(name));
+        }
+    }
 
-    // Track that a notification-path invite is active.
-    if (!notification_event_id.empty())
-        rtc_pending_notification_id_ = notification_event_id;
+    // Fetch any avatar not decoded yet; the redraw when it lands (via
+    // on_media_bytes_ready_) picks it up through the provider below.
+    for (const auto& [uid, mxc] : roster.avatar_urls)
+        ensure_user_avatar_(mxc);
 
-    rv->show_call_banner(room_id, slot_id, display_name, call_intent, lifetime_ms);
+    std::vector<views::CallBanner::Member> members;
+    members.reserve(roster.names.size());
+    for (const auto& [uid, name] : roster.names)
+        members.push_back({uid, name});
+
+    rv->set_call_banner_avatar_provider(
+        [this, room_id](const std::string& user_id) -> const tk::Image*
+        {
+            auto rit = call_banner_rosters_.find(room_id);
+            if (rit == call_banner_rosters_.end())
+                return nullptr;
+            auto ait = rit->second.avatar_urls.find(user_id);
+            if (ait == rit->second.avatar_urls.end())
+                return nullptr;
+            return account_manager_.thumbnail_cache().peek(tk::CacheKey::media(ait->second));
+        });
+    // Join is disabled while the user is in a different call.
+    rv->set_call_banner(room_id, r->call_intent, std::move(members), call_session_ == nullptr);
 }
 
 void ShellBase::handle_rtc_video_frame_ui_(
@@ -13207,9 +13269,9 @@ void ShellBase::start_call(const std::string& room_id, const std::string& slot_i
             ov->set_show_video_button(false);
     }
 
-    // Dismiss the incoming-call banner (if the user answered via banner) —
-    // wherever it's showing, main window or a pop-out.
-    if (auto* rv = room_view_for_room_(room_id)) rv->dismiss_call_banner();
+    // The user is now in this call: hides its banner (and disables Join on
+    // other rooms' banners), wherever it shows, main window or a pop-out.
+    refresh_call_banners_();
 
     // Flip the call button to active state in main window and all pop-outs.
     if (room_view_ && room_view_->header())
@@ -13254,6 +13316,8 @@ void ShellBase::end_call()
     }
     if (main_app_) main_app_->unmount_call_overlay();
     call_overlay_state_ = {};
+    // The call may still be running for others: bring its banner back.
+    refresh_call_banners_();
 }
 
 void ShellBase::handle_rtc_participant_joined_ui_(std::uint64_t session_id,
@@ -13298,14 +13362,6 @@ void ShellBase::handle_rtc_session_ended_ui_(std::uint64_t session_id,
         call_session_->session_id() != session_id)
         return;
 
-    // Clear the pending notification dedup tracker and any standing banner
-    // — wherever it's showing, main window or a pop-out.
-    rtc_pending_notification_id_.clear();
-    if (auto* rv = room_view_for_room_(call_session_->room_id()))
-    {
-        rv->dismiss_call_banner();
-    }
-
     // Surface disconnect reason for non-normal ends.
     if (!reason.empty()
         && reason != "hangup"
@@ -13349,6 +13405,8 @@ void ShellBase::handle_rtc_session_ended_ui_(std::uint64_t session_id,
         if (w->room_view() && w->room_view()->header())
             w->room_view()->header()->set_call_active(false);
     }
+    // The call may still be running for others: bring its banner back.
+    refresh_call_banners_();
 }
 
 views::CallOverlayWidget* ShellBase::active_call_overlay_() const

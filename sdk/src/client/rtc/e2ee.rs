@@ -95,21 +95,6 @@ impl E2eeManager {
             .expect("HKDF expand to 16 bytes always succeeds");
         okm
     }
-
-    /// Broadcast our current key to all joined room members via Olm-encrypted
-    /// to-device `org.matrix.msc4143.rtc.encryption_key` events.
-    ///
-    /// Olm-wrapping ensures the homeserver cannot read the frame key material.
-    /// Without this an eavesdropper with homeserver access could decrypt all
-    /// call media even though LiveKit AES-GCM frame encryption is enabled.
-    pub async fn broadcast_own_key(
-        &self,
-        client: &matrix_sdk::Client,
-        room: &matrix_sdk::Room,
-        member_id: &str,
-    ) -> anyhow::Result<()> {
-        broadcast_key(client, room, member_id, &self.own_key_b64(), self.own_index).await
-    }
 }
 
 /// Send a frame key to one specific Matrix user by their user ID.
@@ -124,6 +109,7 @@ impl E2eeManager {
 pub async fn send_frame_key_to_user(
     client: &matrix_sdk::Client,
     matrix_user_id: &str,
+    device_filter: Option<&str>,
     room_id: &str,
     lk_identity: &str,
     key_b64: &str,
@@ -175,10 +161,13 @@ pub async fn send_frame_key_to_user(
             .context("get_user_devices after identity request")?;
     }
 
-    let devices: Vec<Device> = ud.devices().collect();
+    let devices: Vec<Device> = ud
+        .devices()
+        .filter(|d| device_filter.map_or(true, |f| d.device_id().as_str() == f))
+        .collect();
     if devices.is_empty() {
         tracing::warn!(
-            "e2ee: still no devices for {matrix_user_id} after key query — key not delivered"
+            "e2ee: no matching device for {matrix_user_id} ({device_filter:?}) — key not delivered"
         );
         return Ok(());
     }
@@ -207,108 +196,36 @@ pub async fn send_frame_key_to_user(
     Ok(())
 }
 
-/// Broadcast a frame key by value to all joined room members via Olm-encrypted
-/// to-device events.  Exposed as a free function so callers that snapshot key
-/// material before an `.await` can call it without holding the `E2eeManager`
-/// mutex across the async boundary (`parking_lot::MutexGuard` is not `Send`).
-pub async fn broadcast_key(
+/// Send a frame key to the devices of the given live call members
+/// `(user_id, device_id)`. Per MSC4143 keys go only to devices that hold a
+/// call membership, not to every device of every room member.
+pub async fn broadcast_key_to_members(
     client: &matrix_sdk::Client,
-    room: &matrix_sdk::Room,
-    member_id: &str,
+    members: &[(String, String)],
+    room_id: &str,
+    lk_identity: &str,
     key_b64: &str,
     index: u8,
-) -> anyhow::Result<()> {
-    use matrix_sdk::encryption::identities::Device;
-    use matrix_sdk::ruma::events::AnyToDeviceEventContent;
-    use matrix_sdk_base::crypto::CollectStrategy;
-
-    let our_device_id = client
-        .device_id()
-        .ok_or_else(|| anyhow::anyhow!("device id not available"))?
-        .to_string();
-    let room_id = room.room_id().to_string();
-    let now_ms = {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64
-    };
-    let content = serde_json::json!({
-        "keys": { "key": key_b64, "index": index },
-        "room_id": room_id,
-        "member": { "claimed_device_id": our_device_id, "id": member_id },
-        "session": { "call_id": "", "application": "m.call", "scope": "m.room" },
-        "sent_ts": now_ms,
-    });
-    let raw_value =
-        serde_json::value::to_raw_value(&content).context("serialize encryption key")?;
-    let raw_content: matrix_sdk::ruma::serde::Raw<AnyToDeviceEventContent> =
-        matrix_sdk::ruma::serde::Raw::from_json(raw_value);
-
-    let own_user = client
-        .user_id()
-        .ok_or_else(|| anyhow::anyhow!("not logged in"))?;
-
-    let members = room
-        .members(matrix_sdk::RoomMemberships::JOIN)
-        .await
-        .context("get room members for key broadcast")?;
-
-    let other_members: Vec<_> = members.iter().filter(|m| m.user_id() != own_user).collect();
+) {
     tracing::info!(
-        "e2ee: broadcasting key index={index} to {} other member(s)",
-        other_members.len()
+        "e2ee: sending key index={index} to {} call member device(s)",
+        members.len()
     );
-
-    // Collect all UserDevices first so Device references outlive the call to
-    // encrypt_and_send_raw_to_device.
-    let mut all_user_devices = Vec::new();
-    for member in &other_members {
-        let uid = member.user_id();
-        match client.encryption().get_user_devices(uid).await {
-            Ok(ud) => {
-                let n = ud.devices().count();
-                tracing::info!("e2ee:   {uid} → {n} device(s)");
-                all_user_devices.push(ud);
-            }
-            Err(e) => {
-                tracing::warn!("e2ee: failed to get devices for {uid}: {e}");
-            }
-        }
-    }
-
-    let recipient_devices: Vec<Device> = all_user_devices
-        .iter()
-        .flat_map(|ud| ud.devices())
-        .collect();
-
-    if recipient_devices.is_empty() {
-        tracing::warn!("e2ee: no recipient devices found — key broadcast skipped (0 devices across {} user(s))", other_members.len());
-        return Ok(());
-    }
-
-    tracing::info!("e2ee: sending key to {} device(s)", recipient_devices.len());
-    let refs: Vec<&Device> = recipient_devices.iter().collect();
-    let failures = client
-        .encryption()
-        .encrypt_and_send_raw_to_device(
-            refs,
-            "io.element.call.encryption_keys",
-            raw_content,
-            CollectStrategy::AllDevices,
+    for (user, device) in members {
+        if let Err(e) = send_frame_key_to_user(
+            client,
+            user,
+            Some(device),
+            room_id,
+            lk_identity,
+            key_b64,
+            index,
         )
         .await
-        .context("send Olm-encrypted to-device encryption keys")?;
-    if failures.is_empty() {
-        tracing::info!("e2ee: key broadcast complete (all devices reached)");
-    } else {
-        tracing::warn!(
-            "e2ee: key broadcast had {} device failure(s): {failures:?}",
-            failures.len()
-        );
+        {
+            tracing::warn!("e2ee: key delivery to {user}/{device} failed: {e}");
+        }
     }
-    Ok(())
 }
 
 #[cfg(test)]

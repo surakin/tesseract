@@ -1,6 +1,10 @@
-use std::sync::{
-    atomic::{AtomicU64, Ordering},
-    Arc,
+use std::{
+    collections::HashSet,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+    time::{Duration, Instant},
 };
 
 use base64ct::{Base64, Encoding as _};
@@ -12,17 +16,29 @@ use tokio::task::AbortHandle;
 use tracing::{info, warn};
 
 use super::{
-    e2ee::E2eeManager,
-    livekit_room::LiveKitRoom,
+    e2ee::{broadcast_key_to_members, E2eeManager},
+    livekit_room::{LiveKitRoom, MemberTransports, SharedKeys},
+    members::{desired_sfus, read_live_members, transport_map, LkFocus},
+    sfu_set::{SfuContext, SfuSet},
     signaling::{
         self, send_msc3401_call_open, send_msc3401_member_join, send_msc3401_member_leave,
-        RtcMemberEventContent,
+        DelayedRestart, RtcMemberEventContent,
     },
     transport::{fetch_livekit_jwt, fetch_livekit_service_url, livekit_room_alias},
     RtcParticipantInfo,
 };
 
 static SESSION_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+/// Dead-man's switch: the homeserver sends our leave this long after our last
+/// heartbeat (matches matrix-js-sdk's default), so a crash or a lost
+/// connection doesn't leave a ghost participant behind.
+const DELAYED_LEAVE_DELAY: Duration = Duration::from_secs(8);
+const DELAYED_LEAVE_HEARTBEAT: Duration = Duration::from_secs(5);
+/// Membership events are valid for 4 hours after joining; resend well before.
+const MEMBERSHIP_REFRESH: Duration = Duration::from_secs(3600);
+/// Safety net in case a member-change sync event is missed.
+const RECONCILE_INTERVAL: Duration = Duration::from_secs(30);
 
 fn next_session_id() -> u64 {
     SESSION_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
@@ -54,28 +70,30 @@ pub struct RtcSession {
     pub member_id: String,
     pub device_id: String,
     client: matrix_sdk::Client,
-    /// Periodic sticky-event refresh task.
-    refresh_task: AbortHandle,
-    /// Key-rotation task: rotates and rebroadcasts the frame key whenever a
-    /// participant leaves (forward secrecy). None in unencrypted rooms.
-    rotate_task: Option<AbortHandle>,
-    /// Rebroadcast task: re-sends the current frame key whenever a participant
-    /// joins so they can decrypt our media even if they missed the initial
-    /// broadcast. None in unencrypted rooms.
-    rebroadcast_task: Option<AbortHandle>,
-    lk: Arc<LiveKitRoom>,
+    /// Our publishing connection plus the subscribe-only connections to the
+    /// SFUs other members publish on.
+    sfus: Arc<SfuSet>,
+    /// Delayed-leave heartbeat and hourly membership refresh.
+    membership_task: AbortHandle,
+    /// Follows call-member changes: connects/drops SFUs and keeps the E2EE
+    /// frame keys in step with the member set.
+    reconcile_task: AbortHandle,
+    /// The pending MSC4140 delayed leave, cancelled on a graceful hang-up.
+    delay_id: Arc<PLMutex<Option<String>>>,
     e2ee: Arc<PLMutex<E2eeManager>>,
-    /// Removes the m.rtc.encryption_key to-device handler when session is dropped.
+    /// Removes the encryption-key to-device handler when the session is dropped.
     _enc_key_guard: matrix_sdk::event_handler::EventHandlerDropGuard,
+    /// Removes the call-member state handler when the session is dropped.
+    _member_guard: matrix_sdk::event_handler::EventHandlerDropGuard,
 }
 
 impl RtcSession {
     pub fn mute_audio(&self, muted: bool) {
-        self.lk.set_audio_muted(muted);
+        self.sfus.primary.set_audio_muted(muted);
     }
 
     pub fn mute_video(&self, muted: bool) {
-        self.lk.set_video_muted(muted);
+        self.sfus.primary.set_video_muted(muted);
     }
 
     /// Inject an I420 video frame from Layer 3 (VideoCaptureCallSession).
@@ -90,7 +108,8 @@ impl RtcSession {
         stride_u: u32,
         stride_v: u32,
     ) {
-        self.lk
+        self.sfus
+            .primary
             .push_video_frame_i420(y, u, v, width, height, stride_y, stride_u, stride_v);
     }
 
@@ -98,7 +117,7 @@ impl RtcSession {
     /// Spawns a dedicated thread (same pattern as rtc_start_call) so the
     /// LiveKit SDP round-trip doesn't overflow the caller's stack.
     pub fn start_screen_share(&self, handle: tokio::runtime::Handle) -> anyhow::Result<()> {
-        let lk = Arc::clone(&self.lk);
+        let lk = Arc::clone(&self.sfus.primary);
         std::thread::Builder::new()
             .stack_size(16 * 1024 * 1024)
             .spawn(move || handle.block_on(lk.start_screen_share()))
@@ -109,7 +128,7 @@ impl RtcSession {
 
     /// Stop the screen share track.
     pub fn stop_screen_share(&self) {
-        self.lk.stop_screen_share();
+        self.sfus.primary.stop_screen_share();
     }
 
     /// Inject a raw I420 screen frame.
@@ -124,20 +143,16 @@ impl RtcSession {
         stride_u: u32,
         stride_v: u32,
     ) {
-        self.lk
+        self.sfus
+            .primary
             .push_screen_frame_i420(y, u, v, width, height, stride_y, stride_u, stride_v);
     }
 }
 
 impl Drop for RtcSession {
     fn drop(&mut self) {
-        self.refresh_task.abort();
-        if let Some(ref h) = self.rotate_task {
-            h.abort();
-        }
-        if let Some(ref h) = self.rebroadcast_task {
-            h.abort();
-        }
+        self.membership_task.abort();
+        self.reconcile_task.abort();
     }
 }
 
@@ -147,8 +162,10 @@ impl Drop for RtcSession {
 
 /// Start a call in `room_id` under `slot_id` (typically `"call#default"`).
 ///
-/// Performs: transport discovery → JWT acquisition → m.rtc.member join event →
-/// LiveKit connection → E2EE key broadcast → sticky-refresh task.
+/// Performs: discovery of our homeserver's SFU → JWT → membership join event
+/// (`multi_sfu`) → LiveKit connection on our SFU → E2EE key broadcast, then
+/// spawns the background tasks that keep the call in step with the room's
+/// other members (subscribing to their SFUs, key distribution, heartbeat).
 pub async fn start_call(
     client: &matrix_sdk::Client,
     http: &reqwest::Client,
@@ -156,6 +173,11 @@ pub async fn start_call(
     slot_id: &str,
     audio_only: bool,
 ) -> anyhow::Result<RtcSession> {
+    use matrix_sdk::ruma::{
+        events::{call::member::CallMemberEventContent, SyncStateEvent},
+        MilliSecondsSinceUnixEpoch,
+    };
+
     let call_intent = if audio_only { "audio" } else { "video" };
     // "call#default" and "" are Tesseract/C++ labels for the default room call.
     // Element uses "m.call#ROOM" as the canonical slot_id sent to the JWT service.
@@ -165,15 +187,16 @@ pub async fn start_call(
         other => other,
     };
 
+    let t_start = Instant::now();
     let session_id = next_session_id();
     let member_id = new_member_id();
+    let join_ts = MilliSecondsSinceUnixEpoch::now();
 
     let room_oid: matrix_sdk::ruma::OwnedRoomId = room_id.parse().context("invalid room_id")?;
     let room = client
         .get_room(&room_oid)
         .ok_or_else(|| anyhow::anyhow!("room not found: {room_id}"))?;
 
-    // Transport discovery
     let hs_url = client.homeserver().to_string();
     let access_token = client
         .access_token()
@@ -181,22 +204,48 @@ pub async fn start_call(
     let uid = client
         .user_id()
         .ok_or_else(|| anyhow::anyhow!("not logged in"))?;
-    let server_name = uid.server_name().as_str();
-    let service_url = fetch_livekit_service_url(http, &hs_url, &access_token, server_name).await?;
-
-    let lk_alias = livekit_room_alias(room_id, slot_id);
-
-    let user_id = uid.to_string();
-    let device_id = client
+    let own_device = client
         .device_id()
         .ok_or_else(|| anyhow::anyhow!("device id not available"))?
-        .to_string();
+        .to_owned();
+    let device_id = own_device.to_string();
+    let user_id = uid.to_string();
+    let server_name = uid.server_name().as_str();
+
+    // Our own homeserver's SFU: the one we publish on, whatever the other
+    // members use (multi-SFU).
+    let local_service_url =
+        fetch_livekit_service_url(http, &hs_url, &access_token, server_name).await?;
+    let lk_alias = livekit_room_alias(room_id, slot_id);
+    info!("rtc: publishing on local SFU {local_service_url}");
+
+    let initial_members = read_live_members(&room, uid, &own_device).await;
+    info!(
+        "rtc: {} other call member(s) already joined: {:?}",
+        initial_members.len(),
+        initial_members
+            .iter()
+            .map(|m| (&m.user_id, &m.focus_selection))
+            .collect::<Vec<_>>()
+    );
+
+    // Which SFU each member publishes on; lets the LiveKit layer ignore
+    // participants that are not real publishers on the SFU they appear on.
+    let member_transports = MemberTransports::default();
+    let local_focus = LkFocus {
+        service_url: local_service_url.clone(),
+        alias: lk_alias.clone(),
+    };
+    member_transports.replace(transport_map(
+        &initial_members,
+        Some((join_ts, &local_focus)),
+    ));
 
     // OpenID token → JWT
     let openid = get_openid_token(client).await?;
     let lk_transport = fetch_livekit_jwt(
         http,
-        &service_url,
+        &local_service_url,
         room_id,
         slot_id,
         &openid.access_token,
@@ -207,10 +256,11 @@ pub async fn start_call(
         &user_id,
     )
     .await?;
+    info!("rtc: focus discovery done at {:?}", t_start.elapsed());
 
     // ── E2EE negotiation ────────────────────────────────────────────────────
     // Only enable frame encryption when the Matrix room is encrypted.
-    // In unencrypted rooms, peers don't send m.rtc.encryption_key events and
+    // In unencrypted rooms, peers don't send encryption-key events and
     // have no key to decrypt our frames, so encrypting would break the call.
     let use_e2ee = matches!(
         room.encryption_state(),
@@ -218,36 +268,36 @@ pub async fn start_call(
     );
     info!("rtc: room encrypted={use_e2ee}");
 
-    // ── Pre-flight: learn our LiveKit identity from the JWT ───────────────
     // The JWT service assigns the LiveKit participant identity in the `sub`
     // claim. Decode it without verifying the signature so we can send Matrix
-    // signaling BEFORE connecting to LiveKit.
-    //
-    // Sending m.rtc.member first ensures that when we appear in the LiveKit
-    // room the receiving client (e.g. Element Android) already has our state
-    // event and can immediately associate our tracks with our Matrix identity.
-    // Without this, Element subscribes our tracks as an "unknown" participant
-    // and never re-attaches them after the state event later arrives.
+    // signaling BEFORE connecting to LiveKit: the receiving client (e.g. Element
+    // Android) then already has our state event when we appear in the SFU room
+    // and can associate our tracks with our Matrix identity.
     let preflight_identity = super::transport::decode_jwt_sub(&lk_transport.jwt);
 
     // ── E2EE key handler ─────────────────────────────────────────────────
-    // Register BEFORE signaling so we buffer any key events the peer sends
-    // immediately on receiving our m.rtc.member. lk_holder starts as None
-    // (pre-connect); it is populated after LiveKit connects and buffered keys
-    // are drained at that point.
-    let early_keys: Arc<PLMutex<Vec<(String, i32, Vec<u8>)>>> = Arc::new(PLMutex::new(Vec::new()));
-    let lk_holder: Arc<PLMutex<Option<Arc<LiveKitRoom>>>> = Arc::new(PLMutex::new(None));
-
-    let early_keys_h = Arc::clone(&early_keys);
-    let lk_holder_h = Arc::clone(&lk_holder);
+    // Register BEFORE signaling so we keep any key events the peer sends
+    // immediately on receiving our membership. Keys land in `shared` and are
+    // applied to participants as they appear on any SFU.
+    let shared = SharedKeys::new();
+    let sfus_holder: Arc<PLMutex<Option<Arc<SfuSet>>>> = Arc::new(PLMutex::new(None));
+    let shared_h = shared.clone();
+    let holder_h = Arc::clone(&sfus_holder);
+    let room_h = room.clone();
     let enc_key_handle = client.add_event_handler({
         move |ev: matrix_sdk::ruma::events::ToDeviceEvent<
             crate::client::rtc::signaling::RtcEncryptionKeyEventContent,
-        >| {
-            let early = Arc::clone(&early_keys_h);
-            let holder = Arc::clone(&lk_holder_h);
+        >,
+              info: Option<matrix_sdk::deserialized_responses::EncryptionInfo>| {
+            let shared = shared_h.clone();
+            let holder = Arc::clone(&holder_h);
+            let room = room_h.clone();
             async move {
                 let sender = ev.sender.to_string();
+                if let Err(why) = accept_key_event(&room, &ev, info.as_ref()).await {
+                    warn!("e2ee: ignoring key event from {sender}: {why}");
+                    return;
+                }
                 let index = ev.content.keys.index as i32;
                 let key_b64_len = ev.content.keys.key.len();
                 match Base64::decode_vec(&ev.content.keys.key) {
@@ -255,11 +305,10 @@ pub async fn start_call(
                         warn!("e2ee: peer key from {sender} index={index} decoded to empty bytes — dropping");
                     }
                     Ok(raw_key) => {
-                        let lk_opt = holder.lock().clone();
-                        if let Some(lk) = lk_opt {
-                            lk.queue_peer_key(&sender, index, raw_key);
-                        } else {
-                            early.lock().push((sender, index, raw_key));
+                        let set = holder.lock().clone();
+                        match set {
+                            Some(set) => set.apply_key(&sender, index, raw_key),
+                            None => shared.store(&sender, index, raw_key),
                         }
                     }
                     Err(e) => warn!(
@@ -273,9 +322,6 @@ pub async fn start_call(
     let enc_key_guard = client.event_handler_drop_guard(enc_key_handle);
 
     // ── Pre-flight Matrix signaling ───────────────────────────────────────
-    // Send join events using the JWT-decoded identity BEFORE connecting to
-    // LiveKit. If JWT decode fails (should not happen with a well-formed token)
-    // we skip and re-send after connecting with the actual identity.
     if let Some(ref pid) = preflight_identity {
         info!("rtc: pre-flight signaling with identity={pid}");
         send_msc3401_call_open(&room, "").await?;
@@ -284,88 +330,42 @@ pub async fn start_call(
             "",
             &device_id,
             pid,
-            &lk_transport.service_url,
+            &local_service_url,
             &lk_alias,
             &user_id,
             audio_only,
+            None,
         )
         .await?;
     }
 
-    // MSC4075: send ring notification only if we are the first participant.
-    // Our own pre-flight send_msc3401_member_join() hasn't been echoed back
-    // through sync yet, so the local state cache only reflects other users.
-    {
-        use matrix_sdk::deserialized_responses::SyncOrStrippedState;
-        use matrix_sdk::ruma::events::SyncStateEvent;
-
-        let existing = room
-            .get_state_events_static::<RtcMemberEventContent>()
-            .await
-            .unwrap_or_default();
-
-        let has_active_members = existing.iter().any(|raw| {
-            let Ok(ev) = raw.deserialize() else {
-                return false;
-            };
-            let content = match ev {
-                SyncOrStrippedState::Sync(SyncStateEvent::Original(o)) => o.content,
-                _ => return false,
-            };
-            // Leave events carry only disconnect_reason; join events have
-            // application/focus_active/slot_id populated. Mirrors the check
-            // in register_invitation_handler.
-            !content.application.kind.is_empty()
-                || content.focus_active.is_some()
-                || !content.slot_id.is_empty()
-        });
-
-        if !has_active_members {
-            if let Err(e) =
-                signaling::send_rtc_notification(&room, call_intent, &device_id, &user_id).await
-            {
-                warn!("rtc: send_rtc_notification failed (non-fatal): {e}");
-            }
+    // MSC4075: ring the room only if nobody else is in the call yet.
+    if initial_members.is_empty() {
+        if let Err(e) =
+            signaling::send_rtc_notification(&room, call_intent, &device_id, &user_id).await
+        {
+            warn!("rtc: send_rtc_notification failed (non-fatal): {e}");
         }
     }
 
-    // ── Connect to LiveKit ────────────────────────────────────────────────
-    // Create the rotation channel before connecting so the event loop can fire
-    // rotation triggers as soon as participants start disconnecting.
-    let (rotate_tx, rotate_rx) = if use_e2ee {
-        let (tx, rx) = tokio::sync::mpsc::channel::<()>(4);
-        (Some(tx), Some(rx))
-    } else {
-        (None, None)
-    };
-    let (rebroadcast_tx, rebroadcast_rx) = if use_e2ee {
-        let (tx, rx) = tokio::sync::mpsc::channel::<String>(16);
-        (Some(tx), Some(rx))
-    } else {
-        (None, None)
-    };
-
+    // ── Connect to our SFU ────────────────────────────────────────────────
     let sink = super::global_sink();
     let lk = Arc::new(
         LiveKitRoom::connect(
             &lk_transport.server_url,
             &lk_transport.jwt,
             session_id,
-            sink,
+            sink.clone(),
             use_e2ee,
-            rotate_tx,
-            rebroadcast_tx,
+            shared.clone(),
+            &local_service_url,
+            member_transports.clone(),
         )
         .await?,
     );
+    info!("rtc: livekit connect done at {:?}", t_start.elapsed());
     let lk_identity = lk.local_identity().to_owned();
     info!("rtc: lk connected, identity={lk_identity} (preflight={preflight_identity:?})");
-
-    // ── Activate key holder and drain buffered keys ───────────────────────
-    *lk_holder.lock() = Some(Arc::clone(&lk));
-    for (sender, index, raw_key) in early_keys.lock().drain(..) {
-        lk.queue_peer_key(&sender, index, raw_key);
-    }
 
     // ── Correct signaling if the actual identity differs from preflight ───
     // Normally they match. A mismatch would indicate a JWT service change or
@@ -381,98 +381,95 @@ pub async fn start_call(
             "",
             &device_id,
             &lk_identity,
-            &lk_transport.service_url,
+            &local_service_url,
             &lk_alias,
             &user_id,
             audio_only,
+            None,
         )
         .await?;
     }
 
-    // Initialise E2EE only for encrypted rooms.
+    let sfus = Arc::new(SfuSet::new(
+        SfuContext {
+            client: client.clone(),
+            http: http.clone(),
+            room_id: room_id.to_owned(),
+            slot_id: slot_id.to_owned(),
+            member_id: member_id.clone(),
+            device_id: device_id.clone(),
+            user_id: user_id.clone(),
+            session_id,
+            sink,
+            use_e2ee,
+            members: member_transports.clone(),
+        },
+        lk,
+        shared,
+    ));
+    // Keys that arrived while connecting only sit in the shared store.
+    *sfus_holder.lock() = Some(Arc::clone(&sfus));
+    sfus.apply_all_keys();
+
+    // ── Our frame key ─────────────────────────────────────────────────────
     let e2ee = Arc::new(PLMutex::new(E2eeManager::new()));
     if use_e2ee {
-        let mgr = e2ee.lock();
-        // Set our own frame key first so the FrameCryptor can start encrypting
+        let (idx, key_b64, raw) = {
+            let mgr = e2ee.lock();
+            (mgr.own_index(), mgr.own_key_b64(), *mgr.own_raw_key())
+        };
+        // Set our own key first so the FrameCryptor can start encrypting
         // before we broadcast (avoids sending the key before frames are ready).
-        lk.set_own_frame_key(mgr.own_raw_key(), 0);
-        mgr.broadcast_own_key(client, &room, &lk_identity)
-            .await
-            .unwrap_or_else(|e| warn!("e2ee broadcast failed: {e}"));
+        sfus.primary.set_own_frame_key(&raw, idx as i32);
+        let recipients: Vec<(String, String)> =
+            initial_members.iter().map(|m| m.key()).collect();
+        broadcast_key_to_members(client, &recipients, room_id, &lk_identity, &key_b64, idx).await;
     }
 
-    // Spawn the key-rotation task. Fires whenever the LiveKit event loop sends
-    // a () on rotate_rx (i.e. on every ParticipantDisconnected). Absent for
-    // unencrypted rooms (rotate_rx is None).
-    let rotate_task = rotate_rx.map(|mut rx| {
-        let e2ee_r = Arc::clone(&e2ee);
-        let lk_r = Arc::clone(&lk);
-        let client_r = client.clone();
-        let room_r = room.clone();
-        let identity_r = lk_identity.clone();
-        tokio::spawn(async move {
-            while rx.recv().await.is_some() {
-                // Rotate and snapshot — both synchronous, guard drops before
-                // the await.  parking_lot::MutexGuard is !Send so we must not
-                // hold it across an async boundary.
-                let (new_idx, raw, key_b64): (u8, super::e2ee::KeyMaterial, String) = {
-                    let mut mgr = e2ee_r.lock();
-                    let (idx, b64) = mgr.rotate();
-                    (idx, *mgr.own_raw_key(), b64)
-                };
-                lk_r.set_own_frame_key(&raw, new_idx as i32);
-                super::e2ee::broadcast_key(&client_r, &room_r, &identity_r, &key_b64, new_idx)
-                    .await
-                    .unwrap_or_else(|e| warn!("e2ee rebroadcast after participant leave: {e}"));
-            }
-        })
-        .abort_handle()
-    });
-
-    // Spawn the rebroadcast task. Fires whenever a participant connects
-    // (ParticipantConnected or pre-existing at Connected), carrying their
-    // Matrix user ID extracted from the LiveKit identity.  Uses
-    // send_frame_key_to_user which bypasses room.members() and performs a
-    // fresh /keys/query when their devices aren't in the local cache.
-    let rebroadcast_task = rebroadcast_rx.map(|mut rx| {
-        let e2ee_r = Arc::clone(&e2ee);
-        let client_r = client.clone();
-        let room_id_r = room.room_id().to_string();
-        let identity_r = lk_identity.clone();
-        tokio::spawn(async move {
-            while let Some(matrix_user_id) = rx.recv().await {
-                let (idx, key_b64): (u8, String) = {
-                    let mgr = e2ee_r.lock();
-                    (mgr.own_index(), mgr.own_key_b64())
-                };
-                super::e2ee::send_frame_key_to_user(
-                    &client_r,
-                    &matrix_user_id,
-                    &room_id_r,
-                    &identity_r,
-                    &key_b64,
-                    idx,
-                )
-                .await
-                .unwrap_or_else(|e| warn!("e2ee rebroadcast to {matrix_user_id}: {e}"));
-            }
-        })
-        .abort_handle()
-    });
-
-    // Sticky-refresh background task (uses lk_identity as member_id to match
-    // what we sent in the initial m.rtc.member and m.call.member events above).
-    let refresh_task = spawn_refresh_task(
+    // ── Background tasks ──────────────────────────────────────────────────
+    let delay_id = Arc::new(PLMutex::new(None));
+    let membership_task = spawn_membership_task(
         room.clone(),
         lk_identity.clone(),
-        service_url.clone(),
+        local_service_url.clone(),
         lk_alias.clone(),
         device_id.clone(),
         user_id.clone(),
         audio_only,
+        Arc::clone(&delay_id),
     );
 
-    info!("rtc: session {session_id} started in {room_id}/{slot_id}");
+    let (member_tx, member_rx) = tokio::sync::mpsc::channel::<()>(4);
+    let member_tx_h = member_tx.clone();
+    let member_handle = room.add_event_handler(move |_ev: SyncStateEvent<CallMemberEventContent>| {
+        let tx = member_tx_h.clone();
+        async move {
+            let _ = tx.try_send(());
+        }
+    });
+    let member_guard = client.event_handler_drop_guard(member_handle);
+    let reconcile_task = tokio::spawn(reconcile_loop(
+        room.clone(),
+        client.clone(),
+        uid.to_owned(),
+        own_device,
+        local_focus,
+        member_transports,
+        join_ts,
+        Arc::clone(&sfus),
+        Arc::clone(&e2ee),
+        use_e2ee,
+        room_id.to_owned(),
+        lk_identity.clone(),
+        initial_members.iter().map(|m| m.key()).collect(),
+        member_rx,
+    ))
+    .abort_handle();
+
+    info!(
+        "rtc: session {session_id} started in {room_id}/{slot_id} after {:?}",
+        t_start.elapsed()
+    );
     Ok(RtcSession {
         id: session_id,
         room_id: room_id.to_owned(),
@@ -480,18 +477,25 @@ pub async fn start_call(
         member_id: lk_identity,
         device_id,
         client: client.clone(),
-        refresh_task,
-        rotate_task,
-        rebroadcast_task,
-        lk,
+        sfus,
+        membership_task,
+        reconcile_task,
+        delay_id,
         e2ee,
         _enc_key_guard: enc_key_guard,
+        _member_guard: member_guard,
     })
 }
 
 /// Gracefully leave the call: send disconnect events, tear down LiveKit, abort tasks.
 pub async fn end_call(session: &RtcSession) {
-    session.refresh_task.abort();
+    let t0 = Instant::now();
+    session.membership_task.abort();
+    session.reconcile_task.abort();
+    let pending_leave = session.delay_id.lock().take();
+    if let Some(id) = pending_leave {
+        signaling::cancel_delayed_event(&session.client, &id).await;
+    }
     let room_oid: matrix_sdk::ruma::OwnedRoomId =
         session.room_id.parse().unwrap_or_else(|_| unreachable!());
     if let Some(room) = session.client.get_room(&room_oid) {
@@ -503,7 +507,253 @@ pub async fn end_call(session: &RtcSession) {
         // MSC3401 leave — state key must match the join (uses session member_id, not Matrix device_id)
         let _ = send_msc3401_member_leave(&room, &user_id, &session.member_id).await;
     }
-    session.lk.disconnect().await;
+    info!("rtc: leave event sent after {:?}", t0.elapsed());
+    session.sfus.disconnect_all().await;
+    info!("rtc: livekit disconnected after {:?}", t0.elapsed());
+}
+
+/// The event-content checks for a frame-key to-device event (MSC4143).
+/// `sender_device` is `None` when the event arrived unencrypted, otherwise the
+/// authenticated sending device, if known.
+fn check_key_event_fields(
+    expected_room: &str,
+    content: &crate::client::rtc::signaling::RtcEncryptionKeyEventContent,
+    sender_device: Option<Option<&str>>,
+) -> Result<(), String> {
+    let Some(device) = sender_device else {
+        return Err("sent unencrypted".to_owned());
+    };
+    if content.room_id != expected_room {
+        return Err(format!("for another room ({})", content.room_id));
+    }
+    if content.session.application != "m.call" {
+        return Err(format!("for application {:?}", content.session.application));
+    }
+    if let Some(device) = device {
+        if device != content.member.claimed_device_id {
+            return Err(format!(
+                "claims device {} but was sent from {device}",
+                content.member.claimed_device_id
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Whether a frame-key to-device event may be used for this call: the content
+/// checks above, plus the sender must be joined to the room. Anything else
+/// could inject keys for other calls or from outsiders.
+async fn accept_key_event(
+    room: &Room,
+    ev: &matrix_sdk::ruma::events::ToDeviceEvent<
+        crate::client::rtc::signaling::RtcEncryptionKeyEventContent,
+    >,
+    info: Option<&matrix_sdk::deserialized_responses::EncryptionInfo>,
+) -> Result<(), String> {
+    use matrix_sdk::ruma::events::room::member::MembershipState;
+
+    check_key_event_fields(
+        room.room_id().as_str(),
+        &ev.content,
+        info.map(|i| i.sender_device.as_deref().map(|d| d.as_str())),
+    )?;
+    match room.get_member(&ev.sender).await {
+        Ok(Some(m)) if *m.membership() == MembershipState::Join => Ok(()),
+        Ok(_) => Err("sender is not joined to the room".to_owned()),
+        Err(e) => Err(format!("could not look up the sender's membership: {e}")),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Background tasks
+// ---------------------------------------------------------------------------
+
+/// Keeps our membership alive: heartbeats the MSC4140 delayed leave every few
+/// seconds and resends the membership event hourly (with a fresh `expires` and
+/// the original `created_ts`, so peers see a stable join age).
+fn spawn_membership_task(
+    room: Room,
+    member_id: String,
+    service_url: String,
+    lk_alias: String,
+    device_id: String,
+    user_id: String,
+    audio_only: bool,
+    delay_id: Arc<PLMutex<Option<String>>>,
+) -> AbortHandle {
+    tokio::spawn(async move {
+        let client = room.client();
+        let mut delayed_ok = true;
+        let first = signaling::schedule_delayed_msc3401_leave(
+            &room,
+            &user_id,
+            &member_id,
+            DELAYED_LEAVE_DELAY,
+        )
+        .await;
+        delayed_ok &= first.is_some();
+        *delay_id.lock() = first;
+
+        let mut created_ts = None;
+        let mut last_refresh = Instant::now();
+        let mut interval = tokio::time::interval(DELAYED_LEAVE_HEARTBEAT);
+        interval.tick().await; // skip the immediate 0-delay first tick
+        loop {
+            interval.tick().await;
+            let _job = crate::client::activity::begin(
+                "rtc-membership-refresh",
+                "Calls",
+                crate::client::activity::JobKind::Periodic,
+            );
+
+            if delayed_ok {
+                let current = delay_id.lock().clone();
+                match current {
+                    Some(id) => match signaling::restart_delayed_event(&client, &id).await {
+                        DelayedRestart::Ok => {}
+                        DelayedRestart::Gone => {
+                            let n = signaling::schedule_delayed_msc3401_leave(
+                                &room,
+                                &user_id,
+                                &member_id,
+                                DELAYED_LEAVE_DELAY,
+                            )
+                            .await;
+                            delayed_ok = n.is_some();
+                            *delay_id.lock() = n;
+                        }
+                        DelayedRestart::Unsupported => {
+                            delayed_ok = false;
+                            *delay_id.lock() = None;
+                        }
+                    },
+                    None => delayed_ok = false,
+                }
+            }
+
+            if last_refresh.elapsed() >= MEMBERSHIP_REFRESH {
+                if created_ts.is_none() {
+                    created_ts =
+                        signaling::own_msc3401_created_ts(&room, &user_id, &member_id).await;
+                }
+                // Without our original join time a resend would reset our age.
+                let Some(ts) = created_ts else { continue };
+                let sent = send_msc3401_member_join(
+                    &room,
+                    "",
+                    &device_id,
+                    &member_id,
+                    &service_url,
+                    &lk_alias,
+                    &user_id,
+                    audio_only,
+                    Some(ts),
+                )
+                .await;
+                if let Err(e) = sent {
+                    warn!("rtc: membership refresh failed: {e}");
+                    continue;
+                }
+                last_refresh = Instant::now();
+                // A new state event for the same key cancels the delayed leave.
+                if delayed_ok {
+                    let n = signaling::schedule_delayed_msc3401_leave(
+                        &room,
+                        &user_id,
+                        &member_id,
+                        DELAYED_LEAVE_DELAY,
+                    )
+                    .await;
+                    delayed_ok = n.is_some();
+                    *delay_id.lock() = n;
+                }
+            }
+        }
+    })
+    .abort_handle()
+}
+
+/// Follows the room's call members: connects to the SFUs they publish on,
+/// drops SFUs nobody uses any more, and keeps the E2EE key distribution in
+/// step (send our key to new members, rotate when someone leaves).
+#[allow(clippy::too_many_arguments)]
+async fn reconcile_loop(
+    room: Room,
+    client: matrix_sdk::Client,
+    own_user: matrix_sdk::ruma::OwnedUserId,
+    own_device: matrix_sdk::ruma::OwnedDeviceId,
+    local_focus: LkFocus,
+    member_transports: MemberTransports,
+    join_ts: matrix_sdk::ruma::MilliSecondsSinceUnixEpoch,
+    sfus: Arc<SfuSet>,
+    e2ee: Arc<PLMutex<E2eeManager>>,
+    use_e2ee: bool,
+    room_id: String,
+    lk_identity: String,
+    mut previous: HashSet<(String, String)>,
+    mut changes: tokio::sync::mpsc::Receiver<()>,
+) {
+    let mut interval = tokio::time::interval(RECONCILE_INTERVAL);
+    interval.tick().await;
+    let mut first = true;
+    loop {
+        if !first {
+            tokio::select! {
+                _ = changes.recv() => {}
+                _ = interval.tick() => {}
+            }
+            // Coalesce a burst of member events into one pass.
+            while changes.try_recv().is_ok() {}
+        }
+        first = false;
+
+        let _job = crate::client::activity::begin(
+            "rtc-member-reconcile",
+            "Calls",
+            crate::client::activity::JobKind::Periodic,
+        );
+        let members = read_live_members(&room, &own_user, &own_device).await;
+        let current: HashSet<(String, String)> = members.iter().map(|m| m.key()).collect();
+        let joined: Vec<(String, String)> = current.difference(&previous).cloned().collect();
+        let someone_left = previous.difference(&current).next().is_some();
+        if !joined.is_empty() || someone_left {
+            info!(
+                "rtc: call members changed: +{} -{} (now {})",
+                joined.len(),
+                previous.difference(&current).count(),
+                current.len()
+            );
+        }
+
+        if use_e2ee && someone_left {
+            // Forward secrecy: leavers must not decrypt future media.
+            let (idx, key_b64, raw) = {
+                let mut mgr = e2ee.lock();
+                let (idx, key_b64) = mgr.rotate();
+                (idx, key_b64, *mgr.own_raw_key())
+            };
+            sfus.primary.set_own_frame_key(&raw, idx as i32);
+            let everyone: Vec<(String, String)> = current.iter().cloned().collect();
+            broadcast_key_to_members(&client, &everyone, &room_id, &lk_identity, &key_b64, idx)
+                .await;
+        } else if use_e2ee && !joined.is_empty() {
+            let (idx, key_b64) = {
+                let mgr = e2ee.lock();
+                (mgr.own_index(), mgr.own_key_b64())
+            };
+            broadcast_key_to_members(&client, &joined, &room_id, &lk_identity, &key_b64, idx)
+                .await;
+        }
+
+        member_transports.replace(transport_map(&members, Some((join_ts, &local_focus))));
+        let desired = desired_sfus(
+            &members,
+            Some((join_ts, &local_focus)),
+            &local_focus.service_url,
+        );
+        sfus.reconcile(&desired).await;
+        previous = current;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -782,13 +1032,13 @@ pub fn register_rtc_notification_handler(client: &matrix_sdk::Client) {
 // Internals
 // ---------------------------------------------------------------------------
 
-struct OpenIdToken {
-    access_token: String,
-    expires_in: u64,
-    matrix_server_name: String,
+pub(super) struct OpenIdToken {
+    pub access_token: String,
+    pub expires_in: u64,
+    pub matrix_server_name: String,
 }
 
-async fn get_openid_token(client: &matrix_sdk::Client) -> anyhow::Result<OpenIdToken> {
+pub(super) async fn get_openid_token(client: &matrix_sdk::Client) -> anyhow::Result<OpenIdToken> {
     use matrix_sdk::ruma::api::client::account::request_openid_token;
 
     let user_id = client
@@ -804,39 +1054,6 @@ async fn get_openid_token(client: &matrix_sdk::Client) -> anyhow::Result<OpenIdT
         expires_in: resp.expires_in.as_secs(),
         matrix_server_name: resp.matrix_server_name.to_string(),
     })
-}
-
-/// Periodic task: re-sends both MSC3401 and MSC4143 membership events every
-/// 25 seconds to keep sticky events alive (typical expiry window is 30 s).
-fn spawn_refresh_task(
-    room: Room,
-    member_id: String,
-    service_url: String,
-    lk_alias: String,
-    device_id: String,
-    user_id: String,
-    audio_only: bool,
-) -> AbortHandle {
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(25));
-        interval.tick().await; // skip the immediate 0-delay first tick
-        loop {
-            interval.tick().await;
-            let _job = crate::client::activity::begin("rtc-membership-refresh", "Calls", crate::client::activity::JobKind::Periodic);
-            let _ = send_msc3401_member_join(
-                &room,
-                "",
-                &device_id,
-                &member_id,
-                &service_url,
-                &lk_alias,
-                &user_id,
-                audio_only,
-            )
-            .await;
-        }
-    })
-    .abort_handle()
 }
 
 #[cfg(test)]
@@ -886,5 +1103,47 @@ mod invitation_staleness_tests {
     fn fresh_membership_is_active() {
         let content = call_member_content(MilliSecondsSinceUnixEpoch::now());
         assert!(!content.active_memberships(None).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod key_event_tests {
+    use super::*;
+    use crate::client::rtc::signaling::RtcEncryptionKeyEventContent;
+
+    fn content(room: &str, application: &str, device: &str) -> RtcEncryptionKeyEventContent {
+        serde_json::from_value(serde_json::json!({
+            "keys": { "key": "AAAA", "index": 0 },
+            "room_id": room,
+            "member": { "claimed_device_id": device, "id": "@a:x.org:DEV" },
+            "session": { "call_id": "", "application": application, "scope": "m.room" },
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn accepts_matching_encrypted_event() {
+        let c = content("!r:x.org", "m.call", "DEV");
+        assert!(check_key_event_fields("!r:x.org", &c, Some(Some("DEV"))).is_ok());
+        // sending device unknown to the crypto layer: nothing to compare against
+        assert!(check_key_event_fields("!r:x.org", &c, Some(None)).is_ok());
+    }
+
+    #[test]
+    fn rejects_unencrypted() {
+        let c = content("!r:x.org", "m.call", "DEV");
+        assert!(check_key_event_fields("!r:x.org", &c, None).is_err());
+    }
+
+    #[test]
+    fn rejects_other_room_or_application() {
+        assert!(check_key_event_fields("!r:x.org", &content("!other:x.org", "m.call", "DEV"), Some(Some("DEV"))).is_err());
+        assert!(check_key_event_fields("!r:x.org", &content("!r:x.org", "m.whiteboard", "DEV"), Some(Some("DEV"))).is_err());
+    }
+
+    #[test]
+    fn rejects_device_mismatch() {
+        let c = content("!r:x.org", "m.call", "CLAIMED");
+        assert!(check_key_event_fields("!r:x.org", &c, Some(Some("ACTUAL"))).is_err());
     }
 }

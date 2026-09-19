@@ -432,24 +432,6 @@ msgstr "No se encontraron salas."
 msgid "Dismiss"
 msgstr "Descartar"
 
-#: ui/shared/views/IncomingCallBanner.cpp
-msgid "Video call"
-msgstr "Videollamada"
-
-#: ui/shared/views/IncomingCallBanner.cpp
-msgid "Voice call"
-msgstr "Llamada de voz"
-
-#: ui/shared/views/IncomingCallBanner.cpp
-#, c++-format
-msgid "Incoming {0}"
-msgstr "{0} entrante"
-
-#: ui/shared/views/IncomingCallBanner.cpp
-#, c++-format
-msgid "Incoming {0} from {1}"
-msgstr "{0} entrante de {1}"
-
 #: ui/shared/views/InviteCard.cpp
 #, c++-format
 msgid "{0} invited you to a direct message"
@@ -1393,10 +1375,6 @@ msgstr "¡Hola, amigo!"
 #: ui/shared/views/settings/MessageLayoutPreview.cpp
 msgid "Hi! How are you?"
 msgstr "¡Hola! ¿Cómo estás?"
-
-#: ui/shared/views/IncomingCallBanner.cpp
-msgid "Answer"
-msgstr "Contestar"
 
 #: ui/shared/views/IncomingCallBanner.cpp
 msgid "is calling"
@@ -2617,3 +2595,15 @@ msgid "{0} run"
 msgid_plural "{0} runs"
 msgstr[0] "{0} ejecución"
 msgstr[1] "{0} ejecuciones"
+
+#: ui/shared/views/CallBanner.cpp
+msgid "Call in progress"
+msgstr "Llamada en curso"
+
+#: ui/shared/views/CallBanner.cpp
+msgid "Video call in progress"
+msgstr "Videollamada en curso"
+
+#: ui/shared/views/CallBanner.cpp
+msgid "Voice call in progress"
+msgstr "Llamada de voz en curso"

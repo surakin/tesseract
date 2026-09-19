@@ -3289,9 +3289,10 @@ protected:
     // ── MatrixRTC call event hooks ────────────────────────────────────────────
     // Called on the UI thread by EventHandlerBase after marshalling.
     // Default ShellBase implementations update call_session_ state.
-    // Layer 5 shells override to update IncomingCallBanner / CallOverlay.
+    // Layer 5 shells override to update the call banner / CallOverlay.
 
-    // A remote participant opened a call slot in a room we are in.
+    // A call-member event arrived. The call banner is driven by room state, so
+    // this only re-evaluates it (see refresh_call_banners_()).
     virtual void handle_rtc_invitation_ui_(std::string room_id,
                                            std::string slot_id,
                                            std::string caller_user_id,
@@ -3396,10 +3397,20 @@ protected:
     std::unique_ptr<tk::AudioPlayback>          call_audio_output_;
     std::unique_ptr<CallWindowBase>             call_window_;
     CallOverlayState                            call_overlay_state_;
-    // Tracks the notification_event_id of the current pending ring invitation.
-    // Non-empty means a notification-path invite is showing; member-state invites
-    // for the same room are suppressed to avoid duplicate banners.
-    std::string rtc_pending_notification_id_;
+    // The "call in progress" banner is a state of the room: shown while the
+    // room has live call members and this client is not in that call. Applies
+    // the rule to the main window's room view and every pop-out.
+    void refresh_call_banners_();
+    void refresh_call_banner_(views::RoomView* rv, const std::string& room_id);
+    // Names and avatar URLs of a room's call members, rebuilt only when the
+    // member list changes (get_room_members can be large).
+    struct CallBannerRoster
+    {
+        std::vector<std::string>                     ids;
+        std::vector<std::pair<std::string, std::string>> names; // user id, display name
+        std::unordered_map<std::string, std::string> avatar_urls; // user id -> mxc
+    };
+    std::unordered_map<std::string, CallBannerRoster> call_banner_rosters_;
 
     // Install the platform screen-lock probe (called once by the concrete
     // shell at startup, mirroring the per-account INotifier injection).

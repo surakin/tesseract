@@ -2,21 +2,42 @@
 
 #include "tk/widget.h"
 #include "tk_test_host.h"
-#include "views/IncomingCallBanner.h"
+#include "views/CallBanner.h"
 #include "views/InviteCard.h"
 #include "views/RoomPreviewView.h"
 
-using tesseract::views::IncomingCallBanner;
+using tesseract::views::CallBanner;
 using tesseract::views::InviteCard;
 using tesseract::views::RoomPreviewView;
 
-TEST_CASE("IncomingCallBanner announces the caller and call type",
+TEST_CASE("CallBanner announces the call type and who is in it",
          "[banner][accessibility]")
 {
-    auto banner = tk::create_root_widget<IncomingCallBanner>(nullptr);
-    banner->set_call("Alice", "video", [] {}, [] {});
+    auto banner = tk::create_root_widget<CallBanner>(nullptr);
+    banner->set_call("video", {{"@a:x.org", "Alice"}, {"@b:x.org", ""}}, [] {}, true);
     CHECK(banner->access_role() == tk::Role::Group);
-    CHECK(banner->access_name() == "Incoming Video call from Alice");
+    CHECK(banner->access_name() == "Video call in progress: Alice, @b:x.org");
+
+    banner->set_call("", {}, [] {}, true);
+    CHECK(banner->access_name() == "Call in progress");
+}
+
+TEST_CASE("CallBanner shows until cleared and has only a Join button",
+         "[banner]")
+{
+    auto banner = tk::create_root_widget<CallBanner>(nullptr);
+    CHECK_FALSE(banner->visible());
+
+    int joined = 0;
+    banner->set_call("audio", {{"@a:x.org", "Alice"}}, [&] { ++joined; }, true);
+    CHECK(banner->visible());
+    CHECK(banner->members().size() == 1);
+    // Join is the only button: no Decline/Answer pair, and no auto-dismiss API.
+    CHECK(banner->children().size() == 1);
+
+    banner->clear();
+    CHECK_FALSE(banner->visible());
+    CHECK(banner->members().empty());
 }
 
 TEST_CASE("RoomPreviewView summarises the room; None until a summary is set",

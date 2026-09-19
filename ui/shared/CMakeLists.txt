@@ -362,8 +362,8 @@ elseif(TESSERACT_UI STREQUAL "win32")
 endif()
 
 list(APPEND _tk_sources
-    views/IncomingCallBanner.h
-    views/IncomingCallBanner.cpp
+    views/CallBanner.h
+    views/CallBanner.cpp
     views/ParticipantTile.h
     views/ParticipantTile.cpp
     views/CallOverlayWidget.h

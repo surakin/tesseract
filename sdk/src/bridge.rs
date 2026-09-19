@@ -168,6 +168,11 @@ pub mod ffi {
         /// True when any participant has an active MatrixRTC call in this room
         /// (`m.call.member` state events with non-empty content).
         has_active_call: bool,
+        /// Distinct users (oldest join first) with a live call membership in
+        /// the room, excluding this device. Empty when nobody else is in a call.
+        call_members: Vec<String>,
+        /// `"video"`, `"audio"` or empty: the intent of the room's live call.
+        call_intent: String,
         /// True when the room has a `uk.half-shot.bridge` state event (MSC2346),
         /// indicating it is bridged to another platform. Used to suppress
         /// features that bridges cannot relay (calls, threads). This is the
@@ -3940,6 +3945,8 @@ impl Clone for ffi::RoomInfo {
             is_low_priority: self.is_low_priority,
             is_encrypted: self.is_encrypted,
             has_active_call: self.has_active_call,
+            call_members: self.call_members.clone(),
+            call_intent: self.call_intent.clone(),
             is_bridged: self.is_bridged,
             bridge_network_name: self.bridge_network_name.clone(),
             bridge_network_avatar_url: self.bridge_network_avatar_url.clone(),

@@ -111,6 +111,8 @@ pub mod ffi {
         pub is_low_priority: bool,
         pub is_encrypted: bool,
         pub has_active_call: bool,
+        pub call_members: Vec<String>,
+        pub call_intent: String,
         pub history_visibility: String,
         pub join_rule: String,
         pub guest_access: bool,

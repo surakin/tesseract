@@ -576,6 +576,12 @@ struct RoomInfo
     /// True when any participant has an active MatrixRTC call in this room
     /// (`m.call.member` state events with non-empty content).
     bool has_active_call = false;
+    /// Distinct users (oldest join first) with a live call membership,
+    /// excluding this device. Drives the room's call banner: empty means
+    /// nobody else is in a call.
+    std::vector<std::string> call_members;
+    /// "video", "audio" or empty: the intent of the room's live call.
+    std::string call_intent;
     /// True when the room has a `uk.half-shot.bridge` state event (MSC2346).
     /// This is the raw detection result, unaffected by the local override
     /// below — kept around so room settings can still offer the override
@@ -642,6 +648,8 @@ struct RoomInfo
                topic_html == other.topic_html &&
                is_encrypted == other.is_encrypted &&
                has_active_call == other.has_active_call &&
+               call_members == other.call_members &&
+               call_intent == other.call_intent &&
                is_bridged == other.is_bridged &&
                bridge_overridden == other.bridge_overridden &&
                bridge_network_name == other.bridge_network_name &&

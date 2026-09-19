@@ -38,7 +38,7 @@
 #include "UserProfilePanel.h"
 #include "media_drop.h"
 #include "CallOverlayWidget.h"
-#include "IncomingCallBanner.h"
+#include "CallBanner.h"
 
 #include "tk/audio.h"
 #include "tk/widget.h"
@@ -388,17 +388,18 @@ public:
     // rather than stay open in the wrong place.
     void dismiss_popups() { hide_pickers_(); }
 
-    // Show the incoming-call banner for the given room+slot. Caller name is
-    // displayed in the banner; Answer fires on_start_call; Decline + the
-    // auto-dismiss timer both call dismiss_call_banner(). lifetime_ms controls
-    // the auto-dismiss timeout (0 → falls back to 30 s).
-    void show_call_banner(const std::string& room_id,
-                          const std::string& slot_id,
-                          const std::string& caller_display_name,
-                          const std::string& call_intent,
-                          std::uint64_t      lifetime_ms);
-    void dismiss_call_banner();
-    // Returns true while the incoming-call banner is visible.
+    // Show the "call in progress" banner: a state of the room, so it has no
+    // dismiss and no timeout. The shell shows it while the room has a live call
+    // the user is not part of and clears it otherwise. Join fires
+    // on_start_call; join_enabled is false while the user is in another call.
+    void set_call_banner(const std::string&                 room_id,
+                         const std::string&                 call_intent,
+                         std::vector<CallBanner::Member>    members,
+                         bool                               join_enabled);
+    void clear_call_banner();
+    // Resolves a member's avatar image for the banner's avatar stack.
+    void set_call_banner_avatar_provider(CallBanner::AvatarProvider p);
+    // Returns true while the call banner is visible.
     bool call_banner_visible() const;
 
     // Fired when the user answers (banner or header button). The shell calls
@@ -852,13 +853,9 @@ private:
     // Click/hover blocker over message_list_, visible only while the
     // thread panel is open. See the nested class doc above.
     MessageBlocker*  message_blocker_   = nullptr;
-    // Incoming-call banner — created in constructor (hidden), shown/dismissed
-    // via show_call_banner() / dismiss_call_banner(). Stores pending room+slot
-    // so the answer callback can pass them to on_start_call.
-    IncomingCallBanner* call_banner_ = nullptr;
-    std::string         call_banner_room_id_;
-    std::string         call_banner_slot_id_;
-    std::uint64_t       call_banner_dismiss_gen_ = 0;
+    // Call-in-progress banner — created in constructor (hidden), driven by
+    // set_call_banner() / clear_call_banner().
+    CallBanner* call_banner_ = nullptr;
     // Docked call panel — lazily created by mount_call_panel(), removed by
     // unmount_call_panel(). nullptr when no call is active.
     views::CallOverlayWidget* call_panel_ = nullptr;

@@ -2725,24 +2725,38 @@ pub(super) async fn build_room_info(
         }
     };
     let is_encrypted = room.encryption_state().is_encrypted();
-    let has_active_call = {
+    let (has_active_call, call_members, call_intent) = {
         use matrix_sdk::deserialized_responses::SyncOrStrippedState;
         use matrix_sdk::ruma::events::{call::member::CallMemberEventContent, SyncStateEvent};
-        room.get_state_events_static::<CallMemberEventContent>()
+        let own_user = client.user_id();
+        let own_device = client.device_id();
+        let mut active = false;
+        let mut participants = Vec::new();
+        for raw in room
+            .get_state_events_static::<CallMemberEventContent>()
             .await
             .unwrap_or_default()
-            .into_iter()
-            .any(|raw| match raw.deserialize() {
-                Ok(SyncOrStrippedState::Sync(SyncStateEvent::Original(o))) => {
-                    // active_memberships() filters out expired memberships using
-                    // origin_server_ts as the fallback for created_ts; non-empty
-                    // result means at least one participant is still in the call.
-                    !o.content
-                        .active_memberships(Some(o.origin_server_ts))
-                        .is_empty()
+        {
+            if let Ok(SyncOrStrippedState::Sync(SyncStateEvent::Original(o))) = raw.deserialize() {
+                // active_memberships() filters out expired memberships using
+                // origin_server_ts as the fallback for created_ts; non-empty
+                // result means at least one participant is still in the call.
+                if !o.content.active_memberships(Some(o.origin_server_ts)).is_empty() {
+                    active = true;
                 }
-                _ => false,
-            })
+                if let (Some(u), Some(d)) = (own_user, own_device) {
+                    participants.extend(rtc::members::call_participants(
+                        &o.content,
+                        &o.sender,
+                        o.origin_server_ts,
+                        u,
+                        d,
+                    ));
+                }
+            }
+        }
+        let (members, intent) = rtc::members::summarize_participants(participants);
+        (active, members, intent)
     };
     // MSC2346: presence of a uk.half-shot.bridge state event means the room is
     // bridged to another platform. Calls and threads are suppressed for such rooms.
@@ -2895,6 +2909,8 @@ pub(super) async fn build_room_info(
         is_low_priority,
         is_encrypted,
         has_active_call,
+        call_members,
+        call_intent,
         is_bridged,
         bridge_network_name,
         bridge_network_avatar_url,
@@ -2962,6 +2978,8 @@ pub(super) struct RoomListFingerprintKey {
     is_favorite: bool,
     is_low_priority: bool,
     has_active_call: bool,
+    call_members: Vec<String>,
+    call_intent: String,
     last_activity_ts: u64,
     id: String,
     name: String,
@@ -3045,6 +3063,8 @@ pub(super) fn room_list_fingerprint(
                 is_favorite: r.is_favorite,
                 is_low_priority: r.is_low_priority,
                 has_active_call: r.has_active_call,
+                call_members: r.call_members.clone(),
+                call_intent: r.call_intent.clone(),
                 last_activity_ts: r.last_activity_ts,
                 id: r.id.clone(),
                 name: r.name.clone(),
@@ -3317,6 +3337,17 @@ mod tests {
         r.has_active_call = true;
         let after = room_list_fingerprint(std::slice::from_ref(&r));
         assert_ne!(before, after);
+    }
+
+    #[test]
+    fn fingerprint_changes_when_call_members_change() {
+        let mut r = room("!a:example.org");
+        let before = room_list_fingerprint(std::slice::from_ref(&r));
+        r.call_members = vec!["@b:example.org".to_owned()];
+        let with_member = room_list_fingerprint(std::slice::from_ref(&r));
+        assert_ne!(before, with_member);
+        r.call_members.push("@c:example.org".to_owned());
+        assert_ne!(with_member, room_list_fingerprint(std::slice::from_ref(&r)));
     }
 
     #[test]

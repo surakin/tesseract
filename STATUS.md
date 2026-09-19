@@ -1,6 +1,23 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-18**. 1876 C++ + 676 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-19**. 1877 C++ + 704 Rust tests.
+
+> **Call banner is a room state (2026-09-19, v0.8.24-unreleased).**
+> The banner stays while the room has live call members and you aren't in
+> the call: member avatars and one Join button, no dismiss or timeout.
+> Driven by `RoomInfo.call_members` via `ShellBase::refresh_call_banners_()`.
+> Qt6 build + ctest 1877/1877; unverified live.
+
+<!-- -->
+
+> **Calls: multi-SFU / cross-homeserver (2026-09-19, v0.8.24-unreleased).**
+> Calls speak Element Call's `multi_sfu` mode: we publish on our SFU and
+> subscribe to every member's SFU (`rtc/members.rs`, `rtc/sfu_set.rs`), with
+> per-member key delivery, MSC4140 delayed leave and hardened key-event
+> checks. User-verified against Element Web; sticky `matrix_2_0`
+> memberships not supported yet.
+
+<!-- -->
 
 > **Activity Monitor window (2026-09-18, v0.8.24-unreleased).**
 > Settings → Advanced → "Open Activity Monitor" opens a separate window

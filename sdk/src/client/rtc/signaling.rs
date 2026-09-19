@@ -209,6 +209,50 @@ pub async fn send_msc3401_call_open(room: &matrix_sdk::Room, call_id: &str) -> a
     Ok(())
 }
 
+fn msc3401_state_key(
+    user_id: &str,
+    membership_id: &str,
+) -> anyhow::Result<matrix_sdk::ruma::events::call::member::CallMemberStateKey> {
+    let session_part = membership_id
+        .strip_prefix(&format!("{user_id}:"))
+        .unwrap_or(membership_id);
+    let uid: matrix_sdk::ruma::OwnedUserId = user_id.parse().context("invalid user_id")?;
+    Ok(matrix_sdk::ruma::events::call::member::CallMemberStateKey::new(
+        uid,
+        Some(format!("{session_part}_m.call")),
+        true,
+    ))
+}
+
+/// The join time of our own membership as receivers see it: the `created_ts`
+/// carried in the event, else the `origin_server_ts` of the initial event.
+/// Re-sent refreshes must copy this value or peers see us as re-joining
+/// every refresh and never treat us as the oldest member. `None` until the
+/// initial event has been echoed back through sync.
+pub async fn own_msc3401_created_ts(
+    room: &matrix_sdk::Room,
+    user_id: &str,
+    membership_id: &str,
+) -> Option<matrix_sdk::ruma::MilliSecondsSinceUnixEpoch> {
+    use matrix_sdk::deserialized_responses::SyncOrStrippedState;
+    use matrix_sdk::ruma::events::{call::member::CallMemberEventContent, SyncStateEvent};
+
+    let state_key = msc3401_state_key(user_id, membership_id).ok()?;
+    let raw = room
+        .get_state_event_static_for_key::<CallMemberEventContent, _>(&state_key)
+        .await
+        .ok()??;
+    match raw.deserialize().ok()? {
+        SyncOrStrippedState::Sync(SyncStateEvent::Original(o)) => o
+            .content
+            .memberships()
+            .first()
+            .and_then(|m| m.created_ts())
+            .or(Some(o.origin_server_ts)),
+        _ => None,
+    }
+}
+
 /// Publish or refresh our MSC3401 call membership.
 ///
 /// `membership_id` is the LiveKit participant identity (`{user_id}:{session_part}`),
@@ -231,28 +275,60 @@ pub async fn send_msc3401_member_join(
     livekit_alias: &str,
     user_id: &str,
     audio_only: bool,
+    created_ts: Option<matrix_sdk::ruma::MilliSecondsSinceUnixEpoch>,
 ) -> anyhow::Result<()> {
     use matrix_sdk::ruma::{
         api::client::state::send_state_event,
-        events::{
-            call::member::{
-                ActiveFocus, ActiveLivekitFocus, Application, CallApplicationContent,
-                CallMemberEventContent, CallMemberStateKey, CallScope, Focus, LivekitFocus,
-            },
-            rtc::notification::CallIntent,
-            AnyStateEventContent, StateEventType,
-        },
-        OwnedUserId,
+        events::{AnyStateEventContent, StateEventType},
     };
 
     // The state key uses the session part (UUID) so that each LiveKit session
     // gets a unique state event even if multiple sessions share the same device.
-    let session_part = membership_id
-        .strip_prefix(&format!("{user_id}:"))
-        .unwrap_or(membership_id);
+    let state_key = msc3401_state_key(user_id, membership_id)?;
+    let body = msc3401_member_body(
+        call_id,
+        matrix_device_id,
+        membership_id,
+        service_url,
+        livekit_alias,
+        audio_only,
+        created_ts,
+    )?;
 
-    let uid: OwnedUserId = user_id.parse().context("invalid user_id")?;
-    let state_key = CallMemberStateKey::new(uid, Some(format!("{session_part}_m.call")), true);
+    let raw_body = serde_json::value::to_raw_value(&body)
+        .map(|v| matrix_sdk::ruma::serde::Raw::<AnyStateEventContent>::from_json(v))
+        .map_err(|e| anyhow::anyhow!("re-serialize with membershipID: {e}"))?;
+
+    let request = send_state_event::v3::Request::new_raw(
+        room.room_id().to_owned(),
+        StateEventType::from("org.matrix.msc3401.call.member"),
+        state_key.as_ref().to_owned(),
+        raw_body,
+    );
+    room.client().send(request).await?;
+    Ok(())
+}
+
+/// The content of our `org.matrix.msc3401.call.member` join event.
+fn msc3401_member_body(
+    call_id: &str,
+    matrix_device_id: &str,
+    membership_id: &str,
+    service_url: &str,
+    livekit_alias: &str,
+    audio_only: bool,
+    created_ts: Option<matrix_sdk::ruma::MilliSecondsSinceUnixEpoch>,
+) -> anyhow::Result<serde_json::Value> {
+    use matrix_sdk::ruma::{
+        events::{
+            call::member::{
+                ActiveFocus, ActiveLivekitFocus, Application, CallApplicationContent,
+                CallMemberEventContent, CallScope, Focus, LivekitFocus,
+            },
+            rtc::notification::CallIntent,
+        },
+        MilliSecondsSinceUnixEpoch,
+    };
 
     let mut app_content = CallApplicationContent::new(call_id.to_owned(), CallScope::Room);
     app_content.call_intent = Some(if audio_only {
@@ -269,8 +345,14 @@ pub async fn send_msc3401_member_join(
             livekit_alias.to_owned(),
             service_url.to_owned(),
         ))],
-        None,
-        None,
+        created_ts,
+        // The membership is valid for 4h after joining; extend it on every
+        // refresh so a long call does not expire while created_ts stays fixed.
+        created_ts.map(|c| {
+            let elapsed_ms = u64::from(MilliSecondsSinceUnixEpoch::now().0)
+                .saturating_sub(u64::from(c.0));
+            std::time::Duration::from_millis(elapsed_ms) + std::time::Duration::from_secs(4 * 3600)
+        }),
     );
 
     // ruma 0.34's SessionMembershipData doesn't model `membershipID` (it exists
@@ -281,19 +363,44 @@ pub async fn send_msc3401_member_join(
     let mut body: serde_json::Value =
         serde_json::to_value(&content).context("serialize CallMemberEventContent")?;
     body["membershipID"] = serde_json::Value::String(membership_id.to_owned());
+    // multi_sfu (Element Call's mode): we publish on our own homeserver's SFU
+    // (foci_preferred[0]) and subscribe to every other member's SFU. ruma can
+    // only build `oldest_membership` here, so override the value.
+    body["focus_active"]["focus_selection"] =
+        serde_json::Value::String(super::members::SELECTION_MULTI_SFU.to_owned());
+    Ok(body)
+}
 
-    let raw_body = serde_json::value::to_raw_value(&body)
-        .map(|v| matrix_sdk::ruma::serde::Raw::<AnyStateEventContent>::from_json(v))
-        .map_err(|e| anyhow::anyhow!("re-serialize with membershipID: {e}"))?;
+#[cfg(test)]
+mod member_body_tests {
+    use super::*;
+    use matrix_sdk::ruma::{MilliSecondsSinceUnixEpoch, UInt};
 
-    let request = send_state_event::v3::Request::new_raw(
-        room.room_id().to_owned(),
-        StateEventType::from("org.matrix.msc3401.call.member"),
-        state_key.as_ref().to_owned(),
-        raw_body,
-    );
-    room.client().send(request).await?;
-    Ok(())
+    #[test]
+    fn join_advertises_multi_sfu_and_our_local_sfu_first() {
+        let body = msc3401_member_body("", "DEV", "@a:x.org:DEV", "https://jwt.x.org", "!r:x.org", false, None)
+            .unwrap();
+        assert_eq!(body["focus_active"]["type"], "livekit");
+        assert_eq!(body["focus_active"]["focus_selection"], "multi_sfu");
+        assert_eq!(body["foci_preferred"][0]["livekit_service_url"], "https://jwt.x.org");
+        assert_eq!(body["foci_preferred"][0]["livekit_alias"], "!r:x.org");
+        assert_eq!(body["device_id"], "DEV");
+        assert_eq!(body["membershipID"], "@a:x.org:DEV");
+        assert!(body.get("created_ts").is_none(), "initial join carries no created_ts");
+    }
+
+    #[test]
+    fn refresh_keeps_created_ts_and_extends_expires() {
+        let created = MilliSecondsSinceUnixEpoch(
+            MilliSecondsSinceUnixEpoch::now().0 - UInt::from(60_000u32),
+        );
+        let body = msc3401_member_body("", "DEV", "@a:x.org:DEV", "https://jwt.x.org", "!r", true, Some(created))
+            .unwrap();
+        assert_eq!(body["created_ts"], serde_json::to_value(created).unwrap());
+        // 4h plus the ~60 s already elapsed
+        let expires = body["expires"].as_u64().unwrap();
+        assert!(expires >= 4 * 3600 * 1000 + 59_000 && expires < 4 * 3600 * 1000 + 70_000, "{expires}");
+    }
 }
 
 /// Leave the MSC3401 call. Sends ruma's Empty content to the per-session state key.
@@ -304,20 +411,108 @@ pub async fn send_msc3401_member_leave(
     user_id: &str,
     membership_id: &str,
 ) -> anyhow::Result<()> {
-    use matrix_sdk::ruma::{
-        events::call::member::{CallMemberEventContent, CallMemberStateKey},
-        OwnedUserId,
-    };
+    use matrix_sdk::ruma::events::call::member::CallMemberEventContent;
 
-    let session_part = membership_id
-        .strip_prefix(&format!("{user_id}:"))
-        .unwrap_or(membership_id);
-
-    let uid: OwnedUserId = user_id.parse().context("invalid user_id")?;
-    let state_key = CallMemberStateKey::new(uid, Some(format!("{session_part}_m.call")), true);
+    let state_key = msc3401_state_key(user_id, membership_id)?;
     let content = CallMemberEventContent::new_empty(None);
     room.send_state_event_for_key(&state_key, content).await?;
     Ok(())
+}
+
+/// Outcome of restarting a delayed event.
+pub enum DelayedRestart {
+    Ok,
+    /// The homeserver no longer knows the delayed event (already sent, or
+    /// cancelled by a newer state event for the same key); schedule a new one.
+    Gone,
+    /// The homeserver does not support delayed events.
+    Unsupported,
+}
+
+/// Schedule the MSC3401 leave as an MSC4140 delayed event (dead-man's switch):
+/// if we crash or lose connectivity, the homeserver sends the leave for us.
+/// Returns the `delay_id`, or `None` when delayed events are unavailable.
+pub async fn schedule_delayed_msc3401_leave(
+    room: &matrix_sdk::Room,
+    user_id: &str,
+    membership_id: &str,
+    delay: std::time::Duration,
+) -> Option<String> {
+    use matrix_sdk::ruma::{
+        api::client::delayed_events::{delayed_state_event, DelayParameters},
+        events::{
+            call::member::CallMemberEventContent, AnyStateEventContent, StateEventType,
+        },
+    };
+
+    let state_key = msc3401_state_key(user_id, membership_id).ok()?;
+    let body = serde_json::to_value(CallMemberEventContent::new_empty(None)).ok()?;
+    let raw = matrix_sdk::ruma::serde::Raw::<AnyStateEventContent>::from_json(
+        serde_json::value::to_raw_value(&body).ok()?,
+    );
+    let request = delayed_state_event::unstable::Request::new_raw(
+        room.room_id().to_owned(),
+        state_key.as_ref().to_owned(),
+        StateEventType::from("org.matrix.msc3401.call.member"),
+        DelayParameters::Timeout { timeout: delay },
+        raw,
+    );
+    match room.client().send(request).await {
+        Ok(resp) => Some(resp.delay_id),
+        Err(e) => {
+            tracing::info!("rtc: delayed leave not scheduled ({e}); continuing without it");
+            None
+        }
+    }
+}
+
+/// Send an MSC4140 update action for a delayed event. Tries the current
+/// endpoint (`.../{delay_id}/{action}`) and falls back to the older one
+/// (action in the body) when the homeserver doesn't know the former.
+async fn update_delayed_event(
+    client: &matrix_sdk::Client,
+    delay_id: &str,
+    action: matrix_sdk::ruma::api::client::delayed_events::update_delayed_event::UpdateAction,
+) -> Result<(), matrix_sdk::Error> {
+    use matrix_sdk::ruma::api::{
+        client::delayed_events::update_delayed_event::{unstable_v1, unstable_v2},
+        error::ErrorKind,
+    };
+
+    let v2 = unstable_v2::Request::new(delay_id.to_owned(), action.clone());
+    match client.send(v2).await {
+        Ok(_) => Ok(()),
+        Err(e) if matches!(e.client_api_error_kind(), Some(ErrorKind::Unrecognized)) => {
+            let v1 = unstable_v1::Request::new(delay_id.to_owned(), action);
+            client.send(v1).await.map(|_| ()).map_err(Into::into)
+        }
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// Push a scheduled delayed event further into the future.
+pub async fn restart_delayed_event(client: &matrix_sdk::Client, delay_id: &str) -> DelayedRestart {
+    use matrix_sdk::ruma::api::{
+        client::delayed_events::update_delayed_event::UpdateAction, error::ErrorKind,
+    };
+
+    match update_delayed_event(client, delay_id, UpdateAction::Restart).await {
+        Ok(()) => DelayedRestart::Ok,
+        Err(e) => match e.client_api_error_kind() {
+            Some(ErrorKind::NotFound) => DelayedRestart::Gone,
+            Some(ErrorKind::Unrecognized) => DelayedRestart::Unsupported,
+            _ => {
+                tracing::warn!("rtc: restarting delayed leave failed: {e}");
+                DelayedRestart::Ok
+            }
+        },
+    }
+}
+
+/// Cancel a scheduled delayed event so it is never sent (best effort).
+pub async fn cancel_delayed_event(client: &matrix_sdk::Client, delay_id: &str) {
+    use matrix_sdk::ruma::api::client::delayed_events::update_delayed_event::UpdateAction;
+    let _ = update_delayed_event(client, delay_id, UpdateAction::Cancel).await;
 }
 
 /// Open or refresh the call slot. State key = slot_id.
