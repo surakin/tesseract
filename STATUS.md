@@ -2,7 +2,7 @@
 
 Snapshot of every feature that has landed on `main`. Last updated **2026-09-19**. 1877 C++ + 704 Rust tests.
 
-> **Call banner is a room state (2026-09-19, v0.8.24-unreleased).**
+> **Call banner is a room state (2026-09-19, v0.8.24).**
 > The banner stays while the room has live call members and you aren't in
 > the call: member avatars and one Join button, no dismiss or timeout.
 > Driven by `RoomInfo.call_members` via `ShellBase::refresh_call_banners_()`.
@@ -10,7 +10,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-19**
 
 <!-- -->
 
-> **Calls: multi-SFU / cross-homeserver (2026-09-19, v0.8.24-unreleased).**
+> **Calls: multi-SFU / cross-homeserver (2026-09-19, v0.8.24).**
 > Calls speak Element Call's `multi_sfu` mode: we publish on our SFU and
 > subscribe to every member's SFU (`rtc/members.rs`, `rtc/sfu_set.rs`), with
 > per-member key delivery, MSC4140 delayed leave and hardened key-event
@@ -19,7 +19,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-19**
 
 <!-- -->
 
-> **Activity Monitor window (2026-09-18, v0.8.24-unreleased).**
+> **Activity Monitor window (2026-09-18, v0.8.24).**
 > Settings → Advanced → "Open Activity Monitor" opens a separate window
 > listing every background job grouped by area (Sync, Backfill, Media,
 > Search, Calls, Export, Workers, UI housekeeping): state, last run,
@@ -35,7 +35,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-19**
 
 <!-- -->
 
-> **Image metadata stripped on upload; Compressed photos keep orientation (2026-09-18, v0.8.24-unreleased).**
+> **Image metadata stripped on upload; Compressed photos keep orientation (2026-09-18, v0.8.24).**
 > Uploaded JPEG/PNG/WebP images now have EXIF/GPS, XMP, IPTC and text
 > chunks removed losslessly in the Rust SDK (`strip_meta.rs`, built on
 > `img-parts` + `little_exif`), covering Original quality, animated WebP,
@@ -48,7 +48,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-19**
 
 <!-- -->
 
-> **In-memory cache size accounting fixed (2026-09-18, v0.8.24-unreleased).**
+> **In-memory cache size accounting fixed (2026-09-18, v0.8.24).**
 > Settings → About could show an absurd in-memory cache size (tens of
 > billions of GB) instead of the real figure. `AnimImageCache` tracked
 > frame bytes as a running total nudged incrementally on add/remove, which
@@ -61,7 +61,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-19**
 
 <!-- -->
 
-> **Timeline link tooltips show the real target URL (2026-09-17, v0.8.24-unreleased).**
+> **Timeline link tooltips show the real target URL (2026-09-17, v0.8.24).**
 > Hovering a linkified URL or a markdown-style `[text](url)` link in the
 > message timeline now shows a tooltip with the real target URL, reusing
 > the existing generic `tk::Host::show_tooltip`/`hide_tooltip` machinery

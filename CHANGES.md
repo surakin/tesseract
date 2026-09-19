@@ -3,7 +3,9 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
-## Unreleased
+## v0.8.24 — 2026-09-19
+
+### Summary
 
 - fix(calls): screen share and camera video from the same participant could land on one tile, leaving the other showing only an avatar — `TrackSubscribed` classified a video track as screen or camera by checking whether the participant published a screen share *at all*, not which publication the subscribed track itself was. Only showed up when screen sharing was already active before the second participant joined. Cargo 704; unverified live
 - fix(calls): the call banner is now a room state instead of a dismissible, 30 s incoming-call prompt: shown while the room has live call members and you aren't in it, with member avatars and a single Join button (`IncomingCallBanner` → `CallBanner`, `RoomInfo.call_members`). Linux Qt6 build + full ctest 1877/1877, cargo 704; unverified live. Windows/macOS/GTK4 unbuilt
