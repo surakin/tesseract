@@ -1,20 +1,13 @@
 cmake_minimum_required(VERSION 3.25)
 
-# Download Noto Color Emoji (CBDT/CBLC color emoji font) once at configure
-# time. Keeps the binary out of git while ensuring a reproducible build.
+# Noto Color Emoji (CBDT/CBLC color emoji font), vendored under fonts/ rather
+# than downloaded at configure time — a prior fetch from
+# googlefonts/noto-emoji's `main` branch broke outright when upstream moved
+# the file to a new path without a redirect. SIL OFL 1.1, see
+# fonts/NotoEmoji-LICENSE.
 set(_noto_emoji_ttf "${CMAKE_CURRENT_SOURCE_DIR}/fonts/NotoColorEmoji.ttf")
 if(NOT EXISTS "${_noto_emoji_ttf}")
-    message(STATUS "Downloading Noto Color Emoji font (one-time)...")
-    file(DOWNLOAD
-        "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/fonts/NotoColorEmoji.ttf"
-        "${_noto_emoji_ttf}"
-        EXPECTED_HASH SHA256=72a635cb3d2f3524c51620cdde406b217204e8a6a06c6a096ff8ed4b5fd6e27b
-        SHOW_PROGRESS
-        STATUS _noto_status)
-    list(GET _noto_status 0 _noto_err)
-    if(_noto_err)
-        message(FATAL_ERROR "Failed to download Noto Color Emoji font: ${_noto_status}")
-    endif()
+    message(FATAL_ERROR "Missing vendored font: ${_noto_emoji_ttf}")
 endif()
 
 # Generate Tesseract.ico from the shared SVG at build time. Renderer is
