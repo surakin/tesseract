@@ -26,6 +26,16 @@ struct TextSpan; // ui/shared/tk/canvas.h
 // for emoji-only message bodies.
 bool is_emoji_only(const std::string& utf8);
 
+// Same emoji-only classification as is_emoji_only(), but for a parsed span
+// list rather than a plain-text body. Handles MSC2545 custom emoticons
+// (TextSpan::is_image, PillKind::Generic) as emoji, since m.body's plain-text
+// fallback can't see those — a custom-emoji-only message's shortcode text
+// (e.g. ":party:") doesn't look like emoji to is_emoji_only(m.body). A
+// mention pill (also is_image, but a non-Generic PillKind) makes the whole
+// span list not emoji-only. Used to pick the 2x BigEmoji font for bodies
+// mixing native and/or custom emoji with no other real text.
+bool is_emoji_only_spans(const std::vector<TextSpan>& spans);
+
 // Split one TextSpan into sub-spans at emoji/text boundaries so emoji grapheme
 // clusters can be rendered at a larger inline-emoji size. `code`/`code_block`
 // spans are returned unsplit. All formatting (bold, colour, url, ...) is

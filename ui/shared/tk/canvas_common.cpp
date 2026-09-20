@@ -28,6 +28,7 @@ bool font_role_is_semibold(FontRole role)
     case FontRole::SidebarPreview:
     case FontRole::BigEmoji:
     case FontRole::InlineEmoji:
+    case FontRole::InlineCustomEmoji:
     case FontRole::EmojiPickerCell:
     case FontRole::ReactionEmoji:
     case FontRole::ReactionText:

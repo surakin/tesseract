@@ -1042,7 +1042,7 @@ public:
     QtFactory()
     {
         static_assert(
-            static_cast<int>(FontRole::ReactionText) == 14,
+            static_cast<int>(FontRole::ReactionText) == 15,
             "FontRole layout changed — verify font_cache_ index mapping");
         for (std::size_t i = 0; i < kNumRoles; ++i)
         {
@@ -1294,6 +1294,21 @@ public:
                 0.5),
             6);
 
+        // Custom-emoticon (MSC2545, TextSpan::is_image) box size: BigEmoji
+        // for an emoji-only body, else InlineCustomEmoji — independent of
+        // emoji_pt above, which is reserved for native is_emoji_run glyph
+        // sizing (still InlineEmoji, a deliberate same-as-body no-op). No
+        // stock-rendering compensation here: kQtEmojiStockComp corrects for
+        // Qt's Noto Color Emoji CBDT glyphs rendering smaller than Cairo's,
+        // which doesn't apply to an arbitrary bitmap drawn via draw_image().
+        const FontRole custom_emoji_role = (s.role == FontRole::BigEmoji)
+                                                ? FontRole::BigEmoji
+                                                : FontRole::InlineCustomEmoji;
+        const int custom_emoji_pt = std::max(
+            font_cache_[static_cast<std::size_t>(custom_emoji_role)]
+                .pointSize(),
+            6);
+
         // QTextDocument has no native "truncate rich content to one line +
         // …" support — unlike build_text's QFontMetrics::elidedText, which
         // only works on a flat string — so for a single-line, ellipsis-
@@ -1314,7 +1329,8 @@ public:
             const QFontMetricsF emoji_fm(emoji_font);
             const qreal ell_w =
                 base_fm.horizontalAdvance(QChar(0x2026)); // "…"
-            const qreal img_w = static_cast<qreal>(emoji_pt) * 96.0 / 72.0;
+            const qreal img_w =
+                static_cast<qreal>(custom_emoji_pt) * 96.0 / 72.0;
 
             std::vector<QString> span_q;
             span_q.reserve(spans.size());
@@ -1544,8 +1560,11 @@ public:
             doc->documentLayout()->registerHandler(
                 kBlankObjectType, blank_object_handler());
             // Shared square box for plain custom emoticons (image_span_widths
-            // == -1) — unchanged from before per-pill sizing existed.
-            const qreal emoji_box = static_cast<qreal>(emoji_pt) * 96.0 / 72.0;
+            // == -1), sized from custom_emoji_pt (InlineCustomEmoji /
+            // BigEmoji) — independent of emoji_pt, which only sizes native
+            // is_emoji_run text runs.
+            const qreal emoji_box =
+                static_cast<qreal>(custom_emoji_pt) * 96.0 / 72.0;
             // Pill height: full ascent+descent of the paragraph's own role,
             // matching tk::measure_pill()'s width computation above. Note
             // this backend has no ascent/descent *split* the way CTRunDelegate

@@ -1,6 +1,16 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-19**. 1877 C++ + 704 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-20**. 1883 C++ + 704 Rust tests.
+
+> **Custom emoji get BigEmoji sizing too (2026-09-20, v0.8.24).**
+> A body made entirely of custom emoticons (MSC2545), alone or mixed with
+> native emoji, now gets the same 2x BigEmoji size a native-emoji-only
+> message did; a custom emoji mid-sentence also renders larger than the
+> surrounding text (`FontRole::InlineCustomEmoji`, native inline emoji
+> unchanged). Linux Qt6 build + full ctest 1883/1883 (+6); user-verified
+> live. GTK4/Windows/macOS share the code, unbuilt this session.
+
+<!-- -->
 
 > **Call banner is a room state (2026-09-19, v0.8.24).**
 > The banner stays while the room has live call members and you aren't in

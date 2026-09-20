@@ -1394,6 +1394,7 @@ TEST_CASE("img: recognised inside html_to_blocks paragraphs too",
 
 using tesseract::views::find_emoji_byte_ranges;
 using tesseract::views::is_emoji_only;
+using tesseract::views::is_emoji_only_spans;
 using tesseract::views::segment_emoji_runs;
 
 TEST_CASE("is_emoji_only: single emoji is emoji-only", "[html_spans][emoji]")
@@ -1454,6 +1455,66 @@ TEST_CASE("is_emoji_only: whitespace-only string is not emoji-only",
           "[html_spans][emoji]")
 {
     CHECK_FALSE(is_emoji_only("   \t\n"));
+}
+
+TEST_CASE("is_emoji_only_spans: custom-emoticon-only span list is emoji-only",
+          "[html_spans][emoji]")
+{
+    tk::TextSpan img;
+    img.is_image = true;
+    img.image_mxc = "mxc://example.org/party";
+    img.image_alt = ":party:";
+    CHECK(is_emoji_only_spans({img}));
+}
+
+TEST_CASE("is_emoji_only_spans: custom emoji with whitespace text between "
+          "spans is emoji-only",
+          "[html_spans][emoji]")
+{
+    tk::TextSpan img;
+    img.is_image = true;
+    tk::TextSpan ws;
+    ws.text = "  \n";
+    CHECK(is_emoji_only_spans({img, ws, img}));
+}
+
+TEST_CASE("is_emoji_only_spans: native + custom emoji mixed, no other text, "
+          "is emoji-only",
+          "[html_spans][emoji]")
+{
+    tk::TextSpan native;
+    native.text = "\xF0\x9F\x98\x80"; // 😀
+    tk::TextSpan img;
+    img.is_image = true;
+    CHECK(is_emoji_only_spans({native, img}));
+}
+
+TEST_CASE("is_emoji_only_spans: custom emoji alongside real text is not "
+          "emoji-only",
+          "[html_spans][emoji]")
+{
+    tk::TextSpan img;
+    img.is_image = true;
+    tk::TextSpan text;
+    text.text = "nice one";
+    CHECK_FALSE(is_emoji_only_spans({img, text}));
+}
+
+TEST_CASE("is_emoji_only_spans: a mention pill is not emoji-only",
+          "[html_spans][emoji]")
+{
+    tk::TextSpan img;
+    img.is_image = true;
+    tk::TextSpan pill;
+    pill.is_image = true;
+    pill.pill_kind = tk::PillKind::User;
+    CHECK_FALSE(is_emoji_only_spans({img, pill}));
+}
+
+TEST_CASE("is_emoji_only_spans: empty span list is not emoji-only",
+          "[html_spans][emoji]")
+{
+    CHECK_FALSE(is_emoji_only_spans({}));
 }
 
 TEST_CASE("segment_emoji_runs: plain text stays a single unsplit span",

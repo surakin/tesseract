@@ -134,6 +134,7 @@ using tk::apply_emoji_segmentation;
 using tk::EmojiByteRange;
 using tk::find_emoji_byte_ranges;
 using tk::is_emoji_only;
+using tk::is_emoji_only_spans;
 using tk::segment_emoji_runs;
 
 } // namespace tesseract::views

@@ -2640,7 +2640,7 @@ public:
             // (content, theme) on the cache entry.
             if (e.natural_w < 0.0f)
             {
-                tk::TextStyle st = body_style(-1.0f, is_emoji_only(m.body));
+                tk::TextStyle st = body_style(-1.0f, e.emoji_only);
                 auto nat = ctx.factory.build_rich_text(e.spans, st);
                 e.natural_w = nat ? nat->measure().w
                                   : (e.layout ? e.layout->measure().w : 0.0f);
@@ -5007,12 +5007,13 @@ private:
             m.event_id, key,
             [&](LinkLayout& slot)
             {
-                const bool eo = is_emoji_only(m.body);
+                bool eo = is_emoji_only(m.body);
                 slot.layout.reset();
                 slot.spans.clear();
                 slot.plain.clear();
                 slot.sections.clear();
                 slot.natural_w = -1.0f;
+                slot.emoji_only = eo;
 
                 if (!m.formatted_body.empty())
                 {
@@ -5026,6 +5027,16 @@ private:
                     else if (blocks.size() == 1 &&
                              blocks[0].kind != BodyBlock::Kind::Paragraph)
                         has_structure = true;
+
+                    // m.body's plain-text fallback can't see MSC2545 custom
+                    // emoticons (they're TextSpan::is_image leaves in the
+                    // parsed formatted-body spans, not emoji codepoints), so
+                    // a single-paragraph body made up solely of custom and/or
+                    // native emoji needs a second, span-level check here to
+                    // also qualify for BigEmoji sizing.
+                    if (!eo && !has_structure && blocks.size() == 1)
+                        eo = tk::is_emoji_only_spans(blocks[0].spans);
+                    slot.emoji_only = eo;
 
                     if (has_structure)
                     {
@@ -5224,10 +5235,11 @@ private:
                     if (auto lay =
                             f.build_rich_text(combined, body_style(w, false)))
                     {
-                        slot.layout    = std::move(lay);
-                        slot.plain     = pfx_plain + slot.plain;
-                        slot.spans     = std::move(combined);
-                        slot.natural_w = -1.0f;
+                        slot.layout     = std::move(lay);
+                        slot.plain      = pfx_plain + slot.plain;
+                        slot.spans      = std::move(combined);
+                        slot.natural_w  = -1.0f;
+                        slot.emoji_only = false;
                     }
                 }
             });

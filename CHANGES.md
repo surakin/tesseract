@@ -7,6 +7,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ### Summary
 
+- feat(messages): custom emoticons (MSC2545) now get BigEmoji sizing when they're the whole message, and render larger inline mid-sentence too (`FontRole::InlineCustomEmoji`); native inline emoji unchanged. Linux Qt6 build + full ctest 1883/1883 (+6); user-verified live. GTK4/Windows/macOS share the code, unbuilt this session
 - fix(windows): the Windows build failed to configure because the CMake step that fetched Noto Color Emoji from `googlefonts/noto-emoji`'s `main` branch 404'd — upstream moved the file to a new path with no redirect. Vendored the font (and its SIL OFL 1.1 license) under `ui/windows/fonts/` instead of downloading it at configure time.
 - fix(calls): screen share and camera video from the same participant could land on one tile, leaving the other showing only an avatar — `TrackSubscribed` classified a video track as screen or camera by checking whether the participant published a screen share *at all*, not which publication the subscribed track itself was. Only showed up when screen sharing was already active before the second participant joined. Cargo 704; unverified live
 - fix(calls): the call banner is now a room state instead of a dismissible, 30 s incoming-call prompt: shown while the room has live call members and you aren't in it, with member avatars and a single Join button (`IncomingCallBanner` → `CallBanner`, `RoomInfo.call_members`). Linux Qt6 build + full ctest 1877/1877, cargo 704; unverified live. Windows/macOS/GTK4 unbuilt

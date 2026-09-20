@@ -143,6 +143,13 @@ enum class FontRole
     UiSemibold,     // base−1 semibold — button label
     BigEmoji,       // base×2 regular   — emoji-only message body
     InlineEmoji,    // (base+1)×5/4 regular — emoji within mixed-text body
+    InlineCustomEmoji, // (base+1)×5/4 regular — custom-emoticon image boxes
+                       // (TextSpan::is_image, MSC2545) within mixed-text
+                       // bodies. Deliberately independent of InlineEmoji:
+                       // that role governs native Unicode emoji runs and is
+                       // currently a same-as-body no-op "pending tuning"
+                       // (see font_role_pt below), while custom emoji are
+                       // meant to render larger starting now.
     EmojiPickerCell,// base+9 regular  — emoji picker grid cells
     ReactionEmoji,  // base+3 regular  — emoji glyph inside reaction chips
     ReactionText,   // ReactionEmoji×4/5 regular — text run beside/instead of emoji in a reaction chip
@@ -187,6 +194,8 @@ inline int font_role_pt(FontRole role, int base_pt)
     // and the shared kEmojiSizeAdjust knob; keeping this at the plain body
     // size lets that be compared straight across all platforms.
     case FontRole::InlineEmoji:    return std::max(base_pt, 6);
+    case FontRole::InlineCustomEmoji:
+        return std::max((base_pt + 1) * 5 / 4, 6);
     case FontRole::EmojiPickerCell:offset = +9; break;
     case FontRole::ReactionEmoji:  offset = +2; break;
     case FontRole::ReactionText:

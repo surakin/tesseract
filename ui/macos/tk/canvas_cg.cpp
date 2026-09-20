@@ -1770,8 +1770,16 @@ public:
 
         if (!image_ranges.empty())
         {
+            // Custom-emoticon (MSC2545, TextSpan::is_image) box size:
+            // BigEmoji for an emoji-only body, else InlineCustomEmoji —
+            // independent of the InlineEmoji role used for native
+            // is_emoji_run text sizing elsewhere in this function (still a
+            // deliberate same-as-body no-op).
+            const FontRole custom_emoji_role =
+                (s.role == FontRole::BigEmoji) ? FontRole::BigEmoji
+                                                : FontRole::InlineCustomEmoji;
             const CGFloat box_size = static_cast<CGFloat>(
-                font_role_pt(FontRole::InlineEmoji, macos_system_base_pt()));
+                font_role_pt(custom_emoji_role, macos_system_base_pt()));
             CFRetained<CTRunDelegateRef> delegate{
                 create_image_run_delegate(box_size)};
             if (delegate.get())
