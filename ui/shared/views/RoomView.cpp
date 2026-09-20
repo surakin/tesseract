@@ -2074,9 +2074,13 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         const auto mode = call_panel_->mode();
         if (mode == views::CallOverlayWidget::Mode::DockedExpanded)
         {
-            const float panel_h = bounds.bottom() - list_top;
+            // Stop at compose_top, not bounds.bottom(): the compose bar must
+            // stay visible and hit-testable during a call. Extending the panel
+            // over it paints the call UI on top of the composer and would also
+            // force MainAppWidget to hide the native text-area overlay.
+            const float panel_h = std::max(0.0f, compose_top - list_top);
             call_panel_->arrange(ctx, {bounds.x, list_top, bounds.w, panel_h});
-            list_top = bounds.bottom(); // collapse messages
+            list_top = compose_top; // collapse messages, keep the compose bar
         }
         else // Docked (220 px strip)
         {

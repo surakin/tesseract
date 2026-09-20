@@ -88,6 +88,34 @@ TEST_CASE("RoomView clears the compose text-area rect after the room closes",
     CHECK(view.compose_text_area_rect().empty());
 }
 
+TEST_CASE("RoomView keeps the compose bar clear of an expanded call panel",
+          "[tk][view][room][call]")
+{
+    TkRoomViewStage st;
+    auto view_owner = tk::create_root_widget<RoomView>(nullptr);
+    RoomView& view = *view_owner;
+
+    tesseract::RoomInfo info;
+    info.id = "!room:example.org";
+    info.name = "Test Room";
+    view.set_room(info);
+    st.run(view, {0, 0, 800, 600});
+    const Rect compose = view.compose_text_area_rect();
+    REQUIRE_FALSE(compose.empty());
+
+    view.mount_call_panel(
+        tesseract::views::CallOverlayWidget::Mode::DockedExpanded, {}, {}, {},
+        {});
+    st.run(view, {0, 0, 800, 600});
+
+    auto* panel = view.call_panel();
+    REQUIRE(panel != nullptr);
+    CHECK(panel->bounds().bottom() <= compose.y);
+    CHECK_FALSE(view.compose_text_area_rect().empty());
+
+    view.unmount_call_panel();
+}
+
 TEST_CASE("RoomView claims drag-hover onto its compose bar and releases it "
           "on leave",
           "[tk][view][room][drag_hover]")

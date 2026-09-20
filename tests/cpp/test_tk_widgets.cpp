@@ -49,6 +49,20 @@ struct TkWidgetsStage
     }
 };
 
+struct TkMainAppStage
+{
+    std::unique_ptr<TestSurface> surface = TestSurface::create(1000, 700);
+
+    void run(Widget& root, Rect bounds = {0, 0, 1000, 700})
+    {
+        LayoutCtx lc{surface->factory(), Theme::light()};
+        root.measure(lc, {bounds.w, bounds.h});
+        root.arrange(lc, bounds);
+        PaintCtx pc{surface->canvas(), surface->factory(), Theme::light()};
+        root.paint(pc);
+    }
+};
+
 bool nearly(Color a, Color b, int tol = 12)
 {
     auto delta = [](int x, int y)
@@ -407,6 +421,50 @@ TEST_CASE("MainAppWidget Escape closes in-room search",
     CHECK(app.room_view()->room_search_open() == true);
     CHECK(app.dispatch_key_down({Key::Escape}) == true);
     CHECK(app.room_view()->room_search_open() == false);
+}
+
+TEST_CASE("MainAppWidget keeps the compose overlay active when a floating "
+          "call does not overlap it",
+          "[tk][widget][call]")
+{
+    TkMainAppStage st;
+    auto app_owner = tk::create_root_widget<MainAppWidget>(nullptr);
+    MainAppWidget& app = *app_owner;
+    app.room_view()->set_room({.id = "!room:example.org", .name = "Room"});
+
+    st.run(app);
+    const Rect compose = app.compose_text_area_rect();
+    REQUIRE_FALSE(compose.empty());
+
+    app.mount_call_overlay(
+        tesseract::views::CallOverlayWidget::Mode::Floating, {}, {}, {}, {});
+    st.run(app);
+
+    REQUIRE(app.call_panel_for_room() != nullptr);
+    CHECK_FALSE(app.compose_text_area_rect().empty());
+}
+
+TEST_CASE("MainAppWidget hides the compose overlay only while a floating "
+          "call overlaps it",
+          "[tk][widget][call]")
+{
+    TkMainAppStage st;
+    auto app_owner = tk::create_root_widget<MainAppWidget>(nullptr);
+    MainAppWidget& app = *app_owner;
+    app.room_view()->set_room({.id = "!room:example.org", .name = "Room"});
+
+    st.run(app);
+    const Rect compose = app.compose_text_area_rect();
+    REQUIRE_FALSE(compose.empty());
+
+    app.mount_call_overlay(
+        tesseract::views::CallOverlayWidget::Mode::Floating, {}, {}, {}, {});
+    auto* overlay = app.call_panel_for_room();
+    REQUIRE(overlay != nullptr);
+    overlay->set_float_position(compose.x, compose.y - 40.0f);
+    st.run(app);
+
+    CHECK(app.compose_text_area_rect().empty());
 }
 
 TEST_CASE("MainAppWidget routes primary shortcut callbacks",

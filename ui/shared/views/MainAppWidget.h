@@ -23,8 +23,9 @@
 // The compose bar's text input and the room-search field are both
 // self-positioning (tk::TextArea / tk::TextField reached via
 // room_view()->compose_bar()->text_area() and
-// room_list_view()->search_field()); arrange() force-hides them while
-// any_modal_open_() or while their owning pane is hidden (narrow mode) — see
+// room_list_view()->search_field()); arrange() force-hides them while a true
+// modal is open, while an in-app call overlay physically covers them, or
+// while their owning pane is hidden (narrow mode) — see
 // compose_text_area_rect().
 
 #include "ConfirmDialog.h"
@@ -313,10 +314,11 @@ public:
 
     // ── Native overlay rects (call from the surface's set_on_layout) ──────
     //
-    // While any modal overlay is up (ConfirmDialog at this level, or the
+    // While a true modal overlay is up (ConfirmDialog at this level, or the
     // room-info / user-profile panels owned by RoomView) the compose-textarea
     // accessor reports "hidden" so the shells don't leave that native OS
-    // control clickable through the panel backdrop.
+    // control clickable through the panel backdrop. It also hides the native
+    // control while an in-app call overlay actually overlaps that rect.
 
     tk::Rect compose_text_area_rect() const;
 
@@ -368,10 +370,15 @@ private:
     class OverlayStackWidget;
     class FloatingCallLayerWidget;
 
-    // True when ConfirmDialog or any RoomView-owned panel covers the canvas;
-    // drives compose_text_area_rect() and the room-list search field's
-    // visibility gating so the native OS controls hide while overlays are up.
+    // True when a genuine modal overlay covers the canvas; drives focus and
+    // native-overlay hiding for panels that intentionally block the rest of
+    // the app.
     bool any_modal_open_() const;
+
+    // True when an in-app call overlay is physically covering the given native
+    // overlay rect (compose box, room-list search field, ...), so the shell's
+    // native control must hide instead of drawing above it.
+    bool call_overlay_occludes_native_rect_(const tk::Rect& rect) const;
     void clear_alternate_content_();
     void notify_layout_changed_();
     void set_room_visible_(bool visible);

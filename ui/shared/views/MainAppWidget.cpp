@@ -1745,10 +1745,23 @@ void MainAppWidget::show_message_search(bool show)
 
 // ── Native overlay rect queries ────────────────────────────────────────────
 
+namespace
+{
+// True when the two rects share any area. Both must already be in surface
+// space — tk::Widget::bounds(), tk::TextField::bounds(), and
+// RoomView::compose_text_area_rect() all are.
+bool rects_overlap_(const tk::Rect& a, const tk::Rect& b)
+{
+    if (a.empty() || b.empty())
+        return false;
+    return a.x < b.right() && b.x < a.right() && a.y < b.bottom() &&
+           b.y < a.bottom();
+}
+} // namespace
+
 bool MainAppWidget::any_modal_open_() const
 {
-    const bool existing_modals =
-           (confirm_dialog_    && confirm_dialog_->is_open()) ||
+    return (confirm_dialog_    && confirm_dialog_->is_open()) ||
            (room_view_         && room_view_->is_overlay_open()) ||
            (img_viewer_        && img_viewer_->is_open()) ||
            (vid_viewer_        && vid_viewer_->is_open()) ||
@@ -1761,14 +1774,21 @@ bool MainAppWidget::any_modal_open_() const
            (add_room_view_     && add_room_view_->is_open()) ||
            camera_widget_ ||
            screen_picker_;
-    // Docked mode is NOT modal — it sits inside RoomView and doesn't suppress
-    // native overlays. Only DockedExpanded (covers the chat panel) and Floating
-    // (free-floating overlay) are treated as modal.
-    const auto* panel = room_view_ ? room_view_->call_panel() : nullptr;
-    const bool panel_modal =
-        panel && panel->mode() == views::CallOverlayWidget::Mode::DockedExpanded;
-    const bool float_modal = float_call_overlay_ && float_call_overlay_->visible();
-    return existing_modals || panel_modal || float_modal;
+}
+
+bool MainAppWidget::call_overlay_occludes_native_rect_(const tk::Rect& rect) const
+{
+    if (rect.empty())
+        return false;
+
+    const auto overlaps = [&](const views::CallOverlayWidget* overlay)
+    {
+        return overlay && overlay->visible() &&
+               rects_overlap_(overlay->bounds(), rect);
+    };
+
+    return overlaps(float_call_overlay_) ||
+           overlaps(room_view_ ? room_view_->call_panel() : nullptr);
 }
 
 tk::Rect MainAppWidget::compose_text_area_rect() const
@@ -1781,9 +1801,11 @@ tk::Rect MainAppWidget::compose_text_area_rect() const
     // deliberately not called on that transition, so room_view_'s own
     // has_room_/visible_ flags stay unchanged; only the ancestor's
     // visibility actually changed.
-    if (any_modal_open_()) return {};
     if (!room_view_ || !room_view_->visible_in_tree()) return {};
-    return room_view_->compose_text_area_rect();
+    const tk::Rect rect = room_view_->compose_text_area_rect();
+    if (any_modal_open_() || call_overlay_occludes_native_rect_(rect))
+        return {};
+    return rect;
 }
 
 // ── tk::Widget overrides ───────────────────────────────────────────────────
@@ -1828,7 +1850,8 @@ void MainAppWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     // narrow-window layout hiding the sidebar (see compose_text_area_rect()'s
     // comment on the analogous room_view_ case).
     if (room_list_view_ && room_list_view_->search_field() &&
-        (any_modal_open_() || !room_list_view_->visible_in_tree()))
+        (any_modal_open_() || !room_list_view_->visible_in_tree() ||
+         call_overlay_occludes_native_rect_(room_list_view_->search_field()->bounds())))
     {
         room_list_view_->search_field()->set_visible(false);
     }
