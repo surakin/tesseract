@@ -1,4 +1,11 @@
 cmake_minimum_required(VERSION 3.25)
+
+# Must run before project()/enable_language(): locates and applies the MSVC
+# dev environment (vcvarsall) on Windows so the Ninja generator can find
+# cl.exe et al. without a Developer Command Prompt. No-op off Windows or when
+# already in a dev environment. See cmake/MsvcAutoVcvars.cmake.
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/MsvcAutoVcvars.cmake)
+
 project(Tesseract VERSION 0.8.25 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)

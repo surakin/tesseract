@@ -3,6 +3,10 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
+## Unreleased
+
+- build(windows): `cmake --preset windows-*` now works from a plain terminal instead of requiring a Developer Command Prompt — `cmake/MsvcAutoVcvars.cmake` locates the MSVC install via `vswhere` and applies its `vcvarsall.bat x64` environment before `project()` runs.
+
 ## v0.8.24 — 2026-09-19
 
 ### Summary
