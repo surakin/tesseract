@@ -95,6 +95,14 @@ All presets live in `CMakePresets.json`:
 `macos-appkit-arm64-debug`, `macos-appkit-arm64-release`,
 `macos-appkit-x86_64-debug`, `macos-appkit-x86_64-release`.
 
+On Windows, the presets intentionally use short build directories (`b/wd` and
+`b/wr`) instead of `build/windows-*`. The LiveKit/WebRTC dependency extracts a
+very deep header tree under Cargo's build scratch directory; with a long
+checkout path, MSVC can start reporting nested headers as missing even though
+those files exist on disk. If you still hit that on a deep checkout, build the
+repo through a short path such as `C:\src\tesseract` or a temporary drive
+mapping (`subst T: <repo>`).
+
 The `linux-*` presets configure and build both the GTK4 and Qt6 UIs from a
 single configure (`TESSERACT_UI=linux`), producing
 `ui/linux-qt/tesseract` and `ui/linux-gtk/tesseract` side by side in the same

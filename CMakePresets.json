@@ -15,6 +15,7 @@
       "name": "windows-debug",
       "displayName": "Windows – Win32 (Debug)",
       "inherits": "base",
+      "binaryDir": "${sourceDir}/b/wd",
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
       "cacheVariables": {
         "TESSERACT_UI": "win32"
@@ -24,6 +25,7 @@
       "name": "windows-release",
       "displayName": "Windows – Win32 (Release)",
       "inherits": "windows-debug",
+      "binaryDir": "${sourceDir}/b/wr",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
