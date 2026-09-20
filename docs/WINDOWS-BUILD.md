@@ -198,7 +198,7 @@ ctest --test-dir b\wd --output-on-failure
 Run only tests matching a regex:
 
 ```powershell
-ctest --test-dir b\wd --output-on-failure -R "RoomView|MainAppWidget"
+ctest --test-dir b\wd --output-on-failure -R "<your test regex>"
 ```
 
 List registered tests without running them:
@@ -316,21 +316,26 @@ then the shell was set up for the wrong architecture.
 ### 7. `ctest -N` mentions a missing `bettertext_tests.exe`
 
 You may see a registered test entry for `third_party/bettertext/bettertext_tests.exe`
-when listing all tests. If your target fix is already built and your targeted
-regression tests pass, treat that separately; it is not part of the normal
-Tesseract app target.
+when listing all tests. Treat that separately from the normal Tesseract app and
+`tesseract_tests` targets.
 
 ## Known-good command sequence
 
-If you want one practical sequence that worked during validation:
+If you want one practical end-to-end sequence:
 
 ```powershell
 python -m pip install resvg-py pillow
 cmake --preset windows-debug
 cmake --build b\wd --target tesseract_tests
-ctest --test-dir b\wd --output-on-failure -R "RoomView keeps the compose bar clear of an expanded call panel|MainAppWidget keeps the compose overlay active when a floating call does not overlap it|MainAppWidget hides the compose overlay only while a floating call overlaps it"
+ctest --test-dir b\wd --output-on-failure
 cmake --build b\wd --target tesseract_win32
 .\b\wd\ui\windows\Tesseract.exe
+```
+
+If you only want to run a subset of the C++ tests, add a regex filter:
+
+```powershell
+ctest --test-dir b\wd --output-on-failure -R "<your test regex>"
 ```
 
 ## Outputs to expect
