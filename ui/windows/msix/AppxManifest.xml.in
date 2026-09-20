@@ -25,7 +25,7 @@
       ProcessorArchitecture="x64" />
 
   <Properties>
-    <DisplayName>Tesseract</DisplayName>
+    <DisplayName>Tesseract (Matrix)</DisplayName>
     <PublisherDisplayName>@TESSERACT_MSIX_PUBLISHER_DISPLAY_NAME@</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
     <Description>Tesseract — cross-platform Matrix chat client</Description>
@@ -56,7 +56,7 @@
     <Application Id="Tesseract" Executable="Tesseract.exe"
         uap10:RuntimeBehavior="win32App" uap10:TrustLevel="mediumIL">
       <uap:VisualElements
-          DisplayName="Tesseract"
+          DisplayName="Tesseract (Matrix)"
           Description="Tesseract — cross-platform Matrix chat client"
           Square150x150Logo="Assets\Square150x150Logo.png"
           Square44x44Logo="Assets\Square44x44Logo.png"
@@ -72,7 +72,7 @@
              unpackaged/NSIS build writes at first launch. -->
         <uap:Extension Category="windows.protocol">
           <uap:Protocol Name="matrix">
-            <uap:DisplayName>Tesseract</uap:DisplayName>
+            <uap:DisplayName>Tesseract (Matrix)</uap:DisplayName>
           </uap:Protocol>
         </uap:Extension>
 
@@ -82,7 +82,7 @@
           <desktop:StartupTask
               TaskId="TesseractStartup"
               Enabled="false"
-              DisplayName="Tesseract" />
+              DisplayName="Tesseract (Matrix)" />
         </desktop:Extension>
       </Extensions>
     </Application>
