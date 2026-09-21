@@ -327,6 +327,7 @@ inline tesseract_ffi::RoomCreateOptionsFfi to_ffi(const RoomCreateOptions& o)
         .visibility            = o.visibility,
         .encrypted             = o.encrypted,
         .is_space              = o.is_space,
+        .is_call_room          = o.is_call_room,
         .invite                = std::move(invite),
         .invite_reason         = o.invite_reason,
     };
@@ -425,6 +426,7 @@ inline RoomInfo from_ffi(const tesseract_ffi::RoomInfo& r)
         .last_message_thumbnail_url = std::string(r.last_message_thumbnail_url),
         .last_activity_ts = r.last_activity_ts,
         .is_space = r.is_space,
+        .is_call_room = r.is_call_room,
         .is_favorite = r.is_favorite,
         .is_low_priority = r.is_low_priority,
         .topic_html = std::string(r.topic_html),

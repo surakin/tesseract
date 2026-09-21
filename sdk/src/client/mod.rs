@@ -2704,6 +2704,9 @@ pub(super) async fn build_room_info(
             })
             .unwrap_or_default()
     };
+    // MSC3417: creation_content.type == "org.matrix.msc3417.call" marks
+    // this as a dedicated call room.
+    let is_call_room = rtc::signaling::is_call_room(room).await;
 
     // Deref to base Room to avoid matrix-sdk-ui RoomExt shadowing latest_event()
     // with an async version (same trick as mark_room_as_read, line 2148).
@@ -2905,6 +2908,7 @@ pub(super) async fn build_room_info(
         last_message_thumbnail_url,
         last_activity_ts,
         is_space,
+        is_call_room,
         is_favorite,
         is_low_priority,
         is_encrypted,

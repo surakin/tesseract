@@ -1846,6 +1846,7 @@ static RoomSummary parse_room_summary_json(const std::string& json)
     s.guest_can_join     = js_bool(j, "guest_can_join", false);
     s.encryption         = js_str(j, "encryption");
     s.is_space           = js_bool(j, "is_space", false);
+    s.is_call_room       = js_bool(j, "is_call_room", false);
     s.membership         = js_str(j, "membership");
     return s;
 }
@@ -2407,6 +2408,7 @@ RoomSummary RoomSummary::from_json(const std::string& json)
     s.join_rule          = js_str(j, "join_rule");
     s.world_readable     = js_bool(j, "world_readable", false);
     s.is_space           = js_bool(j, "is_space", false);
+    s.is_call_room       = js_bool(j, "is_call_room", false);
     s.membership         = js_str(j, "membership");
     return s;
 }

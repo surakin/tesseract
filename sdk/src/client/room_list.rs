@@ -30,6 +30,7 @@ struct RoomSummaryJson {
     join_rule: String,
     world_readable: bool,
     is_space: bool,
+    is_call_room: bool,
     membership: String,
 }
 
@@ -39,6 +40,7 @@ impl From<matrix_sdk::room_preview::RoomPreview> for RoomSummaryJson {
         use matrix_sdk::ruma::room::RoomType;
         use matrix_sdk_base::RoomState;
 
+        let room_type = p.room_type.as_ref();
         RoomSummaryJson {
             room_id: p.room_id.to_string(),
             canonical_alias: p.canonical_alias.map(|a| a.to_string()).unwrap_or_default(),
@@ -52,7 +54,9 @@ impl From<matrix_sdk::room_preview::RoomPreview> for RoomSummaryJson {
                 .map(|j| j.as_str().to_owned())
                 .unwrap_or_else(|| "public".to_owned()),
             world_readable: p.is_world_readable.unwrap_or(false),
-            is_space: matches!(p.room_type, Some(RoomType::Space)),
+            is_space: matches!(room_type, Some(RoomType::Space)),
+            // MSC3417: creation_content.type == "org.matrix.msc3417.call".
+            is_call_room: matches!(room_type, Some(RoomType::Call)),
             membership: match p.state {
                 Some(RoomState::Joined) => "join".to_owned(),
                 Some(RoomState::Left) => "leave".to_owned(),
@@ -632,12 +636,14 @@ impl ClientFfi {
         include_invite: bool,
     ) -> Result<matrix_sdk::ruma::api::client::room::create_room::v3::Request, String> {
         use matrix_sdk::ruma::api::client::room::{
-            create_room::v3::{Request, RoomPreset},
+            create_room::v3::{CreationContent, Request, RoomPreset},
             Visibility,
         };
         use matrix_sdk::ruma::events::{
             room::encryption::RoomEncryptionEventContent, InitialStateEvent,
         };
+        use matrix_sdk::ruma::room::RoomType;
+        use matrix_sdk::ruma::serde::Raw;
         use matrix_sdk::ruma::OwnedUserId;
 
         let mut invite = Vec::new();
@@ -679,6 +685,16 @@ impl ClientFfi {
         request.preset = Some(preset);
         request.invite = invite;
         request.initial_state = initial_state;
+        // MSC3417: mark this as a dedicated call room via
+        // creation_content.type. Unstable prefix "org.matrix.msc3417.call"
+        // until the MSC stabilises (ruma's RoomType::Call, behind the
+        // "unstable-msc3417" feature).
+        if opts.is_call_room {
+            let mut creation_content = CreationContent::new();
+            creation_content.room_type = Some(RoomType::Call);
+            request.creation_content =
+                Some(Raw::new(&creation_content).map_err(|e| e.to_string())?);
+        }
         Ok(request)
     }
 
@@ -719,6 +735,9 @@ impl ClientFfi {
         }
         if let Some(preset) = &request.preset {
             body["preset"] = serde_json::json!(preset);
+        }
+        if let Some(creation_content) = &request.creation_content {
+            body["creation_content"] = serde_json::json!(creation_content);
         }
         body["uk.timedout.msc4491.invite_reason"] = serde_json::json!(opts.invite_reason);
         Ok(body)
@@ -2760,6 +2779,7 @@ mod create_room_tests {
             visibility: "private".to_owned(),
             encrypted: false,
             is_space: false,
+            is_call_room: false,
             invite,
             invite_reason: invite_reason.to_owned(),
         }
@@ -2793,6 +2813,23 @@ mod create_room_tests {
         // excluded, since it's never parsed in that branch.
         let o = opts(vec!["not-a-user-id".to_owned()], "join us!");
         assert!(ClientFfi::build_create_room_request(&o, false).is_ok());
+    }
+
+    #[test]
+    fn call_room_sets_creation_content_type() {
+        let mut o = opts(vec![], "");
+        o.is_call_room = true;
+        let request = ClientFfi::build_create_room_request(&o, true).unwrap();
+        let creation_content = request.creation_content.expect("creation_content set");
+        let value: serde_json::Value = creation_content.deserialize_as().unwrap();
+        assert_eq!(value["type"], "org.matrix.msc3417.call");
+    }
+
+    #[test]
+    fn non_call_room_leaves_creation_content_unset() {
+        let o = opts(vec![], "");
+        let request = ClientFfi::build_create_room_request(&o, true).unwrap();
+        assert!(request.creation_content.is_none());
     }
 
     // --- build_msc4491_create_room_body ---
@@ -2835,6 +2872,14 @@ mod create_room_tests {
     fn msc4491_body_rejects_invalid_user_id() {
         let o = opts(vec!["not-a-user-id".to_owned()], "a reason");
         assert!(ClientFfi::build_msc4491_create_room_body(&o).is_err());
+    }
+
+    #[test]
+    fn msc4491_body_includes_creation_content_for_call_room() {
+        let mut o = opts(vec![], "a reason");
+        o.is_call_room = true;
+        let body = ClientFfi::build_msc4491_create_room_body(&o).unwrap();
+        assert_eq!(body["creation_content"]["type"], "org.matrix.msc3417.call");
     }
 }
 

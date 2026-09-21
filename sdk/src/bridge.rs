@@ -159,6 +159,10 @@ pub mod ffi {
         last_activity_ts: u64,
         /// True when this room's type is "m.space".
         is_space: bool,
+        /// True when this room's `m.room.create` `creation_content.type` is
+        /// the MSC3417 call-room type (`org.matrix.msc3417.call`, or the
+        /// eventual stable `m.call`).
+        is_call_room: bool,
         /// True when the room is tagged `m.favourite` by the current user.
         is_favorite: bool,
         /// True when the room is tagged `m.lowpriority` by the current user.
@@ -1024,6 +1028,10 @@ pub mod ffi {
         visibility: String,
         encrypted: bool,
         is_space: bool,
+        /// Sets `creation_content.type` to the MSC3417 call-room type
+        /// (`org.matrix.msc3417.call`) — see `build_create_room_request` in
+        /// room_list.rs.
+        is_call_room: bool,
         invite: Vec<String>,
         /// Reason shown to invitees. Empty = no reason. When non-empty,
         /// invitees are invited via a follow-up `/invite` call (carrying the
@@ -3941,6 +3949,7 @@ impl Clone for ffi::RoomInfo {
             last_message_thumbnail_url: self.last_message_thumbnail_url.clone(),
             last_activity_ts: self.last_activity_ts,
             is_space: self.is_space,
+            is_call_room: self.is_call_room,
             is_favorite: self.is_favorite,
             is_low_priority: self.is_low_priority,
             is_encrypted: self.is_encrypted,

@@ -198,11 +198,36 @@ pub struct RtcEncryptionKeyEventContent {
 // Helpers for sending state events
 // ---------------------------------------------------------------------------
 
+/// MSC3417: true when `room`'s `m.room.create` `creation_content.type` is
+/// the call-room type (`org.matrix.msc3417.call`). Read directly from
+/// `m.room.create` rather than any mutable per-call state, since MSC3417
+/// makes the (immutable) room-create type the authority over a possibly
+/// drifted `m.intent` on the `org.matrix.msc3401.call` state event.
+pub async fn is_call_room(room: &matrix_sdk::Room) -> bool {
+    use matrix_sdk::deserialized_responses::SyncOrStrippedState;
+    use matrix_sdk::ruma::events::{room::create::RoomCreateEventContent, SyncStateEvent};
+    use matrix_sdk::ruma::room::RoomType;
+    room.get_state_event_static::<RoomCreateEventContent>()
+        .await
+        .ok()
+        .flatten()
+        .and_then(|raw| raw.deserialize().ok())
+        .is_some_and(|ev| {
+            let SyncOrStrippedState::Sync(SyncStateEvent::Original(o)) = ev else {
+                return false;
+            };
+            matches!(o.content.room_type, Some(RoomType::Call))
+        })
+}
+
 /// Open the MSC3401 call slot event. State key = call_id (empty = default room call).
-/// Idempotent — safe to re-send.
+/// Idempotent — safe to re-send. `m.intent` follows the room's MSC3417
+/// creation type so it never drifts out of sync with it: `"m.call"` for a
+/// dedicated call room, `"m.room"` otherwise.
 pub async fn send_msc3401_call_open(room: &matrix_sdk::Room, call_id: &str) -> anyhow::Result<()> {
+    let intent = if is_call_room(room).await { "m.call" } else { "m.room" };
     let content = Msc3401CallEventContent {
-        intent: "m.room".to_owned(),
+        intent: intent.to_owned(),
         kind: "m.video".to_owned(),
     };
     room.send_state_event_for_key(call_id, content).await?;

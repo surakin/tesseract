@@ -107,6 +107,7 @@ pub mod ffi {
         pub last_message_thumbnail_url: String,
         pub last_activity_ts: u64,
         pub is_space: bool,
+        pub is_call_room: bool,
         pub is_favorite: bool,
         pub is_low_priority: bool,
         pub is_encrypted: bool,
@@ -436,6 +437,7 @@ pub mod ffi {
         pub visibility: String,
         pub encrypted: bool,
         pub is_space: bool,
+        pub is_call_room: bool,
         pub invite: Vec<String>,
         pub invite_reason: String,
     }

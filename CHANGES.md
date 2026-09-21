@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- feat(rooms): implement MSC3417 (call room type) — `creation_content.type` round-trips as `is_call_room` on `RoomInfo`/`RoomSummary`, and MSC3401 signaling now sends `m.intent: m.call` for such rooms instead of always `m.room`. SDK/client plumbing only, no UI yet; Windows build + full ctest, 1885/1886 (1 pre-existing unrelated failure), cargo 706 (+3).
 - feat(packaging): add a winget manifest (`Tesseract.Matrix`, points at the NSIS installer) and a `winget-publish` CI workflow that submits version-bump PRs to `winget-pkgs` on each GitHub Release. Generated manifests land in the build tree rather than in-source, since `winget validate`/`wingetcreate` parse every file in a target directory and refuse one containing a subdirectory. `winget validate` passing against a real configured build tree; first upstream submission to `winget-pkgs` still pending.
 - build(windows): `cmake --preset windows-*` now works from a plain terminal instead of requiring a Developer Command Prompt — `cmake/MsvcAutoVcvars.cmake` locates the MSVC install via `vswhere` and applies its `vcvarsall.bat x64` environment before `project()` runs.
 
