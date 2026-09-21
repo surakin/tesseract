@@ -88,7 +88,6 @@ TEST_CASE("RoomView clears the compose text-area rect after the room closes",
     CHECK(view.compose_text_area_rect().empty());
 }
 
-
 TEST_CASE("RoomView claims drag-hover onto its compose bar and releases it "
           "on leave",
           "[tk][view][room][drag_hover]")
