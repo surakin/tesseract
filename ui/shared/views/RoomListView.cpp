@@ -192,6 +192,9 @@ int classify_room_section(const tesseract::RoomInfo& r,
             return RoomListView::kSecInactive;
     }
 
+    if (!r.is_space && r.is_call_room)
+        return RoomListView::kSecCallRooms;
+
     if (r.is_direct)
         return RoomListView::kSecDMs;
     if (!r.is_space)

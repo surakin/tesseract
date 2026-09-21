@@ -126,6 +126,19 @@ public:
     void set_mode(Mode m);
     Mode mode() const { return mode_; }
 
+    // Whether the call's room is the one currently being viewed. Docked/
+    // DockedExpanded only make sense while true; when false, the expand
+    // button is hidden and pip_btn_'s cycle skips those modes in favor of
+    // Floating. Defaults to true so callers that don't track room navigation
+    // (audio-only test harnesses, etc.) see unchanged behavior.
+    void set_room_active(bool active);
+    bool room_active() const { return room_active_; }
+
+    // Test-only accessors: exercise the pip/expand buttons' click handlers
+    // and visibility without needing real pointer-event dispatch.
+    bool expand_button_visible_for_test() const;
+    void click_pip_button_for_test();
+
     // Floating mode position (top-left corner, parent-local coordinates).
     void      set_float_position(float x, float y);
     tk::Point float_position() const { return {float_x_, float_y_}; }
@@ -179,6 +192,7 @@ private:
     Mode  mode_    = Mode::Docked;
     float float_x_ = 40.0f;
     float float_y_ = 40.0f;
+    bool  room_active_ = true; // see set_room_active()
 
     // ── Drag state (Floating mode only) ───────────────────────────────────────
     bool      dragging_       = false;

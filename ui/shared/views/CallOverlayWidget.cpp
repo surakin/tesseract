@@ -89,6 +89,11 @@ CallOverlayWidget::CallOverlayWidget()
         else if (mode_ == Mode::Floating)
             target = Mode::Popout;
         // else Popout → Docked (already initialised above)
+        // Docked/DockedExpanded aren't valid targets while the call's room
+        // isn't the one currently being viewed — land in Floating instead.
+        if (!room_active_ &&
+            (target == Mode::Docked || target == Mode::DockedExpanded))
+            target = Mode::Floating;
         on_mode_change_requested(target);
     });
 }
@@ -207,10 +212,32 @@ void CallOverlayWidget::set_mode(Mode m)
 {
     mode_ = m;
     // Keep button visibility consistent before the first arrange() pass.
-    const bool show_expand = (mode_ == Mode::Docked || mode_ == Mode::DockedExpanded);
+    const bool show_expand = room_active_ &&
+        (mode_ == Mode::Docked || mode_ == Mode::DockedExpanded);
     if (expand_btn_) expand_btn_->set_visible(show_expand);
     // pip_btn_ is visible in all modes: cycles Docked→Floating→Popout→Docked.
     if (pip_btn_) pip_btn_->set_visible(true);
+}
+
+bool CallOverlayWidget::expand_button_visible_for_test() const
+{
+    return expand_btn_ && expand_btn_->visible();
+}
+
+void CallOverlayWidget::click_pip_button_for_test()
+{
+    if (pip_btn_) pip_btn_->click();
+}
+
+void CallOverlayWidget::set_room_active(bool active)
+{
+    room_active_ = active;
+    // Re-derive expand_btn_'s visibility immediately; a repaint is enough to
+    // reflect this, no full arrange() pass is needed for a same-mode flip.
+    const bool show_expand = room_active_ &&
+        (mode_ == Mode::Docked || mode_ == Mode::DockedExpanded);
+    if (expand_btn_) expand_btn_->set_visible(show_expand);
+    if (repaint_requester_) repaint_requester_();
 }
 
 void CallOverlayWidget::set_float_position(float x, float y)
@@ -588,10 +615,12 @@ void CallOverlayWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         hangup_btn_->arrange(ctx, {bx, btn_y, kBtnSz, kBtnSz});
 
     // ── Expand + pip buttons (top-right corner) ──────────────────────────────
-    // expand_btn_: Docked ↔ DockedExpanded toggle; hidden otherwise.
+    // expand_btn_: Docked ↔ DockedExpanded toggle; hidden otherwise, and also
+    //              hidden while the call's room isn't the one being viewed.
     // pip_btn_:    cycles Docked/DockedExpanded → Floating → Popout → Docked;
     //              always visible so the user can advance through all modes.
-    const bool show_expand = (mode_ == Mode::Docked || mode_ == Mode::DockedExpanded);
+    const bool show_expand = room_active_ &&
+        (mode_ == Mode::Docked || mode_ == Mode::DockedExpanded);
     const float ey = bounds_.y + kExpandMargin;
     // Right-edge anchor for the button strip; pip is rightmost, expand to its left.
     float right_edge = bounds_.x + bounds_.w - kExpandMargin;

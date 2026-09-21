@@ -11650,6 +11650,9 @@ void ShellBase::after_active_room_changed_()
         }
     }
 
+    // Auto-join/leave/float/restore the call tied to call-room navigation.
+    handle_call_room_navigation_();
+
     // Each new room starts with an unknown thread history — allow pagination.
     if (main_room_pane_)
         main_room_pane_->reset_thread_backfill();
@@ -13200,6 +13203,21 @@ void ShellBase::push_call_audio_bgnd_(const std::int16_t* samples,
         call_audio_output_->push_frame(samples, sample_count, sample_rate, num_channels);
 }
 
+views::CallOverlayWidget::Mode ShellBase::overlay_mode_from_settings_() const
+{
+    switch (Settings::instance().call_overlay_mode)
+    {
+    case Settings::CallOverlayMode::DockedExpanded:
+        return views::CallOverlayWidget::Mode::DockedExpanded;
+    case Settings::CallOverlayMode::Floating:
+        return views::CallOverlayWidget::Mode::Floating;
+    case Settings::CallOverlayMode::Popout:
+        return views::CallOverlayWidget::Mode::Popout;
+    default:
+        return views::CallOverlayWidget::Mode::Docked;
+    }
+}
+
 void ShellBase::start_call(const std::string& room_id, const std::string& slot_id,
                            bool audio_only)
 {
@@ -13244,21 +13262,8 @@ void ShellBase::start_call(const std::string& room_id, const std::string& slot_i
         call_session_->mute_video(true);
     }
 
-    // Determine the initial overlay mode from saved settings.
-    auto initial_mode = views::CallOverlayWidget::Mode::Docked;
-    switch (Settings::instance().call_overlay_mode)
-    {
-    case Settings::CallOverlayMode::DockedExpanded:
-        initial_mode = views::CallOverlayWidget::Mode::DockedExpanded; break;
-    case Settings::CallOverlayMode::Floating:
-        initial_mode = views::CallOverlayWidget::Mode::Floating;       break;
-    case Settings::CallOverlayMode::Popout:
-        initial_mode = views::CallOverlayWidget::Mode::Popout;         break;
-    default: break;
-    }
-
-    // Mount + wire the call overlay in the resolved mode.
-    on_call_overlay_mode_requested_(initial_mode);
+    // Mount + wire the call overlay in the mode resolved from saved settings.
+    on_call_overlay_mode_requested_(overlay_mode_from_settings_());
 
     // Restore saved float position; hide video button for audio-only calls.
     if (auto* ov = active_call_overlay_())
@@ -13281,6 +13286,82 @@ void ShellBase::start_call(const std::string& room_id, const std::string& slot_i
         if (w->room_view() && w->room_view()->header())
             w->room_view()->header()->set_call_active(true);
     }
+}
+
+CallRoomAction decide_call_room_action(bool has_active_call,
+                                       bool active_call_room_is_new_room,
+                                       bool new_room_is_call_room,
+                                       bool call_auto_floated,
+                                       bool overlay_is_docked)
+{
+    if (!has_active_call)
+        return new_room_is_call_room ? CallRoomAction::AutoJoin
+                                     : CallRoomAction::None;
+
+    if (active_call_room_is_new_room)
+        return call_auto_floated ? CallRoomAction::AutoRestore
+                                 : CallRoomAction::None;
+
+    if (new_room_is_call_room)
+        return CallRoomAction::LeaveAndJoin;
+
+    return overlay_is_docked ? CallRoomAction::AutoFloat : CallRoomAction::NoOp;
+}
+
+void ShellBase::handle_call_room_navigation_()
+{
+    const auto* new_room = room_by_id_(current_room_id_);
+    if (!new_room || new_room->is_space)
+        return;
+
+    auto* ov = active_call_overlay_();
+    const bool overlay_docked =
+        ov && (ov->mode() == views::CallOverlayWidget::Mode::Docked ||
+               ov->mode() == views::CallOverlayWidget::Mode::DockedExpanded);
+
+    switch (decide_call_room_action(
+        /*has_active_call=*/call_session_ != nullptr,
+        /*active_call_room_is_new_room=*/
+        call_session_ && call_session_->room_id() == current_room_id_,
+        /*new_room_is_call_room=*/new_room->is_call_room,
+        call_auto_floated_, overlay_docked))
+    {
+    case CallRoomAction::AutoJoin:
+        // First switch into a call room with no active call: auto-join.
+        start_call(current_room_id_);
+        break;
+    case CallRoomAction::AutoRestore:
+        // Returning to the room hosting the active call: undo whatever
+        // auto-float was forced when the user left it, restoring their
+        // real (non-floating) mode preference.
+        call_auto_floated_ = false;
+        on_call_overlay_mode_requested_(overlay_mode_from_settings_(),
+                                        /*persist=*/false);
+        break;
+    case CallRoomAction::LeaveAndJoin:
+        // Switching directly into another call room (whether the previous
+        // call was auto-joined or manually joined via the "call in
+        // progress" banner): leave the old call and join the new one.
+        // start_call() no-ops while call_session_ is non-null, so
+        // end_call() first is required.
+        end_call();
+        start_call(current_room_id_);
+        break;
+    case CallRoomAction::AutoFloat:
+        // Leaving the active call's room for an ordinary room: float it
+        // rather than leave it docked to a room no longer shown.
+        call_auto_floated_ = true;
+        on_call_overlay_mode_requested_(views::CallOverlayWidget::Mode::Floating,
+                                        /*persist=*/false);
+        break;
+    case CallRoomAction::None:
+    case CallRoomAction::NoOp:
+        break;
+    }
+
+    if (auto* ov2 = active_call_overlay_())
+        ov2->set_room_active(call_session_ &&
+                             call_session_->room_id() == current_room_id_);
 }
 
 void ShellBase::end_call()
@@ -13316,6 +13397,7 @@ void ShellBase::end_call()
     }
     if (main_app_) main_app_->unmount_call_overlay();
     call_overlay_state_ = {};
+    call_auto_floated_ = false;
     // The call may still be running for others: bring its banner back.
     refresh_call_banners_();
 }
@@ -13398,6 +13480,7 @@ void ShellBase::handle_rtc_session_ended_ui_(std::uint64_t session_id,
         call_window_.release()->schedule_delete(); // defer Qt delete past event handler
     }
     if (main_app_) main_app_->unmount_call_overlay();
+    call_auto_floated_ = false;
     if (room_view_ && room_view_->header())
         room_view_->header()->set_call_active(false);
     for (auto& w : owned_secondary_windows_)
@@ -13418,10 +13501,21 @@ views::CallOverlayWidget* ShellBase::active_call_overlay_() const
     return nullptr;
 }
 
-void ShellBase::on_call_overlay_mode_requested_(views::CallOverlayWidget::Mode m)
+void ShellBase::on_call_overlay_mode_requested_(views::CallOverlayWidget::Mode m,
+                                                bool persist)
 {
     if (!main_app_ || !call_session_)
         return;
+
+    // Docked/DockedExpanded only make sense while the call's room is the one
+    // currently being viewed; the UI already hides those options otherwise,
+    // but callers (e.g. the popout window's on_window_closed) don't all
+    // check this, so clamp defensively rather than dock into a room that
+    // isn't shown.
+    if ((m == views::CallOverlayWidget::Mode::Docked ||
+         m == views::CallOverlayWidget::Mode::DockedExpanded) &&
+        call_session_->room_id() != current_room_id_)
+        m = views::CallOverlayWidget::Mode::Floating;
 
     // Snapshot mutable overlay state into the persistent struct before teardown.
     if (auto* ov = active_call_overlay_())
@@ -13529,6 +13623,8 @@ void ShellBase::on_call_overlay_mode_requested_(views::CallOverlayWidget::Mode m
         // restore() sets local_user_id first so is_self is applied when
         // update_participants() creates/refreshes tiles below.
         ov->restore(call_overlay_state_);
+        ov->set_room_active(call_session_ &&
+                            call_session_->room_id() == current_room_id_);
 
         ov->on_hang_up = [this] { end_call(); };
         ov->on_toggle_audio = [this](bool muted)
@@ -13548,6 +13644,9 @@ void ShellBase::on_call_overlay_mode_requested_(views::CallOverlayWidget::Mode m
         };
         ov->on_mode_change_requested = [this](views::CallOverlayWidget::Mode nm)
         {
+            // A deliberate user choice must never be later "undone" by the
+            // auto-restore path in handle_call_room_navigation_().
+            call_auto_floated_ = false;
             on_call_overlay_mode_requested_(nm);
         };
         ov->on_float_position_changed = [this](float x, float y)
@@ -13586,10 +13685,16 @@ void ShellBase::on_call_overlay_mode_requested_(views::CallOverlayWidget::Mode m
         }
     }
 
-    // Persist the new mode (Settings::CallOverlayMode has the same ordinal order).
-    Settings::instance().call_overlay_mode =
-        static_cast<Settings::CallOverlayMode>(static_cast<int>(m));
-    Settings::instance().save_to_disk(tesseract::config_dir());
+    // Persist the new mode (Settings::CallOverlayMode has the same ordinal
+    // order) unless this transition was driven by Tesseract itself
+    // (auto-float / auto-restore), which must not overwrite the user's
+    // actual preference.
+    if (persist)
+    {
+        Settings::instance().call_overlay_mode =
+            static_cast<Settings::CallOverlayMode>(static_cast<int>(m));
+        Settings::instance().save_to_disk(tesseract::config_dir());
+    }
     request_relayout_();
 }
 

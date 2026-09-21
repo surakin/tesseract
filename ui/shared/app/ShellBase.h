@@ -88,6 +88,31 @@ class UserPackEditor;
 class UserProfilePanel;
 }
 
+// Pure decision for how a room switch should affect an in-progress call.
+// Isolated from ShellBase's live state so it's unit-testable without a real
+// ShellBase/CallSession/CallOverlayWidget — mirrors classify_room_section's
+// (RoomListView.h) role for RoomListView.
+enum class CallRoomAction
+{
+    None,        // no active call; new room isn't a call room either.
+    AutoJoin,    // no active call; new room is a call room -> start_call().
+    AutoRestore, // active call's room == new room, was auto-floated ->
+                 // restore the user's saved (non-floating) overlay mode.
+    LeaveAndJoin,// active call's room != new room, new room is a call room ->
+                 // end_call() then start_call() for the new room.
+    AutoFloat,   // active call's room != new room, new room isn't a call
+                 // room, overlay is currently Docked/DockedExpanded ->
+                 // force Floating so it doesn't stay docked to a hidden room.
+    NoOp,        // active call's room != new room, new room isn't a call
+                 // room, overlay is already Floating/Popout -> nothing to do.
+};
+
+CallRoomAction decide_call_room_action(bool has_active_call,
+                                       bool active_call_room_is_new_room,
+                                       bool new_room_is_call_room,
+                                       bool call_auto_floated,
+                                       bool overlay_is_docked);
+
 // ShellBase holds all state and platform-agnostic logic that is identical
 // across the Qt6, GTK4, Win32, and macOS shells. Platform-specific concerns
 // (UI widget manipulation, image decode, thread-dispatch mechanism) are
@@ -3370,11 +3395,31 @@ protected:
     views::CallOverlayWidget* active_call_overlay_() const;
 
     // Tear down the current overlay, switch to the requested mode, remount,
-    // rewire all callbacks, and persist the new mode to Settings.
-    void on_call_overlay_mode_requested_(views::CallOverlayWidget::Mode m);
+    // rewire all callbacks, and persist the new mode to Settings. Docked/
+    // DockedExpanded are clamped to Floating if the call's room isn't
+    // current_room_id_ (the UI already hides those mode options in that
+    // state, but the state machine doesn't rely on that). Pass persist=false
+    // for transitions Tesseract itself drives (auto-float on room-leave,
+    // auto-restore on room-return) so they don't clobber the user's actual
+    // CallOverlayMode preference in Settings.
+    void on_call_overlay_mode_requested_(views::CallOverlayWidget::Mode m,
+                                         bool persist = true);
 
     // Persist the new float position to Settings and request relayout.
     void on_call_float_position_changed_(float x, float y);
+
+    // Resolve the user's persisted CallOverlayMode setting into a Mode, the
+    // same mapping start_call() uses to pick the initial mode. Shared so
+    // handle_call_room_navigation_()'s auto-restore-from-Floating path
+    // restores the user's real preference rather than a hardcoded Docked.
+    views::CallOverlayWidget::Mode overlay_mode_from_settings_() const;
+
+    // Called from after_active_room_changed_() on every room switch. Drives
+    // auto-join (first switch into a call room), auto-leave-and-join
+    // (switching directly between an active call and another call room),
+    // and the auto-float/auto-restore transition (switching away from /
+    // back to the room hosting the active call).
+    void handle_call_room_navigation_();
 
     // Overlay configuration that must survive mode switches (docked ↔ floating ↔
     // popout). Initialised at call start; each remount reads from this struct
@@ -3397,6 +3442,12 @@ protected:
     std::unique_ptr<tk::AudioPlayback>          call_audio_output_;
     std::unique_ptr<CallWindowBase>             call_window_;
     CallOverlayState                            call_overlay_state_;
+    // True iff Tesseract (not the user) forced Floating mode because the
+    // user navigated away from the active call's room. Lets
+    // handle_call_room_navigation_() tell "returning to a room we auto-
+    // floated away from" apart from "the user deliberately chose Floating,"
+    // so only the former auto-restores Docked/DockedExpanded.
+    bool                                         call_auto_floated_ = false;
     // The "call in progress" banner is a state of the room: shown while the
     // room has live call members and this client is not in that call. Applies
     // the rule to the main window's room view and every pop-out.

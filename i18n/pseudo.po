@@ -2682,3 +2682,7 @@ msgstr "[Vïdéö çàll ïñ prögréssxxxx]"
 #: ui/shared/views/CallBanner.cpp
 msgid "Voice call in progress"
 msgstr "[Vöïçé çàll ïñ prögréssxxxx]"
+
+#: ui/shared/views/RoomListView.h
+msgid "Call Rooms"
+msgstr "[Çàll Röömsxxx]"

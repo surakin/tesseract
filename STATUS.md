@@ -1,6 +1,19 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-20**. 1883 C++ + 704 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-21**. 1898 C++ + 704 Rust tests.
+
+> **Call rooms (MSC3417) get room-list UI and full call lifecycle (2026-09-21, v0.8.25).**
+> Call rooms now show in their own "Call Rooms" room-list section (after
+> Rooms, ranked below Favorites/Unread/Inactive; reappears per-Space when
+> drilled in), and Tesseract auto-joins the call on first switch into one.
+> Switching away floats the call instead of hanging up; switching back
+> restores the user's saved (non-floating) mode; switching directly between
+> two call rooms leaves the old call and joins the new one. Docked/
+> DockedExpanded mode controls now hide while the call's room isn't the one
+> being viewed. Linux (Qt6 + GTK4) build + full ctest 1898/1898 (+15);
+> unverified live this session. Windows/macOS share the code, unbuilt.
+
+<!-- -->
 
 > **Custom emoji get BigEmoji sizing too (2026-09-20, v0.8.24).**
 > A body made entirely of custom emoticons (MSC2545), alone or mixed with

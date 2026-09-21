@@ -2607,3 +2607,7 @@ msgstr "Videollamada en curso"
 #: ui/shared/views/CallBanner.cpp
 msgid "Voice call in progress"
 msgstr "Llamada de voz en curso"
+
+#: ui/shared/views/RoomListView.h
+msgid "Call Rooms"
+msgstr "Salas de llamada"
