@@ -30,3 +30,7 @@ corrosion/required_libs/Cargo.lock
 /PACKAGING.md
 /packaging/arch/PKGBUILD
 /packaging/flatpak/io.github.surakin.Tesseract.yml
+
+# The winget manifests are generated to the build tree (build/<preset>/winget/),
+# not in-source — see the comment above the configure_file() loop in the root
+# CMakeLists.txt for why.

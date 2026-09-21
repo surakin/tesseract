@@ -59,6 +59,24 @@ configure_file(
     @ONLY
 )
 
+# winget manifests — generated to the build tree, unlike PACKAGING.md above.
+# `winget validate`/`wingetcreate submit` don't filter by extension: they try
+# to parse every file in the given directory as a manifest and refuse any
+# subdirectory outright, so the directory handed to those tools must contain
+# *only* the three manifest files — it can't also hold README.md or the .in
+# templates the way packaging/winget/ does. Edit the .in files, not these.
+foreach(_tesseract_winget_manifest
+    Tesseract.Matrix.yaml
+    Tesseract.Matrix.installer.yaml
+    Tesseract.Matrix.locale.en-US.yaml
+)
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/packaging/winget/${_tesseract_winget_manifest}.in"
+        "${CMAKE_BINARY_DIR}/winget/${_tesseract_winget_manifest}"
+        @ONLY
+    )
+endforeach()
+
 # OBJCXX must be enabled at root scope; enabling it from a subdirectory leaves
 # CMAKE_OBJCXX_COMPILE_OBJECT unset in CMake 4.x.
 if(APPLE)

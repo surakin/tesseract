@@ -3,6 +3,10 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
+## 2026-09-21
+
+- feat(packaging): add a winget manifest (`Tesseract.Matrix`, points at the NSIS installer) and a `winget-publish` CI workflow that submits version-bump PRs to `winget-pkgs` on each GitHub Release. Generated manifests land in the build tree rather than in-source, since `winget validate`/`wingetcreate` parse every file in a target directory and refuse one containing a subdirectory. `winget validate` passing against a real configured build tree; first upstream submission to `winget-pkgs` still pending.
+
 ## v0.8.24 — 2026-09-19
 
 ### Summary
