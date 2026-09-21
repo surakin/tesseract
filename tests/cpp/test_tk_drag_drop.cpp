@@ -76,7 +76,7 @@ private:
     bool accept_;
 };
 
-DragPayload make_payload()
+DragPayload make_drag_payload()
 {
     return DragPayload("room_id", std::string("!room:example.org"));
 }
@@ -86,7 +86,7 @@ DragPayload make_payload()
 TEST_CASE("DragPayload carries a kind-tagged, strongly-typed value",
           "[tk][drag_drop]")
 {
-    DragPayload payload = make_payload();
+    DragPayload payload = make_drag_payload();
 
     CHECK(payload.kind() == "room_id");
     REQUIRE(payload.get_if<std::string>("room_id") != nullptr);
@@ -123,7 +123,7 @@ TEST_CASE("dispatch_drag_enter claims the topmost accepting descendant, "
         std::make_unique<DragProbeWidget>(Rect{0, 0, 100, 100}, /*accept=*/true));
     auto* b = root.add_child(
         std::make_unique<DragProbeWidget>(Rect{200, 0, 100, 100}, /*accept=*/true));
-    DragPayload payload = make_payload();
+    DragPayload payload = make_drag_payload();
 
     Widget* target = root.dispatch_drag_enter({50, 50}, payload);
     REQUIRE(target == a);
@@ -143,7 +143,7 @@ TEST_CASE("dispatch_drag_enter skips an invisible subtree entirely",
     auto* grandchild = hidden->add_child(
         std::make_unique<DragProbeWidget>(Rect{50, 50, 50, 50}, /*accept=*/true));
     hidden->set_visible(false);
-    DragPayload payload = make_payload();
+    DragPayload payload = make_drag_payload();
 
     Widget* target = root.dispatch_drag_enter({60, 60}, payload);
 
@@ -170,7 +170,7 @@ TEST_CASE("Host::begin_drag + dispatch_pointer_move retargets across "
     host.dispatch_pointer_down({10, 10});
     REQUIRE(host.pressed_widget_.lock().get() == source);
 
-    host.begin_drag(make_payload(), DragVisual{}, {10, 10});
+    host.begin_drag(make_drag_payload(), DragVisual{}, {10, 10});
     REQUIRE(host.is_dragging());
 
     host.dispatch_pointer_move({150, 150}); // inside a
@@ -204,7 +204,7 @@ TEST_CASE("Dropping where nothing accepts ends the drag without firing "
     TestHost host(&root);
 
     host.dispatch_pointer_down({10, 10});
-    host.begin_drag(make_payload(), DragVisual{}, {10, 10});
+    host.begin_drag(make_drag_payload(), DragVisual{}, {10, 10});
     host.dispatch_pointer_move({200, 200});
     CHECK(host.active_drag_->current_target.expired());
 
@@ -224,7 +224,7 @@ TEST_CASE("cancel_drag fires on_drag_leave_target, never on_drop, and is "
     TestHost host(&root);
 
     host.dispatch_pointer_down({10, 10});
-    host.begin_drag(make_payload(), DragVisual{}, {10, 10});
+    host.begin_drag(make_drag_payload(), DragVisual{}, {10, 10});
     host.dispatch_pointer_move({150, 150});
     REQUIRE(a->enter_count == 1);
 
@@ -248,7 +248,7 @@ TEST_CASE("Escape cancels an active drag ahead of other key handling",
     TestHost host(&root);
 
     host.dispatch_pointer_down({10, 10});
-    host.begin_drag(make_payload(), DragVisual{}, {10, 10});
+    host.begin_drag(make_drag_payload(), DragVisual{}, {10, 10});
     host.dispatch_pointer_move({150, 150});
     REQUIRE(a->enter_count == 1);
 
