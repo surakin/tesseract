@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- feat(packaging): add a winget manifest (`Tesseract.Matrix`, points at the NSIS installer) and a `winget-publish` CI workflow that submits version-bump PRs to `winget-pkgs` on each GitHub Release. Generated manifests land in the build tree rather than in-source, since `winget validate`/`wingetcreate` parse every file in a target directory and refuse one containing a subdirectory. `winget validate` passing against a real configured build tree; first upstream submission to `winget-pkgs` still pending.
 - build(windows): `cmake --preset windows-*` now works from a plain terminal instead of requiring a Developer Command Prompt — `cmake/MsvcAutoVcvars.cmake` locates the MSVC install via `vswhere` and applies its `vcvarsall.bat x64` environment before `project()` runs.
 
 ## v0.8.24 — 2026-09-19

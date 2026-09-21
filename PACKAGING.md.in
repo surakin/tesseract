@@ -14,6 +14,7 @@ produce native installers. Configuration lives in
 | Debian     | `dpkg-buildpackage` | `tesseract_<ver>_<arch>.deb` + `tesseract-gtk_<ver>_<arch>.deb`  |
 | Arch Linux | `makepkg`           | `tesseract-<ver>-<pkgrel>-<arch>.pkg.tar.zst`                    |
 | Flatpak    | `flatpak-builder`   | `io.github.surakin.Tesseract` (sandboxed, Flathub)               |
+| Windows    | `winget` manifest   | `Tesseract.Matrix` (points at the NSIS `.exe`, winget-pkgs)      |
 
 NSIS, Store MSIX, and direct MSIX are alternative editions of the same
 Windows build — they may be installed side by side (each is a distinct
@@ -71,6 +72,28 @@ Timestamping uses `http://timestamp.digicert.com` with SHA-256. Verify with:
 ```powershell
 signtool verify /pa "C:\Program Files\Tesseract\bin\Tesseract.exe"
 ```
+
+---
+
+## Windows: winget
+
+Similar to the Arch/Flatpak split above — only the `*.yaml.in` templates
+live in this repo, at [packaging/winget/](packaging/winget/) — but unlike
+those, the version-substituted manifests are generated to the *build*
+tree (`build/<preset>/winget/`), not back in-source: `winget
+validate`/`wingetcreate submit` parse every file in whatever directory
+they're pointed at as a manifest and refuse a directory containing a
+subdirectory, so the directory handed to those tools can't also hold this
+README or the `.in` templates. The published copy lives in the
+community-run [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs)
+repo under package identifier `Tesseract.Matrix` (the `Tesseract`
+identifier is already taken upstream), submitted via PR (there
+is no upload step comparable to Partner Center). It points at the NSIS
+`.exe` from the section above, not either MSIX edition — see
+[packaging/winget/README.md](packaging/winget/README.md) for why, the
+one-time setup, the manual first-submission procedure, and how
+[.github/workflows/winget-publish.yml](.github/workflows/winget-publish.yml)
+automates subsequent version bumps on every GitHub Release.
 
 ---
 
@@ -407,3 +430,12 @@ See the MSIX section above for the `TESSERACT_MSIX_*` identity/update variables.
   `flathub/io.github.surakin.Tesseract` — see
   [packaging/flatpak/README.md](packaging/flatpak/README.md) for the
   submission/update procedure.
+- winget: same split again — only the `*.yaml.in` templates live in this
+  repo; the generated manifests land in the build tree, not in-source (see
+  the "Windows: winget" section above). The published copy lives in
+  `microsoft/winget-pkgs`. The very first submission is manual
+  (`wingetcreate submit`); `WINGET_TOKEN` (a PAT with `public_repo` scope)
+  is not yet configured as a repo secret, so
+  [.github/workflows/winget-publish.yml](.github/workflows/winget-publish.yml)
+  won't run until that's added — see
+  [packaging/winget/README.md](packaging/winget/README.md).

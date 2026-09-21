@@ -120,7 +120,7 @@ Come join us in [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-cl
 - In-flight request indicator in the status bar
 - Low power mode (Auto / On / Off) — pauses background work (backfill, prefetch, cache GC, search indexing) while keeping sync live
 - Light / dark / system themes
-- Windows: installable via the Microsoft Store or direct sideload (MSIX), alongside NSIS; taskbar unread/mention overlays, thumbnail controls, and Jump Lists
+- Windows: installable via the Microsoft Store, direct sideload (MSIX), NSIS, or `winget install Tesseract.Matrix`; taskbar unread/mention overlays, thumbnail controls, and Jump Lists
 - Linux: system-wide room/contact search via GNOME Shell search and KRunner; MPRIS media controls for voice/audio playback; installable via a self-hosted Flatpak repo (not Flathub — see [packaging/flatpak/README.md](packaging/flatpak/README.md)), plus DEB/RPM/AppImage/AUR
 - macOS: Now Playing integration for voice/audio playback; rooms and contacts indexed for Spotlight search; every keyboard-shortcut action (Settings, Add Room, Find, Search Your Messages, Go Back/Forward, Quick Switcher, Cycle Recent Rooms) has an application menu-bar entry
 
