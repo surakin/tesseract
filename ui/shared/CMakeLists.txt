@@ -94,6 +94,8 @@ set(_tk_sources
     tk/image_view.cpp
     tk/scrollable_base.h
     tk/scrollable_base.cpp
+    tk/scroll_view.h
+    tk/scroll_view.cpp
     tk/list_view.h
     tk/list_view.cpp
     tk/tab_bar.h
@@ -197,6 +199,10 @@ set(_tk_sources
     views/room_chip_strip.cpp
     views/ForwardRoomPicker.h
     views/ForwardRoomPicker.cpp
+    views/SpaceAddRoomList.h
+    views/SpaceAddRoomList.cpp
+    views/SpaceChildRoomGrid.h
+    views/SpaceChildRoomGrid.cpp
     views/MessageSearchView.h
     views/MessageSearchView.cpp
     views/ImagePackTileGridBase.h
@@ -408,11 +414,6 @@ set_source_files_properties(tk/status_icons.cpp PROPERTIES SKIP_UNITY_BUILD_INCL
 # it out of the unity blobs avoids reordering a neighbour's include set (same
 # tk::PaintCtx leakage reason as status_icons.cpp).
 set_source_files_properties(tk/emoji_segmentation.cpp PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
-# New files stay out of the unity blobs so they don't shift the batch
-# boundaries (and expose latent anonymous-namespace collisions) of their
-# neighbours.
-set_source_files_properties(app/ActivityRegistry.cpp views/ActivityMonitorView.cpp
-                            PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
 
 # Embed the application icon PNG as a C byte array so BrandView can decode it
 # cross-platform without per-shell resource loading. Runs at configure time.

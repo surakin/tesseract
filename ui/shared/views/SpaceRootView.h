@@ -5,9 +5,12 @@
 // space and its child counts rather than offering a join action.
 
 #include "RoomSettingsView.h"
+#include "SpaceAddRoomList.h"
+#include "SpaceChildRoomGrid.h"
 
 #include "tk/canvas.h"
 #include "tk/controls.h"
+#include "tk/scroll_view.h"
 #include "tk/svg.h"
 #include "tk/widget.h"
 
@@ -44,6 +47,35 @@ public:
 
     // Shell should kick an avatar fetch on miss and repaint.
     std::function<void(const std::string& mxc)> on_avatar_needed;
+    // Fired when the user clicks an autolinked URL/matrix.to link inside the
+    // topic text (see TopicLinkLabel). The shell decides whether it's a
+    // Matrix link (open_matrix_link) or an ordinary URL (open in browser) —
+    // mirrors ShellBase::setup_link_clicked_'s identical RoomView wiring.
+    std::function<void(std::string url)> on_link_clicked;
+    // Fired whenever the hovered link inside the topic changes (including
+    // to/from empty) so the shell can swap the native cursor — mirrors
+    // RoomView/RoomInfoPanel's identical on_link_hovered mechanism
+    // (cursor-setting is platform-specific, wired per shell).
+    std::function<void(std::string url)> on_link_hovered;
+
+    // ── Room management section (add_list_ / child_grid_) ─────────────────
+    // SpaceRootView does no data fetching of its own for this section — it
+    // only owns the two widgets and forwards data/callbacks, exactly like
+    // it already does for its own avatar (on_avatar_needed above).
+    using RoomsProvider = SpaceAddRoomList::RoomsProvider;
+
+    void set_candidate_rooms_provider(RoomsProvider p);
+    void set_children(std::vector<SpaceChildRoomGrid::ChildRoomEntry> children);
+    // Gates both the add and remove directions — see ShellBase's
+    // can_edit_space_children, the single Matrix permission both share.
+    void set_can_manage_children(bool v);
+
+    // Forwarded from add_list_/child_grid_, carrying the current space's id
+    // so the shell's mutation call sites don't need to track it separately.
+    std::function<void(std::string space_id, std::string room_id)> on_add_room_to_space;
+    std::function<void(std::string space_id, std::string room_id)> on_remove_room_from_space;
+    std::function<void(std::string room_id)> on_child_summary_needed;
+    std::function<void(const tesseract::RoomInfo&)> on_room_avatar_needed;
 
     // Owned settings overlay opened via the wrench icon (top-left, mirrors
     // RoomInfoPanel's). Replaces this view's own summary content entirely
@@ -75,6 +107,17 @@ public:
     void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void     paint(tk::PaintCtx& ctx) override;
 
+    // Claims any press landing on this view's own empty background (the
+    // gaps around/between the avatar/topic block and the room-management
+    // section) rather than leaving it unclaimed. Without this, an unclaimed
+    // press bubbles all the way up to MainAppWidget's sidebar-resize
+    // wrapper, whose own on_pointer_down fallback claims *any* unclaimed
+    // press unconditionally (it assumes every view fills its own space with
+    // real interactive widgets) — starting a spurious sidebar-resize drag
+    // from a click anywhere on this view's background. A no-op consume, not
+    // an interactive claim.
+    bool on_pointer_down(tk::Point local) override;
+
 private:
     std::optional<tesseract::RoomInfo> space_;
     std::size_t joined_children_ = 0;
@@ -87,19 +130,57 @@ private:
 
     tk::Button*       leave_btn_  = nullptr;
 
+    SpaceAddRoomList*   add_list_   = nullptr;
+    SpaceChildRoomGrid* child_grid_ = nullptr;
+    // Topic/description: a real scrollable child (tk::ScrollView wrapping a
+    // TopicLinkLabel), not a manually clipped/height-capped TextLayout — an
+    // arbitrarily long topic scrolls instead of overflowing into (or
+    // getting truncated against) the room-management section below/beside
+    // it. topic_label_'s text is set once in set_space(), not every paint().
+    class TopicLinkLabel;
+    tk::ScrollView* topic_scroll_ = nullptr;
+    TopicLinkLabel* topic_label_  = nullptr;
+    // Whether the room-management section (add_list_/child_grid_ + the
+    // explanatory label) is shown at all — set via set_can_manage_children.
+    // The whole section is hidden, not just individually disabled, when the
+    // user lacks permission to send m.space.child in this space; the
+    // widgets' own can_manage_ gating stays as defense-in-depth underneath.
+    bool can_manage_children_ = false;
+    // Change-detected so add_list_/child_grid_ are only re-arranged when
+    // their section actually moves/resizes, not on every paint() call (this
+    // view recomputes its own text layout positions every frame, but a real
+    // child widget's arrange() is not free the way redrawing cached text
+    // is).
+    tk::Rect last_left_rect_{-1, -1, -1, -1};
+    tk::Rect last_right_rect_{-1, -1, -1, -1};
+
     mutable std::unique_ptr<tk::TextLayout> name_layout_;
     mutable std::unique_ptr<tk::TextLayout> alias_layout_;
-    mutable std::unique_ptr<tk::TextLayout> topic_layout_;
     mutable std::unique_ptr<tk::TextLayout> meta_layout_;
     mutable std::unique_ptr<tk::TextLayout> hint_layout_;
     mutable tk::CanvasFactory* factory_seen_ = nullptr;
-    mutable float last_bounds_h_ = -1.0f;
-    mutable float last_content_w_ = -1.0f;
 
     static constexpr float kAvatarD = 72.0f;
     static constexpr float kContentW = 340.0f;
     static constexpr float kPadY = 32.0f;
     static constexpr float kGap = 12.0f;
+
+    // Top row (avatar/name/alias column + topic column): fixed-height
+    // estimates, not measured from actual text, so the row's total height
+    // never depends on font metrics being available yet.
+    static constexpr float kNameH = 28.0f;
+    static constexpr float kAliasH = 18.0f;
+    static constexpr float kTopRowMinH = 150.0f;
+
+    // Room-management section (add_list_ / child_grid_), carved out of the
+    // vertical space between the top row and the room-count row.
+    static constexpr float kTopicMaxH = 80.0f;       // fixed cap, stacked-narrow layout only
+    static constexpr float kSectionMinH = 180.0f;     // never shrinks below this
+    static constexpr float kSectionPadX = 24.0f;      // inset from bounds_ edges
+    static constexpr float kSectionGap = 16.0f;       // between list and grid
+    static constexpr float kSectionLabelGap = 8.0f;   // between label and lists
+    static constexpr float kStackBreakpoint = 560.0f; // side-by-side vs. stacked
+    static constexpr float kLeftColumnW = 280.0f;      // candidate list width
 
     void reset_layouts_();
     std::string child_count_label_() const;

@@ -1547,6 +1547,38 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         {
             ensure_media_thumbnail_(mxc, 64, 64, false);
         };
+        // Mirrors setup_link_clicked_'s identical RoomView wiring.
+        sr->on_link_clicked = [this](const std::string& url)
+        {
+            if (Client::parse_matrix_link(url).kind != Client::MatrixLink::Kind::Unknown)
+                open_matrix_link(url);
+            else
+                Client::open_in_browser(url);
+        };
+        // Room-management section (add candidates / space children). Same
+        // rooms_-derived source RoomListView uses, just filtered
+        // differently — see set_children() forwarding the exclusion set.
+        sr->set_candidate_rooms_provider([this]() { return rooms_; });
+        sr->on_room_avatar_needed = [this](const tesseract::RoomInfo& r)
+        {
+            ensure_room_avatar_(r);
+        };
+        sr->on_add_room_to_space = [this](std::string space_id, std::string room_id)
+        {
+            request_add_room_to_space_(space_id, room_id);
+        };
+        sr->on_remove_room_from_space = [this](std::string space_id, std::string room_id)
+        {
+            request_remove_room_from_space_(space_id, room_id);
+        };
+        // Not wired: get_cached_unjoined_summaries_() (called from
+        // refresh_space_root_children_ below) already proactively fetches
+        // every unjoined child's summary whenever it's called — the same
+        // mechanism RoomListView's own "Available to join" section relies
+        // on — so there is nothing left for this widget-triggered hook to
+        // do beyond what refresh_space_root_children_'s triggers already
+        // cover.
+        sr->on_child_summary_needed = [](std::string) {};
     }
     app->room_list_view()->set_avatar_provider(avatar_lookup);
     // Lazy avatar fetching: the provider above is a pure cache peek, so the
@@ -3762,6 +3794,12 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
         invalidate_known_users_();
     }
     update_space_children_cache_();
+    // Immediate (not waiting on update_space_children_cache_'s async
+    // fetch, which no-ops when the space-children set itself didn't
+    // change): the room-management section's candidate list depends on
+    // rooms_ directly, so a newly joined/left room needs to be reflected
+    // here even when no space's children changed at all.
+    refresh_space_root_children_(space_root_shown_id_);
     on_rooms_updated_();
     // Re-evaluate call-button and threads-button visibility for the current
     // room: bridge status (is_bridged) can change via on_rooms_updated without
@@ -4122,6 +4160,7 @@ void ShellBase::leave_space_navigate_back_(const std::string& space_id)
         main_app_->hide_room_preview();
         main_app_->hide_space_root();
     }
+    space_root_shown_id_.clear();
     refresh_room_list_();
     if (!space_nav_frames_.empty())
     {
@@ -4479,6 +4518,7 @@ void ShellBase::update_space_children_cache_()
                         }
 
                         on_space_children_cache_ready_ui_();
+                        refresh_space_root_children_(space_root_shown_id_);
                     }
                 });
         });
@@ -4557,6 +4597,7 @@ void ShellBase::fetch_single_room_summary_(const std::string& space_id,
                             if (auto* rl = main_app_->room_list_view())
                                 rl->set_space_unjoined_rooms(
                                     std::vector<tesseract::RoomSummary>(summaries));
+                        refresh_space_root_children_(space_id);
                         if (!cached.avatar_url.empty())
                             ensure_media_thumbnail_(cached.avatar_url, 64, 64, false);
                     });
@@ -4641,6 +4682,7 @@ void ShellBase::handle_space_child_summary_ready_ui_(std::uint64_t request_id,
         if (auto* rl = main_app_->room_list_view())
             rl->set_space_unjoined_rooms(
                 std::vector<tesseract::RoomSummary>(cached));
+    refresh_space_root_children_(space_id);
 }
 
 void ShellBase::handle_server_info_async_ready_ui_(std::uint64_t /*request_id*/,
@@ -4959,7 +5001,119 @@ void ShellBase::show_space_root_(const std::string& space_id)
 
     main_app_->show_space_root(*space, joined_children, unjoined_children,
                                make_avatar_image_provider_());
+    space_root_shown_id_ = space_id;
+    refresh_space_root_children_(space_id);
     request_relayout_();
+}
+
+void ShellBase::refresh_space_root_children_(const std::string& space_id)
+{
+    if (!main_app_ || !main_app_->space_root() || space_id.empty() ||
+        space_id != space_root_shown_id_)
+    {
+        return;
+    }
+
+    std::vector<views::SpaceChildRoomGrid::ChildRoomEntry> entries;
+
+    if (auto it = space_children_cache_.find(space_id);
+        it != space_children_cache_.end())
+    {
+        // Mirrors refresh_room_list_()'s identical drilled-into-space
+        // filter: iterate rooms_ (the same source RoomListView itself is
+        // built from) and keep only those the cache says are children —
+        // NOT the reverse (iterating child ids and looking each one up),
+        // which would let a stale id space_children() still reports (e.g.
+        // a room since left/abandoned, no longer in rooms_) leak through
+        // as a blank placeholder entry.
+        const auto& child_ids = it->second;
+        for (const auto& r : rooms_)
+        {
+            if (std::find(child_ids.begin(), child_ids.end(), r.id) ==
+                child_ids.end())
+                continue;
+            views::SpaceChildRoomGrid::ChildRoomEntry entry;
+            entry.joined = true;
+            entry.info = r;
+            entries.push_back(std::move(entry));
+        }
+    }
+
+    if (auto it = unjoined_space_children_cache_.find(space_id);
+        it != unjoined_space_children_cache_.end())
+    {
+        // Also proactively kicks off a fetch for every summary not yet
+        // cached — the same mechanism RoomListView's own "Available to
+        // join" section already relies on (see its doc comment). Mirroring
+        // that section exactly: only ids with an already-resolved summary
+        // are shown — RoomListView's own set_space_unjoined_rooms() is fed
+        // solely from unjoined_summaries_cache_, never a placeholder for a
+        // still-pending or perpetually-failing (e.g. dead/unreachable)
+        // child — so a child id with no summary yet simply doesn't appear
+        // here either, rather than as a permanent blank/"Loading…" row.
+        const auto& cached_summaries = get_cached_unjoined_summaries_(space_id);
+        for (const auto& id : it->second)
+        {
+            auto sit = std::find_if(
+                cached_summaries.begin(), cached_summaries.end(),
+                [&](const tesseract::RoomSummary& s) { return s.room_id == id; });
+            if (sit == cached_summaries.end())
+                continue;
+            views::SpaceChildRoomGrid::ChildRoomEntry entry;
+            entry.joined = false;
+            entry.info.id = id;
+            entry.info.name = sit->name;
+            entry.info.topic = sit->topic;
+            entry.info.avatar_url = sit->avatar_url;
+            entries.push_back(std::move(entry));
+        }
+    }
+
+    main_app_->space_root()->set_children(std::move(entries));
+    main_app_->space_root()->set_can_manage_children(
+        client_ && client_->can_edit_space_children(space_id));
+}
+
+void ShellBase::request_add_room_to_space_(const std::string& space_id,
+                                           const std::string& room_id)
+{
+    if (!client_ || space_id.empty() || room_id.empty())
+        return;
+
+    auto& joined = space_children_cache_[space_id];
+    if (std::find(joined.begin(), joined.end(), room_id) == joined.end())
+        joined.push_back(room_id);
+    auto& unjoined = unjoined_space_children_cache_[space_id];
+    unjoined.erase(std::remove(unjoined.begin(), unjoined.end(), room_id),
+                  unjoined.end());
+    refresh_space_root_children_(space_id);
+    // The main sidebar's root-level grouping (filter_root_rooms) and any
+    // drilled-into-space view both key off space_children_cache_ too — not
+    // just the space-root section above.
+    refresh_room_list_();
+
+    const auto req_id = next_room_action_id_++;
+    pending_room_actions_[req_id] = {room_id, RoomActionKind::AddSpaceChild, space_id};
+    client_->add_room_to_space_async(req_id, space_id, room_id, {});
+}
+
+void ShellBase::request_remove_room_from_space_(const std::string& space_id,
+                                                const std::string& room_id)
+{
+    if (!client_ || space_id.empty() || room_id.empty())
+        return;
+
+    auto& joined = space_children_cache_[space_id];
+    joined.erase(std::remove(joined.begin(), joined.end(), room_id), joined.end());
+    auto& unjoined = unjoined_space_children_cache_[space_id];
+    unjoined.erase(std::remove(unjoined.begin(), unjoined.end(), room_id),
+                  unjoined.end());
+    refresh_space_root_children_(space_id);
+    refresh_room_list_();
+
+    const auto req_id = next_room_action_id_++;
+    pending_room_actions_[req_id] = {room_id, RoomActionKind::RemoveSpaceChild, space_id};
+    client_->remove_room_from_space_async(req_id, space_id, room_id);
 }
 
 void ShellBase::cancel_unjoined_summaries_()
@@ -5980,7 +6134,7 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
     auto it = pending_room_actions_.find(request_id);
     if (it == pending_room_actions_.end())
         return;
-    auto [room_id, kind] = std::move(it->second);
+    auto [room_id, kind, action_space_id] = std::move(it->second);
     pending_room_actions_.erase(it);
 
     if (!ok)
@@ -6016,6 +6170,12 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
         case RoomActionKind::AcceptKnock:
             verb = tk::tr("accept join request");
             break;
+        case RoomActionKind::AddSpaceChild:
+            verb = tk::tr("add room to space");
+            break;
+        case RoomActionKind::RemoveSpaceChild:
+            verb = tk::tr("remove room from space");
+            break;
         }
         std::string status = tk::trf(tk::tr("Couldn't {0}"), {verb});
         if (!message.empty())
@@ -6025,6 +6185,33 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
             on_join_room_outcome_ui_(false, room_id, message);
         else if (kind == RoomActionKind::Create)
             on_create_room_outcome_ui_(false, room_id, message);
+        else if (kind == RoomActionKind::AddSpaceChild ||
+                 kind == RoomActionKind::RemoveSpaceChild)
+        {
+            // Revert the optimistic cache mutation request_add/remove_
+            // room_to/from_space_ already applied, then re-push the
+            // (now-reverted) child set to the UI.
+            const bool was_add = (kind == RoomActionKind::AddSpaceChild);
+            if (was_add)
+            {
+                auto& joined = space_children_cache_[action_space_id];
+                joined.erase(std::remove(joined.begin(), joined.end(), room_id),
+                            joined.end());
+            }
+            else
+            {
+                // We don't know whether the removed child was joined or
+                // unjoined at the time of the request — re-derive both from
+                // the still-authoritative last-known-good source (a fresh
+                // update_space_children_cache_() pass) rather than guessing
+                // which vector to restore it to.
+                update_space_children_cache_();
+            }
+            // refresh_space_root_children_ itself checks whether
+            // action_space_id is the one currently shown.
+            refresh_space_root_children_(action_space_id);
+            refresh_room_list_();
+        }
         return;
     }
 
@@ -6106,6 +6293,14 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
         // No navigation — the admin didn't join anything. The requester
         // becomes an invited/joined member on the next sync tick, and
         // on_knock_requests_updated will drop them from the panel.
+        break;
+    case RoomActionKind::AddSpaceChild:
+    case RoomActionKind::RemoveSpaceChild:
+        // No extra work — request_add/remove_room_to/from_space_ already
+        // applied the optimistic UI update before this call was even made;
+        // the real m.space.child state lands via the next sync tick like
+        // any other state change, which update_space_children_cache_()
+        // picks up through its existing polling/refresh triggers.
         break;
     }
 }

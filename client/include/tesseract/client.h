@@ -1948,6 +1948,33 @@ public:
     /// membership — includes rooms the user has not joined.
     std::vector<std::string> space_children_all(const std::string& space_id) const;
 
+    /// True iff the current user can send m.space.child in this space
+    /// (cached power-levels check, no network round-trip). Use this to
+    /// gate whether drag-drop / add-remove UI is interactive, before
+    /// attempting a mutation — the homeserver is still the source of
+    /// truth.
+    bool can_edit_space_children(const std::string& space_id) const;
+
+    /// Add `room_id` as a child of `space_id` (sends an m.space.child state
+    /// event keyed by room_id with a non-empty via list). `via` supplies
+    /// extra routing server-name hints (e.g. from a permalink); the SDK
+    /// also derives hints from the room's own domain. Non-blocking; spawns
+    /// a tokio task; result delivered via
+    /// `IEventHandler::on_room_action_complete(request_id, ok, "", message)`
+    /// — `joined_room_id` is unused/empty for this action.
+    void add_room_to_space_async(std::uint64_t request_id,
+                                 const std::string& space_id,
+                                 const std::string& room_id,
+                                 const std::vector<std::string>& via = {});
+
+    /// Remove `room_id` as a child of `space_id` (sends an m.space.child
+    /// state event keyed by room_id with an empty via list, invalidating
+    /// the child per the Matrix spec). Non-blocking; result delivered via
+    /// `IEventHandler::on_room_action_complete(request_id, ok, "", message)`.
+    void remove_room_from_space_async(std::uint64_t request_id,
+                                      const std::string& space_id,
+                                      const std::string& room_id);
+
     // ------------------------------------------------------------------
     // Recovery / key backup (Step 6)
     // ------------------------------------------------------------------

@@ -3891,6 +3891,23 @@ void MacShell::apply_window_title_ui_(const std::string& title)
             };
         }
         {
+            auto hovered = std::make_shared<bool>(false);
+            _mainApp->space_root()->on_link_hovered =
+                [hovered](const std::string& url)
+            {
+                if (!url.empty() && !*hovered)
+                {
+                    [[NSCursor pointingHandCursor] push];
+                    *hovered = true;
+                }
+                else if (url.empty() && *hovered)
+                {
+                    [NSCursor pop];
+                    *hovered = false;
+                }
+            };
+        }
+        {
             // 0 = none pushed, 1 = resize, 2 = toggle(hand).
             auto pushed = std::make_shared<int>(0);
             _mainApp->on_sidebar_cursor =

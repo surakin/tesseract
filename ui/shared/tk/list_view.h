@@ -242,7 +242,8 @@ public:
         return hovered_index_;
     }
 
-    // Widget-local rect of cell `idx`, or a zero-area rect when out of bounds.
+    // World-space rect of cell `idx` (built off bounds_.x/y, like
+    // ListView::row_world_rect), or a zero-area rect when out of bounds.
     tk::Rect rect_at(int idx) const;
 
     // First and last cell indices currently intersecting the viewport,
@@ -253,6 +254,18 @@ public:
     // identical method; GridView::paint() computes this same range itself
     // and calls into this method rather than duplicating the row math.
     std::pair<int, int> visible_range() const;
+
+protected:
+    // Background fill drawn behind the cells in paint(). Defaults to the
+    // plain surface background; a subclass overrides to match whatever
+    // container it's embedded in — mirrors ListView::background_color's
+    // identical mechanism (which defaults to the sidebar tint instead,
+    // since GridView and ListView have different default embedding
+    // contexts today).
+    virtual Color background_color(const Theme& theme) const
+    {
+        return theme.palette.bg;
+    }
 
 private:
     int cols(float available_w) const;

@@ -2708,6 +2708,38 @@ pub(super) async fn build_room_info(
     // this as a dedicated call room.
     let is_call_room = rtc::signaling::is_call_room(room).await;
 
+    // See the field's own doc comment (sdk/src/lib.rs) for why this exists:
+    // adding/removing a space child is a state change on the space's own
+    // room (this one, when is_space), not the child's, so the fingerprint
+    // needs a stable summary of it here to ever notice the change.
+    let space_children_summary = if is_space {
+        use matrix_sdk::deserialized_responses::SyncOrStrippedState;
+        use matrix_sdk::ruma::events::{space::child::SpaceChildEventContent, SyncStateEvent};
+        let mut children: Vec<String> = room
+            .get_state_events_static::<SpaceChildEventContent>()
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|raw| match raw.deserialize().ok()? {
+                SyncOrStrippedState::Sync(SyncStateEvent::Original(e))
+                    if !e.content.via.is_empty() =>
+                {
+                    Some(e.state_key.to_string())
+                }
+                SyncOrStrippedState::Stripped(e)
+                    if e.content.via.as_ref().is_some_and(|v| !v.is_empty()) =>
+                {
+                    Some(e.state_key.to_string())
+                }
+                _ => None,
+            })
+            .collect();
+        children.sort_unstable();
+        children.join("\u{1}")
+    } else {
+        String::new()
+    };
+
     // Deref to base Room to avoid matrix-sdk-ui RoomExt shadowing latest_event()
     // with an async version (same trick as mark_room_as_read, line 2148).
     let lev = std::ops::Deref::deref(room).latest_event();
@@ -2908,6 +2940,7 @@ pub(super) async fn build_room_info(
         last_message_thumbnail_url,
         last_activity_ts,
         is_space,
+        space_children_summary,
         is_call_room,
         is_favorite,
         is_low_priority,
@@ -2985,6 +3018,8 @@ pub(super) struct RoomListFingerprintKey {
     call_members: Vec<String>,
     call_intent: String,
     last_activity_ts: u64,
+    is_space: bool,
+    space_children_summary: String,
     id: String,
     name: String,
     avatar_url: String,
@@ -3061,6 +3096,29 @@ pub(super) fn room_list_fingerprint(
             // The id set doesn't change across that transition, so without
             // the body text here the corrected banner text sits fixed in the
             // Rust-side room cache and never reaches the UI.
+            //
+            // is_space: room-list section membership (Spaces vs. Rooms/
+            // Favorites/etc.) depends on this flag. In practice a room's
+            // space-ness is set once at creation and matrix-sdk should
+            // already know it by the first notable update, so this is a
+            // cheap defensive inclusion rather than a fix for an observed
+            // bug — unlike space_children_summary just below, which fixes a
+            // real, common one.
+            //
+            // space_children_summary: a room's *space-hierarchy* (which
+            // space(s) it's a child of) is what actually changes in normal
+            // use — via the room-management UI (SpaceRootView) or another
+            // client — and it's a state change on the SPACE's own room
+            // (m.space.child, state_key = child id), not the child's. None
+            // of the child room's own fields change when that happens, and
+            // neither does the space's — except this synthesized summary —
+            // so without it here, adding/removing a space child would never
+            // perturb ANY room's fingerprint, on_rooms_updated would never
+            // fire, and ShellBase::update_space_children_cache_() (which
+            // only ever runs from inside the on_rooms_updated handler) would
+            // never re-fetch — leaving both the room list's space grouping
+            // and SpaceChildRoomGrid/SpaceAddRoomList stale until an
+            // unrelated notable update happened to perturb the fingerprint.
             RoomListFingerprintKey {
                 unread,
                 quiet_unread,
@@ -3070,6 +3128,8 @@ pub(super) fn room_list_fingerprint(
                 call_members: r.call_members.clone(),
                 call_intent: r.call_intent.clone(),
                 last_activity_ts: r.last_activity_ts,
+                is_space: r.is_space,
+                space_children_summary: r.space_children_summary.clone(),
                 id: r.id.clone(),
                 name: r.name.clone(),
                 avatar_url: r.avatar_url.clone(),
@@ -3318,6 +3378,38 @@ mod tests {
         let mut r = room("!a:example.org");
         let before = room_list_fingerprint(std::slice::from_ref(&r));
         r.avatar_url = "mxc://example.org/new-avatar".to_owned();
+        let after = room_list_fingerprint(std::slice::from_ref(&r));
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn fingerprint_changes_when_space_children_summary_changes() {
+        // Adding/removing a room from a space is a state change on the
+        // SPACE's own room (m.space.child), not the child's — none of the
+        // other fields change, so this synthesized summary is the only
+        // thing that can perturb the fingerprint for that case. Without it,
+        // ShellBase::update_space_children_cache_() (only re-triggered from
+        // on_rooms_updated) would never re-fetch and the room list's space
+        // grouping would go stale.
+        let mut r = room("!space:example.org");
+        r.is_space = true;
+        let before = room_list_fingerprint(std::slice::from_ref(&r));
+        r.space_children_summary = "!child:example.org".to_owned();
+        let after = room_list_fingerprint(std::slice::from_ref(&r));
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn fingerprint_changes_when_is_space_toggles() {
+        // is_space determines room-list section membership (Spaces vs.
+        // Rooms/Favorites/etc.) same as the favourite/low-priority toggles
+        // above — matrix-sdk can resolve m.room.create's type after this
+        // room's first notable update already fired, so without this the
+        // room would keep sitting in the wrong section until an unrelated
+        // field happened to perturb the fingerprint.
+        let mut r = room("!a:example.org");
+        let before = room_list_fingerprint(std::slice::from_ref(&r));
+        r.is_space = true;
         let after = room_list_fingerprint(std::slice::from_ref(&r));
         assert_ne!(before, after);
     }

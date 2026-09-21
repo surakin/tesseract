@@ -598,6 +598,15 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                                                : Qt::PointingHandCursor);
                 }
             };
+            mainApp_->space_root()->on_link_hovered =
+                [sfp](const std::string& url)
+            {
+                if (sfp)
+                {
+                    sfp->setCursor(url.empty() ? Qt::ArrowCursor
+                                               : Qt::PointingHandCursor);
+                }
+            };
             mainApp_->on_sidebar_cursor =
                 [sfp](tesseract::views::MainAppWidget::SidebarCursor c)
             {

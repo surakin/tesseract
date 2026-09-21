@@ -2355,6 +2355,12 @@ void MainWindow::on_create(HWND hwnd)
             main_app_surface_->set_cursor(url.empty() ? tk::win32::Cursor::Default
                                                       : tk::win32::Cursor::Pointer);
         };
+        main_app_->space_root()->on_link_hovered = [this](const std::string& url)
+        {
+            if (!main_app_surface_) return;
+            main_app_surface_->set_cursor(url.empty() ? tk::win32::Cursor::Default
+                                                      : tk::win32::Cursor::Pointer);
+        };
         // Cursor over the draggable room-list separator: ↔ on the band, hand
         // on the collapse grip.
         main_app_->on_sidebar_cursor =

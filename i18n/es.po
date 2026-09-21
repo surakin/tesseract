@@ -93,6 +93,38 @@ msgstr[1] "{0} disponibles para unirse"
 msgid "Explore the rooms in this space from the room list."
 msgstr "Explora las salas de este espacio desde la lista de salas."
 
+#: ui/shared/views/SpaceRootView.cpp
+msgid "Drag rooms between the two lists to add or remove them, or select one and press Enter to add / Delete to remove."
+msgstr "Arrastra salas entre las dos listas para añadirlas o eliminarlas, o selecciona una y pulsa Intro para añadir / Suprimir para eliminar."
+
+#: ui/shared/views/SpaceAddRoomList.cpp
+msgid "Search your rooms…"
+msgstr "Buscar en tus salas…"
+
+#: ui/shared/views/SpaceAddRoomList.cpp
+msgid "No more rooms to add."
+msgstr "No hay más salas para añadir."
+
+#: ui/shared/views/SpaceAddRoomList.cpp
+msgid "You don't have permission to add rooms to this space."
+msgstr "No tienes permiso para añadir salas a este espacio."
+
+#: ui/shared/views/SpaceChildRoomGrid.cpp
+msgid "This space has no rooms yet."
+msgstr "Este espacio todavía no tiene salas."
+
+#: ui/shared/views/SpaceChildRoomGrid.cpp
+msgid "You don't have permission to remove rooms from this space."
+msgstr "No tienes permiso para eliminar salas de este espacio."
+
+#: ui/shared/app/ShellBase.cpp
+msgid "add room to space"
+msgstr "añadir sala al espacio"
+
+#: ui/shared/app/ShellBase.cpp
+msgid "remove room from space"
+msgstr "eliminar sala del espacio"
+
 #: ui/shared/app/RoomPane.cpp
 msgid "Failed to cancel message: {0}"
 msgstr "Error al cancelar el mensaje: {0}"

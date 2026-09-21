@@ -1,6 +1,31 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-21**. 1906 C++ + 704 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-21**. 1906 C++ + 711 Rust tests.
+
+> **Space room management (2026-09-21, v0.8.25).**
+> `SpaceRootView` gains an add/remove-rooms section: a searchable candidates
+> list on the left, the space's current children (joined + unjoined) as a
+> grid on the right. Drag a room either direction, or use Enter/Delete;
+> optimistic with revert-on-failure via the existing `pending_room_actions_`
+> correlation. Hidden entirely when the user lacks `m.space.child` send
+> power. New Rust/FFI/Client mutation API
+> (`can_edit_space_children`/`add_room_to_space_async`/
+> `remove_room_from_space_async`) reusing `resolve_route_via` and the
+> existing `on_room_action_complete` callback — no new IEventHandler hook.
+> Also fixed a gap where the room list never refreshed when a room's space
+> membership changed, since `m.space.child` is a state event on the space's
+> room, not the child's — `room_list_fingerprint` now tracks a
+> `space_children_summary` per room. The view's top row was redone as
+> avatar+alias on the left and a scrollable, linkified topic on the right
+> (was overlapping the new section for long topics). First real consumer of
+> the in-app drag-and-drop framework below. Linux (Qt6 + GTK4) build + full
+> ctest 1906/1906, cargo 711 (+7); user-verified live over several rounds of
+> interactive fixes (grid cell shape, stale/unknown room filtering,
+> scrollbar-vs-drag conflicts, tooltip offset, a sidebar-resize-grip
+> regression). No automated tests yet for the two new widgets themselves.
+> Windows/macOS share the code, unbuilt.
+
+<!-- -->
 
 > **In-app drag-and-drop framework for `tesseract_tk` (2026-09-21, v0.8.25).**
 > New synthetic, in-process widget-to-widget drag-and-drop primitive:

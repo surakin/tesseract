@@ -1158,7 +1158,7 @@ float GridView::content_height() const
 
 void GridView::paint(PaintCtx& ctx)
 {
-    ctx.canvas.fill_rect(bounds_, ctx.theme.palette.bg);
+    ctx.canvas.fill_rect(bounds_, background_color(ctx.theme));
     step_kinetic();
     if (!adapter_ || adapter_->count() == 0)
     {

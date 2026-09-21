@@ -26,16 +26,6 @@ and in-progress work, as a single backlog ordered by priority/urgency.
 
 ## Tier 3 — Smaller deferred items, pick opportunistically
 
-- **Space room management via drag-and-drop.** The generic in-app
-  drag-and-drop framework (`tk::Host::begin_drag`, `DragPayload`/`DragVisual`,
-  `on_drag_enter`/`on_drag_over`/`on_drag_leave_target`/`on_drop`) has
-  landed, but nothing uses it yet. Still needed: wire `RoomListView` as a
-  drag source (rooms) and drop target (spaces) — its rows are custom-painted
-  by an internal `Adapter`, not separate widgets, so the list resolves its
-  own row/payload itself — and a new client-side API to actually mutate
-  space membership (add/remove `m.space.child` state events), which doesn't
-  exist yet (only read APIs — `Client::space_children`,
-  `get_space_child_summary` — are there today).
 - Cmd/Ctrl+K refinements, room mentions as pills (vs. just user mentions),
   self-mention emphasis, device rename, new-device warnings, edit history
   viewer, GIF picker.

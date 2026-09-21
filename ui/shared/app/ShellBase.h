@@ -648,6 +648,13 @@ protected:
     void populate_pending_restore_popouts_();
     std::vector<std::string> space_stack_;
 
+    // The space currently shown in main_app_->space_root(), or empty when
+    // it isn't showing. Set by show_space_root_(), cleared alongside
+    // main_app_->hide_space_root(). Used by refresh_space_root_children_'s
+    // callers to avoid rebuilding the room-management section's data for a
+    // space that isn't even visible.
+    std::string space_root_shown_id_;
+
     // Current room-list search query (empty when search is inactive). Owned by
     // the shared search-field wiring in wire_main_app_widget_(); read by
     // is_room_search_active_().
@@ -1219,11 +1226,15 @@ protected:
     // MSVC does not honor a derived-class `using` re-export of a protected nested
     // enum the way GCC/Clang do.
 public:
-    enum class RoomActionKind { Accept, Join, Leave, Create, Knock, AcceptKnock, LeaveSpace };
+    enum class RoomActionKind { Accept, Join, Leave, Create, Knock, AcceptKnock, LeaveSpace,
+                               AddSpaceChild, RemoveSpaceChild };
     struct PendingRoomAction
     {
         std::string room_id;
         RoomActionKind kind;
+        // Only populated for AddSpaceChild/RemoveSpaceChild — the space
+        // being mutated (room_id above is the child room, not the space).
+        std::string space_id;
     };
 
 protected:
@@ -2308,6 +2319,27 @@ protected:
     // Show the chat-panel root view for a joined space. No-op if the room is
     // unknown or is not a space.
     void show_space_root_(const std::string& space_id);
+
+    // Rebuilds the room-management section's data (SpaceAddRoomList's
+    // exclusion set + SpaceChildRoomGrid's children) from the current
+    // space_children_cache_/unjoined_space_children_cache_/rooms_ and pushes
+    // it into main_app_->space_root(). No-op if that space isn't the one
+    // currently shown. Called after show_space_root_() itself, after
+    // space_children_cache_/unjoined summaries refresh, after rooms_
+    // changes, and — optimistically — immediately by
+    // request_add/remove_room_to/from_space_ before their async result
+    // even returns.
+    void refresh_space_root_children_(const std::string& space_id);
+
+    // Optimistically updates space_children_cache_/unjoined_space_children_cache_
+    // and the room-management UI, then fires the async mutation. On
+    // failure, handle_room_action_complete_ui_ reverts the cache and
+    // refreshes again. See client.h's add_room_to_space_async/
+    // remove_room_from_space_async for the underlying API contract.
+    void request_add_room_to_space_(const std::string& space_id,
+                                    const std::string& room_id);
+    void request_remove_room_from_space_(const std::string& space_id,
+                                         const std::string& room_id);
 
     // Called after rooms_ is updated — shell refreshes the room-list widget.
     virtual void on_rooms_updated_() = 0;

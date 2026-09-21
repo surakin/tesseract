@@ -159,6 +159,15 @@ pub mod ffi {
         last_activity_ts: u64,
         /// True when this room's type is "m.space".
         is_space: bool,
+        /// Stable, sorted, \x01-joined summary of this room's current
+        /// m.space.child children (only ever non-empty when is_space) — see
+        /// room_list_fingerprint's doc comment in client/mod.rs for why this
+        /// exists: adding/removing a space child is a state change on the
+        /// SPACE's own room, not the child's, so none of this room's other
+        /// fields change when it happens. Not consumed on the C++ side
+        /// (space_children()/space_children_all() remain the real data
+        /// source there) — this exists purely so the fingerprint notices.
+        space_children_summary: String,
         /// True when this room's `m.room.create` `creation_content.type` is
         /// the MSC3417 call-room type (`org.matrix.msc3417.call`, or the
         /// eventual stable `m.call`).
@@ -3640,6 +3649,34 @@ pub mod ffi {
         /// keep running.
         fn cancel_space_summaries(self: &ClientFfi, space_id: &str);
 
+        /// True iff the current user's power level meets the requirement for
+        /// sending m.space.child in this space. Cached read — no network
+        /// round-trip. Used to gate drag-drop/add-remove UI affordances.
+        fn can_edit_space_children(self: &ClientFfi, space_id: &str) -> bool;
+
+        /// Add `room_id` as a child of `space_id` (m.space.child state event,
+        /// state_key = room_id, non-empty via). Non-blocking; spawns on the
+        /// tokio runtime; result delivered via
+        /// on_room_action_complete(request_id, ok, "", message).
+        fn add_room_to_space_async(
+            self: &ClientFfi,
+            request_id: u64,
+            space_id: &str,
+            room_id: &str,
+            via: &Vec<String>,
+        );
+
+        /// Remove `room_id` as a child of `space_id` (m.space.child state
+        /// event, state_key = room_id, empty via — per spec this invalidates
+        /// the child). Non-blocking; result delivered via
+        /// on_room_action_complete(request_id, ok, "", message).
+        fn remove_room_from_space_async(
+            self: &ClientFfi,
+            request_id: u64,
+            space_id: &str,
+            room_id: &str,
+        );
+
         /// Async counterpart of `get_server_info`. Spawns the fetch on the
         /// tokio runtime and fires `on_server_info_ready(request_id, info_json)`
         /// on completion. Does not pin a thread.
@@ -3949,6 +3986,7 @@ impl Clone for ffi::RoomInfo {
             last_message_thumbnail_url: self.last_message_thumbnail_url.clone(),
             last_activity_ts: self.last_activity_ts,
             is_space: self.is_space,
+            space_children_summary: self.space_children_summary.clone(),
             is_call_room: self.is_call_room,
             is_favorite: self.is_favorite,
             is_low_priority: self.is_low_priority,

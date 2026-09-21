@@ -1642,6 +1642,12 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
             gtk_widget_set_cursor_from_name(w, url.empty() ? "default"
                                                            : "pointer");
         };
+        main_app_->space_root()->on_link_hovered = [this](const std::string& url)
+        {
+            GtkWidget* w = main_app_surface_->widget();
+            gtk_widget_set_cursor_from_name(w, url.empty() ? "default"
+                                                           : "pointer");
+        };
         main_app_->on_sidebar_cursor =
             [this](tesseract::views::MainAppWidget::SidebarCursor c)
         {

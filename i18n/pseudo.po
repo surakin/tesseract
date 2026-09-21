@@ -1749,6 +1749,38 @@ msgstr[1] "[{0} àvàïlàblé tö jöïñxxxx]"
 msgid "Explore the rooms in this space from the room list."
 msgstr "[Éxplöré thé rööms ïñ thïs spàçé fröm thé rööm lïst.xxxxxxxxxx]"
 
+#: ui/shared/views/SpaceRootView.cpp
+msgid "Drag rooms between the two lists to add or remove them, or select one and press Enter to add / Delete to remove."
+msgstr "[Dràg rööms bétwééñ thé twö lïsts tö àdd ör rémövé thém, ör séléçt öñé àñd préss Éñtér tö àdd / Délété tö rémövé.xxxxxxxxxx]"
+
+#: ui/shared/views/SpaceAddRoomList.cpp
+msgid "Search your rooms…"
+msgstr "[Séàrçh yöür rööms…xxxx]"
+
+#: ui/shared/views/SpaceAddRoomList.cpp
+msgid "No more rooms to add."
+msgstr "[Nö möré rööms tö àdd.xxxx]"
+
+#: ui/shared/views/SpaceAddRoomList.cpp
+msgid "You don't have permission to add rooms to this space."
+msgstr "[Yöü dön't hàvé pérmïssïön tö àdd rööms tö thïs spàçé.xxxxxxxxxx]"
+
+#: ui/shared/views/SpaceChildRoomGrid.cpp
+msgid "This space has no rooms yet."
+msgstr "[Thïs spàçé hàs nö rööms yét.xxxx]"
+
+#: ui/shared/views/SpaceChildRoomGrid.cpp
+msgid "You don't have permission to remove rooms from this space."
+msgstr "[Yöü dön't hàvé pérmïssïön tö rémövé rööms fröm thïs spàçé.xxxxxxxxxx]"
+
+#: ui/shared/app/ShellBase.cpp
+msgid "add room to space"
+msgstr "[àdd rööm tö spàçéxxxx]"
+
+#: ui/shared/app/ShellBase.cpp
+msgid "remove room from space"
+msgstr "[rémövé rööm fröm spàçéxxxx]"
+
 #: /home/rayden/src/tesseract/ui/shared/views/StickerPicker.cpp:44
 msgid "Search stickers"
 msgstr "[Séàrçh stïçkérsxxx]"

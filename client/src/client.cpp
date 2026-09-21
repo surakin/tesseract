@@ -2753,6 +2753,38 @@ Client::space_children_all(const std::string& space_id) const
     return result;
 }
 
+bool Client::can_edit_space_children(const std::string& space_id) const
+{
+    SH_FFI;
+    return impl_->ffi->can_edit_space_children(space_id);
+}
+
+void Client::add_room_to_space_async(std::uint64_t request_id,
+                                     const std::string& space_id,
+                                     const std::string& room_id,
+                                     const std::vector<std::string>& via)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    const auto vs = to_rust_strings(via);
+    impl_->ffi->add_room_to_space_async(request_id, space_id, room_id, vs);
+}
+
+void Client::remove_room_from_space_async(std::uint64_t request_id,
+                                          const std::string& space_id,
+                                          const std::string& room_id)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    impl_->ffi->remove_room_from_space_async(request_id, space_id, room_id);
+}
+
 bool Client::needs_recovery() const
 {
     SH_FFI;
