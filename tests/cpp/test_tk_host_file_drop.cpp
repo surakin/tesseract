@@ -46,13 +46,13 @@ public:
         return true;
     }
 
-    bool on_drag_hover(Point local) override
+    bool on_native_drag_hover(Point local) override
     {
         ++hover_count;
         last_hover_local = local;
         return claim_drop_;
     }
-    void on_drag_leave() override { ++leave_count; }
+    void on_native_drag_leave() override { ++leave_count; }
 
     int drop_count = 0;
     Point last_local{};
@@ -155,11 +155,11 @@ TEST_CASE("An invisible ancestor skips the whole subtree even though a "
     CHECK(payload.bytes == std::vector<std::uint8_t>{1, 2, 3});
 }
 
-// Host::dispatch_drag_hover / dispatch_drag_leave — the per-widget
+// Host::dispatch_native_drag_hover / dispatch_native_drag_leave — the per-widget
 // replacement for the old whole-surface "Drop to attach" overlay. Mirrors
 // dispatch_file_drop's claim-based shape (children topmost-first, self
 // last) but tracks a persistent claimant across calls instead of resolving
-// once per event, firing on_drag_leave when the claim changes.
+// once per event, firing on_native_drag_leave when the claim changes.
 
 TEST_CASE("Drag hover claiming a widget requests no extra leave on the "
           "very first call",
@@ -168,16 +168,16 @@ TEST_CASE("Drag hover claiming a widget requests no extra leave on the "
     DropProbeWidget root({0, 0, 400, 400}, /*claim_drop=*/true);
     TestHost host(&root);
 
-    Widget* target = host.dispatch_drag_hover({10, 10});
+    Widget* target = host.dispatch_native_drag_hover({10, 10});
 
     REQUIRE(target == &root);
     CHECK(root.hover_count == 1);
     CHECK(root.leave_count == 0);
-    CHECK(host.drag_hovered_widget_.lock().get() == &root);
+    CHECK(host.native_drag_hovered_widget_.lock().get() == &root);
 }
 
 TEST_CASE("Drag hover moving between two claiming widgets fires "
-          "on_drag_leave on the previous claimant",
+          "on_native_drag_leave on the previous claimant",
           "[tk][host][drag_hover]")
 {
     DropProbeWidget root({0, 0, 400, 400});
@@ -187,18 +187,18 @@ TEST_CASE("Drag hover moving between two claiming widgets fires "
         std::make_unique<DropProbeWidget>(Rect{200, 0, 100, 100}, true));
     TestHost host(&root);
 
-    REQUIRE(host.dispatch_drag_hover({50, 50}) == a);
+    REQUIRE(host.dispatch_native_drag_hover({50, 50}) == a);
     CHECK(a->hover_count == 1);
     CHECK(a->leave_count == 0);
 
-    REQUIRE(host.dispatch_drag_hover({250, 50}) == b);
+    REQUIRE(host.dispatch_native_drag_hover({250, 50}) == b);
     CHECK(a->leave_count == 1);  // a lost the claim
     CHECK(b->hover_count == 1);
     CHECK(b->leave_count == 0);
 }
 
 TEST_CASE("Drag hover moving off every widget clears the claim and fires "
-          "on_drag_leave",
+          "on_native_drag_leave",
           "[tk][host][drag_hover]")
 {
     DropProbeWidget root({0, 0, 400, 400});
@@ -206,37 +206,37 @@ TEST_CASE("Drag hover moving off every widget clears the claim and fires "
         std::make_unique<DropProbeWidget>(Rect{0, 0, 100, 100}, true));
     TestHost host(&root);
 
-    REQUIRE(host.dispatch_drag_hover({50, 50}) == a);
-    REQUIRE(host.dispatch_drag_hover({300, 300}) == nullptr);
+    REQUIRE(host.dispatch_native_drag_hover({50, 50}) == a);
+    REQUIRE(host.dispatch_native_drag_hover({300, 300}) == nullptr);
 
     CHECK(a->leave_count == 1);
-    CHECK(host.drag_hovered_widget_.expired());
+    CHECK(host.native_drag_hovered_widget_.expired());
 }
 
-TEST_CASE("dispatch_drag_leave clears an active claim", "[tk][host][drag_hover]")
+TEST_CASE("dispatch_native_drag_leave clears an active claim", "[tk][host][drag_hover]")
 {
     DropProbeWidget root({0, 0, 400, 400}, /*claim_drop=*/true);
     TestHost host(&root);
 
-    REQUIRE(host.dispatch_drag_hover({10, 10}) == &root);
-    host.dispatch_drag_leave();
+    REQUIRE(host.dispatch_native_drag_hover({10, 10}) == &root);
+    host.dispatch_native_drag_leave();
 
     CHECK(root.leave_count == 1);
-    CHECK(host.drag_hovered_widget_.expired());
+    CHECK(host.native_drag_hovered_widget_.expired());
 
     // Idempotent — a second leave with no active claim is a no-op.
-    host.dispatch_drag_leave();
+    host.dispatch_native_drag_leave();
     CHECK(root.leave_count == 1);
 }
 
-TEST_CASE("A non-claiming widget still receives on_drag_hover but never "
+TEST_CASE("A non-claiming widget still receives on_native_drag_hover but never "
           "becomes the claimant",
           "[tk][host][drag_hover]")
 {
     DropProbeWidget root({0, 0, 400, 400}, /*claim_drop=*/false);
     TestHost host(&root);
 
-    Widget* target = host.dispatch_drag_hover({10, 10});
+    Widget* target = host.dispatch_native_drag_hover({10, 10});
 
     REQUIRE(target == nullptr);
     CHECK(root.hover_count == 1);

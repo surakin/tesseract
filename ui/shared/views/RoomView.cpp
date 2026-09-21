@@ -2250,8 +2250,8 @@ void RoomView::paint(tk::PaintCtx& ctx)
     if (compose_bar_)
     {
         compose_bar_->paint(ctx);
-        if (drag_hover_)
-            tk::paint_drag_hover_highlight(ctx, compose_bar_->bounds());
+        if (native_drag_hover_)
+            tk::paint_native_drag_hover_highlight(ctx, compose_bar_->bounds());
     }
 
     // Paint call panel last so it always draws on top of both message list and
@@ -2454,24 +2454,24 @@ bool RoomView::on_file_drop(tk::Point /*local*/, tk::FileDropPayload& payload)
     return outcome == FileDropOutcome::Accepted;
 }
 
-tk::Widget* RoomView::dispatch_drag_hover(tk::Point world)
+tk::Widget* RoomView::dispatch_native_drag_hover(tk::Point world)
 {
     if (tk::Widget* o = active_overlay_panel_())
-        return o->dispatch_drag_hover(world);
-    return tk::Widget::dispatch_drag_hover(world);
+        return o->dispatch_native_drag_hover(world);
+    return tk::Widget::dispatch_native_drag_hover(world);
 }
 
-bool RoomView::on_drag_hover(tk::Point /*local*/)
+bool RoomView::on_native_drag_hover(tk::Point /*local*/)
 {
     if (!compose_bar_ || !compose_bar_->enabled())
         return false;
-    drag_hover_ = true;
+    native_drag_hover_ = true;
     return true;
 }
 
-void RoomView::on_drag_leave()
+void RoomView::on_native_drag_leave()
 {
-    drag_hover_ = false;
+    native_drag_hover_ = false;
 }
 
 } // namespace tesseract::views

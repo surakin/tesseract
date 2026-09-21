@@ -620,7 +620,7 @@ TEST_CASE("ImagePackEditorView: dispatch_file_drop reconstructs world "
     CHECK(payload.bytes.empty()); // accepted — moved out
 }
 
-TEST_CASE("ImagePackEditorView: dispatch_drag_hover targets the pack under "
+TEST_CASE("ImagePackEditorView: dispatch_native_drag_hover targets the pack under "
          "the point and updates on move without changing the claimed widget",
          "[image_pack][view]")
 {
@@ -639,21 +639,21 @@ TEST_CASE("ImagePackEditorView: dispatch_drag_hover targets the pack under "
     const tk::Point pack1_pt{100.0f, pack1_top + 10.0f};
     const tk::Point pack2_pt{100.0f, pack2_top + 10.0f};
 
-    tk::Widget* target1 = v.dispatch_drag_hover(pack1_pt);
+    tk::Widget* target1 = v.dispatch_native_drag_hover(pack1_pt);
     REQUIRE(target1 == &v);
-    REQUIRE(v.list()->drag_hover_pack().has_value());
-    CHECK(*v.list()->drag_hover_pack() == 0);
+    REQUIRE(v.list()->native_drag_hover_pack().has_value());
+    CHECK(*v.list()->native_drag_hover_pack() == 0);
 
     // Moving to a different pack still claims the same widget (v itself is
-    // the claimant on_file_drop/on_drag_hover reach) but updates which pack
+    // the claimant on_file_drop/on_native_drag_hover reach) but updates which pack
     // is highlighted internally.
-    tk::Widget* target2 = v.dispatch_drag_hover(pack2_pt);
+    tk::Widget* target2 = v.dispatch_native_drag_hover(pack2_pt);
     REQUIRE(target2 == &v);
-    REQUIRE(v.list()->drag_hover_pack().has_value());
-    CHECK(*v.list()->drag_hover_pack() == 1);
+    REQUIRE(v.list()->native_drag_hover_pack().has_value());
+    CHECK(*v.list()->native_drag_hover_pack() == 1);
 
-    v.on_drag_leave();
-    CHECK_FALSE(v.list()->drag_hover_pack().has_value());
+    v.on_native_drag_leave();
+    CHECK_FALSE(v.list()->native_drag_hover_pack().has_value());
 }
 
 TEST_CASE("ImagePackEditorView: add_pending_image_at falls back to the "

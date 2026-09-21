@@ -684,12 +684,12 @@ public:
     // views::route_file_drop_to_compose_bar.
     bool on_file_drop(tk::Point local, tk::FileDropPayload& payload) override;
     // Same overlay-first routing, for drag-hover feedback.
-    tk::Widget* dispatch_drag_hover(tk::Point world) override;
+    tk::Widget* dispatch_native_drag_hover(tk::Point world) override;
     // Claims whenever on_file_drop would (mirrors its compose_bar_->enabled()
     // gate) and shows a highlight scoped to compose_bar_'s own bounds — not
     // RoomView's whole content pane — since that's where the drop will land.
-    bool on_drag_hover(tk::Point local) override;
-    void on_drag_leave() override;
+    bool on_native_drag_hover(tk::Point local) override;
+    void on_native_drag_leave() override;
 
 private:
     // The open overlay panel that should receive input ahead of all other
@@ -789,7 +789,7 @@ private:
 
     bool has_room_ = false; // true after the first set_room() call
     tesseract::Client* client_ = nullptr; // borrowed; see set_client()
-    bool drag_hover_ = false; // true while claiming on_drag_hover
+    bool native_drag_hover_ = false; // true while claiming on_native_drag_hover
 
     // Set by set_room() on a genuine room switch; consumed by the next
     // paint() once the widget tree's visibility for this frame has fully

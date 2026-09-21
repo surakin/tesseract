@@ -3068,13 +3068,13 @@ public:
     // callbacks (plain free functions, not Host members — need a public
     // wrapper around the protected shared dispatch, mirroring
     // ingest_native_file_drop above).
-    Widget* on_drag_hover(Point world)
+    Widget* on_native_drag_hover(Point world)
     {
-        return dispatch_drag_hover(world);
+        return dispatch_native_drag_hover(world);
     }
-    void on_drag_leave()
+    void on_native_drag_leave()
     {
-        dispatch_drag_leave();
+        dispatch_native_drag_leave();
     }
 
     void on_draw(cairo_t* cr, int w, int h)
@@ -3100,6 +3100,7 @@ public:
         paint_tooltip_overlay(ctx, surface_bounds);
         paint_focus_overlay(ctx);
         paint_toast_overlay(ctx, surface_bounds);
+        paint_drag_overlay(ctx, surface_bounds);
         current_canvas_ = nullptr;
         sync_anim_overlays_();
     }
@@ -3496,7 +3497,7 @@ gboolean drop_cb(GtkDropTarget* /*target*/, const GValue* value, double x,
         return FALSE;
     }
 
-    host->on_drag_leave();
+    host->on_native_drag_leave();
 
     const tk::Point pos{static_cast<float>(x), static_cast<float>(y)};
     bool any = false;
@@ -3539,7 +3540,7 @@ GdkDragAction drop_motion_cb(GtkDropTarget* /*target*/, double x, double y,
     Host* host = static_cast<Host*>(p);
     if (host)
     {
-        host->on_drag_hover({static_cast<float>(x), static_cast<float>(y)});
+        host->on_native_drag_hover({static_cast<float>(x), static_cast<float>(y)});
         return GDK_ACTION_COPY;
     }
     return static_cast<GdkDragAction>(0);
@@ -3550,7 +3551,7 @@ void drop_leave_cb(GtkDropTarget* /*target*/, gpointer p)
     Host* host = static_cast<Host*>(p);
     if (host)
     {
-        host->on_drag_leave();
+        host->on_native_drag_leave();
     }
 }
 
@@ -3677,7 +3678,7 @@ Surface::Surface(const Theme& theme, bool transparent)
 
     // Drop target — accepts both single-file (Firefox URI) and
     // multi-file (Nautilus) drags, routed automatically through the widget
-    // tree (Host::dispatch_file_drop / dispatch_drag_hover) rather than a
+    // tree (Host::dispatch_file_drop / dispatch_native_drag_hover) rather than a
     // registered handler.
     //
     // Attached to `overlay` (not `drawing_area`) and set to the CAPTURE

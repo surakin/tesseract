@@ -103,6 +103,20 @@ void Host::dispatch_pointer_down(Point world)
 
 void Host::dispatch_pointer_up(Point world)
 {
+    if (active_drag_)
+    {
+        Widget* target = active_drag_->current_target.lock().get();
+        DragPayload payload = std::move(active_drag_->payload);
+        Point local{};
+        if (target)
+            local = target->world_to_local(world);
+        active_drag_.reset(); // clear before callback (re-entrancy safe)
+        pressed_widget_.reset();
+        if (target)
+            target->on_drop(local, std::move(payload));
+        request_repaint();
+        return;
+    }
     auto w = pressed_widget_.lock();
     if (!w)
         return;
@@ -123,6 +137,39 @@ void Host::dispatch_pointer_move(Point world)
     Widget* root = input_root_();
     if (!root)
     {
+        return;
+    }
+    // While an in-app drag (begin_drag()) is active, moves retarget drop
+    // candidates instead of reaching the widget pressed_widget_ still holds
+    // (that widget stops receiving on_pointer_drag once a drag has begun).
+    // This is a distinct branch from the pressed_widget_ hover-suspension
+    // below, so retargeting still works even though normal hover dispatch
+    // stays suspended for the whole gesture.
+    if (active_drag_)
+    {
+        active_drag_->cursor_world = world;
+        Widget* current = active_drag_->current_target.lock().get();
+        // Only re-run the claim-bubble walk (which calls on_drag_enter on
+        // whatever it resolves to, per its claim-testing contract) when the
+        // current target no longer contains the cursor — otherwise the same
+        // still-current target would see a spurious repeat on_drag_enter on
+        // every move instead of the "fires once" contract its doc promises.
+        if (current && current->contains_world(world))
+        {
+            current->on_drag_over(current->world_to_local(world), active_drag_->payload);
+            request_repaint();
+            return;
+        }
+        Widget* target = root->dispatch_drag_enter(world, active_drag_->payload);
+        if (target != current)
+        {
+            if (current)
+                current->on_drag_leave_target();
+            active_drag_->current_target = track(target);
+        }
+        if (target)
+            target->on_drag_over(target->world_to_local(world), active_drag_->payload);
+        request_repaint();
         return;
     }
     // If a widget claimed the last pointer-down, all subsequent moves go to it
@@ -226,36 +273,82 @@ Widget* Host::dispatch_file_drop(Point world, FileDropPayload& payload)
     return target;
 }
 
-Widget* Host::dispatch_drag_hover(Point world)
+Widget* Host::dispatch_native_drag_hover(Point world)
 {
     Widget* root = input_root_();
     if (!root)
         return nullptr;
-    Widget* target = root->dispatch_drag_hover(world);
-    bool changed = (target != drag_hovered_widget_.lock().get());
+    Widget* target = root->dispatch_native_drag_hover(world);
+    bool changed = (target != native_drag_hovered_widget_.lock().get());
     if (changed)
     {
-        if (auto d = drag_hovered_widget_.lock())
-            d->on_drag_leave();
-        drag_hovered_widget_ = track(target);
+        if (auto d = native_drag_hovered_widget_.lock())
+            d->on_native_drag_leave();
+        native_drag_hovered_widget_ = track(target);
     }
     if (changed || target)
         request_repaint();
     return target;
 }
 
-void Host::dispatch_drag_leave()
+void Host::dispatch_native_drag_leave()
 {
-    if (auto d = drag_hovered_widget_.lock())
+    if (auto d = native_drag_hovered_widget_.lock())
     {
-        d->on_drag_leave();
-        drag_hovered_widget_.reset();
+        d->on_native_drag_leave();
+        native_drag_hovered_widget_.reset();
         request_repaint();
     }
 }
 
+void Host::begin_drag(DragPayload payload, DragVisual visual, Point source_local)
+{
+    // Convert the caller-local point to world space using whatever widget
+    // is still holding pointer capture (pressed_widget_) — begin_drag() is
+    // only ever called from within that widget's own on_pointer_down/
+    // on_pointer_drag, so it is always the caller here.
+    Point world = source_local;
+    if (auto p = pressed_widget_.lock())
+    {
+        Rect b = p->bounds();
+        world = Point{b.x + source_local.x, b.y + source_local.y};
+    }
+    active_drag_.reset(new ActiveDrag{std::move(payload), std::move(visual), world, {}});
+    request_repaint();
+}
+
+void Host::cancel_drag()
+{
+    if (!active_drag_)
+        return;
+    if (auto t = active_drag_->current_target.lock())
+        t->on_drag_leave_target();
+    active_drag_.reset();
+    pressed_widget_.reset();
+    request_repaint();
+}
+
+void Host::paint_drag_overlay(PaintCtx& ctx, Rect /*surface_bounds*/)
+{
+    if (!active_drag_ || !active_drag_->visual.image)
+        return;
+    const DragVisual& visual = active_drag_->visual;
+    Point cursor = active_drag_->cursor_world;
+    Rect dst{cursor.x - visual.hotspot.x, cursor.y - visual.hotspot.y,
+              static_cast<float>(visual.image->width()),
+              static_cast<float>(visual.image->height())};
+    ctx.canvas.push_opacity(visual.opacity);
+    ctx.canvas.draw_image(*visual.image, dst);
+    ctx.canvas.pop_opacity();
+}
+
 void Host::dispatch_pointer_leave()
 {
+    // A drag in progress is cancelled by the pointer leaving the surface
+    // entirely (no OS-level drag to hand off to, per design). cancel_drag()
+    // already resets pressed_widget_, so the pressed-widget cleanup below
+    // becomes a no-op afterward.
+    cancel_drag();
     if (auto hb = hovered_btn_.lock())
     {
         hb->set_hovered(false);
@@ -424,6 +517,15 @@ bool Host::advance_focus_(bool forward)
 bool Host::dispatch_key_down(const KeyEvent& event)
 {
     fire_user_activity_();
+    // A drag in progress is the most "modal" transient state a surface can
+    // be in — Escape cancels it ahead of every other Escape-consumer below
+    // (popup dismiss, etc.), which would be reaching for state that no
+    // longer means anything mid-drag.
+    if (active_drag_ && event.key == Key::Escape)
+    {
+        cancel_drag();
+        return true;
+    }
     // Any key (not just Tab) reasserts keyboard modality — e.g. pressing
     // Enter/Space to activate an already-Tab-focused widget should keep the
     // ring visible. Skipped when the currently focused widget holds its own

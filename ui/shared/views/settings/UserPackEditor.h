@@ -134,12 +134,12 @@ public:
 
     // Drag-hover feedback — single grid, no position targeting needed
     // (mirrors on_file_drop). Always claims; paint() highlights bounds().
-    bool on_drag_hover(tk::Point local) override;
-    void on_drag_leave() override;
+    bool on_native_drag_hover(tk::Point local) override;
+    void on_native_drag_leave() override;
 
     // Test accessors.
     const std::vector<StagedPackImage>& images() const { return images_; }
-    bool drag_hover() const { return drag_hover_; }
+    bool drag_hover() const { return native_drag_hover_; }
 
 protected:
     float content_height() const override;
@@ -155,7 +155,7 @@ private:
     std::vector<std::string> removed_shortcodes_;
     bool committing_ = false;
     bool dirty_      = false;
-    bool drag_hover_ = false; // true while claiming on_drag_hover
+    bool native_drag_hover_ = false; // true while claiming on_native_drag_hover
     std::uint64_t next_local_id_ = 0;
 
     std::optional<std::size_t> editing_; // tile index whose shortcode is edited

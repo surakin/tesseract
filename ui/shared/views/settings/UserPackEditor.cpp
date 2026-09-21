@@ -107,15 +107,15 @@ bool UserPackEditor::on_file_drop(tk::Point /*local*/, tk::FileDropPayload& payl
     return true;
 }
 
-bool UserPackEditor::on_drag_hover(tk::Point /*local*/)
+bool UserPackEditor::on_native_drag_hover(tk::Point /*local*/)
 {
-    drag_hover_ = true;
+    native_drag_hover_ = true;
     return true;
 }
 
-void UserPackEditor::on_drag_leave()
+void UserPackEditor::on_native_drag_leave()
 {
-    drag_hover_ = false;
+    native_drag_hover_ = false;
 }
 
 tk::Rect UserPackEditor::shortcode_edit_rect() const
@@ -370,8 +370,8 @@ void UserPackEditor::paint(tk::PaintCtx& ctx)
     }
     if (editing_ && shortcode_field_ && shortcode_field_->visible())
         shortcode_field_->paint(ctx);
-    if (drag_hover_)
-        tk::paint_drag_hover_highlight(ctx, bounds_);
+    if (native_drag_hover_)
+        tk::paint_native_drag_hover_highlight(ctx, bounds_);
     ctx.canvas.pop_clip();
     paint_scrollbar(ctx);
 }

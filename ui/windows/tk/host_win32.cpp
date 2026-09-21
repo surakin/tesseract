@@ -4151,6 +4151,7 @@ public:
                 paint_tooltip_overlay(ctx, surface_bounds);
                 paint_focus_overlay(ctx);
                 paint_toast_overlay(ctx, surface_bounds);
+                paint_drag_overlay(ctx, surface_bounds);
             }
             if (has_dirty)
             {
@@ -4470,11 +4471,11 @@ public:
     {
         if (!hwnd_ || !IsWindowVisible(hwnd_))
             return nullptr;
-        return dispatch_drag_hover(pos);
+        return dispatch_native_drag_hover(pos);
     }
     void leave_file_drop()
     {
-        dispatch_drag_leave();
+        dispatch_native_drag_leave();
     }
 
 private:

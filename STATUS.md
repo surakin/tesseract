@@ -1,6 +1,24 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-21**. 1898 C++ + 704 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-21**. 1906 C++ + 704 Rust tests.
+
+> **In-app drag-and-drop framework for `tesseract_tk` (2026-09-21, v0.8.25).**
+> New synthetic, in-process widget-to-widget drag-and-drop primitive:
+> `Host::begin_drag()` (a kind-tagged `DragPayload` + a fully customizable
+> pre-rendered `DragVisual` that floats above everything) hands pointer
+> routing to a claim-bubble drop-target search (`on_drag_enter`/
+> `on_drag_over`/`on_drag_leave_target`/`on_drop`), with Escape/leave-surface
+> cancel and a shared `DragGestureTracker` click-vs-drag threshold helper.
+> No OS drag-source APIs are touched — this doesn't interoperate with
+> dragging content to other apps. The existing OS-inbound file-drop hover
+> API was renamed (`on_drag_hover`→`on_native_drag_hover`, etc.) so the two
+> systems can never be confused. Framework only, no product call site yet —
+> first consumer will be dragging rooms onto Spaces in `RoomListView`, which
+> also needs a still-missing client API to mutate `m.space.child`. Linux
+> (Qt6 + GTK4) build + full ctest 1906/1906 (+8); Windows/macOS share the
+> code, unbuilt this session.
+
+<!-- -->
 
 > **Call rooms (MSC3417) get room-list UI and full call lifecycle (2026-09-21, v0.8.25).**
 > Call rooms now show in their own "Call Rooms" room-list section (after
@@ -2153,7 +2171,8 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **Native text overlays** — `NativeTextField` (`QLineEdit` / `GtkEntry` / Win32 EDIT / `NSTextField`) and `NativeTextArea` (`QTextEdit` / `GtkTextView` / multi-line EDIT / `NSTextView`) for IME-friendly input. `set_placeholder` is implemented on all four platforms (GTK4 uses a `dim-label` `GtkLabel` overlay child since `GtkTextView` has no native placeholder API).
 - **Shared views** — `LoginView`, `RoomListView`, `MessageListView`, `EmojiPicker`, `StickerPicker`, `RecoveryBanner`, `ComposeBar` mounted identically on every platform.
 - **`AlertDialog`** — modal overlay widget (not backdrop-dismissible) with a title, body, and up to two configurable action buttons (`open(Options, primary_cb, secondary_cb)` / `close()` / `is_open()`). Used by `LoginView` to surface startup restore errors; available for other blocking error prompts.
-- **Drag-and-drop ingest** — `tk::Widget` virtuals (`on_file_drop`/`dispatch_file_drop`, `on_drag_hover`/`dispatch_drag_hover`) mirror the existing pointer-event dispatch shape, so each drop target (`ComposeBar`, `RoomView`, `ImagePackEditorView`, `UserPackEditor`) claims its own drop and paints its own localized hover highlight instead of one whole-surface overlay; image-data MIME types route to the compose bar's image preview, generic files route to the file chip.
+- **Drag-and-drop ingest (OS-inbound files)** — `tk::Widget` virtuals (`on_file_drop`/`dispatch_file_drop`, `on_native_drag_hover`/`dispatch_native_drag_hover`) mirror the existing pointer-event dispatch shape, so each drop target (`ComposeBar`, `RoomView`, `ImagePackEditorView`, `UserPackEditor`) claims its own drop and paints its own localized hover highlight instead of one whole-surface overlay; image-data MIME types route to the compose bar's image preview, generic files route to the file chip. Distinct from the in-app drag-and-drop framework below.
+- **In-app drag-and-drop framework** — `Host::begin_drag(DragPayload, DragVisual, Point)` starts a synthetic, in-process widget-to-widget drag (no OS drag-source APIs), with a claim-bubble drop-target search (`Widget::on_drag_enter`/`on_drag_over`/`on_drag_leave_target`/`on_drop`, `dispatch_drag_enter`), a Host-owned floating visual painted above everything, and a shared `DragGestureTracker` click-vs-drag threshold helper (`ui/shared/tk/drag_gesture.h`). Cancels on Escape or the pointer leaving the surface.
 - **`PopupMenu`** — renders through `tk::PopupSurfaceHandle` (`Host::make_popup_surface()`, the same primitive `tk::ComboBox`'s dropdown uses) rather than a canvas overlay, so it's a genuine OS popup window that z-orders correctly above everything, including native controls; row drawing/hit-testing lives in a nested `MenuList` widget. Supports separator and disabled items. Dismisses on any outside click — including a click that lands in a native text field and never reaches canvas hit-testing — and on the window losing activation (alt-tab), via `Host::dismiss_active_popup()` (also benefits `ComboBox`/`DatePickerView`). `PopupSurfaceHandle::on_dismiss_requested` outside-click auto-dismiss (Mention/Slash/Shortcode/Gif popups) works on all four shells, not just Qt.
 
 ## Messaging

@@ -177,13 +177,13 @@ public:
     // the protected shared dispatch, mirroring ingest_native_file_drop
     // above). The per-widget highlight these drive replaces the old
     // whole-surface "Drop to attach" overlay.
-    Widget* on_drag_hover(tk::Point world)
+    Widget* on_native_drag_hover(tk::Point world)
     {
-        return dispatch_drag_hover(world);
+        return dispatch_native_drag_hover(world);
     }
-    void on_drag_leave()
+    void on_native_drag_leave()
     {
-        dispatch_drag_leave();
+        dispatch_native_drag_leave();
     }
 
 protected:
@@ -603,7 +603,7 @@ tk::KeyEvent translate_key_event(NSEvent* event)
     {
         // Same conversion as -performDragOperation: below.
         NSPoint loc = [self convertPoint:sender.draggingLocation fromView:nil];
-        self.hostPtr->on_drag_hover(
+        self.hostPtr->on_native_drag_hover(
             {static_cast<float>(loc.x), static_cast<float>(loc.y)});
     }
     return op;
@@ -614,7 +614,7 @@ tk::KeyEvent translate_key_event(NSEvent* event)
     (void)sender;
     if (self.hostPtr)
     {
-        self.hostPtr->on_drag_leave();
+        self.hostPtr->on_native_drag_leave();
     }
 }
 
@@ -640,7 +640,7 @@ tk::KeyEvent translate_key_event(NSEvent* event)
     BOOL ok = self.hostPtr->ingest_native_file_drop(sender.draggingPasteboard, pos)
                  ? YES
                  : NO;
-    self.hostPtr->on_drag_leave();
+    self.hostPtr->on_native_drag_leave();
     return ok;
 }
 
@@ -1228,7 +1228,7 @@ public:
     // the dropped file's path as text — before the Surface's own
     // -draggingEntered:/-performDragOperation: ever saw it. These mirror
     // TKSurfaceView's own overrides exactly, resolving the drop location
-    // into superview_'s coordinate space (what tk::macos::Host::on_drag_hover/
+    // into superview_'s coordinate space (what tk::macos::Host::on_native_drag_hover/
     // ingest_native_file_drop expect) instead of this view's local space.
     NSDragOperation dragging_entered(id<NSDraggingInfo> sender) const;
     NSDragOperation dragging_updated(id<NSDraggingInfo> sender) const;
@@ -2851,7 +2851,7 @@ NSDragOperation NSTextViewNative::dragging_updated(id<NSDraggingInfo> sender) co
     if (op != NSDragOperationNone && superview_.hostPtr)
     {
         NSPoint loc = [superview_ convertPoint:sender.draggingLocation fromView:nil];
-        superview_.hostPtr->on_drag_hover(
+        superview_.hostPtr->on_native_drag_hover(
             {static_cast<float>(loc.x), static_cast<float>(loc.y)});
     }
     return op;
@@ -2861,7 +2861,7 @@ void NSTextViewNative::dragging_exited(id<NSDraggingInfo> sender) const
 {
     (void)sender;
     if (superview_.hostPtr)
-        superview_.hostPtr->on_drag_leave();
+        superview_.hostPtr->on_native_drag_leave();
 }
 
 BOOL NSTextViewNative::prepare_for_drag_operation(id<NSDraggingInfo> sender) const
@@ -2879,7 +2879,7 @@ BOOL NSTextViewNative::perform_drag_operation(id<NSDraggingInfo> sender) const
     BOOL ok = superview_.hostPtr->ingest_native_file_drop(sender.draggingPasteboard, pos)
                   ? YES
                   : NO;
-    superview_.hostPtr->on_drag_leave();
+    superview_.hostPtr->on_native_drag_leave();
     return ok;
 }
 
@@ -3578,6 +3578,7 @@ void Host::on_draw(CGContextRef ctx)
         paint_tooltip_overlay(pc, surface_bounds);
         paint_focus_overlay(pc);
         paint_toast_overlay(pc, surface_bounds);
+        paint_drag_overlay(pc, surface_bounds);
     }
     else
     {

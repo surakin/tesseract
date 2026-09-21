@@ -2607,6 +2607,7 @@ public:
         paint_tooltip_overlay(ctx, surface_bounds);
         paint_focus_overlay(ctx);
         paint_toast_overlay(ctx, surface_bounds);
+        paint_drag_overlay(ctx, surface_bounds);
     }
 
     // Pointer-event entry points. Each translates the native event to a
@@ -2653,13 +2654,13 @@ public:
     }
 
     // Drag-hover entry points, mirroring on_file_drop above.
-    Widget* on_drag_hover(Point world)
+    Widget* on_native_drag_hover(Point world)
     {
-        return dispatch_drag_hover(world);
+        return dispatch_native_drag_hover(world);
     }
-    void on_drag_leave()
+    void on_native_drag_leave()
     {
-        dispatch_drag_leave();
+        dispatch_native_drag_leave();
     }
 
     void detach_surface()
@@ -3124,7 +3125,7 @@ void Surface::dragEnterEvent(QDragEnterEvent* e)
     {
         e->setDropAction(Qt::CopyAction);
         e->acceptProposedAction();
-        host_->on_drag_hover({static_cast<float>(e->position().x()),
+        host_->on_native_drag_hover({static_cast<float>(e->position().x()),
                               static_cast<float>(e->position().y())});
     }
     else
@@ -3139,7 +3140,7 @@ void Surface::dragMoveEvent(QDragMoveEvent* e)
     {
         e->setDropAction(Qt::CopyAction);
         e->acceptProposedAction();
-        host_->on_drag_hover({static_cast<float>(e->position().x()),
+        host_->on_native_drag_hover({static_cast<float>(e->position().x()),
                               static_cast<float>(e->position().y())});
     }
     else
@@ -3150,12 +3151,12 @@ void Surface::dragMoveEvent(QDragMoveEvent* e)
 
 void Surface::dragLeaveEvent(QDragLeaveEvent*)
 {
-    host_->on_drag_leave();
+    host_->on_native_drag_leave();
 }
 
 void Surface::dropEvent(QDropEvent* e)
 {
-    host_->on_drag_leave();
+    host_->on_native_drag_leave();
 
     const QMimeData* md = e->mimeData();
     if (!md)

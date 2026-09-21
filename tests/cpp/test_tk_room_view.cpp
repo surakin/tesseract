@@ -106,13 +106,13 @@ TEST_CASE("RoomView claims drag-hover onto its compose bar and releases it "
     const Rect cb = view.compose_bar()->bounds();
     const Point inside{cb.x + cb.w * 0.5f, cb.y + cb.h * 0.5f};
 
-    Widget* target = view.dispatch_drag_hover(inside);
+    Widget* target = view.dispatch_native_drag_hover(inside);
     CHECK(target == &view);
 
-    view.on_drag_leave();
-    // on_drag_leave clears the highlight flag; re-claiming should still work
+    view.on_native_drag_leave();
+    // on_native_drag_leave clears the highlight flag; re-claiming should still work
     // (not left in some latched state).
-    CHECK(view.dispatch_drag_hover(inside) == &view);
+    CHECK(view.dispatch_native_drag_hover(inside) == &view);
 }
 
 TEST_CASE("RoomView does not claim drag-hover while its compose bar is "
@@ -128,7 +128,7 @@ TEST_CASE("RoomView does not claim drag-hover while its compose bar is "
     // set_room() runs (and again after clear_room()), regardless of where in
     // RoomView's bounds the point falls — RoomView is the position-agnostic
     // catch-all, so it always claims-or-rejects as a whole, never by point.
-    Widget* target = view.dispatch_drag_hover({400.0f, 300.0f});
+    Widget* target = view.dispatch_native_drag_hover({400.0f, 300.0f});
     CHECK(target == nullptr);
 }
 
