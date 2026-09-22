@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cwctype>
 #include <imm.h>
 #include <strsafe.h>
 #include <vector>
@@ -1459,6 +1460,174 @@ int64_t PrevClusterBoundary(ControlState* state, int64_t pos) {
     return prev_start < pos ? prev_start : pos - 1;  // defensive
 }
 
+// Start offset of every glyph cluster, plus a final entry equal to the text
+// length, so word scanning steps over whole clusters (emoji, combining
+// marks) exactly like the single-cluster helpers above. One layout build per
+// call rather than one per step — a word jump can cross many clusters.
+std::vector<int64_t> ClusterStarts(ControlState* state) {
+    const int64_t length = static_cast<int64_t>(state->document.Length());
+    std::vector<int64_t> starts;
+    Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
+    UINT32 count = 0;
+    if (SUCCEEDED(CreateLayout(state, layout.GetAddressOf())) && layout) {
+        layout->GetClusterMetrics(nullptr, 0, &count);
+    }
+    std::vector<DWRITE_CLUSTER_METRICS> metrics(count);
+    if (count > 0 && SUCCEEDED(layout->GetClusterMetrics(metrics.data(), count, &count))) {
+        starts.reserve(count + 1);
+        int64_t pos = 0;
+        for (const DWRITE_CLUSTER_METRICS& m : metrics) {
+            starts.push_back(pos);
+            pos += m.length;
+        }
+        if (pos == length) {
+            starts.push_back(length);
+            return starts;
+        }
+        starts.clear();  // layout text out of sync with the document (IME)
+    }
+    // Fallback: step by code point so surrogate pairs are never split.
+    const std::wstring text = state->document.PlainText();
+    for (size_t i = 0; i < text.size();) {
+        starts.push_back(static_cast<int64_t>(i));
+        i += (IsHighSurrogate(text[i]) && i + 1 < text.size() && IsLowSurrogate(text[i + 1])) ? 2 : 1;
+    }
+    starts.push_back(length);
+    return starts;
+}
+
+enum class WordClass { Space, Newline, Word, Other };
+
+WordClass ClassifyCluster(wchar_t first) {
+    if (first == L'\n') {
+        return WordClass::Newline;
+    }
+    if (std::iswspace(first)) {
+        return WordClass::Space;
+    }
+    if (first == L'_' || std::iswalnum(first)) {
+        return WordClass::Word;
+    }
+    return WordClass::Other;
+}
+
+// Ctrl+Left / Ctrl+Backspace target: skip spaces, then one run of the same
+// class (word characters vs. punctuation/emoji). A newline is its own stop
+// so deleting a word never also swallows the line break before it.
+int64_t PrevWordBoundary(ControlState* state, int64_t pos) {
+    if (pos <= 0) {
+        return 0;
+    }
+    if (state->password_mode) {
+        return 0;  // don't reveal word structure of a masked secret
+    }
+    const std::wstring text = state->document.PlainText();
+    const std::vector<int64_t> starts = ClusterStarts(state);
+    size_t i = static_cast<size_t>(std::lower_bound(starts.begin(), starts.end(), pos) - starts.begin());
+    auto cls = [&](size_t k) { return ClassifyCluster(text[static_cast<size_t>(starts[k])]); };
+
+    const size_t before_spaces = i;
+    while (i > 0 && cls(i - 1) == WordClass::Space) {
+        --i;
+    }
+    if (i == 0) {
+        return 0;
+    }
+    if (cls(i - 1) == WordClass::Newline) {
+        return i != before_spaces ? starts[i] : starts[i - 1];
+    }
+    const WordClass run = cls(i - 1);
+    while (i > 0 && cls(i - 1) == run) {
+        --i;
+    }
+    return starts[i];
+}
+
+// Ctrl+Right / Ctrl+Delete target: the start of the next word (skip the
+// current run, then trailing spaces), matching Qt's NextWord.
+int64_t NextWordBoundary(ControlState* state, int64_t pos) {
+    const int64_t length = static_cast<int64_t>(state->document.Length());
+    if (pos >= length) {
+        return length;
+    }
+    if (state->password_mode) {
+        return length;
+    }
+    const std::wstring text = state->document.PlainText();
+    const std::vector<int64_t> starts = ClusterStarts(state);
+    const size_t n = starts.size() - 1;  // number of clusters
+    size_t i = static_cast<size_t>(std::lower_bound(starts.begin(), starts.end(), pos) - starts.begin());
+    auto cls = [&](size_t k) { return ClassifyCluster(text[static_cast<size_t>(starts[k])]); };
+
+    if (i >= n) {
+        return length;
+    }
+    if (cls(i) == WordClass::Newline) {
+        return starts[i + 1];
+    }
+    if (cls(i) != WordClass::Space) {
+        const WordClass run = cls(i);
+        while (i < n && cls(i) == run) {
+            ++i;
+        }
+    }
+    while (i < n && cls(i) == WordClass::Space) {
+        ++i;
+    }
+    return starts[i];
+}
+
+// Home/End target on the caret's visual (wrapped) line.
+int64_t LineBoundary(ControlState* state, bool end) {
+    const int64_t length = static_cast<int64_t>(state->document.Length());
+    const int64_t caret = std::clamp<int64_t>(state->selection.caret, 0, length);
+
+    Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
+    UINT32 count = 0;
+    if (SUCCEEDED(CreateLayout(state, layout.GetAddressOf())) && layout) {
+        layout->GetLineMetrics(nullptr, 0, &count);
+    }
+    std::vector<DWRITE_LINE_METRICS> lines(count);
+    if (count > 0 && SUCCEEDED(layout->GetLineMetrics(lines.data(), count, &count))) {
+        int64_t line_start = 0;
+        for (UINT32 i = 0; i < count; ++i) {
+            const DWRITE_LINE_METRICS& line = lines[i];
+            const int64_t line_end = line_start + line.length;
+            const bool last = i + 1 == count;
+            if (caret < line_end || last) {
+                if (!end) {
+                    return line_start;
+                }
+                if (last) {
+                    return length;
+                }
+                if (line.newlineLength > 0) {
+                    return line_end - line.newlineLength;
+                }
+                // Soft wrap: line_end is also the next line's start and
+                // would draw the caret there, so stop before the wrap point.
+                if (line.trailingWhitespaceLength > 0) {
+                    return line_end - line.trailingWhitespaceLength;
+                }
+                return std::max(line_start, PrevClusterBoundary(state, line_end));
+            }
+            line_start = line_end;
+        }
+    }
+
+    // Fallback: logical line bounded by '\n'.
+    const std::wstring text = state->document.PlainText();
+    if (end) {
+        const size_t newline = text.find(L'\n', static_cast<size_t>(caret));
+        return newline == std::wstring::npos ? length : static_cast<int64_t>(newline);
+    }
+    if (caret == 0) {
+        return 0;
+    }
+    const size_t newline = text.rfind(L'\n', static_cast<size_t>(caret - 1));
+    return newline == std::wstring::npos ? 0 : static_cast<int64_t>(newline + 1);
+}
+
 int64_t HitTest(ControlState* state, float x, float y) {
     Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
     if (FAILED(CreateLayout(state, layout.GetAddressOf())) || !layout) {
@@ -1623,7 +1792,7 @@ void PasteClipboardText(ControlState* state) {
     CloseClipboard();
 }
 
-void DeleteSelectionOrRange(ControlState* state, bool backward) {
+void DeleteSelectionOrRange(ControlState* state, bool backward, bool word = false) {
     if (state->read_only) {
         return;
     }
@@ -1634,12 +1803,12 @@ void DeleteSelectionOrRange(ControlState* state, bool backward) {
             if (start == 0) {
                 return;
             }
-            start = PrevClusterBoundary(state, start);
+            start = word ? PrevWordBoundary(state, start) : PrevClusterBoundary(state, start);
         } else {
             if (end >= static_cast<int64_t>(state->document.Length())) {
                 return;
             }
-            end = NextClusterBoundary(state, end);
+            end = word ? NextWordBoundary(state, end) : NextClusterBoundary(state, end);
         }
     }
     state->PushUndo();
@@ -1817,10 +1986,12 @@ LRESULT HandleKeyDown(ControlState* state, WPARAM key) {
 
     switch (key) {
     case VK_LEFT:
-        MoveCaret(state, PrevClusterBoundary(state, state->selection.caret), shift);
+        MoveCaret(state, ctrl ? PrevWordBoundary(state, state->selection.caret)
+                              : PrevClusterBoundary(state, state->selection.caret), shift);
         return 0;
     case VK_RIGHT:
-        MoveCaret(state, NextClusterBoundary(state, state->selection.caret), shift);
+        MoveCaret(state, ctrl ? NextWordBoundary(state, state->selection.caret)
+                              : NextClusterBoundary(state, state->selection.caret), shift);
         return 0;
     case VK_UP:
         MoveCaretVertically(state, -1, shift);
@@ -1829,16 +2000,16 @@ LRESULT HandleKeyDown(ControlState* state, WPARAM key) {
         MoveCaretVertically(state, 1, shift);
         return 0;
     case VK_HOME:
-        MoveCaret(state, 0, shift);
+        MoveCaret(state, ctrl ? 0 : LineBoundary(state, false), shift);
         return 0;
     case VK_END:
-        MoveCaret(state, static_cast<int64_t>(state->document.Length()), shift);
+        MoveCaret(state, ctrl ? static_cast<int64_t>(state->document.Length()) : LineBoundary(state, true), shift);
         return 0;
     case VK_BACK:
-        DeleteSelectionOrRange(state, true);
+        DeleteSelectionOrRange(state, true, ctrl);
         return 0;
     case VK_DELETE:
-        DeleteSelectionOrRange(state, false);
+        DeleteSelectionOrRange(state, false, ctrl);
         return 0;
     default:
         return DefWindowProcW(state->hwnd, WM_KEYDOWN, key, 0);
@@ -1849,7 +2020,9 @@ LRESULT HandleChar(ControlState* state, WPARAM ch) {
     if (state->read_only) {
         return 0;
     }
-    if (ch == L'\b' || ch == 0x1b) {
+    // 0x7f is the WM_CHAR TranslateMessage emits for Ctrl+Backspace, which
+    // HandleKeyDown already handled as a word delete.
+    if (ch == L'\b' || ch == 0x1b || ch == 0x7f) {
         return 0;
     }
 

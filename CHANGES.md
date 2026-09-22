@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(windows): text fields now support Ctrl+Left/Right word jumps, Ctrl+Backspace/Delete word deletion, line-aware Home/End and Ctrl+Home/End for document start/end, matching the other platforms. BetterText only knew single-character movement and whole-document Home/End; Ctrl+Backspace also no longer inserts a stray U+007F. Windows build; user-verified live
 - fix(calls): a Floating call no longer hides the composer — it was counted as a modal, which force-hides the compose bar's native text control. The floating bubble is now kept above the compose bar instead (the hidden native control still takes OS pointer input on macOS/Qt6/GTK4), and a drag starts from its on-screen position so there's no dead zone after hitting an edge. Linux Qt6 build + full ctest 1906/1906; user-verified live. GTK4/Windows/macOS share the code, unbuilt
 - fix(packaging): the Microsoft Store build no longer checks GitHub for new releases, since the Store handles its updates. `msix-store-publish.yml` drops `-DTESSERACT_GITHUB_REPO`, which compiles out the check and its Settings toggle. Unverified (CI-only workflow)
 - fix(net): requests now honor the OS-level system proxy (Windows/macOS settings), not just `HTTP_PROXY`/`HTTPS_PROXY` env vars — reqwest's `system-proxy` feature was never enabled. Windows build + cargo 716/716; unverified live (no proxy environment available to test against)
