@@ -29,6 +29,10 @@ name: MSIX Store Publish
 
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build and submit, e.g. v0.8.25'
+        required: true
 
 jobs:
   publish:
@@ -36,10 +40,14 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: read
-      actions: write
 
     steps:
+      # Build the released tag, not the dispatching branch's HEAD, so the
+      # Store package always matches a GitHub release. refs/tags/ makes a
+      # typo fail here instead of resolving to a branch of the same name.
       - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag }}
 
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
@@ -107,7 +115,7 @@ jobs:
         run: cmake --build build/windows-release --target msix-stage msix-pack msix-validate
 
       - name: Configure Microsoft Store CLI
-        uses: microsoft/microsoft-store-apppublisher@v1.1
+        uses: microsoft/microsoft-store-apppublisher@v1.4
 
       - name: Reconfigure store credentials
         run: |
@@ -117,11 +125,8 @@ jobs:
             --clientId ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }} `
             --clientSecret ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
 
+      # The positional argument is a project directory msstore would try to
+      # detect a WinUI/MAUI/Electron/... project in; a prebuilt package goes
+      # through --inputFile instead.
       - name: Publish to Store
-        run: msstore publish "${{ github.workspace }}/build/windows-release/msix/Tesseract-store-x64.msix" -id ${{ vars.TESSERACT_MSIX_STORE_PRODUCT_ID }}
-
-      - name: Cancel workflow run on failure
-        if: failure()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh run cancel ${{ github.run_id }} --repo ${{ github.repository }}
+        run: msstore publish --inputFile "${{ github.workspace }}/build/windows-release/msix/Tesseract-store-x64.msix" --appId ${{ vars.TESSERACT_MSIX_STORE_PRODUCT_ID }}

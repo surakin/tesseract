@@ -177,11 +177,14 @@ edition.
 
 ### What's still manual
 
-- Submitting the Store `.msix` to Partner Center for validation and listing
-  — not automated, the same way Flathub/AUR submission (below) is a manual,
-  separate step from this repo's build.
-- Reserving the real package identities in Partner Center and obtaining a
-  code-signing certificate for the direct edition.
+- Store updates are submitted by `msix-store-publish.yml`, run by hand
+  from the Actions tab with a release tag. It builds the Store edition from
+  that tag and uploads it through the Microsoft Store Developer CLI, which
+  commits the submission for certification. The Partner Center setup it
+  needs (Entra ID app, repo secrets and variables) is listed at the top of
+  that workflow. Partner Center rejects a new submission while an earlier
+  one is still in certification.
+- Obtaining a code-signing certificate for the direct edition.
 
 ---
 
