@@ -16,7 +16,7 @@ version) are noted where relevant.
 - Light / dark / system themes
 - HiDPI / fractional display-scale awareness on all four backends — reacts to a live DPI or monitor change (`WM_DPICHANGED`, backing-scale notifications, `devicePixelRatio`/`screenChanged`, `notify::scale-factor`), and fetches avatars and thumbnails at the current scale so they stay sharp instead of being upscaled
 - System font size inherited from the OS on all four backends (`QApplication::font`, `GtkSettings gtk-font-name`, `NONCLIENTMETRICS`, `NSFont.systemFontSize`); all per-role sizes scale with the user's accessibility font-size setting; Win32 body font raised 1 pt above the raw system size for better readability
-- Automatic GitHub release update checker (runs at startup; opt-in via Settings → Privacy)
+- Automatic GitHub release update checker (runs at startup; opt-in via Settings → Privacy; left out of the Microsoft Store build, which the Store updates)
 - Launch at login (off by default) — Settings → General toggle; registers with each OS's own login-item mechanism (registry `Run` key on Windows, `SMAppService` on macOS 13+, XDG autostart on Linux)
 - In-flight request indicator in the status bar — an animated spinning ring (green / amber / red by threshold) with a tooltip showing the exact in-flight count
 - Low power mode — Settings → General → Power: `Auto` (default) / `On` / `Off`; halts background work (history backfill, media prefetch, cache GC, search indexing) while keeping message sync live

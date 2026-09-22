@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(packaging): the Microsoft Store build no longer checks GitHub for new releases, since the Store handles its updates. `msix-store-publish.yml` drops `-DTESSERACT_GITHUB_REPO`, which compiles out the check and its Settings toggle. Unverified (CI-only workflow)
 - fix(net): requests now honor the OS-level system proxy (Windows/macOS settings), not just `HTTP_PROXY`/`HTTPS_PROXY` env vars — reqwest's `system-proxy` feature was never enabled. Windows build + cargo 716/716; unverified live (no proxy environment available to test against)
 - feat(calls): joining a call now goes through a pre-call lobby (camera preview, mic/camera toggles, Join/Cancel) instead of connecting instantly. Windows build; user-verified live. Qt6/GTK4/macOS share the code, unbuilt
 - feat(spaces): the Create Room dialog's Create button is now a split button (new shared `tk::ComboButton` widget) offering "Create Room" / "Create Space", finally wiring `RoomCreateOptions::is_space` through to the UI — `build_create_room_request` had silently ignored the field even at the Rust layer. Windows build; user-verified live. Qt6/GTK4/macOS share the code, unbuilt

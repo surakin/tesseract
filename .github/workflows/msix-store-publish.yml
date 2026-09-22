@@ -94,7 +94,6 @@ jobs:
         run: |
           cmake --preset windows-release `
             "-DPython3_EXECUTABLE=${{ steps.python.outputs.python-path }}" `
-            "-DTESSERACT_GITHUB_REPO=${{ github.repository }}" `
             "-DTESSERACT_MSIX_STORE_IDENTITY_NAME=${{ vars.TESSERACT_MSIX_STORE_IDENTITY_NAME }}" `
             "-DTESSERACT_MSIX_STORE_PUBLISHER=${{ vars.TESSERACT_MSIX_STORE_PUBLISHER }}" `
             "-DTESSERACT_MSIX_PUBLISHER_DISPLAY_NAME=${{ vars.TESSERACT_MSIX_PUBLISHER_DISPLAY_NAME }}"
