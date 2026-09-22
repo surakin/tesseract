@@ -112,7 +112,12 @@ private:
         st.role = tk::FontRole::Body;
         st.wrap = true;
         st.max_width = w;
-        layout_ = factory.build_rich_text(spans_, st);
+        // autolink_plain_to_spans() returns an empty vector when the topic
+        // has no links at all (not a single plain-text span) — fall back to
+        // a plain build_text so a link-free topic still renders, matching
+        // RoomInfoPanel's identical fallback for the same helper.
+        layout_ = spans_.empty() ? factory.build_text(topic_, st)
+                                  : factory.build_rich_text(spans_, st);
     }
 
     std::string topic_;
