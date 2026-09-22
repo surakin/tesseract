@@ -108,6 +108,16 @@ public:
         const auto& pal = ctx.theme.palette;
         ctx.canvas.fill_rect(bounds_, pal.chrome_bg);
 
+        if (header_hovered_ || header_pressed_)
+        {
+            tk::Rect r = header_rect_();
+            r.x += kPad;
+            r.w = std::max(0.0f, r.w - 2.0f * kPad);
+            ctx.canvas.fill_rounded_rect(
+                r, kHoverRadius,
+                header_pressed_ ? pal.subtle_pressed : pal.subtle_hover);
+        }
+
         if (name_lbl_)
             name_lbl_->paint(ctx);
 
@@ -160,6 +170,43 @@ public:
         }
     }
 
+    bool on_pointer_move(tk::Point local) override
+    {
+        const bool prev = header_hovered_;
+        header_hovered_ = on_header &&
+            point_in_rect({bounds_.x + local.x, bounds_.y + local.y},
+                          header_rect_());
+        return header_hovered_ != prev;
+    }
+
+    void on_pointer_leave() override
+    {
+        header_hovered_ = false;
+        header_pressed_ = false;
+    }
+
+    // Base Widget::dispatch_pointer_move stops recursion at the deepest
+    // child under the cursor (unlike dispatch_pointer_down, which bubbles).
+    // name_lbl_ covers most of header_rect_(), so without this override the
+    // default recursion would hand hover off to the label and our own
+    // on_pointer_move (which drives the header hover highlight) would never
+    // run except over the small gap next to it. Only back_btn_ needs its
+    // own hover handling, so recurse into that child and nothing else.
+    tk::Widget* dispatch_pointer_move(tk::Point world, bool* dirty = nullptr) override
+    {
+        if (!visible() || !contains_world(world))
+            return nullptr;
+        if (back_btn_ && back_btn_->visible())
+        {
+            if (tk::Widget* hit = back_btn_->dispatch_pointer_move(world, dirty))
+                return hit;
+        }
+        tk::Point local{world.x - bounds_.x, world.y - bounds_.y};
+        if (on_pointer_move(local) && dirty)
+            *dirty = true;
+        return this;
+    }
+
 private:
     tk::Rect header_rect_() const
     {
@@ -174,11 +221,13 @@ private:
     static constexpr float kPad = 4.0f;
     static constexpr float kAvatarSize = MainAppWidget::kNavAvatarSize;
     static constexpr float kNavIconPx = 16.0f;
+    static constexpr float kHoverRadius = tesseract::visual::kRadiusSM;
 
     tk::Button* back_btn_ = nullptr;
     tk::Label* name_lbl_ = nullptr;
     tk::IconCache back_icon_;
     bool header_pressed_ = false;
+    bool header_hovered_ = false;
     std::string space_name_;
     std::string avatar_url_;
     std::function<const tk::Image*(const std::string&)> avatar_provider_;

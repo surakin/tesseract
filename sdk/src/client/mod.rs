@@ -3022,6 +3022,8 @@ pub(super) struct RoomListFingerprintKey {
     space_children_summary: String,
     id: String,
     name: String,
+    topic: String,
+    topic_html: String,
     avatar_url: String,
     dm_avatar_url: String,
     is_encrypted: bool,
@@ -3097,6 +3099,14 @@ pub(super) fn room_list_fingerprint(
             // the body text here the corrected banner text sits fixed in the
             // Rust-side room cache and never reaches the UI.
             //
+            // topic / topic_html: RoomGeneralSection and RoomInfoPanel display
+            // the room topic straight from this cached RoomInfo. Changing it
+            // via set_room_topic() doesn't touch unread/name/recency/avatar/
+            // etc. either, so without these fields here the same failure mode
+            // as avatar_url/join_rule above applies: the settings/info panel
+            // keeps showing the stale topic until an unrelated field happens
+            // to perturb the fingerprint (in practice: until app restart).
+            //
             // is_space: room-list section membership (Spaces vs. Rooms/
             // Favorites/etc.) depends on this flag. In practice a room's
             // space-ness is set once at creation and matrix-sdk should
@@ -3132,6 +3142,8 @@ pub(super) fn room_list_fingerprint(
                 space_children_summary: r.space_children_summary.clone(),
                 id: r.id.clone(),
                 name: r.name.clone(),
+                topic: r.topic.clone(),
+                topic_html: r.topic_html.clone(),
                 avatar_url: r.avatar_url.clone(),
                 dm_avatar_url: r.dm_avatar_url.clone(),
                 is_encrypted: r.is_encrypted,
@@ -3369,6 +3381,24 @@ mod tests {
         let mut r = room("!a:example.org");
         let before = room_list_fingerprint(std::slice::from_ref(&r));
         r.name = "New Name".to_owned();
+        let after = room_list_fingerprint(std::slice::from_ref(&r));
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn fingerprint_changes_when_topic_changes() {
+        let mut r = room("!a:example.org");
+        let before = room_list_fingerprint(std::slice::from_ref(&r));
+        r.topic = "New topic".to_owned();
+        let after = room_list_fingerprint(std::slice::from_ref(&r));
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn fingerprint_changes_when_topic_html_changes() {
+        let mut r = room("!a:example.org");
+        let before = room_list_fingerprint(std::slice::from_ref(&r));
+        r.topic_html = "<b>New topic</b>".to_owned();
         let after = room_list_fingerprint(std::slice::from_ref(&r));
         assert_ne!(before, after);
     }
