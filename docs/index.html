@@ -875,8 +875,8 @@
       <aside class="sim-downloads">
         <h2>Download</h2>
         <p class="dl-lead">Native installers for every platform. <span class="dl-version" id="dl-version"></span></p>
-        <div class="dl-cards">
-          <div class="dl-card">
+        <div class="dl-cards" id="dl-cards">
+          <div class="dl-card" data-os="win">
             <div class="dl-os"><span class="ico">🪟</span> Windows</div>
             <a class="dl-store" href="https://apps.microsoft.com/detail/9nz8v8tcnvjw" aria-label="Get it from Microsoft">
               <img class="badge-on-light" src="ms-store-badge-dark.svg" alt="Get it from Microsoft" width="161" height="44">
@@ -888,7 +888,7 @@
               <p>The Store version is signed. For the <b>.exe</b> installer, SmartScreen may show “Windows protected your PC”. Click <b>More info</b> → <b>Run anyway</b>.</p>
             </details>
           </div>
-          <div class="dl-card">
+          <div class="dl-card" data-os="mac">
             <div class="dl-os"><span class="ico">🍎</span> macOS</div>
             <a class="dl-btn" data-dl="mac-arm" href="https://github.com/surakin/tesseract/releases/latest"><span>Apple Silicon</span><span class="dl-sub">.dmg · arm64</span></a>
             <a class="dl-btn" data-dl="mac-x86" href="https://github.com/surakin/tesseract/releases/latest"><span>Intel</span><span class="dl-sub">.dmg · x86_64</span></a>
@@ -897,7 +897,7 @@
               <p>Gatekeeper will say it can’t verify the developer. <b>Right-click</b> the app → <b>Open</b>, then confirm — or allow it under <b>System&nbsp;Settings → Privacy&nbsp;&amp;&nbsp;Security</b>.</p>
             </details>
           </div>
-          <div class="dl-card">
+          <div class="dl-card" data-os="linux">
             <div class="dl-os"><span class="ico">🐧</span> Linux</div>
             <a class="dl-btn" data-dl="deb" href="https://github.com/surakin/tesseract/releases/latest"><span>Debian / Ubuntu</span><span class="dl-sub">.deb</span></a>
             <a class="dl-btn" data-dl="rpm" href="https://github.com/surakin/tesseract/releases/latest"><span>Fedora / RHEL</span><span class="dl-sub">.rpm</span></a>
@@ -1807,6 +1807,25 @@
   /* ---------- Boot ---------- */
   renderSidebar();
   renderRoom();
+})();
+
+/* ===== Downloads: put the visitor's own platform first ===== */
+(function () {
+  "use strict";
+  // Prefer UA Client Hints; fall back to the UA string. Phones/tablets (Android
+  // reports "Linux", iPadOS reports "Macintosh") keep the default order.
+  var uad = navigator.userAgentData;
+  var ua = navigator.userAgent || "";
+  if ((uad && uad.mobile) || /Android|iPhone|iPad|iPod|Mobile/i.test(ua) ||
+      (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return;
+  var p = (uad && uad.platform) || navigator.platform || ua;
+  var os = /win/i.test(p) ? "win"
+         : /mac/i.test(p) ? "mac"
+         : /linux|x11|bsd/i.test(p) && !/CrOS/.test(ua) ? "linux"
+         : null;
+  var list = document.getElementById("dl-cards");
+  var card = os && list && list.querySelector('.dl-card[data-os="' + os + '"]');
+  if (card) list.insertBefore(card, list.firstElementChild);
 })();
 
 /* ===== Downloads: resolve the latest release's installer assets ===== */
