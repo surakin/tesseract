@@ -118,7 +118,7 @@ version) are noted where relevant.
 
 - Native LiveKit-based MatrixRTC voice/video calls (MSC4143); interoperates with Element X and Element Call
 - End-to-end encryption (HKDF key derivation matching Element Call's wire format); echo cancellation via each platform's native audio device manager
-- Docked, expanded, floating (draggable, position persisted), and popout (dedicated OS window) call overlay modes
+- Docked, expanded, floating (draggable, position persisted, kept clear of the composer), and popout (dedicated OS window) call overlay modes
 - Mute/video/hang-up controls, call duration timer, pinned-participant grid layout
 - Screen sharing, with real per-source thumbnails in the picker (native platform capture: DXGI Desktop Duplication / PrintWindow on Windows, ScreenCaptureKit on macOS, xdg-desktop-portal + PipeWire on Linux)
 - Mute, video-mute, and screen-share state persist across Docked/Floating/Popout overlay mode switches

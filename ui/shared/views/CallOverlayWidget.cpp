@@ -794,8 +794,13 @@ bool CallOverlayWidget::on_pointer_down(tk::Point local)
             // Store drag origin in world coordinates so the delta stays
             // correct even after bounds_ is updated by a mid-drag relayout.
             drag_start_pos_ = {local.x + bounds_.x, local.y + bounds_.y};
-            drag_start_fx_  = float_x_;
-            drag_start_fy_  = float_y_;
+            // Seed from the on-screen (parent-clamped) position, not the
+            // stored float_x_/y_: after a drag into a clamped region (window
+            // edge, compose bar) the stored value can sit well past where the
+            // bubble actually is, which would leave a dead zone on the next
+            // drag before it started moving back.
+            drag_start_fx_  = bounds_.x;
+            drag_start_fy_  = bounds_.y;
             return true;
         }
     }
