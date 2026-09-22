@@ -115,6 +115,12 @@ identities: a Store edition (uploaded unsigned — Partner Center signs it on
 ingestion) and a direct-distribution edition (signed locally/in CI, updated
 via a generated `.appinstaller`).
 
+Configure the Store build without `-DTESSERACT_GITHUB_REPO` (as
+`msix-store-publish.yml` does): the Store delivers its updates, so the
+GitHub release check and its Settings toggle are compiled out. The build in
+`package.yml` keeps the check for NSIS and the direct edition, even though
+the `msix-pack` targets there also produce a Store package.
+
 ### Prerequisites
 
 - Everything from the NSIS prerequisites above.
