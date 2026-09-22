@@ -39,6 +39,7 @@
 #include "media_drop.h"
 #include "CallOverlayWidget.h"
 #include "CallBanner.h"
+#include "CallLobbyView.h"
 
 #include "tk/audio.h"
 #include "tk/widget.h"
@@ -428,6 +429,13 @@ public:
 
     // Returns the active docked call panel, or nullptr if not mounted.
     views::CallOverlayWidget* call_panel() const { return call_panel_; }
+
+    // ── Pre-call lobby ────────────────────────────────────────────────────
+    // Always mounted (hidden until opened). ShellBase::request_call_() calls
+    // open() on this instead of joining directly — see CallLobbyView.h.
+    // Covers the message list + compose bar (everything below the header)
+    // while open; the header itself stays interactive.
+    views::CallLobbyView* call_lobby() const { return call_lobby_; }
 
     // ── External callbacks — wire to SDK ─────────────────────────────────
 
@@ -859,6 +867,9 @@ private:
     // Docked call panel — lazily created by mount_call_panel(), removed by
     // unmount_call_panel(). nullptr when no call is active.
     views::CallOverlayWidget* call_panel_ = nullptr;
+    // Pre-call lobby — created in constructor (hidden), covers the message
+    // list + compose bar while open(). See call_lobby()'s doc comment.
+    views::CallLobbyView* call_lobby_ = nullptr;
     // Docked search strip under the header; nullptr until first open.
     RoomSearchBar*   room_search_bar_   = nullptr;
     ThreadPanelState thread_panel_state_ = ThreadPanelState::Closed;

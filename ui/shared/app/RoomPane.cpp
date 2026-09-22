@@ -826,14 +826,15 @@ void RoomPane::wire_room_view_()
         open_dm_(std::move(user_id));
     };
 
-    // Answering the incoming-call banner (or starting a call) — start_call is
-    // a singleton (one call process-wide), so this is safe to wire
-    // identically for every pane; ShellBase resolves the banner/dismiss
-    // target per-room via room_view_for_room_.
+    // Answering the incoming-call banner (or starting a call) opens the
+    // pre-call lobby rather than joining directly — request_call_ is a
+    // singleton (one call process-wide), so this is safe to wire
+    // identically for every pane; ShellBase resolves the lobby/banner/
+    // dismiss target per-room via room_view_for_room_.
     rv->on_start_call = [this](const std::string& room_id,
                                const std::string& slot_id, bool audio_only)
     {
-        shell_->start_call(room_id, slot_id, audio_only);
+        shell_->request_call_(room_id, slot_id, audio_only);
     };
 
     // Forward picker: stable providers wired once so open() always has rooms.

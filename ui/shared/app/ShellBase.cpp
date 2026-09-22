@@ -2292,7 +2292,7 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
             [this](const std::string& room_id, const std::string& slot_id,
                    bool audio_only)
         {
-            start_call(room_id, slot_id, audio_only);
+            request_call_(room_id, slot_id, audio_only);
         };
     }
 
@@ -13470,7 +13470,7 @@ views::CallOverlayWidget::Mode ShellBase::overlay_mode_from_settings_() const
 }
 
 void ShellBase::start_call(const std::string& room_id, const std::string& slot_id,
-                           bool audio_only)
+                           bool audio_only, bool start_audio_muted)
 {
     if (call_session_ || !client_)
         return;
@@ -13484,11 +13484,15 @@ void ShellBase::start_call(const std::string& room_id, const std::string& slot_i
 
     call_session_ = std::make_unique<CallSession>(client_, room_id, slot_id);
     call_audio_output_ = make_call_audio_output_();
+    if (start_audio_muted)
+        call_session_->mute_audio(true);
 
     // Initialise overlay state for this call. elapsed_seconds starts at 0;
-    // audio_only is only known here, so it must be captured in the struct now.
+    // audio_only/start_audio_muted are only known here, so they must be
+    // captured in the struct now.
     call_overlay_state_ = {};
     call_overlay_state_.show_video_button = !audio_only;
+    call_overlay_state_.audio_muted       = start_audio_muted;
     call_overlay_state_.local_user_id     = my_user_id_;
 
     if (!audio_only)
@@ -13523,6 +13527,8 @@ void ShellBase::start_call(const std::string& room_id, const std::string& slot_i
                                Settings::instance().call_overlay_float_y);
         if (audio_only)
             ov->set_show_video_button(false);
+        if (start_audio_muted)
+            ov->set_audio_muted(true);
     }
 
     // The user is now in this call: hides its banner (and disables Join on
@@ -13559,6 +13565,62 @@ CallRoomAction decide_call_room_action(bool has_active_call,
     return overlay_is_docked ? CallRoomAction::AutoFloat : CallRoomAction::NoOp;
 }
 
+void ShellBase::request_call_(const std::string& room_id, const std::string& slot_id,
+                              bool audio_only)
+{
+    views::RoomView* rv = room_view_for_room_(room_id);
+    views::CallLobbyView* lobby = rv ? rv->call_lobby() : nullptr;
+    if (!lobby)
+    {
+        // Defensive fallback — shouldn't happen since callers only ever
+        // target the room currently being viewed.
+        start_call(room_id, slot_id, audio_only);
+        return;
+    }
+
+    lobby->set_local_user_id(my_user_id_);
+
+    if (room_id == current_room_id_)
+    {
+        lobby->set_repaint_requester([this] { request_repaint_(); });
+    }
+    else if (auto it = secondary_windows_.find(room_id);
+             it != secondary_windows_.end())
+    {
+        RoomWindowBase* win = it->second;
+        lobby->set_repaint_requester([win] { if (win) win->request_relayout(); });
+    }
+
+    lobby->set_avatar_provider(
+        [this, room_id](const std::string& user_id) -> const tk::Image*
+        {
+            if (!client_) return nullptr;
+            const auto members = client_->get_room_members(room_id);
+            for (const auto& mem : members)
+            {
+                if (mem.user_id == user_id && !mem.avatar_url.empty())
+                    return account_manager_.thumbnail_cache().peek(
+                        tk::CacheKey::media(mem.avatar_url));
+            }
+            return nullptr;
+        });
+
+    lobby->on_join = [this](const std::string& rid, const std::string& sid,
+                            bool ao, bool muted)
+    {
+        // If a different room's call is still active (LeaveAndJoin), end it
+        // before joining — start_call() no-ops while call_session_ is
+        // already set. Confirmed only here, on actual Join, not on the
+        // room switch that opened this lobby.
+        if (call_session_ && call_session_->room_id() != rid)
+            end_call();
+        start_call(rid, sid, ao, muted);
+    };
+    lobby->on_cancel = [] {};
+
+    lobby->open(room_id, slot_id, audio_only);
+}
+
 void ShellBase::handle_call_room_navigation_()
 {
     const auto* new_room = room_by_id_(current_room_id_);
@@ -13578,8 +13640,9 @@ void ShellBase::handle_call_room_navigation_()
         call_auto_floated_, overlay_docked))
     {
     case CallRoomAction::AutoJoin:
-        // First switch into a call room with no active call: auto-join.
-        start_call(current_room_id_);
+        // First switch into a call room with no active call: open the
+        // lobby instead of joining immediately.
+        request_call_(current_room_id_);
         break;
     case CallRoomAction::AutoRestore:
         // Returning to the room hosting the active call: undo whatever
@@ -13592,11 +13655,12 @@ void ShellBase::handle_call_room_navigation_()
     case CallRoomAction::LeaveAndJoin:
         // Switching directly into another call room (whether the previous
         // call was auto-joined or manually joined via the "call in
-        // progress" banner): leave the old call and join the new one.
-        // start_call() no-ops while call_session_ is non-null, so
-        // end_call() first is required.
-        end_call();
-        start_call(current_room_id_);
+        // progress" banner): open the new room's lobby rather than ending
+        // the old call immediately — the old call only ends once the user
+        // actually confirms Join (see request_call_()'s on_join, which
+        // ends whatever call is active in a different room before
+        // starting the new one). Cancel leaves the original call untouched.
+        request_call_(current_room_id_);
         break;
     case CallRoomAction::AutoFloat:
         // Leaving the active call's room for an ordinary room: float it

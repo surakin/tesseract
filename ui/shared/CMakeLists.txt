@@ -376,6 +376,8 @@ list(APPEND _tk_sources
     views/ParticipantTile.cpp
     views/CallOverlayWidget.h
     views/CallOverlayWidget.cpp
+    views/CallLobbyView.h
+    views/CallLobbyView.cpp
     views/ScreenPickerWidget.h
     views/ScreenPickerWidget.cpp
     app/CallWindowBase.h

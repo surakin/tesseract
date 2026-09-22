@@ -228,10 +228,12 @@ public:
     // ── MatrixRTC call control (Layer 4) ─────────────────────────────────────
     // start_call creates a CallSession, wires audio (and video if a camera is
     // available) capture routing, and calls rtc_start_call on the client.
-    // No-op when a call is already active.
+    // No-op when a call is already active. start_audio_muted mutes the mic
+    // immediately after joining — the lobby's mic toggle feeds this.
     void start_call(const std::string& room_id,
-                    const std::string& slot_id   = "call#default",
-                    bool               audio_only = false);
+                    const std::string& slot_id        = "call#default",
+                    bool               audio_only      = false,
+                    bool               start_audio_muted = false);
     // End the active call and tear down all call resources. No-op when idle.
     void end_call();
     // Returns the active CallSession, or nullptr when not in a call.
@@ -3452,6 +3454,17 @@ protected:
     // and the auto-float/auto-restore transition (switching away from /
     // back to the room hosting the active call).
     void handle_call_room_navigation_();
+
+    // Opens room_id's pre-call lobby (camera preview + mic/cam toggles +
+    // Join/Cancel) instead of joining directly — the single seam every
+    // "start a call" entry point (auto-join, the call banner, the header
+    // call button, LeaveAndJoin) now goes through. Wires the lobby's
+    // on_join to start_call() and falls back to start_call() directly if
+    // room_id isn't currently displayed in any window (defensive; shouldn't
+    // happen since callers only ever target the room being viewed).
+    void request_call_(const std::string& room_id,
+                       const std::string& slot_id   = "call#default",
+                       bool               audio_only = false);
 
     // Overlay configuration that must survive mode switches (docked ↔ floating ↔
     // popout). Initialised at call start; each remount reads from this struct
