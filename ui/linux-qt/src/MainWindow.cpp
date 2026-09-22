@@ -4016,18 +4016,7 @@ void MainWindow::refreshRoomList()
 
 void MainWindow::onSpaceBack()
 {
-    if (!space_stack_.empty())
-        space_stack_.pop_back();
-    if (mainApp_)
-        mainApp_->hide_room_preview();
-    if (mainApp_)
-        mainApp_->hide_space_root();
-    refreshRoomList();
-    if (!space_nav_frames_.empty())
-    {
-        space_nav_frames_.back().restore(mainApp_->room_list_view());
-        space_nav_frames_.pop_back();
-    }
+    space_back_command_();
 }
 
 // ---------------------------------------------------------------------------

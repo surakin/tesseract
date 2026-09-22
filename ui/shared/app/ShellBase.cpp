@@ -3799,7 +3799,19 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
     // change): the room-management section's candidate list depends on
     // rooms_ directly, so a newly joined/left room needs to be reflected
     // here even when no space's children changed at all.
-    refresh_space_root_children_(space_root_shown_id_);
+    //
+    // Re-runs the full show_space_root_ (not just refresh_space_root_children_)
+    // so the space's own RoomInfo — in particular its name — gets re-pushed
+    // too: a just-created space can still be showing sync's placeholder
+    // "Empty room" name (matrix-sdk's display_name() fallback, computed
+    // before the m.room.name state event this same create_room call set had
+    // actually arrived) at the moment it was first shown, and nothing else
+    // ever revisits that once shown. show_space_root_ no-ops harmlessly
+    // when nothing is currently shown (room_by_id_("") is null).
+    if (!space_root_shown_id_.empty())
+        show_space_root_(space_root_shown_id_);
+    else
+        refresh_space_root_children_(space_root_shown_id_);
     on_rooms_updated_();
     // Re-evaluate call-button and threads-button visibility for the current
     // room: bridge status (is_bridged) can change via on_rooms_updated without
@@ -3817,6 +3829,18 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
         }
         if (client_ && room_view_)
             apply_threads_list_(client_->list_room_threads(current_room_id_));
+        // A just-created room can turn out to be a space only once sync
+        // actually delivers its creation_content — e.g. CreateRoomView's
+        // "Create Space" navigates here before this room exists in rooms_
+        // at all, so after_active_room_changed_()'s is_space check saw
+        // nothing and fell through to the normal RoomView. Retry that
+        // check now that rooms_ actually knows about the room, so the view
+        // doesn't stay stuck showing it as a plain chat room.
+        if (const auto* cur = room_by_id_(current_room_id_);
+            cur && cur->is_space && space_root_shown_id_ != current_room_id_)
+        {
+            show_space_root_(current_room_id_);
+        }
     }
     // Call members / bridge status may have changed with this update.
     refresh_call_banners_();
@@ -4172,6 +4196,38 @@ void ShellBase::leave_space_navigate_back_(const std::string& space_id)
     {
         current_room_id_.clear();
         after_active_room_changed_();
+    }
+}
+
+void ShellBase::space_back_command_()
+{
+    if (!space_stack_.empty())
+        space_stack_.pop_back();
+    if (main_app_)
+        main_app_->hide_room_preview();
+
+    if (const auto* cur = room_by_id_(current_room_id_); cur && cur->is_space)
+    {
+        // current_room_id_ is itself still a space — e.g. it's what's
+        // actually open in the main pane — so re-assert the space root
+        // instead of hiding it: hide_space_root() unconditionally reveals
+        // RoomView underneath, which would show that space's own
+        // (effectively empty) room instead.
+        show_space_root_(current_room_id_);
+    }
+    else
+    {
+        if (main_app_)
+            main_app_->hide_space_root();
+        space_root_shown_id_.clear();
+    }
+
+    refresh_room_list_();
+    if (!space_nav_frames_.empty())
+    {
+        if (main_app_ && main_app_->room_list_view())
+            space_nav_frames_.back().restore(main_app_->room_list_view());
+        space_nav_frames_.pop_back();
     }
 }
 

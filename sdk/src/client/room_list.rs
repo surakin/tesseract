@@ -685,13 +685,21 @@ impl ClientFfi {
         request.preset = Some(preset);
         request.invite = invite;
         request.initial_state = initial_state;
+        // `is_space`/`is_call_room` both map to creation_content.type — at
+        // most one is ever set from the UI (CreateRoomView's combo picks
+        // one mode), but if both were somehow set, a space room_type wins
+        // since it's the one exposed as a user-facing choice.
         // MSC3417: mark this as a dedicated call room via
         // creation_content.type. Unstable prefix "org.matrix.msc3417.call"
         // until the MSC stabilises (ruma's RoomType::Call, behind the
         // "unstable-msc3417" feature).
-        if opts.is_call_room {
+        if opts.is_space || opts.is_call_room {
             let mut creation_content = CreationContent::new();
-            creation_content.room_type = Some(RoomType::Call);
+            creation_content.room_type = Some(if opts.is_space {
+                RoomType::Space
+            } else {
+                RoomType::Call
+            });
             request.creation_content =
                 Some(Raw::new(&creation_content).map_err(|e| e.to_string())?);
         }

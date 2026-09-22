@@ -20,6 +20,7 @@
 // AddRoomView; call reset() when the Create tab becomes active.
 
 #include "tk/canvas.h"
+#include "tk/combo_button.h"
 #include "tk/combobox.h"
 #include "tk/controls.h"
 #include "tk/group_box.h"
@@ -30,6 +31,7 @@
 
 #include <tesseract/types.h>
 
+#include <chrono>
 #include <functional>
 #include <string>
 
@@ -49,8 +51,10 @@ public:
     static constexpr float kPreferredW = 440.0f;
     // +20 over the fields' own floor heights for invite_group_'s top/bottom
     // padding around the invite+reason cluster (see CreateRoomView.cpp's
-    // kCRGroupPadY).
-    static constexpr float kPreferredH = 520.0f;
+    // kCRGroupPadY), +26 for the status/error row arrange() now always
+    // reserves space for (kCRStatusH + kCRSmallGap), whether or not it's
+    // actually showing anything.
+    static constexpr float kPreferredH = 546.0f;
 
     enum class State
     {
@@ -103,6 +107,10 @@ public:
 private:
     void apply_state();
     tesseract::RoomCreateOptions build_options_() const;
+    // Swaps the name/alias placeholders and the invite-reason hint between
+    // their "room" and "space" wording to match create_combo_btn_'s current
+    // selection — called from its on_selection_changed and from reset().
+    void apply_type_placeholders_();
 
     bool title_visible_ = true;
     State state_ = State::Idle;
@@ -132,9 +140,18 @@ private:
     tk::Label* reason_hint_lbl_ = nullptr;
     tk::ComboBox* visibility_combo_ = nullptr;
     tk::CheckButton* encryption_check_ = nullptr;
-    tk::Button* create_btn_ = nullptr;
+    tk::ComboButton* create_combo_btn_ = nullptr;
     tk::Button* cancel_btn_ = nullptr;
     tk::Label* status_lbl_ = nullptr;
+
+    // Set from create_combo_btn_'s currently selected option ("room" vs
+    // "space") — read by build_options_() into RoomCreateOptions::is_space.
+    bool is_space_ = false;
+
+    // Animation clock for the centered spinner shown in place of the whole
+    // form while State::Creating — reset by set_state() on every transition
+    // into Creating. See paint()'s tk::draw_spinner_dots call.
+    std::chrono::steady_clock::time_point creating_spinner_start_;
 };
 
 } // namespace tesseract::views

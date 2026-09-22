@@ -565,7 +565,6 @@ public:
     // push_space captures nav frame + pushes room onto space_stack_.
     // Caller must call SpaceNavFrame::enter() (or refresh) after if needed.
     void push_space(const std::string& room_id, tesseract::views::RoomListView* rlv);
-    void pop_space(tesseract::views::RoomListView* rlv);
     bool space_stack_empty() const;
     const std::string& current_space() const;
     const std::vector<std::string>* space_children(const std::string& id) const;
@@ -639,6 +638,7 @@ public:
     using ShellBase::run_async_mut_;
     using ShellBase::begin_media_req_;
     using ShellBase::handle_media_ready_ui_;
+    using ShellBase::space_back_command_;
 
     // Public method to call the protected update_typing_bar_ method
     void update_typing_bar(const std::string& text, bool visible)
@@ -2695,16 +2695,6 @@ void MacShell::push_space(const std::string& room_id,
 {
     space_nav_frames_.push_back(SpaceNavFrame::capture(rlv));
     space_stack_.push_back(room_id);
-}
-void MacShell::pop_space(tesseract::views::RoomListView* rlv)
-{
-    if (!space_stack_.empty())
-        space_stack_.pop_back();
-    if (!space_nav_frames_.empty())
-    {
-        space_nav_frames_.back().restore(rlv);
-        space_nav_frames_.pop_back();
-    }
 }
 const std::string& MacShell::verification_flow_id() const
     { return active_verification_flow_id_; }
@@ -7366,12 +7356,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
 
 - (void)_onSpaceBack
 {
-    _shell->pop_space(_roomListView);
-    if (_mainApp)
-        _mainApp->hide_room_preview();
-    if (_mainApp)
-        _mainApp->hide_space_root();
-    [self _refreshRoomList];
+    _shell->space_back_command_();
 }
 
 - (void)_openAccountPicker

@@ -80,6 +80,8 @@ set(_tk_sources
     tk/form_layout.cpp
     tk/combobox.h
     tk/combobox.cpp
+    tk/combo_button.h
+    tk/combo_button.cpp
     tk/searchable_picker.h
     tk/searchable_picker.cpp
     tk/controls.h

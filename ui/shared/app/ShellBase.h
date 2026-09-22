@@ -4742,6 +4742,15 @@ protected:
     // UI on the now-gone space's summary. Safe to call even if space_id
     // wasn't actually the current stack top / active room.
     void leave_space_navigate_back_(const std::string& space_id);
+    // The room list's own "back" button: exits one level of the sidebar's
+    // "drilled into a space" browsing (space_stack_/space_nav_frames_).
+    // Purely a sidebar action — current_room_id_ (the main pane's active
+    // room) is untouched, so if it's still a space (e.g. that's what's
+    // actually open in the main pane), the space-root view is re-asserted
+    // rather than being blindly hidden, which would otherwise reveal
+    // RoomView underneath showing that space's own (effectively empty)
+    // room instead. Every shell's on_space_back delegates here.
+    void space_back_command_();
     void join_room_command_(const std::string& room_id_or_alias,
                             std::vector<std::string> via = {});
     void invite_user_command_(const std::string& room_id,

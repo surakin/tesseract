@@ -856,18 +856,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
         // Space nav back button.
         main_app_->on_space_back = [this]
         {
-            if (!space_stack_.empty())
-                space_stack_.pop_back();
-            if (main_app_)
-                main_app_->hide_room_preview();
-            if (main_app_)
-                main_app_->hide_space_root();
-            refresh_room_list();
-            if (!space_nav_frames_.empty())
-            {
-                space_nav_frames_.back().restore(room_list_view_);
-                space_nav_frames_.pop_back();
-            }
+            space_back_command_();
         };
 
         room_list_view_->on_room_selected = [this](const std::string& room_id)

@@ -1,11 +1,13 @@
 #include "CreateRoomView.h"
 
 #include "tk/i18n.h"
+#include "tk/loading_spinner.h"
 #include "tk/theme.h"
 
 #include <tesseract/visual.h>
 
 #include <algorithm>
+#include <chrono>
 #include <optional>
 #include <string>
 #include <utility>
@@ -28,7 +30,16 @@ constexpr float kCRInviteH = 50.0f;
 constexpr float kCRHintH = 16.0f;
 constexpr float kCRBtnH = 32.0f;
 constexpr float kCRBtnW = 96.0f;
+// Wider than kCRBtnW — the Create split button's main zone has to fit
+// "Create Space" (the longer of its two labels) plus its own chevron slot.
+constexpr float kCRCreateBtnW = 132.0f;
 constexpr float kCRStatusH = 20.0f;
+// Centered spinner shown in place of the whole form while State::Creating —
+// same radius/dot size EncryptionSetupOverlay's Progress step uses for its
+// own blocking centered spinner.
+constexpr float kCRSpinnerRadius = 16.0f;
+constexpr float kCRSpinnerDotR = 3.0f;
+constexpr float kCRSpinnerLabelGap = 18.0f;
 constexpr float kCRRadius = tesseract::visual::kRadiusSM;
 constexpr float kCRBorderW = 1.0f;
 // Inset between invite_group_'s border and the invite/reason/hint fields
@@ -135,17 +146,36 @@ CreateRoomView::CreateRoomView()
     auto enc = tk::create_widget<tk::CheckButton>(this, tk::tr("Encrypt this room"));
     encryption_check_ = add_child(std::move(enc));
 
-    auto create = tk::create_widget<tk::Button>(this, tk::tr("Create"),
-        std::function<void()>{}, tk::Button::Variant::Primary);
-    create->set_on_click(
-        [this]
+    auto create = tk::create_widget<tk::ComboButton>(this);
+    create->set_options({
+        {tk::tr("Create Room"), "room"},
+        {tk::tr("Create Space"), "space"},
+    });
+    create->set_selected_value("room");
+    create->set_variant(tk::Button::Variant::Primary);
+    create->on_selection_changed =
+        [this](std::string value)
         {
+            is_space_ = (value == "space");
+            // Encryption isn't a supported concept for spaces — mirrors
+            // RoomSettingsView hiding the same field for an existing space.
+            if (encryption_check_ && state_ != State::Creating)
+            {
+                if (is_space_) encryption_check_->set_checked(false);
+                encryption_check_->set_enabled(!is_space_);
+            }
+            apply_type_placeholders_();
+        };
+    create->on_activate =
+        [this](std::string value)
+        {
+            is_space_ = (value == "space");
             if (on_create_requested)
             {
                 on_create_requested(build_options_());
             }
-        });
-    create_btn_ = add_child(std::move(create));
+        };
+    create_combo_btn_ = add_child(std::move(create));
 
     auto cancel = tk::create_widget<tk::Button>(this, tk::tr("Cancel"),
         std::function<void()>{}, tk::Button::Variant::Subtle);
@@ -167,6 +197,25 @@ CreateRoomView::CreateRoomView()
     apply_state();
 }
 
+void CreateRoomView::apply_type_placeholders_()
+{
+    if (name_field_)
+    {
+        name_field_->set_placeholder(is_space_ ? tk::tr("Space name") : tk::tr("Room name"));
+    }
+    if (alias_field_)
+    {
+        alias_field_->set_placeholder(is_space_ ? tk::tr("Space alias (optional)")
+                                                 : tk::tr("Room alias (optional)"));
+    }
+    if (reason_hint_lbl_)
+    {
+        reason_hint_lbl_->set_text(is_space_
+                                        ? tk::tr("Sent as plain text, even in encrypted spaces")
+                                        : tk::tr("Sent as plain text, even in encrypted rooms"));
+    }
+}
+
 tesseract::RoomCreateOptions CreateRoomView::build_options_() const
 {
     tesseract::RoomCreateOptions o;
@@ -176,7 +225,8 @@ tesseract::RoomCreateOptions CreateRoomView::build_options_() const
     o.visibility = visibility_combo_ && !visibility_combo_->selected_value().empty()
                        ? visibility_combo_->selected_value()
                        : std::string("private");
-    o.encrypted = encryption_check_ && encryption_check_->checked();
+    o.encrypted = encryption_check_ && encryption_check_->checked() && !is_space_;
+    o.is_space = is_space_;
     o.invite = invite_field_ ? split_invitees(invite_field_->text()) : std::vector<std::string>();
     o.invite_reason = reason_field_ ? reason_field_->text() : std::string();
     return o;
@@ -184,6 +234,8 @@ tesseract::RoomCreateOptions CreateRoomView::build_options_() const
 
 void CreateRoomView::set_state(State s)
 {
+    if (s == State::Creating)
+        creating_spinner_start_ = std::chrono::steady_clock::now();
     state_ = s;
     if (s != State::Error)
     {
@@ -211,7 +263,14 @@ void CreateRoomView::reset()
     invite_h_ = kCRInviteH;
     if (reason_field_) reason_field_->set_text("");
     if (visibility_combo_) visibility_combo_->set_selected_value("private");
-    if (encryption_check_) encryption_check_->set_checked(false);
+    if (encryption_check_)
+    {
+        encryption_check_->set_checked(false);
+        encryption_check_->set_enabled(true);
+    }
+    is_space_ = false;
+    if (create_combo_btn_) create_combo_btn_->set_selected_value("room");
+    apply_type_placeholders_();
     set_state(State::Idle);
 }
 
@@ -244,7 +303,11 @@ void CreateRoomView::on_theme_changed(const tk::Theme& t)
 void CreateRoomView::apply_state()
 {
     const bool creating = (state_ == State::Creating);
-    const bool show_status = (state_ == State::Creating || state_ == State::Error);
+    // Creating no longer uses status_lbl_ — paint() draws a centered
+    // spinner + message over the whole (hidden) form instead. status_lbl_
+    // stays reserved for Error, where the form is still shown so the user
+    // can fix and retry.
+    const bool show_status = (state_ == State::Error);
 
     if (name_field_) name_field_->set_enabled(!creating);
     if (topic_field_) topic_field_->set_enabled(!creating);
@@ -252,20 +315,34 @@ void CreateRoomView::apply_state()
     if (invite_field_) invite_field_->set_enabled(!creating);
     if (reason_field_) reason_field_->set_enabled(!creating);
     if (visibility_combo_) visibility_combo_->set_enabled(!creating);
-    if (encryption_check_) encryption_check_->set_enabled(!creating);
-    if (create_btn_) create_btn_->set_enabled(!creating);
+    if (encryption_check_) encryption_check_->set_enabled(!creating && !is_space_);
+    if (create_combo_btn_) create_combo_btn_->set_enabled(!creating);
+
+    // Hide the entire form while creating — replaced by the centered
+    // spinner + message (see paint()). The view's own size never changes:
+    // arrange() always receives the same fixed bounds from AddRoomView
+    // regardless of what's shown inside it.
+    if (name_field_) name_field_->set_visible(!creating);
+    if (topic_field_) topic_field_->set_visible(!creating);
+    if (alias_field_) alias_field_->set_visible(!creating);
+    if (invite_field_) invite_field_->set_visible(!creating);
+    if (reason_field_) reason_field_->set_visible(!creating);
+    if (reason_hint_lbl_) reason_hint_lbl_->set_visible(!creating);
+    if (invite_group_) invite_group_->set_visible(!creating);
+    if (visibility_combo_) visibility_combo_->set_visible(!creating);
+    if (encryption_check_) encryption_check_->set_visible(!creating);
+    if (create_combo_btn_) create_combo_btn_->set_visible(!creating);
+    if (cancel_btn_) cancel_btn_->set_visible(!creating);
 
     if (status_lbl_)
     {
         status_lbl_->set_visible(show_status);
-        if (state_ == State::Creating)
+        if (state_ == State::Error)
         {
-            status_lbl_->set_text(tk::tr("Creating room\xe2\x80\xa6"));
-        }
-        else if (state_ == State::Error)
-        {
-            status_lbl_->set_text(error_msg_.empty() ? tk::tr("Couldn't create room.")
-                                                       : error_msg_);
+            status_lbl_->set_text(
+                error_msg_.empty()
+                    ? (is_space_ ? tk::tr("Couldn't create space.") : tk::tr("Couldn't create room."))
+                    : error_msg_);
         }
         else
         {
@@ -305,7 +382,10 @@ void CreateRoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         + kCRGroupPadY                                          // invite_group_'s bottom inset
         + kCRGap                                                // gap below invite_group_
         + kCRFieldH + kCRGap                                    // visibility/encryption row
-        + (status_lbl_ && status_lbl_->visible() ? kCRStatusH + kCRSmallGap : 0.0f)
+        // Always reserved, whether or not status_lbl_ is currently showing
+        // an error — otherwise the button row jumps down the moment an
+        // error appears (and back up when it clears).
+        + kCRStatusH + kCRSmallGap
         + kCRBtnH + kCRPadY;                                    // button row + bottom padding
 
     if (topic_field_)
@@ -392,19 +472,21 @@ void CreateRoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     }
     y += kCRFieldH + kCRGap;
 
-    if (status_lbl_ && status_lbl_->visible())
+    // Always arranged (and its row height always advanced past) regardless
+    // of status_lbl_'s current visibility — see reserved_below_fixed above.
+    if (status_lbl_)
     {
         status_lbl_->arrange(ctx, {x, y, inner_w, kCRStatusH});
-        y += kCRStatusH + kCRSmallGap;
     }
+    y += kCRStatusH + kCRSmallGap;
 
     float btn_row_y = std::max(y, bounds.y + bounds.h - kCRPadY - kCRBtnH);
     float btn_x = x + inner_w;
 
-    if (create_btn_)
+    if (create_combo_btn_)
     {
-        btn_x -= kCRBtnW;
-        create_btn_->arrange(ctx, {btn_x, btn_row_y, kCRBtnW, kCRBtnH});
+        btn_x -= kCRCreateBtnW;
+        create_combo_btn_->arrange(ctx, {btn_x, btn_row_y, kCRCreateBtnW, kCRBtnH});
         btn_x -= kCRSmallGap;
     }
     if (cancel_btn_)
@@ -465,7 +547,7 @@ void CreateRoomView::paint(tk::PaintCtx& ctx)
     y += kCRFieldH + kCRGap;
 
     y += kCRGroupPadY;
-    if (invite_group_)
+    if (invite_group_ && invite_group_->visible())
     {
         invite_group_->paint(ctx);
     }
@@ -501,14 +583,41 @@ void CreateRoomView::paint(tk::PaintCtx& ctx)
         y += kCRStatusH + kCRSmallGap;
     }
 
-    if (visibility_combo_)
+    if (visibility_combo_ && visibility_combo_->visible())
         visibility_combo_->paint(ctx);
-    if (encryption_check_)
+    if (encryption_check_ && encryption_check_->visible())
         encryption_check_->paint(ctx);
-    if (create_btn_)
-        create_btn_->paint(ctx);
-    if (cancel_btn_)
+    if (create_combo_btn_ && create_combo_btn_->visible())
+        create_combo_btn_->paint(ctx);
+    if (cancel_btn_ && cancel_btn_->visible())
         cancel_btn_->paint(ctx);
+
+    if (state_ == State::Creating)
+    {
+        const float scx = bounds_.x + bounds_.w * 0.5f;
+        const float scy = bounds_.y + bounds_.h * 0.5f;
+        const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                     std::chrono::steady_clock::now() - creating_spinner_start_)
+                                     .count();
+        const float phase = static_cast<float>(elapsed_ms % 1000) / 1000.0f;
+        tk::draw_spinner_dots(ctx.canvas, {scx, scy}, phase, kCRSpinnerRadius,
+                              kCRSpinnerDotR, pal.accent);
+
+        tk::TextStyle st;
+        st.role = tk::FontRole::Body;
+        auto lo = ctx.factory.build_text(is_space_ ? tk::tr("Creating space\xe2\x80\xa6")
+                                                    : tk::tr("Creating room\xe2\x80\xa6"),
+                                         st);
+        if (lo)
+        {
+            tk::Size sz = lo->measure();
+            ctx.canvas.draw_text(
+                *lo, {scx - sz.w * 0.5f, scy + kCRSpinnerRadius + kCRSpinnerLabelGap},
+                pal.text_secondary);
+        }
+        if (auto* h = host())
+            h->request_repaint(); // self-drive the spinner
+    }
 }
 
 } // namespace tesseract::views

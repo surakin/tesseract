@@ -506,9 +506,18 @@ msgstr[1] "{0} miembros"
 msgid "Create"
 msgstr "Crear"
 
+msgid "Create Room"
+msgstr "Crear sala"
+
+msgid "Create Space"
+msgstr "Crear espacio"
+
 #: ui/shared/views/CreateRoomView.cpp:42
 msgid "Room name"
 msgstr "Nombre de la sala"
+
+msgid "Space name"
+msgstr "Nombre del espacio"
 
 #: ui/shared/views/CreateRoomView.cpp:46
 msgid "Topic (optional)"
@@ -517,6 +526,9 @@ msgstr "Tema (opcional)"
 #: ui/shared/views/CreateRoomView.cpp:50
 msgid "Room alias (optional)"
 msgstr "Alias de la sala (opcional)"
+
+msgid "Space alias (optional)"
+msgstr "Alias del espacio (opcional)"
 
 #: ui/shared/views/CreateRoomView.cpp:85
 msgid "Invite people (optional) — Matrix IDs, one per line or comma-separated"
@@ -536,6 +548,9 @@ msgstr "Motivo: {0}"
 msgid "Sent as plain text, even in encrypted rooms"
 msgstr "Se envía como texto sin cifrar, incluso en salas cifradas"
 
+msgid "Sent as plain text, even in encrypted spaces"
+msgstr "Se envía como texto sin cifrar, incluso en espacios cifrados"
+
 #: ui/shared/views/CreateRoomView.cpp:141
 msgid ""
 "Sets the initial join rule, history visibility, and directory listing. "
@@ -553,9 +568,15 @@ msgstr ""
 msgid "Creating room…"
 msgstr "Creando sala…"
 
+msgid "Creating space…"
+msgstr "Creando espacio…"
+
 #: ui/shared/views/CreateRoomView.cpp:179
 msgid "Couldn't create room."
 msgstr "No se pudo crear la sala."
+
+msgid "Couldn't create space."
+msgstr "No se pudo crear el espacio."
 
 #: ui/shared/views/CreateRoomView.cpp:270
 msgid "Create a Room"

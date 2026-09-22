@@ -174,6 +174,12 @@ SpaceRootView::SpaceRootView()
     {
         if (on_copy_to_clipboard) on_copy_to_clipboard(std::move(text));
     };
+    // The settings dialog's own destructive "Leave Space" button — same
+    // action as leave_btn_ above, just reachable from inside Settings too.
+    settings_view_->on_leave_room = [this](std::string space_id)
+    {
+        if (on_leave_space) on_leave_space(std::move(space_id));
+    };
 
     auto add_list = tk::create_widget<SpaceAddRoomList>(this);
     add_list->on_add_requested = [this](std::string room_id)

@@ -985,7 +985,14 @@ public:
         {
             return;
         }
+        // BetterTextSetPlaceholder only marks content_dirty (InvalidateRect
+        // on a control that never actually appears on screen — see the
+        // ctor's SetWindowRgn(empty) comment) — unlike BetterTextSetText, it
+        // fires no Changed notification, so nothing re-captures the offscreen
+        // render target on its own. Mirrors set_text()'s own trailing
+        // refresh_image() call.
         BetterTextSetPlaceholder(hwnd_, utf8_to_wide(text).c_str());
+        refresh_image();
     }
     void set_focused(bool focused) override
     {
@@ -1678,6 +1685,11 @@ public:
             // document is empty (see LayoutHeight()'s placeholder branch),
             // so re-report natural_height() the same way set_text() does.
             refresh_height();
+            // BetterTextSetPlaceholder only marks content_dirty — unlike
+            // BetterTextSetText it fires no Changed notification, so nothing
+            // re-captures the offscreen render target on its own. Mirrors
+            // set_text()'s own trailing refresh_image() call.
+            refresh_image();
         }
     }
 
