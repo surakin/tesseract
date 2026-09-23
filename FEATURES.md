@@ -10,6 +10,7 @@ version) are noted where relevant.
 - Multi-account support (multiple accounts active simultaneously)
 - OS-native secure credential storage on every platform
 - Single-instance behavior (launching again restores the running window)
+- Command-line options on every platform: `--help`, `--version`, `--profile` (separate, isolated app profiles), `--hidden`, `--log-level`/`--verbose`, `--logoutall`, and `--open-*` actions (settings, quick switcher, message search, a specific room) — see [docs/CLI.md](docs/CLI.md)
 - System tray with minimize-to-tray (default), unread dot, and mention-state color; clicking the tray icon jumps to the first unread room
 - macOS dock badge showing the total notification count; clicking the dock icon raises the window and navigates to the first unread room
 - Session restore (all open room tabs and active account restored on launch)
@@ -56,6 +57,7 @@ version) are noted where relevant.
 - Inline Unicode emoji rendered at ~125% of body font size in message bodies, the composer (live as-you-type), and the room list's last-message preview
 - Location messages render an embedded pannable/zoomable map; clicking (not panning) opens the location on openstreetmap.org. Send via a recognized Google Maps/OpenStreetMap link (opt-in setting) or the `/location` command (shares your current OS location)
 - An opt-in setting (default off) surfaces room join/leave/kick/ban/invite/knock events in the timeline, with consecutive same-action events collapsed into one expandable summary line
+- Room name changes show as a system line in the timeline (e.g. "Alice changed the room name to Welcome Lounge")
 
 ## Media
 
@@ -84,6 +86,7 @@ version) are noted where relevant.
 - A Bridged badge (with the bridged network's name, when known) appears in the room-info panel for rooms bridged to a third-party network (MSC2346), overridable per-room in room settings
 - Sticky section headers — the current section's header pins to the top while scrolling (interactive: click to collapse/expand)
 - Space navigation with drill-down and recursive subspace support; unjoined child rooms shown with a preview panel (name, avatar, topic, member count, Join button); selecting a joined space itself shows a summary panel (avatar, topic, joined/unjoined child counts)
+- Space room management: drag rooms between a candidates list and the space's rooms grid to add or remove them (Enter/Delete from the keyboard), shown only to members allowed to edit the space
 - Multiple rooms open in tabs
 - Pop-out room windows (ctrl/⌘+click a tab to open the room in its own native window)
 - Quick switcher (ctrl/⌘+K command palette to jump between rooms, with a recently-visited strip)
@@ -98,7 +101,8 @@ version) are noted where relevant.
 - Room search (filters by room display name)
 - Right-click a room in the list for a context menu: Open in tab, Open in window, Leave room
 - Direct messages (create / open; reuses existing DM if present)
-- Room creation (name, topic, alias, public/private visibility)
+- Room and space creation (name, topic, alias, public/private visibility, optional invites) — the Create button is a split button offering "Create Room" / "Create Space"
+- Public room directory browsing (Add Room → Browse), with search and a choice of server
 - Room knocking (MSC2403): request to join a knock/knock-restricted room (with an optional reason) from the Join dialog; track and cancel a pending request from a "Requests to Join" room-list section; admins/moderators can accept, deny, or deny-and-ban a request from Room Info
 - Room settings, tabbed (General / Media / Security & Privacy / Permissions / Emojis & Stickers): avatar, display name, and topic; join rule (Public/Invite/Knock), guest access, history visibility, and one-directional encryption enable; aggregate power-level thresholds (default role, invite/kick/ban, message/settings/permissions defaults, @room notifications, starting calls) — all per-field power-level gated, staged edits aren't sent until confirmed; the Permissions tab warns (non-blocking) when a staged change would leave no other member able to edit permissions; a Leave button sits in the footer
 - Full room-history export (room info panel → Export History) to plain text or HTML, optionally with images and packaged as a `.zip`; resumable if interrupted
@@ -117,6 +121,8 @@ version) are noted where relevant.
 ## Calls
 
 - Native LiveKit-based MatrixRTC voice/video calls (MSC4143); interoperates with Element X and Element Call
+- Pre-call lobby before joining: camera preview, mic/camera toggles, Join/Cancel
+- Call rooms (MSC3417): a dedicated "Call Rooms" room-list section; opening one joins its call, navigating away floats the call instead of hanging up, and returning restores it
 - End-to-end encryption (HKDF key derivation matching Element Call's wire format); echo cancellation via each platform's native audio device manager
 - Docked, expanded, floating (draggable, position persisted, kept clear of the composer), and popout (dedicated OS window) call overlay modes
 - Mute/video/hang-up controls, call duration timer, pinned-participant grid layout
@@ -128,7 +134,8 @@ version) are noted where relevant.
 ## Security & privacy
 
 - End-to-end encryption
-- Guided encryption setup for new accounts (cross-signing wizard)
+- Guided encryption setup for new accounts (cross-signing wizard); a fresh login finishes setup before syncing starts
+- The sidebar avatar warns when the current session is unverified, with a "Verify this session…" menu item to reopen verification
 - Device verification via emoji (SAS)
 - Key backup recovery
 - Room key export / import (standard interoperable format)
@@ -146,6 +153,7 @@ version) are noted where relevant.
 - A clear "No Internet Connection" dialog on cold-start when offline, instead of a raw connection-error message
 - QR-code login (MSC4108; gated on server capability advertisement)
 - Profile editing: display name, avatar, and extended fields — pronouns, timezone, and biography (MSC4133)
+- Your own profile updates live when edited on another device (MSC4262; on Synapse this needs `include_profile_updates_in_sync`)
 - User status (MSC4426): a self-set emoji + short text status shown on the profile card and as a third line in the sidebar account strip, plus an automatic "In a call" indicator while in a MatrixRTC call
 - Multi-account
 
@@ -175,11 +183,10 @@ version) are noted where relevant.
 ## Not yet implemented
 
 - **Room administration**: inviting users from the member list (`/invite` slash command works today), and per-member moderation actions (kick / ban) — room creation, and editing name/topic/avatar/join-rule/history-visibility/guest-access/power-level-thresholds, are all implemented
-- **Room directory browsing**
-- **Accessibility**: screen-reader support is incomplete on `development` (built on a separate `a11y` branch — Windows UIA, macOS NSAccessibility, Qt6/GTK4 bridges — not yet merged)
+- **Accessibility**: screen-reader support is in place but incomplete — Windows UIA, macOS NSAccessibility, and Qt6/GTK4 bridges exist, but not every widget and view is mapped yet
 - **Localization**: only English and Spanish so far (Settings → Language: Auto/English/Spanish, takes effect after restart) — more languages are opportunistic/contributor-driven
 - **Background push on macOS / Windows** (Linux uses Unified Push; in-app notifications elsewhere)
-- **Spaces management** beyond navigation (creating / editing space structure)
+- **Space child ordering** and "suggested room" flags (creating spaces and adding/removing their rooms are implemented)
 - **3PID management**, **account deactivation**, **identity server settings**
 
 ## Possible / planned polish
