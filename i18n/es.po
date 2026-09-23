@@ -2680,3 +2680,79 @@ msgstr "Llamada de voz en curso"
 #: ui/shared/views/RoomListView.h
 msgid "Call Rooms"
 msgstr "Salas de llamada"
+
+#: ui/shared/app/Launch.cpp
+msgid "Show this help and exit"
+msgstr "Mostrar esta ayuda y salir"
+
+#: ui/shared/app/Launch.cpp
+msgid "Show the version and exit"
+msgstr "Mostrar la versión y salir"
+
+#: ui/shared/app/Launch.cpp
+msgid "Use a separate profile with its own accounts and settings"
+msgstr "Usar un perfil separado con sus propias cuentas y ajustes"
+
+#: ui/shared/app/Launch.cpp
+msgid "Start in the tray without showing the window"
+msgstr "Iniciar en la bandeja sin mostrar la ventana"
+
+#: ui/shared/app/Launch.cpp
+msgid "Set the log level (error, warn, info, debug, trace)"
+msgstr "Establecer el nivel de registro (error, warn, info, debug, trace)"
+
+#: ui/shared/app/Launch.cpp
+msgid "Log more detail (same as --log-level=debug)"
+msgstr "Registrar más detalle (igual que --log-level=debug)"
+
+#: ui/shared/app/Launch.cpp
+msgid "Open the room with this ID"
+msgstr "Abrir la sala con este ID"
+
+#: ui/shared/app/Launch.cpp
+msgid "Open the quick switcher"
+msgstr "Abrir el selector rápido"
+
+#: ui/shared/app/Launch.cpp
+msgid "Open message search"
+msgstr "Abrir la búsqueda de mensajes"
+
+#: ui/shared/app/Launch.cpp
+msgid "Open Settings"
+msgstr "Abrir Ajustes"
+
+#: ui/shared/app/Launch.cpp
+msgid "Sign out of every account and exit"
+msgstr "Cerrar sesión en todas las cuentas y salir"
+
+#: ui/shared/app/Launch.cpp
+msgid "[OPTIONS] [MATRIX-URI]"
+msgstr "[OPCIONES] [URI-MATRIX]"
+
+#: ui/shared/app/Launch.cpp
+msgid "Usage:"
+msgstr "Uso:"
+
+#: ui/shared/app/Launch.cpp
+msgid "Options:"
+msgstr "Opciones:"
+
+#: ui/shared/app/Launch.cpp
+msgid "Tesseract is running. Quit it first, then try again."
+msgstr "Tesseract está en ejecución. Ciérralo primero y vuelve a intentarlo."
+
+#: ui/shared/app/Launch.cpp
+msgid "The account list could not be read. Nothing was changed."
+msgstr "No se pudo leer la lista de cuentas. No se cambió nada."
+
+#: ui/shared/app/Launch.cpp
+msgid "No accounts to sign out."
+msgstr "No hay cuentas en las que cerrar sesión."
+
+#: ui/shared/app/Launch.cpp
+msgid "Signed out {0}"
+msgstr "Sesión cerrada en {0}"
+
+#: ui/shared/app/Launch.cpp
+msgid "Removed {0} from this device, but the server sign-out failed: {1}"
+msgstr "Se eliminó {0} de este dispositivo, pero el cierre de sesión en el servidor falló: {1}"

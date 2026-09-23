@@ -85,7 +85,9 @@ add_executable(tesseract_tests
     cpp/test_table_layout.cpp
     cpp/test_prefs.cpp
     cpp/test_settings.cpp
+    cpp/test_cli.cpp
     cpp/test_launch_args.cpp
+    cpp/test_single_instance.cpp
     cpp/test_pending_send.cpp
     cpp/test_compose_bar_media.cpp
     cpp/test_media_drop.cpp

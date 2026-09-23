@@ -1902,19 +1902,20 @@ const xdg_activation_token_v1_listener kTokenDoneListener = {s_token_done};
 
 void MainWindow::setupActivationListener_()
 {
-    // Protocol: newline-delimited.
-    //   Line 1: XDG_ACTIVATION_TOKEN (may be empty)
-    //   Line 2: matrix: URI to navigate to (optional)
-    // Shared with GTK4 (ui/shared/tk/single_instance.h) — either backend's
-    // "losing" launch can forward here regardless of which one won the lock.
+    // Protocol: see tk::ActivationRequest (ui/shared/tk/single_instance.h).
+    // Shared with GTK4 — either backend's "losing" launch can forward here
+    // regardless of which one won the lock.
     activationListener_ = std::make_unique<tk::ActivationListener>(
-        [this](std::string token, std::string uri)
+        [this](tk::ActivationRequest req)
         {
-            activateWindowWithToken_(QString::fromStdString(token));
-            if (!uri.empty())
+            activateWindowWithToken_(QString::fromStdString(req.token));
+            if (!req.uri.empty())
             {
-                openMatrixLink(uri);
+                openMatrixLink(req.uri);
             }
+            dispatch_launch_action_(
+                tesseract::launch_action_from_option_id(req.action),
+                std::move(req.room_id));
         });
     if (activationListener_->fd() >= 0)
     {
@@ -2298,6 +2299,23 @@ void MainWindow::showMainContent_()
 {
     contentStack_->setCurrentWidget(mainAppSurface_);
     teardownLoginView_();
+    mark_main_content_ready_();
+}
+
+void MainWindow::raise_main_window_ui_()
+{
+    // Focus/activation itself is handled by the caller's path (startup
+    // activateOnStartup() or the forwarded activation token) — this only
+    // makes sure a tray-hidden or minimized window is actually on screen.
+    if (!isVisible())
+    {
+        show();
+    }
+    if (isMinimized())
+    {
+        showNormal();
+    }
+    raise();
 }
 
 void MainWindow::doLogin()

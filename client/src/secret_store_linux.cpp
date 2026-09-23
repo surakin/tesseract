@@ -21,7 +21,7 @@ std::optional<std::string> SecretStore::load(const std::string& user_id)
     GError* err = nullptr;
     gchar* secret = secret_password_lookup_sync(
         &kSchema, nullptr, &err,
-        "user-id", user_id.c_str(),
+        "user-id", SecretStore::key_for(user_id).c_str(),
         nullptr);
     if (err)
     {
@@ -45,7 +45,7 @@ bool SecretStore::save(const std::string& user_id, const std::string& json)
         "Tesseract session",
         json.c_str(),
         nullptr, &err,
-        "user-id", user_id.c_str(),
+        "user-id", SecretStore::key_for(user_id).c_str(),
         nullptr);
     if (err)
     {
@@ -60,7 +60,7 @@ void SecretStore::remove(const std::string& user_id)
     GError* err = nullptr;
     secret_password_clear_sync(
         &kSchema, nullptr, &err,
-        "user-id", user_id.c_str(),
+        "user-id", SecretStore::key_for(user_id).c_str(),
         nullptr);
     if (err)
         g_error_free(err);

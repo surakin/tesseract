@@ -15,6 +15,8 @@ set(_tk_sources
     app/DeferredTeardown.h
     app/AccountManager.h
     app/AccountManager.cpp
+    app/Launch.h
+    app/Launch.cpp
     app/EventHandlerBase.h
     app/EventHandlerBase.cpp
     app/RoomWindowBase.h
@@ -388,8 +390,13 @@ list(APPEND _tk_sources
 )
 if(TESSERACT_UI STREQUAL "macos")
     # screen_capture_macos.mm / location_provider_macos.mm live in
-    # ui/macos/tk/ and are added by ui/macos/CMakeLists.txt instead —
-    # this target has no macos sources.
+    # ui/macos/tk/ and are added by ui/macos/CMakeLists.txt instead.
+    # single_instance is plain POSIX (flock): the macOS shell uses its
+    # per-profile lock for duplicate-launch detection.
+    list(APPEND _tk_sources
+        tk/single_instance.h
+        tk/single_instance.cpp
+    )
 elseif(TESSERACT_UI STREQUAL "win32")
     # screen_capture_win32.cpp / location_provider_win32.cpp live in
     # ui/windows/tk/ and are added by ui/windows/CMakeLists.txt instead —

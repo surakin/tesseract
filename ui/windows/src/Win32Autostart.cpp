@@ -1,5 +1,7 @@
 #include "Win32Autostart.h"
 #include "Win32PackageContext.h"
+#include <tesseract/launch_args.h>
+#include <tesseract/paths.h>
 
 #include <string>
 
@@ -13,7 +15,19 @@ namespace win32
 namespace
 {
 constexpr wchar_t kRunKeyPath[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-constexpr wchar_t kValueName[]  = L"Tesseract";
+// Per --profile, so each profile has its own login item and enabling one
+// never overwrites another's.
+const wchar_t* value_name()
+{
+    static const std::wstring name = []
+    {
+        std::wstring n = L"Tesseract";
+        for (char c : tesseract::profile_suffix())
+            n.push_back(static_cast<wchar_t>(c));
+        return n;
+    }();
+    return name.c_str();
+}
 } // namespace
 
 bool Win32Autostart::is_enabled() const
@@ -39,7 +53,7 @@ bool Win32Autostart::is_enabled() const
     {
         return false;
     }
-    LONG result = RegQueryValueExW(key, kValueName, nullptr, nullptr, nullptr, nullptr);
+    LONG result = RegQueryValueExW(key, value_name(), nullptr, nullptr, nullptr, nullptr);
     RegCloseKey(key);
     return result == ERROR_SUCCESS;
 }
@@ -76,7 +90,7 @@ bool Win32Autostart::set_enabled(bool enabled)
             // Key doesn't exist at all: nothing to remove, already disabled.
             return true;
         }
-        LONG result = RegDeleteValueW(key, kValueName);
+        LONG result = RegDeleteValueW(key, value_name());
         RegCloseKey(key);
         return result == ERROR_SUCCESS || result == ERROR_FILE_NOT_FOUND;
     }
@@ -86,6 +100,12 @@ bool Win32Autostart::set_enabled(bool enabled)
         return false;
 
     std::wstring cmd = std::wstring(L"\"") + exe_path + L"\" --autostart";
+    for (const auto& arg : tesseract::profile_relaunch_args(tesseract::profile()))
+    {
+        cmd += L" ";
+        for (char c : arg)
+            cmd.push_back(static_cast<wchar_t>(c));
+    }
 
     HKEY key = nullptr;
     if (RegCreateKeyExW(HKEY_CURRENT_USER, kRunKeyPath, 0, nullptr,
@@ -95,7 +115,7 @@ bool Win32Autostart::set_enabled(bool enabled)
         return false;
     }
     LONG result = RegSetValueExW(
-        key, kValueName, 0, REG_SZ,
+        key, value_name(), 0, REG_SZ,
         reinterpret_cast<const BYTE*>(cmd.c_str()),
         static_cast<DWORD>((cmd.size() + 1) * sizeof(wchar_t)));
     RegCloseKey(key);

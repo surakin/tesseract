@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- feat(cli): portable command-line parser shared by all shells, adding `--help`, `--version`, `--profile`, `--hidden`, `--log-level`/`--verbose` and `--logoutall`; `--open-*` actions now work on every platform. See [docs/CLI.md](docs/CLI.md). Qt6 build + ctest 1936/1936, cargo 713/713; unverified live, GTK4/Windows/macOS unbuilt
 - feat(rooms): room name changes now show as a system row in the timeline (e.g. "Alice changed the room name to Welcome Lounge"), matching how membership changes already render. `m.room.name` state events were previously discarded by the SDK's timeline conversion along with all other non-pinned `OtherState` events. Windows build + full ctest 1909/1909, cargo 712/712; user-verified live
 - fix(login): cancelling a first-time login no longer crashes or leaves Sign In dead afterward. Windows build + full ctest 1909/1909, cargo 716/716; user-verified live. Qt6/GTK4/macOS share the fix, unbuilt
 - feat(security): a fresh login now waits for the encryption-setup dialog to be resolved before starting sync, instead of racing the two. Windows build + full ctest 1909/1909, cargo 716/716; user-verified live. Qt6/GTK4/macOS share the code, unbuilt

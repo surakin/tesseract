@@ -3773,6 +3773,8 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
     notify_tray_unread_();
     if (user_id != my_user_id_)
     {
+        // A pending --open-room target may live on this (inactive) account.
+        retry_pending_launch_room_();
         return;
     }
     rooms_ = std::move(rooms);
@@ -3848,6 +3850,7 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
     // both pin/unpin state-event changes and PL changes that flip can_pin
     // or the redact-others (delete-others'-messages) permission.
     refresh_pinned_for_current_room_();
+    retry_pending_launch_room_();
 
     // Every background-warming dispatch below shares the single-thread
     // mut_pool_ with subscribe_room() (queued moments ago inside
@@ -5500,6 +5503,104 @@ void ShellBase::open_settings_to_account_tab_()
     open_app_settings_ui_();
     if (stats_settings_view_)
         stats_settings_view_->show_account_section();
+}
+
+void ShellBase::dispatch_launch_action_(LaunchAction action, std::string room_id)
+{
+    if (action == LaunchAction::None)
+    {
+        return;
+    }
+    if (action == LaunchAction::Room)
+    {
+        // Empty when replaying a held Room action from
+        // mark_main_content_ready_: the ID is already pending.
+        if (!room_id.empty())
+        {
+            pending_launch_room_id_ = std::move(room_id);
+        }
+        if (pending_launch_room_id_.empty())
+        {
+            return;
+        }
+    }
+    if (!main_content_ready_)
+    {
+        pending_launch_action_ = action;
+        return;
+    }
+    raise_main_window_ui_();
+    switch (action)
+    {
+    case LaunchAction::QuickSwitcher:
+        open_quick_switch_ui_();
+        break;
+    case LaunchAction::MessageSearch:
+        open_message_search_ui_();
+        break;
+    case LaunchAction::Settings:
+        open_app_settings_ui_();
+        break;
+    case LaunchAction::Room:
+        open_launch_room_(pending_launch_room_id_);
+        break;
+    case LaunchAction::None:
+        break;
+    }
+}
+
+void ShellBase::mark_main_content_ready_()
+{
+    main_content_ready_ = true;
+    if (pending_launch_action_ != LaunchAction::None)
+    {
+        const auto action = pending_launch_action_;
+        pending_launch_action_ = LaunchAction::None;
+        dispatch_launch_action_(action);
+    }
+}
+
+void ShellBase::retry_pending_launch_room_()
+{
+    // Only once a held action has run: before that, mark_main_content_ready_
+    // replays it through dispatch_launch_action_ (which also raises the
+    // window).
+    if (main_content_ready_ && pending_launch_action_ == LaunchAction::None &&
+        !pending_launch_room_id_.empty())
+    {
+        open_launch_room_(pending_launch_room_id_);
+    }
+}
+
+void ShellBase::open_launch_room_(const std::string& room_id)
+{
+    if (room_id.empty())
+    {
+        return;
+    }
+    // Callers commonly pass pending_launch_room_id_ itself. Copy before
+    // clearing that member so navigation never observes an invalidated alias.
+    const std::string target_room_id = room_id;
+    for (const auto& [user_id, rooms] : per_account_rooms_)
+    {
+        const bool found = std::any_of(
+            rooms.begin(), rooms.end(),
+            [&](const RoomInfo& room) { return room.id == target_room_id; });
+        if (!found)
+        {
+            continue;
+        }
+        pending_launch_room_id_.clear();
+        if (!active_account_ || active_account_->user_id != user_id)
+        {
+            switch_active_account_(user_id);
+        }
+        navigate_to_room_(target_room_id);
+        return;
+    }
+    // Account restoration or the initial room snapshot may still be in
+    // progress. push_rooms_ retries without opening a join prompt.
+    pending_launch_room_id_ = target_room_id;
 }
 
 void ShellBase::handle_profile_field_change_(const std::string& key,

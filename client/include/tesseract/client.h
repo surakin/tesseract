@@ -108,6 +108,13 @@ struct ServerInfo
     static ServerInfo from_json(const std::string& json);
 };
 
+/// Process-wide SDK log filter from the command line (`--log-level`,
+/// `--verbose`): a bare level or full tracing EnvFilter directives. Beats
+/// RUST_LOG and the persisted Settings::sdk_log_level. The Rust tracing
+/// subscriber is installed once, by the first Client constructed, so call
+/// this before creating any Client. Empty clears it.
+void set_log_filter_override(std::string filter);
+
 /// High-level C++ Matrix client.
 ///
 /// Thread-safety: methods may be called from any thread; the underlying Rust

@@ -84,6 +84,12 @@ public:
         gtk_window_present(GTK_WINDOW(window_));
     }
 
+    /// Command-line launch action (see ShellBase::dispatch_launch_action_).
+    void dispatch_launch_action(tesseract::LaunchAction action, std::string room_id)
+    {
+        dispatch_launch_action_(action, std::move(room_id));
+    }
+
     // Bring the main window forward and open the quick switcher. Pop-out room
     // windows route here on Ctrl+K — their own shortcut controller is scoped
     // to the pop-out window, while the switcher widget lives in the main one.
@@ -139,6 +145,9 @@ private:
     void on_server_info_ready_ui_() override;
     void on_own_extended_profile_ready_ui_() override;
     void open_app_settings_ui_() override { open_settings_(); }
+    void raise_main_window_ui_() override { present(); }
+    void open_quick_switch_ui_() override { open_quick_switch_(); }
+    void open_message_search_ui_() override { open_message_search_(); }
     void on_profile_field_result_ui_(const std::string& key, bool ok,
                                      const std::string& error) override;
     void draw_inflight_dot_(cairo_t* cr);

@@ -1078,17 +1078,28 @@ pub(crate) fn encode_voice_ogg(
 
 impl ClientFfi {
     #[cfg(not(test))]
-    pub fn new(log_level: &str) -> Self {
-        // When RUST_LOG is set, use it directly so it fully overrides the
-        // programmatic defaults.  When RUST_LOG is absent, apply the
-        // caller-supplied level for matrix_sdk (defaulting to "warn").
-        let level = if ["error", "warn", "info", "debug", "trace"].contains(&log_level) {
+    pub fn new(log_level: &str, filter_override: &str) -> Self {
+        // Precedence: a command-line override (`--log-level` / `--verbose`)
+        // first, then RUST_LOG (used verbatim so it fully overrides the
+        // programmatic defaults), then the caller-supplied persisted level
+        // for matrix_sdk (defaulting to "warn"). A bare level is applied to
+        // matrix_sdk the same way the persisted setting is; anything else is
+        // taken as a full EnvFilter directive string.
+        const LEVELS: [&str; 5] = ["error", "warn", "info", "debug", "trace"];
+        let level_filter =
+            |level: &str| format!("matrix_sdk={level},matrix_sdk::http_client=off");
+        let level = if LEVELS.contains(&log_level) {
             log_level
         } else {
             "warn"
         };
-        let default_filter = format!("matrix_sdk={level},matrix_sdk::http_client=off");
-        let filter_str = std::env::var("RUST_LOG").unwrap_or(default_filter);
+        let filter_str = if LEVELS.contains(&filter_override) {
+            level_filter(filter_override)
+        } else if !filter_override.is_empty() {
+            filter_override.to_owned()
+        } else {
+            std::env::var("RUST_LOG").unwrap_or_else(|_| level_filter(level))
+        };
         let _ = tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::new(filter_str))
             .try_init();

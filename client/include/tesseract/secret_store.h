@@ -1,5 +1,7 @@
 #pragma once
 
+#include "tesseract/paths.h"
+
 #include <optional>
 #include <string>
 
@@ -30,6 +32,17 @@ public:
     /// Remove the credential for `user_id`. No-op if the key does not exist
     /// or the backend is unavailable.
     static void remove(const std::string& user_id);
+
+    /// The backend key actually used for `user_id`: the bare MXID in the
+    /// default profile (unchanged from before profiles existed, so no
+    /// migration), `profile:<name>/<user_id>` under `--profile=<name>` so the
+    /// same account signed in to two profiles keeps two independent
+    /// credentials. MXIDs start with '@', so the two forms never collide.
+    static std::string key_for(const std::string& user_id)
+    {
+        const std::string& p = profile();
+        return p.empty() ? user_id : "profile:" + p + "/" + user_id;
+    }
 };
 
 } // namespace tesseract

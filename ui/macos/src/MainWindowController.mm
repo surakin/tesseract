@@ -230,6 +230,10 @@ protected:
     void on_server_info_ready_ui_() override;
     void on_own_extended_profile_ready_ui_() override;
     void open_app_settings_ui_() override;
+    // makeKeyAndOrderFront: also brings back a window orderOut:'d to the tray.
+    void raise_main_window_ui_() override { raise_and_activate_(); }
+    void open_quick_switch_ui_() override;
+    void open_message_search_ui_() override;
     void on_profile_field_result_ui_(const std::string& key, bool ok,
                                      const std::string& error) override;
     void update_typing_bar_(const std::string& text, bool visible) override;
@@ -601,6 +605,15 @@ public:
         send_notification_reply_(std::move(user_id), std::move(room_id),
                                  std::move(event_id), std::move(text));
     }
+
+    // Command-line launch actions (thin wrappers over the protected
+    // ShellBase members).
+    void dispatch_launch_action(tesseract::LaunchAction action,
+                                std::string room_id)
+    {
+        dispatch_launch_action_(action, std::move(room_id));
+    }
+    void mark_main_content_ready() { mark_main_content_ready_(); }
 
     // LEGACY: do not add new entries here. Add a public C++ method above instead.
 public:
@@ -2054,6 +2067,20 @@ void MacShell::open_app_settings_ui_()
     MainWindowController* c = ctrl_;
     if (c)
         [c _openSettings];
+}
+
+void MacShell::open_quick_switch_ui_()
+{
+    MainWindowController* c = ctrl_;
+    if (c)
+        [c _openQuickSwitch];
+}
+
+void MacShell::open_message_search_ui_()
+{
+    MainWindowController* c = ctrl_;
+    if (c)
+        [c _openMessageSearch];
 }
 
 void MacShell::on_profile_field_result_ui_(const std::string& key,
@@ -5754,6 +5781,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
     if (_loginView)
         _loginView.hidden = YES;
     [self _teardownLoginView];
+    _shell->mark_main_content_ready();
 }
 
 - (void)dealloc
@@ -5988,6 +6016,16 @@ void MacShell::apply_window_title_ui_(const std::string& title)
     if (uri && _shell)
     {
         _shell->open_matrix_link([uri UTF8String]);
+    }
+}
+
+- (void)dispatchLaunchAction:(tesseract::LaunchAction)action
+                      roomId:(NSString*)roomId
+{
+    if (_shell)
+    {
+        _shell->dispatch_launch_action(action,
+                                       roomId ? [roomId UTF8String] : "");
     }
 }
 

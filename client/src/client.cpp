@@ -29,6 +29,22 @@
 namespace tesseract
 {
 
+namespace
+{
+
+std::string& log_filter_override_storage()
+{
+    static std::string filter;
+    return filter;
+}
+
+} // namespace
+
+void set_log_filter_override(std::string filter)
+{
+    log_filter_override_storage() = std::move(filter);
+}
+
 // ---------------------------------------------------------------------------
 // Pimpl
 // ---------------------------------------------------------------------------
@@ -72,7 +88,8 @@ struct Client::Impl
 
     explicit Impl()
         : ffi(tesseract_ffi::client_create(
-              Settings::instance().sdk_log_level.c_str()))
+              Settings::instance().sdk_log_level.c_str(),
+              log_filter_override_storage().c_str()))
     {
     }
 };

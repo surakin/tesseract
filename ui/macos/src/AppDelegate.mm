@@ -4,23 +4,27 @@
 #import <Carbon/Carbon.h> // kAEOpenApplication / keyAEPropData / keyAELaunchedAsLogInItem
 #import <CoreSpotlight/CoreSpotlight.h>
 #import "tk_locale.h"
-#include "tesseract/crash_handler.h"
-#include "tesseract/paths.h"
-#include "tesseract/settings.h"
-#include <optional>
-#include <vector>
-#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
 #include "tesseract/launch_args.h"
-#endif
+#include "tesseract/paths.h"
+#include "tk/single_instance.h"
+#include <string>
+#include <utility>
 
 @implementation AppDelegate
 {
     MainWindowController* _windowController;
+    // Parsed command line, handed over by main() (see ui/shared/app/Launch.h).
+    tesseract::LaunchPlan _launchPlan;
     // Best-effort "was I launched by the login-item mechanism" signal —
     // set in applicationWillFinishLaunching: (before the event queue could
     // have discarded the Apple Event), read in applicationDidFinishLaunching:
     // to decide whether to skip the initial window show.
     BOOL _launchedAsLoginItem;
+}
+
+- (void)setLaunchPlan:(tesseract::LaunchPlan)plan
+{
+    _launchPlan = std::move(plan);
 }
 
 // Detects the kAEOpenApplication Apple Event's keyAEPropData ==
@@ -44,19 +48,47 @@
 }
 
 // Distributed notification a duplicate-launch process posts to ask the
-// already-running instance to show its window — see -handleActivateRequest:.
-// NSRunningApplication.activateWithOptions: (below) can only bring the other
-// process's app to the front; it can't reach into that process to un-hide a
-// window that was orderOut:'d to the menu-bar tray, so this fills that gap
+// already-running instance to show its window and act on the duplicate's
+// command line — see -handleActivateRequest:. NSRunningApplication's
+// activateWithOptions: (below) can only bring the other process's app to the
+// front; it can't reach into that process to un-hide a window that was
+// orderOut:'d to the menu-bar tray, or open a room, so this fills that gap
 // the same way WM_COPYDATA (Windows) / the ActivationListener socket
-// (Qt6/GTK4) do for their platforms.
-static NSString* const kTesseractActivateRequestNotification =
-    @"io.gnomos.Tesseract.ActivateRequest";
+// (Qt6/GTK4) do for their platforms. The name carries the --profile suffix
+// so a request only reaches the instance of the same profile.
+static NSString* activateRequestNotificationName()
+{
+    return [@"io.gnomos.Tesseract.ActivateRequest"
+        stringByAppendingString:[NSString stringWithUTF8String:
+                                              tesseract::profile_suffix().c_str()]];
+}
+
+// userInfo keys of the activate-request notification. All optional.
+static NSString* const kActivateUriKey = @"uri";
+static NSString* const kActivateActionKey = @"action";
+static NSString* const kActivateRoomKey = @"room_id";
 
 - (void)handleActivateRequest:(NSNotification*)note
 {
     // Same recipe as a Dock-icon reopen with no visible windows.
     [self applicationShouldHandleReopen:NSApp hasVisibleWindows:NO];
+
+    NSDictionary* info = note.userInfo;
+    NSString* uri = [info[kActivateUriKey] isKindOfClass:NSString.class]
+                        ? info[kActivateUriKey] : nil;
+    NSString* action = [info[kActivateActionKey] isKindOfClass:NSString.class]
+                           ? info[kActivateActionKey] : nil;
+    NSString* roomId = [info[kActivateRoomKey] isKindOfClass:NSString.class]
+                           ? info[kActivateRoomKey] : nil;
+    if (uri.length > 0)
+        [_windowController openMatrixLink:uri];
+    if (action.length > 0)
+    {
+        [_windowController
+            dispatchLaunchAction:tesseract::launch_action_from_option_id(
+                                     [action UTF8String])
+                          roomId:roomId ?: @""];
+    }
 }
 
 - (void)applicationWillFinishLaunching:(NSNotification*)note
@@ -66,93 +98,71 @@ static NSString* const kTesseractActivateRequestNotification =
     [NSDistributedNotificationCenter.defaultCenter
         addObserver:self
            selector:@selector(handleActivateRequest:)
-               name:kTesseractActivateRequestNotification
+               name:activateRequestNotificationName()
              object:nil];
 
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
-    {
-        NSArray<NSString*>* args = NSProcessInfo.processInfo.arguments;
-        std::vector<std::string> cppArgs;
-        for (NSUInteger i = 1; i < args.count; ++i)
-            cppArgs.emplace_back([args[i] UTF8String]);
-        if (tesseract::parse_launch_args(cppArgs).screenshot_dir)
-            return; // Screenshot builds may run beside an installed instance.
-    }
+    if (_launchPlan.args.screenshot_dir)
+        return; // Screenshot builds may run beside an installed instance.
 #endif
 
-    // Raise the existing instance and abort if we are a duplicate.
-    // LSMultipleInstancesProhibited in Info.plist covers Finder/Dock launches;
-    // this handles command-line and IDE launches where LaunchServices is bypassed.
-    NSString* bundleId = NSBundle.mainBundle.bundleIdentifier;
-    NSRunningApplication* myself = NSRunningApplication.currentApplication;
-    if (bundleId)
+    // Raise the existing instance of this --profile and abort if we are a
+    // duplicate. LSMultipleInstancesProhibited in Info.plist covers
+    // Finder/Dock launches; this handles command-line and IDE launches where
+    // LaunchServices is bypassed. A per-profile flock (not a bundle-id scan)
+    // decides, so a named profile started from a terminal runs beside the
+    // default one instead of being mistaken for a duplicate.
+    if (!tk::acquire_single_instance_lock().acquired)
     {
-        for (NSRunningApplication* other in [NSRunningApplication
-                 runningApplicationsWithBundleIdentifier:bundleId])
+        // A duplicate hidden/autostart launch with nothing to forward has no
+        // meaningful action against the running instance — terminate
+        // quietly without raising it (which would defeat staying hidden).
+        if (!_launchedAsLoginItem && _launchPlan.should_raise_existing_instance())
         {
-            if ([other isEqual:myself])
-            {
-                continue;
-            }
-            // A duplicate autostart launch has no meaningful action against
-            // an already-running instance — terminate quietly without
-            // raising it (which would defeat staying hidden).
-            if (!_launchedAsLoginItem)
+            if (NSRunningApplication* other = [NSRunningApplication
+                    runningApplicationWithProcessIdentifier:
+                        tk::single_instance_owner_pid()])
             {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
                 [other activateWithOptions:NSApplicationActivateIgnoringOtherApps];
 #pragma clang diagnostic pop
-                // activateWithOptions: only brings the other process's app
-                // to the front — it can't un-hide a window that instance
-                // has orderOut:'d to the tray. Ask it directly.
-                [NSDistributedNotificationCenter.defaultCenter
-                    postNotificationName:kTesseractActivateRequestNotification
-                                  object:nil
-                                userInfo:nil
-                      deliverImmediately:YES];
             }
-            [NSApp terminate:nil];
-            return;
+            const tesseract::LaunchArgs& a = _launchPlan.args;
+            NSMutableDictionary* info = [NSMutableDictionary dictionary];
+            if (a.matrix_uri)
+                info[kActivateUriKey] =
+                    [NSString stringWithUTF8String:a.matrix_uri->c_str()];
+            if (a.action != tesseract::LaunchAction::None)
+                info[kActivateActionKey] = [NSString
+                    stringWithUTF8String:std::string(
+                                             tesseract::launch_action_option_id(
+                                                 a.action))
+                                             .c_str()];
+            if (a.room_id)
+                info[kActivateRoomKey] =
+                    [NSString stringWithUTF8String:a.room_id->c_str()];
+            [NSDistributedNotificationCenter.defaultCenter
+                postNotificationName:activateRequestNotificationName()
+                              object:nil
+                            userInfo:info
+                  deliverImmediately:YES];
         }
+        [NSApp terminate:nil];
     }
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification*)note
 {
-#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
-    std::optional<std::string> screenshotDir;
-    {
-        NSArray<NSString*>* args = NSProcessInfo.processInfo.arguments;
-        std::vector<std::string> cppArgs;
-        for (NSUInteger i = 1; i < args.count; ++i)
-            cppArgs.emplace_back([args[i] UTF8String]);
-        screenshotDir = tesseract::parse_launch_args(cppArgs).screenshot_dir;
-    }
-#endif
-    // Load persisted settings before set_locale so the saved language
-    // preference overrides the OS default when the user has set one.
-    tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
-
-    tesseract::install_crash_handler(tesseract::Settings::instance().crash_reporting_enabled);
-
-    // i18n: initialise locale before any views are constructed.
-    {
-        std::string lang = tesseract::Settings::instance().language;
-        if (lang == "auto" || lang.empty())
-        {
-            NSString* os_lang = NSLocale.preferredLanguages.firstObject ?: @"en";
-            os_lang = [os_lang stringByReplacingOccurrencesOfString:@"-" withString:@"_"];
-            lang = [os_lang UTF8String];
-        }
-        NSString* resDir = NSBundle.mainBundle.resourcePath;
-        std::string i18n_dir = (resDir ? std::string([resDir UTF8String]) : std::string{}) + "/i18n";
-        tk::set_locale(i18n_dir, lang);
-    }
+    // Settings, crash handler and locale were set up by prepare_launch() in
+    // main() — before any views are constructed.
+    // A copy: the dispatch_async block below captures it by value.
+    const tesseract::LaunchArgs launch = _launchPlan.args;
+    const BOOL startHidden = _launchedAsLoginItem || _launchPlan.start_hidden();
 
     _windowController = [[MainWindowController alloc] init];
-    _windowController.startedHidden = _launchedAsLoginItem;
-    if (!_launchedAsLoginItem)
+    _windowController.startedHidden = startHidden;
+    if (!startHidden)
     {
         [_windowController showWindow:self];
         [_windowController.window makeKeyAndOrderFront:self];
@@ -168,14 +178,28 @@ static NSString* const kTesseractActivateRequestNotification =
     // browser-redirect prompt doesn't open behind a still-loading shell.
     dispatch_async(dispatch_get_main_queue(), ^{
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
-        if (screenshotDir)
+        if (launch.screenshot_dir)
         {
-            NSString* dir = [NSString stringWithUTF8String:screenshotDir->c_str()];
+            NSString* dir =
+                [NSString stringWithUTF8String:launch.screenshot_dir->c_str()];
             [_windowController captureScreenshotsToDirectory:dir];
             return;
         }
 #endif
         [_windowController beginLogin];
+        // Command-line launch intents, same as a forwarded request. Both are
+        // held by the shell until there is something to act on.
+        if (launch.matrix_uri)
+        {
+            [_windowController
+                openMatrixLink:[NSString
+                                   stringWithUTF8String:launch.matrix_uri->c_str()]];
+        }
+        [_windowController
+            dispatchLaunchAction:launch.action
+                          roomId:[NSString stringWithUTF8String:
+                                               launch.room_id.value_or(std::string{})
+                                                   .c_str()]];
     });
 }
 

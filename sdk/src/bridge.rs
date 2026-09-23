@@ -1,7 +1,7 @@
 pub use super::client::ClientFfi;
 
-pub fn client_create(log_level: &str) -> Box<ClientFfi> {
-    Box::new(ClientFfi::new(log_level))
+pub fn client_create(log_level: &str, filter_override: &str) -> Box<ClientFfi> {
+    Box::new(ClientFfi::new(log_level, filter_override))
 }
 
 /// Installs the Rust-side half of the optional local crash handler (see
@@ -1836,7 +1836,10 @@ pub mod ffi {
     extern "Rust" {
         type ClientFfi;
 
-        fn client_create(log_level: &str) -> Box<ClientFfi>;
+        /// `filter_override`: a `--log-level`/`--verbose` command-line value
+        /// (bare level or full EnvFilter directives); empty when not given.
+        /// Takes precedence over RUST_LOG and the persisted `log_level`.
+        fn client_create(log_level: &str, filter_override: &str) -> Box<ClientFfi>;
 
         // ----- Optional local crash handler -----
 

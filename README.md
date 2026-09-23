@@ -131,6 +131,7 @@ Come join us in [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-cl
 - Right click on the user info (bottom left) to add an account or open settings
 - Left click on the user info to open account picker (only if there is more than one account)
 - Ctrl+click on an account in the account picker to open said account in a separate window.
+- Command-line options (`--help`, `--profile`, `--hidden`, `--open-room`, `--logoutall`, …) are listed in [docs/CLI.md](docs/CLI.md).
 
 ## Server requirements
 

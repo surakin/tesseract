@@ -2758,3 +2758,79 @@ msgstr "[Vöïçé çàll ïñ prögréssxxxx]"
 #: ui/shared/views/RoomListView.h
 msgid "Call Rooms"
 msgstr "[Çàll Röömsxxx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "Show this help and exit"
+msgstr "[Shöw thïs hélp àñd éxïtxxxxx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "Show the version and exit"
+msgstr "[Shöw thé vérsïöñ àñd éxïtxxxxx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "Use a separate profile with its own accounts and settings"
+msgstr "[Üsé à sépàràté pröfïlé wïth ïts öwñ àççöüñts àñd séttïñgsxxxxxxxxxxx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "Start in the tray without showing the window"
+msgstr "[Stàrt ïñ thé trày wïthöüt shöwïñg thé wïñdöwxxxxxxxxx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "Set the log level (error, warn, info, debug, trace)"
+msgstr "[Sét thé lög lévél (érrör, wàrñ, ïñfö, débüg, tràçé)xxxxxxxxxx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "Log more detail (same as --log-level=debug)"
+msgstr "[Lög möré détàïl (sàmé às --log-level=debug)xxxxxxxxx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "Open the room with this ID"
+msgstr "[Öpéñ thé rööm wïth thïs ÏDxxxxx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "Open the quick switcher"
+msgstr "[Öpéñ thé qüïçk swïtçhérxxxxx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "Open message search"
+msgstr "[Öpéñ méssàgé séàrçhxxxx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "Open Settings"
+msgstr "[Öpéñ Séttïñgsxxx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "Sign out of every account and exit"
+msgstr "[Sïgñ öüt öf évéry àççöüñt àñd éxïtxxxxxxx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "[OPTIONS] [MATRIX-URI]"
+msgstr "[[ÖPTÏÖÑS] [MÀTRÏX-ÜRÏ]xxxx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "Usage:"
+msgstr "[Üsàgé:xx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "Options:"
+msgstr "[Öptïöñs:xx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "Tesseract is running. Quit it first, then try again."
+msgstr "[Tésséràçt ïs rüññïñg. Qüït ït fïrst, théñ try àgàïñ.xxxxxxxxxx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "The account list could not be read. Nothing was changed."
+msgstr "[Thé àççöüñt lïst çöüld ñöt bé réàd. Ñöthïñg wàs çhàñgéd.xxxxxxxxxxx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "No accounts to sign out."
+msgstr "[Ñö àççöüñts tö sïgñ öüt.xxxxx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "Signed out {0}"
+msgstr "[Sïgñéd öüt {0}xxx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "Removed {0} from this device, but the server sign-out failed: {1}"
+msgstr "[Rémövéd {0} fröm thïs dévïçé, büt thé sérvér sïgñ-öüt fàïléd: {1}xxxxxxxxxxxxx]"

@@ -3096,6 +3096,7 @@ void MainWindow::show_main_content_()
 {
     gtk_stack_set_visible_child_name(GTK_STACK(content_stack_), "main");
     teardown_login_view_();
+    mark_main_content_ready_();
 }
 
 void MainWindow::finish_login_ui_(const std::string& uid)

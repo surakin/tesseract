@@ -1,6 +1,7 @@
 #pragma once
 #import <AppKit/AppKit.h>
 
+#include <tesseract/launch_args.h>
 #include <tesseract/types.h>
 
 #include <memory>
@@ -58,6 +59,13 @@
 
 /// Navigate to the target described by a matrix.to or matrix: URI.
 - (void)openMatrixLink:(NSString*)uri;
+
+/// Command-line launch action (`--open-settings`, `--open-room=ID`, ...).
+/// Held until the main content is showing — see
+/// ShellBase::dispatch_launch_action_. `roomId` is used only for
+/// LaunchAction::Room.
+- (void)dispatchLaunchAction:(tesseract::LaunchAction)action
+                      roomId:(NSString*)roomId;
 
 /// Navigate to the highest-priority unread room across all signed-in accounts.
 /// No-op when there is nothing unread.

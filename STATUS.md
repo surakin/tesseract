@@ -1,6 +1,11 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-21**. 1906 C++ + 711 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-23**. 1936 C++ + 713 Rust tests.
+
+> **Command-line options (2026-09-23).** A shared parser and startup
+> pipeline for all shells: `--help`, `--version`, `--profile` (isolated
+> profiles), `--hidden`, `--log-level`/`--verbose`, `--logoutall`, and
+> `--open-*` on every platform. See [docs/CLI.md](docs/CLI.md).
 
 > **Space room management (2026-09-21, v0.8.25).**
 > `SpaceRootView` gains an add/remove-rooms section: a searchable candidates

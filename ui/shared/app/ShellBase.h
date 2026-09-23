@@ -4,6 +4,7 @@
 #include <tesseract/client.h>
 #include <tesseract/event_handler.h>
 #include <tesseract/image_pack.h>
+#include <tesseract/launch_args.h>
 #include <tesseract/paths.h>
 #include <tesseract/power_monitor.h>
 #include <tesseract/screen_lock.h>
@@ -3802,6 +3803,37 @@ protected:
     /// Open settings and land on the Account tab — wired to the sidebar
     /// status line's `on_status_clicked`.
     void open_settings_to_account_tab_();
+
+    // ── Command-line launch actions ───────────────────────────────────────────
+    // `--open-settings`, `--open-quick-switcher`, `--open-message-search` and
+    // `--open-room=ID` (Windows Jump List tasks use them too), either from
+    // this process's own argv or forwarded by a later launch to the running
+    // instance. Shared by every shell; the shell supplies only the native
+    // hooks below and calls mark_main_content_ready_() from its
+    // show-main-content path.
+
+    /// Act on `action` now, or hold it until mark_main_content_ready_() when
+    /// the main UI isn't up yet (still at login / restoring). `room_id` is
+    /// used only for LaunchAction::Room.
+    void dispatch_launch_action_(LaunchAction action, std::string room_id = {});
+    /// The main UI (room list + room view) is showing; runs any held action.
+    void mark_main_content_ready_();
+    /// Navigate to `room_id` on whichever signed-in account has joined it,
+    /// switching accounts if needed. When no account has it yet (restore or
+    /// the first room snapshot still in flight) it stays pending and
+    /// push_rooms_ retries it — no join prompt.
+    void open_launch_room_(const std::string& room_id);
+    /// push_rooms_ hook: re-run open_launch_room_ for a still-pending target.
+    void retry_pending_launch_room_();
+
+    /// Bring the main window to the front, un-hiding it from the tray.
+    virtual void raise_main_window_ui_() {}
+    virtual void open_quick_switch_ui_() {}
+    virtual void open_message_search_ui_() {}
+
+    bool main_content_ready_ = false;
+    LaunchAction pending_launch_action_ = LaunchAction::None;
+    std::string pending_launch_room_id_;
 
     /// Called on the UI thread after a set_profile_field / delete_profile_field
     /// call completes. Override to clear the busy state and surface errors.

@@ -8,12 +8,13 @@
 namespace
 {
 
-// Build the Credential Manager target name: "Tesseract:<user_id>".
-// Matrix IDs are ASCII-compatible; widen one byte at a time.
+// Build the Credential Manager target name: "Tesseract:<key>", where key is
+// SecretStore::key_for(user_id) (the bare MXID in the default profile).
+// Matrix IDs and profile names are ASCII-compatible; widen one byte at a time.
 std::wstring make_target(const std::string& user_id)
 {
     std::wstring target = L"Tesseract:";
-    for (unsigned char c : user_id)
+    for (unsigned char c : tesseract::SecretStore::key_for(user_id))
         target.push_back(static_cast<wchar_t>(c));
     return target;
 }
