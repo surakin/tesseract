@@ -216,6 +216,10 @@ msgstr "[Jùmp tö dàté fàïléd: {0}xxxx]"
 msgid "Settings…"
 msgstr "[Séttïñgs…x]"
 
+#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp:7484
+msgid "Verify this session…"
+msgstr "[Vérïfý thïs séssïöñ…xx]"
+
 #: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp:5468
 msgid "Add Account…"
 msgstr "[Àdd Àççöùñt…xx]"

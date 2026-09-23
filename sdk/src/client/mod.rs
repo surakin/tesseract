@@ -949,6 +949,19 @@ impl Drop for ClientFfi {
                     drop(client);
                 });
             }
+            // Explicit take, same reasoning as self.client above: a login
+            // cancelled before oauth_await_callback's browser wait ever
+            // finishes leaves self.client None but self.oauth_flow holding
+            // the half-built Client(s) (PendingFlowState::client /
+            // PendingFlow::finished) — those drop here (runtime in TLS)
+            // rather than in the implicit field-drop pass after this fn
+            // returns, which crashed with a Handle::current() panic-during-
+            // drop abort when cancelling a fresh login before the browser
+            // ever opened.
+            if let Some(flow) = self.oauth_flow.take() {
+                oauth::cancel(&flow);
+                drop(flow);
+            }
         }
         // Remaining fields are all None/empty; rt drops last (declared last).
     }

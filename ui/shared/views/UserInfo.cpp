@@ -114,6 +114,11 @@ void UserInfo::set_notification_dot(bool on)
     notification_dot_ = on;
 }
 
+void UserInfo::set_warning_dot(bool on)
+{
+    warning_dot_ = on;
+}
+
 void UserInfo::set_icon_only(bool on)
 {
     icon_only_ = on;
@@ -250,6 +255,27 @@ void UserInfo::paint(tk::PaintCtx& ctx)
         ctx.canvas.fill_rounded_rect(
             {dot_cx - kDotD * 0.5f, dot_cy - kDotD * 0.5f, kDotD, kDotD},
             kDotD * 0.5f, theme.palette.unread_bg);
+    }
+
+    // -------- Warning dot (opposite avatar corner) --------
+    // Flags an unverified session. Placed on the top-right corner so it
+    // coexists with the notification dot (bottom-right) without colliding.
+    if (warning_dot_)
+    {
+        constexpr float kDotD = 8.0f;
+        constexpr float kRing = 2.0f;
+        const float outer_d = kDotD + kRing * 2.0f;
+        const float dot_cx = avatar_centre.x + avatar_size_ * 0.5f;
+        const float dot_cy = avatar_centre.y - avatar_size_ * 0.5f;
+        const tk::Color ring_col = pressed_ ? theme.palette.subtle_pressed
+                                   : hovered_ ? theme.palette.subtle_hover
+                                              : theme.palette.sidebar_bg;
+        ctx.canvas.fill_rounded_rect(
+            {dot_cx - outer_d * 0.5f, dot_cy - outer_d * 0.5f, outer_d, outer_d},
+            outer_d * 0.5f, ring_col);
+        ctx.canvas.fill_rounded_rect(
+            {dot_cx - kDotD * 0.5f, dot_cy - kDotD * 0.5f, kDotD, kDotD},
+            kDotD * 0.5f, theme.palette.destructive);
     }
 
     // Icon-only (collapsed sidebar): avatar only, no text column.

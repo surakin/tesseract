@@ -188,17 +188,31 @@ public:
     };
 
     // Build the canonical user-strip context-menu item list. The order and
-    // Log Out label are defined here; platform shells supply the five action
+    // Log Out label are defined here; platform shells supply the action
     // callbacks and iterate the result to build their native menu. The QR
     // item is omitted automatically when server_info_.supports_qr_grant is
     // false. show_qr_grant may be a null std::function even when QR is
-    // supported — the item will still be omitted.
+    // supported — the item will still be omitted. Likewise, verify_session
+    // is omitted when null — pass it only when the active session is
+    // currently unverified (mirrors UserInfo's warning-dot condition), so
+    // the item lets the user restart verification mid-session and
+    // disappears once verified.
     std::vector<UserMenuItem> build_user_menu_items_(
         std::function<void()> open_settings,
         std::function<void()> add_account,
         std::function<void()> show_qr_grant,
         std::function<void()> logout,
-        std::function<void()> quit) const;
+        std::function<void()> quit,
+        std::function<void()> verify_session = nullptr) const;
+
+    // Callback for build_user_menu_items_'s verify_session parameter above:
+    // null when the active account is already verified (the item is then
+    // omitted), otherwise reopens the same encryption-setup dialog shown
+    // right after login (recovery-key entry, or Fresh bootstrap — whichever
+    // check_encryption_setup_ picks; it doesn't require another device).
+    // Every shell wants the exact same condition and action here, so it's
+    // consolidated instead of duplicated four times.
+    std::function<void()> verify_session_menu_callback_();
 
     // Arm the pending-login OAuth flow's temp directory. Installed (via a
     // shell-native one-liner lambda) as the LoginView's on-begin-oauth
@@ -1178,6 +1192,12 @@ protected:
     // Set when the user dismisses the overlay (Skip or Done). Prevents it from
     // re-appearing if recovery_state() returns Disabled again.
     bool encryption_setup_dismissed_ = false;
+    // Non-null while a fresh-login's start_sync() was deliberately withheld
+    // (see FinalizeLoginResult::needs_encryption_setup) pending the user
+    // resolving the encryption-setup overlay. release_pending_sync_gate_()
+    // starts sync on it once the user closes the overlay (Skip/Done) or
+    // hands off to SAS verification instead.
+    std::shared_ptr<AccountSession> pending_sync_session_;
 
     // ── Cross-signing / SAS device verification ───────────────────────────────
     bool verification_banner_dismissed_ = false;
@@ -2080,6 +2100,15 @@ protected:
         bool        rejected_duplicate = false; // uid already signed in
         std::string user_id;                    // the new (or duplicate) uid
         std::string error;                      // failure detail (when !ok)
+        // True when finalize_login_blocking_ found recovery/cross-signing not
+        // set up (or incomplete on this device) and deliberately skipped
+        // start_sync — the shell must show the encryption-setup overlay
+        // (begin_gated_encryption_setup_if_needed_) instead of assuming sync
+        // is already running. See ShellBase::release_pending_sync_gate_.
+        bool        needs_encryption_setup      = false;
+        // Which EncryptionSetupOverlay::Mode to open when needs_encryption_setup
+        // is true: false = Fresh, true = Recover.
+        bool        encryption_setup_recover_mode = false;
     };
 
     // Blocking half of add-account finalize: exports the pending client's
@@ -2126,6 +2155,21 @@ protected:
     // moved out here). UI-thread only to call; `done` itself runs on the UI
     // thread.
     void finalize_login_async_(std::function<void(FinalizeLoginResult)> done);
+
+    // Called by each shell right after it activates the newly-added account
+    // (switchActiveAccount / equivalent) inside its finalize_login_async_
+    // `done` callback. A no-op unless `fin.needs_encryption_setup` is set, in
+    // which case it raises the encryption-setup overlay in the right mode and
+    // remembers the session so release_pending_sync_gate_() can start its
+    // sync once the user is done with the overlay.
+    void begin_gated_encryption_setup_if_needed_(const FinalizeLoginResult& fin);
+
+    // Starts the sync that finalize_login_blocking_ withheld for
+    // pending_sync_session_, if any. Wired as the release point from the
+    // encryption-setup overlay's on_close / on_request_sas callbacks — both
+    // mean "the user is done deciding" (setup finished, skipped, or handed
+    // off to SAS verification instead).
+    void release_pending_sync_gate_();
 
     // ── Active-account logout ─────────────────────────────────────────────────
     // Outcome of logout_active_account_impl_(): lets each shell decide between the
@@ -5157,6 +5201,12 @@ protected:
     // raise the encryption-setup overlay. Guards on encryption_setup_shown_ and
     // encryption_setup_dismissed_ so the overlay is shown at most once per session.
     void check_encryption_setup_();
+
+    // Clears the shown/dismissed guards check_encryption_setup_ uses to only
+    // raise the overlay once, then re-runs it — letting the user reopen the
+    // dialog deliberately (verify_session_menu_callback_ above) rather than
+    // waiting for it to reappear on its own.
+    void reopen_encryption_setup_();
 
 private:
     // intentionally empty — all other state is protected so shells can reset it

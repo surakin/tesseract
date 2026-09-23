@@ -360,6 +360,10 @@ void MainWindow::handle_verification_state_ui_(bool is_verified)
     {
         return;
     }
+    if (main_app_->user_info())
+    {
+        main_app_->user_info()->set_warning_dot(!is_verified);
+    }
     if (is_verified)
     {
         main_app_->show_verif_banner(false);
@@ -803,7 +807,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                 [this] { begin_add_account(); },
                 [this] { start_qr_grant_overlay(); },
                 [this] { logout_active_account(); },
-                [this] { tray_.reset(); g_application_quit(G_APPLICATION(app_)); });
+                [this] { tray_.reset(); g_application_quit(G_APPLICATION(app_)); },
+                verify_session_menu_callback_());
 
             GMenu* top = g_menu_new();
             GMenu* cur = g_menu_new();
@@ -3278,6 +3283,7 @@ void MainWindow::on_login_succeeded()
             wire_history_export_dialog_callbacks_();
             gtk_label_set_text(GTK_LABEL(status_bar_), _("Connected"));
             show_main_content_();
+            begin_gated_encryption_setup_if_needed_(fin);
             start_tray_if_needed_();
             start_search_provider_if_needed_();
             start_mpris_if_needed_();
@@ -6434,6 +6440,19 @@ void MainWindow::on_login_cancelled()
     {
         switch_active_account(account_manager_.accounts()[add_account_return_idx_]->user_id);
         show_main_content_();
+    }
+    else if (!pending_login_is_add_account_)
+    {
+        // Initial mode: no back-state to return to — rearm a fresh pending
+        // client so Sign In works again, mirroring the one-time setup in
+        // restore_all_accounts_async_'s no-accounts branch. Without this,
+        // login_view_ is left clientless and Sign In silently does nothing.
+        ensure_login_view_();
+        pending_login_client_ = std::make_unique<tesseract::Client>();
+        login_view_->set_client(pending_login_client_.get());
+        login_view_->set_on_begin_oauth([this] { arm_pending_login_(); });
+        login_view_->set_mode(tesseract::views::LoginView::Mode::Initial);
+        login_view_->reset();
     }
     pending_login_is_add_account_ = false;
     add_account_return_idx_ = -1;

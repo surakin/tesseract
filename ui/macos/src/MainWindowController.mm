@@ -464,6 +464,11 @@ public:
     {
         finalize_login_async_(std::move(done));
     }
+    void begin_gated_encryption_setup_if_needed(
+        const tesseract::ShellBase::FinalizeLoginResult& fin)
+    {
+        begin_gated_encryption_setup_if_needed_(fin);
+    }
     tesseract::ShellBase::LogoutResult        logout_active_account();
     bool switch_account(const std::string& user_id);
     tesseract::ShellBase::RestoreResult       restore_all_accounts();
@@ -3259,7 +3264,8 @@ void MacShell::apply_window_title_ui_(const std::string& title)
                 [weakSelf] { if (auto c = weakSelf) [c _beginAddAccount]; },
                 [weakSelf] { if (auto c = weakSelf) [c _showQRGrant]; },
                 [weakSelf] { if (auto c = weakSelf) [c _logoutActiveAccount]; },
-                [] { [NSApp terminate:nil]; });
+                [] { [NSApp terminate:nil]; },
+                s->_shell->verify_session_menu_callback_());
             NSMenu* menu = [[NSMenu alloc] initWithTitle:@""];
             NSMutableArray<_TkMenuAction*>* actions = [NSMutableArray new];
             for (const auto& item : items)
@@ -6883,6 +6889,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
         s->_shell->ensure_settings_controller();
         s->_shell->ensure_history_export_controller();
         [s _bindHistoryExportControllerNative];
+        s->_shell->begin_gated_encryption_setup_if_needed(fin);
     });
 }
 
@@ -6896,6 +6903,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
         std::filesystem::remove_all(_shell->pending_login_temp_dir_, ec);
         _shell->pending_login_temp_dir_.clear();
     }
+    const bool wasAddAccount = _shell->pending_login_is_add_account_;
     _shell->pending_login_is_add_account_ = false;
     const auto& accs = _shell->account_manager_.accounts();
     int returnIdx = _shell->add_account_return_idx_;
@@ -6907,6 +6915,27 @@ void MacShell::apply_window_title_ui_(const std::string& title)
         // so switch_account() returns false and _refreshAccountUIAfterSwitch is
         // skipped. Always hide the login view explicitly.
         [self _refreshAccountUIAfterSwitch];
+    }
+    else if (!wasAddAccount)
+    {
+        // Initial mode: no back-state to return to — rearm a fresh pending
+        // client so Sign In works again, mirroring the one-time setup in
+        // restore_all_accounts_async_'s no-accounts branch. Without this,
+        // _loginView is left clientless and Sign In silently does nothing.
+        [self _ensureLoginView];
+        _shell->pending_login_client_ = std::make_unique<tesseract::Client>();
+        [_loginView setClient:_shell->pending_login_client_.get()];
+        __weak MainWindowController* weakSelf = self;
+        _loginView.onBeginOAuth = ^{
+            MainWindowController* s = weakSelf;
+            if (!s)
+            {
+                return;
+            }
+            s->_shell->arm_pending_login_();
+        };
+        [_loginView setMode:tesseract::views::LoginView::Mode::Initial];
+        [_loginView reset];
     }
 }
 
@@ -7805,6 +7834,10 @@ void MacShell::apply_window_title_ui_(const std::string& title)
     if (!_mainApp || !_mainAppSurface)
     {
         return;
+    }
+    if (_mainApp->user_info())
+    {
+        _mainApp->user_info()->set_warning_dot(isVerified ? NO : YES);
     }
     // Only prompt when there is actually an identity to verify against. On a
     // fresh/only device our own login-time bootstrap holds the cross-signing

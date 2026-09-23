@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "views/RoomSettingsView.h"
+#include "tk/controls.h"
 #include "tk_test_host.h"
 #include "tk_test_surface.h"
 
@@ -665,11 +666,29 @@ TEST_CASE("RoomSettingsView: clicking Room ID fires on_copy_to_clipboard",
     TkRoomSettingsViewStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
-    // Room ID row: with an 800x600 stage, tabs_ occupies {0,49,800,487}
-    // (kBarHeight=48 + 1px separator to kFooterH-from-bottom=64), SideTabView
-    // reserves a 200px sidebar, and RoomGeneralSection::Content lays out
-    // Name -> Topic -> Room Address -> Room ID top to bottom, giving
-    // roomid_rect_ = {344, 267, 432, 26}.
+    // Locate the Room ID row's bounds by finding the Label whose text is the
+    // room id and clicking its parent (RoomGeneralSection::RoomIdRow handles
+    // the click, not the Label itself) — robust against RoomGeneralSection's
+    // internal layout (row order/spacing/font metrics), unlike a hardcoded
+    // pixel coordinate.
+    std::function<tk::Widget*(tk::Widget*)> find_room_id_row =
+        [&](tk::Widget* w) -> tk::Widget*
+    {
+        for (auto& ch : w->children())
+        {
+            if (auto* label = dynamic_cast<tk::Label*>(ch.get());
+                label && label->text() == "!room:example.org")
+            {
+                return w;
+            }
+            if (auto* found = find_room_id_row(ch.get()))
+                return found;
+        }
+        return nullptr;
+    };
+    tk::Widget* room_id_row = find_room_id_row(&v);
+    REQUIRE(room_id_row != nullptr);
+
     std::string copied;
     int copy_count = 0;
     v.on_copy_to_clipboard = [&](std::string text)
@@ -678,7 +697,9 @@ TEST_CASE("RoomSettingsView: clicking Room ID fires on_copy_to_clipboard",
         copied = std::move(text);
     };
 
-    const tk::Point pt{400.0f, 275.0f};
+    const tk::Rect row_bounds = room_id_row->bounds();
+    const tk::Point pt{row_bounds.x + row_bounds.w * 0.5f,
+                       row_bounds.y + row_bounds.h * 0.5f};
     tk::Widget* hit = v.dispatch_pointer_down(pt);
     REQUIRE(hit != nullptr);
 

@@ -72,6 +72,15 @@ public:
         return notification_dot_;
     }
 
+    // Warning badge on the avatar's opposite corner from the notification
+    // dot (so both can show at once). Used by the sidebar user-strip to flag
+    // that the current session is not verified.
+    void set_warning_dot(bool on);
+    bool warning_dot() const
+    {
+        return warning_dot_;
+    }
+
     const std::string& display_name() const
     {
         return display_name_;
@@ -162,6 +171,7 @@ private:
     bool status_line_enabled_ = false;
     bool active_indicator_ = false;
     bool notification_dot_ = false;
+    bool warning_dot_ = false;
     bool icon_only_ = false;
     float avatar_size_ = 44.0f;
     ImageProvider image_provider_;

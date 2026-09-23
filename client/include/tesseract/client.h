@@ -324,6 +324,14 @@ public:
     // ------------------------------------------------------------------
 
     void start_sync(IEventHandler* handler);
+
+    // Attach the event-handler bridge without starting the sync loop itself.
+    // Lets handler-routed calls (enable_recovery/recover's progress
+    // callbacks) work while start_sync is deliberately withheld — see
+    // ShellBase::finalize_login_blocking_'s encryption-setup gating.
+    // start_sync() later re-attaches over this (harmless) and does the
+    // actual spawning.
+    void attach_event_handler(IEventHandler* handler);
     /// Signals shutdown (session flush + stop channel) without stop_sync()'s
     /// exclusive lock, so it can run immediately even while a concurrent
     /// call (send_message, subscribe_room, ...) is mid-flight. Call this

@@ -941,9 +941,9 @@ TEST_CASE("LoginView lays out + paints onto the offscreen surface",
     REQUIRE(signin);
     signin->click(); // no-op: client_ is null, sign_in_() returns immediately
 
-    // Switching to Waiting hides Sign in. Cancel visibility is now gated
-    // on Mode (added for multi-account): Initial keeps Cancel hidden,
-    // AddAccount surfaces it.
+    // Switching to Waiting hides Sign in. Cancel shows during Waiting
+    // regardless of Mode (so a stuck first-time login can be aborted), and
+    // is otherwise only shown in AddAccount mode.
     view.set_state(LoginView::State::Waiting);
     auto count_visible_buttons = [&]()
     {
@@ -960,7 +960,8 @@ TEST_CASE("LoginView lays out + paints onto the offscreen surface",
         }
         return n;
     };
-    CHECK(count_visible_buttons() == 0); // Initial + Waiting → both hidden
+    CHECK(count_visible_buttons() == 1); // Initial + Waiting → Cancel only
+    CHECK(view.cancel_visible());
 
     view.set_mode(LoginView::Mode::AddAccount);
     CHECK(count_visible_buttons() == 1); // AddAccount + Waiting → Cancel only

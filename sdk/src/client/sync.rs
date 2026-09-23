@@ -30,6 +30,20 @@ impl ClientFfi {
         self.sync_tasks.push(h);
     }
 
+    /// Attach the event-handler bridge only — sets `self.handler` exactly
+    /// like `start_sync` does, without spawning any watcher task or the
+    /// SyncService loop. Lets handler-routed calls (enable_recovery/recover's
+    /// progress callbacks) work while the real sync start is deliberately
+    /// withheld. A later `start_sync` call re-attaches over this (harmless —
+    /// same wiring) and does the actual spawning.
+    pub fn attach_event_handler(&mut self, handler: UniquePtr<EventHandlerBridge>) {
+        if self.client.is_none() {
+            return;
+        }
+        let handler = Arc::new(Mutex::new(SendHandler(handler)));
+        self.handler = Some(handler);
+    }
+
     pub fn start_sync(&mut self, handler: UniquePtr<EventHandlerBridge>) {
         let Some(client) = self.client.clone() else {
             return;

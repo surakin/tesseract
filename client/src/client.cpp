@@ -320,6 +320,20 @@ void Client::start_sync(IEventHandler* handler)
             impl_->handler_slot));
 }
 
+void Client::attach_event_handler(IEventHandler* handler)
+{
+    MUT_FFI;
+    if (impl_->handler_slot)
+    {
+        impl_->handler_slot->detach();
+    }
+    impl_->handler_slot =
+        std::make_shared<tesseract_ffi::HandlerSlot>(handler);
+    impl_->ffi->attach_event_handler(
+        std::make_unique<tesseract_ffi::EventHandlerBridge>(
+            impl_->handler_slot));
+}
+
 void Client::request_stop()
 {
     // Shared, not exclusive: unlike stop_sync(), this must not queue behind

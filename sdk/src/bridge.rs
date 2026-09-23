@@ -1998,6 +1998,15 @@ pub mod ffi {
 
         // ----- Sync -----
 
+        /// Attach the event-handler bridge without starting the sync loop
+        /// itself. Lets the encryption-setup overlay's enable_recovery/
+        /// recover progress callbacks (routed through the same handler)
+        /// work while a fresh login's real sync is deliberately withheld —
+        /// see ShellBase::finalize_login_blocking_'s gating and
+        /// start_sync's own handler wiring, which this mirrors. start_sync
+        /// re-attaches the same way (harmlessly) when it later actually
+        /// spawns the sync tasks.
+        fn attach_event_handler(self: &mut ClientFfi, handler: UniquePtr<EventHandlerBridge>);
         fn start_sync(self: &mut ClientFfi, handler: UniquePtr<EventHandlerBridge>);
         /// Signals shutdown (session flush + stop channel) without the
         /// exclusive lock `stop_sync` needs, so it can run immediately even

@@ -848,6 +848,10 @@ void MainWindow::handle_verification_state_ui_(bool is_verified)
     {
         return;
     }
+    if (main_app_->user_info())
+    {
+        main_app_->user_info()->set_warning_dot(!is_verified);
+    }
     // Only prompt when there is actually an identity to verify against. On a
     // fresh/only device our own login-time bootstrap holds the cross-signing
     // keys, so "verify this device" is a dead end — check_encryption_setup_
@@ -4190,6 +4194,7 @@ void MainWindow::on_login_succeeded()
             ensure_settings_controller_();
             ensure_history_export_controller_();
             wire_history_export_dialog_callbacks_();
+            begin_gated_encryption_setup_if_needed_(fin);
             pending_login_is_add_account_ = false;
             add_account_return_idx_ = -1;
         });
@@ -6275,6 +6280,18 @@ void MainWindow::on_login_cancelled()
     }
     else
     {
+        // No account to return to — this was the very first (Initial-mode)
+        // login, not an add-account attempt. Rearm a fresh pending client so
+        // Sign In works again; mirrors the one-time setup in
+        // restore_all_accounts_async_'s no-accounts branch. Without this,
+        // login_view_ is left clientless (set_client(nullptr) above) and Sign
+        // In silently does nothing.
+        ensure_login_view_();
+        pending_login_client_ = std::make_unique<tesseract::Client>();
+        login_view_->set_client(pending_login_client_.get());
+        login_view_->set_on_begin_oauth([this] { arm_pending_login_(); });
+        login_view_->set_mode(tesseract::views::LoginView::Mode::Initial);
+        login_view_->reset();
         show_login_view();
     }
     add_account_return_idx_ = -1;
@@ -6502,7 +6519,8 @@ void MainWindow::show_user_context_menu_(int screen_x, int screen_y)
         [this] { begin_add_account(); },
         [this] { start_qr_grant_overlay(); },
         [this] { logout_active_account(); },
-        [this] { quitting_ = true; DestroyWindow(hwnd_); });
+        [this] { quitting_ = true; DestroyWindow(hwnd_); },
+        verify_session_menu_callback_());
 
     HMENU menu = CreatePopupMenu();
     UINT id = 1;

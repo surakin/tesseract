@@ -7475,10 +7475,13 @@ std::vector<ShellBase::UserMenuItem> ShellBase::build_user_menu_items_(
     std::function<void()> add_account,
     std::function<void()> show_qr_grant,
     std::function<void()> logout,
-    std::function<void()> quit) const
+    std::function<void()> quit,
+    std::function<void()> verify_session) const
 {
     std::vector<UserMenuItem> items;
     items.push_back({tk::tr("Settings\xe2\x80\xa6"),    std::move(open_settings)});
+    if (verify_session)
+        items.push_back({tk::tr("Verify this session\xe2\x80\xa6"), std::move(verify_session)});
     items.push_back({tk::tr("Add Account\xe2\x80\xa6"), std::move(add_account)});
     if (server_info_.supports_qr_grant && show_qr_grant)
         items.push_back({tk::tr("Add device via QR\xe2\x80\xa6"), std::move(show_qr_grant)});
@@ -7783,8 +7786,56 @@ ShellBase::FinalizeLoginIO ShellBase::finalize_login_blocking_(
     // expensive part of finalize — this is why finalize_login_blocking_
     // exists as a separate, worker-thread-only step.
     session->bridge = make_account_bridge_(session->user_id);
-    session->client->start_sync(session->bridge.get());
-    session->sync_started = true;
+
+    // Determine whether recovery/cross-signing needs setting up on this
+    // device BEFORE starting sync, so the encryption-setup flow (and any
+    // SAS verification the user starts from it) doesn't have to compete
+    // with the initial sync for the crypto machine — the race that made
+    // verification slow/flaky right after login. recovery_state() is a
+    // cheap local read, but can briefly report Unknown while the crypto
+    // machine finishes initializing, so poll it for a short bound; if it's
+    // still Unknown after that, don't block startup on it — start_sync
+    // proceeds normally and check_encryption_setup_() will catch it later,
+    // same as the pre-existing (unlocked) behavior.
+    uint8_t recovery_state = session->client->recovery_state();
+    {
+        constexpr auto kPollInterval = std::chrono::milliseconds(50);
+        constexpr auto kPollTimeout  = std::chrono::milliseconds(2000);
+        const auto      deadline     = std::chrono::steady_clock::now() + kPollTimeout;
+        while (recovery_state == 0 /* Unknown */ &&
+               std::chrono::steady_clock::now() < deadline)
+        {
+            std::this_thread::sleep_for(kPollInterval);
+            recovery_state = session->client->recovery_state();
+        }
+    }
+
+    if (recovery_state == 1 /* Disabled */ || recovery_state == 3 /* Incomplete */)
+    {
+        // Disabled is ambiguous between a truly fresh account (bootstrap a
+        // new identity, Fresh) and one whose identity was set up on another
+        // device without server-side secret storage (must Recover instead)
+        // — same distinction check_encryption_setup_() makes; see
+        // foreign_cross_signing_identity_()'s doc comment.
+        const bool foreign_identity =
+            session->client->own_identity_exists() &&
+            !session->client->have_cross_signing_keys();
+        out.needs_encryption_setup        = true;
+        out.encryption_setup_recover_mode = recovery_state == 3 || foreign_identity;
+        session->sync_started              = false;
+        // Attach the handler (without starting the sync loop) so the
+        // encryption-setup overlay's enable_recovery/recover progress
+        // callbacks — routed through this same handler — actually reach the
+        // UI instead of silently vanishing. release_pending_sync_gate_()
+        // later calls the real start_sync(), which re-attaches (harmlessly)
+        // and spawns the sync tasks this deliberately skips for now.
+        session->client->attach_event_handler(session->bridge.get());
+    }
+    else
+    {
+        session->client->start_sync(session->bridge.get());
+        session->sync_started = true;
+    }
     apply_search_indexing_pref_(*session->client);
     apply_membership_events_pref_(*session->client);
     apply_msc2545_legacy_compat_pref_(*session->client);
@@ -7885,6 +7936,37 @@ void ShellBase::finalize_login_async_(std::function<void(FinalizeLoginResult)> d
                     done(std::move(io->result));
                 });
         });
+}
+
+void ShellBase::begin_gated_encryption_setup_if_needed_(const FinalizeLoginResult& fin)
+{
+    if (!fin.needs_encryption_setup || !main_app_)
+        return;
+
+    auto sess = account_manager_.find(fin.user_id);
+    if (!sess)
+        return;
+
+    pending_sync_session_       = sess;
+    encryption_setup_dismissed_ = false;
+    encryption_setup_shown_     = true;
+    show_encryption_setup_overlay_(
+        fin.encryption_setup_recover_mode
+            ? tesseract::views::EncryptionSetupOverlay::Mode::Recover
+            : tesseract::views::EncryptionSetupOverlay::Mode::Fresh);
+    request_relayout_();
+}
+
+void ShellBase::release_pending_sync_gate_()
+{
+    auto sess = std::move(pending_sync_session_);
+    pending_sync_session_.reset();
+    if (!sess || !sess->client || sess->sync_started)
+        return;
+    run_async_mut_([sess]() {
+        sess->client->start_sync(sess->bridge.get());
+        sess->sync_started = true;
+    });
 }
 
 bool ShellBase::switch_active_account_impl_(const std::string& user_id)
@@ -12745,6 +12827,7 @@ void ShellBase::wire_encryption_setup_callbacks_(
     ov.on_request_sas = [this]() {
         encryption_setup_dismissed_ = true;
         if (main_app_) main_app_->show_encryption_setup(false);
+        release_pending_sync_gate_();
         auto sess = active_account_;
         run_async_mut_([sess]() {
             if (!sess || !sess->client) return;
@@ -12756,6 +12839,7 @@ void ShellBase::wire_encryption_setup_callbacks_(
     ov.on_close = [this]() {
         encryption_setup_dismissed_ = true;
         if (main_app_) main_app_->show_encryption_setup(false);
+        release_pending_sync_gate_();
         request_relayout_();
     };
 
@@ -12830,6 +12914,29 @@ void ShellBase::check_encryption_setup_()
         show_encryption_setup_overlay_(Mode::Recover);
     }
     // Unknown (0) and Enabled (2): do nothing; re-checked on next tick.
+}
+
+void ShellBase::reopen_encryption_setup_()
+{
+    encryption_setup_dismissed_ = false;
+    encryption_setup_shown_     = false;
+    check_encryption_setup_();
+}
+
+std::function<void()> ShellBase::verify_session_menu_callback_()
+{
+    // Deliberately reads read_device_verified_() live instead of
+    // active_account_->unverified: that cached field is only ever written by
+    // EventHandlerBase::on_verification_state_changed, driven by a watcher
+    // task spawned inside the full start_sync() — it can lag well behind (or
+    // never catch up to) the actual state, exactly like the warning-dot badge
+    // would if it read the same field instead of calling read_device_verified_()
+    // directly (see check_encryption_setup_()'s handle_verification_state_ui_
+    // call). Matching that same live read keeps the menu item's visibility
+    // consistent with the badge.
+    if (!active_account_ || read_device_verified_())
+        return nullptr;
+    return [this] { reopen_encryption_setup_(); };
 }
 
 void ShellBase::begin_crypto_identity_reset_()

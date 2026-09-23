@@ -93,17 +93,20 @@ TEST_CASE("LoginView Mode::Initial hides Cancel in Form state",
     CHECK_FALSE(lv.cancel_visible());
 }
 
-TEST_CASE("LoginView Mode::Initial keeps Cancel hidden in Waiting state",
+TEST_CASE("LoginView Mode::Initial keeps Cancel hidden on the form but shows it "
+          "while Waiting",
           "[tk][view][login][multi_account]")
 {
     TkLoginViewStage st;
     StubHost host;
     auto lv_owner = tk::create_root_widget<LoginView>(&host);
     LoginView& lv = *lv_owner;
+    st.run(lv, {0, 0, 640, 480});
+    CHECK_FALSE(lv.cancel_visible());
+
     lv.set_state(LoginView::State::Waiting);
     st.run(lv, {0, 0, 640, 480});
-
-    CHECK_FALSE(lv.cancel_visible());
+    CHECK(lv.cancel_visible());
 }
 
 TEST_CASE("LoginView Mode::AddAccount shows Cancel in Form state",

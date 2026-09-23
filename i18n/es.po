@@ -254,6 +254,10 @@ msgstr "Añadir cuenta…"
 msgid "Settings…"
 msgstr "Ajustes…"
 
+#: ui/shared/app/ShellBase.cpp:7484
+msgid "Verify this session…"
+msgstr "Verificar esta sesión…"
+
 #: ui/linux-qt/src/MainWindow.cpp:3687
 msgid "Log Out %1"
 msgstr "Cerrar sesión de %1"

@@ -203,7 +203,7 @@ void LoginView::set_state(State s)
     if (!sign_in_btn_ || !cancel_btn_)
         return;
     sign_in_btn_->set_visible(s == State::Form && oauth_available_);
-    cancel_btn_->set_visible(mode_ == Mode::AddAccount);
+    cancel_btn_->set_visible(mode_ == Mode::AddAccount || s == State::Waiting);
     if (register_link_)
         register_link_->set_visible(s == State::Form && registration_supported_);
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
@@ -215,7 +215,7 @@ void LoginView::set_mode(Mode m)
 {
     mode_ = m;
     if (cancel_btn_)
-        cancel_btn_->set_visible(m == Mode::AddAccount);
+        cancel_btn_->set_visible(m == Mode::AddAccount || state_ == State::Waiting);
     if (relayout_)
         relayout_();
 }
@@ -732,7 +732,7 @@ void LoginView::update_form_visibility_()
     // inside join_worker_() for up to the HTTP client's timeout.
     if (cancel_btn_)
         cancel_btn_->set_visible(
-            mode_ == Mode::AddAccount &&
+            (mode_ == Mode::AddAccount || state_ == State::Waiting) &&
             !(state_ == State::Waiting && form_kind_ == FormKind::Password));
 }
 

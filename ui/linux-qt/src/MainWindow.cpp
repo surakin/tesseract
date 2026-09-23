@@ -2573,6 +2573,7 @@ void MainWindow::onLoginSucceeded()
             wire_history_export_dialog_callbacks_();
             statusBar()->showMessage(tr("Connected"));
             showMainContent_();
+            begin_gated_encryption_setup_if_needed_(fin);
 
             pending_login_is_add_account_ = false;
             add_account_return_idx_ = -1;
@@ -2599,13 +2600,24 @@ void MainWindow::onLoginSucceeded()
 
 void MainWindow::onLoginCancelled()
 {
-    // The user clicked Cancel during AddAccount. Return to the previous
-    // foreground account; the in-flight client is discarded.
+    // The user clicked Cancel, either during AddAccount (return to the
+    // previous foreground account) or during the very first (Initial-mode)
+    // login. Either way the in-flight client is discarded.
     loginView_->set_client(nullptr);
     pending_login_client_.reset();
     if (!pending_login_is_add_account_)
     {
-        return; // no back-state in Initial mode
+        // Initial mode: no back-state to return to — rearm a fresh pending
+        // client so Sign In works again, mirroring the one-time setup in
+        // restore_all_accounts_async_'s no-accounts branch. Without this,
+        // loginView_ is left clientless and Sign In silently does nothing.
+        ensureLoginView_();
+        loginView_->set_mode(tesseract::views::LoginView::Mode::Initial);
+        pending_login_client_ = std::make_unique<tesseract::Client>();
+        loginView_->set_client(pending_login_client_.get());
+        loginView_->set_on_begin_oauth([this] { arm_pending_login_(); });
+        loginView_->reset();
+        return;
     }
 
     int back = add_account_return_idx_;
@@ -4146,7 +4158,8 @@ void MainWindow::onUserStripContextMenu(const QPoint& global_pos)
         [this] { beginAddAccount(); },
         [this] { start_qr_grant_overlay(); },
         [this] { logoutActiveAccount(); },
-        [this] { do_quit_(); });
+        [this] { do_quit_(); },
+        verify_session_menu_callback_());
     for (const auto& item : items)
     {
         if (item.label.empty())
@@ -4846,6 +4859,10 @@ void MainWindow::handle_verification_state_ui_(bool is_verified)
     if (!mainApp_)
     {
         return;
+    }
+    if (mainApp_->user_info())
+    {
+        mainApp_->user_info()->set_warning_dot(!is_verified);
     }
     if (is_verified)
     {
