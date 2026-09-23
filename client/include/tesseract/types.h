@@ -30,6 +30,7 @@ enum class EventType
     PinnedEvent, // m.room.pinned_events state-event timeline row
     CallNotification, // org.matrix.msc4075.rtc.notification
     Membership, // m.room.member state-event row (join/leave/kick/ban/invite/knock/…)
+    RoomName, // m.room.name state-event timeline row
 };
 
 /// One `m.room.member` membership transition, computed server-side by
@@ -446,6 +447,18 @@ struct PinnedStateEvent : public Event
     {
         type = EventType::PinnedEvent;
     }
+};
+
+/// m.room.name state event surfaced as a timeline row. `sender`/`sender_name`
+/// (base Event fields) identify who changed the name.
+struct RoomNameStateEvent : public Event
+{
+    RoomNameStateEvent()
+    {
+        type = EventType::RoomName;
+    }
+    std::string new_name; ///< empty if the name was removed
+    std::string old_name; ///< empty if the room had no prior name
 };
 
 /// org.matrix.msc4075.rtc.notification — MatrixRTC call ring/notification event.

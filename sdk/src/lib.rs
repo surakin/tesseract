@@ -260,6 +260,8 @@ pub mod ffi {
         pub membership_target_user_id: String,
         pub membership_target_name: String,
         pub membership_target_avatar_url: String,
+        pub room_name_new: String,
+        pub room_name_old: String,
     }
 
     #[derive(Debug, PartialEq, Default)]

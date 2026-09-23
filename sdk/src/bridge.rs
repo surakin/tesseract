@@ -594,6 +594,12 @@ pub mod ffi {
         /// "m.room.member" only: mxc:// avatar URL of the target as
         /// recorded in this state event's content. Empty when absent.
         membership_target_avatar_url: String,
+        /// "m.room.name" only: the new room name. Empty when the name was
+        /// removed. Never English prose — the raw name value only.
+        room_name_new: String,
+        /// "m.room.name" only: the previous room name, empty when the room
+        /// had none before (or the diff carries no previous content).
+        room_name_old: String,
     }
 
     /// Outcome of an asynchronous SDK operation.

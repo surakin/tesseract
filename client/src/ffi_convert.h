@@ -775,6 +775,15 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e)
         return ev;
     }
 
+    if (msg_type == "m.room.name")
+    {
+        auto ev = std::make_unique<RoomNameStateEvent>();
+        assign_base(*ev, e);
+        ev->new_name = std::string(e.room_name_new);
+        ev->old_name = std::string(e.room_name_old);
+        return ev;
+    }
+
     if (msg_type == "org.matrix.msc4075.rtc.notification")
     {
         auto ev = std::make_unique<CallNotificationEvent>();

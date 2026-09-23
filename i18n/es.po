@@ -1223,6 +1223,18 @@ msgstr "La solicitud de {0} para unirse fue denegada por {1}"
 msgid "{0}'s join request was denied"
 msgstr "La solicitud de {0} para unirse fue denegada"
 
+#: ui/shared/views/MessageListView.cpp
+msgid "{0} set the room name to {1}"
+msgstr "{0} estableció el nombre de la sala como {1}"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0} changed the room name to {1}"
+msgstr "{0} cambió el nombre de la sala a {1}"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "{0} removed the room name"
+msgstr "{0} eliminó el nombre de la sala"
+
 #: ui/shared/app/HistoryExportController.cpp
 msgid "{0}'s request to join was withdrawn"
 msgstr "La solicitud de {0} para unirse fue retirada"

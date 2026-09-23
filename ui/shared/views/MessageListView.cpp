@@ -556,6 +556,14 @@ MessageRowData make_row_data(const tesseract::Event& ev,
         row.membership_target_avatar_url = mem.target_avatar_url;
         break;
     }
+    case tesseract::EventType::RoomName:
+    {
+        row.kind = Kind::RoomName;
+        const auto& rn = static_cast<const tesseract::RoomNameStateEvent&>(ev);
+        row.room_name_new = rn.new_name;
+        row.room_name_old = rn.old_name;
+        break;
+    }
     }
 
     // Extract the first URL from text messages for preview card display.
@@ -1051,6 +1059,20 @@ std::string membership_expanded_phrase(const MessageRowData& m)
     return t;
 }
 
+// Per-event phrase for an m.room.name state-event row, e.g. "Alice changed
+// the room name to Welcome Lounge". Rust never sends English prose here
+// (see timeline_convert.rs) — this composes the display string entirely
+// through tk::tr()/tk::trf().
+std::string room_name_change_phrase(const MessageRowData& m)
+{
+    const std::string s = m.sender_name.empty() ? m.sender : m.sender_name;
+    if (m.room_name_new.empty())
+        return tk::trf(tk::tr("{0} removed the room name"), {s});
+    if (m.room_name_old.empty())
+        return tk::trf(tk::tr("{0} set the room name to {1}"), {s, m.room_name_new});
+    return tk::trf(tk::tr("{0} changed the room name to {1}"), {s, m.room_name_new});
+}
+
 // Build the "Alice, Bob and 3 others" style name list for a collapsed
 // membership-group summary.
 std::string membership_names_label(const std::vector<std::string>& names)
@@ -1141,7 +1163,8 @@ static bool is_virtual_event(MessageRowData::Kind k)
     using Kind = MessageRowData::Kind;
     return k == Kind::DaySeparator || k == Kind::ReadMarker ||
            k == Kind::TimelineStart || k == Kind::PinnedEvent ||
-           k == Kind::CallNotification || k == Kind::Membership;
+           k == Kind::CallNotification || k == Kind::Membership ||
+           k == Kind::RoomName;
 }
 
 // Kinds whose body/caption can be edited in place. Image/File/Video carry an
@@ -1516,6 +1539,10 @@ public:
         {
             return kPinnedEventH;
         }
+        if (m.kind == Kind::RoomName)
+        {
+            return kPinnedEventH;
+        }
         if (m.kind == Kind::Membership)
         {
             // Group-start rows are always one line tall (either the
@@ -1636,6 +1663,11 @@ public:
         if (m.kind == Kind::CallNotification)
         {
             paint_call_notification(m, ctx, bounds);
+            return;
+        }
+        if (m.kind == Kind::RoomName)
+        {
+            paint_room_name_change(m, ctx, bounds);
             return;
         }
         if (m.kind == Kind::Membership)
@@ -3074,6 +3106,8 @@ public:
                                              : tk::tr("started a call"));
             return m.sender_name.empty() ? intent : m.sender_name + " " + intent;
         }
+        case Kind::RoomName:
+            return room_name_change_phrase(m);
         case Kind::Membership:
         {
             if (is_membership_group_start(index))
@@ -3464,6 +3498,7 @@ private:
         case Kind::PinnedEvent:
         case Kind::CallNotification:
         case Kind::Membership:
+        case Kind::RoomName:
             return tk::Role::StaticText;
         default:
             return tk::Role::ListItem;
@@ -3625,6 +3660,47 @@ private:
         std::string label = m.sender_name.empty()
             ? m.body
             : m.sender_name + " " + m.body;
+        if (label.empty())
+        {
+            return;
+        }
+        tk::TextStyle st{};
+        st.role = tk::FontRole::Small;
+        st.wrap = false;
+        st.trim = tk::TextTrim::Ellipsis;
+        st.max_width = std::max(0.0f, bounds.w - kMsgListPadX * 2);
+        auto lo = ctx.factory.build_text(label, st);
+        if (!lo)
+        {
+            return;
+        }
+        tk::Size sz = lo->measure();
+        constexpr float kLabelPadX = 8.0f;
+        float cx = bounds.x + bounds.w * 0.5f;
+        float cy = bounds.y + kPinnedEventH * 0.5f;
+        float label_l = cx - sz.w * 0.5f - kLabelPadX;
+        float label_r = cx + sz.w * 0.5f + kLabelPadX;
+        float line_y = std::round(cy);
+        if (label_l > bounds.x + kMsgListPadX)
+        {
+            ctx.canvas.fill_rect(
+                {bounds.x + kMsgListPadX, line_y, label_l - bounds.x - kMsgListPadX, 1.0f},
+                ctx.theme.palette.border);
+        }
+        if (label_r < bounds.x + bounds.w - kMsgListPadX)
+        {
+            ctx.canvas.fill_rect(
+                {label_r, line_y, bounds.x + bounds.w - kMsgListPadX - label_r, 1.0f},
+                ctx.theme.palette.border);
+        }
+        ctx.canvas.draw_text(*lo, {cx - sz.w * 0.5f, cy - sz.h * 0.5f},
+                             ctx.theme.palette.text_muted);
+    }
+
+    void paint_room_name_change(const MessageRowData& m, tk::PaintCtx& ctx,
+                                tk::Rect bounds) const
+    {
+        std::string label = room_name_change_phrase(m);
         if (label.empty())
         {
             return;
@@ -4186,6 +4262,7 @@ private:
         case MessageRowData::Kind::PinnedEvent:
         case MessageRowData::Kind::CallNotification:
         case MessageRowData::Kind::Membership:
+        case MessageRowData::Kind::RoomName:
             return 0.0f;
         }
         return quote_h;
@@ -4578,6 +4655,7 @@ private:
         case MessageRowData::Kind::PinnedEvent:
         case MessageRowData::Kind::CallNotification:
         case MessageRowData::Kind::Membership:
+        case MessageRowData::Kind::RoomName:
             break;
         }
         return y;

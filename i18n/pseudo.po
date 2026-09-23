@@ -1096,6 +1096,21 @@ msgstr "[{0}'s réqùést tö jöïñ wàs déñïéd by {1}xxxxxxx]"
 msgid "{0}'s join request was denied"
 msgstr "[{0}'s jöïñ réqùést wàs déñïédxxxxx]"
 
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:1072
+#, c++-format
+msgid "{0} set the room name to {1}"
+msgstr "[{0} sét thé röóm ñàmé tö {1}xxxxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:1073
+#, c++-format
+msgid "{0} changed the room name to {1}"
+msgstr "[{0} chàñgéd thé röóm ñàmé tö {1}xxxxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:1070
+#, c++-format
+msgid "{0} removed the room name"
+msgstr "[{0} rémövéd thé röóm ñàméxxxxxx]"
+
 #: /home/rayden/src/tesseract/ui/shared/app/HistoryExportController.cpp
 msgid "{0}'s request to join was withdrawn"
 msgstr "[{0}'s réqùést tö jöïñ wàs wïthdràwñxxxxx]"
