@@ -9048,6 +9048,42 @@ void ShellBase::handle_account_prefs_updated_ui_(std::string user_id,
     }
 }
 
+void ShellBase::handle_own_profile_changed_ui_(
+    std::string user_id, std::optional<std::string> display_name,
+    std::optional<std::string> avatar_url)
+{
+    if (!active_account_ || active_account_->user_id != user_id)
+    {
+        return;
+    }
+
+    bool identity_changed = false;
+    if (display_name && *display_name != my_display_name_)
+    {
+        my_display_name_ = std::move(*display_name);
+        active_account_->display_name = my_display_name_;
+        identity_changed = true;
+    }
+    if (avatar_url && *avatar_url != my_avatar_url_)
+    {
+        my_avatar_url_ = std::move(*avatar_url);
+        active_account_->avatar_url = my_avatar_url_;
+        identity_changed = true;
+    }
+    if (identity_changed)
+    {
+        refresh_user_strip_();
+    }
+
+    // Timezone, status, pronouns and bio come from the MSC4133 fetch; its
+    // own-profile branch in handle_extended_profile_ready_ui_ applies them.
+    if (server_info_.supports_profile_fields &&
+        server_info_.profile_fields_enabled)
+    {
+        fetch_own_extended_profile_async_();
+    }
+}
+
 void ShellBase::handle_voice_waveform_ready_ui_(
     std::string room_id, std::string event_id,
     std::vector<std::uint16_t> waveform)

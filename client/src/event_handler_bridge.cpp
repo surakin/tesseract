@@ -909,6 +909,24 @@ void EventHandlerBridge::on_media_preview_config_updated(rust::Str json) const
           });
 }
 
+void EventHandlerBridge::on_own_profile_changed(bool has_display_name,
+                                                rust::Str display_name,
+                                                bool has_avatar_url,
+                                                rust::Str avatar_url) const
+{
+    with_handler("on_own_profile_changed", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              std::optional<std::string> name;
+              std::optional<std::string> avatar;
+              if (has_display_name)
+                  name = std::string(display_name);
+              if (has_avatar_url)
+                  avatar = std::string(avatar_url);
+              handler_->on_own_profile_changed(name, avatar);
+          });
+}
+
 void EventHandlerBridge::on_room_media_preview_override_updated(
     rust::Str room_id, rust::Str json) const
 {

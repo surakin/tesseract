@@ -647,6 +647,19 @@ void EventHandlerBase::on_media_preview_config_updated(const std::string& json)
         });
 }
 
+void EventHandlerBase::on_own_profile_changed(
+    const std::optional<std::string>& display_name,
+    const std::optional<std::string>& avatar_url)
+{
+    shell()->post_to_ui_(
+        [shell = shell(), uid = user_id_, n = display_name,
+         a = avatar_url]() mutable
+        {
+            shell->handle_own_profile_changed_ui_(std::move(uid), std::move(n),
+                                                  std::move(a));
+        });
+}
+
 void EventHandlerBase::on_room_media_preview_override_updated(
     const std::string& room_id, const std::string& override_json)
 {

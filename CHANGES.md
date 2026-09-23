@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- feat(profile): your own profile (timezone, status, pronouns, bio, name, avatar) now updates live when edited on another device, instead of only after a restart. Enables the MSC4262 sliding-sync Profiles extension; Synapse needs `include_profile_updates_in_sync` turned on. Qt6 build + ctest 1936/1936, cargo 713/713; user-verified live. GTK4/Windows/macOS share the code, unbuilt
 - feat(cli): portable command-line parser shared by all shells, adding `--help`, `--version`, `--profile`, `--hidden`, `--log-level`/`--verbose` and `--logoutall`; `--open-*` actions now work on every platform. See [docs/CLI.md](docs/CLI.md). Qt6 build + ctest 1936/1936, cargo 713/713; unverified live, GTK4/Windows/macOS unbuilt
 - feat(rooms): room name changes now show as a system row in the timeline (e.g. "Alice changed the room name to Welcome Lounge"), matching how membership changes already render. `m.room.name` state events were previously discarded by the SDK's timeline conversion along with all other non-pinned `OtherState` events. Windows build + full ctest 1909/1909, cargo 712/712; user-verified live
 - fix(login): cancelling a first-time login no longer crashes or leaves Sign In dead afterward. Windows build + full ctest 1909/1909, cargo 716/716; user-verified live. Qt6/GTK4/macOS share the fix, unbuilt

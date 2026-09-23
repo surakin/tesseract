@@ -2,6 +2,7 @@
 #include "types.h"
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -444,6 +445,17 @@ public:
     /// or `"{}"` when missing. UIs re-read `Client::media_preview_config()`
     /// and update their media/invite-avatar gating.
     virtual void on_media_preview_config_updated(const std::string& /*json*/)
+    {
+    }
+
+    /// Fired when the logged-in user's global profile changes during sync
+    /// (MSC4262), e.g. a timezone, status, name or avatar edit made on
+    /// another device. `display_name` / `avatar_url` are nullopt when the
+    /// server hasn't delivered that field (unknown, not unset). UIs re-fetch
+    /// the extended profile for the remaining fields.
+    virtual void
+    on_own_profile_changed(const std::optional<std::string>& /*display_name*/,
+                           const std::optional<std::string>& /*avatar_url*/)
     {
     }
 

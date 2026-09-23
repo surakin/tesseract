@@ -1418,6 +1418,18 @@ pub mod ffi {
         /// change from another device). `json` is the raw event content, or
         /// `"{}"` when missing. The UI re-reads via `media_preview_config`.
         fn on_media_preview_config_updated(self: &EventHandlerBridge, json: &str);
+        /// Fired when the logged-in user's global profile changes during sync
+        /// (MSC4262 Profiles extension), e.g. an edit made on another device.
+        /// `has_*` is false when the server hasn't delivered that field, in
+        /// which case the value is meaningless. The UI re-fetches the
+        /// extended profile for the remaining fields.
+        fn on_own_profile_changed(
+            self: &EventHandlerBridge,
+            has_display_name: bool,
+            display_name: &str,
+            has_avatar_url: bool,
+            avatar_url: &str,
+        );
         /// Fired shortly after `on_room_preview_override_ready` when
         /// `room_media_preview_override_async`'s background network
         /// verification (see its doc — sliding sync's account-data extension

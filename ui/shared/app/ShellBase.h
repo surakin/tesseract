@@ -3343,6 +3343,12 @@ protected:
     // mirror (active account only) and refresh gating + room list.
     virtual void handle_media_preview_config_updated_ui_(std::string user_id,
                                                          std::string json);
+    // MSC4262: own global profile changed during sync (e.g. edited on another
+    // device). Active account only: applies name/avatar when delivered and
+    // re-fetches the extended profile (tz, status, pronouns, bio).
+    void handle_own_profile_changed_ui_(std::string user_id,
+                                        std::optional<std::string> display_name,
+                                        std::optional<std::string> avatar_url);
     // Callback from media_preview_config_async: parse config_json and apply.
     void handle_media_preview_config_fetched_ui_(std::uint64_t request_id,
                                                  std::string config_json);
