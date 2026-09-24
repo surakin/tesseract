@@ -185,6 +185,15 @@ async fn resolve_route_via(
     via
 }
 
+/// Which moderation call `moderate_user_async` makes.
+#[cfg(not(test))]
+#[derive(Clone, Copy)]
+enum Moderation {
+    Kick,
+    Ban,
+    Unban,
+}
+
 impl ClientFfi {
     pub fn list_rooms(&self) -> Vec<crate::ffi::RoomInfo> {
         #[cfg(not(test))]
@@ -1788,6 +1797,119 @@ impl ClientFfi {
     ) {
     }
 
+    /// Non-blocking kick. Spawns as a tokio task; result delivered via
+    /// on_room_action_complete(request_id, ok, "", message). `reason` empty =
+    /// no reason.
+    #[cfg(not(test))]
+    pub fn kick_user_async(&self, request_id: u64, room_id: &str, user_id: &str, reason: &str) {
+        self.moderate_user_async(request_id, room_id, user_id, reason, Moderation::Kick);
+    }
+
+    #[cfg(test)]
+    pub fn kick_user_async(&self, _request_id: u64, _room_id: &str, _user_id: &str, _reason: &str) {
+    }
+
+    /// Non-blocking ban. Same delivery contract as `kick_user_async`.
+    #[cfg(not(test))]
+    pub fn ban_user_async(&self, request_id: u64, room_id: &str, user_id: &str, reason: &str) {
+        self.moderate_user_async(request_id, room_id, user_id, reason, Moderation::Ban);
+    }
+
+    #[cfg(test)]
+    pub fn ban_user_async(&self, _request_id: u64, _room_id: &str, _user_id: &str, _reason: &str) {
+    }
+
+    /// Non-blocking unban. Same delivery contract as `kick_user_async`.
+    #[cfg(not(test))]
+    pub fn unban_user_async(&self, request_id: u64, room_id: &str, user_id: &str, reason: &str) {
+        self.moderate_user_async(request_id, room_id, user_id, reason, Moderation::Unban);
+    }
+
+    #[cfg(test)]
+    pub fn unban_user_async(
+        &self,
+        _request_id: u64,
+        _room_id: &str,
+        _user_id: &str,
+        _reason: &str,
+    ) {
+    }
+
+    /// Shared body of kick_user_async/ban_user_async/unban_user_async.
+    #[cfg(not(test))]
+    fn moderate_user_async(
+        &self,
+        request_id: u64,
+        room_id: &str,
+        user_id: &str,
+        reason: &str,
+        action: Moderation,
+    ) {
+        use matrix_sdk::ruma::UserId;
+        let Some(client) = self.client.clone() else {
+            return;
+        };
+        let handler = self.handler.clone();
+
+        let deliver = move |ok: bool, msg: &str| {
+            if let Some(h) = &handler {
+                {
+                    let g = h.lock();
+                    g.on_room_action_complete(request_id, ok, "", msg);
+                }
+            }
+        };
+
+        let room_id_parsed: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(e) => {
+                deliver(false, &format!("invalid room id: {e}"));
+                return;
+            }
+        };
+        let uid = match UserId::parse(user_id) {
+            Ok(uid) => uid,
+            Err(e) => {
+                deliver(false, &format!("invalid user id: {e}"));
+                return;
+            }
+        };
+        let reason_owned = (!reason.is_empty()).then(|| reason.to_owned());
+        let in_flight = self.in_flight.clone();
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
+        let handler_for_guard = self.handler.clone();
+        self.rt.spawn(async move {
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler_for_guard,
+                #[cfg(debug_assertions)]
+                &in_flight_urls,
+                #[cfg(debug_assertions)]
+                match action {
+                    Moderation::Kick => "room_list/kick_user",
+                    Moderation::Ban => "room_list/ban_user",
+                    Moderation::Unban => "room_list/unban_user",
+                }
+                .to_string(),
+            );
+            let Some(room) = client.get_room(&room_id_parsed) else {
+                deliver(false, "room not found");
+                return;
+            };
+            let reason = reason_owned.as_deref();
+            let result = match action {
+                Moderation::Kick => room.kick_user(&uid, reason).await,
+                Moderation::Ban => room.ban_user(&uid, reason).await,
+                Moderation::Unban => room.unban_user(&uid, reason).await,
+            };
+            match result {
+                Ok(_) => deliver(true, ""),
+                Err(e) => deliver(false, &e.to_string()),
+            }
+        });
+    }
+
     /// Fetch the joined member list for a room. Blocks — worker thread.
     #[cfg(not(test))]
     pub fn get_room_members(&self, room_id: &str) -> Vec<crate::ffi::RoomMember> {
@@ -1852,6 +1974,74 @@ impl ClientFfi {
 
     #[cfg(test)]
     pub fn get_room_members(&self, _room_id: &str) -> Vec<crate::ffi::RoomMember> {
+        Vec::new()
+    }
+
+    /// Banned members of a room (Room Settings → Moderation). Unlike
+    /// `get_room_members`, this does sync the member list first: with lazy
+    /// loading, ban events for users who never spoke aren't in the local
+    /// store. The sync is bounded by a timeout so a stalled
+    /// `GET /rooms/{id}/members` can't hold the FFI lock indefinitely; on
+    /// timeout/error it falls back to whatever the store already has.
+    /// Blocks — worker thread.
+    #[cfg(not(test))]
+    pub fn get_banned_members(&self, room_id: &str) -> Vec<crate::ffi::BannedMember> {
+        let _enter = self.rt.enter();
+        let Some(client) = self.client.as_ref() else {
+            return Vec::new();
+        };
+        let room_id: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(_) => return Vec::new(),
+        };
+        let Some(room) = client.get_room(&room_id) else {
+            return Vec::new();
+        };
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "room_list/get_banned_members".to_string(),
+        );
+        let _ = self.rt.block_on(tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            room.sync_members(),
+        ));
+        let own = client.user_id().map(ToOwned::to_owned);
+        let power_levels = self.rt.block_on(room.power_levels()).ok();
+        match self
+            .rt
+            .block_on(room.members_no_sync(matrix_sdk::RoomMemberships::BAN))
+        {
+            Ok(members) => members
+                .into_iter()
+                .map(|m| {
+                    let event = m.event();
+                    let can_unban = match (&own, &power_levels) {
+                        (Some(own), Some(pl)) => pl.user_can_unban_user(own, m.user_id()),
+                        _ => false,
+                    };
+                    crate::ffi::BannedMember {
+                        user_id: m.user_id().to_string(),
+                        display_name: m
+                            .display_name()
+                            .map(str::to_owned)
+                            .unwrap_or_else(|| m.user_id().localpart().to_string()),
+                        avatar_url: m.avatar_url().map(|u| u.to_string()).unwrap_or_default(),
+                        reason: event.reason().unwrap_or_default().to_owned(),
+                        banned_by: event.sender().to_string(),
+                        can_unban,
+                    }
+                })
+                .collect(),
+            Err(_) => Vec::new(),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn get_banned_members(&self, _room_id: &str) -> Vec<crate::ffi::BannedMember> {
         Vec::new()
     }
 
@@ -2932,6 +3122,61 @@ impl ClientFfi {
     #[cfg(test)]
     pub fn can_ban_users(&self, _room_id: &str) -> bool {
         false
+    }
+
+    /// True iff the current user may kick `target_user_id` specifically:
+    /// meets the kick level AND outranks the target (ruma's
+    /// `user_can_kick_user`, which also accounts for room-v12 privileged
+    /// creators). False for the user themselves and on any uncertainty.
+    /// Cached read — no network round-trip.
+    #[cfg(not(test))]
+    pub fn can_kick_user(&self, room_id: &str, target_user_id: &str) -> bool {
+        self.can_moderate_user(room_id, target_user_id, false)
+    }
+
+    #[cfg(test)]
+    pub fn can_kick_user(&self, _room_id: &str, _target_user_id: &str) -> bool {
+        false
+    }
+
+    /// Ban counterpart of `can_kick_user`.
+    #[cfg(not(test))]
+    pub fn can_ban_user(&self, room_id: &str, target_user_id: &str) -> bool {
+        self.can_moderate_user(room_id, target_user_id, true)
+    }
+
+    #[cfg(test)]
+    pub fn can_ban_user(&self, _room_id: &str, _target_user_id: &str) -> bool {
+        false
+    }
+
+    #[cfg(not(test))]
+    fn can_moderate_user(&self, room_id: &str, target_user_id: &str, ban: bool) -> bool {
+        use matrix_sdk::ruma::{OwnedRoomId, UserId};
+
+        let Some(client) = self.client.as_ref() else {
+            return false;
+        };
+        let Ok(room_id_parsed) = room_id.parse::<OwnedRoomId>() else {
+            return false;
+        };
+        let Ok(target) = UserId::parse(target_user_id) else {
+            return false;
+        };
+        let Some(room) = client.get_room(&room_id_parsed) else {
+            return false;
+        };
+        let Some(user_id) = client.user_id() else {
+            return false;
+        };
+        if user_id == target {
+            return false;
+        }
+        match self.rt.block_on(room.power_levels()) {
+            Ok(pl) if ban => pl.user_can_ban_user(user_id, &target),
+            Ok(pl) => pl.user_can_kick_user(user_id, &target),
+            Err(_) => false,
+        }
     }
 
     /// True iff the current user's power level meets the requirement for

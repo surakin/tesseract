@@ -859,6 +859,18 @@ void RoomView::wire_internal_callbacks()
     {
         show_invite_dialog();
     };
+    room_info_panel_->on_kick_member =
+        [this](std::string room_id, std::string user_id, std::string name)
+    {
+        confirm_and_moderate_member_(false, std::move(room_id), std::move(user_id),
+                                     std::move(name));
+    };
+    room_info_panel_->on_ban_member =
+        [this](std::string room_id, std::string user_id, std::string name)
+    {
+        confirm_and_moderate_member_(true, std::move(room_id), std::move(user_id),
+                                     std::move(name));
+    };
 
     // Wire knock-requests panel callbacks.
     knock_requests_panel_->on_layout_changed = [this]()
@@ -934,6 +946,12 @@ void RoomView::wire_internal_callbacks()
         confirm_and_leave_room_(
             [this]() { if (room_settings_view_) room_settings_view_->close(); },
             std::move(room_id));
+    };
+    room_settings_view_->on_unban_requested =
+        [this](std::string room_id, std::string user_id, std::string name)
+    {
+        if (on_unban_member)
+            on_unban_member(std::move(room_id), std::move(user_id), std::move(name));
     };
     room_settings_view_->on_bridge_override_changed =
         [this](std::string room_id, bool not_bridged)
@@ -1022,6 +1040,57 @@ void RoomView::confirm_and_leave_room_(std::function<void()> close_panel,
         return;
     }
     if (on_leave_room) on_leave_room(std::move(room_id));
+}
+
+void RoomView::confirm_and_moderate_member_(bool ban, std::string room_id,
+                                            std::string user_id,
+                                            std::string display_name)
+{
+    auto forward = [this, ban](const std::string& rid, const std::string& uid,
+                               const std::string& name, std::string reason)
+    {
+        auto& cb = ban ? on_ban_member : on_kick_member;
+        if (cb) cb(rid, uid, name, std::move(reason));
+    };
+    if (!confirm_provider_)
+    {
+        forward(room_id, user_id, display_name, {});
+        return;
+    }
+
+    const std::string who = display_name.empty() ? user_id : display_name;
+    ConfirmDialog::Options opts;
+    if (ban)
+    {
+        opts.title         = tk::trf(tk::tr("Ban {0}?"), {who});
+        opts.body          = tk::tr("They will be removed from the room and unable "
+                                    "to rejoin unless unbanned.");
+        opts.confirm_label = tk::tr("Ban");
+    }
+    else
+    {
+        opts.title         = tk::trf(tk::tr("Remove {0} from the room?"), {who});
+        opts.body          = tk::tr("They can rejoin if the room allows it.");
+        opts.confirm_label = tk::tr("Kick");
+    }
+    opts.cancel_label       = tk::tr("Cancel");
+    opts.destructive        = true;
+    opts.reason_field       = true;
+    opts.reason_placeholder = tk::tr("Reason (optional)");
+    // on_reason fires immediately before the confirm callback; stash the text
+    // for it to forward.
+    auto reason = std::make_shared<std::string>();
+    opts.on_reason = [reason](std::string r) { *reason = std::move(r); };
+
+    // Close the panel so the prompt doesn't stack on top of its backdrop.
+    if (room_info_panel_) room_info_panel_->close();
+    if (on_layout_changed) on_layout_changed();
+
+    confirm_provider_(std::move(opts),
+                      [forward, reason, room_id = std::move(room_id),
+                       user_id = std::move(user_id),
+                       display_name = std::move(display_name)]()
+                      { forward(room_id, user_id, display_name, std::move(*reason)); });
 }
 
 void RoomView::show_room_info()

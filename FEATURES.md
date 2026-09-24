@@ -56,7 +56,7 @@ version) are noted where relevant.
 - Media captions (MSC2530); emoji-only captions render at 2× body size; bare URLs in a caption are linkified the same as in a regular message body
 - Inline Unicode emoji rendered at ~125% of body font size in message bodies, the composer (live as-you-type), and the room list's last-message preview
 - Location messages render an embedded pannable/zoomable map; clicking (not panning) opens the location on openstreetmap.org. Send via a recognized Google Maps/OpenStreetMap link (opt-in setting) or the `/location` command (shares your current OS location)
-- An opt-in setting (default off) surfaces room join/leave/kick/ban/invite/knock events in the timeline, with consecutive same-action events collapsed into one expandable summary line
+- An opt-in setting (default off) surfaces room join/leave/kick/ban/invite/knock events in the timeline, with consecutive same-action events collapsed into one expandable summary line; kicks and bans show their reason
 - Room name changes show as a system line in the timeline (e.g. "Alice changed the room name to Welcome Lounge")
 
 ## Media
@@ -104,7 +104,9 @@ version) are noted where relevant.
 - Room, space and call room creation (name, topic, alias, public/private visibility, optional invites) — the Create button is a split button offering "Create Room" / "Create Space" / "Create Call Room"
 - Public room directory browsing (Add Room → Browse), with search and a choice of server
 - Room knocking (MSC2403): request to join a knock/knock-restricted room (with an optional reason) from the Join dialog; track and cancel a pending request from a "Requests to Join" room-list section; admins/moderators can accept, deny, or deny-and-ban a request from Room Info
-- Room settings, tabbed (General / Media / Security & Privacy / Permissions / Emojis & Stickers): avatar, display name, and topic; join rule (Public/Invite/Knock), guest access, history visibility, and one-directional encryption enable; aggregate power-level thresholds (default role, invite/kick/ban, message/settings/permissions defaults, @room notifications, starting calls) — all per-field power-level gated, staged edits aren't sent until confirmed; the Permissions tab warns (non-blocking) when a staged change would leave no other member able to edit permissions; a Leave button sits in the footer
+- Invite people from the room info panel (shown only with invite permission): filter known users or paste full Matrix IDs, with per-user results
+- Member moderation: right-click a member in the room info panel for Show profile / Kick / Ban. Kick and Ban ask for confirmation with an optional reason, and are only enabled for members you outrank
+- Room settings, tabbed (General / Media / Security & Privacy / Permissions / Moderation / Emojis & Stickers): avatar, display name, and topic; join rule (Public/Invite/Knock), guest access, history visibility, and one-directional encryption enable; aggregate power-level thresholds (default role, invite/kick/ban, message/settings/permissions defaults, @room notifications, starting calls) — all per-field power-level gated, staged edits aren't sent until confirmed; the Permissions tab warns (non-blocking) when a staged change would leave no other member able to edit permissions; the Moderation tab lists banned users (with reason and who banned them) and unbans with one click; a Leave button sits in the footer
 - Full room-history export (room info panel → Export History) to plain text or HTML, optionally with images and packaged as a `.zip`; resumable if interrupted
 
 ## Notifications
@@ -182,7 +184,6 @@ version) are noted where relevant.
 
 ## Not yet implemented
 
-- **Room administration**: inviting users from the member list (`/invite` slash command works today), and per-member moderation actions (kick / ban) — room creation, and editing name/topic/avatar/join-rule/history-visibility/guest-access/power-level-thresholds, are all implemented
 - **Accessibility**: screen-reader support is in place but incomplete — Windows UIA, macOS NSAccessibility, and Qt6/GTK4 bridges exist, but not every widget and view is mapped yet
 - **Localization**: only English and Spanish so far (Settings → Language: Auto/English/Spanish, takes effect after restart) — more languages are opportunistic/contributor-driven
 - **Background push on macOS / Windows** (Linux uses Unified Push; in-app notifications elsewhere)

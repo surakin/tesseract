@@ -85,6 +85,8 @@ Come join us in [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-cl
 - Room tags (favorite, low priority)
 - Room creation (name, topic, alias, public/private)
 - Room knocking: request to join a knock-restricted room, with admin/moderator review (accept / deny / deny-and-ban)
+- Invite people from the room info panel
+- Member moderation: kick and ban from the member list (with an optional reason), and a banned-users list with unban in room settings
 - Room settings: name, topic, avatar, join rule, guest access, history visibility, encryption, and power-level thresholds (permissions)
 - Full room-history export to plain text or HTML, optionally with images
 - Optional room join/leave event display in the timeline

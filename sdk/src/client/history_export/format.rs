@@ -104,7 +104,20 @@ fn membership_line(ev: &TimelineEvent, labels: &Labels) -> String {
         ev.membership_target_user_id.as_str()
     };
     let by_actor = ev.sender != ev.membership_target_user_id;
-    labels.format_membership(resolved, by_actor, target, sender_display(ev))
+    let line = labels.format_membership(resolved, by_actor, target, sender_display(ev));
+    // Kick/ban reasons, as in the live view (`with_membership_reason`). An
+    // empty template (version-skewed C++ caller) keeps the bare line.
+    let is_removal = matches!(
+        ev.membership_action.as_str(),
+        "kicked" | "banned" | "kicked_and_banned"
+    );
+    if is_removal
+        && !ev.membership_reason.is_empty()
+        && !labels.get(ExportLabel::MembershipReason).is_empty()
+    {
+        return labels.format(ExportLabel::MembershipReason, &[&line, &ev.membership_reason]);
+    }
+    line
 }
 
 /// Resolves an event's body text through `labels` for the placeholder
@@ -578,6 +591,9 @@ mod tests {
         t[ExportLabel::MembershipJoined as usize] = "{0} joined the room".into();
         t[ExportLabel::MembershipInvitedByActor as usize] = "{0} was invited by {1}".into();
         t[ExportLabel::MembershipInvitedNoActor as usize] = "{0} received an invitation".into();
+        t[ExportLabel::MembershipKickedByActor as usize] = "{0} was removed by {1}".into();
+        t[ExportLabel::MembershipLeft as usize] = "{0} left the room".into();
+        t[ExportLabel::MembershipReason as usize] = "{0}. Reason: {1}".into();
         Labels::new(t)
     }
 
@@ -697,6 +713,31 @@ mod tests {
         ev.membership_target_name = "Bob".into();
         let line = TextSink.event(&ev, &EventContext::default(), AttachmentState::None, &labels());
         assert!(line.contains("Bob was invited by Alice"), "{line}");
+    }
+
+    #[test]
+    fn text_event_membership_kicked_includes_reason() {
+        let mut ev = base_event();
+        ev.msg_type = "m.room.member".into();
+        ev.membership_action = "kicked".into();
+        ev.membership_target_user_id = "@bob:example.org".into();
+        ev.membership_target_name = "Bob".into();
+        ev.membership_reason = "spamming".into();
+        let line = TextSink.event(&ev, &EventContext::default(), AttachmentState::None, &labels());
+        assert!(line.contains("Bob was removed by Alice. Reason: spamming"), "{line}");
+    }
+
+    #[test]
+    fn text_event_membership_reason_ignored_for_non_removals() {
+        let mut ev = base_event();
+        ev.msg_type = "m.room.member".into();
+        ev.membership_action = "left".into();
+        ev.membership_target_user_id = ev.sender.clone();
+        ev.membership_target_name = ev.sender_name.clone();
+        ev.membership_reason = "bye".into();
+        let line = TextSink.event(&ev, &EventContext::default(), AttachmentState::None, &labels());
+        assert!(line.contains("Alice left the room"), "{line}");
+        assert!(!line.contains("Reason"), "{line}");
     }
 
     #[test]

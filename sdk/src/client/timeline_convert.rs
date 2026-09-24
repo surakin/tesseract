@@ -100,6 +100,7 @@ pub(super) fn ffi_event_defaults() -> TimelineEvent {
         membership_target_user_id: String::new(),
         membership_target_name: String::new(),
         membership_target_avatar_url: String::new(),
+        membership_reason: String::new(),
         room_name_new: String::new(),
         room_name_old: String::new(),
     }
@@ -757,6 +758,12 @@ pub(super) async fn timeline_item_to_ffi(
                 .avatar_url()
                 .map(|u| u.to_string())
                 .unwrap_or_default(),
+            membership_reason: match change.content() {
+                matrix_sdk::ruma::events::StateEventContentChange::Original { content, .. } => {
+                    content.reason.clone().unwrap_or_default()
+                }
+                _ => String::new(),
+            },
             timestamp: event_item.timestamp().get().into(),
             ..ffi_event_defaults()
         });

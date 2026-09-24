@@ -511,6 +511,7 @@ void RoomPane::wire_room_view_()
         v->set_best_other_power_level(
             shell_->client_->room_best_other_power_level(room_id));
         v->set_calls_supported(shell_->server_info_.supports_calls);
+        fetch_banned_members_(rv, room_id);
         shell_->seed_room_media_section_(room_id);
         shell_->fetch_room_security_state_(room_id);
         shell_->seed_image_pack_tab_(room_id, v);
@@ -541,6 +542,16 @@ void RoomPane::wire_room_view_()
             return;
         }
         v->set_invite_visible(shell_->client_->can_invite_users(room_id));
+        v->set_member_actions_provider(
+            [this, room_id](const std::string& user_id) {
+                views::RoomInfoPanel::MemberActions a;
+                if (shell_->client_)
+                {
+                    a.can_kick = shell_->client_->can_kick_user(room_id, user_id);
+                    a.can_ban  = shell_->client_->can_ban_user(room_id, user_id);
+                }
+                return a;
+            });
         const tesseract::RoomInfo* info = shell_->room_by_id_(room_id);
         const bool knockable = info && (info->join_rule == "knock" ||
                                         info->join_rule == "knock_restricted");
@@ -665,6 +676,37 @@ void RoomPane::wire_room_view_()
     rv->on_decline_and_ban_knock_request =
         [this](std::string room_id, std::string user_id, std::string reason) {
         shell_->decline_and_ban_knock_request_async_(room_id, user_id, reason);
+    };
+    // Member context menu Kick / Ban — RoomView has already confirmed.
+    rv->on_kick_member = [this](std::string room_id, std::string user_id,
+                                std::string display_name, std::string reason) {
+        shell_->moderate_member_(ShellBase::ModerationAction::Kick, room_id, user_id,
+                                 display_name, reason);
+    };
+    rv->on_ban_member = [this](std::string room_id, std::string user_id,
+                               std::string display_name, std::string reason) {
+        shell_->moderate_member_(ShellBase::ModerationAction::Ban, room_id, user_id,
+                                 display_name, reason);
+    };
+    // Room Settings → Moderation: Unban applies immediately; the row is
+    // disabled while in flight and removed on success (not refetched — the
+    // store still lists the ban until sync delivers the membership change).
+    // A failed unban re-enables the row; the shell's status line says why.
+    rv->on_unban_member = [this, rv](std::string room_id, std::string user_id,
+                                     std::string display_name) {
+        if (auto* v = rv->room_settings_view())
+            v->set_unban_pending(user_id, true);
+        shell_->moderate_member_(
+            ShellBase::ModerationAction::Unban, room_id, user_id, display_name, "",
+            guarded([this, rv, room_id, user_id](bool ok) {
+                auto* v = rv->room_settings_view();
+                if (!v || !v->is_open() || v->room_id() != room_id)
+                    return;
+                if (ok)
+                    v->remove_banned_member(user_id);
+                else
+                    v->set_unban_pending(user_id, false);
+            }));
     };
     rv->room_settings_view()->on_accept =
         [this, rv](std::string room_id, views::RoomSettingsChanges changes) {
@@ -3137,6 +3179,22 @@ void RoomPane::wire_shortcode_hooks_(
     { shell_ensure_media_image_(url, 28, 28); };
     hooks.resolve_image = [this](const std::string& url) -> const tk::Image*
     { return shell_image_(url); };
+}
+
+void RoomPane::fetch_banned_members_(views::RoomView* rv, const std::string& room_id)
+{
+    if (!shell_->client_) return;
+    auto sess = shell_->active_account();
+    run_async_(guarded([this, rv, sess, room_id]() {
+        if (!sess || !sess->client) return;
+        auto banned = sess->client->get_banned_members(room_id);
+        post_to_ui_(guarded([rv, room_id, banned = std::move(banned)]() mutable {
+            auto* v = rv->room_settings_view();
+            if (!v || !v->is_open() || v->room_id() != room_id)
+                return;
+            v->set_banned_members(std::move(banned));
+        }));
+    }));
 }
 
 void RoomPane::wire_gif_hooks_(views::GifController::Hooks& hooks)

@@ -390,6 +390,11 @@ public:
     void wire_shortcode_hooks_(views::ShortcodePopup* popup,
                                views::ShortcodeController::Hooks& hooks);
     void wire_gif_hooks_(views::GifController::Hooks& hooks);
+    // Room Settings → Moderation: fetch room_id's banned members on a worker
+    // (Client::get_banned_members syncs members first, so it can take a
+    // moment) and push them into rv's settings view if it still shows that
+    // room.
+    void fetch_banned_members_(views::RoomView* rv, const std::string& room_id);
 
     // Position + show a "row list" composer popup (mention/slash/shortcode)
     // anchored at the text cursor. Replaces every show_mention_popup_/

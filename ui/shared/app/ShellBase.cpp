@@ -4381,6 +4381,30 @@ void ShellBase::invite_user_command_(const std::string& room_id,
     client_->invite_user_async(req_id, room_id, user_id, reason);
 }
 
+void ShellBase::moderate_member_(ModerationAction action, const std::string& room_id,
+                                 const std::string& user_id,
+                                 const std::string& display_name,
+                                 const std::string& reason,
+                                 std::function<void(bool ok)> done)
+{
+    if (room_id.empty() || user_id.empty() || !client_)
+        return;
+    auto req_id = next_room_action_id_++;
+    pending_moderations_[req_id] = {user_id, display_name, action, std::move(done)};
+    switch (action)
+    {
+    case ModerationAction::Kick:
+        client_->kick_user_async(req_id, room_id, user_id, reason);
+        break;
+    case ModerationAction::Ban:
+        client_->ban_user_async(req_id, room_id, user_id, reason);
+        break;
+    case ModerationAction::Unban:
+        client_->unban_user_async(req_id, room_id, user_id, reason);
+        break;
+    }
+}
+
 void ShellBase::invite_users_(
     const std::string& room_id, const std::vector<std::string>& user_ids,
     std::function<void(const std::string& user_id, bool ok,
@@ -6414,6 +6438,37 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
                 status += ": " + message;
             show_status_message_(std::move(status));
         }
+        return;
+    }
+
+    if (auto mit = pending_moderations_.find(request_id);
+        mit != pending_moderations_.end())
+    {
+        PendingModeration mod = std::move(mit->second);
+        pending_moderations_.erase(mit);
+        if (!ok)
+        {
+            const std::string& who =
+                mod.display_name.empty() ? mod.user_id : mod.display_name;
+            std::string status;
+            switch (mod.action)
+            {
+            case ModerationAction::Kick:
+                status = tk::trf(tk::tr("Couldn't kick {0}"), {who});
+                break;
+            case ModerationAction::Ban:
+                status = tk::trf(tk::tr("Couldn't ban {0}"), {who});
+                break;
+            case ModerationAction::Unban:
+                status = tk::trf(tk::tr("Couldn't unban {0}"), {who});
+                break;
+            }
+            if (!message.empty())
+                status += ": " + message;
+            show_status_message_(std::move(status));
+        }
+        if (mod.done)
+            mod.done(ok);
         return;
     }
 

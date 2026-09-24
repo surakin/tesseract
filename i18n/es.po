@@ -2831,3 +2831,86 @@ msgid "Inviting {0} person…"
 msgid_plural "Inviting {0} people…"
 msgstr[0] "Invitando a {0} persona…"
 msgstr[1] "Invitando a {0} personas…"
+
+#: ui/shared/views/RoomInfoPanel.cpp
+msgid "Show profile"
+msgstr "Ver perfil"
+
+#: ui/shared/views/RoomInfoPanel.cpp
+msgid "Kick user…"
+msgstr "Expulsar usuario…"
+
+#: ui/shared/views/RoomInfoPanel.cpp
+msgid "Ban user…"
+msgstr "Vetar usuario…"
+
+#: ui/shared/views/RoomView.cpp
+#, c++-format
+msgid "Ban {0}?"
+msgstr "¿Vetar a {0}?"
+
+#: ui/shared/views/RoomView.cpp
+msgid "They will be removed from the room and unable to rejoin unless unbanned."
+msgstr "Se le expulsará de la sala y no podrá volver a unirse a menos que se le retire el veto."
+
+#: ui/shared/views/RoomView.cpp
+msgid "Ban"
+msgstr "Vetar"
+
+#: ui/shared/views/RoomView.cpp
+#, c++-format
+msgid "Remove {0} from the room?"
+msgstr "¿Expulsar a {0} de la sala?"
+
+#: ui/shared/views/RoomView.cpp
+msgid "They can rejoin if the room allows it."
+msgstr "Podrá volver a unirse si la sala lo permite."
+
+#: ui/shared/views/RoomView.cpp
+msgid "Kick"
+msgstr "Expulsar"
+
+#: ui/shared/app/ShellBase.cpp
+#, c++-format
+msgid "Couldn't ban {0}"
+msgstr "No se pudo vetar a {0}"
+
+#: ui/shared/app/ShellBase.cpp
+#, c++-format
+msgid "Couldn't kick {0}"
+msgstr "No se pudo expulsar a {0}"
+
+#: ui/shared/views/MessageListView.cpp ui/shared/app/HistoryExportController.cpp
+#, c++-format
+msgid "{0}. Reason: {1}"
+msgstr "{0}. Motivo: {1}"
+
+#: ui/shared/views/RoomSettingsView.cpp
+msgid "Moderation"
+msgstr "Moderación"
+
+#: ui/shared/views/settings/RoomModerationSection.cpp
+msgid "Banned users"
+msgstr "Usuarios vetados"
+
+#: ui/shared/views/settings/RoomModerationSection.cpp
+msgid "No banned users"
+msgstr "No hay usuarios vetados"
+
+#: ui/shared/views/settings/RoomModerationSection.cpp
+msgid "Unban"
+msgstr "Retirar veto"
+
+#: ui/shared/views/settings/RoomModerationSection.cpp
+msgid "Unban (you don't have permission to lift this ban)"
+msgstr "Retirar veto (no tienes permiso para retirar este veto)"
+
+#: ui/shared/views/settings/RoomModerationSection.cpp
+#, c++-format
+msgid "Banned by {0}"
+msgstr "Vetado por {0}"
+
+#: ui/shared/app/ShellBase.cpp
+#, c++-format
+msgid "Couldn't unban {0}"
+msgstr "No se pudo retirar el veto a {0}"

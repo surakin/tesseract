@@ -30,6 +30,7 @@
 #include "views/settings/RoomBridgeSection.h"
 #include "views/settings/RoomGeneralSection.h"
 #include "views/settings/RoomMediaSection.h"
+#include "views/settings/RoomModerationSection.h"
 #include "views/settings/RoomPermissionsSection.h"
 #include "views/settings/RoomSecuritySection.h"
 
@@ -307,6 +308,20 @@ public:
     std::function<void(std::string room_id, bool not_bridged)>
         on_bridge_override_changed;
 
+    // Moderation tab. open() puts the banned list in its loading state; the
+    // shell fetches (Client::get_banned_members) and pushes the result via
+    // set_banned_members(). Unban applies immediately (not staged for
+    // Accept, like the Bridge override): on_unban_requested fires on click,
+    // the shell marks the row pending via set_unban_pending() and removes it
+    // via remove_banned_member() on success.
+    void set_banned_members(std::vector<tesseract::BannedMember> members);
+    void set_unban_pending(const std::string& user_id, bool pending);
+    void remove_banned_member(const std::string& user_id);
+    RoomModerationSection* moderation_section() const { return moderation_; }
+    std::function<void(std::string room_id, std::string user_id,
+                       std::string display_name)>
+        on_unban_requested;
+
     // Fired when the view's own layout-affecting state changes (open/close,
     // permission changes affecting field rects, tab switches) so the shell
     // can relayout native overlays.
@@ -369,7 +384,7 @@ public:
 private:
     bool image_pack_tab_selected_() const;
 
-    static constexpr int kImagePackTabIndex = 4;
+    static constexpr int kImagePackTabIndex = 5;
     // Recomputes would_lock_out_self_ from staged_permissions_ and
     // own_power_level_, pushes it to permissions_ for the warning banner,
     // and calls refresh_accept_enabled_(). Called whenever either input
@@ -440,6 +455,7 @@ private:
     RoomMediaSection*       media_       = nullptr;
     RoomSecuritySection*    security_    = nullptr;
     RoomPermissionsSection* permissions_ = nullptr;
+    RoomModerationSection*  moderation_  = nullptr;
     ImagePackEditorView*    image_packs_ = nullptr;
     RoomBridgeSection*      bridge_      = nullptr;
 
@@ -463,13 +479,12 @@ private:
     std::unique_ptr<tk::TextLayout> commit_error_layout_;
 
     // Index of the "Media" tab within tabs_, in add_tab() order (General=0,
-    // Media=1, Security=2, Permissions=3, Emojis & Stickers=kImagePackTabIndex,
-    // Bridge=kBridgeTabIdx) — hidden in space-root mode.
+    // Media=1, Security=2, Permissions=3, Moderation=4, Emojis & Stickers=
+    // kImagePackTabIndex, Bridge=kBridgeTabIdx) — hidden in space-root mode.
     static constexpr int kMediaTabIdx = 1;
-    // Index of the "Bridge" tab, appended last (after Emojis & Stickers) so
-    // adding it didn't renumber kImagePackTabIndex. Only shown for a room
-    // MSC2346 flagged as bridged — see open()'s tabs_->set_tab_visible call.
-    static constexpr int kBridgeTabIdx = 5;
+    // Index of the "Bridge" tab, last. Only shown for a room MSC2346 flagged
+    // as bridged — see open()'s tabs_->set_tab_visible call.
+    static constexpr int kBridgeTabIdx = 6;
 
     static constexpr float kPadX      = 24.0f;
     static constexpr float kBarHeight = 48.0f; // top title bar, matches SettingsView's back-bar

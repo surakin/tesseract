@@ -256,6 +256,14 @@ RoomSettingsView::RoomSettingsView()
         if (on_layout_changed) on_layout_changed();
     };
 
+    auto moderation = std::make_unique<RoomModerationSection>();
+    moderation_ = moderation.get();
+    moderation_->on_unban_requested = [this](std::string user_id, std::string name)
+    {
+        if (on_unban_requested)
+            on_unban_requested(room_id_, std::move(user_id), std::move(name));
+    };
+
     auto image_packs = tk::create_widget<ImagePackEditorView>(this);
     image_packs_ = image_packs.get();
     image_packs_->on_layout_changed = [this]()
@@ -286,6 +294,7 @@ RoomSettingsView::RoomSettingsView()
     tabs->add_tab(tk::tr("Media"), std::move(media));
     tabs->add_tab(tk::tr("Security & Privacy"), std::move(security));
     tabs->add_tab(tk::tr("Permissions"), std::move(permissions));
+    tabs->add_tab(tk::tr("Moderation"), std::move(moderation));
     tabs->add_tab(tk::tr("Emojis & Stickers"), std::move(image_packs));
     tabs->add_tab(tk::tr("Bridge"), std::move(bridge));
     // Switching tabs must re-poll General's topic NativeTextArea overlay
@@ -338,6 +347,8 @@ void RoomSettingsView::open(const tesseract::RoomInfo& info)
     // Only relevant for a room MSC2346 actually flagged as bridged — no
     // point offering an override for one it never flagged.
     tabs_->set_tab_visible(kBridgeTabIdx, info.is_bridged);
+    // Fresh fetch per open (see set_banned_members' doc comment).
+    moderation_->set_loading(true);
 
     room_id_ = info.id;
     original_name_        = info.name;
@@ -794,6 +805,24 @@ void RoomSettingsView::paint_before_children(tk::PaintCtx& ctx)
             bounds_.y + (kBarHeight - title_layout_->measure().h) * 0.5f;
         cv.draw_text(*title_layout_, {bounds_.x + kPadX, title_y}, pal.text_primary);
     }
+}
+
+void RoomSettingsView::set_banned_members(std::vector<tesseract::BannedMember> members)
+{
+    moderation_->set_banned_members(std::move(members));
+    if (on_layout_changed) on_layout_changed();
+}
+
+void RoomSettingsView::set_unban_pending(const std::string& user_id, bool pending)
+{
+    moderation_->set_unban_pending(user_id, pending);
+    if (on_layout_changed) on_layout_changed();
+}
+
+void RoomSettingsView::remove_banned_member(const std::string& user_id)
+{
+    moderation_->remove_banned_member(user_id);
+    if (on_layout_changed) on_layout_changed();
 }
 
 } // namespace tesseract::views

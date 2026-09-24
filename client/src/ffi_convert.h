@@ -799,6 +799,7 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e)
         ev->target_user_id = std::string(e.membership_target_user_id);
         ev->target_display_name = std::string(e.membership_target_name);
         ev->target_avatar_url = std::string(e.membership_target_avatar_url);
+        ev->reason = std::string(e.membership_reason);
         return ev;
     }
 

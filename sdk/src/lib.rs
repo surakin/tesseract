@@ -181,6 +181,16 @@ pub mod ffi {
         pub avatar_url: String,
     }
 
+    #[derive(Debug, Clone, Default)]
+    pub struct BannedMember {
+        pub user_id: String,
+        pub display_name: String,
+        pub avatar_url: String,
+        pub reason: String,
+        pub banned_by: String,
+        pub can_unban: bool,
+    }
+
     #[derive(Debug, PartialEq, Default)]
     pub struct UserProfile {
         pub exists: bool,
@@ -260,6 +270,7 @@ pub mod ffi {
         pub membership_target_user_id: String,
         pub membership_target_name: String,
         pub membership_target_avatar_url: String,
+        pub membership_reason: String,
         pub room_name_new: String,
         pub room_name_old: String,
     }

@@ -91,10 +91,14 @@ pub(super) enum ExportLabel {
     MembershipKnockDeniedByActor = 30,
     /// "{0}'s join request was denied" — {0} = target.
     MembershipKnockDeniedNoActor = 31,
+    /// "{0}. Reason: {1}" — {0} = a kick/ban membership line, {1} = the
+    /// event's free-text reason. Same wording as the live view's
+    /// `with_membership_reason`.
+    MembershipReason = 32,
 }
 
 impl ExportLabel {
-    pub(super) const COUNT: usize = 32;
+    pub(super) const COUNT: usize = 33;
 }
 
 /// The two label slots for one membership action that has both an

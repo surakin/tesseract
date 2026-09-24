@@ -1,6 +1,27 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-24**. 1936 C++ + 713 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-24**. 1960 C++ + 715 Rust tests.
+
+> **Member moderation: kick, ban, unban (2026-09-24, unreleased).**
+> Right-clicking a member row in `RoomInfoPanelBody` opens a `PopupMenu`
+> with Show profile / Kick user… / Ban user…. Kick/Ban are enabled per
+> member through a `MemberActionsProvider` backed by the new
+> `Client::can_kick_user`/`can_ban_user` (ruma's target-aware
+> `user_can_kick_user`/`user_can_ban_user`, room-v12 creators included);
+> `RoomView::confirm_and_moderate_member_` confirms via `ConfirmDialog`'s
+> new optional reason field. Room Settings gains a Moderation tab
+> (`RoomModerationSection`, index 4) listing banned users from
+> `Client::get_banned_members` (member sync with a 10 s cap, then the
+> store), each with Unban; a successful unban removes its row locally,
+> since the store keeps the ban until sync delivers the change. All three
+> actions go through `ShellBase::moderate_member_` (`ModerationAction`
+> Kick/Ban/Unban, failures on the status line). Kick/ban reasons also show
+> on timeline membership lines (`with_membership_reason`) and in history
+> export (label slot 32). Qt6 build + ctest 1960/1960, cargo 715/715;
+> user-tested live, unban row-removal fix unverified. GTK4/Windows/macOS
+> share the code, unbuilt.
+
+<!-- -->
 
 > **Mention pills: initials disc when there's no avatar (2026-09-24, v0.8.25).**
 > A pill's reserved avatar slot used to stay blank until an avatar loaded,

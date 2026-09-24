@@ -2026,6 +2026,45 @@ void Client::invite_user_async(std::uint64_t request_id,
     impl_->ffi->invite_user_async(request_id, room_id, user_id, reason);
 }
 
+void Client::kick_user_async(std::uint64_t request_id,
+                             const std::string& room_id,
+                             const std::string& user_id,
+                             const std::string& reason)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    impl_->ffi->kick_user_async(request_id, room_id, user_id, reason);
+}
+
+void Client::ban_user_async(std::uint64_t request_id,
+                            const std::string& room_id,
+                            const std::string& user_id,
+                            const std::string& reason)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    impl_->ffi->ban_user_async(request_id, room_id, user_id, reason);
+}
+
+void Client::unban_user_async(std::uint64_t request_id,
+                              const std::string& room_id,
+                              const std::string& user_id,
+                              const std::string& reason)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    impl_->ffi->unban_user_async(request_id, room_id, user_id, reason);
+}
+
 std::vector<RoomMember> Client::get_room_members(const std::string& room_id)
 {
     SH_FFI;
@@ -2036,6 +2075,21 @@ std::vector<RoomMember> Client::get_room_members(const std::string& room_id)
     {
         out.push_back({std::string(m.user_id), std::string(m.display_name),
                        std::string(m.avatar_url), m.power_level});
+    }
+    return out;
+}
+
+std::vector<BannedMember> Client::get_banned_members(const std::string& room_id)
+{
+    SH_FFI;
+    auto raw = impl_->ffi->get_banned_members(room_id);
+    std::vector<BannedMember> out;
+    out.reserve(raw.size());
+    for (const auto& m : raw)
+    {
+        out.push_back({std::string(m.user_id), std::string(m.display_name),
+                       std::string(m.avatar_url), std::string(m.reason),
+                       std::string(m.banned_by), m.can_unban});
     }
     return out;
 }
@@ -2188,6 +2242,20 @@ bool Client::can_ban_users(const std::string& room_id)
 {
     SH_FFI;
     return impl_->ffi->can_ban_users(room_id);
+}
+
+bool Client::can_kick_user(const std::string& room_id,
+                           const std::string& target_user_id)
+{
+    SH_FFI;
+    return impl_->ffi->can_kick_user(room_id, target_user_id);
+}
+
+bool Client::can_ban_user(const std::string& room_id,
+                          const std::string& target_user_id)
+{
+    SH_FFI;
+    return impl_->ffi->can_ban_user(room_id, target_user_id);
 }
 
 bool Client::can_set_room_power_levels(const std::string& room_id)

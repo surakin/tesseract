@@ -12,11 +12,9 @@ and in-progress work, as a single backlog ordered by priority/urgency.
   testers show up in the room.
 - **Screen sharing**: same testing-tail treatment, at whatever level of
   priority given it's explicitly YMMV/rougher than calls.
-## Tier 2 — The room-admin cluster, still incomplete
 
-- Invite UI (member list → invite), beyond the `/invite` slash command.
-- Member list with moderation actions (kick/ban) — related to but distinct
-  from the power-levels editor already built.
+## Tier 2 — Next up
+
 - **DM-counterpart avatar picks the bridge bot itself** when the bridge
   doesn't publish `io.element.functional_members` (MSC4171) — heisenbridge
   currently lacks the state event, so 1:1 control rooms show the bot's own

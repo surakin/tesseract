@@ -1,6 +1,7 @@
 #include "ConfirmDialog.h"
 
 #include "media_utils.h" // rect_contains
+#include "text_util.h"
 
 #include "tk/theme.h"
 
@@ -22,12 +23,31 @@ ConfirmDialog::ConfirmDialog()
                                      tk::Button::Variant::Subtle));
 
     confirm_btn_->set_on_click([this]() {
-        // Capture the callback locally before close() so re-entrant open()
+        // Capture the callbacks locally before close() so re-entrant open()
         // calls inside on_confirm_ see the new state, not the previous one.
         auto cb = std::move(on_confirm_);
+        auto reason_cb = opts_.reason_field ? std::move(opts_.on_reason)
+                                            : std::function<void(std::string)>{};
+        std::string reason =
+            reason_field_ ? text::trim(reason_field_->text()) : std::string();
         close();
+        if (reason_cb) reason_cb(std::move(reason));
         if (cb) cb();
     });
+
+    if (host())
+    {
+        auto field = tk::create_widget<tk::TextField>(this, kFieldH);
+        field->set_on_submit([this]() { confirm(); });
+        field->push_popup_nav([this](tk::NavKey k) {
+            if (k != tk::NavKey::Escape)
+                return false;
+            close();
+            return true;
+        });
+        field->set_visible(false);
+        reason_field_ = add_child(std::move(field));
+    }
     cancel_btn_->set_on_click([this]() {
         close();
     });
@@ -60,11 +80,25 @@ void ConfirmDialog::open(Options opts, std::function<void()> on_confirm)
     title_layout_.reset();
     body_layout_.reset();
 
+    if (reason_field_)
+    {
+        reason_field_->set_text("");
+        reason_field_->set_placeholder(opts_.reason_placeholder);
+        reason_field_->set_visible(opts_.reason_field);
+        if (opts_.reason_field)
+            reason_field_->set_focused(true);
+    }
+
     // Tell the shell to re-query rect accessors — this is what makes the
     // compose textarea + room-search NativeTextField overlays hide while
     // the dialog is up. Skip the fire when we were already open so back-
     // to-back open() calls don't churn the shell layout.
     if (!was_open && on_layout_changed) on_layout_changed();
+}
+
+void ConfirmDialog::confirm()
+{
+    if (open_ && confirm_btn_) confirm_btn_->click();
 }
 
 void ConfirmDialog::close()
@@ -73,7 +107,13 @@ void ConfirmDialog::close()
     open_ = false;
     set_visible(false);
     on_confirm_ = nullptr;
+    opts_.on_reason = nullptr;
     press_backdrop_ = false;
+    if (reason_field_)
+    {
+        reason_field_->set_focused(false);
+        reason_field_->set_visible(false);
+    }
     if (was_open && on_layout_changed) on_layout_changed();
 }
 
@@ -121,9 +161,12 @@ void ConfirmDialog::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     const float title_h =
         title_layout_ ? std::max(title_layout_->measure().h, kTitleH) : kTitleH;
 
+    const bool show_field = opts_.reason_field && reason_field_;
+
     // Card grows to fit the content, but never taller than the surface.
     const float card_h = kCardPad * 2 + title_h +
                          (opts_.body.empty() ? 0.0f : (kTitleGap + body_h)) +
+                         (show_field ? kTitleGap + kFieldH : 0.0f) +
                          kBodyGap + kBtnH;
     const float clamped_h = std::min(card_h, bounds.h);
     card_rect_ = {bounds.x + (bounds.w - card_w) * 0.5f,
@@ -150,6 +193,17 @@ void ConfirmDialog::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
         cancel_btn_->arrange(lc, {cancel_x, btns_y, cancel_w, kBtnH});
     if (confirm_btn_)
         confirm_btn_->arrange(lc, {confirm_x, btns_y, confirm_w, kBtnH});
+
+    // Reason field sits directly above the button row.
+    if (show_field)
+        reason_field_->arrange(lc, {card_rect_.x + kCardPad,
+                                    btns_y - kBodyGap - kFieldH, text_w, kFieldH});
+}
+
+void ConfirmDialog::on_theme_changed(const tk::Theme& t)
+{
+    tk::Widget::on_theme_changed(t);
+    if (reason_field_) reason_field_->set_text_color(t.palette.text_primary);
 }
 
 // ── paint ─────────────────────────────────────────────────────────────────
@@ -205,9 +259,11 @@ void ConfirmDialog::paint_before_children(tk::PaintCtx& ctx)
         }
         if (body_layout_)
         {
+            const float field_h =
+                (opts_.reason_field && reason_field_) ? kTitleGap + kFieldH : 0.0f;
             cv.push_clip_rect({card_rect_.x, card_rect_.y,
                                card_rect_.w,
-                               card_rect_.h - kCardPad - kBtnH - kBodyGap});
+                               card_rect_.h - kCardPad - kBtnH - kBodyGap - field_h});
             cv.draw_text(*body_layout_, {text_x, y}, pal.text_secondary);
             cv.pop_clip();
         }

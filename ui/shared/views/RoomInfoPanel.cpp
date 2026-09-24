@@ -28,6 +28,17 @@ RoomInfoPanelBody::RoomInfoPanelBody()
         topic_field_ = add_child(std::move(field));
     }
 
+    member_menu_ = add_child(std::make_unique<PopupMenu>());
+    member_menu_->on_dismissed = [this] { member_menu_->close(); };
+    member_menu_->on_layout_changed = [this]
+    {
+        if (auto* h = host())
+        {
+            h->request_relayout();
+            h->request_repaint();
+        }
+    };
+
     edit_topic_btn_ = add_child(
         tk::create_widget<tk::Button>(this, "\xE2\x9C\x8E", std::function<void()>{},
                                      tk::Button::Variant::Icon));
@@ -215,11 +226,32 @@ void RoomInfoPanelBody::close()
     // topic_field_ itself, so hide it directly here in case of a mid-edit close.
     editing_topic_ = false;
     if (topic_field_) topic_field_->set_visible(false);
+    if (member_menu_) member_menu_->close();
 }
 
 void RoomInfoPanelBody::set_avatar_provider(ImageProvider p)
 {
     image_provider_ = std::move(p);
+}
+
+void RoomInfoPanelBody::set_member_actions_provider(MemberActionsProvider p)
+{
+    member_actions_provider_ = std::move(p);
+}
+
+const std::vector<PopupMenu::Item>& RoomInfoPanelBody::member_menu_items_for_test() const
+{
+    static const std::vector<PopupMenu::Item> kEmpty;
+    return member_menu_ ? member_menu_->items_for_test() : kEmpty;
+}
+
+tk::Rect RoomInfoPanelBody::member_row_rect_for_test(int i) const
+{
+    if (i < 0 || i >= static_cast<int>(member_rects_.size()))
+        return {};
+    tk::Rect r = member_rects_[static_cast<std::size_t>(i)];
+    r.y -= scroll_y_;
+    return r;
 }
 
 void RoomInfoPanelBody::set_presence_provider(PresenceProvider p)
@@ -1214,9 +1246,95 @@ void RoomInfoPanelBody::on_pointer_leave()
     }
 }
 
+bool RoomInfoPanelBody::on_right_click(tk::Point local)
+{
+    if (!open_ || !member_menu_)
+        return false;
+
+    // Same viewport-local → content-local conversion as on_pointer_down.
+    const tk::Point c{local.x, local.y + scroll_y_};
+    int idx = -1;
+    for (int i = 0; i < static_cast<int>(member_rects_.size()) &&
+                    i < static_cast<int>(members_.size());
+         ++i)
+    {
+        if (rect_contains(member_rects_[static_cast<std::size_t>(i)], c))
+        {
+            idx = i;
+            break;
+        }
+    }
+    if (idx < 0)
+        return false;
+
+    const auto& mem = members_[static_cast<std::size_t>(idx)];
+    const std::string room_id = room_id_;
+    const std::string user_id = mem.user_id;
+    const std::string name    = mem.display_name;
+    const std::string avatar  = mem.avatar_url;
+    const MemberActions actions =
+        member_actions_provider_ ? member_actions_provider_(user_id) : MemberActions{};
+
+    std::vector<PopupMenu::Item> items;
+
+    PopupMenu::Item profile;
+    profile.svg_icon    = kUserRoundSvg;
+    profile.label       = tk::tr("Show profile");
+    profile.on_selected = [this, user_id, name, avatar]
+    {
+        if (on_member_clicked)
+            on_member_clicked(user_id, name, avatar);
+    };
+    items.push_back(std::move(profile));
+
+    PopupMenu::Item sep;
+    sep.is_separator = true;
+    items.push_back(std::move(sep));
+
+    PopupMenu::Item kick;
+    kick.svg_icon    = kUserRoundMinusSvg;
+    kick.label       = tk::tr("Kick user\xe2\x80\xa6");
+    kick.destructive = true;
+    kick.enabled     = actions.can_kick;
+    kick.on_selected = [this, room_id, user_id, name]
+    {
+        if (on_kick_member)
+            on_kick_member(room_id, user_id, name);
+    };
+    items.push_back(std::move(kick));
+
+    PopupMenu::Item ban;
+    ban.svg_icon    = kBanSvg;
+    ban.label       = tk::tr("Ban user\xe2\x80\xa6");
+    ban.destructive = true;
+    ban.enabled     = actions.can_ban;
+    ban.on_selected = [this, room_id, user_id, name]
+    {
+        if (on_ban_member)
+            on_ban_member(room_id, user_id, name);
+    };
+    items.push_back(std::move(ban));
+
+    // Anchor of width PopupMenu::kWidth starting at the click point, so the
+    // menu (right-aligned to the anchor) opens to the right of the cursor —
+    // same as RoomListView::on_right_click.
+    const tk::Rect anchor_world{bounds_.x + local.x, bounds_.y + local.y,
+                                PopupMenu::kWidth, 0.0f};
+    member_menu_->open(std::move(items), anchor_world);
+    return true;
+}
+
+void RoomInfoPanelBody::on_popup_dismiss()
+{
+    if (member_menu_)
+        member_menu_->close();
+}
+
 bool RoomInfoPanelBody::on_wheel(tk::Point /*local*/, float /*dx*/, float dy, bool /*is_touchpad*/)
 {
     if (!open_) return false;
+    // The menu is anchored to where the row was; don't leave it floating.
+    if (member_menu_) member_menu_->close();
     const float prev = scroll_y_;
     scroll_y_ += dy;
     clamp_scroll();
@@ -1286,6 +1404,16 @@ RoomInfoPanel::RoomInfoPanel()
     body_->on_leave_room = [this](std::string room_id) {
         if (on_leave_room) on_leave_room(std::move(room_id));
     };
+    body_->on_kick_member = [this](std::string room_id, std::string user_id,
+                                   std::string display_name) {
+        if (on_kick_member)
+            on_kick_member(std::move(room_id), std::move(user_id), std::move(display_name));
+    };
+    body_->on_ban_member = [this](std::string room_id, std::string user_id,
+                                  std::string display_name) {
+        if (on_ban_member)
+            on_ban_member(std::move(room_id), std::move(user_id), std::move(display_name));
+    };
 
     close_btn_ = add_child(
         tk::create_widget<tk::Button>(this, "\xC3\x97", std::function<void()>{},
@@ -1348,6 +1476,11 @@ void RoomInfoPanel::set_avatar_provider(ImageProvider p)
 void RoomInfoPanel::set_presence_provider(PresenceProvider p)
 {
     if (body_) body_->set_presence_provider(std::move(p));
+}
+
+void RoomInfoPanel::set_member_actions_provider(MemberActionsProvider p)
+{
+    if (body_) body_->set_member_actions_provider(std::move(p));
 }
 
 void RoomInfoPanel::set_members(std::vector<tesseract::RoomMember> members)

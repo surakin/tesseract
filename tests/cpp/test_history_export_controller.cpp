@@ -9,10 +9,10 @@ using tesseract::HistoryExportController;
 TEST_CASE("HistoryExportController: build_labels has the exact count the Rust side expects",
           "[history_export][controller]")
 {
-    // Must track history_export::labels::ExportLabel::COUNT (32) on the
+    // Must track history_export::labels::ExportLabel::COUNT (33) on the
     // Rust side exactly — a mismatch silently misattributes prose to the
     // wrong slot rather than failing loudly, so both sides pin the count.
-    CHECK(HistoryExportController::build_labels().size() == 32);
+    CHECK(HistoryExportController::build_labels().size() == 33);
 }
 
 TEST_CASE("HistoryExportController: build_labels has no empty entries",

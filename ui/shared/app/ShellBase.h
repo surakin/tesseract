@@ -1289,6 +1289,21 @@ protected:
     };
     std::unordered_map<std::uint64_t, PendingInvite> pending_invites_;
 
+    // In-flight kick/ban/unban requests (room info panel's member context
+    // menu, Room Settings → Moderation), same request-id counter and
+    // completion path as pending_invites_. Failures surface on the status
+    // line; success shows up through sync as the membership event. `done`
+    // (optional) fires either way, after the status message.
+    enum class ModerationAction { Kick, Ban, Unban };
+    struct PendingModeration
+    {
+        std::string user_id;
+        std::string display_name;
+        ModerationAction action = ModerationAction::Kick;
+        std::function<void(bool ok)> done;
+    };
+    std::unordered_map<std::uint64_t, PendingModeration> pending_moderations_;
+
     // ── Read receipts ─────────────────────────────────────────────────────────
     // room_id → last event_id for which a receipt was sent in this session.
     // Pruned alongside pagination_ in prune_warm_subscriptions_() when a room
@@ -4896,6 +4911,13 @@ protected:
     void invite_user_command_(const std::string& room_id,
                               const std::string& user_id,
                               const std::string& reason = "");
+    // Kick / ban / unban user_id in room_id; failures go to the status line
+    // (see pending_moderations_). `reason` empty = none.
+    void moderate_member_(ModerationAction action, const std::string& room_id,
+                          const std::string& user_id,
+                          const std::string& display_name,
+                          const std::string& reason,
+                          std::function<void(bool ok)> done = {});
 
     // AddRoomView's Join tab: async MSC3266 room summary lookup (no async
     // get_room_summary exists, so this dispatches the blocking call on a

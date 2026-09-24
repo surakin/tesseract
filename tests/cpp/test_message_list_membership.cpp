@@ -11,6 +11,7 @@ using tesseract::views::membership_group_end;
 using tesseract::views::membership_group_start_of;
 using tesseract::views::MessageRowData;
 using tesseract::views::make_row_data;
+using tesseract::views::with_membership_reason;
 
 namespace
 {
@@ -131,6 +132,7 @@ TEST_CASE("MembershipStateEvent produces Kind::Membership row with correct field
     ev.target_user_id = "@bob:server";
     ev.target_display_name = "Bob";
     ev.target_avatar_url = "mxc://server/bob";
+    ev.reason = "spamming";
 
     MessageRowData row = make_row_data(ev, /*my_user_id=*/"@me:server");
 
@@ -142,6 +144,7 @@ TEST_CASE("MembershipStateEvent produces Kind::Membership row with correct field
     CHECK(row.membership_target_user_id == "@bob:server");
     CHECK(row.membership_target_name == "Bob");
     CHECK(row.membership_target_avatar_url == "mxc://server/bob");
+    CHECK(row.membership_reason == "spamming");
     // Gendered narration (MSC4247): defaults to the neutral pronoun,
     // unresolved, until MessageListView::update_member_pronoun() resolves it
     // — Rust never populates this field (see timeline_convert.rs), it's
@@ -157,4 +160,24 @@ TEST_CASE("MessageRowData pronoun fields default to unresolved/neutral",
     MessageRowData row;
     CHECK(row.target_pronoun == "their");
     CHECK_FALSE(row.pronoun_resolved);
+}
+
+TEST_CASE("with_membership_reason appends the reason to removal phrases only",
+          "[message_list][membership]")
+{
+    auto row = membership_row("$e", MembershipAction::Kicked);
+    CHECK(with_membership_reason("Bob was removed", row) == "Bob was removed");
+
+    row.membership_reason = "spamming";
+    CHECK(with_membership_reason("Bob was removed", row) ==
+          "Bob was removed. Reason: spamming");
+    row.membership_action = MembershipAction::Banned;
+    CHECK(with_membership_reason("Bob was banned", row) ==
+          "Bob was banned. Reason: spamming");
+    row.membership_action = MembershipAction::KickedAndBanned;
+    CHECK(with_membership_reason("x", row) == "x. Reason: spamming");
+
+    // Other transitions keep their phrase even when the event carries a reason.
+    row.membership_action = MembershipAction::Left;
+    CHECK(with_membership_reason("Bob left the room", row) == "Bob left the room");
 }

@@ -328,6 +328,8 @@ set(_tk_sources
     views/settings/RoomGeneralSection.cpp
     views/settings/RoomBridgeSection.h
     views/settings/RoomBridgeSection.cpp
+    views/settings/RoomModerationSection.h
+    views/settings/RoomModerationSection.cpp
     views/settings/RoomMediaSection.h
     views/settings/RoomMediaSection.cpp
     views/settings/RoomSecuritySection.h
@@ -501,6 +503,9 @@ set(_icon_svgs
     "${_lucide_dir}/lucide-eye.svg"
     "${_lucide_dir}/lucide-cable.svg"
     "${_lucide_dir}/lucide-user-round-plus.svg"
+    "${_lucide_dir}/lucide-user-round.svg"
+    "${_lucide_dir}/lucide-user-round-minus.svg"
+    "${_lucide_dir}/lucide-ban.svg"
 )
 
 add_custom_command(

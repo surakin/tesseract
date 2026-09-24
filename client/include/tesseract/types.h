@@ -112,6 +112,19 @@ struct RoomMember
     int64_t power_level = 0;
 };
 
+/// A banned member of a room (Room Settings → Moderation). `reason` and
+/// `banned_by` (mxid of whoever issued the ban) come from the ban event and
+/// may be empty. `can_unban` = the current user may lift this ban.
+struct BannedMember
+{
+    std::string user_id;
+    std::string display_name; ///< resolves to user_id localpart when unset
+    std::string avatar_url;   ///< mxc:// or empty
+    std::string reason;
+    std::string banned_by;
+    bool can_unban = false;
+};
+
 /// One `m.pronouns` (MSC4247) entry: a language-tagged pronoun summary plus
 /// an optional grammatical gender. `language` is a BCP-47 tag (empty only for
 /// the legacy plain-string fallback shape). `grammatical_gender` is empty
@@ -487,6 +500,7 @@ struct MembershipStateEvent : public Event
     std::string target_user_id;
     std::string target_display_name; ///< as recorded in this state event; may be empty
     std::string target_avatar_url;   ///< mxc:// or empty
+    std::string reason;              ///< free-text reason from the event content; may be empty
 };
 
 /// Ordered list of timeline events (oldest-first), as passed to

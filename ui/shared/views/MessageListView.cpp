@@ -554,6 +554,7 @@ MessageRowData make_row_data(const tesseract::Event& ev,
         row.membership_target_user_id = mem.target_user_id;
         row.membership_target_name = mem.target_display_name;
         row.membership_target_avatar_url = mem.target_avatar_url;
+        row.membership_reason = mem.reason;
         break;
     }
     case tesseract::EventType::RoomName:
@@ -1003,7 +1004,14 @@ std::string format_day_label(std::uint64_t timestamp_ms)
 // Rust never sends English prose here (see membership_action_str in
 // sdk/src/client/timeline_convert.rs) — this is the sole place that
 // composes the display string, entirely through tk::tr()/tk::trf().
+std::string membership_expanded_phrase_base(const MessageRowData& m);
+
 std::string membership_expanded_phrase(const MessageRowData& m)
+{
+    return with_membership_reason(membership_expanded_phrase_base(m), m);
+}
+
+std::string membership_expanded_phrase_base(const MessageRowData& m)
 {
     using A = tesseract::MembershipAction;
     const std::string t = m.membership_target_name.empty()
@@ -3124,9 +3132,11 @@ public:
                                             ? mm.membership_target_user_id
                                             : mm.membership_target_name);
                     }
-                    return membership_summary_phrase(
+                    std::string phrase = membership_summary_phrase(
                         m.membership_action, names,
                         names.size() == 1 ? m.target_pronoun : "their");
+                    return names.size() == 1 ? with_membership_reason(std::move(phrase), m)
+                                             : phrase;
                 }
                 return membership_expanded_phrase(m);
             }
@@ -3968,11 +3978,13 @@ private:
         {
             owner_.on_member_pronoun_needed(msgs[start].membership_target_user_id);
         }
-        auto lo = ctx.factory.build_text(
+        std::string phrase =
             membership_summary_phrase(msgs[start].membership_action, names,
                                       total == 1 ? msgs[start].target_pronoun
-                                                 : "their"),
-            st);
+                                                 : "their");
+        if (total == 1)
+            phrase = with_membership_reason(std::move(phrase), msgs[start]);
+        auto lo = ctx.factory.build_text(phrase, st);
         if (lo)
         {
             tk::Size sz = lo->measure();
@@ -6490,9 +6502,13 @@ public:
             ctx, bounds, kPinnedEventH,
             msgirc::timestamp_part(format_hhmm(msgs[start].timestamp_ms)) +
                 "* " +
-                membership_summary_phrase(
-                    msgs[start].membership_action, names,
-                    (end - start) == 1 ? msgs[start].target_pronoun : "their"),
+                ((end - start) == 1
+                     ? with_membership_reason(
+                           membership_summary_phrase(msgs[start].membership_action,
+                                                     names, msgs[start].target_pronoun),
+                           msgs[start])
+                     : membership_summary_phrase(msgs[start].membership_action,
+                                                 names, "their")),
             ctx.theme.palette.text_muted, /*rule=*/false);
         return true;
     }
@@ -10657,6 +10673,22 @@ void MessageListView::paint(tk::PaintCtx& ctx)
         ctx.canvas.draw_text(*line.layout, {panel.x + kTipPadX, y},
                              ctx.theme.palette.text_primary);
         y += line.size.h;
+    }
+}
+
+std::string with_membership_reason(std::string phrase, const MessageRowData& m)
+{
+    using A = tesseract::MembershipAction;
+    if (m.membership_reason.empty())
+        return phrase;
+    switch (m.membership_action)
+    {
+    case A::Kicked:
+    case A::Banned:
+    case A::KickedAndBanned:
+        return tk::trf(tk::tr("{0}. Reason: {1}"), {phrase, m.membership_reason});
+    default:
+        return phrase;
     }
 }
 

@@ -365,6 +365,19 @@ pub mod ffi {
         power_level: i64,
     }
 
+    /// One banned member of a room, for the Room Settings → Moderation
+    /// tab. `reason` / `banned_by` come from the ban's m.room.member event
+    /// (empty when absent). `can_unban` = the current user may lift this
+    /// specific ban (ruma's target-aware `user_can_unban_user`).
+    struct BannedMember {
+        user_id: String,
+        display_name: String,
+        avatar_url: String,
+        reason: String,
+        banned_by: String,
+        can_unban: bool,
+    }
+
     /// Result of a `resolve_user_profile` lookup. `exists` is true only when
     /// the homeserver returned a profile for the requested mxid (i.e. the user
     /// exists). `display_name` falls back to the localpart when the user has no
@@ -594,6 +607,9 @@ pub mod ffi {
         /// "m.room.member" only: mxc:// avatar URL of the target as
         /// recorded in this state event's content. Empty when absent.
         membership_target_avatar_url: String,
+        /// "m.room.member" only: the optional free-text `reason` from the
+        /// state event's content (e.g. a kick/ban reason). Empty when absent.
+        membership_reason: String,
         /// "m.room.name" only: the new room name. Empty when the name was
         /// removed. Never English prose — the raw name value only.
         room_name_new: String,
@@ -3365,6 +3381,40 @@ pub mod ffi {
             reason: &str,
         );
 
+        /// Non-blocking kick. Spawns as a tokio task; result delivered via
+        /// on_room_action_complete(request_id, ok, "", message). `reason`
+        /// empty = no reason.
+        fn kick_user_async(
+            self: &ClientFfi,
+            request_id: u64,
+            room_id: &str,
+            user_id: &str,
+            reason: &str,
+        );
+
+        /// Non-blocking ban. Same delivery contract as `kick_user_async`.
+        fn ban_user_async(
+            self: &ClientFfi,
+            request_id: u64,
+            room_id: &str,
+            user_id: &str,
+            reason: &str,
+        );
+
+        /// Non-blocking unban. Same delivery contract as `kick_user_async`.
+        fn unban_user_async(
+            self: &ClientFfi,
+            request_id: u64,
+            room_id: &str,
+            user_id: &str,
+            reason: &str,
+        );
+
+        /// Banned members of a room. Syncs the member list first (bounded by
+        /// a timeout, since lazy-loaded rooms may not have ban events
+        /// locally), then reads the store. Blocks — worker thread.
+        fn get_banned_members(self: &ClientFfi, room_id: &str) -> Vec<BannedMember>;
+
         /// Fetch the joined member list for a room. Blocks — worker thread.
         fn get_room_members(self: &ClientFfi, room_id: &str) -> Vec<RoomMember>;
 
@@ -3483,6 +3533,14 @@ pub mod ffi {
         /// False on any uncertainty. Blocks — worker thread (reads cached
         /// power levels, no network round-trip).
         fn can_ban_users(self: &ClientFfi, room_id: &str) -> bool;
+
+        /// True iff the current user may kick `target_user_id` specifically
+        /// (meets the kick level and outranks the target; false for self).
+        /// Blocks — worker thread (cached power levels, no network).
+        fn can_kick_user(self: &ClientFfi, room_id: &str, target_user_id: &str) -> bool;
+
+        /// Ban counterpart of `can_kick_user`.
+        fn can_ban_user(self: &ClientFfi, room_id: &str, target_user_id: &str) -> bool;
 
         /// True iff the current user's power level meets the requirement for
         /// sending m.room.power_levels in this room — the single all-or-

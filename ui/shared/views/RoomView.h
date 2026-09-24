@@ -574,6 +574,13 @@ public:
     // on_leave_room's confirm-then-forward pattern).
     std::function<void(std::string room_id, std::string user_id,
                        std::string reason)>                 on_decline_and_ban_knock_request;
+    // Fired once the user confirms Kick / Ban from the room info panel's
+    // member context menu (RoomView interposes a ConfirmDialog with an
+    // optional reason field). `reason` empty = none given.
+    std::function<void(std::string room_id, std::string user_id,
+                       std::string display_name, std::string reason)> on_kick_member;
+    std::function<void(std::string room_id, std::string user_id,
+                       std::string display_name, std::string reason)> on_ban_member;
     // Fired when the user clicks the room-settings avatar disc to pick a
     // new image. The shell uploads it (Client::upload_media) and calls
     // room_settings_view()->set_staged_avatar() — never commits directly.
@@ -584,6 +591,11 @@ public:
     // doc comment (local-only preference, applied right away, not staged).
     std::function<void(std::string room_id, bool not_bridged)>
         on_bridge_override_changed;
+    // Room Settings → Moderation's Unban button (applies immediately — see
+    // RoomSettingsView::on_unban_requested).
+    std::function<void(std::string room_id, std::string user_id,
+                       std::string display_name)>
+        on_unban_member;
     std::function<void(std::string user_id)>                on_open_dm;
     // Predicate: return true when a DM with user_id already exists.
     // Set by the shell (ShellBase wires this to find_existing_dm_).
@@ -754,6 +766,12 @@ private:
     // — close_panel closes whichever of the two panels is currently open.
     void confirm_and_leave_room_(std::function<void()> close_panel,
                                  std::string room_id);
+    // Confirms kicking (ban=false) / banning a member, collecting an
+    // optional reason, then forwards to on_kick_member / on_ban_member.
+    // Falls back to firing directly (no reason) if confirm_provider_ is unset.
+    void confirm_and_moderate_member_(bool ban, std::string room_id,
+                                      std::string user_id,
+                                      std::string display_name);
     // Swap room_info_panel_ for knock_requests_panel_. Mirrors
     // show_room_settings(); the reverse (knock_requests_panel_->on_close)
     // calls show_room_info() to go back, unlike Settings' Cancel which

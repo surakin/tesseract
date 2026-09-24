@@ -231,6 +231,7 @@ struct MessageRowData
     std::string membership_target_user_id;
     std::string membership_target_name;
     std::string membership_target_avatar_url; // mxc
+    std::string membership_reason; // free-text kick/ban/… reason; may be empty
 
     // Room name change (Kind::RoomName only).
     std::string room_name_new; // empty if the name was removed
@@ -271,6 +272,10 @@ std::size_t membership_group_end(const std::vector<MessageRowData>& msgs,
 // Walk backward from any Membership row to the start of its group.
 std::size_t membership_group_start_of(const std::vector<MessageRowData>& msgs,
                                       std::size_t index);
+// Appends the state event's free-text reason to a removal phrase (kick /
+// ban / kick-and-ban), e.g. "Bob was removed by Alice. Reason: spam". Other
+// actions, and rows without a reason, pass through unchanged.
+std::string with_membership_reason(std::string phrase, const MessageRowData& m);
 
 class MessageListView : public tk::ListView
 {

@@ -1545,6 +1545,24 @@ public:
                            const std::string& user_id,
                            const std::string& reason = "");
 
+    /// Non-blocking kick / ban. Result delivered via
+    /// IEventHandler::on_room_action_complete. `reason` is optional (empty =
+    /// no reason).
+    void kick_user_async(std::uint64_t request_id, const std::string& room_id,
+                         const std::string& user_id,
+                         const std::string& reason = "");
+    void ban_user_async(std::uint64_t request_id, const std::string& room_id,
+                        const std::string& user_id,
+                        const std::string& reason = "");
+    void unban_user_async(std::uint64_t request_id, const std::string& room_id,
+                          const std::string& user_id,
+                          const std::string& reason = "");
+
+    /// Banned members of a room. Syncs the member list first (bounded by a
+    /// timeout) so bans of users who never spoke are included.
+    /// Blocks the calling thread — call from a worker thread.
+    std::vector<BannedMember> get_banned_members(const std::string& room_id);
+
     /// Fetch the joined member list for a room.
     /// Blocks the calling thread — call from a worker thread.
     std::vector<RoomMember> get_room_members(const std::string& room_id);
@@ -1657,6 +1675,13 @@ public:
     /// room (gates the "Deny & Ban" knock-request action). Cached read —
     /// no network. Returns false on any uncertainty.
     bool can_ban_users(const std::string& room_id);
+
+    /// True iff the current user may kick / ban `target_user_id`
+    /// specifically: meets the room's kick/ban level AND outranks the target
+    /// (room-v12 privileged creators included). False for the current user
+    /// themselves. Cached read — no network. False on any uncertainty.
+    bool can_kick_user(const std::string& room_id, const std::string& target_user_id);
+    bool can_ban_user(const std::string& room_id, const std::string& target_user_id);
 
     /// True iff the current user's PL meets the requirement for sending
     /// m.room.power_levels in this room — the single all-or-nothing gate

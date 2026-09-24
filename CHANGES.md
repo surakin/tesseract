@@ -3,11 +3,19 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
+## Unreleased
+
+- feat(rooms): right-clicking a member in the room info panel opens a menu with Show profile / Kick user… / Ban user…. Kick and Ban are greyed out unless you outrank that member (ruma's target-aware `user_can_kick_user`/`user_can_ban_user`, so room-v12 creators are handled), and confirm through `ConfirmDialog`, which gained an optional reason field. New `kick_user_async`/`ban_user_async` FFI report failures on the status line. Qt6 build + ctest 1957/1957, cargo 713/713; user-tested live. GTK4/Windows/macOS share the code, unbuilt
+- feat(timeline): kick and ban lines show the reason when one was given (e.g. "Bob was removed by Alice. Reason: spam"), in the timeline and in history export. New `membership_reason` field on the FFI timeline event; export gains label slot 32. Qt6 build + ctest 1958/1958, cargo 715/715; unverified live
+- feat(rooms): Room Settings has a new Moderation tab listing banned users, with the reason, who banned them, and an Unban button (disabled without permission to lift that ban). Shows "No banned users" when empty. New `get_banned_members` (syncs members first, 10 s cap) and `unban_user_async` FFI. The tab sits after Permissions, so Emojis & Stickers and Bridge shifted to indices 5/6. Qt6 build + ctest 1960/1960, cargo 715/715; user-tested live. Unbanning now drops the row right away: re-reading the store still listed the ban until sync caught up, and that fix is unverified live. GTK4/Windows/macOS share the code, unbuilt
+- fix(rooms): invite errors in the invite dialog now wrap instead of running past the card edge. Qt6 build + invite tests 13/13; unverified live
+- feat(tk): `tk::Button` supports a leading SVG icon next to its label (`set_leading_icon`); the room info panel's Invite / Export History / Leave Room buttons use Lucide icons. Qt6 build + ctest; user-verified live
+- feat(rooms): the room info panel has an "Invite people" button (shown only with invite permission) that opens a new invite dialog: filter known users and check them, or type/paste one or more full mxids, which become pills once known or resolved on the server. Invites now report per-user results (`invite_user_async` takes a request id), so `/invite` failures also surface. Also fixes the multi-select checkbox tick sitting low in its circle (now a Lucide `check` icon, shared with the forward dialog). Qt6 build + ctest 1949/1949, cargo 713/713; user-verified live. GTK4/Windows/macOS share the code, unbuilt
+
 ## v0.8.25 — 2026-09-24
 
 ### Summary
 
-- feat(rooms): the room info panel has an "Invite people" button (shown only with invite permission) that opens a new invite dialog: filter known users and check them, or type/paste one or more full mxids, which become pills once known or resolved on the server. Invites now report per-user results (`invite_user_async` takes a request id), so `/invite` failures also surface. Also fixes the multi-select checkbox tick sitting low in its circle (now a Lucide `check` icon, shared with the forward dialog). Qt6 build + ctest 1949/1949, cargo 713/713; user-verified live. GTK4/Windows/macOS share the code, unbuilt
 - feat(calls): the Create Room dialog's split button now also offers "Create Call Room", and a newly created call room opens its pre-call lobby once sync delivers it. Windows build + ctest 1935/1935; user-verified live. Qt6/GTK4/macOS share the code, unbuilt
 - polish(mentions): a mention pill with no avatar (none set, or still loading) now shows an initials disc in its avatar slot instead of an empty gap; `@room` pills show "@". Disc uses the theme's avatar-initials colors, passed to composers via a new `tk::MentionColors`. Windows build + pill/mention ctest 63/63; user-verified live. Qt6/GTK4/macOS share the code, unbuilt
 - fix(timeline): in bubble layout, a message with a URL preview no longer stretches its bubble to full width; it now fits the wider of the text and the preview card. Windows build + ctest 1935/1935; unverified live. Qt6/GTK4/macOS share the code, unbuilt

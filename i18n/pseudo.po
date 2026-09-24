@@ -2909,3 +2909,86 @@ msgid "Inviting {0} person…"
 msgid_plural "Inviting {0} people…"
 msgstr[0] "[Ïñvïtïñg {0} pérsöñ…xxxx]"
 msgstr[1] "[Ïñvïtïñg {0} péöplé…xxxx]"
+
+#: ui/shared/views/RoomInfoPanel.cpp
+msgid "Show profile"
+msgstr "[Shöw pröfïléxx]"
+
+#: ui/shared/views/RoomInfoPanel.cpp
+msgid "Kick user…"
+msgstr "[Kïçk ùsér…xx]"
+
+#: ui/shared/views/RoomInfoPanel.cpp
+msgid "Ban user…"
+msgstr "[Bàñ ùsér…x]"
+
+#: ui/shared/views/RoomView.cpp
+#, c++-format
+msgid "Ban {0}?"
+msgstr "[Bàñ {0}?x]"
+
+#: ui/shared/views/RoomView.cpp
+msgid "They will be removed from the room and unable to rejoin unless unbanned."
+msgstr "[Théy wïll bé rémövéd fröm thé rööm àñd ùñàblé tö réjöïñ ùñléss ùñbàññéd.xxxxxxxxxxxxxx]"
+
+#: ui/shared/views/RoomView.cpp
+msgid "Ban"
+msgstr "[Bàñx]"
+
+#: ui/shared/views/RoomView.cpp
+#, c++-format
+msgid "Remove {0} from the room?"
+msgstr "[Rémövé {0} fröm thé rööm?xxxxx]"
+
+#: ui/shared/views/RoomView.cpp
+msgid "They can rejoin if the room allows it."
+msgstr "[Théy çàñ réjöïñ ïf thé rööm àllöws ït.xxxxxxx]"
+
+#: ui/shared/views/RoomView.cpp
+msgid "Kick"
+msgstr "[Kïçkx]"
+
+#: ui/shared/app/ShellBase.cpp
+#, c++-format
+msgid "Couldn't ban {0}"
+msgstr "[Çöùldñ't bàñ {0}xxx]"
+
+#: ui/shared/app/ShellBase.cpp
+#, c++-format
+msgid "Couldn't kick {0}"
+msgstr "[Çöùldñ't kïçk {0}xxx]"
+
+#: ui/shared/views/MessageListView.cpp ui/shared/app/HistoryExportController.cpp
+#, c++-format
+msgid "{0}. Reason: {1}"
+msgstr "[{0}. Réàsöñ: {1}xxx]"
+
+#: ui/shared/views/RoomSettingsView.cpp
+msgid "Moderation"
+msgstr "[Mödéràtïöñxx]"
+
+#: ui/shared/views/settings/RoomModerationSection.cpp
+msgid "Banned users"
+msgstr "[Bàññéd ùsérsxx]"
+
+#: ui/shared/views/settings/RoomModerationSection.cpp
+msgid "No banned users"
+msgstr "[Ñö bàññéd ùsérsxxx]"
+
+#: ui/shared/views/settings/RoomModerationSection.cpp
+msgid "Unban"
+msgstr "[Ùñbàñx]"
+
+#: ui/shared/views/settings/RoomModerationSection.cpp
+msgid "Unban (you don't have permission to lift this ban)"
+msgstr "[Ùñbàñ (yöù döñ't hàvé pérmïssïöñ tö lïft thïs bàñ)xxxxxxxxxx]"
+
+#: ui/shared/views/settings/RoomModerationSection.cpp
+#, c++-format
+msgid "Banned by {0}"
+msgstr "[Bàññéd by {0}xx]"
+
+#: ui/shared/app/ShellBase.cpp
+#, c++-format
+msgid "Couldn't unban {0}"
+msgstr "[Çöùldñ't ùñbàñ {0}xxx]"

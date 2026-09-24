@@ -832,18 +832,22 @@ void InviteDialog::paint(tk::PaintCtx& ctx)
         }
         else if (!error_lines_.empty())
         {
-            constexpr float kLineH = 24.0f;
-            constexpr float kPad   = 16.0f;
-            ts.trim      = tk::TextTrim::Ellipsis;
+            constexpr float kLineGap = 6.0f;
+            constexpr float kPad     = 16.0f;
+            // Wrapped: homeserver error details are often longer than the card.
+            ts.wrap      = true;
             ts.max_width = std::max(0.0f, card_rect_.w - 2.0f * kPad);
             float ey = body_y + kPad;
             for (const auto& line : error_lines_)
             {
-                if (ey + kLineH > body_y + body_h)
+                auto lo = ctx.factory.build_text(line, ts);
+                if (!lo)
+                    continue;
+                const float h = lo->measure().h;
+                if (ey + h > body_y + body_h)
                     break;
-                if (auto lo = ctx.factory.build_text(line, ts))
-                    ctx.canvas.draw_text(*lo, {card_rect_.x + kPad, ey}, pal.destructive);
-                ey += kLineH;
+                ctx.canvas.draw_text(*lo, {card_rect_.x + kPad, ey}, pal.destructive);
+                ey += h + kLineGap;
             }
             draw_button(dismiss_btn_rect_, tk::tr("Dismiss"), false, true, press_dismiss_);
         }

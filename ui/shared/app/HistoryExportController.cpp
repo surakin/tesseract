@@ -64,7 +64,7 @@ std::string HistoryExportController::suggested_folder_name(const Request& req)
 // composes English text itself. Both sides carry a count-assert test
 // against drift (this file's Catch2 test + labels.rs's own COUNT check).
 //
-// The membership entries (indices 10-31) intentionally reuse the exact
+// The membership entries (indices 10-32) intentionally reuse the exact
 // wording from MessageListView.cpp's membership_expanded_phrase(),
 // including its by-actor/no-actor split, so translators aren't asked to
 // translate the same sentiment twice and an exported room reads
@@ -107,6 +107,7 @@ std::vector<std::string> HistoryExportController::build_labels()
         tk::tr("{0}'s request to join was withdrawn"),
         tk::tr("{0}'s request to join was denied by {1}"),
         tk::tr("{0}'s join request was denied"),
+        tk::tr("{0}. Reason: {1}"),
     };
 }
 

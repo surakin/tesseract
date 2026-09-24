@@ -8,6 +8,7 @@
 
 #include "tk/canvas.h"
 #include "tk/controls.h"
+#include "tk/text_field.h"
 #include "tk/widget.h"
 
 #include <functional>
@@ -27,6 +28,13 @@ public:
         std::string confirm_label = "Confirm";
         std::string cancel_label  = "Cancel";
         bool        destructive   = false;  // red confirm button
+        // Show a single-line free-text field under the body (e.g. a
+        // kick/ban reason). Its trimmed text is handed to `on_reason`
+        // immediately before the on_confirm callback fires; cancel/backdrop
+        // never fire it. No-op without a Host (the field isn't created).
+        bool        reason_field  = false;
+        std::string reason_placeholder;
+        std::function<void(std::string reason)> on_reason;
     };
 
     ConfirmDialog();
@@ -39,6 +47,11 @@ public:
     void open(Options opts, std::function<void()> on_confirm);
     void close();
     bool is_open() const { return open_; }
+    // Same as clicking the confirm button (Enter in the reason field, tests).
+    void confirm();
+
+    // The Options::reason_field input; null without a Host.
+    tk::TextField* reason_field() const { return reason_field_; }
 
     // Fires when the dialog opens or closes. MainAppWidget routes this into
     // the shared layout-changed chain so the shells re-query rect accessors
@@ -52,6 +65,7 @@ public:
     void     paint_before_children(tk::PaintCtx&) override;
     bool     on_pointer_down(tk::Point local) override;
     void     on_pointer_up(tk::Point local, bool inside_self) override;
+    void     on_theme_changed(const tk::Theme& t) override;
 
     // Accessibility: a Dialog node named for its title + body (both are
     // canvas-painted, not child widgets); the confirm/cancel buttons attach
@@ -75,6 +89,8 @@ private:
     // Child buttons — owned via add_child, raw pointers borrowed back.
     tk::Button* confirm_btn_ = nullptr;
     tk::Button* cancel_btn_  = nullptr;
+    // Options::reason_field input; null without a Host.
+    tk::TextField* reason_field_ = nullptr;
 
     // Layout rects in world-space, updated each arrange().
     tk::Rect backdrop_rect_{};
@@ -93,6 +109,7 @@ private:
     static constexpr float kTitleH  = 22.0f;
     static constexpr float kTitleGap = 12.0f;
     static constexpr float kBodyGap  = 20.0f;
+    static constexpr float kFieldH   = 32.0f;
 };
 
 } // namespace tesseract::views

@@ -243,6 +243,7 @@ TEST_CASE("make_event dispatches m.room.member to MembershipStateEvent",
     ffi.membership_target_user_id = "@bob:server";
     ffi.membership_target_name = "Bob";
     ffi.membership_target_avatar_url = "mxc://server/bob";
+    ffi.membership_reason = "spamming";
     auto ev = tesseract::make_event(ffi);
     auto* mem = dynamic_cast<tesseract::MembershipStateEvent*>(ev.get());
     REQUIRE(mem != nullptr);
@@ -250,6 +251,7 @@ TEST_CASE("make_event dispatches m.room.member to MembershipStateEvent",
     CHECK(mem->target_user_id == "@bob:server");
     CHECK(mem->target_display_name == "Bob");
     CHECK(mem->target_avatar_url == "mxc://server/bob");
+    CHECK(mem->reason == "spamming");
 }
 
 TEST_CASE("parse_membership_action round-trips every known discriminant",

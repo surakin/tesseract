@@ -379,8 +379,8 @@ TEST_CASE("RoomSettingsView: shared footer stays visible and in the same "
 
     // Side tab column: kSidebarWidth=200, kTabHeight=36 (tk::SideTabView),
     // tabs start at y = kBarHeight(48) + 1 = 49. Emojis & Stickers is the
-    // 5th tab (index 4): row center y = 49 + (4 + 0.5) * 36 = 211.
-    const tk::Point tab_pt{100.0f, 211.0f};
+    // 6th tab (index 5): row center y = 49 + (5 + 0.5) * 36 = 247.
+    const tk::Point tab_pt{100.0f, 247.0f};
     tk::Widget* tab_hit = v.dispatch_pointer_down(tab_pt);
     REQUIRE(tab_hit != nullptr);
     tab_hit->on_pointer_up(tab_hit->world_to_local(tab_pt), /*inside_self=*/true);
@@ -408,9 +408,9 @@ TEST_CASE("RoomSettingsView: on_accept's changes.image_packs is set when "
     TkRoomSettingsViewStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
 
-    // Switch to the Emojis & Stickers tab (index 4; see the footer test
+    // Switch to the Emojis & Stickers tab (index 5; see the footer test
     // above for the sidebar tab-row geometry derivation).
-    const tk::Point tab_pt{100.0f, 211.0f};
+    const tk::Point tab_pt{100.0f, 247.0f};
     tk::Widget* tab_hit = v.dispatch_pointer_down(tab_pt);
     REQUIRE(tab_hit != nullptr);
     tab_hit->on_pointer_up(tab_hit->world_to_local(tab_pt), /*inside_self=*/true);
@@ -465,7 +465,7 @@ TEST_CASE("RoomSettingsView: dispatch_file_drop reaches the image pack "
     // Switch to the Emojis & Stickers tab and create one pack via the UI
     // (mirrors the "on_accept's changes.image_packs" test's geometry) so
     // there's an active pack for the drop to fall back onto.
-    const tk::Point tab_pt{100.0f, 211.0f};
+    const tk::Point tab_pt{100.0f, 247.0f};
     tk::Widget* tab_hit = v.dispatch_pointer_down(tab_pt);
     REQUIRE(tab_hit != nullptr);
     tab_hit->on_pointer_up(tab_hit->world_to_local(tab_pt), /*inside_self=*/true);
@@ -527,7 +527,7 @@ TEST_CASE("RoomSettingsView: set_image_pack_field_permissions forwards to "
 
     // Switch to the Emojis & Stickers tab (see the footer test above for
     // the sidebar tab-row geometry derivation).
-    const tk::Point tab_pt{100.0f, 211.0f};
+    const tk::Point tab_pt{100.0f, 247.0f};
     tk::Widget* tab_hit = v.dispatch_pointer_down(tab_pt);
     REQUIRE(tab_hit != nullptr);
     tab_hit->on_pointer_up(tab_hit->world_to_local(tab_pt), /*inside_self=*/true);
@@ -986,4 +986,79 @@ TEST_CASE("RoomSettingsView: no other-admin warning when the user can't "
     TkRoomSettingsViewStage st;
     st.run(v, {0.0f, 0.0f, 800.0f, 600.0f});
     CHECK_FALSE(v.permissions_section()->other_admin_warning()->visible());
+}
+
+namespace
+{
+
+tesseract::BannedMember banned(const std::string& uid, bool can_unban = true)
+{
+    tesseract::BannedMember m;
+    m.user_id      = uid;
+    m.display_name = uid.substr(1, uid.find(':') - 1);
+    m.reason       = "spam";
+    m.banned_by    = "@admin:example.org";
+    m.can_unban    = can_unban;
+    return m;
+}
+
+} // namespace
+
+TEST_CASE("RoomSettingsView: open() puts the Moderation tab's banned list in loading state",
+          "[room_settings][moderation]")
+{
+    TkRoomSettingsViewStage st;
+    auto view = tk::create_root_widget<RoomSettingsView>(nullptr);
+    view->open(make_room_info());
+    auto* mod = view->moderation_section();
+    REQUIRE(mod);
+    CHECK(mod->showing_loading_label());
+
+    view->set_banned_members({});
+    CHECK_FALSE(mod->showing_loading_label());
+    CHECK(mod->showing_empty_label());
+    st.run(*view, {0, 0, 800, 600});
+}
+
+TEST_CASE("RoomModerationSection: rows replace the empty label and Unban fires the callback",
+          "[room_settings][moderation]")
+{
+    TkRoomSettingsViewStage st;
+    auto view = tk::create_root_widget<RoomSettingsView>(nullptr);
+    view->open(make_room_info());
+    std::string room, uid, name;
+    view->on_unban_requested = [&](std::string r, std::string u, std::string n) {
+        room = std::move(r);
+        uid  = std::move(u);
+        name = std::move(n);
+    };
+
+    view->set_banned_members({banned("@bob:example.org"), banned("@eve:example.org", false)});
+    auto* mod = view->moderation_section();
+    CHECK_FALSE(mod->showing_empty_label());
+    CHECK(mod->banned_members().size() == 2);
+    st.run(*view, {0, 0, 800, 600});
+
+    // Row 1 (no permission) is disabled.
+    CHECK_FALSE(mod->click_unban_for_test(1));
+    REQUIRE(mod->click_unban_for_test(0));
+    CHECK(room == "!room:example.org");
+    CHECK(uid == "@bob:example.org");
+    CHECK(name == "bob");
+
+    // Pending disables the row; clearing re-enables it.
+    view->set_unban_pending("@bob:example.org", true);
+    CHECK_FALSE(mod->click_unban_for_test(0));
+    view->set_unban_pending("@bob:example.org", false);
+    CHECK(mod->click_unban_for_test(0));
+
+    // Success drops the row; the last removal falls back to the empty label.
+    view->remove_banned_member("@bob:example.org");
+    REQUIRE(mod->banned_members().size() == 1);
+    CHECK(mod->banned_members()[0].user_id == "@eve:example.org");
+    view->remove_banned_member("@nobody:example.org"); // no-op
+    CHECK(mod->banned_members().size() == 1);
+    view->remove_banned_member("@eve:example.org");
+    CHECK(mod->showing_empty_label());
+    st.run(*view, {0, 0, 800, 600});
 }
