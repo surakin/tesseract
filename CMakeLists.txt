@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.25)
 # already in a dev environment. See cmake/MsvcAutoVcvars.cmake.
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/MsvcAutoVcvars.cmake)
 
-project(Tesseract VERSION 0.8.25 LANGUAGES CXX)
+project(Tesseract VERSION 0.9.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
