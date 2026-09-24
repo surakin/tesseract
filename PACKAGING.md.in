@@ -13,7 +13,7 @@ produce native installers. Configuration lives in
 | macOS      | `DragNDrop`         | `Tesseract-<version>-<arch>.dmg`                                 |
 | Debian     | `dpkg-buildpackage` | `tesseract_<ver>_<arch>.deb` + `tesseract-gtk_<ver>_<arch>.deb`  |
 | Arch Linux | `makepkg`           | `tesseract-<ver>-<pkgrel>-<arch>.pkg.tar.zst`                    |
-| Flatpak    | `flatpak-builder`   | `io.github.surakin.Tesseract` (sandboxed, Flathub)               |
+| Flatpak    | `flatpak-builder`   | `io.github.surakin.Tesseract` (sandboxed, not Flathub)           |
 | Windows    | `winget` manifest   | `Tesseract.Matrix` (points at the NSIS `.exe`, winget-pkgs)      |
 
 NSIS, Store MSIX, and direct MSIX are alternative editions of the same

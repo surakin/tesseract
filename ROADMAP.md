@@ -26,6 +26,11 @@ and in-progress work, as a single backlog ordered by priority/urgency.
 
 ## Tier 3 — Smaller deferred items, pick opportunistically
 
+- **Accessibility (screen reader support) — widget mapping, ongoing.**
+  Platform bridges are in place (Windows UIA, macOS NSAccessibility, Qt6/GTK4
+  AT-SPI) and wired into `tk::Widget` via `Role`/`AccessState`; Phase 4
+  widget-by-widget mapping is underway. See `docs/ACCESSIBILITY-PLAN.md` for
+  what's mapped and what's left.
 - Cmd/Ctrl+K refinements, room mentions as pills (vs. just user mentions),
   self-mention emphasis, device rename, new-device warnings, edit history
   viewer, GIF picker.
@@ -110,8 +115,6 @@ and in-progress work, as a single backlog ordered by priority/urgency.
 
 ## Tier 5 — The big structural gaps, acknowledge and schedule loosely, don't start soon
 
-- Accessibility (screen reader support) — large, its own project, not a
-  quick add.
 - Localization beyond English/Spanish — content work, opportunistic/
   contributor-driven.
 - **i18n not fully wired on macOS or Win32** — both shells use `tk::tr()`
