@@ -30,6 +30,20 @@ impl ClientFfi {
         self.sync_tasks.push(h);
     }
 
+    /// Attach the event-handler bridge only — sets `self.handler` exactly
+    /// like `start_sync` does, without spawning any watcher task or the
+    /// SyncService loop. Lets handler-routed calls (enable_recovery/recover's
+    /// progress callbacks) work while the real sync start is deliberately
+    /// withheld. A later `start_sync` call re-attaches over this (harmless —
+    /// same wiring) and does the actual spawning.
+    pub fn attach_event_handler(&mut self, handler: UniquePtr<EventHandlerBridge>) {
+        if self.client.is_none() {
+            return;
+        }
+        let handler = Arc::new(Mutex::new(SendHandler(handler)));
+        self.handler = Some(handler);
+    }
+
     pub fn start_sync(&mut self, handler: UniquePtr<EventHandlerBridge>) {
         let Some(client) = self.client.clone() else {
             return;
@@ -154,9 +168,14 @@ impl ClientFfi {
         // reachable, then transitions back to State::Running and restarts the
         // sync child tasks — no manual stop/start cycle or exponential
         // backoff needed on our side.
+        //
+        // `with_profiles_extension` enables MSC4262 so global profile changes
+        // made on another device (timezone, status, name, avatar) arrive via
+        // sync; see the own-profile watcher below.
         let sync_service = match self.rt.block_on(
             SyncService::builder(client.clone())
                 .with_offline_mode()
+                .with_profiles_extension()
                 .build(),
         ) {
             Ok(s) => Arc::new(s),
@@ -169,6 +188,18 @@ impl ClientFfi {
             }
         };
         self.sync_service = Some(Arc::clone(&sync_service));
+
+        // Own-profile watcher (MSC4262). Profile fields aren't account data,
+        // so none of the account-data watchers see a change made on another
+        // device; the Profiles extension enabled above is the only push
+        // signal for them. Without server support the stream never emits
+        // past its initial value and this task just idles.
+        {
+            let h = Arc::clone(&handler);
+            let client_clone = client.clone();
+            let stop_rx = stop_rx.clone();
+            self.spawn_tracked("own-profile-watcher", watch_own_profile(h, client_clone, stop_rx));
+        }
 
         // Room info watcher: maintains a per-room cache and re-emits the room
         // list on every notable update. The notable_update_receiver carries the
@@ -1739,6 +1770,67 @@ async fn watch_backup_state(
                         total_keys:    0,
                     });
                 }
+            }
+            else => break,
+        }
+    }
+}
+
+/// Own-profile watcher (MSC4262): fire `on_own_profile_changed` whenever the
+/// stored global profile for the logged-in user changes during sync. The
+/// stream's first item is the stored baseline, not a change, so it is only
+/// recorded. The stored profile only holds fields the server has delivered,
+/// so name/avatar are forwarded with a presence flag: absent means "unknown",
+/// not "unset".
+async fn watch_own_profile(
+    h: Arc<Mutex<SendHandler>>,
+    client: Client,
+    mut stop_rx: watch::Receiver<bool>,
+) {
+    use futures_util::StreamExt;
+    let stream = match client.subscribe_to_own_profile() {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!("own-profile watcher not started: {e}");
+            return;
+        }
+    };
+    let mut stream = std::pin::pin!(stream);
+
+    // UserProfile has no PartialEq; it wraps a BTreeMap, so its JSON form is
+    // a stable comparison key.
+    let key = |p: &matrix_sdk::ruma::profile::UserProfile| {
+        serde_json::to_string(p).unwrap_or_default()
+    };
+    let mut prev: Option<String> = None;
+
+    loop {
+        tokio::select! {
+            _ = stop_rx.changed() => {
+                if *stop_rx.borrow() { break; }
+            }
+            Some(profile) = stream.next() => {
+                let cur = key(&profile);
+                let Some(prev_key) = prev.replace(cur.clone()) else {
+                    tracing::info!(
+                        "own-profile watcher: stored MSC4262 profile {}",
+                        if cur == "{}" { "empty (nothing received yet)" } else { "present" },
+                    );
+                    continue;
+                };
+                if prev_key == cur {
+                    continue;
+                }
+                tracing::info!("own-profile watcher: global profile changed via MSC4262");
+                let name = profile.get("displayname");
+                let avatar = profile.get("avatar_url");
+                let guard = h.lock();
+                guard.on_own_profile_changed(
+                    name.is_some(),
+                    name.and_then(|v| v.as_str()).unwrap_or(""),
+                    avatar.is_some(),
+                    avatar.and_then(|v| v.as_str()).unwrap_or(""),
+                );
             }
             else => break,
         }

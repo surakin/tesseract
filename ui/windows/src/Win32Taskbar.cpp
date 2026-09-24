@@ -3,6 +3,7 @@
 #include "resource.h"
 
 #include "tk/i18n.h"
+#include <tesseract/launch_args.h>
 #include <tesseract/paths.h>
 #include <tesseract/tray_icon.h>
 
@@ -46,6 +47,15 @@ std::wstring to_wide(const std::string& text)
     MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()),
                         result.data(), count);
     return result;
+}
+
+// Jump List arguments relaunch into the running --profile.
+std::wstring with_profile(const std::wstring& args)
+{
+    std::wstring out;
+    for (const auto& arg : tesseract::profile_relaunch_args(tesseract::profile()))
+        out += to_wide(arg) + L" ";
+    return out + args;
 }
 
 std::string to_utf8(const std::wstring& text)
@@ -628,9 +638,9 @@ void Win32Taskbar::rebuild_classic_jump_list_()
                                        aumid_.c_str()))
             tasks->AddObject(link.Get());
     };
-    add_task(L"--open-quick-switcher", quick_switcher_label_);
-    add_task(L"--open-message-search", message_search_label_);
-    add_task(L"--open-settings", settings_label_);
+    add_task(with_profile(L"--open-quick-switcher"), quick_switcher_label_);
+    add_task(with_profile(L"--open-message-search"), message_search_label_);
+    add_task(with_profile(L"--open-settings"), settings_label_);
 
     if (!recent_rooms_.empty())
     {
@@ -642,7 +652,8 @@ void Win32Taskbar::rebuild_classic_jump_list_()
             UINT added = 0;
             for (const auto& room : recent_rooms_)
             {
-                const std::wstring args = L"--open-room=\"" + room.room_id + L"\"";
+                const std::wstring args =
+                    with_profile(L"--open-room=\"" + room.room_id + L"\"");
                 if (removed_arguments.contains(args)) continue;
                 if (auto link = make_task_link(exe, args.c_str(),
                                                room.title.c_str(),
@@ -751,16 +762,17 @@ void Win32Taskbar::rebuild_packaged_jump_list_()
             if (!logo.empty()) item.Logo(Uri(logo));
             list.Items().Append(item);
         };
-        append(L"--open-quick-switcher", quick_switcher_label_, L"",
+        append(with_profile(L"--open-quick-switcher"), quick_switcher_label_, L"",
                L"ms-appx:///Assets/Task.png");
-        append(L"--open-message-search", message_search_label_, L"",
+        append(with_profile(L"--open-message-search"), message_search_label_, L"",
                L"ms-appx:///Assets/Task.png");
-        append(L"--open-settings", settings_label_, L"",
+        append(with_profile(L"--open-settings"), settings_label_, L"",
                L"ms-appx:///Assets/Task.png");
         const auto group = to_wide(tk::tr("Recent rooms"));
         for (const auto& room : recent_rooms_)
         {
-            append(L"--open-room=\"" + room.room_id + L"\"", room.title,
+            append(with_profile(L"--open-room=\"" + room.room_id + L"\""),
+                   room.title,
                    group, packaged_avatar_uri_(room.room_id));
         }
         list.SaveAsync().get();

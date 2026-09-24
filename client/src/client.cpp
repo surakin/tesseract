@@ -29,6 +29,22 @@
 namespace tesseract
 {
 
+namespace
+{
+
+std::string& log_filter_override_storage()
+{
+    static std::string filter;
+    return filter;
+}
+
+} // namespace
+
+void set_log_filter_override(std::string filter)
+{
+    log_filter_override_storage() = std::move(filter);
+}
+
 // ---------------------------------------------------------------------------
 // Pimpl
 // ---------------------------------------------------------------------------
@@ -72,7 +88,8 @@ struct Client::Impl
 
     explicit Impl()
         : ffi(tesseract_ffi::client_create(
-              Settings::instance().sdk_log_level.c_str()))
+              Settings::instance().sdk_log_level.c_str(),
+              log_filter_override_storage().c_str()))
     {
     }
 };
@@ -316,6 +333,20 @@ void Client::start_sync(IEventHandler* handler)
     impl_->handler_slot =
         std::make_shared<tesseract_ffi::HandlerSlot>(handler);
     impl_->ffi->start_sync(
+        std::make_unique<tesseract_ffi::EventHandlerBridge>(
+            impl_->handler_slot));
+}
+
+void Client::attach_event_handler(IEventHandler* handler)
+{
+    MUT_FFI;
+    if (impl_->handler_slot)
+    {
+        impl_->handler_slot->detach();
+    }
+    impl_->handler_slot =
+        std::make_shared<tesseract_ffi::HandlerSlot>(handler);
+    impl_->ffi->attach_event_handler(
         std::make_unique<tesseract_ffi::EventHandlerBridge>(
             impl_->handler_slot));
 }
@@ -1846,6 +1877,7 @@ static RoomSummary parse_room_summary_json(const std::string& json)
     s.guest_can_join     = js_bool(j, "guest_can_join", false);
     s.encryption         = js_str(j, "encryption");
     s.is_space           = js_bool(j, "is_space", false);
+    s.is_call_room       = js_bool(j, "is_call_room", false);
     s.membership         = js_str(j, "membership");
     return s;
 }
@@ -2407,6 +2439,7 @@ RoomSummary RoomSummary::from_json(const std::string& json)
     s.join_rule          = js_str(j, "join_rule");
     s.world_readable     = js_bool(j, "world_readable", false);
     s.is_space           = js_bool(j, "is_space", false);
+    s.is_call_room       = js_bool(j, "is_call_room", false);
     s.membership         = js_str(j, "membership");
     return s;
 }
@@ -2749,6 +2782,38 @@ Client::space_children_all(const std::string& space_id) const
         result.push_back(std::string(s));
     }
     return result;
+}
+
+bool Client::can_edit_space_children(const std::string& space_id) const
+{
+    SH_FFI;
+    return impl_->ffi->can_edit_space_children(space_id);
+}
+
+void Client::add_room_to_space_async(std::uint64_t request_id,
+                                     const std::string& space_id,
+                                     const std::string& room_id,
+                                     const std::vector<std::string>& via)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    const auto vs = to_rust_strings(via);
+    impl_->ffi->add_room_to_space_async(request_id, space_id, room_id, vs);
+}
+
+void Client::remove_room_from_space_async(std::uint64_t request_id,
+                                          const std::string& space_id,
+                                          const std::string& room_id)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    impl_->ffi->remove_room_from_space_async(request_id, space_id, room_id);
 }
 
 bool Client::needs_recovery() const

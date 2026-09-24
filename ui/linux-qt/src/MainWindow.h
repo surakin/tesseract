@@ -95,6 +95,11 @@ public:
     /// no token is available.
     void activateOnStartup();
     void openMatrixLink(const std::string& uri) { open_matrix_link(uri); }
+    /// Command-line launch action (see ShellBase::dispatch_launch_action_).
+    void dispatchLaunchAction(tesseract::LaunchAction action, std::string room_id)
+    {
+        dispatch_launch_action_(action, std::move(room_id));
+    }
 
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
     /// Seed the deterministic, network-free fixture, capture both themes, and
@@ -218,6 +223,9 @@ private:
     void on_server_info_ready_ui_() override;
     void on_own_extended_profile_ready_ui_() override;
     void open_app_settings_ui_() override { openSettings(); }
+    void raise_main_window_ui_() override;
+    void open_quick_switch_ui_() override { openQuickSwitch_(); }
+    void open_message_search_ui_() override { openMessageSearch_(); }
     void on_profile_field_result_ui_(const std::string& key, bool ok,
                                      const std::string& error) override;
     void update_typing_bar_(const std::string& text, bool visible) override;

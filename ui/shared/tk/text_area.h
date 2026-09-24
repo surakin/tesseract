@@ -91,7 +91,7 @@ public:
                          const std::string& mxc_url, const Image* image);
     std::vector<tesseract::MentionSeg> composer_draft() const;
     void set_cursor_byte_pos(int byte_pos);
-    void set_mention_colors(Color bg, Color fg);
+    void set_mention_colors(const MentionColors& colors);
     void refresh_mention_avatar(const std::string& user_id, const Image* avatar);
     void refresh_room_mention_avatar(const Image* avatar);
 
@@ -258,7 +258,7 @@ private:
         std::optional<bool> enabled;
         std::function<void(const std::string&)> on_changed;
         std::function<void()> on_submit;
-        std::optional<std::pair<Color, Color>> mention_colors;
+        std::optional<MentionColors> mention_colors;
         std::function<bool()> on_edit_last;
         NativeTextArea::ImagePasteHandler on_image_paste;
         NativeTextArea::FilePasteHandler on_file_paste;

@@ -100,6 +100,11 @@ public:
     float stack_height(const MessageRowData& row, tk::CanvasFactory& factory,
                        float col_w) const;
 
+    // Widest card in the stack within `col_w` (0 when there is no card). Used
+    // by the bubble layout to hug the bubble to the cards instead of filling
+    // the row.
+    float stack_width(const MessageRowData& row, float col_w) const;
+
     // --- card paint (Adapter delegates here) ---
     // Draws every card_for(row) card starting at (x, y) within `col_w`,
     // advancing downward, and records each card's world-space rect for the

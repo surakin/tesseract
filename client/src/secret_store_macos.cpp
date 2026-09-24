@@ -313,12 +313,17 @@ void ensure_map_loaded()
 namespace tesseract
 {
 
+// Every entry point keys by SecretStore::key_for(user_id) — the bare MXID in
+// the default profile, profile-scoped otherwise — for both the consolidated
+// map and the legacy per-user items.
+
 // load() populates g_map from the Keychain on the first call (one
 // SecItemCopyMatching at most), then serves subsequent callers from the cache.
 // If the user is not in the consolidated item, falls back to the old
 // per-user format so sessions survive the first post-upgrade launch.
-std::optional<std::string> SecretStore::load(const std::string& user_id)
+std::optional<std::string> SecretStore::load(const std::string& user_id_in)
 {
+    const std::string user_id = key_for(user_id_in);
     std::lock_guard<std::mutex> lock(g_lock);
 
     ensure_map_loaded();
@@ -345,8 +350,9 @@ std::optional<std::string> SecretStore::load(const std::string& user_id)
 // save() updates the in-memory map and flushes to the Keychain with
 // SecItemUpdate/SecItemAdd — never SecItemCopyMatching — so token-refresh
 // calls that arrive at runtime cannot trigger Keychain access dialogs.
-bool SecretStore::save(const std::string& user_id, const std::string& json)
+bool SecretStore::save(const std::string& user_id_in, const std::string& json)
 {
+    const std::string user_id = key_for(user_id_in);
     std::lock_guard<std::mutex> lock(g_lock);
 
     // Defensive: if save() somehow races ahead of the first load() (not
@@ -363,8 +369,9 @@ bool SecretStore::save(const std::string& user_id, const std::string& json)
     return true;
 }
 
-void SecretStore::remove(const std::string& user_id)
+void SecretStore::remove(const std::string& user_id_in)
 {
+    const std::string user_id = key_for(user_id_in);
     std::lock_guard<std::mutex> lock(g_lock);
 
     ensure_map_loaded();

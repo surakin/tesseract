@@ -2489,6 +2489,18 @@ public:
             static_cast<float>(font_role_pt(emoji_role, win32_system_base_pt())) *
             (96.0f / 72.0f);
 
+        // Custom-emoticon (MSC2545, TextSpan::is_image) box size: BigEmoji
+        // for an emoji-only body, else InlineCustomEmoji — independent of
+        // emoji_size_dip above, which only sizes native is_emoji_run glyph
+        // runs (still InlineEmoji, a deliberate same-as-body no-op).
+        const FontRole custom_emoji_role = (s.role == FontRole::BigEmoji)
+                                                ? FontRole::BigEmoji
+                                                : FontRole::InlineCustomEmoji;
+        const float custom_emoji_size_dip =
+            static_cast<float>(
+                font_role_pt(custom_emoji_role, win32_system_base_pt())) *
+            (96.0f / 72.0f);
+
         // Ascent/descent of this layout's own role — needed to size a
         // mention-pill span's reserved box to exactly what
         // tk::measure_pill() computes (so the placeholder here and the
@@ -2555,7 +2567,7 @@ public:
             else if (sp.is_image)
             {
                 ComPtr<IDWriteInlineObject> obj;
-                obj.Attach(new BlankInlineObject(emoji_size_dip));
+                obj.Attach(new BlankInlineObject(custom_emoji_size_dip));
                 layout->SetInlineObject(obj.Get(), tr);
             }
             else if (sp.is_emoji_run)

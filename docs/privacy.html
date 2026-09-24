@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tesseract — Privacy Policy</title>
+<meta name="description" content="Privacy policy for Tesseract, the native desktop Matrix client.">
+<link rel="canonical" href="https://surakin.github.io/tesseract/privacy.html">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="icon" type="image/png" sizes="160x160" href="favicon-160.png">
+<link rel="apple-touch-icon" href="favicon-160.png">
+<style>
+  :root {
+    --page-bg: #E7E9EE;
+    --page-panel: #FFFFFF;
+    --page-text: #111111;
+    --page-muted: #5B616E;
+    --accent: #0084FF;
+    --border: #D0D3D8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --page-bg: #121316;
+      --page-panel: #1B1D21;
+      --page-text: #F2F3F5;
+      --page-muted: #9CA0A8;
+      --border: #33363C;
+    }
+  }
+  :root[data-theme="dark"] {
+    --page-bg: #121316;
+    --page-panel: #1B1D21;
+    --page-text: #F2F3F5;
+    --page-muted: #9CA0A8;
+    --border: #33363C;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page-bg);
+    color: var(--page-text);
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+  }
+  main {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 48px 20px 80px;
+  }
+  .panel {
+    background: var(--page-panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 32px clamp(20px, 5vw, 48px);
+  }
+  h1 { font-size: 1.6rem; margin-bottom: 4px; }
+  .updated { color: var(--page-muted); font-size: 0.9rem; margin-top: 0; }
+  h2 { font-size: 1.15rem; margin-top: 2em; }
+  a { color: var(--accent); }
+  code { background: rgba(128,128,128,0.15); padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.9em; }
+  .back { display: inline-block; margin-bottom: 24px; color: var(--page-muted); text-decoration: none; font-size: 0.9rem; }
+  .back:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<main>
+  <a class="back" href="index.html">&larr; Tesseract</a>
+  <div class="panel">
+    <h1>Privacy Policy</h1>
+    <p class="updated">Last updated: 2026-09-19</p>
+
+    <p>
+      Tesseract is a Matrix chat client. It is not a hosted service: there is
+      no Tesseract server, and the people who develop Tesseract do not
+      operate any infrastructure that your account data, messages, or media
+      pass through. This page describes what Tesseract stores on your
+      device and what it sends over the network, and to whom.
+    </p>
+
+    <h2>Data stored on your device</h2>
+    <p>
+      Tesseract stores your login session, encryption keys, and a local
+      cache of rooms and messages on your device, alongside your app
+      settings. None of this is collected by or transmitted to the
+      Tesseract developers. On Windows this lives under
+      <code>%APPDATA%\Tesseract</code>; on macOS under
+      <code>~/Library/Application Support/Tesseract</code>; on Linux under
+      <code>~/.local/share/tesseract</code> (settings under
+      <code>~/.config/tesseract</code>).
+    </p>
+    <p>
+      Tesseract also keeps a separate, expendable cache of media you've
+      viewed — downloaded images, stickers, video thumbnails, map tiles,
+      and voice-message waveforms — so it doesn't have to re-download them
+      each time. This cache can be cleared at any time from Settings, and
+      is stored under <code>%LOCALAPPDATA%\Tesseract</code> on Windows,
+      <code>~/Library/Caches/Tesseract</code> on macOS, and
+      <code>~/.cache/tesseract</code> on Linux.
+    </p>
+
+    <h2>Data sent over the network</h2>
+    <p>
+      Tesseract communicates directly with the Matrix homeserver you log
+      in with — the one you or your account's administrator chose, not one
+      operated by the Tesseract developers. That connection carries your
+      login/authentication, your messages, room state, and any media you
+      send or receive, exactly as it would for any other Matrix client
+      connecting to that homeserver. If you communicate with users on other
+      homeservers, your messages are federated to those homeservers by
+      your own homeserver, per the Matrix protocol.
+    </p>
+    <p>
+      Login via Matrix Authentication Service (MAS) uses a loopback
+      redirect handled entirely on your own device; the authentication
+      exchange itself happens directly between your device and your
+      homeserver's own OAuth server.
+    </p>
+
+    <h2>Microphone and camera</h2>
+    <p>
+      Tesseract only accesses your microphone or camera when you start or
+      join a voice/video call. That media is sent to the call
+      infrastructure (SFU) provided by the homeserver(s) involved in the
+      call — never to the Tesseract developers.
+    </p>
+
+    <h2>Crash reports</h2>
+    <p>
+      Tesseract can optionally write a local crash report file to help you
+      diagnose a problem. This is off by default, and even when enabled,
+      Tesseract does not automatically upload or transmit these reports
+      anywhere — they stay on your device unless you choose to share one
+      yourself, for example by attaching it to a GitHub issue.
+    </p>
+
+    <h2>Third parties</h2>
+    <p>
+      Your homeserver operator, and any call/SFU infrastructure it uses,
+      are third parties independent of Tesseract's developers. Their own
+      privacy practices govern the data your account sends to them. Check
+      with your homeserver administrator if you have questions about how
+      your homeserver handles your data.
+    </p>
+
+    <h2>Children's privacy</h2>
+    <p>
+      Tesseract is not directed at children under 13, and the Tesseract
+      developers do not knowingly collect personal information from
+      anyone, regardless of age — see above.
+    </p>
+
+    <h2>Changes to this policy</h2>
+    <p>
+      If this policy changes, the update will be posted on this page.
+    </p>
+
+    <h2>Contact</h2>
+    <p>
+      Questions about this policy or about Tesseract can be raised via the
+      project's GitHub repository:
+      <a href="https://github.com/surakin/tesseract">github.com/surakin/tesseract</a>.
+    </p>
+  </div>
+</main>
+</body>
+</html>

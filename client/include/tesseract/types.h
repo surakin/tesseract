@@ -30,6 +30,7 @@ enum class EventType
     PinnedEvent, // m.room.pinned_events state-event timeline row
     CallNotification, // org.matrix.msc4075.rtc.notification
     Membership, // m.room.member state-event row (join/leave/kick/ban/invite/knock/…)
+    RoomName, // m.room.name state-event timeline row
 };
 
 /// One `m.room.member` membership transition, computed server-side by
@@ -448,6 +449,18 @@ struct PinnedStateEvent : public Event
     }
 };
 
+/// m.room.name state event surfaced as a timeline row. `sender`/`sender_name`
+/// (base Event fields) identify who changed the name.
+struct RoomNameStateEvent : public Event
+{
+    RoomNameStateEvent()
+    {
+        type = EventType::RoomName;
+    }
+    std::string new_name; ///< empty if the name was removed
+    std::string old_name; ///< empty if the room had no prior name
+};
+
 /// org.matrix.msc4075.rtc.notification — MatrixRTC call ring/notification event.
 /// `body` carries the m.call.intent value: "audio" | "video" | "" (unknown/absent).
 struct CallNotificationEvent : public Event
@@ -567,6 +580,9 @@ struct RoomInfo
     std::string last_message_thumbnail_url;
     uint64_t last_activity_ts = 0;
     bool is_space = false;
+    /// True when creation_content.type is the MSC3417 call-room type
+    /// (org.matrix.msc3417.call, or the eventual stable m.call).
+    bool is_call_room = false;
     bool is_favorite = false;
     bool is_low_priority = false;
     /// HTML body from the MSC3765 m.topic block; empty when absent.
@@ -643,7 +659,8 @@ struct RoomInfo
                last_message_sticker_url == other.last_message_sticker_url &&
                last_message_thumbnail_url == other.last_message_thumbnail_url &&
                last_activity_ts == other.last_activity_ts &&
-               is_space == other.is_space && is_favorite == other.is_favorite &&
+               is_space == other.is_space && is_call_room == other.is_call_room &&
+               is_favorite == other.is_favorite &&
                is_low_priority == other.is_low_priority &&
                topic_html == other.topic_html &&
                is_encrypted == other.is_encrypted &&
@@ -737,6 +754,8 @@ struct RoomSummary
     std::string
         encryption; ///< encryption algorithm or empty when not encrypted
     bool is_space = false;
+    /// True when creation_content.type is the MSC3417 call-room type.
+    bool is_call_room = false;
     /// Current user's membership in this room: "join", "invite",
     /// "leave", "ban", "knock", or empty when unknown / unauthenticated.
     std::string membership;
@@ -858,7 +877,8 @@ struct RoomCreateOptions
     /// preset (join_rule + history_visibility defaults).
     std::string visibility = "private";
     bool encrypted = false;   // adds an m.room.encryption initial_state event
-    bool is_space = false;    // sets creation_content.room_type = "m.space" (unused by v1 UI)
+    bool is_space = false;    // sets creation_content.type = "m.space"
+    bool is_call_room = false; // sets creation_content.type = "org.matrix.msc3417.call" (MSC3417)
     std::vector<std::string> invite; // initial invitee Matrix user IDs
     /// Reason shown to invitees, e.g. "Invited to discuss project updates"
     /// (MSC4491). Empty = no reason. Sent unencrypted even in encrypted

@@ -1,7 +1,7 @@
 pub use super::client::ClientFfi;
 
-pub fn client_create(log_level: &str) -> Box<ClientFfi> {
-    Box::new(ClientFfi::new(log_level))
+pub fn client_create(log_level: &str, filter_override: &str) -> Box<ClientFfi> {
+    Box::new(ClientFfi::new(log_level, filter_override))
 }
 
 /// Installs the Rust-side half of the optional local crash handler (see
@@ -159,6 +159,19 @@ pub mod ffi {
         last_activity_ts: u64,
         /// True when this room's type is "m.space".
         is_space: bool,
+        /// Stable, sorted, \x01-joined summary of this room's current
+        /// m.space.child children (only ever non-empty when is_space) — see
+        /// room_list_fingerprint's doc comment in client/mod.rs for why this
+        /// exists: adding/removing a space child is a state change on the
+        /// SPACE's own room, not the child's, so none of this room's other
+        /// fields change when it happens. Not consumed on the C++ side
+        /// (space_children()/space_children_all() remain the real data
+        /// source there) — this exists purely so the fingerprint notices.
+        space_children_summary: String,
+        /// True when this room's `m.room.create` `creation_content.type` is
+        /// the MSC3417 call-room type (`org.matrix.msc3417.call`, or the
+        /// eventual stable `m.call`).
+        is_call_room: bool,
         /// True when the room is tagged `m.favourite` by the current user.
         is_favorite: bool,
         /// True when the room is tagged `m.lowpriority` by the current user.
@@ -581,6 +594,12 @@ pub mod ffi {
         /// "m.room.member" only: mxc:// avatar URL of the target as
         /// recorded in this state event's content. Empty when absent.
         membership_target_avatar_url: String,
+        /// "m.room.name" only: the new room name. Empty when the name was
+        /// removed. Never English prose — the raw name value only.
+        room_name_new: String,
+        /// "m.room.name" only: the previous room name, empty when the room
+        /// had none before (or the diff carries no previous content).
+        room_name_old: String,
     }
 
     /// Outcome of an asynchronous SDK operation.
@@ -1024,6 +1043,10 @@ pub mod ffi {
         visibility: String,
         encrypted: bool,
         is_space: bool,
+        /// Sets `creation_content.type` to the MSC3417 call-room type
+        /// (`org.matrix.msc3417.call`) — see `build_create_room_request` in
+        /// room_list.rs.
+        is_call_room: bool,
         invite: Vec<String>,
         /// Reason shown to invitees. Empty = no reason. When non-empty,
         /// invitees are invited via a follow-up `/invite` call (carrying the
@@ -1395,6 +1418,18 @@ pub mod ffi {
         /// change from another device). `json` is the raw event content, or
         /// `"{}"` when missing. The UI re-reads via `media_preview_config`.
         fn on_media_preview_config_updated(self: &EventHandlerBridge, json: &str);
+        /// Fired when the logged-in user's global profile changes during sync
+        /// (MSC4262 Profiles extension), e.g. an edit made on another device.
+        /// `has_*` is false when the server hasn't delivered that field, in
+        /// which case the value is meaningless. The UI re-fetches the
+        /// extended profile for the remaining fields.
+        fn on_own_profile_changed(
+            self: &EventHandlerBridge,
+            has_display_name: bool,
+            display_name: &str,
+            has_avatar_url: bool,
+            avatar_url: &str,
+        );
         /// Fired shortly after `on_room_preview_override_ready` when
         /// `room_media_preview_override_async`'s background network
         /// verification (see its doc — sliding sync's account-data extension
@@ -1813,7 +1848,10 @@ pub mod ffi {
     extern "Rust" {
         type ClientFfi;
 
-        fn client_create(log_level: &str) -> Box<ClientFfi>;
+        /// `filter_override`: a `--log-level`/`--verbose` command-line value
+        /// (bare level or full EnvFilter directives); empty when not given.
+        /// Takes precedence over RUST_LOG and the persisted `log_level`.
+        fn client_create(log_level: &str, filter_override: &str) -> Box<ClientFfi>;
 
         // ----- Optional local crash handler -----
 
@@ -1981,6 +2019,15 @@ pub mod ffi {
 
         // ----- Sync -----
 
+        /// Attach the event-handler bridge without starting the sync loop
+        /// itself. Lets the encryption-setup overlay's enable_recovery/
+        /// recover progress callbacks (routed through the same handler)
+        /// work while a fresh login's real sync is deliberately withheld —
+        /// see ShellBase::finalize_login_blocking_'s gating and
+        /// start_sync's own handler wiring, which this mirrors. start_sync
+        /// re-attaches the same way (harmlessly) when it later actually
+        /// spawns the sync tasks.
+        fn attach_event_handler(self: &mut ClientFfi, handler: UniquePtr<EventHandlerBridge>);
         fn start_sync(self: &mut ClientFfi, handler: UniquePtr<EventHandlerBridge>);
         /// Signals shutdown (session flush + stop channel) without the
         /// exclusive lock `stop_sync` needs, so it can run immediately even
@@ -3632,6 +3679,34 @@ pub mod ffi {
         /// keep running.
         fn cancel_space_summaries(self: &ClientFfi, space_id: &str);
 
+        /// True iff the current user's power level meets the requirement for
+        /// sending m.space.child in this space. Cached read — no network
+        /// round-trip. Used to gate drag-drop/add-remove UI affordances.
+        fn can_edit_space_children(self: &ClientFfi, space_id: &str) -> bool;
+
+        /// Add `room_id` as a child of `space_id` (m.space.child state event,
+        /// state_key = room_id, non-empty via). Non-blocking; spawns on the
+        /// tokio runtime; result delivered via
+        /// on_room_action_complete(request_id, ok, "", message).
+        fn add_room_to_space_async(
+            self: &ClientFfi,
+            request_id: u64,
+            space_id: &str,
+            room_id: &str,
+            via: &Vec<String>,
+        );
+
+        /// Remove `room_id` as a child of `space_id` (m.space.child state
+        /// event, state_key = room_id, empty via — per spec this invalidates
+        /// the child). Non-blocking; result delivered via
+        /// on_room_action_complete(request_id, ok, "", message).
+        fn remove_room_from_space_async(
+            self: &ClientFfi,
+            request_id: u64,
+            space_id: &str,
+            room_id: &str,
+        );
+
         /// Async counterpart of `get_server_info`. Spawns the fetch on the
         /// tokio runtime and fires `on_server_info_ready(request_id, info_json)`
         /// on completion. Does not pin a thread.
@@ -3941,6 +4016,8 @@ impl Clone for ffi::RoomInfo {
             last_message_thumbnail_url: self.last_message_thumbnail_url.clone(),
             last_activity_ts: self.last_activity_ts,
             is_space: self.is_space,
+            space_children_summary: self.space_children_summary.clone(),
+            is_call_room: self.is_call_room,
             is_favorite: self.is_favorite,
             is_low_priority: self.is_low_priority,
             is_encrypted: self.is_encrypted,

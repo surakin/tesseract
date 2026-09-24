@@ -13,9 +13,10 @@
 <Package
     xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
     xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+    xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
     xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
     xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-    IgnorableNamespaces="uap desktop rescap">
+    IgnorableNamespaces="uap uap10 desktop rescap">
 
   <Identity
       Name="@TESSERACT_MSIX_IDENTITY_NAME@"
@@ -24,7 +25,7 @@
       ProcessorArchitecture="x64" />
 
   <Properties>
-    <DisplayName>Tesseract</DisplayName>
+    <DisplayName>Tesseract (Matrix)</DisplayName>
     <PublisherDisplayName>@TESSERACT_MSIX_PUBLISHER_DISPLAY_NAME@</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
     <Description>Tesseract — cross-platform Matrix chat client</Description>
@@ -35,8 +36,13 @@
   </Resources>
 
   <Dependencies>
-    <!-- 10.0.18362.0 = Windows 10 version 1903, the plan's minimum target. -->
-    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.18362.0" MaxVersionTested="10.0.22621.0" />
+    <!-- 10.0.19041.0 = Windows 10 version 2004 — the minimum OS that
+         recognizes uap10:RuntimeBehavior/TrustLevel below. Was 1903
+         (10.0.18362.0) until AppData/registry virtualization for the
+         legacy Windows.FullTrustApplication declaration was found to
+         corrupt matrix-sdk's on-disk session/crypto store — see
+         desktop-to-uwp-behind-the-scenes in Microsoft's MSIX docs. -->
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.22621.0" />
   </Dependencies>
 
   <Capabilities>
@@ -47,9 +53,10 @@
   </Capabilities>
 
   <Applications>
-    <Application Id="Tesseract" Executable="Tesseract.exe" EntryPoint="Windows.FullTrustApplication">
+    <Application Id="Tesseract" Executable="Tesseract.exe"
+        uap10:RuntimeBehavior="win32App" uap10:TrustLevel="mediumIL">
       <uap:VisualElements
-          DisplayName="Tesseract"
+          DisplayName="Tesseract (Matrix)"
           Description="Tesseract — cross-platform Matrix chat client"
           Square150x150Logo="Assets\Square150x150Logo.png"
           Square44x44Logo="Assets\Square44x44Logo.png"
@@ -65,7 +72,7 @@
              unpackaged/NSIS build writes at first launch. -->
         <uap:Extension Category="windows.protocol">
           <uap:Protocol Name="matrix">
-            <uap:DisplayName>Tesseract</uap:DisplayName>
+            <uap:DisplayName>Tesseract (Matrix)</uap:DisplayName>
           </uap:Protocol>
         </uap:Extension>
 
@@ -75,7 +82,7 @@
           <desktop:StartupTask
               TaskId="TesseractStartup"
               Enabled="false"
-              DisplayName="Tesseract" />
+              DisplayName="Tesseract (Matrix)" />
         </desktop:Extension>
       </Extensions>
     </Application>

@@ -49,7 +49,9 @@ public:
         Waiting
     };
 
-    /// `Initial` — first login on a fresh install; Cancel is hidden.
+    /// `Initial` — first login on a fresh install; Cancel is hidden on the
+    /// form but shown while State::Waiting (so a user stuck on the browser
+    /// step can abort and retry with a different homeserver).
     /// `AddAccount` — adding a second/Nth account; Cancel is always visible.
     enum class Mode
     {

@@ -1,5 +1,6 @@
 #include "LinuxAutostartQt.h"
 
+#include <tesseract/launch_args.h>
 #include <tesseract/paths.h>
 
 #include <climits>
@@ -10,14 +11,15 @@
 namespace
 {
 
-constexpr const char* kDesktopFileName = "tesseract-matrix.desktop";
-
 std::filesystem::path autostart_desktop_path()
 {
+    // Per --profile, so each profile has its own login item.
+    const std::string file_name =
+        "tesseract-matrix" + tesseract::profile_suffix() + ".desktop";
     // tesseract::config_dir() resolves to $XDG_CONFIG_HOME/tesseract (or
     // ~/.config/tesseract); autostart entries live in the sibling
     // .../autostart/ directory per the XDG autostart spec.
-    return tesseract::config_dir().parent_path() / "autostart" / kDesktopFileName;
+    return tesseract::config_dir().parent_path() / "autostart" / file_name;
 }
 
 // Resolve the running binary's absolute path so the Exec= line works
@@ -61,6 +63,12 @@ bool LinuxAutostartQt::set_enabled(bool enabled)
     if (ec)
         return false;
 
+    std::string profile_args;
+    for (const auto& arg : tesseract::profile_relaunch_args(tesseract::profile()))
+    {
+        profile_args += " " + arg;
+    }
+
     std::ofstream f(path, std::ios::trunc);
     if (!f.is_open())
         return false;
@@ -69,7 +77,7 @@ bool LinuxAutostartQt::set_enabled(bool enabled)
          "Type=Application\n"
          "Name=Tesseract\n"
          "Comment=Matrix chat client\n"
-         "Exec=" << exe << " --autostart\n"
+         "Exec=" << exe << " --autostart" << profile_args << "\n"
          "Icon=tesseract\n"
          "Categories=Network;InstantMessaging;Chat;\n"
          "StartupNotify=false\n"

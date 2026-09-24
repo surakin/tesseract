@@ -8,11 +8,13 @@
 #include <QStandardPaths>
 #include <csignal>
 #include <cstdlib>
+#include <filesystem>
 #include <string>
 #include <sys/socket.h>
 #include <unistd.h>
 #include "MainWindow.h"
 #include "app/AccountManager.h"
+#include "app/Launch.h"
 #include "tk/gst_hw_probe.h"
 #include "tk/qt_accessible.h"
 #include "tk/i18n.h"
@@ -20,8 +22,6 @@
 extern "C" {
 }
 #include <tesseract/client.h>
-#include <tesseract/crash_handler.h>
-#include <tesseract/launch_args.h>
 #include <tesseract/paths.h>
 #include <tesseract/settings.h>
 
@@ -107,12 +107,36 @@ int main(int argc, char* argv[])
     });
 #endif
 
-    // Parse argv once (order-independent: --autostart and a matrix URI may
-    // appear together or alone). Shared with the other shells via
-    // client/src/launch_args.cpp instead of each hand-rolling its own
-    // single-arg check.
-    tesseract::LaunchArgs launch = tesseract::parse_launch_args(
-        std::vector<std::string>(argv + 1, argv + argc));
+    // Shared startup pipeline (ui/shared/app/Launch.h): parses argv, selects
+    // --profile, loads settings + locale, and handles --help / --version /
+    // --logoutall. Runs before QApplication so those exit without touching
+    // the display. Qt's own switches (-platform, -style, ...) are skipped by
+    // the parser and still reach QApplication below via the untouched argv.
+    tesseract::LaunchHooks hooks;
+    hooks.detect_system_lang = []
+    { return QLocale::system().name().toStdString(); };
+    hooks.i18n_dir = []
+    {
+        // <prefix>/bin/tesseract -> <prefix>/share/tesseract/i18n, the same
+        // location QCoreApplication::applicationDirPath() resolved before
+        // this ran ahead of QApplication.
+        std::error_code ec;
+        const auto exe = std::filesystem::read_symlink("/proc/self/exe", ec);
+        if (ec)
+        {
+            return std::string{};
+        }
+        return (exe.parent_path() / ".." / "share" / "tesseract" / "i18n").string();
+    };
+    hooks.acquire_instance_lock = []
+    { return tk::acquire_single_instance_lock().acquired; };
+    const tesseract::LaunchPlan plan = tesseract::prepare_launch(
+        std::vector<std::string>(argv + 1, argv + argc), hooks);
+    if (plan.exit_code)
+    {
+        return *plan.exit_code;
+    }
+    const tesseract::LaunchArgs& launch = plan.args;
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
     const bool screenshot_mode = launch.screenshot_dir.has_value();
 #endif
@@ -127,19 +151,16 @@ int main(int argc, char* argv[])
 #endif
         !tk::acquire_single_instance_lock().acquired)
     {
-        // --autostart has no meaningful action against an already-running
-        // instance — exit quietly without forwarding anything.
-        if (launch.autostart)
+        // A hidden/autostart launch with nothing to forward has no meaningful
+        // action against an already-running instance — exit quietly.
+        if (!plan.should_raise_existing_instance())
         {
             return 0;
         }
         // Another instance holds the lock. Forward any compositor-issued
-        // XDG_ACTIVATION_TOKEN (and matrix URI) so the existing window can
-        // raise itself, then exit.
-        const char* tok = std::getenv("XDG_ACTIVATION_TOKEN");
-        tk::forward_activation_request(tok ? tok : "",
-                                       launch.matrix_uri ? *launch.matrix_uri
-                                                          : std::string());
+        // XDG_ACTIVATION_TOKEN (plus matrix URI / launch action) so the
+        // existing window can raise itself and act on it, then exit.
+        tk::forward_activation_request(tk::activation_request_for(launch));
         return 0;
     }
 
@@ -178,22 +199,6 @@ int main(int argc, char* argv[])
 
     install_graceful_shutdown_signal_handlers(app);
 
-    // Load persisted settings before set_locale so the saved language
-    // preference is available when choosing the locale.
-    tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
-
-    tesseract::install_crash_handler(tesseract::Settings::instance().crash_reporting_enabled);
-
-    {
-        std::string lang = tesseract::Settings::instance().language;
-        if (lang == "auto" || lang.empty())
-        {
-            lang = QLocale::system().name().toStdString();
-        }
-        tk::set_locale(
-            (app.applicationDirPath() + "/../share/tesseract/i18n").toStdString(),
-            lang);
-    }
     app.setOrganizationName("tesseract");
     app.setWindowIcon(QIcon(":/icons/tesseract.svg"));
 
@@ -208,7 +213,7 @@ int main(int argc, char* argv[])
     }
 
     tesseract::AccountManager account_manager;
-    qt6::MainWindow window{account_manager, nullptr, launch.autostart
+    qt6::MainWindow window{account_manager, nullptr, plan.start_hidden()
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
                            , screenshot_mode
 #endif
@@ -221,7 +226,7 @@ int main(int argc, char* argv[])
         return app.exec();
     }
 #endif
-    if (!launch.autostart)
+    if (!plan.start_hidden())
     {
         window.show();
         window.activateOnStartup();
@@ -234,6 +239,9 @@ int main(int argc, char* argv[])
     {
         window.openMatrixLink(*launch.matrix_uri);
     }
+    // Held by ShellBase until the main content is showing.
+    window.dispatchLaunchAction(launch.action,
+                                launch.room_id.value_or(std::string{}));
 
     return app.exec();
 

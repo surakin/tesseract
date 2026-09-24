@@ -1,5 +1,7 @@
 #include "Win32PackageContext.h"
 
+#include <tesseract/paths.h>
+
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -60,7 +62,16 @@ std::wstring effective_aumid()
             [](UINT32* length, wchar_t* value)
             { return GetCurrentApplicationUserModelId(length, value); });
     }
-    return select_aumid(packaged, packaged_aumid);
+    std::wstring aumid = select_aumid(packaged, packaged_aumid);
+    // Unpackaged builds give each --profile its own AUMID (own taskbar
+    // group, Jump List and toast registration). A packaged install's AUMID
+    // is fixed by its manifest, so profiles there share one.
+    if (!packaged && !tesseract::profile().empty())
+    {
+        for (char c : ".p_" + tesseract::profile())
+            aumid.push_back(static_cast<wchar_t>(c));
+    }
+    return aumid;
 }
 
 std::filesystem::path local_state_path()

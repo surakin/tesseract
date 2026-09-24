@@ -60,9 +60,9 @@ public:
         ++right_count;
         return claim_generic;
     }
-    bool on_drag_hover(Point) override
+    bool on_native_drag_hover(Point) override
     {
-        ++drag_hover_count;
+        ++native_drag_hover_count;
         return claim_generic;
     }
     bool on_file_drop(Point, FileDropPayload&) override
@@ -78,10 +78,10 @@ public:
     int leave_count = 0;
     int dismiss_count = 0;
     int right_count = 0;
-    int drag_hover_count = 0;
+    int native_drag_hover_count = 0;
     int file_drop_count = 0;
     bool last_up_inside = false;
-    // When set, on_right_click / on_drag_hover / on_file_drop claim the event.
+    // When set, on_right_click / on_native_drag_hover / on_file_drop claim the event.
     bool claim_generic = false;
 
 private:
@@ -370,8 +370,8 @@ TEST_CASE("A disabled widget absorbs hover, right-click, drag-hover and "
     CHECK(root->dispatch_right_click({60, 60}) == front);
     CHECK(behind->right_count == 0);
 
-    CHECK(root->dispatch_drag_hover({60, 60}) == front);
-    CHECK(behind->drag_hover_count == 0);
+    CHECK(root->dispatch_native_drag_hover({60, 60}) == front);
+    CHECK(behind->native_drag_hover_count == 0);
 
     FileDropPayload payload;
     CHECK(root->dispatch_file_drop({60, 60}, payload) == front);

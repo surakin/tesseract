@@ -4,6 +4,7 @@
 #include <tesseract/client.h>
 #include <tesseract/event_handler.h>
 #include <tesseract/image_pack.h>
+#include <tesseract/launch_args.h>
 #include <tesseract/paths.h>
 #include <tesseract/power_monitor.h>
 #include <tesseract/screen_lock.h>
@@ -88,6 +89,31 @@ class UserPackEditor;
 class UserProfilePanel;
 }
 
+// Pure decision for how a room switch should affect an in-progress call.
+// Isolated from ShellBase's live state so it's unit-testable without a real
+// ShellBase/CallSession/CallOverlayWidget — mirrors classify_room_section's
+// (RoomListView.h) role for RoomListView.
+enum class CallRoomAction
+{
+    None,        // no active call; new room isn't a call room either.
+    AutoJoin,    // no active call; new room is a call room -> start_call().
+    AutoRestore, // active call's room == new room, was auto-floated ->
+                 // restore the user's saved (non-floating) overlay mode.
+    LeaveAndJoin,// active call's room != new room, new room is a call room ->
+                 // end_call() then start_call() for the new room.
+    AutoFloat,   // active call's room != new room, new room isn't a call
+                 // room, overlay is currently Docked/DockedExpanded ->
+                 // force Floating so it doesn't stay docked to a hidden room.
+    NoOp,        // active call's room != new room, new room isn't a call
+                 // room, overlay is already Floating/Popout -> nothing to do.
+};
+
+CallRoomAction decide_call_room_action(bool has_active_call,
+                                       bool active_call_room_is_new_room,
+                                       bool new_room_is_call_room,
+                                       bool call_auto_floated,
+                                       bool overlay_is_docked);
+
 // ShellBase holds all state and platform-agnostic logic that is identical
 // across the Qt6, GTK4, Win32, and macOS shells. Platform-specific concerns
 // (UI widget manipulation, image decode, thread-dispatch mechanism) are
@@ -163,17 +189,31 @@ public:
     };
 
     // Build the canonical user-strip context-menu item list. The order and
-    // Log Out label are defined here; platform shells supply the five action
+    // Log Out label are defined here; platform shells supply the action
     // callbacks and iterate the result to build their native menu. The QR
     // item is omitted automatically when server_info_.supports_qr_grant is
     // false. show_qr_grant may be a null std::function even when QR is
-    // supported — the item will still be omitted.
+    // supported — the item will still be omitted. Likewise, verify_session
+    // is omitted when null — pass it only when the active session is
+    // currently unverified (mirrors UserInfo's warning-dot condition), so
+    // the item lets the user restart verification mid-session and
+    // disappears once verified.
     std::vector<UserMenuItem> build_user_menu_items_(
         std::function<void()> open_settings,
         std::function<void()> add_account,
         std::function<void()> show_qr_grant,
         std::function<void()> logout,
-        std::function<void()> quit) const;
+        std::function<void()> quit,
+        std::function<void()> verify_session = nullptr) const;
+
+    // Callback for build_user_menu_items_'s verify_session parameter above:
+    // null when the active account is already verified (the item is then
+    // omitted), otherwise reopens the same encryption-setup dialog shown
+    // right after login (recovery-key entry, or Fresh bootstrap — whichever
+    // check_encryption_setup_ picks; it doesn't require another device).
+    // Every shell wants the exact same condition and action here, so it's
+    // consolidated instead of duplicated four times.
+    std::function<void()> verify_session_menu_callback_();
 
     // Arm the pending-login OAuth flow's temp directory. Installed (via a
     // shell-native one-liner lambda) as the LoginView's on-begin-oauth
@@ -203,10 +243,12 @@ public:
     // ── MatrixRTC call control (Layer 4) ─────────────────────────────────────
     // start_call creates a CallSession, wires audio (and video if a camera is
     // available) capture routing, and calls rtc_start_call on the client.
-    // No-op when a call is already active.
+    // No-op when a call is already active. start_audio_muted mutes the mic
+    // immediately after joining — the lobby's mic toggle feeds this.
     void start_call(const std::string& room_id,
-                    const std::string& slot_id   = "call#default",
-                    bool               audio_only = false);
+                    const std::string& slot_id        = "call#default",
+                    bool               audio_only      = false,
+                    bool               start_audio_muted = false);
     // End the active call and tear down all call resources. No-op when idle.
     void end_call();
     // Returns the active CallSession, or nullptr when not in a call.
@@ -622,6 +664,13 @@ protected:
     // Platform shells call this right after setting pending_restore_rooms_.
     void populate_pending_restore_popouts_();
     std::vector<std::string> space_stack_;
+
+    // The space currently shown in main_app_->space_root(), or empty when
+    // it isn't showing. Set by show_space_root_(), cleared alongside
+    // main_app_->hide_space_root(). Used by refresh_space_root_children_'s
+    // callers to avoid rebuilding the room-management section's data for a
+    // space that isn't even visible.
+    std::string space_root_shown_id_;
 
     // Current room-list search query (empty when search is inactive). Owned by
     // the shared search-field wiring in wire_main_app_widget_(); read by
@@ -1144,6 +1193,12 @@ protected:
     // Set when the user dismisses the overlay (Skip or Done). Prevents it from
     // re-appearing if recovery_state() returns Disabled again.
     bool encryption_setup_dismissed_ = false;
+    // Non-null while a fresh-login's start_sync() was deliberately withheld
+    // (see FinalizeLoginResult::needs_encryption_setup) pending the user
+    // resolving the encryption-setup overlay. release_pending_sync_gate_()
+    // starts sync on it once the user closes the overlay (Skip/Done) or
+    // hands off to SAS verification instead.
+    std::shared_ptr<AccountSession> pending_sync_session_;
 
     // ── Cross-signing / SAS device verification ───────────────────────────────
     bool verification_banner_dismissed_ = false;
@@ -1194,11 +1249,15 @@ protected:
     // MSVC does not honor a derived-class `using` re-export of a protected nested
     // enum the way GCC/Clang do.
 public:
-    enum class RoomActionKind { Accept, Join, Leave, Create, Knock, AcceptKnock, LeaveSpace };
+    enum class RoomActionKind { Accept, Join, Leave, Create, Knock, AcceptKnock, LeaveSpace,
+                               AddSpaceChild, RemoveSpaceChild };
     struct PendingRoomAction
     {
         std::string room_id;
         RoomActionKind kind;
+        // Only populated for AddSpaceChild/RemoveSpaceChild — the space
+        // being mutated (room_id above is the child room, not the space).
+        std::string space_id;
     };
 
 protected:
@@ -2042,6 +2101,15 @@ protected:
         bool        rejected_duplicate = false; // uid already signed in
         std::string user_id;                    // the new (or duplicate) uid
         std::string error;                      // failure detail (when !ok)
+        // True when finalize_login_blocking_ found recovery/cross-signing not
+        // set up (or incomplete on this device) and deliberately skipped
+        // start_sync — the shell must show the encryption-setup overlay
+        // (begin_gated_encryption_setup_if_needed_) instead of assuming sync
+        // is already running. See ShellBase::release_pending_sync_gate_.
+        bool        needs_encryption_setup      = false;
+        // Which EncryptionSetupOverlay::Mode to open when needs_encryption_setup
+        // is true: false = Fresh, true = Recover.
+        bool        encryption_setup_recover_mode = false;
     };
 
     // Blocking half of add-account finalize: exports the pending client's
@@ -2088,6 +2156,21 @@ protected:
     // moved out here). UI-thread only to call; `done` itself runs on the UI
     // thread.
     void finalize_login_async_(std::function<void(FinalizeLoginResult)> done);
+
+    // Called by each shell right after it activates the newly-added account
+    // (switchActiveAccount / equivalent) inside its finalize_login_async_
+    // `done` callback. A no-op unless `fin.needs_encryption_setup` is set, in
+    // which case it raises the encryption-setup overlay in the right mode and
+    // remembers the session so release_pending_sync_gate_() can start its
+    // sync once the user is done with the overlay.
+    void begin_gated_encryption_setup_if_needed_(const FinalizeLoginResult& fin);
+
+    // Starts the sync that finalize_login_blocking_ withheld for
+    // pending_sync_session_, if any. Wired as the release point from the
+    // encryption-setup overlay's on_close / on_request_sas callbacks — both
+    // mean "the user is done deciding" (setup finished, skipped, or handed
+    // off to SAS verification instead).
+    void release_pending_sync_gate_();
 
     // ── Active-account logout ─────────────────────────────────────────────────
     // Outcome of logout_active_account_impl_(): lets each shell decide between the
@@ -2283,6 +2366,27 @@ protected:
     // Show the chat-panel root view for a joined space. No-op if the room is
     // unknown or is not a space.
     void show_space_root_(const std::string& space_id);
+
+    // Rebuilds the room-management section's data (SpaceAddRoomList's
+    // exclusion set + SpaceChildRoomGrid's children) from the current
+    // space_children_cache_/unjoined_space_children_cache_/rooms_ and pushes
+    // it into main_app_->space_root(). No-op if that space isn't the one
+    // currently shown. Called after show_space_root_() itself, after
+    // space_children_cache_/unjoined summaries refresh, after rooms_
+    // changes, and — optimistically — immediately by
+    // request_add/remove_room_to/from_space_ before their async result
+    // even returns.
+    void refresh_space_root_children_(const std::string& space_id);
+
+    // Optimistically updates space_children_cache_/unjoined_space_children_cache_
+    // and the room-management UI, then fires the async mutation. On
+    // failure, handle_room_action_complete_ui_ reverts the cache and
+    // refreshes again. See client.h's add_room_to_space_async/
+    // remove_room_from_space_async for the underlying API contract.
+    void request_add_room_to_space_(const std::string& space_id,
+                                    const std::string& room_id);
+    void request_remove_room_from_space_(const std::string& space_id,
+                                         const std::string& room_id);
 
     // Called after rooms_ is updated — shell refreshes the room-list widget.
     virtual void on_rooms_updated_() = 0;
@@ -3239,6 +3343,12 @@ protected:
     // mirror (active account only) and refresh gating + room list.
     virtual void handle_media_preview_config_updated_ui_(std::string user_id,
                                                          std::string json);
+    // MSC4262: own global profile changed during sync (e.g. edited on another
+    // device). Active account only: applies name/avatar when delivered and
+    // re-fetches the extended profile (tz, status, pronouns, bio).
+    void handle_own_profile_changed_ui_(std::string user_id,
+                                        std::optional<std::string> display_name,
+                                        std::optional<std::string> avatar_url);
     // Callback from media_preview_config_async: parse config_json and apply.
     void handle_media_preview_config_fetched_ui_(std::uint64_t request_id,
                                                  std::string config_json);
@@ -3370,11 +3480,42 @@ protected:
     views::CallOverlayWidget* active_call_overlay_() const;
 
     // Tear down the current overlay, switch to the requested mode, remount,
-    // rewire all callbacks, and persist the new mode to Settings.
-    void on_call_overlay_mode_requested_(views::CallOverlayWidget::Mode m);
+    // rewire all callbacks, and persist the new mode to Settings. Docked/
+    // DockedExpanded are clamped to Floating if the call's room isn't
+    // current_room_id_ (the UI already hides those mode options in that
+    // state, but the state machine doesn't rely on that). Pass persist=false
+    // for transitions Tesseract itself drives (auto-float on room-leave,
+    // auto-restore on room-return) so they don't clobber the user's actual
+    // CallOverlayMode preference in Settings.
+    void on_call_overlay_mode_requested_(views::CallOverlayWidget::Mode m,
+                                         bool persist = true);
 
     // Persist the new float position to Settings and request relayout.
     void on_call_float_position_changed_(float x, float y);
+
+    // Resolve the user's persisted CallOverlayMode setting into a Mode, the
+    // same mapping start_call() uses to pick the initial mode. Shared so
+    // handle_call_room_navigation_()'s auto-restore-from-Floating path
+    // restores the user's real preference rather than a hardcoded Docked.
+    views::CallOverlayWidget::Mode overlay_mode_from_settings_() const;
+
+    // Called from after_active_room_changed_() on every room switch. Drives
+    // auto-join (first switch into a call room), auto-leave-and-join
+    // (switching directly between an active call and another call room),
+    // and the auto-float/auto-restore transition (switching away from /
+    // back to the room hosting the active call).
+    void handle_call_room_navigation_();
+
+    // Opens room_id's pre-call lobby (camera preview + mic/cam toggles +
+    // Join/Cancel) instead of joining directly — the single seam every
+    // "start a call" entry point (auto-join, the call banner, the header
+    // call button, LeaveAndJoin) now goes through. Wires the lobby's
+    // on_join to start_call() and falls back to start_call() directly if
+    // room_id isn't currently displayed in any window (defensive; shouldn't
+    // happen since callers only ever target the room being viewed).
+    void request_call_(const std::string& room_id,
+                       const std::string& slot_id   = "call#default",
+                       bool               audio_only = false);
 
     // Overlay configuration that must survive mode switches (docked ↔ floating ↔
     // popout). Initialised at call start; each remount reads from this struct
@@ -3397,6 +3538,17 @@ protected:
     std::unique_ptr<tk::AudioPlayback>          call_audio_output_;
     std::unique_ptr<CallWindowBase>             call_window_;
     CallOverlayState                            call_overlay_state_;
+    // True iff Tesseract (not the user) forced Floating mode because the
+    // user navigated away from the active call's room. Lets
+    // handle_call_room_navigation_() tell "returning to a room we auto-
+    // floated away from" apart from "the user deliberately chose Floating,"
+    // so only the former auto-restores Docked/DockedExpanded.
+    bool                                         call_auto_floated_ = false;
+    // Room id handle_call_room_navigation_() was called for before rooms_
+    // knew about it (e.g. a call room just created via CreateRoomView), so
+    // its is_call_room was unknown. The next rooms update that does know it
+    // re-runs the navigation once and clears this. Empty = nothing pending.
+    std::string                                  pending_call_room_nav_id_;
     // The "call in progress" banner is a state of the room: shown while the
     // room has live call members and this client is not in that call. Applies
     // the rule to the main window's room view and every pop-out.
@@ -3662,6 +3814,37 @@ protected:
     /// Open settings and land on the Account tab — wired to the sidebar
     /// status line's `on_status_clicked`.
     void open_settings_to_account_tab_();
+
+    // ── Command-line launch actions ───────────────────────────────────────────
+    // `--open-settings`, `--open-quick-switcher`, `--open-message-search` and
+    // `--open-room=ID` (Windows Jump List tasks use them too), either from
+    // this process's own argv or forwarded by a later launch to the running
+    // instance. Shared by every shell; the shell supplies only the native
+    // hooks below and calls mark_main_content_ready_() from its
+    // show-main-content path.
+
+    /// Act on `action` now, or hold it until mark_main_content_ready_() when
+    /// the main UI isn't up yet (still at login / restoring). `room_id` is
+    /// used only for LaunchAction::Room.
+    void dispatch_launch_action_(LaunchAction action, std::string room_id = {});
+    /// The main UI (room list + room view) is showing; runs any held action.
+    void mark_main_content_ready_();
+    /// Navigate to `room_id` on whichever signed-in account has joined it,
+    /// switching accounts if needed. When no account has it yet (restore or
+    /// the first room snapshot still in flight) it stays pending and
+    /// push_rooms_ retries it — no join prompt.
+    void open_launch_room_(const std::string& room_id);
+    /// push_rooms_ hook: re-run open_launch_room_ for a still-pending target.
+    void retry_pending_launch_room_();
+
+    /// Bring the main window to the front, un-hiding it from the tray.
+    virtual void raise_main_window_ui_() {}
+    virtual void open_quick_switch_ui_() {}
+    virtual void open_message_search_ui_() {}
+
+    bool main_content_ready_ = false;
+    LaunchAction pending_launch_action_ = LaunchAction::None;
+    std::string pending_launch_room_id_;
 
     /// Called on the UI thread after a set_profile_field / delete_profile_field
     /// call completes. Override to clear the busy state and surface errors.
@@ -4659,6 +4842,15 @@ protected:
     // UI on the now-gone space's summary. Safe to call even if space_id
     // wasn't actually the current stack top / active room.
     void leave_space_navigate_back_(const std::string& space_id);
+    // The room list's own "back" button: exits one level of the sidebar's
+    // "drilled into a space" browsing (space_stack_/space_nav_frames_).
+    // Purely a sidebar action — current_room_id_ (the main pane's active
+    // room) is untouched, so if it's still a space (e.g. that's what's
+    // actually open in the main pane), the space-root view is re-asserted
+    // rather than being blindly hidden, which would otherwise reveal
+    // RoomView underneath showing that space's own (effectively empty)
+    // room instead. Every shell's on_space_back delegates here.
+    void space_back_command_();
     void join_room_command_(const std::string& room_id_or_alias,
                             std::vector<std::string> via = {});
     void invite_user_command_(const std::string& room_id,
@@ -5052,6 +5244,12 @@ protected:
     // raise the encryption-setup overlay. Guards on encryption_setup_shown_ and
     // encryption_setup_dismissed_ so the overlay is shown at most once per session.
     void check_encryption_setup_();
+
+    // Clears the shown/dismissed guards check_encryption_setup_ uses to only
+    // raise the overlay once, then re-runs it — letting the user reopen the
+    // dialog deliberately (verify_session_menu_callback_ above) rather than
+    // waiting for it to reappear on its own.
+    void reopen_encryption_setup_();
 
 private:
     // intentionally empty — all other state is protected so shells can reset it

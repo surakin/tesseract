@@ -125,15 +125,15 @@ public:
     std::optional<std::size_t> pack_at(tk::Point world) const;
 
     // Which pack (if any) currently shows the drag-hover highlight — driven
-    // by ImagePackEditorView::on_drag_hover/on_drag_leave. Painted inside
+    // by ImagePackEditorView::on_native_drag_hover/on_native_drag_leave. Painted inside
     // paint()'s own clip/scroll handling so it's naturally culled when the
     // section scrolls out of view, mirroring pack_at's targeting.
-    void set_drag_hover_pack(std::optional<std::size_t> pack_idx)
+    void set_native_drag_hover_pack(std::optional<std::size_t> pack_idx)
     {
-        drag_hover_pack_ = pack_idx;
+        native_drag_hover_pack_ = pack_idx;
     }
     // Test accessor.
-    std::optional<std::size_t> drag_hover_pack() const { return drag_hover_pack_; }
+    std::optional<std::size_t> native_drag_hover_pack() const { return native_drag_hover_pack_; }
 
     std::function<void(std::size_t pack_idx)> on_pack_header_clicked;
     std::function<void(std::size_t pack_idx)> on_pack_name_clicked;
@@ -189,8 +189,8 @@ private:
     std::optional<std::pair<std::size_t, std::size_t>> hovered_tile_;
     std::optional<std::size_t> hovered_header_remove_;
 
-    // Drag-hover highlight target — see set_drag_hover_pack.
-    std::optional<std::size_t> drag_hover_pack_;
+    // Drag-hover highlight target — see set_native_drag_hover_pack.
+    std::optional<std::size_t> native_drag_hover_pack_;
 
     // Lucide "close" (circle-x) icon for the header's remove chip — mutable
     // because paint_header_ is const and IconCache::draw() lazily
@@ -376,10 +376,10 @@ public:
 
     // Drag-hover feedback — same targeting as on_file_drop (pack under the
     // point, falling back to the active pack), forwarded to
-    // list_->set_drag_hover_pack so ImagePackSectionList::paint draws the
+    // list_->set_native_drag_hover_pack so ImagePackSectionList::paint draws the
     // highlight within its own scroll/clip handling.
-    bool on_drag_hover(tk::Point local) override;
-    void on_drag_leave() override;
+    bool on_native_drag_hover(tk::Point local) override;
+    void on_native_drag_leave() override;
 
     // Test accessors.
     tk::Button* create_button() const { return create_btn_; }

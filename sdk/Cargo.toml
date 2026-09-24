@@ -1,6 +1,6 @@
 [package]
 name    = "tesseract-sdk-ffi"
-version = "0.8.24"
+version = "0.8.25"
 edition = "2021"
 
 [lib]
@@ -37,7 +37,7 @@ matrix-sdk-base = "0.18"
 matrix-sdk-ui = { version = "0.18" }
 # Enable decryption of `m.sticker` events sent in encrypted rooms (MSC2545
 # implementations that wrap the media source as an `EncryptedFile`).
-ruma          = { version = "0.16", default-features = false, features = ["api", "compat-encrypted-stickers", "unstable-msc3245-v1-compat", "unstable-msc2448", "unstable-msc4075", "unstable-msc4095", "html"] }
+ruma          = { version = "0.16", default-features = false, features = ["api", "compat-encrypted-stickers", "unstable-msc3245-v1-compat", "unstable-msc2448", "unstable-msc4075", "unstable-msc4095", "unstable-msc3417", "html"] }
 futures-util = "0.3"
 eyeball      = "0.8"
 parking_lot   = "0.12"
@@ -48,7 +48,7 @@ url        = "2"
 serde      = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2       = "0.10" # hash the MXID into Klipy's customer_id (privacy)
-reqwest    = { version = "0.13", default-features = false, features = ["rustls", "json", "stream", "http2"] }
+reqwest    = { version = "0.13", default-features = false, features = ["rustls", "json", "stream", "http2", "system-proxy"] }
 os_info       = "3.15"
 mime          = "0.3"
 audiopus      = "0.2"

@@ -108,6 +108,16 @@ public:
         const auto& pal = ctx.theme.palette;
         ctx.canvas.fill_rect(bounds_, pal.chrome_bg);
 
+        if (header_hovered_ || header_pressed_)
+        {
+            tk::Rect r = header_rect_();
+            r.x += kPad;
+            r.w = std::max(0.0f, r.w - 2.0f * kPad);
+            ctx.canvas.fill_rounded_rect(
+                r, kHoverRadius,
+                header_pressed_ ? pal.subtle_pressed : pal.subtle_hover);
+        }
+
         if (name_lbl_)
             name_lbl_->paint(ctx);
 
@@ -160,6 +170,43 @@ public:
         }
     }
 
+    bool on_pointer_move(tk::Point local) override
+    {
+        const bool prev = header_hovered_;
+        header_hovered_ = on_header &&
+            point_in_rect({bounds_.x + local.x, bounds_.y + local.y},
+                          header_rect_());
+        return header_hovered_ != prev;
+    }
+
+    void on_pointer_leave() override
+    {
+        header_hovered_ = false;
+        header_pressed_ = false;
+    }
+
+    // Base Widget::dispatch_pointer_move stops recursion at the deepest
+    // child under the cursor (unlike dispatch_pointer_down, which bubbles).
+    // name_lbl_ covers most of header_rect_(), so without this override the
+    // default recursion would hand hover off to the label and our own
+    // on_pointer_move (which drives the header hover highlight) would never
+    // run except over the small gap next to it. Only back_btn_ needs its
+    // own hover handling, so recurse into that child and nothing else.
+    tk::Widget* dispatch_pointer_move(tk::Point world, bool* dirty = nullptr) override
+    {
+        if (!visible() || !contains_world(world))
+            return nullptr;
+        if (back_btn_ && back_btn_->visible())
+        {
+            if (tk::Widget* hit = back_btn_->dispatch_pointer_move(world, dirty))
+                return hit;
+        }
+        tk::Point local{world.x - bounds_.x, world.y - bounds_.y};
+        if (on_pointer_move(local) && dirty)
+            *dirty = true;
+        return this;
+    }
+
 private:
     tk::Rect header_rect_() const
     {
@@ -174,11 +221,13 @@ private:
     static constexpr float kPad = 4.0f;
     static constexpr float kAvatarSize = MainAppWidget::kNavAvatarSize;
     static constexpr float kNavIconPx = 16.0f;
+    static constexpr float kHoverRadius = tesseract::visual::kRadiusSM;
 
     tk::Button* back_btn_ = nullptr;
     tk::Label* name_lbl_ = nullptr;
     tk::IconCache back_icon_;
     bool header_pressed_ = false;
+    bool header_hovered_ = false;
     std::string space_name_;
     std::string avatar_url_;
     std::function<const tk::Image*(const std::string&)> avatar_provider_;
@@ -857,6 +906,13 @@ public:
         return constraints;
     }
 
+    // World-space rect the call bubble must never cover (the room compose
+    // bar). Its native text control still receives real OS pointer input on
+    // macOS/Qt6/GTK4 even though it's canvas-rendered, so a bubble over it
+    // would lose clicks to it — and there's no reason to park a call there.
+    // Empty = no exclusion.
+    void set_avoid_rect(tk::Rect r) { avoid_rect_ = r; }
+
     void arrange(tk::LayoutCtx& ctx, tk::Rect bounds) override
     {
         bounds_ = bounds;
@@ -866,8 +922,15 @@ public:
             const auto [cx, cy] = call->float_position();
             const float fx = std::max(bounds.x,
                 std::min(cx, bounds.x + bounds.w - kFloatingCallW));
-            const float fy = std::max(bounds.y,
+            float fy = std::max(bounds.y,
                 std::min(cy, bounds.y + bounds.h - kFloatingCallH));
+            const tk::Rect& a = avoid_rect_;
+            if (!a.empty() &&
+                fx < a.x + a.w && fx + kFloatingCallW > a.x &&
+                fy < a.y + a.h && fy + kFloatingCallH > a.y)
+            {
+                fy = std::max(bounds.y, a.y - kAvoidGap - kFloatingCallH);
+            }
             call->arrange(ctx, {fx, fy, kFloatingCallW, kFloatingCallH});
         }
     }
@@ -919,6 +982,8 @@ public:
 private:
     static constexpr float kFloatingCallW = 320.0f;
     static constexpr float kFloatingCallH = 240.0f;
+    static constexpr float kAvoidGap      = 8.0f;
+    tk::Rect avoid_rect_{};
 };
 
 MainAppWidget::MainAppWidget()
@@ -1762,13 +1827,13 @@ bool MainAppWidget::any_modal_open_() const
            camera_widget_ ||
            screen_picker_;
     // Docked mode is NOT modal — it sits inside RoomView and doesn't suppress
-    // native overlays. Only DockedExpanded (covers the chat panel) and Floating
-    // (free-floating overlay) are treated as modal.
+    // native overlays. Neither is Floating: FloatingCallLayerWidget keeps the
+    // bubble off the compose bar instead. Only DockedExpanded (covers the
+    // chat panel) is treated as modal.
     const auto* panel = room_view_ ? room_view_->call_panel() : nullptr;
     const bool panel_modal =
         panel && panel->mode() == views::CallOverlayWidget::Mode::DockedExpanded;
-    const bool float_modal = float_call_overlay_ && float_call_overlay_->visible();
-    return existing_modals || panel_modal || float_modal;
+    return existing_modals || panel_modal;
 }
 
 tk::Rect MainAppWidget::compose_text_area_rect() const
@@ -1811,6 +1876,21 @@ void MainAppWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
                                           ? RootLayoutWidget::Pane::Room
                                           : RootLayoutWidget::Pane::List);
         root_layout_->arrange(ctx, bounds);
+    }
+
+    // The floating call layer was arranged above before the compose bar's
+    // final bounds were known (and the narrow-mode re-arrange may have just
+    // moved it) — re-arrange it now with the up-to-date exclusion rect.
+    if (floating_call_layer_ && float_call_overlay_)
+    {
+        tk::Rect avoid{};
+        if (room_view_ && room_view_->visible_in_tree())
+        {
+            if (auto* cb = room_view_->compose_bar(); cb && cb->visible())
+                avoid = cb->bounds();
+        }
+        floating_call_layer_->set_avoid_rect(avoid);
+        floating_call_layer_->arrange(ctx, bounds);
     }
 
     if (room_view_ && room_view_->header() && root_layout_)

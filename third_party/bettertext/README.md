@@ -9,7 +9,7 @@ This first implementation provides:
 - Public APIs for text, JSON, HTML, selection, undo/redo, read-only mode, theme, and default/per-range text styles.
 - A paragraph/run document model with inline URI-backed image attachment runs.
 - DirectWrite/Direct2D rendering for text, caret, and selection.
-- Keyboard and mouse editing, Unicode clipboard text, scrolling, and basic IME committed text handling.
+- Keyboard and mouse editing (Ctrl word navigation/deletion, line-aware Home/End), Unicode clipboard text, scrolling, and basic IME committed text handling.
 - Host extension interfaces for URI image resolution, clipboard image mapping, and font collection customization.
 - A Win32 demo app and CTest test executable.
 

@@ -16,9 +16,8 @@
 #include <string>
 #include <vector>
 #include "tk/i18n.h"
+#include "app/Launch.h"
 #include <tesseract/client.h>
-#include <tesseract/crash_handler.h>
-#include <tesseract/launch_args.h>
 #include <tesseract/paths.h>
 #include <tesseract/settings.h>
 
@@ -36,6 +35,81 @@ std::wstring to_wide(const std::string& text)
     MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()),
                         result.data(), count);
     return result;
+}
+
+std::string to_utf8(const wchar_t* text)
+{
+    const int len = WideCharToMultiByte(CP_UTF8, 0, text, -1, nullptr, 0,
+                                        nullptr, nullptr);
+    if (len <= 1) return {};
+    // `len` includes the terminating NUL. Give the conversion API room for
+    // it, then remove it.
+    std::string out(static_cast<std::size_t>(len), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, text, -1, out.data(), len, nullptr, nullptr);
+    out.pop_back();
+    return out;
+}
+
+// argv[1..] as UTF-8, the form tesseract::prepare_launch() takes on every
+// platform. Empty arguments are kept (e.g. `--profile ""`) so the parser
+// sees exactly what was typed.
+std::vector<std::string> command_line_utf8_args()
+{
+    std::vector<std::string> args;
+    int nArgs = 0;
+    LPWSTR* szArgList = CommandLineToArgvW(GetCommandLineW(), &nArgs);
+    if (szArgList)
+    {
+        for (int i = 1; i < nArgs; ++i)
+        {
+            args.push_back(to_utf8(szArgList[i]));
+        }
+        LocalFree(szArgList);
+    }
+    return args;
+}
+
+// Console output for --help / --version / warnings. tesseract.exe is a
+// GUI-subsystem binary, so it has no console of its own: output goes to an
+// inherited redirect (`tesseract --help > out.txt`, pipes) when there is one,
+// else to the launching terminal's console via AttachConsole. cmd.exe and
+// PowerShell don't wait for GUI apps, so the text can land after the prompt
+// has already been redrawn — a known limitation of GUI-subsystem apps.
+void write_console(DWORD which, std::string_view text)
+{
+    static const bool attached = AttachConsole(ATTACH_PARENT_PROCESS) != 0;
+    HANDLE h = GetStdHandle(which);
+    if (!h || h == INVALID_HANDLE_VALUE)
+    {
+        if (!attached) return;
+        static HANDLE conout = CreateFileW(L"CONOUT$", GENERIC_WRITE,
+                                           FILE_SHARE_WRITE, nullptr,
+                                           OPEN_EXISTING, 0, nullptr);
+        h = conout;
+        if (h == INVALID_HANDLE_VALUE) return;
+    }
+    DWORD mode = 0;
+    DWORD written = 0;
+    if (GetConsoleMode(h, &mode))
+    {
+        // A real console: write UTF-16 so non-ASCII (translated help)
+        // renders regardless of the console code page.
+        const std::wstring wide = to_wide(std::string(text));
+        WriteConsoleW(h, wide.data(), static_cast<DWORD>(wide.size()), &written,
+                      nullptr);
+    }
+    else
+    {
+        WriteFile(h, text.data(), static_cast<DWORD>(text.size()), &written,
+                  nullptr);
+    }
+}
+
+// Per-profile so named profiles run side by side.
+std::wstring single_instance_mutex_name()
+{
+    return L"io.gnomos.Tesseract.SingleInstanceMutex" +
+           to_wide(tesseract::profile_suffix());
 }
 
 // Materialise the embedded app-icon PNG (IDR_TOAST_ICON) to a stable file and
@@ -85,43 +159,13 @@ std::wstring write_toast_icon_png(HINSTANCE hInstance)
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
                     LPWSTR /*lpCmdLine*/, int nCmdShow)
 {
-    // Parse command-line arguments (order-independent: --autostart and a
-    // matrix URI may appear together or alone). Shared with the other
-    // shells via client/src/launch_args.cpp instead of hand-rolling a
-    // single-arg check here.
-    tesseract::LaunchArgs launch;
-    {
-        int nArgs = 0;
-        LPWSTR* szArgList = CommandLineToArgvW(GetCommandLineW(), &nArgs);
-        if (szArgList)
-        {
-            std::vector<std::string> args;
-            for (int i = 1; i < nArgs; ++i)
-            {
-                int len = WideCharToMultiByte(CP_UTF8, 0, szArgList[i], -1,
-                                              nullptr, 0, nullptr, nullptr);
-                if (len > 1)
-                {
-                    // `len` includes the terminating NUL. Give the conversion
-                    // API room for it, then remove it before parsing.
-                    std::string arg(static_cast<std::size_t>(len), '\0');
-                    WideCharToMultiByte(CP_UTF8, 0, szArgList[i], -1,
-                                        arg.data(), len, nullptr, nullptr);
-                    arg.pop_back();
-                    args.push_back(std::move(arg));
-                }
-            }
-            launch = tesseract::parse_launch_args(args);
-            LocalFree(szArgList);
-        }
-    }
-    std::string startup_uri = launch.matrix_uri.value_or(std::string{});
+    const std::vector<std::string> utf8_args = command_line_utf8_args();
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
-    const bool screenshot_mode = launch.screenshot_dir.has_value();
-    if (screenshot_mode)
+    // Must run before prepare_launch() loads settings: keep the fixture
+    // isolated from real sessions, settings, caches, and geometry.
+    // Environment changes are process-local.
+    if (tesseract::parse_launch_args(utf8_args).screenshot_dir)
     {
-        // Keep the fixture isolated from real sessions, settings, caches, and
-        // geometry. Environment changes are process-local.
         const auto isolated =
             std::filesystem::temp_directory_path() / L"TesseractScreenshotMode";
         SetEnvironmentVariableW(L"APPDATA", isolated.c_str());
@@ -129,14 +173,59 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
     }
 #endif
 
-    // Single-instance guard: if another process already holds this mutex,
-    // find its main window, bring it to the foreground, and exit.
+    // Shared startup pipeline (ui/shared/app/Launch.h): parses argv, selects
+    // --profile, loads settings + locale, and handles --help / --version /
+    // --logoutall.
+    tesseract::LaunchHooks hooks;
+    hooks.detect_system_lang = []
+    {
+        wchar_t locale_name[LOCALE_NAME_MAX_LENGTH] = {};
+        GetUserDefaultLocaleName(locale_name, LOCALE_NAME_MAX_LENGTH);
+        // Convert to narrow string (locale names are ASCII-safe: "en-US", "es-MX", etc.)
+        char narrow[LOCALE_NAME_MAX_LENGTH] = {};
+        WideCharToMultiByte(CP_UTF8, 0, locale_name, -1, narrow, sizeof(narrow), nullptr, nullptr);
+        // Replace '-' with '_' to match gettext convention (en-US -> en_US)
+        for (char* p = narrow; *p; ++p) { if (*p == '-') *p = '_'; }
+        return std::string(narrow);
+    };
+    hooks.i18n_dir = []
+    {
+        // .mo files live next to the exe in i18n/
+        wchar_t exe_path[MAX_PATH] = {};
+        GetModuleFileNameW(nullptr, exe_path, MAX_PATH);
+        return (std::filesystem::path(exe_path).parent_path() / "i18n").string();
+    };
+    hooks.write_stdout = [](std::string_view text)
+    { write_console(STD_OUTPUT_HANDLE, text); };
+    hooks.write_stderr = [](std::string_view text)
+    { write_console(STD_ERROR_HANDLE, text); };
+    hooks.acquire_instance_lock = []
+    {
+        // Held (leaked) until exit, like the normal-startup mutex below.
+        HANDLE m = CreateMutexW(nullptr, TRUE, single_instance_mutex_name().c_str());
+        return m && GetLastError() != ERROR_ALREADY_EXISTS;
+    };
+    hooks.program_name = "tesseract.exe";
+    const tesseract::LaunchPlan plan = tesseract::prepare_launch(utf8_args, hooks);
+    if (plan.exit_code)
+    {
+        return *plan.exit_code;
+    }
+    const tesseract::LaunchArgs& launch = plan.args;
+    std::string startup_uri = launch.matrix_uri.value_or(std::string{});
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    const bool screenshot_mode = launch.screenshot_dir.has_value();
+#endif
+
+    // Single-instance guard (per --profile): if another process already
+    // holds this mutex, find its main window, bring it to the foreground,
+    // and exit.
     HANDLE single_inst_mutex = CreateMutexW(
         nullptr, TRUE,
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
         screenshot_mode ? L"io.gnomos.Tesseract.ScreenshotModeMutex" :
 #endif
-        L"io.gnomos.Tesseract.SingleInstanceMutex");
+        single_instance_mutex_name().c_str());
     if (!single_inst_mutex || GetLastError() == ERROR_ALREADY_EXISTS)
     {
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
@@ -147,12 +236,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
             return 0;
         }
 #endif
-        // --autostart has no meaningful action against an already-running
-        // instance — exit quietly without forwarding or raising it.
-        if (!launch.autostart || launch.action != tesseract::LaunchAction::None ||
-            !startup_uri.empty())
+        // A hidden/autostart launch with nothing to forward has no meaningful
+        // action against an already-running instance — exit quietly without
+        // forwarding or raising it.
+        if (plan.should_raise_existing_instance())
         {
-            if (HWND existing = FindWindowW(L"TesseractMainWnd", nullptr))
+            if (HWND existing = FindWindowW(win32::MainWindow::class_name(), nullptr))
             {
                 // The running instance may be hidden to the tray (not just
                 // minimized) — relaunching it should bring it back, the same
@@ -179,20 +268,23 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
                 if (launch.action == tesseract::LaunchAction::Room &&
                     launch.room_id)
                 {
+                    // lpData is non-const PVOID; send from a local copy.
+                    std::string room_id = *launch.room_id;
                     COPYDATASTRUCT cds{};
                     cds.dwData = 3; // recent room ID
-                    cds.cbData = static_cast<DWORD>(launch.room_id->size() + 1);
-                    cds.lpData = launch.room_id->data();
+                    cds.cbData = static_cast<DWORD>(room_id.size() + 1);
+                    cds.lpData = room_id.data();
                     SendMessageW(existing, WM_COPYDATA,
                                  reinterpret_cast<WPARAM>(nullptr),
                                  reinterpret_cast<LPARAM>(&cds));
                 }
                 else if (launch.action != tesseract::LaunchAction::None)
                 {
+                    tesseract::LaunchAction action = launch.action;
                     COPYDATASTRUCT cds{};
                     cds.dwData = 2; // typed launch action
-                    cds.cbData = sizeof(launch.action);
-                    cds.lpData = &launch.action;
+                    cds.cbData = sizeof(action);
+                    cds.lpData = &action;
                     SendMessageW(existing, WM_COPYDATA,
                                  reinterpret_cast<WPARAM>(nullptr),
                                  reinterpret_cast<LPARAM>(&cds));
@@ -257,9 +349,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
 
     // Required for WinRT toast notifications: associates toasts with this
     // process and initialises the COM apartment for C++/WinRT calls.
+    // effective_aumid() is per --profile for unpackaged builds, so each
+    // profile gets its own taskbar group and Jump List.
+    const std::wstring aumid = win32::package_context::effective_aumid();
     if (!win32::package_context::is_packaged())
-        SetCurrentProcessExplicitAppUserModelID(
-            win32::package_context::kUnpackagedAumid);
+        SetCurrentProcessExplicitAppUserModelID(aumid.c_str());
     winrt::init_apartment(winrt::apartment_type::single_threaded);
 
     // Register the AUMID in the current-user registry so the WinRT toast
@@ -275,16 +369,20 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
         !win32::package_context::is_packaged()
     ) {
         HKEY key = nullptr;
+        const std::wstring aumid_key = L"Software\\Classes\\AppUserModelId\\" + aumid;
         if (RegCreateKeyExW(
-                HKEY_CURRENT_USER,
-                L"Software\\Classes\\AppUserModelId\\io.gnomos.Tesseract", 0,
+                HKEY_CURRENT_USER, aumid_key.c_str(), 0,
                 nullptr, REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, nullptr, &key,
                 nullptr) == ERROR_SUCCESS)
         {
-            const wchar_t display[] = L"Tesseract";
+            const std::wstring display =
+                L"Tesseract" + (tesseract::profile().empty()
+                                    ? std::wstring{}
+                                    : L" (" + to_wide(tesseract::profile()) + L")");
             RegSetValueExW(key, L"DisplayName", 0, REG_SZ,
-                           reinterpret_cast<const BYTE*>(display),
-                           sizeof(display));
+                           reinterpret_cast<const BYTE*>(display.c_str()),
+                           static_cast<DWORD>((display.size() + 1) *
+                                              sizeof(wchar_t)));
             // IconUri must be an image file — a bare .exe path does not render
             // in the toast / Action Centre. Materialise the embedded app icon
             // and point at the PNG; fall back to the exe path if that fails.
@@ -326,34 +424,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
                               ICC_BAR_CLASSES | ICC_LISTVIEW_CLASSES};
     InitCommonControlsEx(&icce);
 
-    // i18n: initialise locale before any views are constructed.
-    // Load persisted settings first so the saved language preference is
-    // available when choosing the locale.
-    tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
-
-    tesseract::install_crash_handler(tesseract::Settings::instance().crash_reporting_enabled);
-
-    {
-        // .mo files live next to the exe in i18n/
-        wchar_t exe_path[MAX_PATH] = {};
-        GetModuleFileNameW(nullptr, exe_path, MAX_PATH);
-        std::filesystem::path exe_dir = std::filesystem::path(exe_path).parent_path();
-        std::string i18n_dir = (exe_dir / "i18n").string();
-
-        std::string lang = tesseract::Settings::instance().language;
-        if (lang == "auto" || lang.empty())
-        {
-            wchar_t locale_name[LOCALE_NAME_MAX_LENGTH] = {};
-            GetUserDefaultLocaleName(locale_name, LOCALE_NAME_MAX_LENGTH);
-            // Convert to narrow string (locale names are ASCII-safe: "en-US", "es-MX", etc.)
-            char narrow[LOCALE_NAME_MAX_LENGTH] = {};
-            WideCharToMultiByte(CP_UTF8, 0, locale_name, -1, narrow, sizeof(narrow), nullptr, nullptr);
-            // Replace '-' with '_' to match gettext convention (en-US -> en_US)
-            for (char* p = narrow; *p; ++p) { if (*p == '-') *p = '_'; }
-            lang = narrow;
-        }
-        tk::set_locale(i18n_dir, lang);
-    }
+    // Settings, crash handler and locale were set up by prepare_launch().
 
     MFStartup(MF_VERSION, MFSTARTUP_NOSOCKET);
 
@@ -368,7 +439,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
     {
         tesseract::AccountManager account_manager;
         win32::MainWindow window(account_manager, hInstance, taskbar,
-                                 launch.autostart, launch.action,
+                                 plan.start_hidden(), launch.action,
                                  launch.room_id.value_or(std::string{})
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
                                  , launch.screenshot_dir
@@ -384,7 +455,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
                 screenshot_mode ? SW_SHOW :
 #endif
-                (launch.autostart ? SW_HIDE : nCmdShow)))
+                (plan.start_hidden() ? SW_HIDE : nCmdShow)))
         {
             if (!startup_uri.empty())
             {

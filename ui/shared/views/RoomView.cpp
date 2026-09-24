@@ -304,6 +304,13 @@ RoomView::RoomView()
     room_media_view_ = add_child(std::move(rmv));
     room_media_view_->set_visible(false);
 
+    // Added last of all so it dispatches/paints above the whole room,
+    // including room_media_view_ — see call_lobby()'s doc comment. Hidden
+    // until open().
+    auto lobby = std::make_unique<CallLobbyView>();
+    call_lobby_ = add_child(std::move(lobby));
+    call_lobby_->set_visible(false);
+
     wire_internal_callbacks();
 }
 
@@ -1357,7 +1364,8 @@ bool RoomView::is_overlay_open() const
     return (room_settings_view_ && room_settings_view_->is_open()) ||
            (room_info_panel_    && room_info_panel_->is_open()) ||
            (user_profile_panel_ && user_profile_panel_->is_open()) ||
-           (room_media_view_    && room_media_view_->is_open());
+           (room_media_view_    && room_media_view_->is_open()) ||
+           (call_lobby_         && call_lobby_->is_open());
 }
 
 RoomSearchBar* RoomView::room_search_bar() const
@@ -1544,6 +1552,19 @@ bool RoomView::scroll_to_event_id(const std::string& id)
 
 void RoomView::set_room(const tesseract::RoomInfo& info)
 {
+    // The lobby is a pre-join step for the specific room it was opened for
+    // — compared against its own room_id() rather than gated on
+    // room_changed below, since set_room() can otherwise be re-entered for
+    // the same room (e.g. a rooms-list refresh) while the lobby is up, and
+    // gating on room_changed alone would close it right after it opens.
+    // Switching to a different room abandons it, exactly like Cancel.
+    if (call_lobby_ && call_lobby_->is_open() &&
+        call_lobby_->room_id() != info.id)
+    {
+        if (call_lobby_->on_cancel) call_lobby_->on_cancel();
+        call_lobby_->close();
+    }
+
     const bool room_changed = info.id != current_room_info_.id;
     if (room_changed)
     {
@@ -1625,6 +1646,11 @@ void RoomView::set_room(const tesseract::RoomInfo& info)
 void RoomView::clear_room()
 {
     has_room_ = false;
+    if (call_lobby_ && call_lobby_->is_open())
+    {
+        if (call_lobby_->on_cancel) call_lobby_->on_cancel();
+        call_lobby_->close();
+    }
     close_room_search();
     if (compose_bar_)
     {
@@ -2156,6 +2182,16 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         if (panel)
             panel->arrange(ctx, bounds);
     }
+
+    // Pre-call lobby — covers everything below the header (banners, search
+    // bar, docked call panel, message list, compose bar, thread panel) but
+    // deliberately not the header itself, so back/room-name/call-button stay
+    // usable. Only arranged while open (unlike overlay_panels_(), its bounds
+    // depend on header_h, which the lobby doesn't need to zero when closed
+    // since dispatch already gates on visible()).
+    if (call_lobby_ && call_lobby_->is_open())
+        call_lobby_->arrange(ctx, {bounds.x, header_bottom, bounds.w,
+                                   bounds.bottom() - header_bottom});
 }
 
 // Genuine paint() override, kept intentionally (see the paint_children()-
@@ -2250,8 +2286,8 @@ void RoomView::paint(tk::PaintCtx& ctx)
     if (compose_bar_)
     {
         compose_bar_->paint(ctx);
-        if (drag_hover_)
-            tk::paint_drag_hover_highlight(ctx, compose_bar_->bounds());
+        if (native_drag_hover_)
+            tk::paint_native_drag_hover_highlight(ctx, compose_bar_->bounds());
     }
 
     // Paint call panel last so it always draws on top of both message list and
@@ -2272,6 +2308,11 @@ void RoomView::paint(tk::PaintCtx& ctx)
         if (panel)
             panel->paint(ctx);
     }
+
+    // Pre-call lobby paints last of all so it's the true topmost content
+    // below the header.
+    if (call_lobby_ && call_lobby_->is_open())
+        call_lobby_->paint(ctx);
 
     // Register whichever picker is visible as the active popup so the host
     // routes input to it first and calls paint_overlay() on it after the
@@ -2454,24 +2495,24 @@ bool RoomView::on_file_drop(tk::Point /*local*/, tk::FileDropPayload& payload)
     return outcome == FileDropOutcome::Accepted;
 }
 
-tk::Widget* RoomView::dispatch_drag_hover(tk::Point world)
+tk::Widget* RoomView::dispatch_native_drag_hover(tk::Point world)
 {
     if (tk::Widget* o = active_overlay_panel_())
-        return o->dispatch_drag_hover(world);
-    return tk::Widget::dispatch_drag_hover(world);
+        return o->dispatch_native_drag_hover(world);
+    return tk::Widget::dispatch_native_drag_hover(world);
 }
 
-bool RoomView::on_drag_hover(tk::Point /*local*/)
+bool RoomView::on_native_drag_hover(tk::Point /*local*/)
 {
     if (!compose_bar_ || !compose_bar_->enabled())
         return false;
-    drag_hover_ = true;
+    native_drag_hover_ = true;
     return true;
 }
 
-void RoomView::on_drag_leave()
+void RoomView::on_native_drag_leave()
 {
-    drag_hover_ = false;
+    native_drag_hover_ = false;
 }
 
 } // namespace tesseract::views

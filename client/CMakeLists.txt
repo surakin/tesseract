@@ -15,7 +15,9 @@ add_library(tesseract_client STATIC
     src/emoji.cpp
     src/prefs.cpp
     src/settings.cpp
+    src/cli.cpp
     src/launch_args.cpp
+    src/maintenance.cpp
     src/waveform_cache.cpp
     src/highlight.cpp
     src/autolink.cpp

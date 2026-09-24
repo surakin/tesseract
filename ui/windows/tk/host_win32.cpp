@@ -670,8 +670,9 @@ tk::PixmapCache& mention_pill_cache()
 // pixels = DIPs * dpi_scale); BetterTextInsertImageUri still wants the
 // logical DIP size.
 MentionPillBitmap render_mention_pill(const std::string& text, tk::PillKind kind,
-                                      const tk::Image* avatar, Color bg,
-                                      Color fg, float dpi_scale)
+                                      const tk::Image* avatar,
+                                      const tk::MentionColors& colors,
+                                      float dpi_scale)
 {
     using Microsoft::WRL::ComPtr;
     MentionPillBitmap out;
@@ -717,8 +718,10 @@ MentionPillBitmap render_mention_pill(const std::string& text, tk::PillKind kind
     // genuine self-mention (unlike a received timeline pill's
     // pill_kind==Room ambiguity) — so both kinds always reserve the slot.
     spec.reserve_leading_visual = true;
-    spec.bg = bg;
-    spec.fg = fg;
+    spec.bg = colors.bg;
+    spec.fg = colors.fg;
+    spec.initials_bg = colors.initials_bg;
+    spec.initials_fg = colors.initials_fg;
     tk::ImageRef pinned = tk::render_pill_bitmap_cached(
         *factory, mention_pill_cache(), spec, ascent, descent, dpi_scale);
     if (!pinned)
@@ -985,7 +988,14 @@ public:
         {
             return;
         }
+        // BetterTextSetPlaceholder only marks content_dirty (InvalidateRect
+        // on a control that never actually appears on screen — see the
+        // ctor's SetWindowRgn(empty) comment) — unlike BetterTextSetText, it
+        // fires no Changed notification, so nothing re-captures the offscreen
+        // render target on its own. Mirrors set_text()'s own trailing
+        // refresh_image() call.
         BetterTextSetPlaceholder(hwnd_, utf8_to_wide(text).c_str());
+        refresh_image();
     }
     void set_focused(bool focused) override
     {
@@ -1678,6 +1688,11 @@ public:
             // document is empty (see LayoutHeight()'s placeholder branch),
             // so re-report natural_height() the same way set_text() does.
             refresh_height();
+            // BetterTextSetPlaceholder only marks content_dirty — unlike
+            // BetterTextSetText it fires no Changed notification, so nothing
+            // re-captures the offscreen render target on its own. Mirrors
+            // set_text()'s own trailing refresh_image() call.
+            refresh_image();
         }
     }
 
@@ -1939,7 +1954,7 @@ public:
         const tk::PillKind kind = is_room ? tk::PillKind::Room : tk::PillKind::User;
 
         MentionPillBitmap pill = render_mention_pill(
-            visual, kind, avatar, mention_bg_, mention_fg_, dip_scale());
+            visual, kind, avatar, mention_colors_, dip_scale());
         if (!pill.bitmap)
         {
             // D2D/WIC failure — fall back to plain text so the mention is
@@ -1999,8 +2014,8 @@ public:
                 continue;
             }
             MentionPillBitmap pill = render_mention_pill(
-                run.display_name, tk::PillKind::User, avatar, mention_bg_,
-                mention_fg_, dip_scale());
+                run.display_name, tk::PillKind::User, avatar, mention_colors_,
+                dip_scale());
             if (!pill.bitmap)
             {
                 continue;
@@ -2033,8 +2048,8 @@ public:
                 continue;
             }
             MentionPillBitmap pill = render_mention_pill(
-                "room", tk::PillKind::Room, avatar, mention_bg_,
-                mention_fg_, dip_scale());
+                "room", tk::PillKind::Room, avatar, mention_colors_,
+                dip_scale());
             if (!pill.bitmap)
             {
                 continue;
@@ -2170,10 +2185,9 @@ public:
         return segs;
     }
 
-    void set_mention_colors(Color bg, Color fg) override
+    void set_mention_colors(const tk::MentionColors& colors) override
     {
-        mention_bg_ = bg;
-        mention_fg_ = fg;
+        mention_colors_ = colors;
     }
 
     // ── Win32TextAreaBase ─────────────────────────────────────────────────
@@ -2819,8 +2833,9 @@ private:
     std::function<const tk::Image*(const std::string&)> image_resolver_;
     ImageProviderAdapter                        image_provider_{ this };
     std::unordered_set<std::wstring>            pending_image_uris_;
-    Color mention_bg_ = Color::rgb(0x0078D4);
-    Color mention_fg_ = Color::rgba(255, 255, 255, 255);
+    tk::MentionColors mention_colors_{
+        Color::rgb(0x0078D4), Color::rgba(255, 255, 255, 255),
+        Color::rgb(0xCFE3FF), Color::rgb(0x004A9E)};
     int mention_counter_ = 0;
     // Whether the last reformat_emoji_runs() pass found any emoji — lets a
     // change with no emoji (the common case) skip BetterTextSetTextStyle
@@ -4151,6 +4166,7 @@ public:
                 paint_tooltip_overlay(ctx, surface_bounds);
                 paint_focus_overlay(ctx);
                 paint_toast_overlay(ctx, surface_bounds);
+                paint_drag_overlay(ctx, surface_bounds);
             }
             if (has_dirty)
             {
@@ -4470,11 +4486,11 @@ public:
     {
         if (!hwnd_ || !IsWindowVisible(hwnd_))
             return nullptr;
-        return dispatch_drag_hover(pos);
+        return dispatch_native_drag_hover(pos);
     }
     void leave_file_drop()
     {
-        dispatch_drag_leave();
+        dispatch_native_drag_leave();
     }
 
 private:

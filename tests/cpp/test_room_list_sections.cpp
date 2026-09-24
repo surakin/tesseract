@@ -158,6 +158,50 @@ TEST_CASE("classify: group_unread=false keeps normal routing even with unread",
           RoomListView::kSecDMs);
 }
 
+TEST_CASE("classify: plain call room goes to kSecCallRooms", "[roomlist][callrooms]")
+{
+    RoomInfo r;
+    r.is_call_room = true;
+    CHECK(classify_room_section(r, true, true, 30, kNow) ==
+          RoomListView::kSecCallRooms);
+}
+
+TEST_CASE("classify: favorited call room stays in kSecFavorites", "[roomlist][callrooms]")
+{
+    RoomInfo r;
+    r.is_call_room = true;
+    r.is_favorite = true;
+    CHECK(classify_room_section(r, true, true, 30, kNow) ==
+          RoomListView::kSecFavorites);
+}
+
+TEST_CASE("classify: unread call room goes to kSecUnread", "[roomlist][callrooms]")
+{
+    RoomInfo r;
+    r.is_call_room = true;
+    r.notification_count = 3;
+    CHECK(classify_room_section(r, true, true, 30, kNow) ==
+          RoomListView::kSecUnread);
+}
+
+TEST_CASE("classify: inactive call room goes to kSecInactive", "[roomlist][callrooms]")
+{
+    RoomInfo r;
+    r.is_call_room = true;
+    r.last_activity_ts = kNow - 60 * kDayMs;
+    CHECK(classify_room_section(r, true, true, 30, kNow) ==
+          RoomListView::kSecInactive);
+}
+
+TEST_CASE("classify: is_call_room ignored on spaces", "[roomlist][callrooms]")
+{
+    RoomInfo r;
+    r.is_space = true;
+    r.is_call_room = true; // edge case: shouldn't happen in practice
+    CHECK(classify_room_section(r, true, true, 30, kNow) ==
+          RoomListView::kSecSpaces);
+}
+
 namespace
 {
 tesseract::RoomSummary unjoined_summary(const std::string& id,
@@ -272,6 +316,23 @@ TEST_CASE("filter_root_rooms: space-child excluded by default", "[roomlist][filt
     auto sc = single_space_cache("S", "C");
     auto out = filter_root_rooms(rooms, sc, false);
     // Space itself is included; child is excluded.
+    REQUIRE(out.size() == 1);
+    CHECK(out[0].id == "S");
+}
+
+TEST_CASE("filter_root_rooms: call-room space-child follows the same rule as any other child",
+          "[roomlist][filter][callrooms]")
+{
+    // is_call_room carries no special-casing in filter_root_rooms: a call
+    // room that's a space's child is excluded by default exactly like a
+    // plain child_room, and reappears once the caller scopes the list to
+    // that space's own children (RoomListView::set_rooms after drill-in).
+    auto sp = space_room("S");
+    auto ch = child_room("C");
+    ch.is_call_room = true;
+    std::vector<RoomInfo> rooms = {sp, ch};
+    auto sc = single_space_cache("S", "C");
+    auto out = filter_root_rooms(rooms, sc, false);
     REQUIRE(out.size() == 1);
     CHECK(out[0].id == "S");
 }

@@ -15,6 +15,8 @@ set(_tk_sources
     app/DeferredTeardown.h
     app/AccountManager.h
     app/AccountManager.cpp
+    app/Launch.h
+    app/Launch.cpp
     app/EventHandlerBase.h
     app/EventHandlerBase.cpp
     app/RoomWindowBase.h
@@ -80,6 +82,8 @@ set(_tk_sources
     tk/form_layout.cpp
     tk/combobox.h
     tk/combobox.cpp
+    tk/combo_button.h
+    tk/combo_button.cpp
     tk/searchable_picker.h
     tk/searchable_picker.cpp
     tk/controls.h
@@ -94,6 +98,8 @@ set(_tk_sources
     tk/image_view.cpp
     tk/scrollable_base.h
     tk/scrollable_base.cpp
+    tk/scroll_view.h
+    tk/scroll_view.cpp
     tk/list_view.h
     tk/list_view.cpp
     tk/tab_bar.h
@@ -197,6 +203,10 @@ set(_tk_sources
     views/room_chip_strip.cpp
     views/ForwardRoomPicker.h
     views/ForwardRoomPicker.cpp
+    views/SpaceAddRoomList.h
+    views/SpaceAddRoomList.cpp
+    views/SpaceChildRoomGrid.h
+    views/SpaceChildRoomGrid.cpp
     views/MessageSearchView.h
     views/MessageSearchView.cpp
     views/ImagePackTileGridBase.h
@@ -368,6 +378,8 @@ list(APPEND _tk_sources
     views/ParticipantTile.cpp
     views/CallOverlayWidget.h
     views/CallOverlayWidget.cpp
+    views/CallLobbyView.h
+    views/CallLobbyView.cpp
     views/ScreenPickerWidget.h
     views/ScreenPickerWidget.cpp
     app/CallWindowBase.h
@@ -378,8 +390,13 @@ list(APPEND _tk_sources
 )
 if(TESSERACT_UI STREQUAL "macos")
     # screen_capture_macos.mm / location_provider_macos.mm live in
-    # ui/macos/tk/ and are added by ui/macos/CMakeLists.txt instead —
-    # this target has no macos sources.
+    # ui/macos/tk/ and are added by ui/macos/CMakeLists.txt instead.
+    # single_instance is plain POSIX (flock): the macOS shell uses its
+    # per-profile lock for duplicate-launch detection.
+    list(APPEND _tk_sources
+        tk/single_instance.h
+        tk/single_instance.cpp
+    )
 elseif(TESSERACT_UI STREQUAL "win32")
     # screen_capture_win32.cpp / location_provider_win32.cpp live in
     # ui/windows/tk/ and are added by ui/windows/CMakeLists.txt instead —
@@ -408,11 +425,6 @@ set_source_files_properties(tk/status_icons.cpp PROPERTIES SKIP_UNITY_BUILD_INCL
 # it out of the unity blobs avoids reordering a neighbour's include set (same
 # tk::PaintCtx leakage reason as status_icons.cpp).
 set_source_files_properties(tk/emoji_segmentation.cpp PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
-# New files stay out of the unity blobs so they don't shift the batch
-# boundaries (and expose latent anonymous-namespace collisions) of their
-# neighbours.
-set_source_files_properties(app/ActivityRegistry.cpp views/ActivityMonitorView.cpp
-                            PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
 
 # Embed the application icon PNG as a C byte array so BrandView can decode it
 # cross-platform without per-shell resource loading. Runs at configure time.

@@ -230,6 +230,10 @@ protected:
     void on_server_info_ready_ui_() override;
     void on_own_extended_profile_ready_ui_() override;
     void open_app_settings_ui_() override;
+    // makeKeyAndOrderFront: also brings back a window orderOut:'d to the tray.
+    void raise_main_window_ui_() override { raise_and_activate_(); }
+    void open_quick_switch_ui_() override;
+    void open_message_search_ui_() override;
     void on_profile_field_result_ui_(const std::string& key, bool ok,
                                      const std::string& error) override;
     void update_typing_bar_(const std::string& text, bool visible) override;
@@ -464,6 +468,11 @@ public:
     {
         finalize_login_async_(std::move(done));
     }
+    void begin_gated_encryption_setup_if_needed(
+        const tesseract::ShellBase::FinalizeLoginResult& fin)
+    {
+        begin_gated_encryption_setup_if_needed_(fin);
+    }
     tesseract::ShellBase::LogoutResult        logout_active_account();
     bool switch_account(const std::string& user_id);
     tesseract::ShellBase::RestoreResult       restore_all_accounts();
@@ -565,7 +574,6 @@ public:
     // push_space captures nav frame + pushes room onto space_stack_.
     // Caller must call SpaceNavFrame::enter() (or refresh) after if needed.
     void push_space(const std::string& room_id, tesseract::views::RoomListView* rlv);
-    void pop_space(tesseract::views::RoomListView* rlv);
     bool space_stack_empty() const;
     const std::string& current_space() const;
     const std::vector<std::string>* space_children(const std::string& id) const;
@@ -597,6 +605,15 @@ public:
         send_notification_reply_(std::move(user_id), std::move(room_id),
                                  std::move(event_id), std::move(text));
     }
+
+    // Command-line launch actions (thin wrappers over the protected
+    // ShellBase members).
+    void dispatch_launch_action(tesseract::LaunchAction action,
+                                std::string room_id)
+    {
+        dispatch_launch_action_(action, std::move(room_id));
+    }
+    void mark_main_content_ready() { mark_main_content_ready_(); }
 
     // LEGACY: do not add new entries here. Add a public C++ method above instead.
 public:
@@ -639,6 +656,7 @@ public:
     using ShellBase::run_async_mut_;
     using ShellBase::begin_media_req_;
     using ShellBase::handle_media_ready_ui_;
+    using ShellBase::space_back_command_;
 
     // Public method to call the protected update_typing_bar_ method
     void update_typing_bar(const std::string& text, bool visible)
@@ -2051,6 +2069,20 @@ void MacShell::open_app_settings_ui_()
         [c _openSettings];
 }
 
+void MacShell::open_quick_switch_ui_()
+{
+    MainWindowController* c = ctrl_;
+    if (c)
+        [c _openQuickSwitch];
+}
+
+void MacShell::open_message_search_ui_()
+{
+    MainWindowController* c = ctrl_;
+    if (c)
+        [c _openMessageSearch];
+}
+
 void MacShell::on_profile_field_result_ui_(const std::string& key,
                                             bool ok,
                                             const std::string& error)
@@ -2696,16 +2728,6 @@ void MacShell::push_space(const std::string& room_id,
     space_nav_frames_.push_back(SpaceNavFrame::capture(rlv));
     space_stack_.push_back(room_id);
 }
-void MacShell::pop_space(tesseract::views::RoomListView* rlv)
-{
-    if (!space_stack_.empty())
-        space_stack_.pop_back();
-    if (!space_nav_frames_.empty())
-    {
-        space_nav_frames_.back().restore(rlv);
-        space_nav_frames_.pop_back();
-    }
-}
 const std::string& MacShell::verification_flow_id() const
     { return active_verification_flow_id_; }
 const std::vector<tesseract::InviteInfo>* MacShell::invites_ptr() const
@@ -3269,7 +3291,8 @@ void MacShell::apply_window_title_ui_(const std::string& title)
                 [weakSelf] { if (auto c = weakSelf) [c _beginAddAccount]; },
                 [weakSelf] { if (auto c = weakSelf) [c _showQRGrant]; },
                 [weakSelf] { if (auto c = weakSelf) [c _logoutActiveAccount]; },
-                [] { [NSApp terminate:nil]; });
+                [] { [NSApp terminate:nil]; },
+                s->_shell->verify_session_menu_callback_());
             NSMenu* menu = [[NSMenu alloc] initWithTitle:@""];
             NSMutableArray<_TkMenuAction*>* actions = [NSMutableArray new];
             for (const auto& item : items)
@@ -3876,6 +3899,23 @@ void MacShell::apply_window_title_ui_(const std::string& title)
         {
             auto hovered = std::make_shared<bool>(false);
             _mainApp->room_view()->on_link_hovered =
+                [hovered](const std::string& url)
+            {
+                if (!url.empty() && !*hovered)
+                {
+                    [[NSCursor pointingHandCursor] push];
+                    *hovered = true;
+                }
+                else if (url.empty() && *hovered)
+                {
+                    [NSCursor pop];
+                    *hovered = false;
+                }
+            };
+        }
+        {
+            auto hovered = std::make_shared<bool>(false);
+            _mainApp->space_root()->on_link_hovered =
                 [hovered](const std::string& url)
             {
                 if (!url.empty() && !*hovered)
@@ -5741,6 +5781,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
     if (_loginView)
         _loginView.hidden = YES;
     [self _teardownLoginView];
+    _shell->mark_main_content_ready();
 }
 
 - (void)dealloc
@@ -5975,6 +6016,16 @@ void MacShell::apply_window_title_ui_(const std::string& title)
     if (uri && _shell)
     {
         _shell->open_matrix_link([uri UTF8String]);
+    }
+}
+
+- (void)dispatchLaunchAction:(tesseract::LaunchAction)action
+                      roomId:(NSString*)roomId
+{
+    if (_shell)
+    {
+        _shell->dispatch_launch_action(action,
+                                       roomId ? [roomId UTF8String] : "");
     }
 }
 
@@ -6876,6 +6927,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
         s->_shell->ensure_settings_controller();
         s->_shell->ensure_history_export_controller();
         [s _bindHistoryExportControllerNative];
+        s->_shell->begin_gated_encryption_setup_if_needed(fin);
     });
 }
 
@@ -6889,6 +6941,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
         std::filesystem::remove_all(_shell->pending_login_temp_dir_, ec);
         _shell->pending_login_temp_dir_.clear();
     }
+    const bool wasAddAccount = _shell->pending_login_is_add_account_;
     _shell->pending_login_is_add_account_ = false;
     const auto& accs = _shell->account_manager_.accounts();
     int returnIdx = _shell->add_account_return_idx_;
@@ -6900,6 +6953,27 @@ void MacShell::apply_window_title_ui_(const std::string& title)
         // so switch_account() returns false and _refreshAccountUIAfterSwitch is
         // skipped. Always hide the login view explicitly.
         [self _refreshAccountUIAfterSwitch];
+    }
+    else if (!wasAddAccount)
+    {
+        // Initial mode: no back-state to return to — rearm a fresh pending
+        // client so Sign In works again, mirroring the one-time setup in
+        // restore_all_accounts_async_'s no-accounts branch. Without this,
+        // _loginView is left clientless and Sign In silently does nothing.
+        [self _ensureLoginView];
+        _shell->pending_login_client_ = std::make_unique<tesseract::Client>();
+        [_loginView setClient:_shell->pending_login_client_.get()];
+        __weak MainWindowController* weakSelf = self;
+        _loginView.onBeginOAuth = ^{
+            MainWindowController* s = weakSelf;
+            if (!s)
+            {
+                return;
+            }
+            s->_shell->arm_pending_login_();
+        };
+        [_loginView setMode:tesseract::views::LoginView::Mode::Initial];
+        [_loginView reset];
     }
 }
 
@@ -7349,12 +7423,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
 
 - (void)_onSpaceBack
 {
-    _shell->pop_space(_roomListView);
-    if (_mainApp)
-        _mainApp->hide_room_preview();
-    if (_mainApp)
-        _mainApp->hide_space_root();
-    [self _refreshRoomList];
+    _shell->space_back_command_();
 }
 
 - (void)_openAccountPicker
@@ -7803,6 +7872,10 @@ void MacShell::apply_window_title_ui_(const std::string& title)
     if (!_mainApp || !_mainAppSurface)
     {
         return;
+    }
+    if (_mainApp->user_info())
+    {
+        _mainApp->user_info()->set_warning_dot(isVerified ? NO : YES);
     }
     // Only prompt when there is actually an identity to verify against. On a
     // fresh/only device our own login-time bootstrap holds the cross-signing

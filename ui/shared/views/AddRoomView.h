@@ -93,7 +93,11 @@ public:
     bool on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
 
     static constexpr float kCardW = 440.0f;
-    static constexpr float kCardH = 460.0f;
+    // +26 over the Join tab's fit for the Create tab's status/error row,
+    // which CreateRoomView::arrange() now always reserves space for
+    // (kCRStatusH + kCRSmallGap) whether or not it's actually showing an
+    // error, so the Create/Cancel buttons don't jump when one appears.
+    static constexpr float kCardH = 486.0f;
     static constexpr float kHeaderH = 48.0f;
     // Card height on the Browse tab, as a fraction of the app window's
     // height — recomputed every arrange() so it tracks window resizes.

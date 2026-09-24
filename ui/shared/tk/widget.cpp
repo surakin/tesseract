@@ -32,7 +32,7 @@ Widget::Widget()
     host_ = stack.empty() ? nullptr : stack.back();
 }
 
-void paint_drag_hover_highlight(PaintCtx& ctx, Rect rect)
+void paint_native_drag_hover_highlight(PaintCtx& ctx, Rect rect)
 {
     constexpr float kInset  = 4.0f;
     constexpr float kRadius = tesseract::visual::kRadiusMD;
@@ -209,7 +209,7 @@ Widget* Widget::dispatch_file_drop(Point world, FileDropPayload& payload)
     return on_file_drop(local, payload) ? this : nullptr;
 }
 
-Widget* Widget::dispatch_drag_hover(Point world)
+Widget* Widget::dispatch_native_drag_hover(Point world)
 {
     if (!visible_ || !contains_world(world))
     {
@@ -218,7 +218,7 @@ Widget* Widget::dispatch_drag_hover(Point world)
     if (!enabled_)
     {
         return this; // absorb: no drop-target highlight behind us (our own
-                     // on_drag_hover never runs, so we paint none either)
+                     // on_native_drag_hover never runs, so we paint none either)
     }
     for (Widget* ch : snapshot_children_rev(children()))
     {
@@ -226,13 +226,39 @@ Widget* Widget::dispatch_drag_hover(Point world)
         {
             continue;
         }
-        if (Widget* hit = ch->dispatch_drag_hover(world))
+        if (Widget* hit = ch->dispatch_native_drag_hover(world))
         {
             return hit;
         }
     }
     Point local{world.x - bounds_.x, world.y - bounds_.y};
-    return on_drag_hover(local) ? this : nullptr;
+    return on_native_drag_hover(local) ? this : nullptr;
+}
+
+Widget* Widget::dispatch_drag_enter(Point world, const DragPayload& payload)
+{
+    if (!visible_ || !contains_world(world))
+    {
+        return nullptr;
+    }
+    if (!enabled_)
+    {
+        return this; // absorb: no drop-target highlight behind us (our own
+                     // on_drag_enter never runs, so we paint none either)
+    }
+    for (Widget* ch : snapshot_children_rev(children()))
+    {
+        if (!ch->visible())
+        {
+            continue;
+        }
+        if (Widget* hit = ch->dispatch_drag_enter(world, payload))
+        {
+            return hit;
+        }
+    }
+    Point local{world.x - bounds_.x, world.y - bounds_.y};
+    return on_drag_enter(local, payload) ? this : nullptr;
 }
 
 bool Widget::dispatch_key_down(const KeyEvent& event)

@@ -5,11 +5,26 @@
 namespace tk
 {
 
-bool is_emoji_only(const std::string& utf8)
+namespace
+{
+
+struct EmojiOnlyClassification
+{
+    bool all_emoji_or_whitespace;
+    bool has_emoji;
+};
+
+// Shared codepoint walk behind is_emoji_only() and is_emoji_only_spans():
+// classifies a single UTF-8 string as "every non-whitespace codepoint is
+// emoji" plus whether it actually contained any emoji at all (a
+// whitespace-only or empty string is `{true, false}` — neutral, so a caller
+// stitching several strings together can skip it without failing the
+// overall emoji-only check).
+EmojiOnlyClassification classify_emoji_only_utf8(std::string_view utf8)
 {
     if (utf8.empty())
     {
-        return false;
+        return {true, false};
     }
 
     // Decode UTF-8 to codepoints.
@@ -45,7 +60,7 @@ bool is_emoji_only(const std::string& utf8)
         }
         else
         {
-            return false; // invalid UTF-8 → not emoji-only
+            return {false, false}; // invalid UTF-8 → not emoji-only
         }
         cps.push_back(cp);
     }
@@ -84,7 +99,7 @@ bool is_emoji_only(const std::string& utf8)
                 i = j + 1;
                 continue;
             }
-            return false; // bare digit / * / # → not emoji-only
+            return {false, false}; // bare digit / * / # → not emoji-only
         }
         // Emoji codepoint ranges (mirrors the Twemoji fallback table).
         if (cp == 0x00A9 || cp == 0x00AE || cp == 0x203C || cp == 0x2049 ||
@@ -110,7 +125,39 @@ bool is_emoji_only(const std::string& utf8)
             ++i;
             continue;
         }
-        return false; // non-emoji codepoint
+        return {false, false}; // non-emoji codepoint
+    }
+    return {true, has_emoji};
+}
+
+} // namespace
+
+bool is_emoji_only(const std::string& utf8)
+{
+    const auto r = classify_emoji_only_utf8(utf8);
+    return r.all_emoji_or_whitespace && r.has_emoji;
+}
+
+bool is_emoji_only_spans(const std::vector<TextSpan>& spans)
+{
+    bool has_emoji = false;
+    for (const auto& sp : spans)
+    {
+        if (sp.is_image)
+        {
+            if (sp.pill_kind != PillKind::Generic)
+            {
+                return false; // a mention pill → not emoji-only
+            }
+            has_emoji = true;
+            continue;
+        }
+        const auto r = classify_emoji_only_utf8(sp.text);
+        if (!r.all_emoji_or_whitespace)
+        {
+            return false;
+        }
+        has_emoji = has_emoji || r.has_emoji;
     }
     return has_emoji;
 }

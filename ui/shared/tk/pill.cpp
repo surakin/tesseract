@@ -77,6 +77,15 @@ void paint_pill_leading_visual(Canvas& canvas, CanvasFactory& /*factory*/,
         canvas.draw_initials_circle(spec.fallback_glyph, centre, diameter,
                                     spec.bg, spec.fg);
     }
+    else if (spec.reserve_leading_visual)
+    {
+        // Stand-in avatar for a slot whose image hasn't resolved (or never
+        // will): initials, like every other avatar without an image.
+        const std::string_view name =
+            spec.kind == PillKind::Room ? std::string_view("@") : spec.text;
+        canvas.draw_initials_circle(name, centre, diameter, spec.initials_bg,
+                                    spec.initials_fg);
+    }
 }
 
 std::unique_ptr<Image> render_pill_bitmap(CanvasFactory& factory,
@@ -141,6 +150,8 @@ CacheKey pill_cache_key(const PillSpec& spec, float line_ascent,
     };
     mix_color(spec.bg);
     mix_color(spec.fg);
+    mix_color(spec.initials_bg);
+    mix_color(spec.initials_fg);
     h = hash_combine(h, std::hash<float>{}(line_ascent));
     h = hash_combine(h, std::hash<float>{}(line_descent));
     h = hash_combine(h, std::hash<float>{}(scale_factor));

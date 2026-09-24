@@ -177,13 +177,13 @@ public:
     // the protected shared dispatch, mirroring ingest_native_file_drop
     // above). The per-widget highlight these drive replaces the old
     // whole-surface "Drop to attach" overlay.
-    Widget* on_drag_hover(tk::Point world)
+    Widget* on_native_drag_hover(tk::Point world)
     {
-        return dispatch_drag_hover(world);
+        return dispatch_native_drag_hover(world);
     }
-    void on_drag_leave()
+    void on_native_drag_leave()
     {
-        dispatch_drag_leave();
+        dispatch_native_drag_leave();
     }
 
 protected:
@@ -603,7 +603,7 @@ tk::KeyEvent translate_key_event(NSEvent* event)
     {
         // Same conversion as -performDragOperation: below.
         NSPoint loc = [self convertPoint:sender.draggingLocation fromView:nil];
-        self.hostPtr->on_drag_hover(
+        self.hostPtr->on_native_drag_hover(
             {static_cast<float>(loc.x), static_cast<float>(loc.y)});
     }
     return op;
@@ -614,7 +614,7 @@ tk::KeyEvent translate_key_event(NSEvent* event)
     (void)sender;
     if (self.hostPtr)
     {
-        self.hostPtr->on_drag_leave();
+        self.hostPtr->on_native_drag_leave();
     }
 }
 
@@ -640,7 +640,7 @@ tk::KeyEvent translate_key_event(NSEvent* event)
     BOOL ok = self.hostPtr->ingest_native_file_drop(sender.draggingPasteboard, pos)
                  ? YES
                  : NO;
-    self.hostPtr->on_drag_leave();
+    self.hostPtr->on_native_drag_leave();
     return ok;
 }
 
@@ -1228,7 +1228,7 @@ public:
     // the dropped file's path as text — before the Surface's own
     // -draggingEntered:/-performDragOperation: ever saw it. These mirror
     // TKSurfaceView's own overrides exactly, resolving the drop location
-    // into superview_'s coordinate space (what tk::macos::Host::on_drag_hover/
+    // into superview_'s coordinate space (what tk::macos::Host::on_native_drag_hover/
     // ingest_native_file_drop expect) instead of this view's local space.
     NSDragOperation dragging_entered(id<NSDraggingInfo> sender) const;
     NSDragOperation dragging_updated(id<NSDraggingInfo> sender) const;
@@ -1265,7 +1265,7 @@ public:
     void insert_emoticon(int start, int end, const std::string& shortcode,
                          const std::string& mxc_url, const tk::Image* image) override;
     std::vector<tesseract::MentionSeg> composer_draft() const override;
-    void set_mention_colors(Color bg, Color fg) override;
+    void set_mention_colors(const tk::MentionColors& colors) override;
     void refresh_mention_avatar(const std::string& user_id,
                                const tk::Image* avatar) override;
     void refresh_room_mention_avatar(const tk::Image* avatar) override;
@@ -1372,8 +1372,7 @@ private:
     std::function<void()> on_pointer_down_;
     // Raw (not NSColor) so insert_mention() can hand them straight to
     // tk::PillSpec / tk::render_pill_bitmap without a lossy round trip.
-    Color mention_bg_{};
-    Color mention_fg_{};
+    tk::MentionColors mention_colors_{};
     // Lazily created — CanvasFactory is a stateless-ish per-backend wrapper
     // (fresh CG objects per call), cheap to own here rather than threading a
     // Surface reference through just for this one rasterization call.
@@ -2380,8 +2379,10 @@ void NSTextViewNative::insert_mention(int start, int end,
     // ever offers @room for this room), so both kinds always reserve the
     // slot — no url-ambiguity to check.
     spec.reserve_leading_visual = true;
-    spec.bg = mention_bg_;
-    spec.fg = mention_fg_;
+    spec.bg = mention_colors_.bg;
+    spec.fg = mention_colors_.fg;
+    spec.initials_bg = mention_colors_.initials_bg;
+    spec.initials_fg = mention_colors_.initials_fg;
     const CGFloat scale = view_.window.backingScaleFactor ?: 2.0;
 
     // Reuse an already-rasterized identical pill (same kind/text/colors/
@@ -2586,10 +2587,9 @@ std::vector<tesseract::MentionSeg> NSTextViewNative::composer_draft() const
     return segs;
 }
 
-void NSTextViewNative::set_mention_colors(Color bg, Color fg)
+void NSTextViewNative::set_mention_colors(const tk::MentionColors& colors)
 {
-    mention_bg_ = bg;
-    mention_fg_ = fg;
+    mention_colors_ = colors;
 }
 
 void NSTextViewNative::refresh_mention_avatar(const std::string& user_id,
@@ -2625,8 +2625,10 @@ void NSTextViewNative::refresh_mention_avatar(const std::string& user_id,
                 spec.text = m.displayName.UTF8String ? m.displayName.UTF8String : "";
                 spec.kind = tk::PillKind::User;
                 spec.image = avatar;
-                spec.bg = mention_bg_;
-                spec.fg = mention_fg_;
+                spec.bg = mention_colors_.bg;
+                spec.fg = mention_colors_.fg;
+                spec.initials_bg = mention_colors_.initials_bg;
+                spec.initials_fg = mention_colors_.initials_fg;
                 const tk::cg::RealLineMetrics lm =
                     tk::cg::real_line_metrics(tk::FontRole::Body);
                 const CGFloat scale = view_.window.backingScaleFactor ?: 2.0;
@@ -2685,8 +2687,10 @@ void NSTextViewNative::refresh_room_mention_avatar(const tk::Image* avatar)
                 spec.kind = tk::PillKind::Room;
                 spec.image = avatar;
                 spec.reserve_leading_visual = true;
-                spec.bg = mention_bg_;
-                spec.fg = mention_fg_;
+                spec.bg = mention_colors_.bg;
+                spec.fg = mention_colors_.fg;
+                spec.initials_bg = mention_colors_.initials_bg;
+                spec.initials_fg = mention_colors_.initials_fg;
                 const tk::cg::RealLineMetrics lm =
                     tk::cg::real_line_metrics(tk::FontRole::Body);
                 const CGFloat scale = view_.window.backingScaleFactor ?: 2.0;
@@ -2851,7 +2855,7 @@ NSDragOperation NSTextViewNative::dragging_updated(id<NSDraggingInfo> sender) co
     if (op != NSDragOperationNone && superview_.hostPtr)
     {
         NSPoint loc = [superview_ convertPoint:sender.draggingLocation fromView:nil];
-        superview_.hostPtr->on_drag_hover(
+        superview_.hostPtr->on_native_drag_hover(
             {static_cast<float>(loc.x), static_cast<float>(loc.y)});
     }
     return op;
@@ -2861,7 +2865,7 @@ void NSTextViewNative::dragging_exited(id<NSDraggingInfo> sender) const
 {
     (void)sender;
     if (superview_.hostPtr)
-        superview_.hostPtr->on_drag_leave();
+        superview_.hostPtr->on_native_drag_leave();
 }
 
 BOOL NSTextViewNative::prepare_for_drag_operation(id<NSDraggingInfo> sender) const
@@ -2879,7 +2883,7 @@ BOOL NSTextViewNative::perform_drag_operation(id<NSDraggingInfo> sender) const
     BOOL ok = superview_.hostPtr->ingest_native_file_drop(sender.draggingPasteboard, pos)
                   ? YES
                   : NO;
-    superview_.hostPtr->on_drag_leave();
+    superview_.hostPtr->on_native_drag_leave();
     return ok;
 }
 
@@ -3578,6 +3582,7 @@ void Host::on_draw(CGContextRef ctx)
         paint_tooltip_overlay(pc, surface_bounds);
         paint_focus_overlay(pc);
         paint_toast_overlay(pc, surface_bounds);
+        paint_drag_overlay(pc, surface_bounds);
     }
     else
     {

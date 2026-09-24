@@ -466,6 +466,127 @@ void PlaceholderApiDoesNotCrashWhenEmptyOrPopulated() {
     DestroyWindow(hwnd);
 }
 
+void SendKeyWithModifiers(HWND hwnd, WPARAM key, bool ctrl, bool shift) {
+    BYTE keyboard_state[256] = {};
+    if (!GetKeyboardState(keyboard_state)) {
+        SendMessageW(hwnd, WM_KEYDOWN, key, 0);
+        return;
+    }
+
+    const BYTE previous_ctrl = keyboard_state[VK_CONTROL];
+    const BYTE previous_shift = keyboard_state[VK_SHIFT];
+    if (ctrl) keyboard_state[VK_CONTROL] |= 0x80;
+    if (shift) keyboard_state[VK_SHIFT] |= 0x80;
+    SetKeyboardState(keyboard_state);
+    SendMessageW(hwnd, WM_KEYDOWN, key, 0);
+    keyboard_state[VK_CONTROL] = previous_ctrl;
+    keyboard_state[VK_SHIFT] = previous_shift;
+    SetKeyboardState(keyboard_state);
+}
+
+int64_t CaretAfter(HWND hwnd, int64_t start, WPARAM key, bool ctrl, bool shift = false) {
+    BetterTextSetSelection(hwnd, start, start);
+    SendKeyWithModifiers(hwnd, key, ctrl, shift);
+    BetterTextSelection sel{};
+    BetterTextGetSelection(hwnd, &sel);
+    return sel.caret;
+}
+
+std::wstring TextOf(HWND hwnd) {
+    wchar_t buffer[128] = {};
+    BetterTextGetText(hwnd, buffer, 128);
+    return buffer;
+}
+
+void CtrlWordNavigationAndDeletion() {
+    HWND hwnd = CreateHiddenControl(GetModuleHandleW(nullptr));
+    Expect(hwnd != nullptr, "create hidden control for word navigation test");
+    if (!hwnd) {
+        return;
+    }
+
+    BetterTextSetText(hwnd, L"hello, world  foo");
+    Expect(CaretAfter(hwnd, 0, VK_RIGHT, true) == 5, "ctrl+right stops at end of word before punctuation");
+    Expect(CaretAfter(hwnd, 5, VK_RIGHT, true) == 7, "ctrl+right skips punctuation and trailing space");
+    Expect(CaretAfter(hwnd, 7, VK_RIGHT, true) == 14, "ctrl+right lands at start of next word past several spaces");
+    Expect(CaretAfter(hwnd, 14, VK_RIGHT, true) == 17, "ctrl+right on last word goes to end");
+    Expect(CaretAfter(hwnd, 17, VK_LEFT, true) == 14, "ctrl+left goes to start of current word");
+    Expect(CaretAfter(hwnd, 14, VK_LEFT, true) == 7, "ctrl+left skips spaces then previous word");
+    Expect(CaretAfter(hwnd, 9, VK_LEFT, true) == 7, "ctrl+left from mid-word goes to its start");
+    Expect(CaretAfter(hwnd, 7, VK_LEFT, true) == 5, "ctrl+left stops at punctuation run");
+
+    BetterTextSelection sel{};
+    BetterTextSetSelection(hwnd, 17, 17);
+    SendKeyWithModifiers(hwnd, VK_LEFT, true, true);
+    BetterTextGetSelection(hwnd, &sel);
+    Expect(sel.anchor == 17 && sel.caret == 14, "ctrl+shift+left extends selection by a word");
+
+    // Word boundaries step over whole emoji clusters.
+    BetterTextSetText(hwnd, L"ab \U0001F600\U0001F600");
+    Expect(CaretAfter(hwnd, 7, VK_LEFT, true) == 3, "ctrl+left treats an emoji run as one word");
+
+    // Newline is its own stop.
+    BetterTextSetText(hwnd, L"one\ntwo");
+    Expect(CaretAfter(hwnd, 4, VK_LEFT, true) == 3, "ctrl+left at line start only crosses the newline");
+    Expect(CaretAfter(hwnd, 3, VK_RIGHT, true) == 4, "ctrl+right at line end only crosses the newline");
+
+    BetterTextSetText(hwnd, L"hello brave world");
+    BetterTextSetSelection(hwnd, 17, 17);
+    SendKeyWithModifiers(hwnd, VK_BACK, true, false);
+    Expect(TextOf(hwnd) == L"hello brave ", "ctrl+backspace deletes the previous word");
+    SendKeyWithModifiers(hwnd, VK_BACK, true, false);
+    Expect(TextOf(hwnd) == L"hello ", "ctrl+backspace deletes trailing spaces with the word");
+    // TranslateMessage's WM_CHAR for Ctrl+Backspace must not insert U+007F.
+    SendMessageWithCtrl(hwnd, WM_CHAR, 0x7f);
+    Expect(TextOf(hwnd) == L"hello ", "ctrl+backspace WM_CHAR 0x7f inserts nothing");
+
+    BetterTextSetText(hwnd, L"hello brave world");
+    BetterTextSetSelection(hwnd, 0, 0);
+    SendKeyWithModifiers(hwnd, VK_DELETE, true, false);
+    Expect(TextOf(hwnd) == L"brave world", "ctrl+delete deletes to the start of the next word");
+
+    BetterTextSetText(hwnd, L"hello brave world");
+    BetterTextSetSelection(hwnd, 0, 3);
+    SendKeyWithModifiers(hwnd, VK_BACK, true, false);
+    Expect(TextOf(hwnd) == L"lo brave world", "ctrl+backspace with a selection deletes only the selection");
+
+    BetterTextSetPasswordMode(hwnd, TRUE);
+    BetterTextSetText(hwnd, L"pass word");
+    BetterTextSetSelection(hwnd, 9, 9);
+    SendKeyWithModifiers(hwnd, VK_BACK, true, false);
+    Expect(TextOf(hwnd).empty(), "ctrl+backspace in password mode clears to the start");
+
+    DestroyWindow(hwnd);
+}
+
+void HomeEndUseLineAndCtrlUsesDocument() {
+    HWND hwnd = CreateHiddenControl(GetModuleHandleW(nullptr));
+    Expect(hwnd != nullptr, "create hidden control for home/end test");
+    if (!hwnd) {
+        return;
+    }
+
+    BetterTextSetText(hwnd, L"one\ntwo\nsix");
+    Expect(CaretAfter(hwnd, 5, VK_HOME, false) == 4, "home goes to start of the current line");
+    Expect(CaretAfter(hwnd, 5, VK_END, false) == 7, "end goes to end of the current line, before the newline");
+    Expect(CaretAfter(hwnd, 9, VK_END, false) == 11, "end on the last line goes to the document end");
+    Expect(CaretAfter(hwnd, 5, VK_HOME, true) == 0, "ctrl+home goes to document start");
+    Expect(CaretAfter(hwnd, 5, VK_END, true) == 11, "ctrl+end goes to document end");
+
+    BetterTextSelection sel{};
+    BetterTextSetSelection(hwnd, 5, 5);
+    SendKeyWithModifiers(hwnd, VK_END, true, true);
+    BetterTextGetSelection(hwnd, &sel);
+    Expect(sel.anchor == 5 && sel.caret == 11, "ctrl+shift+end extends selection to document end");
+
+    BetterTextSetSelection(hwnd, 5, 5);
+    SendKeyWithModifiers(hwnd, VK_HOME, false, true);
+    BetterTextGetSelection(hwnd, &sel);
+    Expect(sel.anchor == 5 && sel.caret == 4, "shift+home extends selection to line start");
+
+    DestroyWindow(hwnd);
+}
+
 } // namespace
 
 int main() {
@@ -486,6 +607,8 @@ int main() {
     PasswordModeLeavesUnderlyingTextIntact();
     PlaceholderApiDoesNotCrashWhenEmptyOrPopulated();
     ClusterAwareCaretMovement();
+    CtrlWordNavigationAndDeletion();
+    HomeEndUseLineAndCtrlUsesDocument();
 
     if (g_failures != 0) {
         std::cerr << g_failures << " BetterText test(s) failed.\n";

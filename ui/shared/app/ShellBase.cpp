@@ -1547,6 +1547,38 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         {
             ensure_media_thumbnail_(mxc, 64, 64, false);
         };
+        // Mirrors setup_link_clicked_'s identical RoomView wiring.
+        sr->on_link_clicked = [this](const std::string& url)
+        {
+            if (Client::parse_matrix_link(url).kind != Client::MatrixLink::Kind::Unknown)
+                open_matrix_link(url);
+            else
+                Client::open_in_browser(url);
+        };
+        // Room-management section (add candidates / space children). Same
+        // rooms_-derived source RoomListView uses, just filtered
+        // differently — see set_children() forwarding the exclusion set.
+        sr->set_candidate_rooms_provider([this]() { return rooms_; });
+        sr->on_room_avatar_needed = [this](const tesseract::RoomInfo& r)
+        {
+            ensure_room_avatar_(r);
+        };
+        sr->on_add_room_to_space = [this](std::string space_id, std::string room_id)
+        {
+            request_add_room_to_space_(space_id, room_id);
+        };
+        sr->on_remove_room_from_space = [this](std::string space_id, std::string room_id)
+        {
+            request_remove_room_from_space_(space_id, room_id);
+        };
+        // Not wired: get_cached_unjoined_summaries_() (called from
+        // refresh_space_root_children_ below) already proactively fetches
+        // every unjoined child's summary whenever it's called — the same
+        // mechanism RoomListView's own "Available to join" section relies
+        // on — so there is nothing left for this widget-triggered hook to
+        // do beyond what refresh_space_root_children_'s triggers already
+        // cover.
+        sr->on_child_summary_needed = [](std::string) {};
     }
     app->room_list_view()->set_avatar_provider(avatar_lookup);
     // Lazy avatar fetching: the provider above is a pure cache peek, so the
@@ -2260,7 +2292,7 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
             [this](const std::string& room_id, const std::string& slot_id,
                    bool audio_only)
         {
-            start_call(room_id, slot_id, audio_only);
+            request_call_(room_id, slot_id, audio_only);
         };
     }
 
@@ -3741,6 +3773,8 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
     notify_tray_unread_();
     if (user_id != my_user_id_)
     {
+        // A pending --open-room target may live on this (inactive) account.
+        retry_pending_launch_room_();
         return;
     }
     rooms_ = std::move(rooms);
@@ -3762,6 +3796,24 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
         invalidate_known_users_();
     }
     update_space_children_cache_();
+    // Immediate (not waiting on update_space_children_cache_'s async
+    // fetch, which no-ops when the space-children set itself didn't
+    // change): the room-management section's candidate list depends on
+    // rooms_ directly, so a newly joined/left room needs to be reflected
+    // here even when no space's children changed at all.
+    //
+    // Re-runs the full show_space_root_ (not just refresh_space_root_children_)
+    // so the space's own RoomInfo — in particular its name — gets re-pushed
+    // too: a just-created space can still be showing sync's placeholder
+    // "Empty room" name (matrix-sdk's display_name() fallback, computed
+    // before the m.room.name state event this same create_room call set had
+    // actually arrived) at the moment it was first shown, and nothing else
+    // ever revisits that once shown. show_space_root_ no-ops harmlessly
+    // when nothing is currently shown (room_by_id_("") is null).
+    if (!space_root_shown_id_.empty())
+        show_space_root_(space_root_shown_id_);
+    else
+        refresh_space_root_children_(space_root_shown_id_);
     on_rooms_updated_();
     // Re-evaluate call-button and threads-button visibility for the current
     // room: bridge status (is_bridged) can change via on_rooms_updated without
@@ -3779,6 +3831,23 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
         }
         if (client_ && room_view_)
             apply_threads_list_(client_->list_room_threads(current_room_id_));
+        // A just-created room can turn out to be a space only once sync
+        // actually delivers its creation_content — e.g. CreateRoomView's
+        // "Create Space" navigates here before this room exists in rooms_
+        // at all, so after_active_room_changed_()'s is_space check saw
+        // nothing and fell through to the normal RoomView. Retry that
+        // check now that rooms_ actually knows about the room, so the view
+        // doesn't stay stuck showing it as a plain chat room.
+        if (const auto* cur = room_by_id_(current_room_id_);
+            cur && cur->is_space && space_root_shown_id_ != current_room_id_)
+        {
+            show_space_root_(current_room_id_);
+        }
+        // Same for a just-created call room: after_active_room_changed_()'s
+        // handle_call_room_navigation_() couldn't see is_call_room yet, so
+        // the lobby never opened. Retry once now that the room is known.
+        if (pending_call_room_nav_id_ == current_room_id_ && room_by_id_(current_room_id_))
+            handle_call_room_navigation_();
     }
     // Call members / bridge status may have changed with this update.
     refresh_call_banners_();
@@ -3786,6 +3855,7 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
     // both pin/unpin state-event changes and PL changes that flip can_pin
     // or the redact-others (delete-others'-messages) permission.
     refresh_pinned_for_current_room_();
+    retry_pending_launch_room_();
 
     // Every background-warming dispatch below shares the single-thread
     // mut_pool_ with subscribe_room() (queued moments ago inside
@@ -4122,6 +4192,7 @@ void ShellBase::leave_space_navigate_back_(const std::string& space_id)
         main_app_->hide_room_preview();
         main_app_->hide_space_root();
     }
+    space_root_shown_id_.clear();
     refresh_room_list_();
     if (!space_nav_frames_.empty())
     {
@@ -4133,6 +4204,38 @@ void ShellBase::leave_space_navigate_back_(const std::string& space_id)
     {
         current_room_id_.clear();
         after_active_room_changed_();
+    }
+}
+
+void ShellBase::space_back_command_()
+{
+    if (!space_stack_.empty())
+        space_stack_.pop_back();
+    if (main_app_)
+        main_app_->hide_room_preview();
+
+    if (const auto* cur = room_by_id_(current_room_id_); cur && cur->is_space)
+    {
+        // current_room_id_ is itself still a space — e.g. it's what's
+        // actually open in the main pane — so re-assert the space root
+        // instead of hiding it: hide_space_root() unconditionally reveals
+        // RoomView underneath, which would show that space's own
+        // (effectively empty) room instead.
+        show_space_root_(current_room_id_);
+    }
+    else
+    {
+        if (main_app_)
+            main_app_->hide_space_root();
+        space_root_shown_id_.clear();
+    }
+
+    refresh_room_list_();
+    if (!space_nav_frames_.empty())
+    {
+        if (main_app_ && main_app_->room_list_view())
+            space_nav_frames_.back().restore(main_app_->room_list_view());
+        space_nav_frames_.pop_back();
     }
 }
 
@@ -4479,6 +4582,7 @@ void ShellBase::update_space_children_cache_()
                         }
 
                         on_space_children_cache_ready_ui_();
+                        refresh_space_root_children_(space_root_shown_id_);
                     }
                 });
         });
@@ -4557,6 +4661,7 @@ void ShellBase::fetch_single_room_summary_(const std::string& space_id,
                             if (auto* rl = main_app_->room_list_view())
                                 rl->set_space_unjoined_rooms(
                                     std::vector<tesseract::RoomSummary>(summaries));
+                        refresh_space_root_children_(space_id);
                         if (!cached.avatar_url.empty())
                             ensure_media_thumbnail_(cached.avatar_url, 64, 64, false);
                     });
@@ -4641,6 +4746,7 @@ void ShellBase::handle_space_child_summary_ready_ui_(std::uint64_t request_id,
         if (auto* rl = main_app_->room_list_view())
             rl->set_space_unjoined_rooms(
                 std::vector<tesseract::RoomSummary>(cached));
+    refresh_space_root_children_(space_id);
 }
 
 void ShellBase::handle_server_info_async_ready_ui_(std::uint64_t /*request_id*/,
@@ -4959,7 +5065,119 @@ void ShellBase::show_space_root_(const std::string& space_id)
 
     main_app_->show_space_root(*space, joined_children, unjoined_children,
                                make_avatar_image_provider_());
+    space_root_shown_id_ = space_id;
+    refresh_space_root_children_(space_id);
     request_relayout_();
+}
+
+void ShellBase::refresh_space_root_children_(const std::string& space_id)
+{
+    if (!main_app_ || !main_app_->space_root() || space_id.empty() ||
+        space_id != space_root_shown_id_)
+    {
+        return;
+    }
+
+    std::vector<views::SpaceChildRoomGrid::ChildRoomEntry> entries;
+
+    if (auto it = space_children_cache_.find(space_id);
+        it != space_children_cache_.end())
+    {
+        // Mirrors refresh_room_list_()'s identical drilled-into-space
+        // filter: iterate rooms_ (the same source RoomListView itself is
+        // built from) and keep only those the cache says are children —
+        // NOT the reverse (iterating child ids and looking each one up),
+        // which would let a stale id space_children() still reports (e.g.
+        // a room since left/abandoned, no longer in rooms_) leak through
+        // as a blank placeholder entry.
+        const auto& child_ids = it->second;
+        for (const auto& r : rooms_)
+        {
+            if (std::find(child_ids.begin(), child_ids.end(), r.id) ==
+                child_ids.end())
+                continue;
+            views::SpaceChildRoomGrid::ChildRoomEntry entry;
+            entry.joined = true;
+            entry.info = r;
+            entries.push_back(std::move(entry));
+        }
+    }
+
+    if (auto it = unjoined_space_children_cache_.find(space_id);
+        it != unjoined_space_children_cache_.end())
+    {
+        // Also proactively kicks off a fetch for every summary not yet
+        // cached — the same mechanism RoomListView's own "Available to
+        // join" section already relies on (see its doc comment). Mirroring
+        // that section exactly: only ids with an already-resolved summary
+        // are shown — RoomListView's own set_space_unjoined_rooms() is fed
+        // solely from unjoined_summaries_cache_, never a placeholder for a
+        // still-pending or perpetually-failing (e.g. dead/unreachable)
+        // child — so a child id with no summary yet simply doesn't appear
+        // here either, rather than as a permanent blank/"Loading…" row.
+        const auto& cached_summaries = get_cached_unjoined_summaries_(space_id);
+        for (const auto& id : it->second)
+        {
+            auto sit = std::find_if(
+                cached_summaries.begin(), cached_summaries.end(),
+                [&](const tesseract::RoomSummary& s) { return s.room_id == id; });
+            if (sit == cached_summaries.end())
+                continue;
+            views::SpaceChildRoomGrid::ChildRoomEntry entry;
+            entry.joined = false;
+            entry.info.id = id;
+            entry.info.name = sit->name;
+            entry.info.topic = sit->topic;
+            entry.info.avatar_url = sit->avatar_url;
+            entries.push_back(std::move(entry));
+        }
+    }
+
+    main_app_->space_root()->set_children(std::move(entries));
+    main_app_->space_root()->set_can_manage_children(
+        client_ && client_->can_edit_space_children(space_id));
+}
+
+void ShellBase::request_add_room_to_space_(const std::string& space_id,
+                                           const std::string& room_id)
+{
+    if (!client_ || space_id.empty() || room_id.empty())
+        return;
+
+    auto& joined = space_children_cache_[space_id];
+    if (std::find(joined.begin(), joined.end(), room_id) == joined.end())
+        joined.push_back(room_id);
+    auto& unjoined = unjoined_space_children_cache_[space_id];
+    unjoined.erase(std::remove(unjoined.begin(), unjoined.end(), room_id),
+                  unjoined.end());
+    refresh_space_root_children_(space_id);
+    // The main sidebar's root-level grouping (filter_root_rooms) and any
+    // drilled-into-space view both key off space_children_cache_ too — not
+    // just the space-root section above.
+    refresh_room_list_();
+
+    const auto req_id = next_room_action_id_++;
+    pending_room_actions_[req_id] = {room_id, RoomActionKind::AddSpaceChild, space_id};
+    client_->add_room_to_space_async(req_id, space_id, room_id, {});
+}
+
+void ShellBase::request_remove_room_from_space_(const std::string& space_id,
+                                                const std::string& room_id)
+{
+    if (!client_ || space_id.empty() || room_id.empty())
+        return;
+
+    auto& joined = space_children_cache_[space_id];
+    joined.erase(std::remove(joined.begin(), joined.end(), room_id), joined.end());
+    auto& unjoined = unjoined_space_children_cache_[space_id];
+    unjoined.erase(std::remove(unjoined.begin(), unjoined.end(), room_id),
+                  unjoined.end());
+    refresh_space_root_children_(space_id);
+    refresh_room_list_();
+
+    const auto req_id = next_room_action_id_++;
+    pending_room_actions_[req_id] = {room_id, RoomActionKind::RemoveSpaceChild, space_id};
+    client_->remove_room_from_space_async(req_id, space_id, room_id);
 }
 
 void ShellBase::cancel_unjoined_summaries_()
@@ -5290,6 +5508,104 @@ void ShellBase::open_settings_to_account_tab_()
     open_app_settings_ui_();
     if (stats_settings_view_)
         stats_settings_view_->show_account_section();
+}
+
+void ShellBase::dispatch_launch_action_(LaunchAction action, std::string room_id)
+{
+    if (action == LaunchAction::None)
+    {
+        return;
+    }
+    if (action == LaunchAction::Room)
+    {
+        // Empty when replaying a held Room action from
+        // mark_main_content_ready_: the ID is already pending.
+        if (!room_id.empty())
+        {
+            pending_launch_room_id_ = std::move(room_id);
+        }
+        if (pending_launch_room_id_.empty())
+        {
+            return;
+        }
+    }
+    if (!main_content_ready_)
+    {
+        pending_launch_action_ = action;
+        return;
+    }
+    raise_main_window_ui_();
+    switch (action)
+    {
+    case LaunchAction::QuickSwitcher:
+        open_quick_switch_ui_();
+        break;
+    case LaunchAction::MessageSearch:
+        open_message_search_ui_();
+        break;
+    case LaunchAction::Settings:
+        open_app_settings_ui_();
+        break;
+    case LaunchAction::Room:
+        open_launch_room_(pending_launch_room_id_);
+        break;
+    case LaunchAction::None:
+        break;
+    }
+}
+
+void ShellBase::mark_main_content_ready_()
+{
+    main_content_ready_ = true;
+    if (pending_launch_action_ != LaunchAction::None)
+    {
+        const auto action = pending_launch_action_;
+        pending_launch_action_ = LaunchAction::None;
+        dispatch_launch_action_(action);
+    }
+}
+
+void ShellBase::retry_pending_launch_room_()
+{
+    // Only once a held action has run: before that, mark_main_content_ready_
+    // replays it through dispatch_launch_action_ (which also raises the
+    // window).
+    if (main_content_ready_ && pending_launch_action_ == LaunchAction::None &&
+        !pending_launch_room_id_.empty())
+    {
+        open_launch_room_(pending_launch_room_id_);
+    }
+}
+
+void ShellBase::open_launch_room_(const std::string& room_id)
+{
+    if (room_id.empty())
+    {
+        return;
+    }
+    // Callers commonly pass pending_launch_room_id_ itself. Copy before
+    // clearing that member so navigation never observes an invalidated alias.
+    const std::string target_room_id = room_id;
+    for (const auto& [user_id, rooms] : per_account_rooms_)
+    {
+        const bool found = std::any_of(
+            rooms.begin(), rooms.end(),
+            [&](const RoomInfo& room) { return room.id == target_room_id; });
+        if (!found)
+        {
+            continue;
+        }
+        pending_launch_room_id_.clear();
+        if (!active_account_ || active_account_->user_id != user_id)
+        {
+            switch_active_account_(user_id);
+        }
+        navigate_to_room_(target_room_id);
+        return;
+    }
+    // Account restoration or the initial room snapshot may still be in
+    // progress. push_rooms_ retries without opening a join prompt.
+    pending_launch_room_id_ = target_room_id;
 }
 
 void ShellBase::handle_profile_field_change_(const std::string& key,
@@ -5980,7 +6296,7 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
     auto it = pending_room_actions_.find(request_id);
     if (it == pending_room_actions_.end())
         return;
-    auto [room_id, kind] = std::move(it->second);
+    auto [room_id, kind, action_space_id] = std::move(it->second);
     pending_room_actions_.erase(it);
 
     if (!ok)
@@ -6016,6 +6332,12 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
         case RoomActionKind::AcceptKnock:
             verb = tk::tr("accept join request");
             break;
+        case RoomActionKind::AddSpaceChild:
+            verb = tk::tr("add room to space");
+            break;
+        case RoomActionKind::RemoveSpaceChild:
+            verb = tk::tr("remove room from space");
+            break;
         }
         std::string status = tk::trf(tk::tr("Couldn't {0}"), {verb});
         if (!message.empty())
@@ -6025,6 +6347,33 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
             on_join_room_outcome_ui_(false, room_id, message);
         else if (kind == RoomActionKind::Create)
             on_create_room_outcome_ui_(false, room_id, message);
+        else if (kind == RoomActionKind::AddSpaceChild ||
+                 kind == RoomActionKind::RemoveSpaceChild)
+        {
+            // Revert the optimistic cache mutation request_add/remove_
+            // room_to/from_space_ already applied, then re-push the
+            // (now-reverted) child set to the UI.
+            const bool was_add = (kind == RoomActionKind::AddSpaceChild);
+            if (was_add)
+            {
+                auto& joined = space_children_cache_[action_space_id];
+                joined.erase(std::remove(joined.begin(), joined.end(), room_id),
+                            joined.end());
+            }
+            else
+            {
+                // We don't know whether the removed child was joined or
+                // unjoined at the time of the request — re-derive both from
+                // the still-authoritative last-known-good source (a fresh
+                // update_space_children_cache_() pass) rather than guessing
+                // which vector to restore it to.
+                update_space_children_cache_();
+            }
+            // refresh_space_root_children_ itself checks whether
+            // action_space_id is the one currently shown.
+            refresh_space_root_children_(action_space_id);
+            refresh_room_list_();
+        }
         return;
     }
 
@@ -6106,6 +6455,14 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
         // No navigation — the admin didn't join anything. The requester
         // becomes an invited/joined member on the next sync tick, and
         // on_knock_requests_updated will drop them from the panel.
+        break;
+    case RoomActionKind::AddSpaceChild:
+    case RoomActionKind::RemoveSpaceChild:
+        // No extra work — request_add/remove_room_to/from_space_ already
+        // applied the optimistic UI update before this call was even made;
+        // the real m.space.child state lands via the next sync tick like
+        // any other state change, which update_space_children_cache_()
+        // picks up through its existing polling/refresh triggers.
         break;
     }
 }
@@ -7224,10 +7581,13 @@ std::vector<ShellBase::UserMenuItem> ShellBase::build_user_menu_items_(
     std::function<void()> add_account,
     std::function<void()> show_qr_grant,
     std::function<void()> logout,
-    std::function<void()> quit) const
+    std::function<void()> quit,
+    std::function<void()> verify_session) const
 {
     std::vector<UserMenuItem> items;
     items.push_back({tk::tr("Settings\xe2\x80\xa6"),    std::move(open_settings)});
+    if (verify_session)
+        items.push_back({tk::tr("Verify this session\xe2\x80\xa6"), std::move(verify_session)});
     items.push_back({tk::tr("Add Account\xe2\x80\xa6"), std::move(add_account)});
     if (server_info_.supports_qr_grant && show_qr_grant)
         items.push_back({tk::tr("Add device via QR\xe2\x80\xa6"), std::move(show_qr_grant)});
@@ -7532,8 +7892,56 @@ ShellBase::FinalizeLoginIO ShellBase::finalize_login_blocking_(
     // expensive part of finalize — this is why finalize_login_blocking_
     // exists as a separate, worker-thread-only step.
     session->bridge = make_account_bridge_(session->user_id);
-    session->client->start_sync(session->bridge.get());
-    session->sync_started = true;
+
+    // Determine whether recovery/cross-signing needs setting up on this
+    // device BEFORE starting sync, so the encryption-setup flow (and any
+    // SAS verification the user starts from it) doesn't have to compete
+    // with the initial sync for the crypto machine — the race that made
+    // verification slow/flaky right after login. recovery_state() is a
+    // cheap local read, but can briefly report Unknown while the crypto
+    // machine finishes initializing, so poll it for a short bound; if it's
+    // still Unknown after that, don't block startup on it — start_sync
+    // proceeds normally and check_encryption_setup_() will catch it later,
+    // same as the pre-existing (unlocked) behavior.
+    uint8_t recovery_state = session->client->recovery_state();
+    {
+        constexpr auto kPollInterval = std::chrono::milliseconds(50);
+        constexpr auto kPollTimeout  = std::chrono::milliseconds(2000);
+        const auto      deadline     = std::chrono::steady_clock::now() + kPollTimeout;
+        while (recovery_state == 0 /* Unknown */ &&
+               std::chrono::steady_clock::now() < deadline)
+        {
+            std::this_thread::sleep_for(kPollInterval);
+            recovery_state = session->client->recovery_state();
+        }
+    }
+
+    if (recovery_state == 1 /* Disabled */ || recovery_state == 3 /* Incomplete */)
+    {
+        // Disabled is ambiguous between a truly fresh account (bootstrap a
+        // new identity, Fresh) and one whose identity was set up on another
+        // device without server-side secret storage (must Recover instead)
+        // — same distinction check_encryption_setup_() makes; see
+        // foreign_cross_signing_identity_()'s doc comment.
+        const bool foreign_identity =
+            session->client->own_identity_exists() &&
+            !session->client->have_cross_signing_keys();
+        out.needs_encryption_setup        = true;
+        out.encryption_setup_recover_mode = recovery_state == 3 || foreign_identity;
+        session->sync_started              = false;
+        // Attach the handler (without starting the sync loop) so the
+        // encryption-setup overlay's enable_recovery/recover progress
+        // callbacks — routed through this same handler — actually reach the
+        // UI instead of silently vanishing. release_pending_sync_gate_()
+        // later calls the real start_sync(), which re-attaches (harmlessly)
+        // and spawns the sync tasks this deliberately skips for now.
+        session->client->attach_event_handler(session->bridge.get());
+    }
+    else
+    {
+        session->client->start_sync(session->bridge.get());
+        session->sync_started = true;
+    }
     apply_search_indexing_pref_(*session->client);
     apply_membership_events_pref_(*session->client);
     apply_msc2545_legacy_compat_pref_(*session->client);
@@ -7634,6 +8042,37 @@ void ShellBase::finalize_login_async_(std::function<void(FinalizeLoginResult)> d
                     done(std::move(io->result));
                 });
         });
+}
+
+void ShellBase::begin_gated_encryption_setup_if_needed_(const FinalizeLoginResult& fin)
+{
+    if (!fin.needs_encryption_setup || !main_app_)
+        return;
+
+    auto sess = account_manager_.find(fin.user_id);
+    if (!sess)
+        return;
+
+    pending_sync_session_       = sess;
+    encryption_setup_dismissed_ = false;
+    encryption_setup_shown_     = true;
+    show_encryption_setup_overlay_(
+        fin.encryption_setup_recover_mode
+            ? tesseract::views::EncryptionSetupOverlay::Mode::Recover
+            : tesseract::views::EncryptionSetupOverlay::Mode::Fresh);
+    request_relayout_();
+}
+
+void ShellBase::release_pending_sync_gate_()
+{
+    auto sess = std::move(pending_sync_session_);
+    pending_sync_session_.reset();
+    if (!sess || !sess->client || sess->sync_started)
+        return;
+    run_async_mut_([sess]() {
+        sess->client->start_sync(sess->bridge.get());
+        sess->sync_started = true;
+    });
 }
 
 bool ShellBase::switch_active_account_impl_(const std::string& user_id)
@@ -8611,6 +9050,42 @@ void ShellBase::handle_account_prefs_updated_ui_(std::string user_id,
         // synced). Only do this on the first account-prefs arrival so that a
         // manual pop-out/close during a session doesn't re-queue stale entries.
         populate_pending_restore_popouts_();
+    }
+}
+
+void ShellBase::handle_own_profile_changed_ui_(
+    std::string user_id, std::optional<std::string> display_name,
+    std::optional<std::string> avatar_url)
+{
+    if (!active_account_ || active_account_->user_id != user_id)
+    {
+        return;
+    }
+
+    bool identity_changed = false;
+    if (display_name && *display_name != my_display_name_)
+    {
+        my_display_name_ = std::move(*display_name);
+        active_account_->display_name = my_display_name_;
+        identity_changed = true;
+    }
+    if (avatar_url && *avatar_url != my_avatar_url_)
+    {
+        my_avatar_url_ = std::move(*avatar_url);
+        active_account_->avatar_url = my_avatar_url_;
+        identity_changed = true;
+    }
+    if (identity_changed)
+    {
+        refresh_user_strip_();
+    }
+
+    // Timezone, status, pronouns and bio come from the MSC4133 fetch; its
+    // own-profile branch in handle_extended_profile_ready_ui_ applies them.
+    if (server_info_.supports_profile_fields &&
+        server_info_.profile_fields_enabled)
+    {
+        fetch_own_extended_profile_async_();
     }
 }
 
@@ -11650,6 +12125,9 @@ void ShellBase::after_active_room_changed_()
         }
     }
 
+    // Auto-join/leave/float/restore the call tied to call-room navigation.
+    handle_call_room_navigation_();
+
     // Each new room starts with an unknown thread history — allow pagination.
     if (main_room_pane_)
         main_room_pane_->reset_thread_backfill();
@@ -12491,6 +12969,7 @@ void ShellBase::wire_encryption_setup_callbacks_(
     ov.on_request_sas = [this]() {
         encryption_setup_dismissed_ = true;
         if (main_app_) main_app_->show_encryption_setup(false);
+        release_pending_sync_gate_();
         auto sess = active_account_;
         run_async_mut_([sess]() {
             if (!sess || !sess->client) return;
@@ -12502,6 +12981,7 @@ void ShellBase::wire_encryption_setup_callbacks_(
     ov.on_close = [this]() {
         encryption_setup_dismissed_ = true;
         if (main_app_) main_app_->show_encryption_setup(false);
+        release_pending_sync_gate_();
         request_relayout_();
     };
 
@@ -12576,6 +13056,29 @@ void ShellBase::check_encryption_setup_()
         show_encryption_setup_overlay_(Mode::Recover);
     }
     // Unknown (0) and Enabled (2): do nothing; re-checked on next tick.
+}
+
+void ShellBase::reopen_encryption_setup_()
+{
+    encryption_setup_dismissed_ = false;
+    encryption_setup_shown_     = false;
+    check_encryption_setup_();
+}
+
+std::function<void()> ShellBase::verify_session_menu_callback_()
+{
+    // Deliberately reads read_device_verified_() live instead of
+    // active_account_->unverified: that cached field is only ever written by
+    // EventHandlerBase::on_verification_state_changed, driven by a watcher
+    // task spawned inside the full start_sync() — it can lag well behind (or
+    // never catch up to) the actual state, exactly like the warning-dot badge
+    // would if it read the same field instead of calling read_device_verified_()
+    // directly (see check_encryption_setup_()'s handle_verification_state_ui_
+    // call). Matching that same live read keeps the menu item's visibility
+    // consistent with the badge.
+    if (!active_account_ || read_device_verified_())
+        return nullptr;
+    return [this] { reopen_encryption_setup_(); };
 }
 
 void ShellBase::begin_crypto_identity_reset_()
@@ -13200,8 +13703,23 @@ void ShellBase::push_call_audio_bgnd_(const std::int16_t* samples,
         call_audio_output_->push_frame(samples, sample_count, sample_rate, num_channels);
 }
 
+views::CallOverlayWidget::Mode ShellBase::overlay_mode_from_settings_() const
+{
+    switch (Settings::instance().call_overlay_mode)
+    {
+    case Settings::CallOverlayMode::DockedExpanded:
+        return views::CallOverlayWidget::Mode::DockedExpanded;
+    case Settings::CallOverlayMode::Floating:
+        return views::CallOverlayWidget::Mode::Floating;
+    case Settings::CallOverlayMode::Popout:
+        return views::CallOverlayWidget::Mode::Popout;
+    default:
+        return views::CallOverlayWidget::Mode::Docked;
+    }
+}
+
 void ShellBase::start_call(const std::string& room_id, const std::string& slot_id,
-                           bool audio_only)
+                           bool audio_only, bool start_audio_muted)
 {
     if (call_session_ || !client_)
         return;
@@ -13215,11 +13733,15 @@ void ShellBase::start_call(const std::string& room_id, const std::string& slot_i
 
     call_session_ = std::make_unique<CallSession>(client_, room_id, slot_id);
     call_audio_output_ = make_call_audio_output_();
+    if (start_audio_muted)
+        call_session_->mute_audio(true);
 
     // Initialise overlay state for this call. elapsed_seconds starts at 0;
-    // audio_only is only known here, so it must be captured in the struct now.
+    // audio_only/start_audio_muted are only known here, so they must be
+    // captured in the struct now.
     call_overlay_state_ = {};
     call_overlay_state_.show_video_button = !audio_only;
+    call_overlay_state_.audio_muted       = start_audio_muted;
     call_overlay_state_.local_user_id     = my_user_id_;
 
     if (!audio_only)
@@ -13244,21 +13766,8 @@ void ShellBase::start_call(const std::string& room_id, const std::string& slot_i
         call_session_->mute_video(true);
     }
 
-    // Determine the initial overlay mode from saved settings.
-    auto initial_mode = views::CallOverlayWidget::Mode::Docked;
-    switch (Settings::instance().call_overlay_mode)
-    {
-    case Settings::CallOverlayMode::DockedExpanded:
-        initial_mode = views::CallOverlayWidget::Mode::DockedExpanded; break;
-    case Settings::CallOverlayMode::Floating:
-        initial_mode = views::CallOverlayWidget::Mode::Floating;       break;
-    case Settings::CallOverlayMode::Popout:
-        initial_mode = views::CallOverlayWidget::Mode::Popout;         break;
-    default: break;
-    }
-
-    // Mount + wire the call overlay in the resolved mode.
-    on_call_overlay_mode_requested_(initial_mode);
+    // Mount + wire the call overlay in the mode resolved from saved settings.
+    on_call_overlay_mode_requested_(overlay_mode_from_settings_());
 
     // Restore saved float position; hide video button for audio-only calls.
     if (auto* ov = active_call_overlay_())
@@ -13267,6 +13776,8 @@ void ShellBase::start_call(const std::string& room_id, const std::string& slot_i
                                Settings::instance().call_overlay_float_y);
         if (audio_only)
             ov->set_show_video_button(false);
+        if (start_audio_muted)
+            ov->set_audio_muted(true);
     }
 
     // The user is now in this call: hides its banner (and disables Join on
@@ -13281,6 +13792,143 @@ void ShellBase::start_call(const std::string& room_id, const std::string& slot_i
         if (w->room_view() && w->room_view()->header())
             w->room_view()->header()->set_call_active(true);
     }
+}
+
+CallRoomAction decide_call_room_action(bool has_active_call,
+                                       bool active_call_room_is_new_room,
+                                       bool new_room_is_call_room,
+                                       bool call_auto_floated,
+                                       bool overlay_is_docked)
+{
+    if (!has_active_call)
+        return new_room_is_call_room ? CallRoomAction::AutoJoin
+                                     : CallRoomAction::None;
+
+    if (active_call_room_is_new_room)
+        return call_auto_floated ? CallRoomAction::AutoRestore
+                                 : CallRoomAction::None;
+
+    if (new_room_is_call_room)
+        return CallRoomAction::LeaveAndJoin;
+
+    return overlay_is_docked ? CallRoomAction::AutoFloat : CallRoomAction::NoOp;
+}
+
+void ShellBase::request_call_(const std::string& room_id, const std::string& slot_id,
+                              bool audio_only)
+{
+    views::RoomView* rv = room_view_for_room_(room_id);
+    views::CallLobbyView* lobby = rv ? rv->call_lobby() : nullptr;
+    if (!lobby)
+    {
+        // Defensive fallback — shouldn't happen since callers only ever
+        // target the room currently being viewed.
+        start_call(room_id, slot_id, audio_only);
+        return;
+    }
+
+    lobby->set_local_user_id(my_user_id_);
+
+    if (room_id == current_room_id_)
+    {
+        lobby->set_repaint_requester([this] { request_repaint_(); });
+    }
+    else if (auto it = secondary_windows_.find(room_id);
+             it != secondary_windows_.end())
+    {
+        RoomWindowBase* win = it->second;
+        lobby->set_repaint_requester([win] { if (win) win->request_relayout(); });
+    }
+
+    lobby->set_avatar_provider(
+        [this, room_id](const std::string& user_id) -> const tk::Image*
+        {
+            if (!client_) return nullptr;
+            const auto members = client_->get_room_members(room_id);
+            for (const auto& mem : members)
+            {
+                if (mem.user_id == user_id && !mem.avatar_url.empty())
+                    return account_manager_.thumbnail_cache().peek(
+                        tk::CacheKey::media(mem.avatar_url));
+            }
+            return nullptr;
+        });
+
+    lobby->on_join = [this](const std::string& rid, const std::string& sid,
+                            bool ao, bool muted)
+    {
+        // If a different room's call is still active (LeaveAndJoin), end it
+        // before joining — start_call() no-ops while call_session_ is
+        // already set. Confirmed only here, on actual Join, not on the
+        // room switch that opened this lobby.
+        if (call_session_ && call_session_->room_id() != rid)
+            end_call();
+        start_call(rid, sid, ao, muted);
+    };
+    lobby->on_cancel = [] {};
+
+    lobby->open(room_id, slot_id, audio_only);
+}
+
+void ShellBase::handle_call_room_navigation_()
+{
+    const auto* new_room = room_by_id_(current_room_id_);
+    // Not in rooms_ yet (just created/joined) — retried once from the rooms
+    // update that delivers it, see pending_call_room_nav_id_.
+    pending_call_room_nav_id_ = new_room ? std::string() : current_room_id_;
+    if (!new_room || new_room->is_space)
+        return;
+
+    auto* ov = active_call_overlay_();
+    const bool overlay_docked =
+        ov && (ov->mode() == views::CallOverlayWidget::Mode::Docked ||
+               ov->mode() == views::CallOverlayWidget::Mode::DockedExpanded);
+
+    switch (decide_call_room_action(
+        /*has_active_call=*/call_session_ != nullptr,
+        /*active_call_room_is_new_room=*/
+        call_session_ && call_session_->room_id() == current_room_id_,
+        /*new_room_is_call_room=*/new_room->is_call_room,
+        call_auto_floated_, overlay_docked))
+    {
+    case CallRoomAction::AutoJoin:
+        // First switch into a call room with no active call: open the
+        // lobby instead of joining immediately.
+        request_call_(current_room_id_);
+        break;
+    case CallRoomAction::AutoRestore:
+        // Returning to the room hosting the active call: undo whatever
+        // auto-float was forced when the user left it, restoring their
+        // real (non-floating) mode preference.
+        call_auto_floated_ = false;
+        on_call_overlay_mode_requested_(overlay_mode_from_settings_(),
+                                        /*persist=*/false);
+        break;
+    case CallRoomAction::LeaveAndJoin:
+        // Switching directly into another call room (whether the previous
+        // call was auto-joined or manually joined via the "call in
+        // progress" banner): open the new room's lobby rather than ending
+        // the old call immediately — the old call only ends once the user
+        // actually confirms Join (see request_call_()'s on_join, which
+        // ends whatever call is active in a different room before
+        // starting the new one). Cancel leaves the original call untouched.
+        request_call_(current_room_id_);
+        break;
+    case CallRoomAction::AutoFloat:
+        // Leaving the active call's room for an ordinary room: float it
+        // rather than leave it docked to a room no longer shown.
+        call_auto_floated_ = true;
+        on_call_overlay_mode_requested_(views::CallOverlayWidget::Mode::Floating,
+                                        /*persist=*/false);
+        break;
+    case CallRoomAction::None:
+    case CallRoomAction::NoOp:
+        break;
+    }
+
+    if (auto* ov2 = active_call_overlay_())
+        ov2->set_room_active(call_session_ &&
+                             call_session_->room_id() == current_room_id_);
 }
 
 void ShellBase::end_call()
@@ -13316,6 +13964,7 @@ void ShellBase::end_call()
     }
     if (main_app_) main_app_->unmount_call_overlay();
     call_overlay_state_ = {};
+    call_auto_floated_ = false;
     // The call may still be running for others: bring its banner back.
     refresh_call_banners_();
 }
@@ -13398,6 +14047,7 @@ void ShellBase::handle_rtc_session_ended_ui_(std::uint64_t session_id,
         call_window_.release()->schedule_delete(); // defer Qt delete past event handler
     }
     if (main_app_) main_app_->unmount_call_overlay();
+    call_auto_floated_ = false;
     if (room_view_ && room_view_->header())
         room_view_->header()->set_call_active(false);
     for (auto& w : owned_secondary_windows_)
@@ -13418,10 +14068,21 @@ views::CallOverlayWidget* ShellBase::active_call_overlay_() const
     return nullptr;
 }
 
-void ShellBase::on_call_overlay_mode_requested_(views::CallOverlayWidget::Mode m)
+void ShellBase::on_call_overlay_mode_requested_(views::CallOverlayWidget::Mode m,
+                                                bool persist)
 {
     if (!main_app_ || !call_session_)
         return;
+
+    // Docked/DockedExpanded only make sense while the call's room is the one
+    // currently being viewed; the UI already hides those options otherwise,
+    // but callers (e.g. the popout window's on_window_closed) don't all
+    // check this, so clamp defensively rather than dock into a room that
+    // isn't shown.
+    if ((m == views::CallOverlayWidget::Mode::Docked ||
+         m == views::CallOverlayWidget::Mode::DockedExpanded) &&
+        call_session_->room_id() != current_room_id_)
+        m = views::CallOverlayWidget::Mode::Floating;
 
     // Snapshot mutable overlay state into the persistent struct before teardown.
     if (auto* ov = active_call_overlay_())
@@ -13529,6 +14190,8 @@ void ShellBase::on_call_overlay_mode_requested_(views::CallOverlayWidget::Mode m
         // restore() sets local_user_id first so is_self is applied when
         // update_participants() creates/refreshes tiles below.
         ov->restore(call_overlay_state_);
+        ov->set_room_active(call_session_ &&
+                            call_session_->room_id() == current_room_id_);
 
         ov->on_hang_up = [this] { end_call(); };
         ov->on_toggle_audio = [this](bool muted)
@@ -13548,6 +14211,9 @@ void ShellBase::on_call_overlay_mode_requested_(views::CallOverlayWidget::Mode m
         };
         ov->on_mode_change_requested = [this](views::CallOverlayWidget::Mode nm)
         {
+            // A deliberate user choice must never be later "undone" by the
+            // auto-restore path in handle_call_room_navigation_().
+            call_auto_floated_ = false;
             on_call_overlay_mode_requested_(nm);
         };
         ov->on_float_position_changed = [this](float x, float y)
@@ -13586,10 +14252,16 @@ void ShellBase::on_call_overlay_mode_requested_(views::CallOverlayWidget::Mode m
         }
     }
 
-    // Persist the new mode (Settings::CallOverlayMode has the same ordinal order).
-    Settings::instance().call_overlay_mode =
-        static_cast<Settings::CallOverlayMode>(static_cast<int>(m));
-    Settings::instance().save_to_disk(tesseract::config_dir());
+    // Persist the new mode (Settings::CallOverlayMode has the same ordinal
+    // order) unless this transition was driven by Tesseract itself
+    // (auto-float / auto-restore), which must not overwrite the user's
+    // actual preference.
+    if (persist)
+    {
+        Settings::instance().call_overlay_mode =
+            static_cast<Settings::CallOverlayMode>(static_cast<int>(m));
+        Settings::instance().save_to_disk(tesseract::config_dir());
+    }
     request_relayout_();
 }
 

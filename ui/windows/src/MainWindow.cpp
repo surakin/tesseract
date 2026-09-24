@@ -848,6 +848,10 @@ void MainWindow::handle_verification_state_ui_(bool is_verified)
     {
         return;
     }
+    if (main_app_->user_info())
+    {
+        main_app_->user_info()->set_warning_dot(!is_verified);
+    }
     // Only prompt when there is actually an identity to verify against. On a
     // fresh/only device our own login-time bootstrap holds the cross-signing
     // keys, so "verify this device" is a dead end — check_encryption_setup_
@@ -1765,15 +1769,17 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
                  cds->cbData == sizeof(tesseract::LaunchAction) && cds->lpData)
         {
             const auto action = *static_cast<const tesseract::LaunchAction*>(cds->lpData);
-            if (action >= tesseract::LaunchAction::None &&
-                action <= tesseract::LaunchAction::Room)
+            // Room needs its ID and arrives as dwData == 3 instead.
+            if (action > tesseract::LaunchAction::None &&
+                action < tesseract::LaunchAction::Room)
                 self->dispatch_launch_action_(action);
         }
         else if (cds && cds->dwData == 3 && cds->cbData > 1 && cds->lpData)
         {
-            self->pending_recent_room_id_.assign(
-                static_cast<const char*>(cds->lpData), cds->cbData - 1);
-            self->dispatch_launch_action_(tesseract::LaunchAction::Room);
+            self->dispatch_launch_action_(
+                tesseract::LaunchAction::Room,
+                std::string(static_cast<const char*>(cds->lpData),
+                            cds->cbData - 1));
         }
         return TRUE;
     }
@@ -1791,6 +1797,18 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
 // Lifetime
 // ---------------------------------------------------------------------------
 
+const wchar_t* MainWindow::class_name()
+{
+    static const std::wstring name = []
+    {
+        std::wstring n = L"TesseractMainWnd";
+        for (char c : tesseract::profile_suffix())
+            n.push_back(static_cast<wchar_t>(c));
+        return n;
+    }();
+    return name.c_str();
+}
+
 bool MainWindow::register_class(HINSTANCE hInst)
 {
     WNDCLASSEXW wc{};
@@ -1803,7 +1821,7 @@ bool MainWindow::register_class(HINSTANCE hInst)
     // control hasn't yet repainted (resize) and avoids a stale-white flash on
     // dark-mode startup.
     wc.hbrBackground = nullptr;
-    wc.lpszClassName = CLASS_NAME;
+    wc.lpszClassName = class_name();
     // Big icon: Alt+Tab, taskbar. Small icon: titlebar, system menu.
     // LoadImage picks the best-matching frame from the multi-resolution .ico.
     wc.hIcon = static_cast<HICON>(
@@ -1837,8 +1855,6 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, HINSTANCE hIn
     , hInst_(hInst)
     , taskbar_(taskbar)
     , start_hidden_(start_hidden)
-    , pending_launch_action_(launch_action)
-    , pending_recent_room_id_(std::move(launch_room_id))
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
     , screenshot_dir_(std::move(screenshot_dir))
 #endif
@@ -1846,6 +1862,9 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, HINSTANCE hIn
     set_screen_lock_(std::make_unique<win32::Win32ScreenLock>(hInst));
     set_power_monitor_(std::make_unique<win32::Win32PowerMonitor>(hInst));
     set_autostart_(std::make_unique<win32::Win32Autostart>());
+
+    // Held until show_main_content() calls mark_main_content_ready_().
+    dispatch_launch_action_(launch_action, std::move(launch_room_id));
 
     account_manager_.register_window(this);
     broadcast_rebuild_tray_();
@@ -1893,7 +1912,7 @@ MainWindow::~MainWindow()
 
 bool MainWindow::create(int nCmdShow)
 {
-    hwnd_ = CreateWindowExW(0, CLASS_NAME, L"Tesseract",
+    hwnd_ = CreateWindowExW(0, class_name(), L"Tesseract",
                             WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
                             CW_USEDEFAULT, CW_USEDEFAULT, 1024, 768, nullptr,
                             nullptr, hInst_, this);
@@ -2350,6 +2369,12 @@ void MainWindow::on_create(HWND hwnd)
         // Switch the surface cursor to the link/pointer shape while the
         // mouse is over a URL / map tile / file card. Empty URL clears.
         room_view_->on_link_hovered = [this](const std::string& url)
+        {
+            if (!main_app_surface_) return;
+            main_app_surface_->set_cursor(url.empty() ? tk::win32::Cursor::Default
+                                                      : tk::win32::Cursor::Pointer);
+        };
+        main_app_->space_root()->on_link_hovered = [this](const std::string& url)
         {
             if (!main_app_surface_) return;
             main_app_surface_->set_cursor(url.empty() ? tk::win32::Cursor::Default
@@ -4184,6 +4209,7 @@ void MainWindow::on_login_succeeded()
             ensure_settings_controller_();
             ensure_history_export_controller_();
             wire_history_export_dialog_callbacks_();
+            begin_gated_encryption_setup_if_needed_(fin);
             pending_login_is_add_account_ = false;
             add_account_return_idx_ = -1;
         });
@@ -4425,60 +4451,14 @@ void MainWindow::show_main_content()
     GetClientRect(hwnd_, &rc);
     on_size(rc.right, rc.bottom);
 
-    main_content_ready_ = true;
-    if (pending_launch_action_ != tesseract::LaunchAction::None)
-    {
-        const auto action = pending_launch_action_;
-        pending_launch_action_ = tesseract::LaunchAction::None;
-        dispatch_launch_action_(action);
-    }
+    mark_main_content_ready_();
 }
 
-void MainWindow::dispatch_launch_action_(tesseract::LaunchAction action)
+void MainWindow::raise_main_window_ui_()
 {
-    if (action == tesseract::LaunchAction::None) return;
-    if (!main_content_ready_)
-    {
-        pending_launch_action_ = action;
-        return;
-    }
     if (IsIconic(hwnd_)) ShowWindow(hwnd_, SW_RESTORE);
     else ShowWindow(hwnd_, SW_SHOW);
     SetForegroundWindow(hwnd_);
-    switch (action)
-    {
-    case tesseract::LaunchAction::QuickSwitcher: open_quick_switch_(); break;
-    case tesseract::LaunchAction::MessageSearch: open_message_search_(); break;
-    case tesseract::LaunchAction::Settings: open_settings_(); break;
-    case tesseract::LaunchAction::Room:
-        open_recent_room_(pending_recent_room_id_);
-        break;
-    case tesseract::LaunchAction::None: break;
-    }
-}
-
-void MainWindow::open_recent_room_(const std::string& room_id)
-{
-    if (room_id.empty()) return;
-    // Callers commonly pass pending_recent_room_id_ itself. Copy before
-    // clearing that member so navigation never observes an invalidated alias.
-    const std::string target_room_id = room_id;
-    for (const auto& [user_id, rooms] : per_account_rooms_)
-    {
-        const bool found = std::any_of(
-            rooms.begin(), rooms.end(),
-            [&](const tesseract::RoomInfo& room)
-            { return room.id == target_room_id; });
-        if (!found) continue;
-        pending_recent_room_id_.clear();
-        if (!active_account_ || active_account_->user_id != user_id)
-            switch_active_account(user_id);
-        navigate_to_room(target_room_id);
-        return;
-    }
-    // Account restoration or the initial room snapshot may still be in
-    // progress. on_rooms_updated_ retries without opening a join prompt.
-    pending_recent_room_id_ = target_room_id;
 }
 
 // ---------------------------------------------------------------------------
@@ -4892,8 +4872,6 @@ void MainWindow::on_rooms_updated_()
 
     update_secondary_room_infos_();
     taskbar_.set_next_unread_available(hwnd_, best_unread_room_() != nullptr);
-    if (!pending_recent_room_id_.empty())
-        open_recent_room_(pending_recent_room_id_);
 }
 
 void MainWindow::on_recent_room_visited_(const tesseract::RoomInfo& room)
@@ -4995,18 +4973,7 @@ void MainWindow::refresh_room_list()
 
 void MainWindow::on_space_back()
 {
-    if (!space_stack_.empty())
-        space_stack_.pop_back();
-    if (main_app_)
-        main_app_->hide_room_preview();
-    if (main_app_)
-        main_app_->hide_space_root();
-    refresh_room_list();
-    if (!space_nav_frames_.empty())
-    {
-        space_nav_frames_.back().restore(room_list_view_);
-        space_nav_frames_.pop_back();
-    }
+    space_back_command_();
 }
 
 // ---------------------------------------------------------------------------
@@ -6280,6 +6247,18 @@ void MainWindow::on_login_cancelled()
     }
     else
     {
+        // No account to return to — this was the very first (Initial-mode)
+        // login, not an add-account attempt. Rearm a fresh pending client so
+        // Sign In works again; mirrors the one-time setup in
+        // restore_all_accounts_async_'s no-accounts branch. Without this,
+        // login_view_ is left clientless (set_client(nullptr) above) and Sign
+        // In silently does nothing.
+        ensure_login_view_();
+        pending_login_client_ = std::make_unique<tesseract::Client>();
+        login_view_->set_client(pending_login_client_.get());
+        login_view_->set_on_begin_oauth([this] { arm_pending_login_(); });
+        login_view_->set_mode(tesseract::views::LoginView::Mode::Initial);
+        login_view_->reset();
         show_login_view();
     }
     add_account_return_idx_ = -1;
@@ -6507,7 +6486,8 @@ void MainWindow::show_user_context_menu_(int screen_x, int screen_y)
         [this] { begin_add_account(); },
         [this] { start_qr_grant_overlay(); },
         [this] { logout_active_account(); },
-        [this] { quitting_ = true; DestroyWindow(hwnd_); });
+        [this] { quitting_ = true; DestroyWindow(hwnd_); },
+        verify_session_menu_callback_());
 
     HMENU menu = CreatePopupMenu();
     UINT id = 1;

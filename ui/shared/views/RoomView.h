@@ -39,6 +39,7 @@
 #include "media_drop.h"
 #include "CallOverlayWidget.h"
 #include "CallBanner.h"
+#include "CallLobbyView.h"
 
 #include "tk/audio.h"
 #include "tk/widget.h"
@@ -429,6 +430,13 @@ public:
     // Returns the active docked call panel, or nullptr if not mounted.
     views::CallOverlayWidget* call_panel() const { return call_panel_; }
 
+    // ── Pre-call lobby ────────────────────────────────────────────────────
+    // Always mounted (hidden until opened). ShellBase::request_call_() calls
+    // open() on this instead of joining directly — see CallLobbyView.h.
+    // Covers the message list + compose bar (everything below the header)
+    // while open; the header itself stays interactive.
+    views::CallLobbyView* call_lobby() const { return call_lobby_; }
+
     // ── External callbacks — wire to SDK ─────────────────────────────────
 
     // Plain text send.
@@ -684,12 +692,12 @@ public:
     // views::route_file_drop_to_compose_bar.
     bool on_file_drop(tk::Point local, tk::FileDropPayload& payload) override;
     // Same overlay-first routing, for drag-hover feedback.
-    tk::Widget* dispatch_drag_hover(tk::Point world) override;
+    tk::Widget* dispatch_native_drag_hover(tk::Point world) override;
     // Claims whenever on_file_drop would (mirrors its compose_bar_->enabled()
     // gate) and shows a highlight scoped to compose_bar_'s own bounds — not
     // RoomView's whole content pane — since that's where the drop will land.
-    bool on_drag_hover(tk::Point local) override;
-    void on_drag_leave() override;
+    bool on_native_drag_hover(tk::Point local) override;
+    void on_native_drag_leave() override;
 
 private:
     // The open overlay panel that should receive input ahead of all other
@@ -789,7 +797,7 @@ private:
 
     bool has_room_ = false; // true after the first set_room() call
     tesseract::Client* client_ = nullptr; // borrowed; see set_client()
-    bool drag_hover_ = false; // true while claiming on_drag_hover
+    bool native_drag_hover_ = false; // true while claiming on_native_drag_hover
 
     // Set by set_room() on a genuine room switch; consumed by the next
     // paint() once the widget tree's visibility for this frame has fully
@@ -859,6 +867,9 @@ private:
     // Docked call panel — lazily created by mount_call_panel(), removed by
     // unmount_call_panel(). nullptr when no call is active.
     views::CallOverlayWidget* call_panel_ = nullptr;
+    // Pre-call lobby — created in constructor (hidden), covers the message
+    // list + compose bar while open(). See call_lobby()'s doc comment.
+    views::CallLobbyView* call_lobby_ = nullptr;
     // Docked search strip under the header; nullptr until first open.
     RoomSearchBar*   room_search_bar_   = nullptr;
     ThreadPanelState thread_panel_state_ = ThreadPanelState::Closed;

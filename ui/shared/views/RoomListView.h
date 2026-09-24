@@ -201,18 +201,19 @@ public:
     static constexpr int kSecFavorites     = 2;  // was 1
     static constexpr int kSecDMs           = 3;  // was 2
     static constexpr int kSecRooms         = 4;  // was 3
-    static constexpr int kSecSpaces        = 5;  // was 4
-    static constexpr int kSecInactive      = 6;  // was 5
-    static constexpr int kSecSpaceUnjoined = 7;  // was 6
-    static constexpr int kSecKnocks        = 8;  // rooms the user has knocked on (MSC2403)
-    static constexpr int kNumSections      = 9;
+    static constexpr int kSecCallRooms     = 5;  // NEW
+    static constexpr int kSecSpaces        = 6;  // was 4/5
+    static constexpr int kSecInactive      = 7;  // was 5/6
+    static constexpr int kSecSpaceUnjoined = 8;  // was 6/7
+    static constexpr int kSecKnocks        = 9;  // rooms the user has knocked on (MSC2403); was 8
+    static constexpr int kNumSections      = 10; // was 9
 
     // kSectionTitles[kSecInvites] / [kSecKnocks] are placeholders; the actual
     // header labels ("Invitations (N)" / "Requests to Join (N)") are
     // constructed dynamically in paint_header.
     static constexpr const char* kSectionTitles[kNumSections] = {
         "Invitations", "Unread", "Favorites", "Direct Messages", "Rooms",
-        "Spaces", "Inactive", "Available to Join", "Requests to Join"};
+        "Call Rooms", "Spaces", "Inactive", "Available to Join", "Requests to Join"};
 
     // Programmatically collapse or expand a section (e.g. to restore saved
     // state on launch). No-op if section is out of range or already in the

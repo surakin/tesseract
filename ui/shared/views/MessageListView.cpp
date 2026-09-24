@@ -556,6 +556,14 @@ MessageRowData make_row_data(const tesseract::Event& ev,
         row.membership_target_avatar_url = mem.target_avatar_url;
         break;
     }
+    case tesseract::EventType::RoomName:
+    {
+        row.kind = Kind::RoomName;
+        const auto& rn = static_cast<const tesseract::RoomNameStateEvent&>(ev);
+        row.room_name_new = rn.new_name;
+        row.room_name_old = rn.old_name;
+        break;
+    }
     }
 
     // Extract the first URL from text messages for preview card display.
@@ -1051,6 +1059,20 @@ std::string membership_expanded_phrase(const MessageRowData& m)
     return t;
 }
 
+// Per-event phrase for an m.room.name state-event row, e.g. "Alice changed
+// the room name to Welcome Lounge". Rust never sends English prose here
+// (see timeline_convert.rs) — this composes the display string entirely
+// through tk::tr()/tk::trf().
+std::string room_name_change_phrase(const MessageRowData& m)
+{
+    const std::string s = m.sender_name.empty() ? m.sender : m.sender_name;
+    if (m.room_name_new.empty())
+        return tk::trf(tk::tr("{0} removed the room name"), {s});
+    if (m.room_name_old.empty())
+        return tk::trf(tk::tr("{0} set the room name to {1}"), {s, m.room_name_new});
+    return tk::trf(tk::tr("{0} changed the room name to {1}"), {s, m.room_name_new});
+}
+
 // Build the "Alice, Bob and 3 others" style name list for a collapsed
 // membership-group summary.
 std::string membership_names_label(const std::vector<std::string>& names)
@@ -1141,7 +1163,8 @@ static bool is_virtual_event(MessageRowData::Kind k)
     using Kind = MessageRowData::Kind;
     return k == Kind::DaySeparator || k == Kind::ReadMarker ||
            k == Kind::TimelineStart || k == Kind::PinnedEvent ||
-           k == Kind::CallNotification || k == Kind::Membership;
+           k == Kind::CallNotification || k == Kind::Membership ||
+           k == Kind::RoomName;
 }
 
 // Kinds whose body/caption can be edited in place. Image/File/Video carry an
@@ -1516,6 +1539,10 @@ public:
         {
             return kPinnedEventH;
         }
+        if (m.kind == Kind::RoomName)
+        {
+            return kPinnedEventH;
+        }
         if (m.kind == Kind::Membership)
         {
             // Group-start rows are always one line tall (either the
@@ -1636,6 +1663,11 @@ public:
         if (m.kind == Kind::CallNotification)
         {
             paint_call_notification(m, ctx, bounds);
+            return;
+        }
+        if (m.kind == Kind::RoomName)
+        {
+            paint_room_name_change(m, ctx, bounds);
             return;
         }
         if (m.kind == Kind::Membership)
@@ -2620,7 +2652,8 @@ public:
 
     // Intrinsic body width used to "hug" the bubble to its content. Flat
     // single-layout bodies report their longest wrapped line; multi-section
-    // bodies (tables/lists/quotes), URL previews and media fill the bubble.
+    // bodies (tables/lists/quotes) fill the bubble; URL preview cards and
+    // media widen it to their own width (body_block_natural_width_).
     float body_text_natural_width_(const MessageRowData& m, tk::LayoutCtx& ctx,
                                    float w) const
     {
@@ -2640,7 +2673,7 @@ public:
             // (content, theme) on the cache entry.
             if (e.natural_w < 0.0f)
             {
-                tk::TextStyle st = body_style(-1.0f, is_emoji_only(m.body));
+                tk::TextStyle st = body_style(-1.0f, e.emoji_only);
                 auto nat = ctx.factory.build_rich_text(e.spans, st);
                 e.natural_w = nat ? nat->measure().w
                                   : (e.layout ? e.layout->measure().w : 0.0f);
@@ -2736,8 +2769,7 @@ public:
             nat = w;
             break;
         }
-        if (owner_.previews_.has_preview(m))
-            nat = w;
+        nat = std::max(nat, owner_.previews_.stack_width(m, w));
         if (m.has_reply())
             nat = std::max(nat, msgbubble::kQuoteMinW);
         // No lower bound: the bubble hugs its content (see msgbubble::layout).
@@ -3074,6 +3106,8 @@ public:
                                              : tk::tr("started a call"));
             return m.sender_name.empty() ? intent : m.sender_name + " " + intent;
         }
+        case Kind::RoomName:
+            return room_name_change_phrase(m);
         case Kind::Membership:
         {
             if (is_membership_group_start(index))
@@ -3464,6 +3498,7 @@ private:
         case Kind::PinnedEvent:
         case Kind::CallNotification:
         case Kind::Membership:
+        case Kind::RoomName:
             return tk::Role::StaticText;
         default:
             return tk::Role::ListItem;
@@ -3625,6 +3660,47 @@ private:
         std::string label = m.sender_name.empty()
             ? m.body
             : m.sender_name + " " + m.body;
+        if (label.empty())
+        {
+            return;
+        }
+        tk::TextStyle st{};
+        st.role = tk::FontRole::Small;
+        st.wrap = false;
+        st.trim = tk::TextTrim::Ellipsis;
+        st.max_width = std::max(0.0f, bounds.w - kMsgListPadX * 2);
+        auto lo = ctx.factory.build_text(label, st);
+        if (!lo)
+        {
+            return;
+        }
+        tk::Size sz = lo->measure();
+        constexpr float kLabelPadX = 8.0f;
+        float cx = bounds.x + bounds.w * 0.5f;
+        float cy = bounds.y + kPinnedEventH * 0.5f;
+        float label_l = cx - sz.w * 0.5f - kLabelPadX;
+        float label_r = cx + sz.w * 0.5f + kLabelPadX;
+        float line_y = std::round(cy);
+        if (label_l > bounds.x + kMsgListPadX)
+        {
+            ctx.canvas.fill_rect(
+                {bounds.x + kMsgListPadX, line_y, label_l - bounds.x - kMsgListPadX, 1.0f},
+                ctx.theme.palette.border);
+        }
+        if (label_r < bounds.x + bounds.w - kMsgListPadX)
+        {
+            ctx.canvas.fill_rect(
+                {label_r, line_y, bounds.x + bounds.w - kMsgListPadX - label_r, 1.0f},
+                ctx.theme.palette.border);
+        }
+        ctx.canvas.draw_text(*lo, {cx - sz.w * 0.5f, cy - sz.h * 0.5f},
+                             ctx.theme.palette.text_muted);
+    }
+
+    void paint_room_name_change(const MessageRowData& m, tk::PaintCtx& ctx,
+                                tk::Rect bounds) const
+    {
+        std::string label = room_name_change_phrase(m);
         if (label.empty())
         {
             return;
@@ -4186,6 +4262,7 @@ private:
         case MessageRowData::Kind::PinnedEvent:
         case MessageRowData::Kind::CallNotification:
         case MessageRowData::Kind::Membership:
+        case MessageRowData::Kind::RoomName:
             return 0.0f;
         }
         return quote_h;
@@ -4578,6 +4655,7 @@ private:
         case MessageRowData::Kind::PinnedEvent:
         case MessageRowData::Kind::CallNotification:
         case MessageRowData::Kind::Membership:
+        case MessageRowData::Kind::RoomName:
             break;
         }
         return y;
@@ -5007,12 +5085,13 @@ private:
             m.event_id, key,
             [&](LinkLayout& slot)
             {
-                const bool eo = is_emoji_only(m.body);
+                bool eo = is_emoji_only(m.body);
                 slot.layout.reset();
                 slot.spans.clear();
                 slot.plain.clear();
                 slot.sections.clear();
                 slot.natural_w = -1.0f;
+                slot.emoji_only = eo;
 
                 if (!m.formatted_body.empty())
                 {
@@ -5026,6 +5105,16 @@ private:
                     else if (blocks.size() == 1 &&
                              blocks[0].kind != BodyBlock::Kind::Paragraph)
                         has_structure = true;
+
+                    // m.body's plain-text fallback can't see MSC2545 custom
+                    // emoticons (they're TextSpan::is_image leaves in the
+                    // parsed formatted-body spans, not emoji codepoints), so
+                    // a single-paragraph body made up solely of custom and/or
+                    // native emoji needs a second, span-level check here to
+                    // also qualify for BigEmoji sizing.
+                    if (!eo && !has_structure && blocks.size() == 1)
+                        eo = tk::is_emoji_only_spans(blocks[0].spans);
+                    slot.emoji_only = eo;
 
                     if (has_structure)
                     {
@@ -5224,10 +5313,11 @@ private:
                     if (auto lay =
                             f.build_rich_text(combined, body_style(w, false)))
                     {
-                        slot.layout    = std::move(lay);
-                        slot.plain     = pfx_plain + slot.plain;
-                        slot.spans     = std::move(combined);
-                        slot.natural_w = -1.0f;
+                        slot.layout     = std::move(lay);
+                        slot.plain      = pfx_plain + slot.plain;
+                        slot.spans      = std::move(combined);
+                        slot.natural_w  = -1.0f;
+                        slot.emoji_only = false;
                     }
                 }
             });
@@ -5430,8 +5520,8 @@ private:
                     // stretches the narrower bitmap to fill the wider box,
                     // smearing the label sideways until the avatar arrives.
                     // Reserving the same slot regardless of resolution state
-                    // keeps the bitmap's width constant; an unresolved avatar
-                    // just leaves that slot blank instead.
+                    // keeps the bitmap's width constant; an unresolved (or
+                    // absent) avatar gets an initials disc in that slot.
                     spec.reserve_leading_visual =
                         (sp.pill_kind == tk::PillKind::User) ||
                         (sp.pill_kind == tk::PillKind::Room && sp.url.empty());
@@ -5446,6 +5536,8 @@ private:
                     // the theme.
                     spec.bg = ctx.theme.palette.accent;
                     spec.fg = ctx.theme.palette.text_on_accent;
+                    spec.initials_bg = ctx.theme.palette.avatar_initials_bg;
+                    spec.initials_fg = ctx.theme.palette.avatar_initials_text;
                     ensure_pill_metrics();
                     // Size the destination rect from the pill's own measured
                     // width/height (identical to what render_pill_bitmap_cached

@@ -23,6 +23,8 @@
 #include <windows.h>
 
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstring>
 #include <mutex>
 #include <string>
@@ -97,7 +99,15 @@ public:
     {
         return S_OK;
     }
-    HRESULT STDMETHODCALLTYPE OnFlush(DWORD) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE OnFlush(DWORD) override
+    {
+        {
+            std::lock_guard<std::mutex> lk(mu_);
+            flush_done_ = true;
+        }
+        flush_cv_.notify_all();
+        return S_OK;
+    }
 
     HRESULT STDMETHODCALLTYPE OnReadSample(HRESULT hr,
                                             DWORD /*stream_index*/,
@@ -278,7 +288,24 @@ public:
             return;
         if (reader_)
         {
+            // Flush() is asynchronous in callback mode: it returns
+            // immediately and only signals real completion via OnFlush().
+            // Releasing the reader before that arrives lets MF's own
+            // threadpool (RTWorkQ) tear down in-flight stream/attribute
+            // objects concurrently with our Release(), which is a
+            // use-after-free — the bounded wait here closes that race.
+            // The timeout is a safety net in case a misbehaving driver
+            // never calls back at all.
+            {
+                std::lock_guard<std::mutex> lk(mu_);
+                flush_done_ = false;
+            }
             reader_->Flush(MF_SOURCE_READER_FIRST_VIDEO_STREAM);
+            {
+                std::unique_lock<std::mutex> lk(mu_);
+                flush_cv_.wait_for(lk, std::chrono::seconds(2),
+                                    [this] { return flush_done_; });
+            }
             reader_->Release();
             reader_ = nullptr;
         }
@@ -368,6 +395,8 @@ private:
     std::uint32_t                     frame_h_    = 480;
 
     std::mutex                        mu_;
+    std::condition_variable           flush_cv_;
+    bool                              flush_done_ = false;
     tk::VideoCapture::FrameCallback   callback_;
     tk::VideoCapture::BgraCallback    bgra_callback_;
     std::vector<std::uint8_t>         i420_buf_;

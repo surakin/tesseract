@@ -598,6 +598,15 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                                                : Qt::PointingHandCursor);
                 }
             };
+            mainApp_->space_root()->on_link_hovered =
+                [sfp](const std::string& url)
+            {
+                if (sfp)
+                {
+                    sfp->setCursor(url.empty() ? Qt::ArrowCursor
+                                               : Qt::PointingHandCursor);
+                }
+            };
             mainApp_->on_sidebar_cursor =
                 [sfp](tesseract::views::MainAppWidget::SidebarCursor c)
             {
@@ -1893,19 +1902,20 @@ const xdg_activation_token_v1_listener kTokenDoneListener = {s_token_done};
 
 void MainWindow::setupActivationListener_()
 {
-    // Protocol: newline-delimited.
-    //   Line 1: XDG_ACTIVATION_TOKEN (may be empty)
-    //   Line 2: matrix: URI to navigate to (optional)
-    // Shared with GTK4 (ui/shared/tk/single_instance.h) — either backend's
-    // "losing" launch can forward here regardless of which one won the lock.
+    // Protocol: see tk::ActivationRequest (ui/shared/tk/single_instance.h).
+    // Shared with GTK4 — either backend's "losing" launch can forward here
+    // regardless of which one won the lock.
     activationListener_ = std::make_unique<tk::ActivationListener>(
-        [this](std::string token, std::string uri)
+        [this](tk::ActivationRequest req)
         {
-            activateWindowWithToken_(QString::fromStdString(token));
-            if (!uri.empty())
+            activateWindowWithToken_(QString::fromStdString(req.token));
+            if (!req.uri.empty())
             {
-                openMatrixLink(uri);
+                openMatrixLink(req.uri);
             }
+            dispatch_launch_action_(
+                tesseract::launch_action_from_option_id(req.action),
+                std::move(req.room_id));
         });
     if (activationListener_->fd() >= 0)
     {
@@ -2289,6 +2299,23 @@ void MainWindow::showMainContent_()
 {
     contentStack_->setCurrentWidget(mainAppSurface_);
     teardownLoginView_();
+    mark_main_content_ready_();
+}
+
+void MainWindow::raise_main_window_ui_()
+{
+    // Focus/activation itself is handled by the caller's path (startup
+    // activateOnStartup() or the forwarded activation token) — this only
+    // makes sure a tray-hidden or minimized window is actually on screen.
+    if (!isVisible())
+    {
+        show();
+    }
+    if (isMinimized())
+    {
+        showNormal();
+    }
+    raise();
 }
 
 void MainWindow::doLogin()
@@ -2564,6 +2591,7 @@ void MainWindow::onLoginSucceeded()
             wire_history_export_dialog_callbacks_();
             statusBar()->showMessage(tr("Connected"));
             showMainContent_();
+            begin_gated_encryption_setup_if_needed_(fin);
 
             pending_login_is_add_account_ = false;
             add_account_return_idx_ = -1;
@@ -2590,13 +2618,24 @@ void MainWindow::onLoginSucceeded()
 
 void MainWindow::onLoginCancelled()
 {
-    // The user clicked Cancel during AddAccount. Return to the previous
-    // foreground account; the in-flight client is discarded.
+    // The user clicked Cancel, either during AddAccount (return to the
+    // previous foreground account) or during the very first (Initial-mode)
+    // login. Either way the in-flight client is discarded.
     loginView_->set_client(nullptr);
     pending_login_client_.reset();
     if (!pending_login_is_add_account_)
     {
-        return; // no back-state in Initial mode
+        // Initial mode: no back-state to return to — rearm a fresh pending
+        // client so Sign In works again, mirroring the one-time setup in
+        // restore_all_accounts_async_'s no-accounts branch. Without this,
+        // loginView_ is left clientless and Sign In silently does nothing.
+        ensureLoginView_();
+        loginView_->set_mode(tesseract::views::LoginView::Mode::Initial);
+        pending_login_client_ = std::make_unique<tesseract::Client>();
+        loginView_->set_client(pending_login_client_.get());
+        loginView_->set_on_begin_oauth([this] { arm_pending_login_(); });
+        loginView_->reset();
+        return;
     }
 
     int back = add_account_return_idx_;
@@ -4007,18 +4046,7 @@ void MainWindow::refreshRoomList()
 
 void MainWindow::onSpaceBack()
 {
-    if (!space_stack_.empty())
-        space_stack_.pop_back();
-    if (mainApp_)
-        mainApp_->hide_room_preview();
-    if (mainApp_)
-        mainApp_->hide_space_root();
-    refreshRoomList();
-    if (!space_nav_frames_.empty())
-    {
-        space_nav_frames_.back().restore(mainApp_->room_list_view());
-        space_nav_frames_.pop_back();
-    }
+    space_back_command_();
 }
 
 // ---------------------------------------------------------------------------
@@ -4148,7 +4176,8 @@ void MainWindow::onUserStripContextMenu(const QPoint& global_pos)
         [this] { beginAddAccount(); },
         [this] { start_qr_grant_overlay(); },
         [this] { logoutActiveAccount(); },
-        [this] { do_quit_(); });
+        [this] { do_quit_(); },
+        verify_session_menu_callback_());
     for (const auto& item : items)
     {
         if (item.label.empty())
@@ -4848,6 +4877,10 @@ void MainWindow::handle_verification_state_ui_(bool is_verified)
     if (!mainApp_)
     {
         return;
+    }
+    if (mainApp_->user_info())
+    {
+        mainApp_->user_info()->set_warning_dot(!is_verified);
     }
     if (is_verified)
     {

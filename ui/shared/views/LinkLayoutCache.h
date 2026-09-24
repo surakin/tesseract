@@ -79,6 +79,14 @@ struct LinkLayout
     // meaningful for the flat rich-span path (spans non-empty); the plain
     // path reads layout->measure().w directly. Reset when the entry rebuilds.
     float natural_w = -1.0f;
+    // Whether this body was shaped with FontRole::BigEmoji (native and/or
+    // custom emoji only, no other text — see MessageListView::
+    // body_layout_for). body_text_natural_width_ must re-measure with this
+    // same flag, not recompute it from m.body alone: a custom-emoji-only
+    // body only looks emoji-only via the parsed spans, not the plain-text
+    // fallback, so recomputing from m.body would under-measure the bubble
+    // and wrap a one-line emoji-only message onto two lines.
+    bool emoji_only = false;
     // Validity key (only meaningful when `keyed`).
     float key_w = -1.0f;
     bool key_dark = false;

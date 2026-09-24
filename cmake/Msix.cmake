@@ -161,7 +161,12 @@ function(_tesseract_msix_edition edition identity_name publisher)
     add_custom_command(
         OUTPUT "${_msix_out}"
         COMMAND "${TESSERACT_MAKEAPPX}" pack /o /d "${_stage}" /p "${_msix_out}"
-        DEPENDS msix-stage-${edition}
+        # Must depend on the marker *file*, not the msix-stage-${edition}
+        # target name — a target-name DEPENDS only orders staging before
+        # packing, it doesn't give Ninja a file timestamp to compare against,
+        # so this command never reran once ${_msix_out} existed once, no
+        # matter how stale the staged payload got.
+        DEPENDS "${_staged_marker}"
         COMMENT "Packing MSIX (${edition})"
         VERBATIM
     )

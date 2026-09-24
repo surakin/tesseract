@@ -1182,6 +1182,18 @@ public:
                 0.5),
             6);
 
+        // Custom-emoticon (MSC2545, TextSpan::is_image) box size: BigEmoji
+        // for an emoji-only body, else InlineCustomEmoji — independent of
+        // emoji_pt above, which only sizes native is_emoji_run glyph runs
+        // (still InlineEmoji, a deliberate same-as-body no-op). No stock-
+        // rendering compensation here: kGtkEmojiStockComp corrects for
+        // color-emoji-font rendering quirks, not an arbitrary bitmap image.
+        const FontRole custom_emoji_role = (s.role == FontRole::BigEmoji)
+                                                ? FontRole::BigEmoji
+                                                : FontRole::InlineCustomEmoji;
+        const int custom_emoji_pt = std::max(
+            font_role_pt(custom_emoji_role, gtk_system_font().pt), 6);
+
         // Ascent/descent of this layout's own role — needed to size a pill
         // span's reserved box to exactly what tk::measure_pill() computes,
         // and to give it the *same real ascent/descent split* as the
@@ -1324,7 +1336,7 @@ public:
             PangoAttrList* existing = pango_layout_get_attributes(lay);
             PangoAttrList* attrs =
                 existing ? pango_attr_list_copy(existing) : pango_attr_list_new();
-            const int box = emoji_pt * PANGO_SCALE;
+            const int box = custom_emoji_pt * PANGO_SCALE;
             // Ink/logical rects are relative to the baseline; a negative y
             // of the full box height sits the shape entirely above it, the
             // same way a typical glyph's ink sits mostly above the baseline.

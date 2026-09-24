@@ -113,6 +113,20 @@ float UrlPreviewCardDisplay::stack_height(const MessageRowData& row,
     return total;
 }
 
+float UrlPreviewCardDisplay::stack_width(const MessageRowData& row,
+                                         float col_w) const
+{
+    if (!has_preview(row))
+    {
+        return 0.0f;
+    }
+    // Every card in a stack shares one width: bundled cards are always
+    // min(col_w, kBundledImageMaxW) wide (see bundled_card_size_), legacy
+    // cards min(col_w, kPreviewCardW) (see paint_one_legacy_).
+    return std::min(col_w, row.bundled_previews_present ? kBundledImageMaxW
+                                                        : kPreviewCardW);
+}
+
 void UrlPreviewCardDisplay::paint_cards(const MessageRowData& row,
                                         tk::PaintCtx& ctx, float x, float y,
                                         float col_w)

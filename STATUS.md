@@ -1,6 +1,93 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-19**. 1877 C++ + 704 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-24**. 1936 C++ + 713 Rust tests.
+
+> **Mention pills: initials disc when there's no avatar (2026-09-24, v0.8.25).**
+> A pill's reserved avatar slot used to stay blank until an avatar loaded,
+> and forever if the user or room had none. `tk::paint_pill_leading_visual`
+> now draws an initials disc there (display-name initials; "@" for `@room`)
+> in the theme's `avatar_initials_bg`/`avatar_initials_text`, carried on
+> `PillSpec::initials_bg`/`initials_fg`. Composers get the colors through
+> `NativeTextArea::set_mention_colors(const tk::MentionColors&)`, which
+> replaces the old `(bg, fg)` overload on all four backends. Windows build +
+> pill/mention ctest 63/63; user-verified live. Qt6/GTK4/macOS unbuilt.
+
+<!-- -->
+
+> **Command-line options (2026-09-23, v0.8.25).** A shared parser and startup
+> pipeline for all shells: `--help`, `--version`, `--profile` (isolated
+> profiles), `--hidden`, `--log-level`/`--verbose`, `--logoutall`, and
+> `--open-*` on every platform. See [docs/CLI.md](docs/CLI.md).
+
+> **Space room management (2026-09-21, v0.8.25).**
+> `SpaceRootView` gains an add/remove-rooms section: a searchable candidates
+> list on the left, the space's current children (joined + unjoined) as a
+> grid on the right. Drag a room either direction, or use Enter/Delete;
+> optimistic with revert-on-failure via the existing `pending_room_actions_`
+> correlation. Hidden entirely when the user lacks `m.space.child` send
+> power. New Rust/FFI/Client mutation API
+> (`can_edit_space_children`/`add_room_to_space_async`/
+> `remove_room_from_space_async`) reusing `resolve_route_via` and the
+> existing `on_room_action_complete` callback — no new IEventHandler hook.
+> Also fixed a gap where the room list never refreshed when a room's space
+> membership changed, since `m.space.child` is a state event on the space's
+> room, not the child's — `room_list_fingerprint` now tracks a
+> `space_children_summary` per room. The view's top row was redone as
+> avatar+alias on the left and a scrollable, linkified topic on the right
+> (was overlapping the new section for long topics). First real consumer of
+> the in-app drag-and-drop framework below. Linux (Qt6 + GTK4) build + full
+> ctest 1906/1906, cargo 711 (+7); user-verified live over several rounds of
+> interactive fixes (grid cell shape, stale/unknown room filtering,
+> scrollbar-vs-drag conflicts, tooltip offset, a sidebar-resize-grip
+> regression). No automated tests yet for the two new widgets themselves.
+> Windows/macOS share the code, unbuilt.
+
+<!-- -->
+
+> **In-app drag-and-drop framework for `tesseract_tk` (2026-09-21, v0.8.25).**
+> New synthetic, in-process widget-to-widget drag-and-drop primitive:
+> `Host::begin_drag()` (a kind-tagged `DragPayload` + a fully customizable
+> pre-rendered `DragVisual` that floats above everything) hands pointer
+> routing to a claim-bubble drop-target search (`on_drag_enter`/
+> `on_drag_over`/`on_drag_leave_target`/`on_drop`), with Escape/leave-surface
+> cancel and a shared `DragGestureTracker` click-vs-drag threshold helper.
+> No OS drag-source APIs are touched — this doesn't interoperate with
+> dragging content to other apps. The existing OS-inbound file-drop hover
+> API was renamed (`on_drag_hover`→`on_native_drag_hover`, etc.) so the two
+> systems can never be confused. Framework only, no product call site yet —
+> first consumer will be dragging rooms onto Spaces in `RoomListView`, which
+> also needs a still-missing client API to mutate `m.space.child`. Linux
+> (Qt6 + GTK4) build + full ctest 1906/1906 (+8); Windows/macOS share the
+> code, unbuilt this session.
+
+<!-- -->
+
+> **Call rooms (MSC3417) get room-list UI and full call lifecycle (2026-09-21, v0.8.25).**
+> Call rooms now show in their own "Call Rooms" room-list section (after
+> Rooms, ranked below Favorites/Unread/Inactive; reappears per-Space when
+> drilled in), and Tesseract auto-joins the call on first switch into one.
+> Switching away floats the call instead of hanging up; switching back
+> restores the user's saved (non-floating) mode; switching directly between
+> two call rooms leaves the old call and joins the new one. Docked/
+> DockedExpanded mode controls now hide while the call's room isn't the one
+> being viewed. Linux (Qt6 + GTK4) build + full ctest 1898/1898 (+15);
+> unverified live this session. Windows/macOS share the code, unbuilt.
+> Since 2026-09-24, call rooms can also be created from the Create Room
+> dialog's split button ("Create Call Room"); the new room opens its
+> pre-call lobby once sync delivers it. Windows build + ctest 1935/1935;
+> user-verified live.
+
+<!-- -->
+
+> **Custom emoji get BigEmoji sizing too (2026-09-20, v0.8.24).**
+> A body made entirely of custom emoticons (MSC2545), alone or mixed with
+> native emoji, now gets the same 2x BigEmoji size a native-emoji-only
+> message did; a custom emoji mid-sentence also renders larger than the
+> surrounding text (`FontRole::InlineCustomEmoji`, native inline emoji
+> unchanged). Linux Qt6 build + full ctest 1883/1883 (+6); user-verified
+> live. GTK4/Windows/macOS share the code, unbuilt this session.
+
+<!-- -->
 
 > **Call banner is a room state (2026-09-19, v0.8.24).**
 > The banner stays while the room has live call members and you aren't in
@@ -2130,7 +2217,8 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **Native text overlays** — `NativeTextField` (`QLineEdit` / `GtkEntry` / Win32 EDIT / `NSTextField`) and `NativeTextArea` (`QTextEdit` / `GtkTextView` / multi-line EDIT / `NSTextView`) for IME-friendly input. `set_placeholder` is implemented on all four platforms (GTK4 uses a `dim-label` `GtkLabel` overlay child since `GtkTextView` has no native placeholder API).
 - **Shared views** — `LoginView`, `RoomListView`, `MessageListView`, `EmojiPicker`, `StickerPicker`, `RecoveryBanner`, `ComposeBar` mounted identically on every platform.
 - **`AlertDialog`** — modal overlay widget (not backdrop-dismissible) with a title, body, and up to two configurable action buttons (`open(Options, primary_cb, secondary_cb)` / `close()` / `is_open()`). Used by `LoginView` to surface startup restore errors; available for other blocking error prompts.
-- **Drag-and-drop ingest** — `tk::Widget` virtuals (`on_file_drop`/`dispatch_file_drop`, `on_drag_hover`/`dispatch_drag_hover`) mirror the existing pointer-event dispatch shape, so each drop target (`ComposeBar`, `RoomView`, `ImagePackEditorView`, `UserPackEditor`) claims its own drop and paints its own localized hover highlight instead of one whole-surface overlay; image-data MIME types route to the compose bar's image preview, generic files route to the file chip.
+- **Drag-and-drop ingest (OS-inbound files)** — `tk::Widget` virtuals (`on_file_drop`/`dispatch_file_drop`, `on_native_drag_hover`/`dispatch_native_drag_hover`) mirror the existing pointer-event dispatch shape, so each drop target (`ComposeBar`, `RoomView`, `ImagePackEditorView`, `UserPackEditor`) claims its own drop and paints its own localized hover highlight instead of one whole-surface overlay; image-data MIME types route to the compose bar's image preview, generic files route to the file chip. Distinct from the in-app drag-and-drop framework below.
+- **In-app drag-and-drop framework** — `Host::begin_drag(DragPayload, DragVisual, Point)` starts a synthetic, in-process widget-to-widget drag (no OS drag-source APIs), with a claim-bubble drop-target search (`Widget::on_drag_enter`/`on_drag_over`/`on_drag_leave_target`/`on_drop`, `dispatch_drag_enter`), a Host-owned floating visual painted above everything, and a shared `DragGestureTracker` click-vs-drag threshold helper (`ui/shared/tk/drag_gesture.h`). Cancels on Escape or the pointer leaving the surface.
 - **`PopupMenu`** — renders through `tk::PopupSurfaceHandle` (`Host::make_popup_surface()`, the same primitive `tk::ComboBox`'s dropdown uses) rather than a canvas overlay, so it's a genuine OS popup window that z-orders correctly above everything, including native controls; row drawing/hit-testing lives in a nested `MenuList` widget. Supports separator and disabled items. Dismisses on any outside click — including a click that lands in a native text field and never reaches canvas hit-testing — and on the window losing activation (alt-tab), via `Host::dismiss_active_popup()` (also benefits `ComboBox`/`DatePickerView`). `PopupSurfaceHandle::on_dismiss_requested` outside-click auto-dismiss (Mention/Slash/Shortcode/Gif popups) works on all four shells, not just Qt.
 
 ## Messaging

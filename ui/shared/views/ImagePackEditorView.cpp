@@ -430,9 +430,9 @@ void ImagePackSectionList::paint(tk::PaintCtx& ctx)
             hovered_header_remove_ && *hovered_header_remove_ == i;
         paint_header_(ctx, i, sec, origin, active, hdr_remove_hovered);
 
-        if (drag_hover_pack_ && *drag_hover_pack_ == i)
+        if (native_drag_hover_pack_ && *native_drag_hover_pack_ == i)
         {
-            tk::paint_drag_hover_highlight(
+            tk::paint_native_drag_hover_highlight(
                 ctx, {origin.x, origin.y + sec.top, bounds_.w, sec.height});
         }
 
@@ -968,7 +968,7 @@ bool ImagePackEditorView::on_file_drop(tk::Point local, tk::FileDropPayload& pay
     return true;
 }
 
-bool ImagePackEditorView::on_drag_hover(tk::Point local)
+bool ImagePackEditorView::on_native_drag_hover(tk::Point local)
 {
     if (!open_)
         return false;
@@ -978,13 +978,13 @@ bool ImagePackEditorView::on_drag_hover(tk::Point local)
         idx = active_pack_index_;
     if (!idx)
         return false;
-    list_->set_drag_hover_pack(idx);
+    list_->set_native_drag_hover_pack(idx);
     return true;
 }
 
-void ImagePackEditorView::on_drag_leave()
+void ImagePackEditorView::on_native_drag_leave()
 {
-    list_->set_drag_hover_pack(std::nullopt);
+    list_->set_native_drag_hover_pack(std::nullopt);
 }
 
 void ImagePackEditorView::set_tile_preview(std::uint64_t local_id,

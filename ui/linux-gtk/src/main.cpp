@@ -10,11 +10,10 @@
 
 #include "MainWindow.h"
 #include "app/AccountManager.h"
+#include "app/Launch.h"
 #include "tk/gst_hw_probe.h"
 #include "tk/i18n.h"
 #include "tk/single_instance.h"
-#include <tesseract/crash_handler.h>
-#include <tesseract/launch_args.h>
 #include <tesseract/paths.h>
 #include <tesseract/settings.h>
 
@@ -66,82 +65,65 @@ int main(int argc, char** argv)
     if (!getenv("GST_DEBUG"))
         setenv("GST_DEBUG", "0", 1);
 
-    // Load persisted settings before set_locale so the saved language
-    // preference is available when choosing the locale.
-    tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
-
-    tesseract::install_crash_handler(tesseract::Settings::instance().crash_reporting_enabled);
+    // Shared startup pipeline (ui/shared/app/Launch.h): parses argv, selects
+    // --profile, loads settings + locale, and handles --help / --version /
+    // --logoutall before any GTK/GApplication state exists.
+    tesseract::LaunchHooks hooks;
+    hooks.detect_system_lang = []
+    {
+        // Derive from the environment (setlocale already called above).
+        const char* lc_messages = setlocale(LC_MESSAGES, nullptr);
+        std::string lang =
+            (lc_messages && lc_messages[0] != 'C' && lc_messages[0] != '\0')
+                ? lc_messages
+                : "en";
+        // Strip encoding suffix if present (e.g. "es_MX.UTF-8" -> "es_MX")
+        auto dot = lang.find('.');
+        if (dot != std::string::npos)
+        {
+            lang.erase(dot);
+        }
+        return lang;
+    };
+    hooks.i18n_dir = []
+    {
+        // locale_dir() is <prefix>/share/locale; the i18n dir is
+        // <prefix>/share/tesseract/i18n.
+        std::string ldir = locale_dir();
+        if (ldir.empty())
+        {
+            return std::string{};
+        }
+        return (std::filesystem::path{ldir}.parent_path() / "tesseract" / "i18n")
+            .string();
+    };
+    hooks.acquire_instance_lock = []
+    { return tk::acquire_single_instance_lock().acquired; };
+    static const tesseract::LaunchPlan plan = tesseract::prepare_launch(
+        std::vector<std::string>(argv + 1, argv + argc), hooks);
+    if (plan.exit_code)
+    {
+        return *plan.exit_code;
+    }
 
     // Mirror Qt6: probe GStreamer hardware decoders once at startup and cache
     // the results so broken hardware elements are demoted before first use.
     std::filesystem::create_directories(tesseract::cache_dir());
     tk::gst::apply_hw_decoder_cache(tesseract::cache_dir().string());
 
-    // Determine locale name: use saved preference if non-auto, else derive
-    // from the environment (setlocale already called above).
-    std::string lang = tesseract::Settings::instance().language;
-    if (lang == "auto" || lang.empty())
-    {
-        const char* lc_messages = setlocale(LC_MESSAGES, nullptr);
-        lang = (lc_messages && lc_messages[0] != 'C' && lc_messages[0] != '\0')
-                   ? lc_messages
-                   : "en";
-        // Strip encoding suffix if present (e.g. "es_MX.UTF-8" -> "es_MX")
-        auto dot = lang.find('.');
-        if (dot != std::string::npos)
-            lang.erase(dot);
-    }
-
-    std::string ldir = locale_dir();
-    std::string i18n_dir;
-    if (!ldir.empty())
-    {
-        // ldir is <prefix>/share/locale; i18n dir is <prefix>/share/tesseract/i18n
-        std::filesystem::path p{ldir};
-        i18n_dir = (p.parent_path() / "tesseract" / "i18n").string();
-    }
-    tk::set_locale(i18n_dir, lang);
-
-    // Parse argv once (order-independent: --autostart and a matrix URI may
-    // appear together or alone). Shared with the other shells via
-    // client/src/launch_args.cpp instead of each hand-rolling its own
-    // single-arg check.
-    static std::string startup_uri;
-    static bool start_hidden = false;
+    static std::string startup_uri = plan.args.matrix_uri.value_or(std::string{});
+    static const bool start_hidden = plan.start_hidden();
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
-    static std::filesystem::path screenshot_dir;
-#endif
-    {
-        tesseract::LaunchArgs launch = tesseract::parse_launch_args(
-            std::vector<std::string>(argv + 1, argv + argc));
-        start_hidden = launch.autostart;
-        if (launch.matrix_uri)
-            startup_uri = *launch.matrix_uri;
-#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
-        if (launch.screenshot_dir)
-            screenshot_dir = *launch.screenshot_dir;
+    static const std::filesystem::path screenshot_dir =
+        plan.args.screenshot_dir.value_or(std::string{});
 #endif
 
-        // Strip every recognised arg out of argv before GApplication sees
-        // it — otherwise G_APPLICATION_HANDLES_OPEN treats a leftover
-        // "--autostart" (or the URI, once handled locally) as a file to
-        // open and fires the "open" signal with garbage.
-        std::vector<char*> filtered{argv[0]};
-        for (int i = 1; i < argc; ++i)
-        {
-            std::string a = argv[i];
-            if (a == "--autostart" || (launch.matrix_uri && a == *launch.matrix_uri)
-#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
-                || (launch.screenshot_dir && a.starts_with("--screenshot-dir="))
-#endif
-                )
-                continue;
-            filtered.push_back(argv[i]);
-        }
-        argc = static_cast<int>(filtered.size());
-        for (int i = 0; i < argc; ++i)
-            argv[i] = filtered[static_cast<std::size_t>(i)];
-    }
+    // Every launch intent was consumed above, so GApplication gets only the
+    // program name. Forwarding the rest would make G_APPLICATION_HANDLES_OPEN
+    // treat leftovers ("--autostart", the URI, ...) as files to open and fire
+    // the "open" signal with garbage — and GApplication's own option parser
+    // would reject flags it doesn't know.
+    argc = 1;
 
     // Single-instance guard shared with the Qt6 build (same flock path, same
     // activation-socket protocol) — GApplication's own D-Bus uniqueness only
@@ -153,18 +135,26 @@ int main(int argc, char** argv)
 #endif
         !tk::acquire_single_instance_lock().acquired)
     {
-        // --autostart has no meaningful action against an already-running
-        // instance — exit quietly without forwarding anything.
-        if (!start_hidden)
+        // A hidden/autostart launch with nothing to forward has no meaningful
+        // action against an already-running instance — exit quietly.
+        if (plan.should_raise_existing_instance())
         {
-            const char* tok = getenv("XDG_ACTIVATION_TOKEN");
-            tk::forward_activation_request(tok ? tok : "", startup_uri);
+            tk::forward_activation_request(tk::activation_request_for(plan.args));
         }
         return 0;
     }
 
+    // A named profile gets its own application id: GApplication's D-Bus
+    // uniqueness would otherwise hand this launch to a running instance of a
+    // *different* profile. The "p_" prefix keeps the element valid even when
+    // the profile name starts with a digit.
+    std::string app_id = "org.tesseract.gtk";
+    if (!tesseract::profile().empty())
+    {
+        app_id += ".p_" + tesseract::profile();
+    }
     GtkApplication* app =
-        gtk_application_new("org.tesseract.gtk", G_APPLICATION_HANDLES_OPEN);
+        gtk_application_new(app_id.c_str(), G_APPLICATION_HANDLES_OPEN);
     install_graceful_shutdown_signal_handlers(app);
 
     tesseract::AccountManager account_manager;
@@ -174,15 +164,18 @@ int main(int argc, char** argv)
     // backend (we're the lock holder from here on) and raise/route them the
     // same way GTK's own "activate"/"open" D-Bus signals do below.
     auto activation_listener = std::make_unique<tk::ActivationListener>(
-        [&window](std::string token, std::string uri)
+        [&window](tk::ActivationRequest req)
         {
-            if (!token.empty())
-                setenv("XDG_ACTIVATION_TOKEN", token.c_str(), 1);
+            if (!req.token.empty())
+                setenv("XDG_ACTIVATION_TOKEN", req.token.c_str(), 1);
             if (window)
             {
                 window->present();
-                if (!uri.empty())
-                    window->open_matrix_link(uri);
+                if (!req.uri.empty())
+                    window->open_matrix_link(req.uri);
+                window->dispatch_launch_action(
+                    tesseract::launch_action_from_option_id(req.action),
+                    std::move(req.room_id));
             }
         });
     if (activation_listener->fd() >= 0)
@@ -227,6 +220,10 @@ int main(int argc, char** argv)
                         win->open_matrix_link(startup_uri);
                         startup_uri.clear();
                     }
+                    // Held by ShellBase until the main content is showing.
+                    win->dispatch_launch_action(
+                        plan.args.action,
+                        plan.args.room_id.value_or(std::string{}));
                 }
                 else
                 {

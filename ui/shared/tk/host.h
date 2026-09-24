@@ -229,6 +229,17 @@ public:
     virtual void set_hovering(bool /*hovering*/) {}
 };
 
+// Theme colors for a composer's inline mention pills: the chip itself
+// (bg/fg) and the initials disc drawn in its avatar slot while no avatar
+// image is available (initials_bg/initials_fg — see tk::PillSpec).
+struct MentionColors
+{
+    Color bg{};
+    Color fg{};
+    Color initials_bg{};
+    Color initials_fg{};
+};
+
 // Multi-line variant. Auto-grows up to a host-clamped envelope so the
 // compose bar's height tracks the text content. Backs the ComposeBar's
 // input affordance; IME / selection stay native.
@@ -367,12 +378,11 @@ public:
         return segs;
     }
 
-    /// Theme the inline mention pills (background + text colour). Call once
-    /// after creation and again when the theme changes. Default no-op.
-    virtual void set_mention_colors(Color bg, Color fg)
+    /// Theme the inline mention pills (chip + initials-disc colours). Call
+    /// once after creation and again when the theme changes. Default no-op.
+    virtual void set_mention_colors(const MentionColors& colors)
     {
-        (void)bg;
-        (void)fg;
+        (void)colors;
     }
 
     /// Re-render every currently-inserted mention pill for `user_id` (there
@@ -1115,18 +1125,55 @@ protected:
 
     // Drag-hover feedback while a drag is over the surface but not yet
     // dropped. Re-evaluates which widget (if any) claims `world` via
-    // `input_root_()->dispatch_drag_hover(...)`, firing on_drag_leave on the
+    // `input_root_()->dispatch_native_drag_hover(...)`, firing on_native_drag_leave on the
     // previous claimant when the claim changes, and requesting a repaint on
     // any change or continued claim (covers a claiming widget's own internal
     // sub-target moving, e.g. between two pack sections). Returns the new
     // claimant, or nullptr if none.
-    Widget* dispatch_drag_hover(Point world);
+    Widget* dispatch_native_drag_hover(Point world);
 
-    // Explicit end-of-drag: fires on_drag_leave on the current claimant (if
+    // Explicit end-of-drag: fires on_native_drag_leave on the current claimant (if
     // any) and clears it. Call on native drag-leave and after a drop (via
     // dispatch_file_drop), since no further hover events will arrive.
-    void dispatch_drag_leave();
+    void dispatch_native_drag_leave();
 
+public:
+    // ── In-app drag-and-drop (see drag_drop.h) ───────────────────────────────
+    // Synthetic, in-process only: this never touches OS drag-source APIs and
+    // does not interoperate with dragging content to other apps. Unrelated
+    // to dispatch_native_drag_hover/_leave above, which is for OS-inbound
+    // file drops.
+
+    // Begins a synthetic in-app drag. Call once a press has become a drag —
+    // typically from a widget's own on_pointer_down/on_pointer_drag, after a
+    // DragGestureTracker (drag_gesture.h) reports the pointer crossed
+    // kDragThresholdPx. `source_local` is the pointer position, in the
+    // calling widget's local coordinates, at the moment of the call. While a
+    // drag is active, pointer-moves stop reaching the widget that was
+    // captured on pointer-down (via pressed_widget_) as on_pointer_drag —
+    // they instead retarget drop candidates via dispatch_drag_enter, see
+    // dispatch_pointer_move().
+    void begin_drag(DragPayload payload, DragVisual visual, Point source_local);
+
+    // True while a drag started by begin_drag() is in progress.
+    bool is_dragging() const
+    {
+        return active_drag_ != nullptr;
+    }
+
+    // Programmatic cancel: Escape key, surface focus loss, or any other
+    // reason to abandon a drag before a drop. No-op if not currently
+    // dragging. Fires on_drag_leave_target() on the current claimant, if
+    // any; never fires on_drop().
+    void cancel_drag();
+
+    // Draws the floating drag visual (if a drag is active), above
+    // everything else. Called by each backend's paint() right after
+    // paint_toast_overlay(ctx, surface_bounds) — nothing else may paint
+    // after this.
+    void paint_drag_overlay(PaintCtx& ctx, Rect surface_bounds);
+
+protected:
     // Hook returning the root widget the dispatch operates on. Each subclass
     // owns its `root_` (a std::unique_ptr<Widget>) and returns `root_.get()`.
     virtual Widget* input_root_() const = 0;
@@ -1206,8 +1253,19 @@ protected:
     std::weak_ptr<Widget> pressed_widget_;      // captured on pointer-down
     std::weak_ptr<Button> hovered_btn_;         // Button currently under the pointer
     std::weak_ptr<Widget> hovered_widget_;      // widget currently under the pointer
-    std::weak_ptr<Widget> drag_hovered_widget_; // widget currently claiming drag-hover
+    std::weak_ptr<Widget> native_drag_hovered_widget_; // widget currently claiming drag-hover
     std::weak_ptr<Widget> focused_widget_;      // canvas widget holding tk-level keyboard focus
+
+    // State for an in-app drag started by begin_drag() (see drag_drop.h).
+    // Unrelated to native_drag_hovered_widget_ above (OS file-drop hover).
+    struct ActiveDrag
+    {
+        DragPayload payload;
+        DragVisual visual;
+        Point cursor_world{}; // updated on every dispatch_pointer_move
+        std::weak_ptr<Widget> current_target; // last dispatch_drag_enter() claimant
+    };
+    std::unique_ptr<ActiveDrag> active_drag_;
 
     // True only when the most recent input was keyboard-driven (any key via
     // dispatch_key_down, or a Tab/Shift-Tab forwarded out of a native text

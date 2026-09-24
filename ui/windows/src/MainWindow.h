@@ -109,6 +109,10 @@ class MainWindow : public tesseract::ShellBase
 {
 public:
     static bool register_class(HINSTANCE hInst);
+    // "TesseractMainWnd" plus the --profile suffix: a second launch finds
+    // the running instance of its own profile with FindWindowW(class_name()).
+    // Only valid after tesseract::set_profile() (prepare_launch) has run.
+    static const wchar_t* class_name();
     static LRESULT CALLBACK wnd_proc(HWND, UINT, WPARAM, LPARAM);
     // start_hidden: true when launched via the OS autostart mechanism
     // (--autostart). The caller passes SW_HIDE to create() in that case;
@@ -221,8 +225,10 @@ private:
     void on_login_succeeded();
     void show_login_view();
     void show_main_content();
-    void dispatch_launch_action_(tesseract::LaunchAction action);
-    void open_recent_room_(const std::string& room_id);
+    // Launch-action hooks for ShellBase::dispatch_launch_action_.
+    void raise_main_window_ui_() override;
+    void open_quick_switch_ui_() override { open_quick_switch_(); }
+    void open_message_search_ui_() override { open_message_search_(); }
     void open_settings_();
     void close_settings_();
     // Lazily construct login_view_/settings_view_ on first need (called from
@@ -486,10 +492,6 @@ private:
     // True when constructed with start_hidden=true (--autostart) and no
     // saved session has yet forced the window visible. See start_login().
     bool start_hidden_ = false;
-    bool main_content_ready_ = false;
-    tesseract::LaunchAction pending_launch_action_ =
-        tesseract::LaunchAction::None;
-    std::string pending_recent_room_id_;
     std::unordered_map<std::string, std::string> recent_taskbar_avatar_rooms_;
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
     std::filesystem::path screenshot_dir_;
@@ -628,7 +630,6 @@ private:
                              std::shared_ptr<bool> target_alive = nullptr)
         override;
 
-    static constexpr const wchar_t* CLASS_NAME = L"TesseractMainWnd";
     static constexpr int IDC_QUICK_SWITCH = 130;
     static constexpr int IDC_NAV_BACK = 131;
     static constexpr int IDC_NAV_FWD  = 132;

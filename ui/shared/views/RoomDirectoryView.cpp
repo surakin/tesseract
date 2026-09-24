@@ -17,11 +17,11 @@ namespace
 constexpr float kPadX = 20.0f;
 constexpr float kPadY = 16.0f;
 constexpr float kGap = 10.0f;
-constexpr float kSmallGap = 6.0f;
-constexpr float kInputH = 32.0f;
+constexpr float kDirSmallGap = 6.0f;
+constexpr float kDirInputH = 32.0f;
 // Two lines' worth at Body role — long messages (e.g. "invalid server
 // name: …") wrap instead of being clipped or overflowing the button row.
-constexpr float kStatusH = 40.0f;
+constexpr float kDirStatusH = 40.0f;
 constexpr float kBtnH = 32.0f;
 constexpr float kBtnW = 96.0f;
 constexpr float kSearchBtnW = 88.0f;
@@ -134,7 +134,7 @@ public:
                     {text_x + kRowPillPadX,
                      y + (kRowPillH - plo->measure().h) * 0.5f},
                     tk::Color{255, 255, 255, 255});
-                advance = pw + kSmallGap;
+                advance = pw + kDirSmallGap;
             }
             const std::string members = tk::trf(
                 tk::trn("{0} member", "{0} members",
@@ -181,7 +181,7 @@ RoomDirectoryView::RoomDirectoryView() : adapter_(std::make_unique<Adapter>(*thi
 {
     if (host())
     {
-        auto server = tk::create_widget<tk::TextField>(this, kInputH);
+        auto server = tk::create_widget<tk::TextField>(this, kDirInputH);
         server->set_on_changed(
             [this](const std::string&)
             {
@@ -199,7 +199,7 @@ RoomDirectoryView::RoomDirectoryView() : adapter_(std::make_unique<Adapter>(*thi
             [this](bool focused) { if (!focused && fields_dirty_) search_now(); });
         server_field_ = add_child(std::move(server));
 
-        auto search = tk::create_widget<tk::TextField>(this, kInputH);
+        auto search = tk::create_widget<tk::TextField>(this, kDirInputH);
         search->set_placeholder(tk::tr("Search rooms\xe2\x80\xa6"));
         search->set_on_changed(
             [this](const std::string&)
@@ -520,22 +520,22 @@ void RoomDirectoryView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     if (server_field_)
     {
         server_field_->set_visible(is_open_);
-        server_field_->arrange(ctx, {x, y0, field_w, kInputH});
+        server_field_->arrange(ctx, {x, y0, field_w, kDirInputH});
     }
     if (search_field_)
     {
         search_field_->set_visible(is_open_);
-        search_field_->arrange(ctx, {x + field_w + kGap, y0, field_w, kInputH});
+        search_field_->arrange(ctx, {x + field_w + kGap, y0, field_w, kDirInputH});
     }
     if (search_btn_)
     {
         search_btn_->arrange(
-            ctx, {x + field_w * 2.0f + kGap * 2.0f, y0, kSearchBtnW, kInputH});
+            ctx, {x + field_w * 2.0f + kGap * 2.0f, y0, kSearchBtnW, kDirInputH});
     }
 
     const float btn_row_y = bounds.y + bounds.h - kPadY - kBtnH;
-    const float status_y = btn_row_y - kSmallGap - kStatusH;
-    const float list_y = y0 + kInputH + kGap;
+    const float status_y = btn_row_y - kDirSmallGap - kDirStatusH;
+    const float list_y = y0 + kDirInputH + kGap;
     const float list_h = std::max(0.0f, status_y - kGap - list_y);
 
     if (list_view_)
@@ -544,7 +544,7 @@ void RoomDirectoryView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     }
     if (status_lbl_)
     {
-        status_lbl_->arrange(ctx, {x, status_y, w, kStatusH});
+        status_lbl_->arrange(ctx, {x, status_y, w, kDirStatusH});
     }
 
     float btn_x = bounds.x + bounds.w - kPadX - kBtnW;
@@ -552,7 +552,7 @@ void RoomDirectoryView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     {
         join_btn_->arrange(ctx, {btn_x, btn_row_y, kBtnW, kBtnH});
     }
-    btn_x -= (kBtnW + kSmallGap);
+    btn_x -= (kBtnW + kDirSmallGap);
     if (cancel_btn_)
     {
         cancel_btn_->arrange(ctx, {btn_x, btn_row_y, kBtnW, kBtnH});

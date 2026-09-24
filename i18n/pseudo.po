@@ -216,6 +216,10 @@ msgstr "[Jùmp tö dàté fàïléd: {0}xxxx]"
 msgid "Settings…"
 msgstr "[Séttïñgs…x]"
 
+#: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp:7484
+msgid "Verify this session…"
+msgstr "[Vérïfý thïs séssïöñ…xx]"
+
 #: /home/rayden/src/tesseract/ui/shared/app/ShellBase.cpp:5468
 msgid "Add Account…"
 msgstr "[Àdd Àççöùñt…xx]"
@@ -450,6 +454,15 @@ msgstr "[Jöïñx]"
 msgid "Create"
 msgstr "[Çréàtéx]"
 
+msgid "Create Room"
+msgstr "[Çréàté Rööm x]"
+
+msgid "Create Space"
+msgstr "[Çréàté Spàçé xx]"
+
+msgid "Create Call Room"
+msgstr "[Çréàté Çàll Rööm xxx]"
+
 #: /home/rayden/src/tesseract/ui/shared/views/AddRoomView.cpp:42
 msgid "Browse"
 msgstr "[Bröwséx]"
@@ -528,6 +541,12 @@ msgstr "[Plàýbàçk spééd: {0}xxx]"
 msgid "Room name"
 msgstr "[Rööm ñàméx]"
 
+msgid "Space name"
+msgstr "[Spàçé ñàméxx]"
+
+msgid "Call room name"
+msgstr "[Çàll rööm ñàméxxx]"
+
 #: /home/rayden/src/tesseract/ui/shared/views/CreateRoomView.cpp:46
 msgid "Topic (optional)"
 msgstr "[Töpïç (öptïöñàl)xxx]"
@@ -535,6 +554,9 @@ msgstr "[Töpïç (öptïöñàl)xxx]"
 #: /home/rayden/src/tesseract/ui/shared/views/CreateRoomView.cpp:50
 msgid "Room alias (optional)"
 msgstr "[Rööm àlïàs (öptïöñàl)xxxx]"
+
+msgid "Space alias (optional)"
+msgstr "[Spàçé àlïàs (öptïöñàl)xxxxx]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/CreateRoomView.cpp:85
 msgid "Invite people (optional) — Matrix IDs, one per line or comma-separated"
@@ -553,6 +575,9 @@ msgstr "[Réàsöñ: {0}xxxxxx]"
 #: /home/rayden/src/tesseract/ui/shared/views/CreateRoomView.cpp:94
 msgid "Sent as plain text, even in encrypted rooms"
 msgstr "[Séñt às plàïñ téxt, évéñ ïñ éñçrýptéd rööms xxxxxxxxxxxxxx]"
+
+msgid "Sent as plain text, even in encrypted spaces"
+msgstr "[Séñt às plàïñ téxt, évéñ ïñ éñçrýptéd spàçés xxxxxxxxxxxxxxx]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/CreateRoomView.cpp:141
 msgid "Sets the initial join rule, history visibility, and directory listing. Private: invite-only, unlisted. Public: anyone can join, listed. Fine-grained options (Knock, Restricted) can be set afterward in Room Settings → Security & Privacy."
@@ -597,9 +622,21 @@ msgstr "[Çàñçélx]"
 msgid "Creating room…"
 msgstr "[Çréàtïñg rööm…xx]"
 
+msgid "Creating space…"
+msgstr "[Çréàtïñg spàçé…xxx]"
+
+msgid "Creating call room…"
+msgstr "[Çréàtïñg çàll rööm…xxxx]"
+
 #: /home/rayden/src/tesseract/ui/shared/views/CreateRoomView.cpp:179
 msgid "Couldn't create room."
 msgstr "[Çöùldñ't çréàté rööm.xxxx]"
+
+msgid "Couldn't create space."
+msgstr "[Çöùldñ't çréàté spàçé.xxxxx]"
+
+msgid "Couldn't create call room."
+msgstr "[Çöùldñ't çréàté çàll rööm.xxxxx]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/CreateRoomView.cpp:270
 msgid "Create a Room"
@@ -1070,6 +1107,21 @@ msgstr "[{0}'s réqùést tö jöïñ wàs déñïéd by {1}xxxxxxx]"
 #, c++-format
 msgid "{0}'s join request was denied"
 msgstr "[{0}'s jöïñ réqùést wàs déñïédxxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:1072
+#, c++-format
+msgid "{0} set the room name to {1}"
+msgstr "[{0} sét thé röóm ñàmé tö {1}xxxxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:1073
+#, c++-format
+msgid "{0} changed the room name to {1}"
+msgstr "[{0} chàñgéd thé röóm ñàmé tö {1}xxxxxxx]"
+
+#: /home/rayden/src/tesseract/ui/shared/views/MessageListView.cpp:1070
+#, c++-format
+msgid "{0} removed the room name"
+msgstr "[{0} rémövéd thé röóm ñàméxxxxxx]"
 
 #: /home/rayden/src/tesseract/ui/shared/app/HistoryExportController.cpp
 msgid "{0}'s request to join was withdrawn"
@@ -1748,6 +1800,38 @@ msgstr[1] "[{0} àvàïlàblé tö jöïñxxxx]"
 #: /home/rayden/src/tesseract/ui/shared/views/SpaceRootView.cpp:192
 msgid "Explore the rooms in this space from the room list."
 msgstr "[Éxplöré thé rööms ïñ thïs spàçé fröm thé rööm lïst.xxxxxxxxxx]"
+
+#: ui/shared/views/SpaceRootView.cpp
+msgid "Drag rooms between the two lists to add or remove them, or select one and press Enter to add / Delete to remove."
+msgstr "[Dràg rööms bétwééñ thé twö lïsts tö àdd ör rémövé thém, ör séléçt öñé àñd préss Éñtér tö àdd / Délété tö rémövé.xxxxxxxxxx]"
+
+#: ui/shared/views/SpaceAddRoomList.cpp
+msgid "Search your rooms…"
+msgstr "[Séàrçh yöür rööms…xxxx]"
+
+#: ui/shared/views/SpaceAddRoomList.cpp
+msgid "No more rooms to add."
+msgstr "[Nö möré rööms tö àdd.xxxx]"
+
+#: ui/shared/views/SpaceAddRoomList.cpp
+msgid "You don't have permission to add rooms to this space."
+msgstr "[Yöü dön't hàvé pérmïssïön tö àdd rööms tö thïs spàçé.xxxxxxxxxx]"
+
+#: ui/shared/views/SpaceChildRoomGrid.cpp
+msgid "This space has no rooms yet."
+msgstr "[Thïs spàçé hàs nö rööms yét.xxxx]"
+
+#: ui/shared/views/SpaceChildRoomGrid.cpp
+msgid "You don't have permission to remove rooms from this space."
+msgstr "[Yöü dön't hàvé pérmïssïön tö rémövé rööms fröm thïs spàçé.xxxxxxxxxx]"
+
+#: ui/shared/app/ShellBase.cpp
+msgid "add room to space"
+msgstr "[àdd rööm tö spàçéxxxx]"
+
+#: ui/shared/app/ShellBase.cpp
+msgid "remove room from space"
+msgstr "[rémövé rööm fröm spàçéxxxx]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/StickerPicker.cpp:44
 msgid "Search stickers"
@@ -2682,3 +2766,83 @@ msgstr "[Vïdéö çàll ïñ prögréssxxxx]"
 #: ui/shared/views/CallBanner.cpp
 msgid "Voice call in progress"
 msgstr "[Vöïçé çàll ïñ prögréssxxxx]"
+
+#: ui/shared/views/RoomListView.h
+msgid "Call Rooms"
+msgstr "[Çàll Röömsxxx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "Show this help and exit"
+msgstr "[Shöw thïs hélp àñd éxïtxxxxx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "Show the version and exit"
+msgstr "[Shöw thé vérsïöñ àñd éxïtxxxxx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "Use a separate profile with its own accounts and settings"
+msgstr "[Üsé à sépàràté pröfïlé wïth ïts öwñ àççöüñts àñd séttïñgsxxxxxxxxxxx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "Start in the tray without showing the window"
+msgstr "[Stàrt ïñ thé trày wïthöüt shöwïñg thé wïñdöwxxxxxxxxx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "Set the log level (error, warn, info, debug, trace)"
+msgstr "[Sét thé lög lévél (érrör, wàrñ, ïñfö, débüg, tràçé)xxxxxxxxxx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "Log more detail (same as --log-level=debug)"
+msgstr "[Lög möré détàïl (sàmé às --log-level=debug)xxxxxxxxx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "Open the room with this ID"
+msgstr "[Öpéñ thé rööm wïth thïs ÏDxxxxx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "Open the quick switcher"
+msgstr "[Öpéñ thé qüïçk swïtçhérxxxxx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "Open message search"
+msgstr "[Öpéñ méssàgé séàrçhxxxx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "Open Settings"
+msgstr "[Öpéñ Séttïñgsxxx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "Sign out of every account and exit"
+msgstr "[Sïgñ öüt öf évéry àççöüñt àñd éxïtxxxxxxx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "[OPTIONS] [MATRIX-URI]"
+msgstr "[[ÖPTÏÖÑS] [MÀTRÏX-ÜRÏ]xxxx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "Usage:"
+msgstr "[Üsàgé:xx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "Options:"
+msgstr "[Öptïöñs:xx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "Tesseract is running. Quit it first, then try again."
+msgstr "[Tésséràçt ïs rüññïñg. Qüït ït fïrst, théñ try àgàïñ.xxxxxxxxxx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "The account list could not be read. Nothing was changed."
+msgstr "[Thé àççöüñt lïst çöüld ñöt bé réàd. Ñöthïñg wàs çhàñgéd.xxxxxxxxxxx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "No accounts to sign out."
+msgstr "[Ñö àççöüñts tö sïgñ öüt.xxxxx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "Signed out {0}"
+msgstr "[Sïgñéd öüt {0}xxx]"
+
+#: ui/shared/app/Launch.cpp
+msgid "Removed {0} from this device, but the server sign-out failed: {1}"
+msgstr "[Rémövéd {0} fröm thïs dévïçé, büt thé sérvér sïgñ-öüt fàïléd: {1}xxxxxxxxxxxxx]"

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <tesseract/launch_args.h>
+
 #include <functional>
 #include <string>
 
@@ -17,7 +19,28 @@ struct SingleInstanceLock
     bool acquired = false;
 };
 
-// Try to become the primary Tesseract instance for this Unix user. On
+// What a losing launch hands the running instance. Every field may be empty.
+struct ActivationRequest
+{
+    std::string token;   // XDG_ACTIVATION_TOKEN issued to the new launch
+    std::string uri;     // matrix: / matrix.to link to open
+    std::string action;  // launch option id, e.g. "open-settings", "open-room"
+    std::string room_id; // target of "open-room"
+};
+
+// Wire format: newline-delimited, one field per line in the order above.
+// Older peers wrote only the first two lines; missing trailing lines parse
+// as empty. Embedded newlines are stripped when formatting.
+std::string format_activation_payload(const ActivationRequest& req);
+ActivationRequest parse_activation_payload(const std::string& payload);
+
+// The request a losing launch forwards: its launch intents plus the
+// XDG_ACTIVATION_TOKEN from its environment.
+ActivationRequest activation_request_for(const tesseract::LaunchArgs& args);
+
+// Try to become the primary Tesseract instance for this Unix user and the
+// active --profile (tesseract::profile_suffix() is part of the lock and
+// socket paths, so different profiles run side by side). On
 // success, holds the lock open for the remaining lifetime of the process
 // (the OS releases it automatically on exit or crash) and returns
 // acquired = true. On failure (another Tesseract process — either backend —
@@ -25,12 +48,16 @@ struct SingleInstanceLock
 // forward_activation_request() and exit without starting its UI.
 SingleInstanceLock acquire_single_instance_lock();
 
+// PID of the process holding this profile's lock (it writes it into the lock
+// file on acquiring), or 0 when unknown. Used by the macOS shell to activate
+// exactly the right running instance when several profiles share a bundle id.
+int single_instance_owner_pid();
+
 // Best-effort: connect to whichever process currently holds the lock and
-// hand it an activation request. `token` is an XDG_ACTIVATION_TOKEN (may be
-// empty); `uri` is an optional matrix: URI to open (may be empty). Returns
+// hand it `request` (see ActivationRequest). Returns
 // false if no listener was reachable within a short timeout — the caller
 // should exit either way, there is nothing more useful to do.
-bool forward_activation_request(const std::string& token, const std::string& uri);
+bool forward_activation_request(const ActivationRequest& request);
 
 // Listens for activation requests forwarded by later launches of either
 // backend. Only meaningful after acquire_single_instance_lock() returned
@@ -40,9 +67,8 @@ bool forward_activation_request(const std::string& token, const std::string& uri
 class ActivationListener
 {
 public:
-    // Invoked with (token, uri) once a peer's request has been read in
-    // full. `uri` is empty when the peer sent none.
-    using Callback = std::function<void(std::string token, std::string uri)>;
+    // Invoked once a peer's request has been read in full.
+    using Callback = std::function<void(ActivationRequest request)>;
 
     explicit ActivationListener(Callback on_activate);
     ~ActivationListener();

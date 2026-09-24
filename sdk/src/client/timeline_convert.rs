@@ -100,6 +100,8 @@ pub(super) fn ffi_event_defaults() -> TimelineEvent {
         membership_target_user_id: String::new(),
         membership_target_name: String::new(),
         membership_target_avatar_url: String::new(),
+        room_name_new: String::new(),
+        room_name_old: String::new(),
     }
 }
 
@@ -621,8 +623,9 @@ pub(super) async fn timeline_item_to_ffi(
         }
     };
 
-    // m.room.pinned_events state events: surface as a labelled timeline row.
-    // All other state events (membership, room name, etc.) remain filtered.
+    // m.room.pinned_events and m.room.name state events: surface as a
+    // labelled timeline row. All other state events (membership excluded,
+    // handled separately below) remain filtered.
     if let TimelineItemContent::OtherState(state) = event_item.content() {
         use matrix_sdk::ruma::events::StateEventContentChange;
         use matrix_sdk_ui::timeline::AnyOtherStateEventContentChange;
@@ -662,6 +665,46 @@ pub(super) async fn timeline_item_to_ffi(
                     sender_name,
                     sender_avatar_url,
                     body,
+                    timestamp: event_item.timestamp().get().into(),
+                    ..ffi_event_defaults()
+                });
+            }
+        }
+        if let AnyOtherStateEventContentChange::RoomName(full) = state.content() {
+            if let StateEventContentChange::Original {
+                content,
+                prev_content,
+            } = full
+            {
+                let room_name_new = content.name.clone();
+                let room_name_old = prev_content
+                    .as_ref()
+                    .and_then(|pc| pc.name.clone())
+                    .unwrap_or_default();
+                let (sender_name, sender_avatar_url) =
+                    if let TimelineDetails::Ready(p) = event_item.sender_profile() {
+                        (
+                            p.display_name.clone().unwrap_or_default(),
+                            p.avatar_url
+                                .as_ref()
+                                .map(|u| u.to_string())
+                                .unwrap_or_default(),
+                        )
+                    } else {
+                        (String::new(), String::new())
+                    };
+                return Some(TimelineEvent {
+                    room_id: room_id.to_owned(),
+                    msg_type: "m.room.name".to_owned(),
+                    event_id: event_item
+                        .event_id()
+                        .map(|id| id.to_string())
+                        .unwrap_or_default(),
+                    sender: event_item.sender().to_string(),
+                    sender_name,
+                    sender_avatar_url,
+                    room_name_new,
+                    room_name_old,
                     timestamp: event_item.timestamp().get().into(),
                     ..ffi_event_defaults()
                 });

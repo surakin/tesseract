@@ -85,7 +85,9 @@ add_executable(tesseract_tests
     cpp/test_table_layout.cpp
     cpp/test_prefs.cpp
     cpp/test_settings.cpp
+    cpp/test_cli.cpp
     cpp/test_launch_args.cpp
+    cpp/test_single_instance.cpp
     cpp/test_pending_send.cpp
     cpp/test_compose_bar_media.cpp
     cpp/test_media_drop.cpp
@@ -185,6 +187,7 @@ add_executable(tesseract_tests
     cpp/test_shell_encryption_setup.cpp
     cpp/test_tk_host_pointer.cpp
     cpp/test_tk_host_file_drop.cpp
+    cpp/test_tk_drag_drop.cpp
     cpp/test_tk_host_focus.cpp
     cpp/test_tk_tooltip.cpp
     cpp/test_tk_toast.cpp
@@ -195,6 +198,7 @@ add_executable(tesseract_tests
     cpp/test_tk_join_room_view.cpp
     cpp/test_tk_room_directory_view.cpp
     cpp/test_call_overlay_controls.cpp
+    cpp/test_call_room_navigation.cpp
 )
 
 # tk_test_surface implementation is per-backend; only the one matching

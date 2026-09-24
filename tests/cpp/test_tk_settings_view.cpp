@@ -178,7 +178,7 @@ TEST_CASE("SettingsView: drag-hover claims the personal pack editor only "
     {
         const tk::Rect r = editor->list_rect();
         const tk::Point p{r.x + 5, r.y + 5};
-        CHECK(view.dispatch_drag_hover(p) == nullptr);
+        CHECK(view.dispatch_native_drag_hover(p) == nullptr);
         CHECK_FALSE(editor->drag_hover());
     }
 
@@ -187,13 +187,13 @@ TEST_CASE("SettingsView: drag-hover claims the personal pack editor only "
     {
         const tk::Rect r = editor->list_rect();
         const tk::Point p{r.x + 5, r.y + 5};
-        CHECK(view.dispatch_drag_hover(p) == editor);
+        CHECK(view.dispatch_native_drag_hover(p) == editor);
         CHECK(editor->drag_hover());
 
         // No Host in this fixture to drive the leave transition — call the
-        // leaf directly, mirroring what Host::dispatch_drag_hover/
-        // dispatch_drag_leave would do on the previous claimant.
-        editor->on_drag_leave();
+        // leaf directly, mirroring what Host::dispatch_native_drag_hover/
+        // dispatch_native_drag_leave would do on the previous claimant.
+        editor->on_native_drag_leave();
         CHECK_FALSE(editor->drag_hover());
     }
 }

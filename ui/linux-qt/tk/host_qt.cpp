@@ -1488,10 +1488,10 @@ public:
         // self-mention (the popup only ever offers @room for this room), so
         // both kinds always reserve the slot — no url-ambiguity to check.
         spec.reserve_leading_visual = true;
-        spec.bg = tk::Color::rgba(mention_bg_.red(), mention_bg_.green(),
-                                  mention_bg_.blue(), mention_bg_.alpha());
-        spec.fg = tk::Color::rgba(mention_fg_.red(), mention_fg_.green(),
-                                  mention_fg_.blue(), mention_fg_.alpha());
+        spec.bg = mention_colors_.bg;
+        spec.fg = mention_colors_.fg;
+        spec.initials_bg = mention_colors_.initials_bg;
+        spec.initials_fg = mention_colors_.initials_fg;
         const tk::LineMetrics lm =
             tk::role_line_metrics(*pill_factory_, tk::FontRole::Body);
         tk::ImageRef pinned = tk::render_pill_bitmap_cached(
@@ -1669,10 +1669,9 @@ public:
         return segs;
     }
 
-    void set_mention_colors(Color bg, Color fg) override
+    void set_mention_colors(const tk::MentionColors& colors) override
     {
-        mention_bg_ = QColor(bg.r, bg.g, bg.b, bg.a);
-        mention_fg_ = QColor(fg.r, fg.g, fg.b, fg.a);
+        mention_colors_ = colors;
     }
 
     // Same fragment-scan technique as composer_draft() above, but mutating
@@ -1722,10 +1721,10 @@ public:
                     cf.property(PropMentionDisplay).toString().toStdString();
                 spec.kind = tk::PillKind::User;
                 spec.image = avatar;
-                spec.bg = tk::Color::rgba(mention_bg_.red(), mention_bg_.green(),
-                                          mention_bg_.blue(), mention_bg_.alpha());
-                spec.fg = tk::Color::rgba(mention_fg_.red(), mention_fg_.green(),
-                                          mention_fg_.blue(), mention_fg_.alpha());
+                spec.bg = mention_colors_.bg;
+                spec.fg = mention_colors_.fg;
+                spec.initials_bg = mention_colors_.initials_bg;
+                spec.initials_fg = mention_colors_.initials_fg;
                 const qreal scale = edit_->devicePixelRatioF();
                 const tk::LineMetrics lm =
                     tk::role_line_metrics(*pill_factory_, tk::FontRole::Body);
@@ -1792,10 +1791,10 @@ public:
                 spec.kind = tk::PillKind::Room;
                 spec.image = avatar;
                 spec.reserve_leading_visual = true;
-                spec.bg = tk::Color::rgba(mention_bg_.red(), mention_bg_.green(),
-                                          mention_bg_.blue(), mention_bg_.alpha());
-                spec.fg = tk::Color::rgba(mention_fg_.red(), mention_fg_.green(),
-                                          mention_fg_.blue(), mention_fg_.alpha());
+                spec.bg = mention_colors_.bg;
+                spec.fg = mention_colors_.fg;
+                spec.initials_bg = mention_colors_.initials_bg;
+                spec.initials_fg = mention_colors_.initials_fg;
                 const qreal scale = edit_->devicePixelRatioF();
                 const tk::LineMetrics lm =
                     tk::role_line_metrics(*pill_factory_, tk::FontRole::Body);
@@ -2012,8 +2011,9 @@ private:
     std::function<void(const std::string&)> on_changed_;
     std::function<void()> on_submit_;
     std::function<void(float)> on_height_changed_;
-    QColor mention_bg_{0x2E, 0x3B, 0x5E};
-    QColor mention_fg_{0xA8, 0xC5, 0xFF};
+    tk::MentionColors mention_colors_{
+        tk::Color::rgb(0x2E3B5E), tk::Color::rgb(0xA8C5FF),
+        tk::Color::rgb(0x1F3A66), tk::Color::rgb(0xBFD8FF)};
     int mention_counter_ = 0;
     int emoticon_counter_ = 0;
     // Lazily created — CanvasFactory is a stateless-ish per-backend wrapper,
@@ -2607,6 +2607,7 @@ public:
         paint_tooltip_overlay(ctx, surface_bounds);
         paint_focus_overlay(ctx);
         paint_toast_overlay(ctx, surface_bounds);
+        paint_drag_overlay(ctx, surface_bounds);
     }
 
     // Pointer-event entry points. Each translates the native event to a
@@ -2653,13 +2654,13 @@ public:
     }
 
     // Drag-hover entry points, mirroring on_file_drop above.
-    Widget* on_drag_hover(Point world)
+    Widget* on_native_drag_hover(Point world)
     {
-        return dispatch_drag_hover(world);
+        return dispatch_native_drag_hover(world);
     }
-    void on_drag_leave()
+    void on_native_drag_leave()
     {
-        dispatch_drag_leave();
+        dispatch_native_drag_leave();
     }
 
     void detach_surface()
@@ -3124,7 +3125,7 @@ void Surface::dragEnterEvent(QDragEnterEvent* e)
     {
         e->setDropAction(Qt::CopyAction);
         e->acceptProposedAction();
-        host_->on_drag_hover({static_cast<float>(e->position().x()),
+        host_->on_native_drag_hover({static_cast<float>(e->position().x()),
                               static_cast<float>(e->position().y())});
     }
     else
@@ -3139,7 +3140,7 @@ void Surface::dragMoveEvent(QDragMoveEvent* e)
     {
         e->setDropAction(Qt::CopyAction);
         e->acceptProposedAction();
-        host_->on_drag_hover({static_cast<float>(e->position().x()),
+        host_->on_native_drag_hover({static_cast<float>(e->position().x()),
                               static_cast<float>(e->position().y())});
     }
     else
@@ -3150,12 +3151,12 @@ void Surface::dragMoveEvent(QDragMoveEvent* e)
 
 void Surface::dragLeaveEvent(QDragLeaveEvent*)
 {
-    host_->on_drag_leave();
+    host_->on_native_drag_leave();
 }
 
 void Surface::dropEvent(QDropEvent* e)
 {
-    host_->on_drag_leave();
+    host_->on_native_drag_leave();
 
     const QMimeData* md = e->mimeData();
     if (!md)

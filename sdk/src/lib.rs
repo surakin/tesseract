@@ -107,6 +107,16 @@ pub mod ffi {
         pub last_message_thumbnail_url: String,
         pub last_activity_ts: u64,
         pub is_space: bool,
+        /// Stable, sorted, \x01-joined summary of this room's current
+        /// m.space.child children (only ever non-empty when is_space) — see
+        /// room_list_fingerprint's doc comment in client/mod.rs for why this
+        /// exists: adding/removing a space child is a state change on the
+        /// SPACE's own room, not the child's, so none of this room's other
+        /// fields change when it happens. Not consumed on the C++ side
+        /// (space_children()/space_children_all() remain the real data
+        /// source there) — this exists purely so the fingerprint notices.
+        pub space_children_summary: String,
+        pub is_call_room: bool,
         pub is_favorite: bool,
         pub is_low_priority: bool,
         pub is_encrypted: bool,
@@ -250,6 +260,8 @@ pub mod ffi {
         pub membership_target_user_id: String,
         pub membership_target_name: String,
         pub membership_target_avatar_url: String,
+        pub room_name_new: String,
+        pub room_name_old: String,
     }
 
     #[derive(Debug, PartialEq, Default)]
@@ -436,6 +448,7 @@ pub mod ffi {
         pub visibility: String,
         pub encrypted: bool,
         pub is_space: bool,
+        pub is_call_room: bool,
         pub invite: Vec<String>,
         pub invite_reason: String,
     }

@@ -91,6 +91,7 @@ struct MessageRowData
         CallNotification,  // org.matrix.msc4075.rtc.notification
         Location,
         Membership,         // m.room.member state-event row
+        RoomName,           // m.room.name state-event row
     };
 
     Kind kind = Kind::Text;
@@ -230,6 +231,10 @@ struct MessageRowData
     std::string membership_target_user_id;
     std::string membership_target_name;
     std::string membership_target_avatar_url; // mxc
+
+    // Room name change (Kind::RoomName only).
+    std::string room_name_new; // empty if the name was removed
+    std::string room_name_old; // empty if the room had no prior name
 
     // Resolved MSC4247 possessive pronoun word for membership_target_user_id
     // ("her"/"its"/"their"), used by the KnockRetracted narration templates.

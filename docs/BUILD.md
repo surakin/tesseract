@@ -60,6 +60,20 @@ xcode-select --install   # Xcode Command Line Tools
 
 No Go or Perl toolchain is needed (see the note under the Linux prerequisites above).
 
+### Windows / Win32
+
+Requires Visual Studio (or the standalone Build Tools) with the "Desktop
+development with C++" workload, plus Ninja, CMake, and a Rust toolchain
+(`rustup`).
+
+`cmake --preset windows-debug` works from a plain terminal — no Developer
+Command Prompt needed. `cmake/MsvcAutoVcvars.cmake` locates the MSVC install
+via `vswhere` and applies its `vcvarsall.bat x64` environment before
+`project()` runs, since the Ninja generator (unlike the Visual Studio
+generators) doesn't activate MSVC on its own. It's a no-op if a dev shell is
+already active or `cl.exe` is already on `PATH`, so running from a Developer
+Command Prompt still works exactly as before.
+
 ## Calls / MatrixRTC
 
 Native voice and video calls via LiveKit/WebRTC are built by default on every

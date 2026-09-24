@@ -192,6 +192,9 @@ public:
                                    rust::Str profile_json) const;
     void on_account_prefs_updated(rust::Str json) const;
     void on_media_preview_config_updated(rust::Str json) const;
+    void on_own_profile_changed(bool has_display_name, rust::Str display_name,
+                                bool has_avatar_url,
+                                rust::Str avatar_url) const;
     void on_room_media_preview_override_updated(rust::Str room_id,
                                                 rust::Str json) const;
     void on_notification(rust::Str room_id, rust::Str room_name,

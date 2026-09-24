@@ -30,6 +30,7 @@ struct RoomSummaryJson {
     join_rule: String,
     world_readable: bool,
     is_space: bool,
+    is_call_room: bool,
     membership: String,
 }
 
@@ -39,6 +40,7 @@ impl From<matrix_sdk::room_preview::RoomPreview> for RoomSummaryJson {
         use matrix_sdk::ruma::room::RoomType;
         use matrix_sdk_base::RoomState;
 
+        let room_type = p.room_type.as_ref();
         RoomSummaryJson {
             room_id: p.room_id.to_string(),
             canonical_alias: p.canonical_alias.map(|a| a.to_string()).unwrap_or_default(),
@@ -52,7 +54,9 @@ impl From<matrix_sdk::room_preview::RoomPreview> for RoomSummaryJson {
                 .map(|j| j.as_str().to_owned())
                 .unwrap_or_else(|| "public".to_owned()),
             world_readable: p.is_world_readable.unwrap_or(false),
-            is_space: matches!(p.room_type, Some(RoomType::Space)),
+            is_space: matches!(room_type, Some(RoomType::Space)),
+            // MSC3417: creation_content.type == "org.matrix.msc3417.call".
+            is_call_room: matches!(room_type, Some(RoomType::Call)),
             membership: match p.state {
                 Some(RoomState::Joined) => "join".to_owned(),
                 Some(RoomState::Left) => "leave".to_owned(),
@@ -632,12 +636,14 @@ impl ClientFfi {
         include_invite: bool,
     ) -> Result<matrix_sdk::ruma::api::client::room::create_room::v3::Request, String> {
         use matrix_sdk::ruma::api::client::room::{
-            create_room::v3::{Request, RoomPreset},
+            create_room::v3::{CreationContent, Request, RoomPreset},
             Visibility,
         };
         use matrix_sdk::ruma::events::{
             room::encryption::RoomEncryptionEventContent, InitialStateEvent,
         };
+        use matrix_sdk::ruma::room::RoomType;
+        use matrix_sdk::ruma::serde::Raw;
         use matrix_sdk::ruma::OwnedUserId;
 
         let mut invite = Vec::new();
@@ -679,6 +685,24 @@ impl ClientFfi {
         request.preset = Some(preset);
         request.invite = invite;
         request.initial_state = initial_state;
+        // `is_space`/`is_call_room` both map to creation_content.type — at
+        // most one is ever set from the UI (CreateRoomView's combo picks
+        // one mode), but if both were somehow set, a space room_type wins
+        // since it's the one exposed as a user-facing choice.
+        // MSC3417: mark this as a dedicated call room via
+        // creation_content.type. Unstable prefix "org.matrix.msc3417.call"
+        // until the MSC stabilises (ruma's RoomType::Call, behind the
+        // "unstable-msc3417" feature).
+        if opts.is_space || opts.is_call_room {
+            let mut creation_content = CreationContent::new();
+            creation_content.room_type = Some(if opts.is_space {
+                RoomType::Space
+            } else {
+                RoomType::Call
+            });
+            request.creation_content =
+                Some(Raw::new(&creation_content).map_err(|e| e.to_string())?);
+        }
         Ok(request)
     }
 
@@ -719,6 +743,9 @@ impl ClientFfi {
         }
         if let Some(preset) = &request.preset {
             body["preset"] = serde_json::json!(preset);
+        }
+        if let Some(creation_content) = &request.creation_content {
+            body["creation_content"] = serde_json::json!(creation_content);
         }
         body["uk.timedout.msc4491.invite_reason"] = serde_json::json!(opts.invite_reason);
         Ok(body)
@@ -1482,6 +1509,213 @@ impl ClientFfi {
 
     #[cfg(test)]
     pub fn leave_room_async(&self, _request_id: u64, _room_id: &str) {}
+
+    /// True iff the current user's power level meets the requirement for
+    /// sending m.space.child in this space (not the child room). Cached
+    /// read — no network round-trip. False on any uncertainty (not a
+    /// space, not logged in, room not found). Used to gate the
+    /// drag-drop/add-remove UI before attempting a mutation — the
+    /// homeserver remains the actual enforcement point. Mirrors
+    /// can_set_room_power_levels.
+    #[cfg(not(test))]
+    pub fn can_edit_space_children(&self, space_id: &str) -> bool {
+        use matrix_sdk::ruma::events::StateEventType;
+
+        let Some(client) = self.client.as_ref() else {
+            return false;
+        };
+        let Ok(space_id_parsed) = space_id.parse::<OwnedRoomId>() else {
+            return false;
+        };
+        let Some(room) = client.get_room(&space_id_parsed) else {
+            return false;
+        };
+        let Some(user_id) = client.user_id() else {
+            return false;
+        };
+        match self.rt.block_on(room.power_levels()) {
+            Ok(pl) => pl.user_can_send_state(user_id, StateEventType::SpaceChild),
+            Err(_) => false,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn can_edit_space_children(&self, _space_id: &str) -> bool {
+        false
+    }
+
+    /// Add `room_id` as a child of `space_id` by sending an m.space.child
+    /// state event (state_key = room_id) with a non-empty `via` list — or
+    /// update an existing child's via list if one is already present.
+    /// `via` supplies extra routing server-name hints (e.g. from a
+    /// permalink); resolved through the same priority order
+    /// (caller-supplied seed, then a joined space's existing hints, then
+    /// the room's own domain) join_room_async/knock_room_async already
+    /// use, via resolve_route_via. Requires permission to send
+    /// m.space.child in the space (not the child room) — see
+    /// can_edit_space_children for a cheap client-side pre-check; the
+    /// homeserver remains the actual enforcement point. Non-blocking;
+    /// result delivered via IEventHandler::on_room_action_complete(
+    /// request_id, ok, "", message).
+    #[cfg(not(test))]
+    pub fn add_room_to_space_async(
+        &self,
+        request_id: u64,
+        space_id: &str,
+        room_id: &str,
+        via: &Vec<String>,
+    ) {
+        use matrix_sdk::ruma::events::space::child::SpaceChildEventContent;
+        use matrix_sdk::ruma::RoomOrAliasId;
+
+        let Some(client) = self.client.clone() else {
+            return;
+        };
+        let handler = self.handler.clone();
+
+        let deliver = move |ok: bool, msg: &str| {
+            if let Some(h) = &handler {
+                let g = h.lock();
+                g.on_room_action_complete(request_id, ok, "", msg);
+            }
+        };
+
+        let space_room_id: OwnedRoomId = match space_id.parse() {
+            Ok(id) => id,
+            Err(_) => {
+                deliver(false, "invalid space id");
+                return;
+            }
+        };
+        let child_room_id: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(_) => {
+                deliver(false, "invalid room id");
+                return;
+            }
+        };
+        let Some(space_room) = client.get_room(&space_room_id) else {
+            deliver(false, "space not found");
+            return;
+        };
+
+        let seed = parse_server_names(via);
+        let in_flight = self.in_flight.clone();
+        let handler_for_guard = self.handler.clone();
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
+
+        self.rt.spawn(async move {
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler_for_guard,
+                #[cfg(debug_assertions)]
+                &in_flight_urls,
+                #[cfg(debug_assertions)]
+                "room_list/add_space_child".to_string(),
+            );
+
+            // Route hints: caller-supplied seed, then the child room's own
+            // domain (resolve_route_via also scans joined spaces' existing
+            // via hints, which is harmless here even though this *is* the
+            // space doing the adding).
+            let target: &RoomOrAliasId = (&*child_room_id).into();
+            let resolved_via = resolve_route_via(&client, target, seed).await;
+            let content = SpaceChildEventContent::new(resolved_via);
+
+            match space_room
+                .send_state_event_for_key(&child_room_id, content)
+                .await
+            {
+                Ok(_) => deliver(true, ""),
+                Err(e) => deliver(false, &e.to_string()),
+            }
+        });
+    }
+
+    #[cfg(test)]
+    pub fn add_room_to_space_async(
+        &self,
+        _request_id: u64,
+        _space_id: &str,
+        _room_id: &str,
+        _via: &Vec<String>,
+    ) {
+    }
+
+    /// Remove `room_id` as a child of `space_id` by sending an
+    /// m.space.child state event (state_key = room_id) with an empty via
+    /// list — per the Matrix spec this invalidates the child, identically
+    /// to how space_children_all already treats via.is_empty() as "not a
+    /// child" (no raw-JSON escape hatch needed; SpaceChildEventContent's
+    /// `via` field has no skip_serializing_if). Requires permission to
+    /// send m.space.child in the space. Non-blocking; result delivered via
+    /// IEventHandler::on_room_action_complete(request_id, ok, "",
+    /// message).
+    #[cfg(not(test))]
+    pub fn remove_room_from_space_async(&self, request_id: u64, space_id: &str, room_id: &str) {
+        use matrix_sdk::ruma::events::space::child::SpaceChildEventContent;
+
+        let Some(client) = self.client.clone() else {
+            return;
+        };
+        let handler = self.handler.clone();
+
+        let deliver = move |ok: bool, msg: &str| {
+            if let Some(h) = &handler {
+                let g = h.lock();
+                g.on_room_action_complete(request_id, ok, "", msg);
+            }
+        };
+
+        let space_room_id: OwnedRoomId = match space_id.parse() {
+            Ok(id) => id,
+            Err(_) => {
+                deliver(false, "invalid space id");
+                return;
+            }
+        };
+        let child_room_id: OwnedRoomId = match room_id.parse() {
+            Ok(id) => id,
+            Err(_) => {
+                deliver(false, "invalid room id");
+                return;
+            }
+        };
+        let Some(space_room) = client.get_room(&space_room_id) else {
+            deliver(false, "space not found");
+            return;
+        };
+
+        let in_flight = self.in_flight.clone();
+        let handler_for_guard = self.handler.clone();
+        #[cfg(debug_assertions)]
+        let in_flight_urls = Arc::clone(&self.in_flight_urls);
+
+        self.rt.spawn(async move {
+            let _guard = super::InFlightGuard::new(
+                &in_flight,
+                &handler_for_guard,
+                #[cfg(debug_assertions)]
+                &in_flight_urls,
+                #[cfg(debug_assertions)]
+                "room_list/remove_space_child".to_string(),
+            );
+
+            let content = SpaceChildEventContent::new(Vec::new());
+            match space_room
+                .send_state_event_for_key(&child_room_id, content)
+                .await
+            {
+                Ok(_) => deliver(true, ""),
+                Err(e) => deliver(false, &e.to_string()),
+            }
+        });
+    }
+
+    #[cfg(test)]
+    pub fn remove_room_from_space_async(&self, _request_id: u64, _space_id: &str, _room_id: &str) {
+    }
 
     #[cfg(not(test))]
     pub fn invite_user_async(&self, room_id: &str, user_id: &str, reason: &str) {
@@ -2760,6 +2994,7 @@ mod create_room_tests {
             visibility: "private".to_owned(),
             encrypted: false,
             is_space: false,
+            is_call_room: false,
             invite,
             invite_reason: invite_reason.to_owned(),
         }
@@ -2793,6 +3028,23 @@ mod create_room_tests {
         // excluded, since it's never parsed in that branch.
         let o = opts(vec!["not-a-user-id".to_owned()], "join us!");
         assert!(ClientFfi::build_create_room_request(&o, false).is_ok());
+    }
+
+    #[test]
+    fn call_room_sets_creation_content_type() {
+        let mut o = opts(vec![], "");
+        o.is_call_room = true;
+        let request = ClientFfi::build_create_room_request(&o, true).unwrap();
+        let creation_content = request.creation_content.expect("creation_content set");
+        let value: serde_json::Value = creation_content.deserialize_as().unwrap();
+        assert_eq!(value["type"], "org.matrix.msc3417.call");
+    }
+
+    #[test]
+    fn non_call_room_leaves_creation_content_unset() {
+        let o = opts(vec![], "");
+        let request = ClientFfi::build_create_room_request(&o, true).unwrap();
+        assert!(request.creation_content.is_none());
     }
 
     // --- build_msc4491_create_room_body ---
@@ -2835,6 +3087,14 @@ mod create_room_tests {
     fn msc4491_body_rejects_invalid_user_id() {
         let o = opts(vec!["not-a-user-id".to_owned()], "a reason");
         assert!(ClientFfi::build_msc4491_create_room_body(&o).is_err());
+    }
+
+    #[test]
+    fn msc4491_body_includes_creation_content_for_call_room() {
+        let mut o = opts(vec![], "a reason");
+        o.is_call_room = true;
+        let body = ClientFfi::build_msc4491_create_room_body(&o).unwrap();
+        assert_eq!(body["creation_content"]["type"], "org.matrix.msc3417.call");
     }
 }
 
@@ -2927,5 +3187,33 @@ mod space_summary_task_tests {
 
         abort_space_summary_group(&map, "space-a");
         assert!(live.await.unwrap_err().is_cancelled());
+    }
+}
+
+// Content-shape only for add/remove_room_to/from_space_async — the actual
+// state-event sends require a live homeserver (join_room_async and friends
+// are tested the same way, i.e. not at all beyond this level, elsewhere in
+// this file). Confirms this repo's usage of SpaceChildEventContent produces
+// the same wire shape ruma's own space_child_serialization /
+// space_child_empty_serialization tests assert.
+#[cfg(test)]
+mod space_child_content_tests {
+    use matrix_sdk::ruma::{events::space::child::SpaceChildEventContent, owned_server_name};
+
+    #[test]
+    fn add_content_serializes_with_via() {
+        let content = SpaceChildEventContent::new(vec![owned_server_name!("example.org")]);
+        let value = serde_json::to_value(&content).unwrap();
+        assert_eq!(value, serde_json::json!({"via": ["example.org"]}));
+    }
+
+    #[test]
+    fn remove_content_serializes_with_empty_via() {
+        // This is exactly what remove_room_from_space_async sends: an empty
+        // `via` list, which space_children_all's reader (space_child_via /
+        // the via.is_empty() check) already treats as "not a child."
+        let content = SpaceChildEventContent::new(Vec::new());
+        let value = serde_json::to_value(&content).unwrap();
+        assert_eq!(value, serde_json::json!({"via": []}));
     }
 }

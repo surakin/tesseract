@@ -131,6 +131,7 @@ Come join us in [#tesseract-client:matrix.org](https://matrix.to/#/#tesseract-cl
 - Right click on the user info (bottom left) to add an account or open settings
 - Left click on the user info to open account picker (only if there is more than one account)
 - Ctrl+click on an account in the account picker to open said account in a separate window.
+- Command-line options (`--help`, `--profile`, `--hidden`, `--open-room`, `--logoutall`, …) are listed in [docs/CLI.md](docs/CLI.md).
 
 ## Server requirements
 
@@ -153,7 +154,7 @@ Change proposals where the homeserver advertises support for them:
 - [MSC2010](https://github.com/matrix-org/matrix-spec-proposals/pull/2010) — spoiler messages
 - [MSC2312](https://github.com/matrix-org/matrix-spec-proposals/pull/2312) — `matrix:` / `matrix.to` link navigation
 - [MSC2545](https://github.com/matrix-org/matrix-spec-proposals/pull/2545) — custom emoji & sticker image packs
-- [MSC4027](https://github.com/matrix-org/matrix-spec-proposals/pull/4027) — mixed text/emoji reaction keys
+- [MSC4027](https://github.com/matrix-org/matrix-spec-proposals/pull/4027) — custom-image (emoticon) reactions
 - [MSC4356](https://github.com/matrix-org/matrix-spec-proposals/pull/4356) — recently-used emoji history
 - [MSC3765](https://github.com/matrix-org/matrix-spec-proposals/pull/3765) — rich (HTML) room topics
 - [MSC3952](https://github.com/matrix-org/matrix-spec-proposals/pull/3952) — intentional mentions
@@ -169,11 +170,10 @@ Change proposals where the homeserver advertises support for them:
 - [MSC3266](https://github.com/matrix-org/matrix-spec-proposals/pull/3266) — room / space summaries
 - [MSC2346](https://github.com/matrix-org/matrix-spec-proposals/pull/2346) — bridged-room detection, alongside [MSC4171](https://github.com/matrix-org/matrix-spec-proposals/pull/4171) (excludes bridge-bot ghosts from member counts)
 - [MSC2403](https://github.com/matrix-org/matrix-spec-proposals/pull/2403) — room knocking: request to join a knock-restricted room, with admin/moderator review (accept / deny / deny-and-ban)
-- [MSC4319](https://github.com/matrix-org/matrix-spec-proposals/pull/4319) — invite timestamps on stripped-state invites
 - [MSC3488](https://github.com/matrix-org/matrix-spec-proposals/pull/3488) — location messages
 - [MSC2285](https://github.com/matrix-org/matrix-spec-proposals/pull/2285) — private read receipts
-- [MSC4143](https://github.com/matrix-org/matrix-spec-proposals/pull/4143) — MatrixRTC voice/video calls, together with [MSC3401](https://github.com/matrix-org/matrix-spec-proposals/pull/3401) (call membership state), [MSC4075](https://github.com/matrix-org/matrix-spec-proposals/pull/4075) (ring notifications), and [MSC4195](https://github.com/matrix-org/matrix-spec-proposals/pull/4195)/[MSC4196](https://github.com/matrix-org/matrix-spec-proposals/pull/4196)/[MSC4354](https://github.com/matrix-org/matrix-spec-proposals/pull/4354)/[MSC4519](https://github.com/matrix-org/matrix-spec-proposals/pull/4519) (transport discovery & signaling)
-- [MSC4133](https://github.com/matrix-org/matrix-spec-proposals/pull/4133) — extended profile fields: pronouns ([MSC4247](https://github.com/matrix-org/matrix-spec-proposals/pull/4247), multi-language), timezone ([MSC4175](https://github.com/matrix-org/matrix-spec-proposals/pull/4175)), and biography ([MSC4440](https://github.com/matrix-org/matrix-spec-proposals/pull/4440))
+- [MSC4143](https://github.com/matrix-org/matrix-spec-proposals/pull/4143) — MatrixRTC voice/video calls, together with [MSC3401](https://github.com/matrix-org/matrix-spec-proposals/pull/3401) (call membership state), [MSC4075](https://github.com/matrix-org/matrix-spec-proposals/pull/4075) (ring notifications), [MSC4140](https://github.com/matrix-org/matrix-spec-proposals/pull/4140) (delayed events, so a crashed or disconnected client still leaves the call), [MSC4195](https://github.com/matrix-org/matrix-spec-proposals/pull/4195)/[MSC4196](https://github.com/matrix-org/matrix-spec-proposals/pull/4196)/[MSC4354](https://github.com/matrix-org/matrix-spec-proposals/pull/4354)/[MSC4519](https://github.com/matrix-org/matrix-spec-proposals/pull/4519) (transport discovery & signaling), and [MSC3417](https://github.com/matrix-org/matrix-spec-proposals/pull/3417) (dedicated call-room type: a "Call Rooms" room-list section, auto-join/auto-float/auto-restore call lifecycle tied to room navigation, and `m.intent` kept in sync with the room's declared purpose) *(creating a call room isn't exposed in the UI yet, only joining/detecting existing ones)*
+- [MSC4133](https://github.com/matrix-org/matrix-spec-proposals/pull/4133) — extended profile fields: pronouns ([MSC4247](https://github.com/matrix-org/matrix-spec-proposals/pull/4247), multi-language), timezone ([MSC4175](https://github.com/matrix-org/matrix-spec-proposals/pull/4175)), and biography ([MSC4440](https://github.com/matrix-org/matrix-spec-proposals/pull/4440)); your own profile updates live when edited on another device via the [MSC4262](https://github.com/matrix-org/matrix-spec-proposals/pull/4262) sliding-sync profiles extension (Synapse: enable `include_profile_updates_in_sync`)
 - [MSC4426](https://github.com/matrix-org/matrix-spec-proposals/pull/4426) — user status profile fields: a self-set emoji + text status, plus an automatic "in a call" indicator published while you're in a MatrixRTC call
 - [MSC4108](https://github.com/matrix-org/matrix-spec-proposals/pull/4108) — QR-code login
 - [MSC4391](https://github.com/matrix-org/matrix-spec-proposals/pull/4391) — in-room bot commands

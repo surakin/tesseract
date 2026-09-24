@@ -949,6 +949,19 @@ impl Drop for ClientFfi {
                     drop(client);
                 });
             }
+            // Explicit take, same reasoning as self.client above: a login
+            // cancelled before oauth_await_callback's browser wait ever
+            // finishes leaves self.client None but self.oauth_flow holding
+            // the half-built Client(s) (PendingFlowState::client /
+            // PendingFlow::finished) — those drop here (runtime in TLS)
+            // rather than in the implicit field-drop pass after this fn
+            // returns, which crashed with a Handle::current() panic-during-
+            // drop abort when cancelling a fresh login before the browser
+            // ever opened.
+            if let Some(flow) = self.oauth_flow.take() {
+                oauth::cancel(&flow);
+                drop(flow);
+            }
         }
         // Remaining fields are all None/empty; rt drops last (declared last).
     }
@@ -1065,17 +1078,28 @@ pub(crate) fn encode_voice_ogg(
 
 impl ClientFfi {
     #[cfg(not(test))]
-    pub fn new(log_level: &str) -> Self {
-        // When RUST_LOG is set, use it directly so it fully overrides the
-        // programmatic defaults.  When RUST_LOG is absent, apply the
-        // caller-supplied level for matrix_sdk (defaulting to "warn").
-        let level = if ["error", "warn", "info", "debug", "trace"].contains(&log_level) {
+    pub fn new(log_level: &str, filter_override: &str) -> Self {
+        // Precedence: a command-line override (`--log-level` / `--verbose`)
+        // first, then RUST_LOG (used verbatim so it fully overrides the
+        // programmatic defaults), then the caller-supplied persisted level
+        // for matrix_sdk (defaulting to "warn"). A bare level is applied to
+        // matrix_sdk the same way the persisted setting is; anything else is
+        // taken as a full EnvFilter directive string.
+        const LEVELS: [&str; 5] = ["error", "warn", "info", "debug", "trace"];
+        let level_filter =
+            |level: &str| format!("matrix_sdk={level},matrix_sdk::http_client=off");
+        let level = if LEVELS.contains(&log_level) {
             log_level
         } else {
             "warn"
         };
-        let default_filter = format!("matrix_sdk={level},matrix_sdk::http_client=off");
-        let filter_str = std::env::var("RUST_LOG").unwrap_or(default_filter);
+        let filter_str = if LEVELS.contains(&filter_override) {
+            level_filter(filter_override)
+        } else if !filter_override.is_empty() {
+            filter_override.to_owned()
+        } else {
+            std::env::var("RUST_LOG").unwrap_or_else(|_| level_filter(level))
+        };
         let _ = tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::new(filter_str))
             .try_init();
@@ -2704,6 +2728,41 @@ pub(super) async fn build_room_info(
             })
             .unwrap_or_default()
     };
+    // MSC3417: creation_content.type == "org.matrix.msc3417.call" marks
+    // this as a dedicated call room.
+    let is_call_room = rtc::signaling::is_call_room(room).await;
+
+    // See the field's own doc comment (sdk/src/lib.rs) for why this exists:
+    // adding/removing a space child is a state change on the space's own
+    // room (this one, when is_space), not the child's, so the fingerprint
+    // needs a stable summary of it here to ever notice the change.
+    let space_children_summary = if is_space {
+        use matrix_sdk::deserialized_responses::SyncOrStrippedState;
+        use matrix_sdk::ruma::events::{space::child::SpaceChildEventContent, SyncStateEvent};
+        let mut children: Vec<String> = room
+            .get_state_events_static::<SpaceChildEventContent>()
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|raw| match raw.deserialize().ok()? {
+                SyncOrStrippedState::Sync(SyncStateEvent::Original(e))
+                    if !e.content.via.is_empty() =>
+                {
+                    Some(e.state_key.to_string())
+                }
+                SyncOrStrippedState::Stripped(e)
+                    if e.content.via.as_ref().is_some_and(|v| !v.is_empty()) =>
+                {
+                    Some(e.state_key.to_string())
+                }
+                _ => None,
+            })
+            .collect();
+        children.sort_unstable();
+        children.join("\u{1}")
+    } else {
+        String::new()
+    };
 
     // Deref to base Room to avoid matrix-sdk-ui RoomExt shadowing latest_event()
     // with an async version (same trick as mark_room_as_read, line 2148).
@@ -2905,6 +2964,8 @@ pub(super) async fn build_room_info(
         last_message_thumbnail_url,
         last_activity_ts,
         is_space,
+        space_children_summary,
+        is_call_room,
         is_favorite,
         is_low_priority,
         is_encrypted,
@@ -2981,8 +3042,12 @@ pub(super) struct RoomListFingerprintKey {
     call_members: Vec<String>,
     call_intent: String,
     last_activity_ts: u64,
+    is_space: bool,
+    space_children_summary: String,
     id: String,
     name: String,
+    topic: String,
+    topic_html: String,
     avatar_url: String,
     dm_avatar_url: String,
     is_encrypted: bool,
@@ -3057,6 +3122,37 @@ pub(super) fn room_list_fingerprint(
             // The id set doesn't change across that transition, so without
             // the body text here the corrected banner text sits fixed in the
             // Rust-side room cache and never reaches the UI.
+            //
+            // topic / topic_html: RoomGeneralSection and RoomInfoPanel display
+            // the room topic straight from this cached RoomInfo. Changing it
+            // via set_room_topic() doesn't touch unread/name/recency/avatar/
+            // etc. either, so without these fields here the same failure mode
+            // as avatar_url/join_rule above applies: the settings/info panel
+            // keeps showing the stale topic until an unrelated field happens
+            // to perturb the fingerprint (in practice: until app restart).
+            //
+            // is_space: room-list section membership (Spaces vs. Rooms/
+            // Favorites/etc.) depends on this flag. In practice a room's
+            // space-ness is set once at creation and matrix-sdk should
+            // already know it by the first notable update, so this is a
+            // cheap defensive inclusion rather than a fix for an observed
+            // bug — unlike space_children_summary just below, which fixes a
+            // real, common one.
+            //
+            // space_children_summary: a room's *space-hierarchy* (which
+            // space(s) it's a child of) is what actually changes in normal
+            // use — via the room-management UI (SpaceRootView) or another
+            // client — and it's a state change on the SPACE's own room
+            // (m.space.child, state_key = child id), not the child's. None
+            // of the child room's own fields change when that happens, and
+            // neither does the space's — except this synthesized summary —
+            // so without it here, adding/removing a space child would never
+            // perturb ANY room's fingerprint, on_rooms_updated would never
+            // fire, and ShellBase::update_space_children_cache_() (which
+            // only ever runs from inside the on_rooms_updated handler) would
+            // never re-fetch — leaving both the room list's space grouping
+            // and SpaceChildRoomGrid/SpaceAddRoomList stale until an
+            // unrelated notable update happened to perturb the fingerprint.
             RoomListFingerprintKey {
                 unread,
                 quiet_unread,
@@ -3066,8 +3162,12 @@ pub(super) fn room_list_fingerprint(
                 call_members: r.call_members.clone(),
                 call_intent: r.call_intent.clone(),
                 last_activity_ts: r.last_activity_ts,
+                is_space: r.is_space,
+                space_children_summary: r.space_children_summary.clone(),
                 id: r.id.clone(),
                 name: r.name.clone(),
+                topic: r.topic.clone(),
+                topic_html: r.topic_html.clone(),
                 avatar_url: r.avatar_url.clone(),
                 dm_avatar_url: r.dm_avatar_url.clone(),
                 is_encrypted: r.is_encrypted,
@@ -3310,10 +3410,60 @@ mod tests {
     }
 
     #[test]
+    fn fingerprint_changes_when_topic_changes() {
+        let mut r = room("!a:example.org");
+        let before = room_list_fingerprint(std::slice::from_ref(&r));
+        r.topic = "New topic".to_owned();
+        let after = room_list_fingerprint(std::slice::from_ref(&r));
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn fingerprint_changes_when_topic_html_changes() {
+        let mut r = room("!a:example.org");
+        let before = room_list_fingerprint(std::slice::from_ref(&r));
+        r.topic_html = "<b>New topic</b>".to_owned();
+        let after = room_list_fingerprint(std::slice::from_ref(&r));
+        assert_ne!(before, after);
+    }
+
+    #[test]
     fn fingerprint_changes_when_avatar_url_changes() {
         let mut r = room("!a:example.org");
         let before = room_list_fingerprint(std::slice::from_ref(&r));
         r.avatar_url = "mxc://example.org/new-avatar".to_owned();
+        let after = room_list_fingerprint(std::slice::from_ref(&r));
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn fingerprint_changes_when_space_children_summary_changes() {
+        // Adding/removing a room from a space is a state change on the
+        // SPACE's own room (m.space.child), not the child's — none of the
+        // other fields change, so this synthesized summary is the only
+        // thing that can perturb the fingerprint for that case. Without it,
+        // ShellBase::update_space_children_cache_() (only re-triggered from
+        // on_rooms_updated) would never re-fetch and the room list's space
+        // grouping would go stale.
+        let mut r = room("!space:example.org");
+        r.is_space = true;
+        let before = room_list_fingerprint(std::slice::from_ref(&r));
+        r.space_children_summary = "!child:example.org".to_owned();
+        let after = room_list_fingerprint(std::slice::from_ref(&r));
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn fingerprint_changes_when_is_space_toggles() {
+        // is_space determines room-list section membership (Spaces vs.
+        // Rooms/Favorites/etc.) same as the favourite/low-priority toggles
+        // above — matrix-sdk can resolve m.room.create's type after this
+        // room's first notable update already fired, so without this the
+        // room would keep sitting in the wrong section until an unrelated
+        // field happened to perturb the fingerprint.
+        let mut r = room("!a:example.org");
+        let before = room_list_fingerprint(std::slice::from_ref(&r));
+        r.is_space = true;
         let after = room_list_fingerprint(std::slice::from_ref(&r));
         assert_ne!(before, after);
     }
