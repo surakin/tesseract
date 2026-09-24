@@ -2846,3 +2846,62 @@ msgstr "[Sïgñéd öüt {0}xxx]"
 #: ui/shared/app/Launch.cpp
 msgid "Removed {0} from this device, but the server sign-out failed: {1}"
 msgstr "[Rémövéd {0} fröm thïs dévïçé, büt thé sérvér sïgñ-öüt fàïléd: {1}xxxxxxxxxxxxx]"
+
+#: ui/shared/views/RoomInfoPanel.cpp
+msgid "Invite people"
+msgstr "[Ïñvïté péöpléxx]"
+
+#: ui/shared/views/InviteDialog.cpp
+msgid "Search people or enter @user:server"
+msgstr "[Séàrçh péöplé ör éñtér @ùsér:sérvérxxxxxxx]"
+
+#: ui/shared/views/InviteDialog.cpp
+msgid "Already in room"
+msgstr "[Àlréàdy ïñ röömxxx]"
+
+#: ui/shared/views/InviteDialog.cpp
+msgid "Looking up…"
+msgstr "[Löökïñg ùp…xx]"
+
+#: ui/shared/views/InviteDialog.cpp
+msgid "User not found"
+msgstr "[Ùsér ñöt föùñdxx]"
+
+#: ui/shared/views/InviteDialog.cpp
+msgid "Invite to room"
+msgstr "[Ïñvïté tö röömxx]"
+
+#: ui/shared/views/InviteDialog.cpp
+#, c++-format
+msgid "Invite to {0}"
+msgstr "[Ïñvïté tö {0}xx]"
+
+#: ui/shared/views/InviteDialog.cpp
+msgid "Invite"
+msgstr "[Ïñvïtéx]"
+
+#: ui/shared/views/InviteDialog.cpp
+#, c++-format
+msgid "Invite ({0})"
+msgstr "[Ïñvïté ({0})xx]"
+
+#: ui/shared/views/InviteDialog.cpp
+msgid "No matching people"
+msgstr "[Ñö màtçhïñg péöpléxxx]"
+
+#: ui/shared/views/InviteDialog.cpp
+#, c++-format
+msgid "Failed to invite {0}: {1}"
+msgstr "[Fàïléd tö ïñvïté {0}: {1}xxxxx]"
+
+#: ui/shared/app/ShellBase.cpp
+#, c++-format
+msgid "Couldn't invite {0}"
+msgstr "[Çöùldñ't ïñvïté {0}xxx]"
+
+#: ui/shared/views/InviteDialog.cpp
+#, c++-format
+msgid "Inviting {0} person…"
+msgid_plural "Inviting {0} people…"
+msgstr[0] "[Ïñvïtïñg {0} pérsöñ…xxxx]"
+msgstr[1] "[Ïñvïtïñg {0} péöplé…xxxx]"

@@ -79,6 +79,7 @@ namespace tesseract
 namespace views
 {
 class ComposeBar;
+class InviteDialog;
 class MainAppWidget;
 class RoomHeader;
 class RoomSearchBar;
@@ -1095,6 +1096,17 @@ protected:
     // request_id → {mxid, gen} for in-flight resolve_user_profile_async.
     std::unordered_map<std::uint64_t, std::pair<std::string, std::uint64_t>>
         pending_resolve_requests_;
+    // Same, for InviteDialog lookups (resolve_invite_user_). gen is 0 for
+    // committed (never-superseded) lookups, else invite_resolve_gen_ at the
+    // time of the debounced request.
+    std::unordered_map<std::uint64_t, std::pair<std::string, std::uint64_t>>
+        pending_invite_resolves_;
+    // mxids with a committed (non-debounced) lookup in flight — dedups the
+    // dialog re-asking on every reconcile.
+    std::unordered_set<std::string> invite_resolves_inflight_;
+    // Bumped per debounced InviteDialog lookup so only the latest keystroke's
+    // lookup fires. Read from worker threads → atomic.
+    std::atomic<std::uint64_t> invite_resolve_gen_{0};
     // Event IDs the user explicitly revealed (click-to-load), bypassing the
     // preview gate for that one item. Cleared on logout / account switch.
     std::unordered_set<std::string> revealed_events_;
@@ -1264,6 +1276,18 @@ protected:
     // request_id → action; cleared in handle_room_action_complete_ui_.
     std::unordered_map<std::uint64_t, PendingRoomAction> pending_room_actions_;
     std::uint64_t next_room_action_id_ = 1;
+
+    // In-flight invite_user_async requests (the /invite command and
+    // InviteDialog), keyed by the same next_room_action_id_ counter since
+    // they complete through handle_room_action_complete_ui_ too. `done` is
+    // null for /invite (failures go to the status line instead).
+    struct PendingInvite
+    {
+        std::string room_id;
+        std::string user_id;
+        std::function<void(bool ok, const std::string& message)> done;
+    };
+    std::unordered_map<std::uint64_t, PendingInvite> pending_invites_;
 
     // ── Read receipts ─────────────────────────────────────────────────────────
     // room_id → last event_id for which a receipt was sent in this session.
@@ -1753,6 +1777,22 @@ protected:
     // Drop the cached roster (account switch / room-set change). Bumps the
     // resolve generation so in-flight resolves are discarded.
     void invalidate_known_users_();
+
+    // ── Invite dialog support (UI thread) ─────────────────────────────────
+    // Start building the known-users roster if it isn't built/building.
+    void ensure_known_users_roster_();
+    // Look up an mxid for InviteDialog; the outcome is broadcast to every
+    // open InviteDialog via set_resolved_user(). `debounce` coalesces the
+    // keystrokes of a still-being-typed mxid (only the latest fires).
+    void resolve_invite_user_(const std::string& user_id, bool debounce);
+    // Run fn on the InviteDialog of the main room view and of every pop-out.
+    void for_each_invite_dialog_(const std::function<void(views::InviteDialog&)>& fn);
+    // Invite each of user_ids to room_id; per_user fires on the UI thread
+    // once per user with that invite's outcome.
+    void invite_users_(const std::string& room_id,
+                       const std::vector<std::string>& user_ids,
+                       std::function<void(const std::string& user_id, bool ok,
+                                          const std::string& message)> per_user);
 
     // ── GNOME Shell / KRunner search-provider registration ─────────────────
     // Registers this shell's rooms/known_users providers + activation

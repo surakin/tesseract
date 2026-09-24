@@ -1718,17 +1718,35 @@ impl ClientFfi {
     }
 
     #[cfg(not(test))]
-    pub fn invite_user_async(&self, room_id: &str, user_id: &str, reason: &str) {
+    pub fn invite_user_async(&self, request_id: u64, room_id: &str, user_id: &str, reason: &str) {
         use matrix_sdk::ruma::UserId;
         let Some(client) = self.client.clone() else {
             return;
         };
+        let handler = self.handler.clone();
+
+        let deliver = move |ok: bool, msg: &str| {
+            if let Some(h) = &handler {
+                {
+                    let g = h.lock();
+                    g.on_room_action_complete(request_id, ok, "", msg);
+                }
+            }
+        };
+
         let room_id_parsed: OwnedRoomId = match room_id.parse() {
             Ok(id) => id,
-            Err(_) => return,
+            Err(e) => {
+                deliver(false, &format!("invalid room id: {e}"));
+                return;
+            }
         };
-        let Ok(uid) = UserId::parse(user_id) else {
-            return;
+        let uid = match UserId::parse(user_id) {
+            Ok(uid) => uid,
+            Err(e) => {
+                deliver(false, &format!("invalid user id: {e}"));
+                return;
+            }
         };
         let reason = reason.to_owned();
         let in_flight = self.in_flight.clone();
@@ -1744,18 +1762,31 @@ impl ClientFfi {
                 #[cfg(debug_assertions)]
                 "room_list/invite_user".to_string(),
             );
-            if let Some(room) = client.get_room(&room_id_parsed) {
-                if reason.is_empty() {
-                    let _ = room.invite_user_by_id(&uid).await;
-                } else {
-                    let _ = Self::invite_user_with_reason(&room, &uid, &reason).await;
-                }
+            let Some(room) = client.get_room(&room_id_parsed) else {
+                deliver(false, "room not found");
+                return;
+            };
+            let result = if reason.is_empty() {
+                room.invite_user_by_id(&uid).await
+            } else {
+                Self::invite_user_with_reason(&room, &uid, &reason).await
+            };
+            match result {
+                Ok(_) => deliver(true, ""),
+                Err(e) => deliver(false, &e.to_string()),
             }
         });
     }
 
     #[cfg(test)]
-    pub fn invite_user_async(&self, _room_id: &str, _user_id: &str, _reason: &str) {}
+    pub fn invite_user_async(
+        &self,
+        _request_id: u64,
+        _room_id: &str,
+        _user_id: &str,
+        _reason: &str,
+    ) {
+    }
 
     /// Fetch the joined member list for a room. Blocks — worker thread.
     #[cfg(not(test))]

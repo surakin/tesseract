@@ -1,5 +1,6 @@
 #include "ForwardRoomPicker.h"
 
+#include "icons.h"
 #include "media_utils.h"
 #include "text_util.h"
 #include "tk/i18n.h"
@@ -20,7 +21,7 @@ constexpr float kForwardRoomPickerAvatarSize = 28.0f;
 constexpr float kForwardRoomPickerPadX       = 12.0f;
 constexpr float kForwardRoomPickerAvatarGap  = 12.0f;
 constexpr float kForwardRoomPickerFieldH     = 34.0f;
-constexpr float kCheckSize  = 18.0f;
+constexpr float kCheckSize  = kCheckCircleSize;
 constexpr float kCheckPadR  = 12.0f;
 constexpr float kForwardRoomPickerBtnH       = 32.0f;
 constexpr float kBtnMinW    = 80.0f;
@@ -99,33 +100,17 @@ public:
                 ctx.theme.palette.text_primary);
         }
 
-        const float r  = kCheckSize * 0.5f;
-        const float cx = bounds.x + bounds.w - kCheckPadR - r;
-        const float cy = bounds.y + bounds.h * 0.5f;
-        const tk::Rect check_rect{cx - r, cy - r, kCheckSize, kCheckSize};
-        if (checked)
-        {
-            ctx.canvas.fill_rounded_rect(check_rect, r, ctx.theme.palette.accent);
-            tk::TextStyle ts{};
-            ts.role = tk::FontRole::Small;
-            auto tick = ctx.factory.build_text(std::string("✓"), ts);
-            if (tick)
-            {
-                const tk::Size tsz = tick->measure();
-                ctx.canvas.draw_text(
-                    *tick, {cx - tsz.w * 0.5f, cy - tsz.h * 0.5f},
-                    ctx.theme.palette.text_on_accent);
-            }
-        }
-        else
-        {
-            ctx.canvas.stroke_rounded_rect(check_rect, r,
-                                           ctx.theme.palette.popup_border, 1.5f);
-        }
+        paint_check_circle(ctx.canvas, ctx.factory, check_icon_, kCheckSvg,
+                           {bounds.x + bounds.w - kCheckPadR - kCheckSize * 0.5f,
+                            bounds.y + bounds.h * 0.5f},
+                           checked, ctx.theme.palette.accent,
+                           ctx.theme.palette.text_on_accent,
+                           ctx.theme.palette.popup_border);
     }
 
 private:
     ForwardRoomPicker& owner_;
+    tk::IconCache check_icon_;
 };
 
 // ─────────────────────────────────────────────────────────────────────────

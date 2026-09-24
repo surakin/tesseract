@@ -2768,3 +2768,62 @@ msgstr "Sesión cerrada en {0}"
 #: ui/shared/app/Launch.cpp
 msgid "Removed {0} from this device, but the server sign-out failed: {1}"
 msgstr "Se eliminó {0} de este dispositivo, pero el cierre de sesión en el servidor falló: {1}"
+
+#: ui/shared/views/RoomInfoPanel.cpp
+msgid "Invite people"
+msgstr "Invitar personas"
+
+#: ui/shared/views/InviteDialog.cpp
+msgid "Search people or enter @user:server"
+msgstr "Busca personas o escribe @usuario:servidor"
+
+#: ui/shared/views/InviteDialog.cpp
+msgid "Already in room"
+msgstr "Ya está en la sala"
+
+#: ui/shared/views/InviteDialog.cpp
+msgid "Looking up…"
+msgstr "Buscando…"
+
+#: ui/shared/views/InviteDialog.cpp
+msgid "User not found"
+msgstr "Usuario no encontrado"
+
+#: ui/shared/views/InviteDialog.cpp
+msgid "Invite to room"
+msgstr "Invitar a la sala"
+
+#: ui/shared/views/InviteDialog.cpp
+#, c++-format
+msgid "Invite to {0}"
+msgstr "Invitar a {0}"
+
+#: ui/shared/views/InviteDialog.cpp
+msgid "Invite"
+msgstr "Invitar"
+
+#: ui/shared/views/InviteDialog.cpp
+#, c++-format
+msgid "Invite ({0})"
+msgstr "Invitar ({0})"
+
+#: ui/shared/views/InviteDialog.cpp
+msgid "No matching people"
+msgstr "No hay personas que coincidan"
+
+#: ui/shared/views/InviteDialog.cpp
+#, c++-format
+msgid "Failed to invite {0}: {1}"
+msgstr "No se pudo invitar a {0}: {1}"
+
+#: ui/shared/app/ShellBase.cpp
+#, c++-format
+msgid "Couldn't invite {0}"
+msgstr "No se pudo invitar a {0}"
+
+#: ui/shared/views/InviteDialog.cpp
+#, c++-format
+msgid "Inviting {0} person…"
+msgid_plural "Inviting {0} people…"
+msgstr[0] "Invitando a {0} persona…"
+msgstr[1] "Invitando a {0} personas…"

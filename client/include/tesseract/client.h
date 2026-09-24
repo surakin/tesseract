@@ -1537,10 +1537,12 @@ public:
     /// via IEventHandler::on_room_action_complete.
     void leave_room_async(std::uint64_t request_id, const std::string& room_id);
 
-    /// Non-blocking invite. Fire-and-forget; no callback. `reason` is
-    /// optional (empty = no reason) and, when set, is attached to the
-    /// invite via the stable `POST /rooms/{roomId}/invite` reason field.
-    void invite_user_async(const std::string& room_id, const std::string& user_id,
+    /// Non-blocking invite. Result delivered via
+    /// IEventHandler::on_room_action_complete. `reason` is optional (empty =
+    /// no reason) and, when set, is attached to the invite via the stable
+    /// `POST /rooms/{roomId}/invite` reason field.
+    void invite_user_async(std::uint64_t request_id, const std::string& room_id,
+                           const std::string& user_id,
                            const std::string& reason = "");
 
     /// Fetch the joined member list for a room.

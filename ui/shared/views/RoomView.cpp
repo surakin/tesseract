@@ -304,6 +304,19 @@ RoomView::RoomView()
     room_media_view_ = add_child(std::move(rmv));
     room_media_view_->set_visible(false);
 
+    // Invite dialog — above the gallery (they never coexist; the gallery
+    // closes RoomInfoPanel, which is the only way in). Hidden until open().
+    invite_dialog_ = add_child(tk::create_widget<InviteDialog>(this));
+    invite_dialog_->on_layout_changed = [this]()
+    {
+        if (on_layout_changed) on_layout_changed();
+    };
+    invite_dialog_->on_close = [this]()
+    {
+        if (on_layout_changed) on_layout_changed();
+        if (repaint_requester_) repaint_requester_();
+    };
+
     // Added last of all so it dispatches/paints above the whole room,
     // including room_media_view_ — see call_lobby()'s doc comment. Hidden
     // until open().
@@ -842,6 +855,10 @@ void RoomView::wire_internal_callbacks()
     {
         show_knock_requests();
     };
+    room_info_panel_->on_invite_requested = [this](std::string)
+    {
+        show_invite_dialog();
+    };
 
     // Wire knock-requests panel callbacks.
     knock_requests_panel_->on_layout_changed = [this]()
@@ -1054,6 +1071,20 @@ void RoomView::show_knock_requests()
         user_profile_panel_->close();
     knock_requests_panel_->open(current_room_info_.id);
     if (on_knock_requests_opened) on_knock_requests_opened(current_room_info_.id);
+    if (repaint_requester_) repaint_requester_();
+}
+
+void RoomView::show_invite_dialog()
+{
+    if (!invite_dialog_ || !has_room_)
+        return;
+    if (room_info_panel_ && room_info_panel_->is_open())
+        room_info_panel_->close();
+    if (user_profile_panel_ && user_profile_panel_->is_open())
+        user_profile_panel_->close();
+    invite_dialog_->open(current_room_info_.id, current_room_info_.name);
+    if (on_invite_dialog_opened) on_invite_dialog_opened(current_room_info_.id);
+    if (on_layout_changed) on_layout_changed();
     if (repaint_requester_) repaint_requester_();
 }
 
@@ -1365,6 +1396,7 @@ bool RoomView::is_overlay_open() const
            (room_info_panel_    && room_info_panel_->is_open()) ||
            (user_profile_panel_ && user_profile_panel_->is_open()) ||
            (room_media_view_    && room_media_view_->is_open()) ||
+           (invite_dialog_      && invite_dialog_->is_open()) ||
            (call_lobby_         && call_lobby_->is_open());
 }
 
@@ -1581,6 +1613,8 @@ void RoomView::set_room(const tesseract::RoomInfo& info)
             user_profile_panel_->close();
         if (room_media_view_ && room_media_view_->is_open())
             room_media_view_->close();
+        if (invite_dialog_ && invite_dialog_->is_open())
+            invite_dialog_->close();
         close_room_search();
         // The action-pill "more" submenu and the call-type popup are backdrop
         // overlays that only close via their own click-outside handling
@@ -2379,11 +2413,11 @@ void RoomView::on_theme_changed(const tk::Theme& t)
         receipt_popup_->apply_theme(t);
 }
 
-std::array<tk::Widget*, 7> RoomView::overlay_panels_() const
+std::array<tk::Widget*, 8> RoomView::overlay_panels_() const
 {
     return {room_info_panel_, user_profile_panel_, overflow_menu_,
             call_popup_, room_media_view_, header_overflow_menu_,
-            knock_requests_panel_};
+            knock_requests_panel_, invite_dialog_};
 }
 
 // ── Pointer/hit-test routing ────────────────────────────────────────────────
@@ -2414,6 +2448,8 @@ tk::Widget* RoomView::active_overlay_panel_() const
     // hover/right-click in RoomView while one is open instead of just
     // dismissing it. Host::register_popup()'s click-anywhere-dismiss (see
     // on_popup_dismiss()) is what closes them now, independent of this path.
+    if (invite_dialog_ && invite_dialog_->is_open())
+        return invite_dialog_;
     if (room_media_view_ && room_media_view_->is_open())
         return room_media_view_;
     if (room_settings_view_ && room_settings_view_->is_open())

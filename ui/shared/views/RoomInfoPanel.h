@@ -58,6 +58,7 @@ public:
     void set_notification_mode(std::string mode);
     void set_media_count(int count);
     void set_knock_requests_visible(bool visible);
+    void set_invite_visible(bool visible);
 
     using ImageProvider = std::function<const tk::Image*(const std::string& mxc)>;
     using PresenceProvider = std::function<tesseract::PresenceState(const std::string& user_id)>;
@@ -91,6 +92,7 @@ public:
     std::function<void(std::string room_id)>                on_fetch_members;
     std::function<void(std::string room_id, std::string t)> on_save_topic;
     std::function<void(std::string room_id)>                on_leave_room;
+    std::function<void(std::string room_id)>                on_invite_requested;
     std::function<void(std::string room_id)>                on_export_history_requested;
     std::function<void(std::string room_id)>                on_media_view_requested;
     std::function<void(std::string user_id,
@@ -152,6 +154,7 @@ private:
     tk::Button* save_btn_       = nullptr;
     tk::Button* cancel_btn_     = nullptr;
     tk::Button* expand_btn_     = nullptr;
+    tk::Button* invite_btn_     = nullptr;
     tk::Button* export_btn_     = nullptr;
     tk::Button* leave_btn_      = nullptr;
 
@@ -276,6 +279,11 @@ public:
     // to keep a summary badge in sync. No-op if unchanged.
     void set_knock_requests_visible(bool visible);
 
+    // Show the "Invite people" button. Pushed by the shell whenever this
+    // panel opens (see Client::can_invite_users) — hidden by default. No-op
+    // if unchanged.
+    void set_invite_visible(bool visible);
+
     using ImageProvider = RoomInfoPanelBody::ImageProvider;
     using PresenceProvider = RoomInfoPanelBody::PresenceProvider;
     void set_avatar_provider(ImageProvider p);
@@ -299,6 +307,9 @@ public:
     std::function<void(std::string room_id)>                on_fetch_members;
     std::function<void(std::string room_id, std::string t)> on_save_topic;
     std::function<void(std::string room_id)>                on_leave_room;
+    // Fired when the "Invite people" button is clicked. RoomView closes
+    // this panel and opens its InviteDialog.
+    std::function<void(std::string room_id)>                on_invite_requested;
     // Fired when the "Export History" button is clicked. The shell opens
     // the shared ExportHistoryDialog for this room.
     std::function<void(std::string room_id)>                on_export_history_requested;

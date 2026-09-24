@@ -1406,6 +1406,12 @@ bool MainAppWidget::dismiss_top_transient_()
         img_viewer_->set_visible(false);
         return true;
     }
+    if (auto* inv = room_view_ ? room_view_->invite_dialog() : nullptr;
+        inv && inv->is_open())
+    {
+        inv->close();
+        return true;
+    }
     if (auto* rmv = room_media_view(); rmv && rmv->is_open())
     {
         rmv->close();

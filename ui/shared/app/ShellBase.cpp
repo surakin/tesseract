@@ -22,6 +22,7 @@
 #include "views/MainAppWidget.h"
 #include "views/VideoViewerOverlay.h"
 #include "views/RoomListView.h"
+#include "views/InviteDialog.h"
 #include "views/text_util.h"
 #include "views/RoomSearchBar.h"
 #include "views/SettingsView.h"
@@ -4375,7 +4376,32 @@ void ShellBase::invite_user_command_(const std::string& room_id,
 {
     if (room_id.empty() || user_id.empty() || !client_)
         return;
-    client_->invite_user_async(room_id, user_id, reason);
+    auto req_id = next_room_action_id_++;
+    pending_invites_[req_id] = {room_id, user_id, nullptr};
+    client_->invite_user_async(req_id, room_id, user_id, reason);
+}
+
+void ShellBase::invite_users_(
+    const std::string& room_id, const std::vector<std::string>& user_ids,
+    std::function<void(const std::string& user_id, bool ok,
+                       const std::string& message)> per_user)
+{
+    if (room_id.empty() || !client_)
+        return;
+    // One shared copy of the per-user callback across every request.
+    auto cb = std::make_shared<decltype(per_user)>(std::move(per_user));
+    for (const auto& user_id : user_ids)
+    {
+        auto req_id = next_room_action_id_++;
+        pending_invites_[req_id] = {
+            room_id, user_id,
+            [cb, user_id](bool ok, const std::string& message)
+            {
+                if (*cb)
+                    (*cb)(user_id, ok, message);
+            }};
+        client_->invite_user_async(req_id, room_id, user_id);
+    }
 }
 
 ShellBase::RoomSendOutcome ShellBase::dispatch_room_send_(
@@ -5690,6 +5716,36 @@ void ShellBase::handle_extended_profile_ready_ui_(std::uint64_t request_id,
         return;
     }
 
+    // InviteDialog lookup: merge into the roster when found, and tell every
+    // open dialog either way (not-found turns the row red).
+    auto iit = pending_invite_resolves_.find(request_id);
+    if (iit != pending_invite_resolves_.end())
+    {
+        auto [mxid, gen] = iit->second;
+        pending_invite_resolves_.erase(iit);
+        if (gen == 0)
+            invite_resolves_inflight_.erase(mxid);
+        else if (invite_resolve_gen_.load() != gen)
+            return; // superseded by a later keystroke
+        auto p = tesseract::UserProfile::from_json(profile_json);
+        std::optional<views::InviteDialog::UserEntry> entry;
+        if (p.exists)
+        {
+            if (p.user_id.empty())
+                p.user_id = mxid;
+            entry = views::InviteDialog::UserEntry{p.user_id, p.display_name,
+                                                   p.avatar_url};
+            // Roster insert only — merge_resolved_user_ would also re-emit
+            // the quick switcher's results.
+            known_users_[p.user_id] =
+                tesseract::RoomMember{p.user_id, p.display_name, p.avatar_url};
+        }
+        for_each_invite_dialog_([&](views::InviteDialog& d)
+                                { d.set_resolved_user(mxid, entry); });
+        request_repaint_();
+        return;
+    }
+
     // Gendered-narration case: resolve the pronoun entry matching the app's
     // current locale, cache its possessive pronoun word, and push it into
     // every currently-open MessageListView (main window + any pop-outs)
@@ -5732,20 +5788,6 @@ void ShellBase::handle_extended_profile_ready_ui_(std::uint64_t request_id,
     }
 }
 
-namespace
-{
-
-// A complete, openable mxid: "@localpart:server" with both parts non-empty.
-bool is_complete_mxid(const std::string& s)
-{
-    if (s.size() < 4 || s.front() != '@')
-        return false;
-    const auto colon = s.find(':');
-    return colon != std::string::npos && colon > 1 && colon + 1 < s.size();
-}
-
-} // namespace
-
 void ShellBase::handle_user_query_(const std::string& query)
 {
     // Strip the leading '@' for substring matching; keep `query` for the
@@ -5765,7 +5807,7 @@ void ShellBase::handle_user_query_(const std::string& query)
 
     // Live-resolve a fully-typed mxid we don't already know, debounced so fast
     // typing coalesces into a single lookup.
-    if (is_complete_mxid(query) &&
+    if (views::is_complete_mxid(query) &&
         known_users_.find(query) == known_users_.end())
     {
         if (!client_) return;
@@ -5935,8 +5977,72 @@ ShellBase::filter_known_users_(const std::string& needle) const
     return out;
 }
 
+void ShellBase::ensure_known_users_roster_()
+{
+    if (!known_users_built_ && !known_users_building_)
+        build_known_users_roster_();
+}
+
+void ShellBase::resolve_invite_user_(const std::string& user_id, bool debounce)
+{
+    if (!client_ || !views::is_complete_mxid(user_id))
+        return;
+    // Already known (e.g. the roster landed since the dialog asked).
+    if (auto it = known_users_.find(user_id); it != known_users_.end())
+    {
+        const auto& m = it->second;
+        views::InviteDialog::UserEntry e{m.user_id, m.display_name, m.avatar_url};
+        for_each_invite_dialog_([&](views::InviteDialog& d)
+                                { d.set_resolved_user(user_id, e); });
+        return;
+    }
+    if (!debounce)
+    {
+        if (!invite_resolves_inflight_.insert(user_id).second)
+            return;
+        auto req_id = next_request_id_++;
+        pending_invite_resolves_[req_id] = {user_id, 0};
+        client_->resolve_user_profile_async(req_id, user_id);
+        return;
+    }
+
+    const std::uint64_t gen = invite_resolve_gen_.fetch_add(1) + 1;
+    auto req_id = next_request_id_++;
+    pending_invite_resolves_[req_id] = {user_id, gen};
+    // Capture client_ on the UI thread; don't read it from the worker.
+    auto* c = client_;
+    run_async_(
+        [this, c, req_id, mxid = user_id, gen]()
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(250));
+            if (invite_resolve_gen_.load() != gen)
+            {
+                post_to_ui_alive_([this, req_id]()
+                                  { pending_invite_resolves_.erase(req_id); });
+                return;
+            }
+            c->resolve_user_profile_async(req_id, mxid);
+        });
+}
+
+void ShellBase::for_each_invite_dialog_(
+    const std::function<void(views::InviteDialog&)>& fn)
+{
+    if (room_view_)
+        if (auto* d = room_view_->invite_dialog(); d && d->is_open())
+            fn(*d);
+    for (const auto& [rid, w] : secondary_windows_)
+    {
+        if (auto* rv = w->room_view())
+            if (auto* d = rv->invite_dialog(); d && d->is_open())
+                fn(*d);
+    }
+}
+
 void ShellBase::emit_user_results_()
 {
+    // Open invite dialogs filter the same roster.
+    for_each_invite_dialog_([](views::InviteDialog& d) { d.refresh_candidates(); });
     if (!main_app_)
         return;
     if (auto* qs = main_app_->quick_switcher())
@@ -6293,6 +6399,24 @@ void ShellBase::handle_room_action_complete_ui_(std::uint64_t request_id,
                                                  std::string joined_room_id,
                                                  std::string message)
 {
+    if (auto iit = pending_invites_.find(request_id); iit != pending_invites_.end())
+    {
+        PendingInvite inv = std::move(iit->second);
+        pending_invites_.erase(iit);
+        if (inv.done)
+        {
+            inv.done(ok, message);
+        }
+        else if (!ok)
+        {
+            std::string status = tk::trf(tk::tr("Couldn't invite {0}"), {inv.user_id});
+            if (!message.empty())
+                status += ": " + message;
+            show_status_message_(std::move(status));
+        }
+        return;
+    }
+
     auto it = pending_room_actions_.find(request_id);
     if (it == pending_room_actions_.end())
         return;

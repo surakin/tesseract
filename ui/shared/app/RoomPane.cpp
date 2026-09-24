@@ -537,8 +537,10 @@ void RoomPane::wire_room_view_()
         if (!shell_->client_)
         {
             v->set_knock_requests_visible(false);
+            v->set_invite_visible(false);
             return;
         }
+        v->set_invite_visible(shell_->client_->can_invite_users(room_id));
         const tesseract::RoomInfo* info = shell_->room_by_id_(room_id);
         const bool knockable = info && (info->join_rule == "knock" ||
                                         info->join_rule == "knock_restricted");
@@ -556,6 +558,89 @@ void RoomPane::wire_room_view_()
     };
     rv->on_knock_requests_closed = [this]() {
         shell_->unsubscribe_knock_requests_panel_();
+    };
+
+    // ── Invite dialog ───────────────────────────────────────────────────────
+    // Candidates come from the shell-wide known-users roster (shared with the
+    // quick switcher); unknown mxids are resolved through the shell, which
+    // broadcasts the outcome to every open dialog.
+    if (auto* inv = rv->invite_dialog())
+    {
+        using Entry = views::InviteDialog::UserEntry;
+        inv->set_users_filter([this](const std::string& needle) {
+            std::vector<Entry> out;
+            for (auto& u : shell_->filter_known_users_(needle))
+                out.push_back({std::move(u.user_id), std::move(u.display_name),
+                               std::move(u.avatar_url)});
+            return out;
+        });
+        inv->set_user_lookup([this](const std::string& id) -> std::optional<Entry> {
+            auto it = shell_->known_users_.find(id);
+            if (it == shell_->known_users_.end())
+                return std::nullopt;
+            return Entry{it->second.user_id, it->second.display_name,
+                         it->second.avatar_url};
+        });
+        inv->set_avatar_provider(
+            [this](const std::string& mxc) { return shell_avatar_(mxc); });
+        inv->on_user_avatar_needed = [this](const std::string&, const std::string& mxc) {
+            shell_->ensure_user_avatar_(mxc);
+        };
+        inv->on_resolve_user = [this](const std::string& id, bool debounce) {
+            shell_->resolve_invite_user_(id, debounce);
+        };
+        inv->on_invite_confirmed = [this, inv](std::vector<std::string> ids) {
+            const std::string room_id = inv->room_id();
+            inv->set_inviting(static_cast<int>(ids.size()));
+            auto remaining = std::make_shared<std::size_t>(ids.size());
+            shell_->invite_users_(
+                room_id, ids,
+                guarded([this, inv, remaining, room_id](
+                            const std::string& user_id, bool ok,
+                            const std::string& message) {
+                    // The dialog may have been dismissed or reopened for
+                    // another room meanwhile — only report into the batch
+                    // that started this.
+                    const bool live = inv->is_open() && inv->is_inviting() &&
+                                      inv->room_id() == room_id;
+                    if (live && !ok)
+                        inv->add_invite_error(user_id, message);
+                    if (--*remaining == 0 && live)
+                        inv->mark_complete();
+                    shell_->request_repaint_();
+                }));
+        };
+    }
+    rv->on_invite_dialog_opened = [this, rv](std::string room_id) {
+        auto* inv = rv->invite_dialog();
+        if (!inv)
+            return;
+        shell_->ensure_known_users_roster_();
+        auto push_members = [inv](const std::vector<tesseract::RoomMember>& members) {
+            std::vector<std::string> ids;
+            ids.reserve(members.size());
+            for (const auto& m : members)
+                ids.push_back(m.user_id);
+            inv->set_existing_members(ids);
+        };
+        if (cached_members_room_ == room_id)
+            push_members(cached_room_members_);
+        inv->refresh_candidates();
+        // Refresh the member list — the cache may be stale or another room's.
+        auto sess = shell_->active_account();
+        run_async_(guarded([this, inv, sess, room_id, push_members]() mutable {
+            if (!sess || !sess->client) return;
+            auto members = sess->client->get_room_members(room_id);
+            post_to_ui_(guarded([this, inv, room_id, push_members,
+                                 members = std::move(members)]() mutable {
+                if (!inv->is_open() || inv->room_id() != room_id)
+                    return;
+                push_members(members);
+                cached_room_members_ = std::move(members);
+                cached_members_room_ = room_id;
+                shell_->request_repaint_();
+            }));
+        }));
     };
     if (auto* krp = rv->knock_requests_panel())
     {
@@ -3146,6 +3231,10 @@ const tk::Image* RoomPane::room_self_avatar_for_compose_()
 
 void RoomPane::notify_avatar_media_ready_(tk::MediaKind kind)
 {
+    if (kind == tk::MediaKind::UserAvatar && room_view_)
+        if (auto* inv = room_view_->invite_dialog(); inv && inv->is_open())
+            inv->refresh_pill_avatars();
+
     auto* ta = room_view_ && room_view_->compose_bar()
                    ? room_view_->compose_bar()->text_area()
                    : nullptr;

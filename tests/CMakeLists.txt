@@ -120,6 +120,7 @@ add_executable(tesseract_tests
     cpp/test_settings_controller.cpp
     cpp/test_history_export_controller.cpp
     cpp/test_export_history_dialog.cpp
+    cpp/test_invite_dialog.cpp
     cpp/test_room_info_panel.cpp
     cpp/test_tk_devices_section.cpp
     cpp/test_tk_settings_page.cpp

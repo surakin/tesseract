@@ -2013,7 +2013,8 @@ void Client::leave_room_async(std::uint64_t request_id, const std::string& room_
     impl_->ffi->leave_room_async(request_id, room_id);
 }
 
-void Client::invite_user_async(const std::string& room_id,
+void Client::invite_user_async(std::uint64_t request_id,
+                                const std::string& room_id,
                                 const std::string& user_id,
                                 const std::string& reason)
 {
@@ -2022,7 +2023,7 @@ void Client::invite_user_async(const std::string& room_id,
         return;
     }
     SH_FFI;
-    impl_->ffi->invite_user_async(room_id, user_id, reason);
+    impl_->ffi->invite_user_async(request_id, room_id, user_id, reason);
 }
 
 std::vector<RoomMember> Client::get_room_members(const std::string& room_id)

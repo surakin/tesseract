@@ -203,6 +203,10 @@ set(_tk_sources
     views/room_chip_strip.cpp
     views/ForwardRoomPicker.h
     views/ForwardRoomPicker.cpp
+    views/InviteDialog.h
+    views/InviteDialog.cpp
+    views/InviteFieldModel.h
+    views/InviteFieldModel.cpp
     views/SpaceAddRoomList.h
     views/SpaceAddRoomList.cpp
     views/SpaceChildRoomGrid.h
@@ -491,6 +495,7 @@ set(_icon_svgs
     "${_lucide_dir}/lucide-battery-low.svg"
     "${_lucide_dir}/lucide-list-checks.svg"
     "${_lucide_dir}/lucide-check-check.svg"
+    "${_lucide_dir}/lucide-check.svg"
     "${_lucide_dir}/lucide-lock-keyhole.svg"
     "${_lucide_dir}/lucide-lock-keyhole-open.svg"
     "${_lucide_dir}/lucide-eye.svg"

@@ -1,7 +1,10 @@
 #pragma once
 #include "tk/canvas.h"
+#include "tk/svg.h"
 #include "tk/i18n.h"
 #include <algorithm>
+#include <cstdint>
+#include <span>
 #include <string>
 
 namespace tesseract::views
@@ -65,6 +68,31 @@ inline void draw_avatar(tk::Canvas& canvas, const tk::Image* img,
         canvas.draw_initials_circle(initials_name, centre, diameter,
                                     initials_bg, initials_fg);
     }
+}
+
+// Round multi-select checkbox shared by the picker overlays
+// (ForwardRoomPicker, InviteDialog): an accent-filled disc with a Lucide
+// check when checked, an outlined circle otherwise. `check_svg` is the
+// caller's kCheckSvg (icons.h is private to tesseract_tk, so it isn't
+// included here); `check_icon` caches its rasterization across rows.
+inline constexpr float kCheckCircleSize = 18.0f;
+
+inline void paint_check_circle(tk::Canvas& canvas, tk::CanvasFactory& factory,
+                               tk::IconCache& check_icon,
+                               std::span<const std::uint8_t> check_svg,
+                               tk::Point centre, bool checked, tk::Color accent,
+                               tk::Color on_accent, tk::Color border)
+{
+    const float r = kCheckCircleSize * 0.5f;
+    const tk::Rect rect{centre.x - r, centre.y - r, kCheckCircleSize,
+                        kCheckCircleSize};
+    if (!checked)
+    {
+        canvas.stroke_rounded_rect(rect, r, border, 1.5f);
+        return;
+    }
+    canvas.fill_rounded_rect(rect, r, accent);
+    check_icon.draw(canvas, factory, check_svg, rect, 12.0f, on_accent);
 }
 
 // Pill background colour for an m.room.join_rules value ("public", "knock",

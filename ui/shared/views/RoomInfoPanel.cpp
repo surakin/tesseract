@@ -42,6 +42,9 @@ RoomInfoPanelBody::RoomInfoPanelBody()
     expand_btn_ = add_child(
         tk::create_widget<tk::Button>(this, "Show all \xE2\x96\xBE", std::function<void()>{},
                                      tk::Button::Variant::Subtle));
+    invite_btn_ = add_child(
+        tk::create_widget<tk::Button>(this, tk::tr("Invite people"), std::function<void()>{},
+                                     tk::Button::Variant::Subtle));
     export_btn_ = add_child(
         tk::create_widget<tk::Button>(this, tk::tr("Export History"), std::function<void()>{},
                                      tk::Button::Variant::Subtle));
@@ -115,6 +118,12 @@ RoomInfoPanelBody::RoomInfoPanelBody()
     export_btn_->set_on_click([this]() {
         if (on_export_history_requested) on_export_history_requested(room_id_);
     });
+    invite_btn_->set_on_click([this]() {
+        if (on_invite_requested) on_invite_requested(room_id_);
+    });
+    // Hidden until the shell confirms the user may invite — see
+    // set_invite_visible().
+    invite_btn_->set_visible(false);
 
     // save, cancel, and expand are hidden until needed
     save_btn_->set_visible(false);
@@ -257,6 +266,13 @@ void RoomInfoPanelBody::set_knock_requests_visible(bool visible)
     if (visible == knock_row_visible_) return;
     knock_row_visible_ = visible;
     knock_row_layout_.reset();
+    if (on_layout_changed) on_layout_changed();
+}
+
+void RoomInfoPanelBody::set_invite_visible(bool visible)
+{
+    if (!invite_btn_ || visible == invite_btn_->own_visible()) return;
+    invite_btn_->set_visible(visible);
     if (on_layout_changed) on_layout_changed();
 }
 
@@ -453,6 +469,15 @@ void RoomInfoPanelBody::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     {
         knock_row_rect_ = {0.0f, y, kPanelW, kMediaRowH};
         y += kMediaRowH + kPadY;
+    }
+
+    // Invite button: first of the action buttons, only when the user may
+    // invite (see set_invite_visible()).
+    if (invite_btn_ && invite_btn_->own_visible())
+    {
+        const float invite_y = y + kPadY;
+        invite_btn_->arrange(lc, {px + kPadX, origin_y + invite_y, iw, kButtonH});
+        y = invite_y + kButtonH;
     }
 
     // Export History button: flows after content, above the leave button
@@ -945,6 +970,7 @@ void RoomInfoPanelBody::paint_before_children(tk::PaintCtx& ctx)
 
     // Export History + Leave buttons (painted before the notification combo
     // so the combo's expanded dropdown overlays them when open)
+    if (invite_btn_ && invite_btn_->own_visible()) invite_btn_->paint(ctx);
     if (export_btn_) export_btn_->paint(ctx);
     if (leave_btn_) leave_btn_->paint(ctx);
 
@@ -1222,6 +1248,9 @@ RoomInfoPanel::RoomInfoPanel()
     body_->on_save_topic = [this](std::string room_id, std::string t) {
         if (on_save_topic) on_save_topic(std::move(room_id), std::move(t));
     };
+    body_->on_invite_requested = [this](std::string room_id) {
+        if (on_invite_requested) on_invite_requested(std::move(room_id));
+    };
     body_->on_export_history_requested = [this](std::string room_id) {
         if (on_export_history_requested) on_export_history_requested(std::move(room_id));
     };
@@ -1336,6 +1365,11 @@ void RoomInfoPanel::set_media_count(int count)
 void RoomInfoPanel::set_knock_requests_visible(bool visible)
 {
     if (body_) body_->set_knock_requests_visible(visible);
+}
+
+void RoomInfoPanel::set_invite_visible(bool visible)
+{
+    if (body_) body_->set_invite_visible(visible);
 }
 
 tk::TextArea* RoomInfoPanel::topic_field() const

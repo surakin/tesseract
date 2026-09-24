@@ -3354,9 +3354,16 @@ pub mod ffi {
         /// the result via `on_room_action_complete(request_id, ok, "", message)`.
         fn leave_room_async(self: &ClientFfi, request_id: u64, room_id: &str);
 
-        /// Non-blocking invite. Spawns as a tokio task; no callback. `reason`
+        /// Non-blocking invite. Spawns as a tokio task; result delivered via
+        /// on_room_action_complete(request_id, ok, "", message). `reason`
         /// empty = no reason.
-        fn invite_user_async(self: &ClientFfi, room_id: &str, user_id: &str, reason: &str);
+        fn invite_user_async(
+            self: &ClientFfi,
+            request_id: u64,
+            room_id: &str,
+            user_id: &str,
+            reason: &str,
+        );
 
         /// Fetch the joined member list for a room. Blocks — worker thread.
         fn get_room_members(self: &ClientFfi, room_id: &str) -> Vec<RoomMember>;

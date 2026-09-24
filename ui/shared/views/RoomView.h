@@ -29,6 +29,7 @@
 #include "RoomHeader.h"
 #include "RoomInfoPanel.h"
 #include "KnockRequestsPanel.h"
+#include "InviteDialog.h"
 #include "RoomMediaView.h"
 #include "RoomSearchBar.h"
 #include "RoomSettingsView.h"
@@ -247,6 +248,10 @@ public:
     RoomMediaView* room_media_view() const
     {
         return room_media_view_;
+    }
+    InviteDialog* invite_dialog() const
+    {
+        return invite_dialog_;
     }
     KnockRequestsPanel* knock_requests_panel() const
     {
@@ -559,6 +564,10 @@ public:
     // (see ShellBase::subscribe_knock_requests_panel_/
     // unsubscribe_knock_requests_panel_).
     std::function<void(std::string room_id)>                on_knock_requests_opened;
+    // Fired right after invite_dialog_ opens for room_id (from
+    // RoomInfoPanel's "Invite people" button) — the owner pushes the room's
+    // existing members and wires/refreshes its providers here.
+    std::function<void(std::string room_id)>                on_invite_dialog_opened;
     std::function<void()>                                   on_knock_requests_closed;
     // Fired when the user confirms "Deny & Ban" in the confirm dialog RoomView
     // itself interposes on knock_requests_panel_->on_decline_and_ban (mirrors
@@ -716,7 +725,7 @@ private:
     // area. room_settings_view_ is deliberately not here — it replaces the
     // ENTIRE room content (early-returns from both arrange() and paint())
     // rather than layering on top of it.
-    std::array<tk::Widget*, 7> overlay_panels_() const;
+    std::array<tk::Widget*, 8> overlay_panels_() const;
 
     // Transparent overlay placed on top of the main MessageListView while the
     // thread panel is open. It eats hover events (so the timeline doesn't
@@ -750,6 +759,8 @@ private:
     // calls show_room_info() to go back, unlike Settings' Cancel which
     // leaves the slot empty (see RoomInfoPanel::on_knock_requests_view_requested).
     void show_knock_requests();
+    // Close room_info_panel_ and open invite_dialog_ for the current room.
+    void show_invite_dialog();
     void show_user_profile(std::string user_id, std::string display_name,
                            std::string avatar_url);
 
@@ -841,6 +852,12 @@ private:
     // routing and set_room()'s room-switch panel-closing for free, the same
     // as room_info_panel_/room_settings_view_/user_profile_panel_.
     RoomMediaView*    room_media_view_    = nullptr;
+    // Modal invite-to-room card, opened from RoomInfoPanel's "Invite
+    // people" button. RoomView-owned (added after room_media_view_) for the
+    // same reasons as room_media_view_: pop-out windows get it for free, and
+    // it joins active_overlay_panel_() routing and set_room()'s room-switch
+    // closing.
+    InviteDialog*     invite_dialog_      = nullptr;
     // Admin-side "Requests to join" panel (MSC2403). Swaps in for
     // room_info_panel_ exactly like room_settings_view_ does — see
     // show_knock_requests()/KnockRequestsPanel's own header doc comment.
