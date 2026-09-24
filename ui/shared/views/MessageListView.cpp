@@ -2652,7 +2652,8 @@ public:
 
     // Intrinsic body width used to "hug" the bubble to its content. Flat
     // single-layout bodies report their longest wrapped line; multi-section
-    // bodies (tables/lists/quotes), URL previews and media fill the bubble.
+    // bodies (tables/lists/quotes) fill the bubble; URL preview cards and
+    // media widen it to their own width (body_block_natural_width_).
     float body_text_natural_width_(const MessageRowData& m, tk::LayoutCtx& ctx,
                                    float w) const
     {
@@ -2768,8 +2769,7 @@ public:
             nat = w;
             break;
         }
-        if (owner_.previews_.has_preview(m))
-            nat = w;
+        nat = std::max(nat, owner_.previews_.stack_width(m, w));
         if (m.has_reply())
             nat = std::max(nat, msgbubble::kQuoteMinW);
         // No lower bound: the bubble hugs its content (see msgbubble::layout).
