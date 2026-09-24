@@ -3,7 +3,9 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
-## Unreleased
+## v0.8.25 — 2026-09-24
+
+### Summary
 
 - polish(mentions): a mention pill with no avatar (none set, or still loading) now shows an initials disc in its avatar slot instead of an empty gap; `@room` pills show "@". Disc uses the theme's avatar-initials colors, passed to composers via a new `tk::MentionColors`. Windows build + pill/mention ctest 63/63; user-verified live. Qt6/GTK4/macOS share the code, unbuilt
 - fix(timeline): in bubble layout, a message with a URL preview no longer stretches its bubble to full width; it now fits the wider of the text and the preview card. Windows build + ctest 1935/1935; unverified live. Qt6/GTK4/macOS share the code, unbuilt

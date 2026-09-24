@@ -2,7 +2,7 @@
 
 Snapshot of every feature that has landed on `main`. Last updated **2026-09-24**. 1936 C++ + 713 Rust tests.
 
-> **Mention pills: initials disc when there's no avatar (2026-09-24).**
+> **Mention pills: initials disc when there's no avatar (2026-09-24, v0.8.25).**
 > A pill's reserved avatar slot used to stay blank until an avatar loaded,
 > and forever if the user or room had none. `tk::paint_pill_leading_visual`
 > now draws an initials disc there (display-name initials; "@" for `@room`)
@@ -14,7 +14,7 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-24**
 
 <!-- -->
 
-> **Command-line options (2026-09-23).** A shared parser and startup
+> **Command-line options (2026-09-23, v0.8.25).** A shared parser and startup
 > pipeline for all shells: `--help`, `--version`, `--profile` (isolated
 > profiles), `--hidden`, `--log-level`/`--verbose`, `--logoutall`, and
 > `--open-*` on every platform. See [docs/CLI.md](docs/CLI.md).
