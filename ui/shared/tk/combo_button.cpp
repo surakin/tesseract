@@ -437,10 +437,15 @@ void ComboButton::paint_before_children(PaintCtx& ctx)
 
         // FontRole::UiSemibold matches tk::Button's own button_text_style()
         // (controls.cpp) — the main zone reads as a button, same weight as
-        // every other Button in this view (e.g. cancel_btn_).
+        // every other Button in this view (e.g. cancel_btn_). Leading/Top
+        // for the same reason as button_text_style(): the tx/ty math below
+        // centres the natural-size layout in main_rect_ itself, so letting
+        // the backend also centre within max_width would double-offset it
+        // toward the chevron.
         TextStyle st{};
         st.role      = FontRole::UiSemibold;
-        st.halign    = TextHAlign::Center;
+        st.halign    = TextHAlign::Leading;
+        st.valign    = TextVAlign::Top;
         st.trim      = TextTrim::Ellipsis;
         st.max_width = main_rect_.w - kCBHPad;
         main_label_layout_ = ctx.factory.build_text(label_text, st);
