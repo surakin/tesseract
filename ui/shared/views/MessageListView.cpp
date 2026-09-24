@@ -5520,8 +5520,8 @@ private:
                     // stretches the narrower bitmap to fill the wider box,
                     // smearing the label sideways until the avatar arrives.
                     // Reserving the same slot regardless of resolution state
-                    // keeps the bitmap's width constant; an unresolved avatar
-                    // just leaves that slot blank instead.
+                    // keeps the bitmap's width constant; an unresolved (or
+                    // absent) avatar gets an initials disc in that slot.
                     spec.reserve_leading_visual =
                         (sp.pill_kind == tk::PillKind::User) ||
                         (sp.pill_kind == tk::PillKind::Room && sp.url.empty());
@@ -5536,6 +5536,8 @@ private:
                     // the theme.
                     spec.bg = ctx.theme.palette.accent;
                     spec.fg = ctx.theme.palette.text_on_accent;
+                    spec.initials_bg = ctx.theme.palette.avatar_initials_bg;
+                    spec.initials_fg = ctx.theme.palette.avatar_initials_text;
                     ensure_pill_metrics();
                     // Size the destination rect from the pill's own measured
                     // width/height (identical to what render_pill_bitmap_cached

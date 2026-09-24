@@ -229,6 +229,17 @@ public:
     virtual void set_hovering(bool /*hovering*/) {}
 };
 
+// Theme colors for a composer's inline mention pills: the chip itself
+// (bg/fg) and the initials disc drawn in its avatar slot while no avatar
+// image is available (initials_bg/initials_fg — see tk::PillSpec).
+struct MentionColors
+{
+    Color bg{};
+    Color fg{};
+    Color initials_bg{};
+    Color initials_fg{};
+};
+
 // Multi-line variant. Auto-grows up to a host-clamped envelope so the
 // compose bar's height tracks the text content. Backs the ComposeBar's
 // input affordance; IME / selection stay native.
@@ -367,12 +378,11 @@ public:
         return segs;
     }
 
-    /// Theme the inline mention pills (background + text colour). Call once
-    /// after creation and again when the theme changes. Default no-op.
-    virtual void set_mention_colors(Color bg, Color fg)
+    /// Theme the inline mention pills (chip + initials-disc colours). Call
+    /// once after creation and again when the theme changes. Default no-op.
+    virtual void set_mention_colors(const MentionColors& colors)
     {
-        (void)bg;
-        (void)fg;
+        (void)colors;
     }
 
     /// Re-render every currently-inserted mention pill for `user_id` (there

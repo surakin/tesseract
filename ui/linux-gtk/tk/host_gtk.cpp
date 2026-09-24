@@ -1204,8 +1204,10 @@ public:
         // ever offers @room for this room), so both kinds always reserve
         // the slot — no url-ambiguity to check.
         spec.reserve_leading_visual = true;
-        spec.bg = mention_bg_;
-        spec.fg = mention_fg_;
+        spec.bg = mention_colors_.bg;
+        spec.fg = mention_colors_.fg;
+        spec.initials_bg = mention_colors_.initials_bg;
+        spec.initials_fg = mention_colors_.initials_fg;
         tk::ImageRef pinned = tk::render_pill_bitmap_cached(
             *pill_factory_, pill_cache_, spec, lm.ascent, lm.descent, scale);
         if (!pinned)
@@ -1453,10 +1455,9 @@ public:
         return segs;
     }
 
-    void set_mention_colors(Color bg, Color fg) override
+    void set_mention_colors(const tk::MentionColors& colors) override
     {
-        mention_bg_ = bg;
-        mention_fg_ = fg;
+        mention_colors_ = colors;
     }
 
     // Same anchor-scan technique as composer_draft() above, but swapping
@@ -1495,8 +1496,10 @@ public:
                     spec.text = d->display_name;
                     spec.kind = tk::PillKind::User;
                     spec.image = avatar;
-                    spec.bg = mention_bg_;
-                    spec.fg = mention_fg_;
+                    spec.bg = mention_colors_.bg;
+                    spec.fg = mention_colors_.fg;
+                    spec.initials_bg = mention_colors_.initials_bg;
+                    spec.initials_fg = mention_colors_.initials_fg;
                     tk::ImageRef pinned = tk::render_pill_bitmap_cached(
                         *pill_factory_, pill_cache_, spec, lm.ascent,
                         lm.descent, scale);
@@ -1563,8 +1566,10 @@ public:
                     spec.kind = tk::PillKind::Room;
                     spec.image = avatar;
                     spec.reserve_leading_visual = true;
-                    spec.bg = mention_bg_;
-                    spec.fg = mention_fg_;
+                    spec.bg = mention_colors_.bg;
+                    spec.fg = mention_colors_.fg;
+                    spec.initials_bg = mention_colors_.initials_bg;
+                    spec.initials_fg = mention_colors_.initials_fg;
                     tk::ImageRef pinned = tk::render_pill_bitmap_cached(
                         *pill_factory_, pill_cache_, spec, lm.ascent,
                         lm.descent, scale);
@@ -2311,8 +2316,9 @@ private:
     // set_font_role) only ever matches this one text view, not every
     // textview on the display.
     std::string font_css_class_;
-    Color mention_bg_{0x2E, 0x3B, 0x5E};
-    Color mention_fg_{0xA8, 0xC5, 0xFF};
+    tk::MentionColors mention_colors_{
+        Color{0x2E, 0x3B, 0x5E}, Color{0xA8, 0xC5, 0xFF},
+        Color{0x1F, 0x3A, 0x66}, Color{0xBF, 0xD8, 0xFF}};
     // Lazily created — CanvasFactory is a stateless-ish per-backend wrapper,
     // cheap to own here rather than threading a Surface reference through
     // just for this one rasterization call.

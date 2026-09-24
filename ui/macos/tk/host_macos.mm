@@ -1265,7 +1265,7 @@ public:
     void insert_emoticon(int start, int end, const std::string& shortcode,
                          const std::string& mxc_url, const tk::Image* image) override;
     std::vector<tesseract::MentionSeg> composer_draft() const override;
-    void set_mention_colors(Color bg, Color fg) override;
+    void set_mention_colors(const tk::MentionColors& colors) override;
     void refresh_mention_avatar(const std::string& user_id,
                                const tk::Image* avatar) override;
     void refresh_room_mention_avatar(const tk::Image* avatar) override;
@@ -1372,8 +1372,7 @@ private:
     std::function<void()> on_pointer_down_;
     // Raw (not NSColor) so insert_mention() can hand them straight to
     // tk::PillSpec / tk::render_pill_bitmap without a lossy round trip.
-    Color mention_bg_{};
-    Color mention_fg_{};
+    tk::MentionColors mention_colors_{};
     // Lazily created — CanvasFactory is a stateless-ish per-backend wrapper
     // (fresh CG objects per call), cheap to own here rather than threading a
     // Surface reference through just for this one rasterization call.
@@ -2380,8 +2379,10 @@ void NSTextViewNative::insert_mention(int start, int end,
     // ever offers @room for this room), so both kinds always reserve the
     // slot — no url-ambiguity to check.
     spec.reserve_leading_visual = true;
-    spec.bg = mention_bg_;
-    spec.fg = mention_fg_;
+    spec.bg = mention_colors_.bg;
+    spec.fg = mention_colors_.fg;
+    spec.initials_bg = mention_colors_.initials_bg;
+    spec.initials_fg = mention_colors_.initials_fg;
     const CGFloat scale = view_.window.backingScaleFactor ?: 2.0;
 
     // Reuse an already-rasterized identical pill (same kind/text/colors/
@@ -2586,10 +2587,9 @@ std::vector<tesseract::MentionSeg> NSTextViewNative::composer_draft() const
     return segs;
 }
 
-void NSTextViewNative::set_mention_colors(Color bg, Color fg)
+void NSTextViewNative::set_mention_colors(const tk::MentionColors& colors)
 {
-    mention_bg_ = bg;
-    mention_fg_ = fg;
+    mention_colors_ = colors;
 }
 
 void NSTextViewNative::refresh_mention_avatar(const std::string& user_id,
@@ -2625,8 +2625,10 @@ void NSTextViewNative::refresh_mention_avatar(const std::string& user_id,
                 spec.text = m.displayName.UTF8String ? m.displayName.UTF8String : "";
                 spec.kind = tk::PillKind::User;
                 spec.image = avatar;
-                spec.bg = mention_bg_;
-                spec.fg = mention_fg_;
+                spec.bg = mention_colors_.bg;
+                spec.fg = mention_colors_.fg;
+                spec.initials_bg = mention_colors_.initials_bg;
+                spec.initials_fg = mention_colors_.initials_fg;
                 const tk::cg::RealLineMetrics lm =
                     tk::cg::real_line_metrics(tk::FontRole::Body);
                 const CGFloat scale = view_.window.backingScaleFactor ?: 2.0;
@@ -2685,8 +2687,10 @@ void NSTextViewNative::refresh_room_mention_avatar(const tk::Image* avatar)
                 spec.kind = tk::PillKind::Room;
                 spec.image = avatar;
                 spec.reserve_leading_visual = true;
-                spec.bg = mention_bg_;
-                spec.fg = mention_fg_;
+                spec.bg = mention_colors_.bg;
+                spec.fg = mention_colors_.fg;
+                spec.initials_bg = mention_colors_.initials_bg;
+                spec.initials_fg = mention_colors_.initials_fg;
                 const tk::cg::RealLineMetrics lm =
                     tk::cg::real_line_metrics(tk::FontRole::Body);
                 const CGFloat scale = view_.window.backingScaleFactor ?: 2.0;

@@ -670,8 +670,9 @@ tk::PixmapCache& mention_pill_cache()
 // pixels = DIPs * dpi_scale); BetterTextInsertImageUri still wants the
 // logical DIP size.
 MentionPillBitmap render_mention_pill(const std::string& text, tk::PillKind kind,
-                                      const tk::Image* avatar, Color bg,
-                                      Color fg, float dpi_scale)
+                                      const tk::Image* avatar,
+                                      const tk::MentionColors& colors,
+                                      float dpi_scale)
 {
     using Microsoft::WRL::ComPtr;
     MentionPillBitmap out;
@@ -717,8 +718,10 @@ MentionPillBitmap render_mention_pill(const std::string& text, tk::PillKind kind
     // genuine self-mention (unlike a received timeline pill's
     // pill_kind==Room ambiguity) — so both kinds always reserve the slot.
     spec.reserve_leading_visual = true;
-    spec.bg = bg;
-    spec.fg = fg;
+    spec.bg = colors.bg;
+    spec.fg = colors.fg;
+    spec.initials_bg = colors.initials_bg;
+    spec.initials_fg = colors.initials_fg;
     tk::ImageRef pinned = tk::render_pill_bitmap_cached(
         *factory, mention_pill_cache(), spec, ascent, descent, dpi_scale);
     if (!pinned)
@@ -1951,7 +1954,7 @@ public:
         const tk::PillKind kind = is_room ? tk::PillKind::Room : tk::PillKind::User;
 
         MentionPillBitmap pill = render_mention_pill(
-            visual, kind, avatar, mention_bg_, mention_fg_, dip_scale());
+            visual, kind, avatar, mention_colors_, dip_scale());
         if (!pill.bitmap)
         {
             // D2D/WIC failure — fall back to plain text so the mention is
@@ -2011,8 +2014,8 @@ public:
                 continue;
             }
             MentionPillBitmap pill = render_mention_pill(
-                run.display_name, tk::PillKind::User, avatar, mention_bg_,
-                mention_fg_, dip_scale());
+                run.display_name, tk::PillKind::User, avatar, mention_colors_,
+                dip_scale());
             if (!pill.bitmap)
             {
                 continue;
@@ -2045,8 +2048,8 @@ public:
                 continue;
             }
             MentionPillBitmap pill = render_mention_pill(
-                "room", tk::PillKind::Room, avatar, mention_bg_,
-                mention_fg_, dip_scale());
+                "room", tk::PillKind::Room, avatar, mention_colors_,
+                dip_scale());
             if (!pill.bitmap)
             {
                 continue;
@@ -2182,10 +2185,9 @@ public:
         return segs;
     }
 
-    void set_mention_colors(Color bg, Color fg) override
+    void set_mention_colors(const tk::MentionColors& colors) override
     {
-        mention_bg_ = bg;
-        mention_fg_ = fg;
+        mention_colors_ = colors;
     }
 
     // ── Win32TextAreaBase ─────────────────────────────────────────────────
@@ -2831,8 +2833,9 @@ private:
     std::function<const tk::Image*(const std::string&)> image_resolver_;
     ImageProviderAdapter                        image_provider_{ this };
     std::unordered_set<std::wstring>            pending_image_uris_;
-    Color mention_bg_ = Color::rgb(0x0078D4);
-    Color mention_fg_ = Color::rgba(255, 255, 255, 255);
+    tk::MentionColors mention_colors_{
+        Color::rgb(0x0078D4), Color::rgba(255, 255, 255, 255),
+        Color::rgb(0xCFE3FF), Color::rgb(0x004A9E)};
     int mention_counter_ = 0;
     // Whether the last reformat_emoji_runs() pass found any emoji — lets a
     // change with no emoji (the common case) skip BetterTextSetTextStyle

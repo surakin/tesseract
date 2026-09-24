@@ -46,6 +46,12 @@ struct PillSpec
     bool reserve_leading_visual = false;
     Color bg{};
     Color fg{};
+    // Initials-disc colors for a reserved leading slot with no image and no
+    // fallback_glyph (avatar still loading, or the target has none) — the
+    // theme's avatar_initials_bg/avatar_initials_text, so a pill's stand-in
+    // avatar matches every other initials avatar in the app.
+    Color initials_bg{};
+    Color initials_fg{};
     // Must match the FontRole of the surrounding text for a timeline pill
     // (so the glyphs read identically inline); the composer's isolated
     // bitmap can pick whatever role its own body text uses.
@@ -119,7 +125,9 @@ void paint_pill_background(Canvas& canvas, Rect bounds, float radius,
 // nearly fills the pill's rounded left cap, since that cap's radius is half
 // the pill's height). Centre-fits an image via draw_circle_image, or draws
 // `fallback_glyph` centred in a plain filled circle when there is no image,
-// or does nothing when neither is set.
+// or — when only reserve_leading_visual is set — an initials disc in
+// initials_bg/initials_fg: the label's initials for a User pill, "@" for a
+// Room pill (whose label is the literal "room").
 void paint_pill_leading_visual(Canvas& canvas, CanvasFactory& factory,
                                const PillSpec& spec, Rect visual_rect);
 

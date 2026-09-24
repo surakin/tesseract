@@ -467,7 +467,10 @@ void ComposeBar::on_theme_changed(const tk::Theme& t)
     if (text_area_)
     {
         text_area_->set_text_color(t.palette.text_primary);
-        text_area_->set_mention_colors(t.palette.accent, t.palette.text_on_accent);
+        text_area_->set_mention_colors({t.palette.accent,
+                                        t.palette.text_on_accent,
+                                        t.palette.avatar_initials_bg,
+                                        t.palette.avatar_initials_text});
     }
 }
 

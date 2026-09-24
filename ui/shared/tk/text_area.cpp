@@ -91,8 +91,7 @@ void TextArea::ensure_native_()
     // BetterTextArea).
     area_->set_on_height_changed([this](float h) { notify_height_changed_(h); });
     notify_height_changed_(area_->natural_height());
-    if (pending_.mention_colors)   area_->set_mention_colors(pending_.mention_colors->first,
-                                                              pending_.mention_colors->second);
+    if (pending_.mention_colors)   area_->set_mention_colors(*pending_.mention_colors);
     if (pending_.on_edit_last)     area_->set_on_edit_last(std::move(pending_.on_edit_last));
     if (pending_.on_image_paste)   area_->set_on_image_paste(std::move(pending_.on_image_paste));
     if (pending_.on_file_paste)    area_->set_on_file_paste(std::move(pending_.on_file_paste));
@@ -224,10 +223,10 @@ void TextArea::refresh_room_mention_avatar(const Image* avatar)
     if (area_) area_->refresh_room_mention_avatar(avatar);
 }
 
-void TextArea::set_mention_colors(Color bg, Color fg)
+void TextArea::set_mention_colors(const MentionColors& colors)
 {
-    if (area_) area_->set_mention_colors(bg, fg);
-    else pending_.mention_colors = std::make_pair(bg, fg);
+    if (area_) area_->set_mention_colors(colors);
+    else pending_.mention_colors = colors;
 }
 
 void TextArea::set_on_edit_last(std::function<bool()> cb)

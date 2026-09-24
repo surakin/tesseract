@@ -1,6 +1,18 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-23**. 1936 C++ + 713 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-24**. 1936 C++ + 713 Rust tests.
+
+> **Mention pills: initials disc when there's no avatar (2026-09-24).**
+> A pill's reserved avatar slot used to stay blank until an avatar loaded,
+> and forever if the user or room had none. `tk::paint_pill_leading_visual`
+> now draws an initials disc there (display-name initials; "@" for `@room`)
+> in the theme's `avatar_initials_bg`/`avatar_initials_text`, carried on
+> `PillSpec::initials_bg`/`initials_fg`. Composers get the colors through
+> `NativeTextArea::set_mention_colors(const tk::MentionColors&)`, which
+> replaces the old `(bg, fg)` overload on all four backends. Windows build +
+> pill/mention ctest 63/63; user-verified live. Qt6/GTK4/macOS unbuilt.
+
+<!-- -->
 
 > **Command-line options (2026-09-23).** A shared parser and startup
 > pipeline for all shells: `--help`, `--version`, `--profile` (isolated
