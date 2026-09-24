@@ -460,6 +460,9 @@ msgstr "[Çréàté Rööm x]"
 msgid "Create Space"
 msgstr "[Çréàté Spàçé xx]"
 
+msgid "Create Call Room"
+msgstr "[Çréàté Çàll Rööm xxx]"
+
 #: /home/rayden/src/tesseract/ui/shared/views/AddRoomView.cpp:42
 msgid "Browse"
 msgstr "[Bröwséx]"
@@ -541,6 +544,9 @@ msgstr "[Rööm ñàméx]"
 msgid "Space name"
 msgstr "[Spàçé ñàméxx]"
 
+msgid "Call room name"
+msgstr "[Çàll rööm ñàméxxx]"
+
 #: /home/rayden/src/tesseract/ui/shared/views/CreateRoomView.cpp:46
 msgid "Topic (optional)"
 msgstr "[Töpïç (öptïöñàl)xxx]"
@@ -619,12 +625,18 @@ msgstr "[Çréàtïñg rööm…xx]"
 msgid "Creating space…"
 msgstr "[Çréàtïñg spàçé…xxx]"
 
+msgid "Creating call room…"
+msgstr "[Çréàtïñg çàll rööm…xxxx]"
+
 #: /home/rayden/src/tesseract/ui/shared/views/CreateRoomView.cpp:179
 msgid "Couldn't create room."
 msgstr "[Çöùldñ't çréàté rööm.xxxx]"
 
 msgid "Couldn't create space."
 msgstr "[Çöùldñ't çréàté spàçé.xxxxx]"
+
+msgid "Couldn't create call room."
+msgstr "[Çöùldñ't çréàté çàll rööm.xxxxx]"
 
 #: /home/rayden/src/tesseract/ui/shared/views/CreateRoomView.cpp:270
 msgid "Create a Room"

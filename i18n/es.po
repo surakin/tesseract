@@ -516,12 +516,18 @@ msgstr "Crear sala"
 msgid "Create Space"
 msgstr "Crear espacio"
 
+msgid "Create Call Room"
+msgstr "Crear sala de llamada"
+
 #: ui/shared/views/CreateRoomView.cpp:42
 msgid "Room name"
 msgstr "Nombre de la sala"
 
 msgid "Space name"
 msgstr "Nombre del espacio"
+
+msgid "Call room name"
+msgstr "Nombre de la sala de llamada"
 
 #: ui/shared/views/CreateRoomView.cpp:46
 msgid "Topic (optional)"
@@ -575,12 +581,18 @@ msgstr "Creando sala…"
 msgid "Creating space…"
 msgstr "Creando espacio…"
 
+msgid "Creating call room…"
+msgstr "Creando sala de llamada…"
+
 #: ui/shared/views/CreateRoomView.cpp:179
 msgid "Couldn't create room."
 msgstr "No se pudo crear la sala."
 
 msgid "Couldn't create space."
 msgstr "No se pudo crear el espacio."
+
+msgid "Couldn't create call room."
+msgstr "No se pudo crear la sala de llamada."
 
 #: ui/shared/views/CreateRoomView.cpp:270
 msgid "Create a Room"

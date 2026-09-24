@@ -72,6 +72,10 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-24**
 > DockedExpanded mode controls now hide while the call's room isn't the one
 > being viewed. Linux (Qt6 + GTK4) build + full ctest 1898/1898 (+15);
 > unverified live this session. Windows/macOS share the code, unbuilt.
+> Since 2026-09-24, call rooms can also be created from the Create Room
+> dialog's split button ("Create Call Room"); the new room opens its
+> pre-call lobby once sync delivers it. Windows build + ctest 1935/1935;
+> user-verified live.
 
 <!-- -->
 

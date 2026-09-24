@@ -3843,6 +3843,11 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
         {
             show_space_root_(current_room_id_);
         }
+        // Same for a just-created call room: after_active_room_changed_()'s
+        // handle_call_room_navigation_() couldn't see is_call_room yet, so
+        // the lobby never opened. Retry once now that the room is known.
+        if (pending_call_room_nav_id_ == current_room_id_ && room_by_id_(current_room_id_))
+            handle_call_room_navigation_();
     }
     // Call members / bridge status may have changed with this update.
     refresh_call_banners_();
@@ -13868,6 +13873,9 @@ void ShellBase::request_call_(const std::string& room_id, const std::string& slo
 void ShellBase::handle_call_room_navigation_()
 {
     const auto* new_room = room_by_id_(current_room_id_);
+    // Not in rooms_ yet (just created/joined) — retried once from the rooms
+    // update that delivers it, see pending_call_room_nav_id_.
+    pending_call_room_nav_id_ = new_room ? std::string() : current_room_id_;
     if (!new_room || new_room->is_space)
         return;
 

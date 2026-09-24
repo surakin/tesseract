@@ -107,9 +107,20 @@ public:
 private:
     void apply_state();
     tesseract::RoomCreateOptions build_options_() const;
+    // What create_combo_btn_'s currently selected option creates — read by
+    // build_options_() into RoomCreateOptions::is_space / is_call_room.
+    enum class Kind
+    {
+        Room,
+        Space,
+        CallRoom,
+    };
+    static Kind kind_from_value_(const std::string& value);
+    void set_kind_(Kind k);
+
     // Swaps the name/alias placeholders and the invite-reason hint between
-    // their "room" and "space" wording to match create_combo_btn_'s current
-    // selection — called from its on_selection_changed and from reset().
+    // their room/space/call-room wording to match create_combo_btn_'s
+    // current selection — called from set_kind_() and from reset().
     void apply_type_placeholders_();
 
     bool title_visible_ = true;
@@ -144,9 +155,9 @@ private:
     tk::Button* cancel_btn_ = nullptr;
     tk::Label* status_lbl_ = nullptr;
 
-    // Set from create_combo_btn_'s currently selected option ("room" vs
-    // "space") — read by build_options_() into RoomCreateOptions::is_space.
-    bool is_space_ = false;
+    // Set from create_combo_btn_'s currently selected option ("room",
+    // "space" or "call") via set_kind_().
+    Kind kind_ = Kind::Room;
 
     // Animation clock for the centered spinner shown in place of the whole
     // form while State::Creating — reset by set_state() on every transition

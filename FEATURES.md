@@ -101,7 +101,7 @@ version) are noted where relevant.
 - Room search (filters by room display name)
 - Right-click a room in the list for a context menu: Open in tab, Open in window, Leave room
 - Direct messages (create / open; reuses existing DM if present)
-- Room and space creation (name, topic, alias, public/private visibility, optional invites) — the Create button is a split button offering "Create Room" / "Create Space"
+- Room, space and call room creation (name, topic, alias, public/private visibility, optional invites) — the Create button is a split button offering "Create Room" / "Create Space" / "Create Call Room"
 - Public room directory browsing (Add Room → Browse), with search and a choice of server
 - Room knocking (MSC2403): request to join a knock/knock-restricted room (with an optional reason) from the Join dialog; track and cancel a pending request from a "Requests to Join" room-list section; admins/moderators can accept, deny, or deny-and-ban a request from Room Info
 - Room settings, tabbed (General / Media / Security & Privacy / Permissions / Emojis & Stickers): avatar, display name, and topic; join rule (Public/Invite/Knock), guest access, history visibility, and one-directional encryption enable; aggregate power-level thresholds (default role, invite/kick/ban, message/settings/permissions defaults, @room notifications, starting calls) — all per-field power-level gated, staged edits aren't sent until confirmed; the Permissions tab warns (non-blocking) when a staged change would leave no other member able to edit permissions; a Leave button sits in the footer
@@ -122,7 +122,7 @@ version) are noted where relevant.
 
 - Native LiveKit-based MatrixRTC voice/video calls (MSC4143); interoperates with Element X and Element Call
 - Pre-call lobby before joining: camera preview, mic/camera toggles, Join/Cancel
-- Call rooms (MSC3417): a dedicated "Call Rooms" room-list section; opening one joins its call, navigating away floats the call instead of hanging up, and returning restores it
+- Call rooms (MSC3417): created from the Create Room dialog; a dedicated "Call Rooms" room-list section; opening one joins its call, navigating away floats the call instead of hanging up, and returning restores it
 - End-to-end encryption (HKDF key derivation matching Element Call's wire format); echo cancellation via each platform's native audio device manager
 - Docked, expanded, floating (draggable, position persisted, kept clear of the composer), and popout (dedicated OS window) call overlay modes
 - Mute/video/hang-up controls, call duration timer, pinned-participant grid layout

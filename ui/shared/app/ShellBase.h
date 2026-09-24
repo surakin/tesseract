@@ -3544,6 +3544,11 @@ protected:
     // floated away from" apart from "the user deliberately chose Floating,"
     // so only the former auto-restores Docked/DockedExpanded.
     bool                                         call_auto_floated_ = false;
+    // Room id handle_call_room_navigation_() was called for before rooms_
+    // knew about it (e.g. a call room just created via CreateRoomView), so
+    // its is_call_room was unknown. The next rooms update that does know it
+    // re-runs the navigation once and clears this. Empty = nothing pending.
+    std::string                                  pending_call_room_nav_id_;
     // The "call in progress" banner is a state of the room: shown while the
     // room has live call members and this client is not in that call. Applies
     // the rule to the main window's room view and every pop-out.

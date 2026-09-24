@@ -877,8 +877,8 @@ struct RoomCreateOptions
     /// preset (join_rule + history_visibility defaults).
     std::string visibility = "private";
     bool encrypted = false;   // adds an m.room.encryption initial_state event
-    bool is_space = false;    // sets creation_content.room_type = "m.space" (unused by v1 UI)
-    bool is_call_room = false; // sets creation_content.type = "m.call" (MSC3417; unused by v1 UI)
+    bool is_space = false;    // sets creation_content.type = "m.space"
+    bool is_call_room = false; // sets creation_content.type = "org.matrix.msc3417.call" (MSC3417)
     std::vector<std::string> invite; // initial invitee Matrix user IDs
     /// Reason shown to invitees, e.g. "Invited to discuss project updates"
     /// (MSC4491). Empty = no reason. Sent unencrypted even in encrypted

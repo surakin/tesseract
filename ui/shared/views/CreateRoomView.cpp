@@ -31,8 +31,8 @@ constexpr float kCRHintH = 16.0f;
 constexpr float kCRBtnH = 32.0f;
 constexpr float kCRBtnW = 96.0f;
 // Wider than kCRBtnW — the Create split button's main zone has to fit
-// "Create Space" (the longer of its two labels) plus its own chevron slot.
-constexpr float kCRCreateBtnW = 132.0f;
+// "Create Call Room" (the longest of its labels) plus its own chevron slot.
+constexpr float kCRCreateBtnW = 160.0f;
 constexpr float kCRStatusH = 20.0f;
 // Centered spinner shown in place of the whole form while State::Creating —
 // same radius/dot size EncryptionSetupOverlay's Progress step uses for its
@@ -150,26 +150,16 @@ CreateRoomView::CreateRoomView()
     create->set_options({
         {tk::tr("Create Room"), "room"},
         {tk::tr("Create Space"), "space"},
+        {tk::tr("Create Call Room"), "call"},
     });
     create->set_selected_value("room");
     create->set_variant(tk::Button::Variant::Primary);
     create->on_selection_changed =
-        [this](std::string value)
-        {
-            is_space_ = (value == "space");
-            // Encryption isn't a supported concept for spaces — mirrors
-            // RoomSettingsView hiding the same field for an existing space.
-            if (encryption_check_ && state_ != State::Creating)
-            {
-                if (is_space_) encryption_check_->set_checked(false);
-                encryption_check_->set_enabled(!is_space_);
-            }
-            apply_type_placeholders_();
-        };
+        [this](std::string value) { set_kind_(kind_from_value_(value)); };
     create->on_activate =
         [this](std::string value)
         {
-            is_space_ = (value == "space");
+            kind_ = kind_from_value_(value);
             if (on_create_requested)
             {
                 on_create_requested(build_options_());
@@ -197,20 +187,46 @@ CreateRoomView::CreateRoomView()
     apply_state();
 }
 
+CreateRoomView::Kind CreateRoomView::kind_from_value_(const std::string& value)
+{
+    if (value == "space")
+        return Kind::Space;
+    if (value == "call")
+        return Kind::CallRoom;
+    return Kind::Room;
+}
+
+void CreateRoomView::set_kind_(Kind k)
+{
+    kind_ = k;
+    const bool is_space = (kind_ == Kind::Space);
+    // Encryption isn't a supported concept for spaces — mirrors
+    // RoomSettingsView hiding the same field for an existing space.
+    if (encryption_check_ && state_ != State::Creating)
+    {
+        if (is_space) encryption_check_->set_checked(false);
+        encryption_check_->set_enabled(!is_space);
+    }
+    apply_type_placeholders_();
+}
+
 void CreateRoomView::apply_type_placeholders_()
 {
+    const bool is_space = (kind_ == Kind::Space);
     if (name_field_)
     {
-        name_field_->set_placeholder(is_space_ ? tk::tr("Space name") : tk::tr("Room name"));
+        name_field_->set_placeholder(is_space                   ? tk::tr("Space name")
+                                     : kind_ == Kind::CallRoom ? tk::tr("Call room name")
+                                                               : tk::tr("Room name"));
     }
     if (alias_field_)
     {
-        alias_field_->set_placeholder(is_space_ ? tk::tr("Space alias (optional)")
-                                                 : tk::tr("Room alias (optional)"));
+        alias_field_->set_placeholder(is_space ? tk::tr("Space alias (optional)")
+                                               : tk::tr("Room alias (optional)"));
     }
     if (reason_hint_lbl_)
     {
-        reason_hint_lbl_->set_text(is_space_
+        reason_hint_lbl_->set_text(is_space
                                         ? tk::tr("Sent as plain text, even in encrypted spaces")
                                         : tk::tr("Sent as plain text, even in encrypted rooms"));
     }
@@ -225,8 +241,9 @@ tesseract::RoomCreateOptions CreateRoomView::build_options_() const
     o.visibility = visibility_combo_ && !visibility_combo_->selected_value().empty()
                        ? visibility_combo_->selected_value()
                        : std::string("private");
-    o.encrypted = encryption_check_ && encryption_check_->checked() && !is_space_;
-    o.is_space = is_space_;
+    o.encrypted = encryption_check_ && encryption_check_->checked() && kind_ != Kind::Space;
+    o.is_space = (kind_ == Kind::Space);
+    o.is_call_room = (kind_ == Kind::CallRoom);
     o.invite = invite_field_ ? split_invitees(invite_field_->text()) : std::vector<std::string>();
     o.invite_reason = reason_field_ ? reason_field_->text() : std::string();
     return o;
@@ -268,7 +285,7 @@ void CreateRoomView::reset()
         encryption_check_->set_checked(false);
         encryption_check_->set_enabled(true);
     }
-    is_space_ = false;
+    kind_ = Kind::Room;
     if (create_combo_btn_) create_combo_btn_->set_selected_value("room");
     apply_type_placeholders_();
     set_state(State::Idle);
@@ -315,7 +332,7 @@ void CreateRoomView::apply_state()
     if (invite_field_) invite_field_->set_enabled(!creating);
     if (reason_field_) reason_field_->set_enabled(!creating);
     if (visibility_combo_) visibility_combo_->set_enabled(!creating);
-    if (encryption_check_) encryption_check_->set_enabled(!creating && !is_space_);
+    if (encryption_check_) encryption_check_->set_enabled(!creating && kind_ != Kind::Space);
     if (create_combo_btn_) create_combo_btn_->set_enabled(!creating);
 
     // Hide the entire form while creating — replaced by the centered
@@ -340,9 +357,10 @@ void CreateRoomView::apply_state()
         if (state_ == State::Error)
         {
             status_lbl_->set_text(
-                error_msg_.empty()
-                    ? (is_space_ ? tk::tr("Couldn't create space.") : tk::tr("Couldn't create room."))
-                    : error_msg_);
+                !error_msg_.empty()        ? error_msg_
+                : kind_ == Kind::Space    ? tk::tr("Couldn't create space.")
+                : kind_ == Kind::CallRoom ? tk::tr("Couldn't create call room.")
+                                          : tk::tr("Couldn't create room."));
         }
         else
         {
@@ -605,8 +623,9 @@ void CreateRoomView::paint(tk::PaintCtx& ctx)
 
         tk::TextStyle st;
         st.role = tk::FontRole::Body;
-        auto lo = ctx.factory.build_text(is_space_ ? tk::tr("Creating space\xe2\x80\xa6")
-                                                    : tk::tr("Creating room\xe2\x80\xa6"),
+        auto lo = ctx.factory.build_text(kind_ == Kind::Space    ? tk::tr("Creating space\xe2\x80\xa6")
+                                         : kind_ == Kind::CallRoom ? tk::tr("Creating call room\xe2\x80\xa6")
+                                                                   : tk::tr("Creating room\xe2\x80\xa6"),
                                          st);
         if (lo)
         {
