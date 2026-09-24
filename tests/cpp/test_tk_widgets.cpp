@@ -15,6 +15,8 @@
 #include <tesseract/settings.h>
 
 #include <memory>
+#include <span>
+#include <string_view>
 
 using namespace tk;
 using tesseract::views::ForwardRoomPicker;
@@ -646,6 +648,75 @@ TEST_CASE("Button paints a coloured rect at its bounds", "[tk][widget][button]")
     auto accent = Theme::light().palette.accent;
     auto px = st.surface->read_pixel(120, 28);
     CHECK(nearly(px, accent, /*tol=*/20));
+}
+
+namespace
+{
+// Solid square filling the whole viewBox — every rasterized pixel is opaque,
+// so a sampled pixel inside the icon box reads back as the tint exactly.
+constexpr std::string_view kSolidSquareSvg =
+    R"(<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">)"
+    R"(<rect x="0" y="0" width="24" height="24" fill="#000"/></svg>)";
+
+std::span<const std::uint8_t> solid_square_svg()
+{
+    return {reinterpret_cast<const std::uint8_t*>(kSolidSquareSvg.data()),
+            kSolidSquareSvg.size()};
+}
+} // namespace
+
+TEST_CASE("Button leading icon widens the measure by icon + gap",
+          "[tk][widget][button]")
+{
+    TkWidgetsStage st;
+    auto lc = st.layout_ctx();
+    auto plain = tk::create_root_widget<Button>(nullptr, "Export History",
+                                                std::function<void()>{},
+                                                Button::Variant::Subtle);
+    auto with_icon = tk::create_root_widget<Button>(nullptr, "Export History",
+                                                    std::function<void()>{},
+                                                    Button::Variant::Subtle);
+    with_icon->set_leading_icon(solid_square_svg(), 16.0f);
+
+    Size a = plain->measure(lc, {-1, -1});
+    Size b = with_icon->measure(lc, {-1, -1});
+    CHECK(b.w == a.w + 16.0f + 8.0f);
+    CHECK(b.h == a.h);
+    // The label is still the accessible name — the icon is decoration.
+    CHECK(with_icon->access_name() == "Export History");
+}
+
+TEST_CASE("Button::set_icon after set_leading_icon reverts to icon-only",
+          "[tk][widget][button]")
+{
+    TkWidgetsStage st;
+    auto lc = st.layout_ctx();
+    auto plain = tk::create_root_widget<Button>(nullptr, "Leave Room");
+    auto btn = tk::create_root_widget<Button>(nullptr, "Leave Room");
+    btn->set_leading_icon(solid_square_svg(), 16.0f);
+    btn->set_icon(solid_square_svg(), 16.0f);
+
+    CHECK(btn->measure(lc, {-1, -1}).w == plain->measure(lc, {-1, -1}).w);
+    st.run(*btn, {10, 10, 160, 36}); // paints the icon-only path cleanly
+}
+
+TEST_CASE("Button leading icon paints left of the label in the text colour",
+          "[tk][widget][button]")
+{
+    TkWidgetsStage st;
+    auto btn = tk::create_root_widget<Button>(nullptr, "Export",
+                                              std::function<void()>{},
+                                              Button::Variant::Subtle);
+    btn->set_leading_icon(solid_square_svg(), 16.0f);
+
+    auto lc = st.layout_ctx();
+    const float content_w = btn->measure(lc, {-1, -1}).w - 2 * 16.0f;
+    st.run(*btn, {0, 0, 300, 36});
+
+    // Group (icon + gap + label) is centred; the icon's centre sits 8 px in.
+    const int icon_cx = static_cast<int>((300.0f - content_w) * 0.5f + 8.0f);
+    auto px = st.surface->read_pixel(icon_cx, 18);
+    CHECK(nearly(px, Theme::light().palette.text_primary, /*tol=*/20));
 }
 
 TEST_CASE("SwitchButton toggles checked state and fires on_change",

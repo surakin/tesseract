@@ -217,6 +217,19 @@ public:
     {
         icon_svg_ = svg;
         icon_logical_px_ = logical_px;
+        icon_leading_ = false;
+        return *this;
+    }
+    // Icon drawn before the label (icon + text), rather than replacing it as
+    // set_icon() does. Same lifetime rule as set_icon(); an empty span clears
+    // the icon and leaves a plain text button. Not meaningful for
+    // Variant::Icon, which never paints its label.
+    Button& set_leading_icon(std::span<const std::uint8_t> svg, float logical_px = 16.0f)
+    {
+        icon_svg_ = svg;
+        icon_logical_px_ = logical_px;
+        icon_leading_ = true;
+        invalidate_cache();
         return *this;
     }
     // Overrides the default theme/enabled-driven tint (text_primary /
@@ -333,6 +346,7 @@ private:
 
     std::span<const std::uint8_t> icon_svg_;
     float icon_logical_px_ = 20.0f;
+    bool icon_leading_ = false; // set_leading_icon(): icon + label, not icon-only
     std::optional<Color> icon_color_override_;
     IconCache icon_cache_;
 

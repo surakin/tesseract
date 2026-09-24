@@ -2851,6 +2851,10 @@ msgstr "[Rémövéd {0} fröm thïs dévïçé, büt thé sérvér sïgñ-öüt 
 msgid "Invite people"
 msgstr "[Ïñvïté péöpléxx]"
 
+#: ui/shared/views/RoomInfoPanel.cpp
+msgid "Leave Room"
+msgstr "[Léàvé Röömxx]"
+
 #: ui/shared/views/InviteDialog.cpp
 msgid "Search people or enter @user:server"
 msgstr "[Séàrçh péöplé ör éñtér @ùsér:sérvérxxxxxxx]"

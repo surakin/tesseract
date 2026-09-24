@@ -500,6 +500,7 @@ set(_icon_svgs
     "${_lucide_dir}/lucide-lock-keyhole-open.svg"
     "${_lucide_dir}/lucide-eye.svg"
     "${_lucide_dir}/lucide-cable.svg"
+    "${_lucide_dir}/lucide-user-round-plus.svg"
 )
 
 add_custom_command(

@@ -2773,6 +2773,10 @@ msgstr "Se eliminó {0} de este dispositivo, pero el cierre de sesión en el ser
 msgid "Invite people"
 msgstr "Invitar personas"
 
+#: ui/shared/views/RoomInfoPanel.cpp
+msgid "Leave Room"
+msgstr "Abandonar sala"
+
 #: ui/shared/views/InviteDialog.cpp
 msgid "Search people or enter @user:server"
 msgstr "Busca personas o escribe @usuario:servidor"

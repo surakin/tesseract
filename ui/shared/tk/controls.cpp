@@ -107,6 +107,7 @@ constexpr float kBtnVPad = 6.0f;
 constexpr float kBtnMinHeight = 32.0f;
 constexpr float kBtnIconPad = 6.0f;
 constexpr float kBtnIconMinSize = 28.0f;
+constexpr float kBtnIconLabelGap = 8.0f;
 constexpr float kControlsHoverFadeMs = 110.0f;
 
 TextStyle button_text_style()
@@ -220,8 +221,15 @@ Size Button::measure(LayoutCtx& ctx, Size constraints)
             cached_size_ = cached_->measure();
         }
     }
-    float w = cached_size_.w + kBtnHPad * 2;
-    float h = std::max(cached_size_.h + kBtnVPad * 2, kBtnMinHeight);
+    float content_w = cached_size_.w;
+    float content_h = cached_size_.h;
+    if (icon_leading_ && !icon_svg_.empty())
+    {
+        content_w += icon_logical_px_ + kBtnIconLabelGap;
+        content_h = std::max(content_h, icon_logical_px_);
+    }
+    float w = content_w + kBtnHPad * 2;
+    float h = std::max(content_h + kBtnVPad * 2, kBtnMinHeight);
     return {std::max(w, min_size_.w), std::max(h, min_size_.h)};
 }
 
@@ -267,7 +275,7 @@ void Button::paint(PaintCtx& ctx)
     }
     ctx.canvas.fill_rounded_rect(bounds_, kControlsBtnRadius, fill);
 
-    if (!icon_svg_.empty())
+    if (!icon_svg_.empty() && !icon_leading_)
     {
         // Any variant may self-paint an icon over its fill (Primary/
         // Destructive keep their colored pill; Icon/Subtle stay
@@ -297,10 +305,23 @@ void Button::paint(PaintCtx& ctx)
     {
         return;
     }
-    float tx = bounds_.x + (bounds_.w - cached_size_.w) * 0.5f;
+    const Color text_color = button_text(variant_, ctx.theme, enabled_);
+    const bool leading_icon = icon_leading_ && !icon_svg_.empty();
+    // Centre the whole icon + gap + label group, so a leading-icon button
+    // lines up with plain-label buttons of the same width.
+    const float icon_w = leading_icon ? icon_logical_px_ + kBtnIconLabelGap : 0.0f;
+    float tx = bounds_.x + (bounds_.w - cached_size_.w - icon_w) * 0.5f;
     float ty = bounds_.y + (bounds_.h - cached_size_.h) * 0.5f;
-    ctx.canvas.draw_text(*cached_, {tx, ty},
-                         button_text(variant_, ctx.theme, enabled_));
+    if (leading_icon)
+    {
+        // Same tint as the label (see the icon-only branch above).
+        Color tint = icon_color_override_.value_or(text_color);
+        icon_cache_.draw(ctx.canvas, ctx.factory, icon_svg_,
+                         {tx, bounds_.y, icon_logical_px_, bounds_.h},
+                         icon_logical_px_, tint);
+        tx += icon_w;
+    }
+    ctx.canvas.draw_text(*cached_, {tx, ty}, text_color);
 }
 
 void Button::click()

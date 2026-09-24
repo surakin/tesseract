@@ -49,8 +49,11 @@ RoomInfoPanelBody::RoomInfoPanelBody()
         tk::create_widget<tk::Button>(this, tk::tr("Export History"), std::function<void()>{},
                                      tk::Button::Variant::Subtle));
     leave_btn_ = add_child(
-        tk::create_widget<tk::Button>(this, "Leave Room", std::function<void()>{},
+        tk::create_widget<tk::Button>(this, tk::tr("Leave Room"), std::function<void()>{},
                                      tk::Button::Variant::Subtle));
+    invite_btn_->set_leading_icon(kUserRoundPlusSvg, 16.0f);
+    export_btn_->set_leading_icon(kDownloadSvg, 16.0f);
+    leave_btn_->set_leading_icon(kLeaveRoomSvg, 16.0f);
 
     // Favourite / Low-priority tag switches (mutually exclusive in the UI).
     favourite_btn_ = add_child(tk::create_widget<tk::SwitchButton>(this, "Favourite"));
