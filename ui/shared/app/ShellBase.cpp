@@ -7682,6 +7682,9 @@ void ShellBase::push_room_list_state_(RoomListState state)
 
 void ShellBase::trigger_update_check_()
 {
+    // Disabled at runtime for installs updated by something else (MSIX).
+    if (!tesseract::update_checks_enabled())
+        return;
     // kVersion is generated from PROJECT_VERSION in CMakeLists.txt via version.h.in.
 #if defined(TESSERACT_AUR_PACKAGE)
     // TESSERACT_AUR_PACKAGE is set at configure time with -DTESSERACT_AUR_PACKAGE=pkgname.

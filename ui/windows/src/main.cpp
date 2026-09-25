@@ -17,6 +17,7 @@
 #include <vector>
 #include "tk/i18n.h"
 #include "app/Launch.h"
+#include "app/UpdateChecker.h"
 #include <tesseract/client.h>
 #include <tesseract/paths.h>
 #include <tesseract/settings.h>
@@ -297,6 +298,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
         }
         return 0;
     }
+
+    // MSIX installs are updated by the Store or App Installer, not by the
+    // GitHub release check (which would point at the NSIS installer).
+    if (win32::package_context::is_packaged())
+        tesseract::disable_update_checks();
 
     // Packaged installs declare matrix: in AppxManifest.xml. Only the NSIS /
     // developer build owns the equivalent HKCU registration.

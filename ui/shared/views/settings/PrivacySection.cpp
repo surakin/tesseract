@@ -2,6 +2,7 @@
 
 #include "SettingsGroup.h"
 
+#include "app/UpdateChecker.h"
 #include "tesseract/settings.h"
 #include "tk/i18n.h"
 
@@ -141,14 +142,20 @@ PrivacySection::PrivacySection()
 
     // ── Updates ───────────────────────────────────────────────────────────────
 #ifdef TESSERACT_UPDATE_CHECKS
-    auto* updates_group = add_group(tk::tr("Updates"));
-    auto updates_cb = tk::create_widget<tk::CheckButton>(
-        this, "Check for updates automatically", s.check_for_updates);
-    check_updates_cb_ = updates_group->add_widget(std::move(updates_cb));
-    check_updates_cb_->on_change = [this](bool v)
+    // Omitted entirely when checks were turned off at runtime (MSIX installs
+    // are updated by the Store / App Installer) — check_updates_cb_ stays
+    // null then.
+    if (tesseract::update_checks_enabled())
     {
-        if (on_check_for_updates_changed) on_check_for_updates_changed(v);
-    };
+        auto* updates_group = add_group(tk::tr("Updates"));
+        auto updates_cb = tk::create_widget<tk::CheckButton>(
+            this, "Check for updates automatically", s.check_for_updates);
+        check_updates_cb_ = updates_group->add_widget(std::move(updates_cb));
+        check_updates_cb_->on_change = [this](bool v)
+        {
+            if (on_check_for_updates_changed) on_check_for_updates_changed(v);
+        };
+    }
 #endif
 
     // ── Encryption ────────────────────────────────────────────────────────────
@@ -192,7 +199,8 @@ void PrivacySection::set_index_messages(bool enabled)
 #ifdef TESSERACT_UPDATE_CHECKS
 void PrivacySection::set_check_for_updates(bool enabled)
 {
-    check_updates_cb_->set_checked(enabled);
+    if (check_updates_cb_)
+        check_updates_cb_->set_checked(enabled);
 }
 #endif
 
