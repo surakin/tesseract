@@ -794,6 +794,234 @@ private:
     UINT32 atom_index_ = 0;
 };
 
+// Draws one emoji tag sequence (England/Scotland/Wales flags: U+1F3F4 + tag
+// characters U+E0020-E007E + cancel tag U+E007F) as a single pre-shaped
+// glyph run. IDWriteTextLayout can't: its script analysis puts the tag
+// characters in their own NO_VISUAL run, so the font's ligature never sees
+// the whole sequence and only a bare black flag is drawn. Shaping the
+// sequence with IDWriteTextAnalyzer as one run yields the flag glyph;
+// Draw() hands it to the layout's renderer (TextRenderer's colour-glyph
+// path). Being one inline object also makes the sequence one hit-test
+// cluster, so caret movement and Backspace step over the whole flag.
+class BetterTextTagSequence final : public IDWriteInlineObject {
+public:
+    BetterTextTagSequence(IDWriteFontFace* face, float em_size, std::vector<UINT16> glyphs,
+                          std::vector<FLOAT> advances, std::vector<DWRITE_GLYPH_OFFSET> offsets)
+        : face_(face), em_size_(em_size), glyphs_(std::move(glyphs)), advances_(std::move(advances)),
+          offsets_(std::move(offsets)) {
+        DWRITE_FONT_METRICS font_metrics{};
+        face_->GetMetrics(&font_metrics);
+        const float scale = em_size_ / static_cast<float>(font_metrics.designUnitsPerEm);
+        ascent_ = font_metrics.ascent * scale;
+        descent_ = font_metrics.descent * scale;
+        for (const FLOAT advance : advances_) {
+            width_ += advance;
+        }
+    }
+
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void** object) override {
+        if (!object) {
+            return E_POINTER;
+        }
+        if (IsEqualGUID(iid, __uuidof(IUnknown)) || IsEqualGUID(iid, __uuidof(IDWriteInlineObject))) {
+            *object = static_cast<IDWriteInlineObject*>(this);
+            AddRef();
+            return S_OK;
+        }
+        *object = nullptr;
+        return E_NOINTERFACE;
+    }
+
+    ULONG STDMETHODCALLTYPE AddRef() override {
+        return static_cast<ULONG>(InterlockedIncrement(&ref_count_));
+    }
+
+    ULONG STDMETHODCALLTYPE Release() override {
+        const ULONG count = static_cast<ULONG>(InterlockedDecrement(&ref_count_));
+        if (count == 0) {
+            delete this;
+        }
+        return count;
+    }
+
+    HRESULT STDMETHODCALLTYPE Draw(void* context, IDWriteTextRenderer* renderer, FLOAT origin_x, FLOAT origin_y,
+                                    BOOL, BOOL, IUnknown* effect) override {
+        if (!renderer) {
+            return S_OK;
+        }
+        DWRITE_GLYPH_RUN run{};
+        run.fontFace = face_.Get();
+        run.fontEmSize = em_size_;
+        run.glyphCount = static_cast<UINT32>(glyphs_.size());
+        run.glyphIndices = glyphs_.data();
+        run.glyphAdvances = advances_.data();
+        run.glyphOffsets = offsets_.data();
+        // Inline objects are positioned by their top-left corner; glyph runs
+        // by their baseline origin.
+        return renderer->DrawGlyphRun(context, origin_x, origin_y + ascent_, DWRITE_MEASURING_MODE_NATURAL, &run,
+                                      nullptr, effect);
+    }
+
+    HRESULT STDMETHODCALLTYPE GetMetrics(DWRITE_INLINE_OBJECT_METRICS* metrics) override {
+        if (!metrics) {
+            return E_POINTER;
+        }
+        metrics->width = width_;
+        metrics->height = ascent_ + descent_;
+        metrics->baseline = ascent_;
+        metrics->supportsSideways = FALSE;
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE GetOverhangMetrics(DWRITE_OVERHANG_METRICS* overhangs) override {
+        if (!overhangs) {
+            return E_POINTER;
+        }
+        *overhangs = DWRITE_OVERHANG_METRICS{ 0.0f, 0.0f, 0.0f, 0.0f };
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE GetBreakConditions(DWRITE_BREAK_CONDITION* before,
+                                                  DWRITE_BREAK_CONDITION* after) override {
+        if (!before || !after) {
+            return E_POINTER;
+        }
+        *before = DWRITE_BREAK_CONDITION_NEUTRAL;
+        *after = DWRITE_BREAK_CONDITION_NEUTRAL;
+        return S_OK;
+    }
+
+private:
+    LONG ref_count_ = 1;
+    Microsoft::WRL::ComPtr<IDWriteFontFace> face_;
+    float em_size_ = 0.0f;
+    std::vector<UINT16> glyphs_;
+    std::vector<FLOAT> advances_;
+    std::vector<DWRITE_GLYPH_OFFSET> offsets_;
+    float width_ = 0.0f;
+    float ascent_ = 0.0f;
+    float descent_ = 0.0f;
+};
+
+// The font face `layout` resolved for `position` from its own font
+// collection/family/weight/style — i.e. whatever ApplyEmojiFallback put
+// there. Null on failure.
+Microsoft::WRL::ComPtr<IDWriteFontFace> LayoutFontFaceAt(ControlState* state, IDWriteTextLayout* layout,
+                                                         UINT32 position) {
+    Microsoft::WRL::ComPtr<IDWriteFontCollection> collection;
+    layout->GetFontCollection(position, collection.GetAddressOf());
+    if (!collection) {
+        state->dwrite_factory->GetSystemFontCollection(collection.GetAddressOf());
+    }
+    UINT32 name_length = 0;
+    if (!collection || FAILED(layout->GetFontFamilyNameLength(position, &name_length))) {
+        return nullptr;
+    }
+    std::wstring family_name(name_length + 1, L'\0');
+    if (FAILED(layout->GetFontFamilyName(position, family_name.data(), name_length + 1))) {
+        return nullptr;
+    }
+    UINT32 family_index = 0;
+    BOOL exists = FALSE;
+    if (FAILED(collection->FindFamilyName(family_name.c_str(), &family_index, &exists)) || !exists) {
+        return nullptr;
+    }
+    DWRITE_FONT_WEIGHT weight = DWRITE_FONT_WEIGHT_NORMAL;
+    DWRITE_FONT_STYLE style = DWRITE_FONT_STYLE_NORMAL;
+    DWRITE_FONT_STRETCH stretch = DWRITE_FONT_STRETCH_NORMAL;
+    layout->GetFontWeight(position, &weight);
+    layout->GetFontStyle(position, &style);
+    layout->GetFontStretch(position, &stretch);
+    Microsoft::WRL::ComPtr<IDWriteFontFamily> family;
+    Microsoft::WRL::ComPtr<IDWriteFont> font;
+    Microsoft::WRL::ComPtr<IDWriteFontFace> face;
+    if (FAILED(collection->GetFontFamily(family_index, family.GetAddressOf())) ||
+        FAILED(family->GetFirstMatchingFont(weight, stretch, style, font.GetAddressOf())) ||
+        FAILED(font->CreateFontFace(face.GetAddressOf()))) {
+        return nullptr;
+    }
+    return face;
+}
+
+// Covers every emoji tag sequence in `text` with a BetterTextTagSequence
+// (see above). Runs after ApplyEmojiFallback so the sequence is shaped with
+// the emoji font it assigned. Sequences the font doesn't ligate to a single
+// glyph are left to the layout as before.
+void ApplyTagSequences(ControlState* state, IDWriteTextLayout* layout, const std::wstring& text) {
+    // Tag characters are all U+E00xx: high surrogate 0xDB40, low 0xDC00 + xx.
+    auto tag_at = [&](size_t i) -> int {
+        if (i + 1 < text.size() && text[i] == 0xDB40 && text[i + 1] >= 0xDC20 && text[i + 1] <= 0xDC7F) {
+            return text[i + 1] - 0xDC00;
+        }
+        return -1;
+    };
+    Microsoft::WRL::ComPtr<IDWriteTextAnalyzer> analyzer;
+    size_t i = 0;
+    while (i < text.size()) {
+        if (i == 0 || tag_at(i) < 0 || tag_at(i) == 0x7F) {
+            ++i;
+            continue;
+        }
+        // Base code point just before the first tag (plus an optional U+FE0F
+        // presentation selector ahead of the tags).
+        size_t start = i;
+        if (text[start - 1] == 0xFE0F && start >= 2) {
+            --start;
+        }
+        if (start >= 2 && IS_SURROGATE_PAIR(text[start - 2], text[start - 1])) {
+            start -= 2;
+        } else {
+            start -= 1;
+        }
+        size_t end = i;
+        while (tag_at(end) >= 0 && tag_at(end) != 0x7F) {
+            end += 2;
+        }
+        if (tag_at(end) != 0x7F) {
+            i = end;  // unterminated — not a valid tag sequence
+            continue;
+        }
+        end += 2;
+        i = end;
+
+        const UINT32 position = static_cast<UINT32>(start);
+        const UINT32 length = static_cast<UINT32>(end - start);
+        if (!analyzer && FAILED(state->dwrite_factory->CreateTextAnalyzer(analyzer.GetAddressOf()))) {
+            return;
+        }
+        const Microsoft::WRL::ComPtr<IDWriteFontFace> face = LayoutFontFaceAt(state, layout, position);
+        FLOAT em_size = 0.0f;
+        if (!face || FAILED(layout->GetFontSize(position, &em_size)) || em_size <= 0.0f) {
+            continue;
+        }
+        std::vector<UINT16> cluster_map(length);
+        std::vector<DWRITE_SHAPING_TEXT_PROPERTIES> text_props(length);
+        std::vector<UINT16> glyphs(length);
+        std::vector<DWRITE_SHAPING_GLYPH_PROPERTIES> glyph_props(length);
+        UINT32 glyph_count = 0;
+        DWRITE_SCRIPT_ANALYSIS script{};
+        if (FAILED(analyzer->GetGlyphs(text.c_str() + start, length, face.Get(), FALSE, FALSE, &script, L"",
+                                       nullptr, nullptr, nullptr, 0, length, cluster_map.data(),
+                                       text_props.data(), glyphs.data(), glyph_props.data(), &glyph_count)) ||
+            glyph_count != 1) {
+            continue;
+        }
+        glyphs.resize(glyph_count);
+        std::vector<FLOAT> advances(glyph_count);
+        std::vector<DWRITE_GLYPH_OFFSET> offsets(glyph_count);
+        if (FAILED(analyzer->GetGlyphPlacements(text.c_str() + start, cluster_map.data(), text_props.data(),
+                                                length, glyphs.data(), glyph_props.data(), glyph_count,
+                                                face.Get(), em_size, FALSE, FALSE, &script, L"", nullptr,
+                                                nullptr, 0, advances.data(), offsets.data()))) {
+            continue;
+        }
+        auto* inline_object = new BetterTextTagSequence(face.Get(), em_size, std::move(glyphs),
+                                                        std::move(advances), std::move(offsets));
+        layout->SetInlineObject(inline_object, DWRITE_TEXT_RANGE{ position, length });
+        inline_object->Release();  // SetInlineObject took its own reference
+    }
+}
+
 HRESULT CreateLayout(ControlState* state, IDWriteTextLayout** layout) {
     *layout = nullptr;
     HRESULT hr = EnsureTextFormat(state);
@@ -825,6 +1053,7 @@ HRESULT CreateLayout(ControlState* state, IDWriteTextLayout** layout) {
     }
     if (SUCCEEDED(hr)) {
         ApplyEmojiFallback(state, *layout, text);
+        ApplyTagSequences(state, *layout, text);
     }
     if (SUCCEEDED(hr) && !state->resolved_images.empty()) {
         for (const auto& info : state->document.ImageAtoms()) {

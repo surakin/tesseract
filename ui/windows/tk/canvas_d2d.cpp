@@ -499,7 +499,6 @@ build_emoji_fallback(ComPtr<IDWriteFactory2>& dwrite,
         {0x1F900, 0x1F9FF}, // Supplemental Symbols and Pictographs
         {0x1FA00, 0x1FA6F}, // Chess Symbols
         {0x1FA70, 0x1FAFF}, // Symbols and Pictographs Extended-A
-        {0xE0000, 0xE007F}, // tag characters (England/Scotland/Wales flag sequences)
     };
     const wchar_t* family[] = {L"Noto Color Emoji"};
 
@@ -2319,6 +2318,7 @@ public:
 
         layout->SetWordWrapping(s.wrap ? DWRITE_WORD_WRAPPING_WRAP
                                        : DWRITE_WORD_WRAPPING_NO_WRAP);
+        apply_tag_sequences_(layout.Get(), wide);
 
         if (s.trim == TextTrim::Ellipsis)
         {
@@ -2427,6 +2427,210 @@ public:
         ULONG refs_ = 1;
         float width_, height_, baseline_;
     };
+
+    // Draws one emoji tag sequence (England/Scotland/Wales flags: U+1F3F4 +
+    // tag characters U+E0020-E007E + cancel tag U+E007F) as a single
+    // pre-shaped glyph run. IDWriteTextLayout can't: its script analysis puts
+    // the tag characters in their own NO_VISUAL run, so the font's GSUB
+    // ligature never sees the whole sequence and only a bare black flag is
+    // drawn. Shaping the sequence ourselves with IDWriteTextAnalyzer as one
+    // run yields the flag glyph; Draw() hands it to the layout's renderer so
+    // it takes CubicEmojiTextRenderer's colour-bitmap path like any emoji.
+    class TagSequenceInlineObject final : public IDWriteInlineObject
+    {
+    public:
+        TagSequenceInlineObject(ComPtr<IDWriteFontFace> face, float em_size,
+                                std::vector<UINT16> glyphs,
+                                std::vector<FLOAT> advances,
+                                std::vector<DWRITE_GLYPH_OFFSET> offsets)
+            : face_(std::move(face)), em_size_(em_size),
+              glyphs_(std::move(glyphs)), advances_(std::move(advances)),
+              offsets_(std::move(offsets))
+        {
+            DWRITE_FONT_METRICS fm{};
+            face_->GetMetrics(&fm);
+            const float du = em_size_ / static_cast<float>(fm.designUnitsPerEm);
+            ascent_ = fm.ascent * du;
+            descent_ = fm.descent * du;
+            for (FLOAT a : advances_)
+                width_ += a;
+        }
+
+        HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
+                                                 void** ppv) override
+        {
+            if (!ppv)
+                return E_POINTER;
+            if (riid == __uuidof(IUnknown) ||
+                riid == __uuidof(IDWriteInlineObject))
+            {
+                *ppv = static_cast<IDWriteInlineObject*>(this);
+                AddRef();
+                return S_OK;
+            }
+            *ppv = nullptr;
+            return E_NOINTERFACE;
+        }
+        ULONG STDMETHODCALLTYPE AddRef() override
+        {
+            return ++refs_;
+        }
+        ULONG STDMETHODCALLTYPE Release() override
+        {
+            ULONG n = --refs_;
+            if (n == 0)
+                delete this;
+            return n;
+        }
+
+        HRESULT STDMETHODCALLTYPE Draw(void* ctx, IDWriteTextRenderer* r,
+                                       FLOAT x, FLOAT y, BOOL, BOOL,
+                                       IUnknown* effect) override
+        {
+            if (!r)
+                return S_OK;
+            DWRITE_GLYPH_RUN run{};
+            run.fontFace = face_.Get();
+            run.fontEmSize = em_size_;
+            run.glyphCount = static_cast<UINT32>(glyphs_.size());
+            run.glyphIndices = glyphs_.data();
+            run.glyphAdvances = advances_.data();
+            run.glyphOffsets = offsets_.data();
+            // Inline objects are positioned by their top-left corner; glyph
+            // runs by their baseline origin.
+            return r->DrawGlyphRun(ctx, x, y + ascent_,
+                                   DWRITE_MEASURING_MODE_NATURAL, &run,
+                                   nullptr, effect);
+        }
+        HRESULT STDMETHODCALLTYPE
+        GetMetrics(DWRITE_INLINE_OBJECT_METRICS* m) override
+        {
+            if (!m)
+                return E_POINTER;
+            m->width = width_;
+            m->height = ascent_ + descent_;
+            m->baseline = ascent_;
+            m->supportsSideways = FALSE;
+            return S_OK;
+        }
+        HRESULT STDMETHODCALLTYPE
+        GetOverhangMetrics(DWRITE_OVERHANG_METRICS* m) override
+        {
+            if (!m)
+                return E_POINTER;
+            *m = {};
+            return S_OK;
+        }
+        HRESULT STDMETHODCALLTYPE
+        GetBreakConditions(DWRITE_BREAK_CONDITION* before,
+                           DWRITE_BREAK_CONDITION* after) override
+        {
+            if (before)
+                *before = DWRITE_BREAK_CONDITION_NEUTRAL;
+            if (after)
+                *after = DWRITE_BREAK_CONDITION_NEUTRAL;
+            return S_OK;
+        }
+
+    private:
+        ULONG refs_ = 1;
+        ComPtr<IDWriteFontFace> face_;
+        float em_size_;
+        std::vector<UINT16> glyphs_;
+        std::vector<FLOAT> advances_;
+        std::vector<DWRITE_GLYPH_OFFSET> offsets_;
+        float width_ = 0, ascent_ = 0, descent_ = 0;
+    };
+
+    // Finds emoji tag sequences in `wide` and covers each with a
+    // TagSequenceInlineObject (see above). Call after all per-range font
+    // sizes are set: the object takes the layout's size at the sequence.
+    // Sequences Noto doesn't ligate to one glyph are left alone.
+    void apply_tag_sequences_(IDWriteTextLayout* layout,
+                              const std::wstring& wide)
+    {
+        IDWriteFontFace* face = backend_.noto_emoji_face.Get();
+        if (!face)
+            return;
+        // Tag characters are all U+E00xx: high surrogate 0xDB40, low
+        // surrogate 0xDC00 + xx.
+        auto tag_at = [&](size_t i) -> int
+        {
+            if (i + 1 < wide.size() && wide[i] == 0xDB40 &&
+                wide[i + 1] >= 0xDC20 && wide[i + 1] <= 0xDC7F)
+                return wide[i + 1] - 0xDC00;
+            return -1;
+        };
+        ComPtr<IDWriteTextAnalyzer> analyzer;
+        size_t i = 0;
+        while (i < wide.size())
+        {
+            if (tag_at(i) < 0 || tag_at(i) == 0x7F || i == 0)
+            {
+                ++i;
+                continue;
+            }
+            // Base code point just before the first tag (plus an optional
+            // U+FE0F presentation selector ahead of the tags).
+            size_t start = i;
+            if (wide[start - 1] == 0xFE0F && start >= 2)
+                --start;
+            if (start >= 2 && IS_SURROGATE_PAIR(wide[start - 2], wide[start - 1]))
+                start -= 2;
+            else
+                start -= 1;
+            size_t end = i;
+            while (tag_at(end) >= 0 && tag_at(end) != 0x7F)
+                end += 2;
+            if (tag_at(end) != 0x7F)
+            {
+                i = end; // unterminated — not a valid tag sequence
+                continue;
+            }
+            end += 2;
+            i = end;
+
+            const UINT32 len = static_cast<UINT32>(end - start);
+            if (!analyzer &&
+                FAILED(backend_.dwrite->CreateTextAnalyzer(&analyzer)))
+                return;
+            std::vector<UINT16> cluster_map(len);
+            std::vector<DWRITE_SHAPING_TEXT_PROPERTIES> text_props(len);
+            std::vector<UINT16> glyphs(len);
+            std::vector<DWRITE_SHAPING_GLYPH_PROPERTIES> glyph_props(len);
+            UINT32 glyph_count = 0;
+            DWRITE_SCRIPT_ANALYSIS sa{};
+            if (FAILED(analyzer->GetGlyphs(
+                    wide.c_str() + start, len, face, FALSE, FALSE, &sa, L"",
+                    nullptr, nullptr, nullptr, 0, len, cluster_map.data(),
+                    text_props.data(), glyphs.data(), glyph_props.data(),
+                    &glyph_count)) ||
+                glyph_count != 1)
+                continue;
+            glyphs.resize(glyph_count);
+
+            FLOAT em_size = 0;
+            if (FAILED(layout->GetFontSize(static_cast<UINT32>(start),
+                                           &em_size)) ||
+                em_size <= 0)
+                continue;
+            std::vector<FLOAT> advances(glyph_count);
+            std::vector<DWRITE_GLYPH_OFFSET> offsets(glyph_count);
+            if (FAILED(analyzer->GetGlyphPlacements(
+                    wide.c_str() + start, cluster_map.data(), text_props.data(),
+                    len, glyphs.data(), glyph_props.data(), glyph_count, face,
+                    em_size, FALSE, FALSE, &sa, L"", nullptr, nullptr, 0,
+                    advances.data(), offsets.data())))
+                continue;
+
+            ComPtr<IDWriteInlineObject> obj;
+            obj.Attach(new TagSequenceInlineObject(
+                face, em_size, std::move(glyphs), std::move(advances),
+                std::move(offsets)));
+            layout->SetInlineObject(
+                obj.Get(), DWRITE_TEXT_RANGE{static_cast<UINT32>(start), len});
+        }
+    }
 
     std::unique_ptr<TextLayout> build_rich_text(std::span<const TextSpan> spans,
                                                 const TextStyle& s) override
@@ -2617,6 +2821,7 @@ public:
         layout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
         layout->SetWordWrapping(s.wrap ? DWRITE_WORD_WRAPPING_WRAP
                                        : DWRITE_WORD_WRAPPING_NO_WRAP);
+        apply_tag_sequences_(layout.Get(), wide);
 
         if (s.trim == TextTrim::Ellipsis)
         {
