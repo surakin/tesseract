@@ -514,6 +514,12 @@ pub struct ClientFfi {
             (Option<String>, Option<String>, u64),
         >,
     >,
+    /// Thread-list preview + server reply count per thread root, written by
+    /// `apply_thread_chips` and read by every room timeline stream so any
+    /// re-emission of a root row keeps the preview. See
+    /// `thread::ThreadChipOverrides`.
+    #[cfg(not(test))]
+    pub(super) thread_chip_overrides: thread::ThreadChipOverrides,
     /// Active knock-request (MSC2403) watchers keyed by room_id — one per
     /// room whose admin-side "Requests to join" panel is currently open.
     /// `RwLock`-wrapped for the same `&self` reason as `thread_lists`.
@@ -1125,6 +1131,8 @@ impl ClientFfi {
             thread_read_markers: parking_lot::RwLock::new(HashMap::new()),
             #[cfg(not(test))]
             thread_receipt_cache: parking_lot::RwLock::new(HashMap::new()),
+            #[cfg(not(test))]
+            thread_chip_overrides: Default::default(),
             #[cfg(not(test))]
             knock_requests: parking_lot::RwLock::new(HashMap::new()),
             #[cfg(not(test))]

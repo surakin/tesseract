@@ -7052,6 +7052,15 @@ void MessageListView::update_message(std::size_t index, MessageRowData msg)
     {
         suppress_read_marker_ = false;
     }
+    // A resolved quote releases this row's room-switch-gate entry (keyed by
+    // the reply row's own event_id). Done here rather than by each caller so
+    // every list — main timeline, thread panel, pop-outs — gets it; the
+    // thread paths never called notify_reply_ready, so a thread with a reply
+    // in view always waited out the gate's full timeout.
+    if (!msg.in_reply_to_id.empty() && !msg.in_reply_to_sender_name.empty())
+    {
+        room_switch_gate_.notify_loaded(msg.event_id);
+    }
     // Copy, not reference: messages_[index] is reassigned below.
     const std::string old_eid = messages_[index].event_id;
     // A read marker moving (in or out of this row) flips suppress_read_marker_

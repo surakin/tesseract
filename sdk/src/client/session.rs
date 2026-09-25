@@ -722,6 +722,7 @@ impl ClientFfi {
         // on the next `start_sync`.
         self.thread_read_markers.write().clear();
         self.thread_receipt_cache.write().clear();
+        self.thread_chip_overrides.write().clear();
 
         self.imported_keys.store(0, Ordering::Relaxed);
         self.backup_state_code

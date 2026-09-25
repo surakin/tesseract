@@ -1443,6 +1443,9 @@ void RoomView::set_post_delayed(
     std::function<void(int, std::function<void()>)> f)
 {
     post_delayed_ = f;
+    if (thread_view_)
+        if (auto* ml = thread_view_->message_list())
+            ml->set_post_delayed(f);
     if (message_list_)
     {
         message_list_->set_post_delayed(std::move(f));
@@ -2008,6 +2011,11 @@ void RoomView::set_thread_panel(ThreadPanelState state,
                 ml->set_avatar_provider(stored_avatar_provider_);
             if (stored_image_provider_)
                 ml->set_image_provider(stored_image_provider_);
+            // Without this the room-switch gate armed by each thread reset
+            // has no timeout fallback, so one unresolved dependency holds
+            // the thread list invisible forever.
+            if (post_delayed_)
+                ml->set_post_delayed(post_delayed_);
             // Wire the same hover-action / media / reaction callbacks as the
             // main timeline so reply / edit / redact (and friends) work
             // inside the thread panel. Reply sends are routed through the

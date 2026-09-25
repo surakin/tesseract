@@ -98,6 +98,7 @@ impl ClientFfi {
             self.search_index_ctx(),
             None,
             Arc::clone(&self.show_membership_events),
+            Arc::clone(&self.thread_chip_overrides),
         );
         // Kick an initial backwards pagination so the thread view is populated
         // immediately from the server. Results arrive as VectorDiff events in
@@ -295,6 +296,7 @@ impl ClientFfi {
             .get(&rid)
             .map(|hh| std::sync::Arc::clone(&hh.timeline));
         let me_for_chips = client.user_id().map(|u| u.to_owned());
+        let chip_overrides = std::sync::Arc::clone(&self.thread_chip_overrides);
         let abort = self
             .rt
             .spawn(async move {
@@ -324,6 +326,7 @@ impl ClientFfi {
                         me_for_chips.as_deref(),
                         &svc_for_watch.items(),
                         &mut chip_cache,
+                        &chip_overrides,
                     )
                     .await;
                 }
@@ -343,6 +346,7 @@ impl ClientFfi {
                             me_for_chips.as_deref(),
                             &svc_for_watch.items(),
                             &mut chip_cache,
+                            &chip_overrides,
                         )
                         .await;
                     }
@@ -681,6 +685,77 @@ struct ChipCount {
     server_count: u64,
 }
 
+/// The thread-list layer `apply_thread_chips` puts on a root row: the
+/// `ThreadListItem`'s latest-reply preview and the server-corrected reply
+/// count.
+#[cfg(not(test))]
+#[derive(Clone, Default)]
+pub(crate) struct ThreadChipOverride {
+    count: u64,
+    latest_name: String,
+    latest_body: String,
+    latest_ts: u64,
+}
+
+/// room_id -> root event_id -> override. Shared between the thread-list
+/// watcher (writer) and every room timeline stream (reader): matrix-sdk-ui
+/// re-emits a root row whenever anything on it changes (a thread read-receipt
+/// echo, a reaction, decryption), carrying only its own thread summary. When
+/// that summary's latest reply isn't loaded, the re-emitted row would blank
+/// the preview `apply_thread_chips` had put there, so the stream re-applies
+/// this layer to every root row it emits.
+#[cfg(not(test))]
+pub(crate) type ThreadChipOverrides = std::sync::Arc<
+    parking_lot::RwLock<
+        std::collections::HashMap<String, std::collections::HashMap<String, ThreadChipOverride>>,
+    >,
+>;
+
+/// Layer `ov` onto a root row. A row without an SDK thread summary takes the
+/// override wholesale; one with a summary keeps its own count and only takes
+/// the preview when `prefer_thread_list_preview` says it is better.
+#[cfg(not(test))]
+fn apply_thread_chip_override(ev: &mut TimelineEvent, ov: &ThreadChipOverride) {
+    if !ev.is_thread_root {
+        ev.is_thread_root = true;
+        ev.thread_reply_count = ov.count;
+        ev.thread_latest_sender_name = ov.latest_name.clone();
+        ev.thread_latest_body = ov.latest_body.clone();
+        ev.thread_latest_ts = ov.latest_ts;
+    } else if prefer_thread_list_preview(
+        &ov.latest_body,
+        ov.latest_ts,
+        &ev.thread_latest_body,
+        ev.thread_latest_ts,
+    ) {
+        ev.thread_latest_sender_name = ov.latest_name.clone();
+        ev.thread_latest_body = ov.latest_body.clone();
+        ev.thread_latest_ts = ov.latest_ts;
+    }
+}
+
+/// Apply the room's thread-list overrides to every root row in `events`.
+/// No-op when the thread list hasn't produced anything for this room yet.
+#[cfg(not(test))]
+pub(super) fn apply_thread_chip_overrides<'a>(
+    events: impl IntoIterator<Item = &'a mut TimelineEvent>,
+    room_id: &str,
+    overrides: &ThreadChipOverrides,
+) {
+    let guard = overrides.read();
+    let Some(room) = guard.get(room_id) else {
+        return;
+    };
+    if room.is_empty() {
+        return;
+    }
+    for ev in events {
+        if let Some(ov) = room.get(ev.event_id.as_str()) {
+            apply_thread_chip_override(ev, ov);
+        }
+    }
+}
+
 /// Walk the room timeline once and re-emit any thread root row whose chip
 /// fields differ from the corresponding `ThreadListItem`. Driven by the
 /// `ThreadListService` watcher task; this is the single path that gets the
@@ -701,12 +776,14 @@ async fn apply_thread_chips(
     me: Option<&matrix_sdk::ruma::UserId>,
     items: &[matrix_sdk_ui::timeline::thread_list_service::ThreadListItem],
     cache: &mut std::collections::HashMap<String, ChipCount>,
+    overrides: &ThreadChipOverrides,
 ) {
     use super::timeline::{emit_updated, TimelineChannel};
     use super::timeline_convert::timeline_item_to_ffi;
     use std::collections::HashMap;
 
     if items.is_empty() {
+        overrides.write().remove(room_id);
         return;
     }
 
@@ -762,6 +839,38 @@ async fn apply_thread_chips(
                 );
             }
         }
+    }
+
+    // Publish this tick's layer for the room timeline stream to re-apply on
+    // every later re-emission of a root row (see ThreadChipOverrides).
+    {
+        let room_layer: HashMap<String, ThreadChipOverride> = items
+            .iter()
+            .map(|item| {
+                let root = item.root_event.event_id.to_string();
+                let count = cache
+                    .get(&root)
+                    .map(|c| c.server_count)
+                    .unwrap_or(item.num_replies as u64);
+                let (latest_name, latest_body, latest_ts) = match &item.latest_event {
+                    Some(le) => {
+                        let (_id, n, b, t) = thread_list_event_preview(le);
+                        (n, b, t)
+                    }
+                    None => (String::new(), String::new(), 0u64),
+                };
+                (
+                    root,
+                    ThreadChipOverride {
+                        count,
+                        latest_name,
+                        latest_body,
+                        latest_ts,
+                    },
+                )
+            })
+            .collect();
+        overrides.write().insert(room_id.to_owned(), room_layer);
     }
 
     // Second pass: walk the room timeline and emit chip updates.
@@ -829,12 +938,29 @@ async fn apply_thread_chips(
                     .get(ev.event_id.as_str())
                     .map(|c| c.server_count)
                     .unwrap_or(item.num_replies as u64);
+                // The root's own matrix-sdk-ui thread summary already carries a
+                // preview; only take the ThreadListItem's when it is strictly
+                // better, so a missing bundled latest event (or a stale one)
+                // can't blank or roll back the row's preview.
                 let (latest_name, latest_body, latest_ts) = match &item.latest_event {
                     Some(le) => {
                         let (_id, n, b, t) = thread_list_event_preview(le);
-                        (n, b, t)
+                        if prefer_thread_list_preview(&b, t, &ev.thread_latest_body, ev.thread_latest_ts)
+                        {
+                            (n, b, t)
+                        } else {
+                            (
+                                ev.thread_latest_sender_name.clone(),
+                                ev.thread_latest_body.clone(),
+                                ev.thread_latest_ts,
+                            )
+                        }
                     }
-                    None => (String::new(), String::new(), 0u64),
+                    None => (
+                        ev.thread_latest_sender_name.clone(),
+                        ev.thread_latest_body.clone(),
+                        ev.thread_latest_ts,
+                    ),
                 };
                 // Skip if chip is already aligned — re-emitting an identical
                 // row would trigger a needless C++ relayout on every sync tick.
@@ -966,6 +1092,22 @@ pub(super) fn thread_is_unread(
     latest_ts == 0 || receipt_ts < latest_ts
 }
 
+/// Pure decision: should `apply_thread_chips` replace the root row's thread
+/// preview (from matrix-sdk-ui's own summary) with the `ThreadListItem`'s?
+///
+/// Only when the list's preview is non-empty and either the row has none or
+/// the list's latest reply is strictly newer. `ThreadListItem::latest_event`
+/// comes from the `/threads` bundle, which a server may omit or which may not
+/// decode yet — taking it unconditionally blanked the row's preview.
+pub(super) fn prefer_thread_list_preview(
+    list_body: &str,
+    list_ts: u64,
+    row_body: &str,
+    row_ts: u64,
+) -> bool {
+    !list_body.is_empty() && (row_body.is_empty() || list_ts > row_ts)
+}
+
 /// Pure decision: does `me` appear in an `m.mentions` block?
 pub(super) fn any_mention(user_ids: &[&str], room: bool, me: &str) -> bool {
     room || user_ids.contains(&me)
@@ -973,7 +1115,7 @@ pub(super) fn any_mention(user_ids: &[&str], room: bool, me: &str) -> bool {
 
 #[cfg(test)]
 mod thread_unread_tests {
-    use super::{any_mention, thread_is_unread};
+    use super::{any_mention, prefer_thread_list_preview, thread_is_unread};
 
     const L: Option<&str> = Some("$latest:server");
     const R_OLD: Option<&str> = Some("$older:server");
@@ -1043,5 +1185,23 @@ mod thread_unread_tests {
     #[test]
     fn no_mention_when_absent() {
         assert!(!any_mention(&[], false, "@me:server"));
+    }
+
+    #[test]
+    fn empty_list_preview_never_replaces_row() {
+        assert!(!prefer_thread_list_preview("", 200, "hi", 100));
+        assert!(!prefer_thread_list_preview("", 0, "", 0));
+    }
+
+    #[test]
+    fn list_preview_fills_empty_row() {
+        assert!(prefer_thread_list_preview("hi", 50, "", 100));
+    }
+
+    #[test]
+    fn list_preview_replaces_only_when_newer() {
+        assert!(prefer_thread_list_preview("new", 200, "old", 100));
+        assert!(!prefer_thread_list_preview("old", 100, "new", 200));
+        assert!(!prefer_thread_list_preview("same", 100, "same", 100));
     }
 }

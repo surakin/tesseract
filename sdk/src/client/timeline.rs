@@ -64,6 +64,32 @@ pub(super) enum EmitOp {
     Removed(u64),
 }
 
+/// Re-apply the thread-list layer (see `thread::ThreadChipOverrides`) to every
+/// room-timeline row in `ops` before it crosses the FFI, so a root row that
+/// matrix-sdk-ui re-emits with an unloaded latest reply keeps its preview.
+/// Thread channels never show the chip.
+#[cfg(not(test))]
+fn apply_chip_overrides_to_ops(
+    ops: &mut [EmitOp],
+    ch: &TimelineChannel,
+    room_id: &str,
+    overrides: &super::thread::ThreadChipOverrides,
+) {
+    if !matches!(ch, TimelineChannel::Room) {
+        return;
+    }
+    let events = ops.iter_mut().flat_map(|op| -> Box<dyn Iterator<Item = &mut TimelineEvent>> {
+        match op {
+            EmitOp::Reset(evs) | EmitOp::Prepended(evs) | EmitOp::Appended(evs) => {
+                Box::new(evs.iter_mut())
+            }
+            EmitOp::Inserted(_, ev) | EmitOp::Updated(_, ev) => Box::new(std::iter::once(ev)),
+            EmitOp::Removed(_) => Box::new(std::iter::empty()),
+        }
+    });
+    super::thread::apply_thread_chip_overrides(events, room_id, overrides);
+}
+
 /// Emit a batch of ops collected from one `stream.next()` poll.
 /// Consecutive same-kind ops are coalesced into a single FFI call.
 #[cfg(not(test))]
@@ -638,6 +664,7 @@ async fn refresh_receipts(
     show_membership_events: &AtomicBool,
     channel: &TimelineChannel,
     cancelled: &AtomicBool,
+    chip_overrides: &super::thread::ThreadChipOverrides,
 ) {
     let items = tl.items().await;
     let show_membership = show_membership_events.load(Ordering::Relaxed);
@@ -691,6 +718,13 @@ async fn refresh_receipts(
     if batch_indices.is_empty() {
         return;
     }
+    if matches!(channel, TimelineChannel::Room) {
+        super::thread::apply_thread_chip_overrides(
+            batch_events.iter_mut(),
+            room_id,
+            chip_overrides,
+        );
+    }
 
     let g = handler.lock();
     if batch_indices.len() == 1 {
@@ -735,6 +769,7 @@ impl ClientFfi {
         index: Option<super::search::SearchIndexCtx>,
         room_media: Option<super::room_media_store::MediaCtx>,
         show_membership_events: Arc<AtomicBool>,
+        chip_overrides: super::thread::ThreadChipOverrides,
     ) -> (tokio::task::AbortHandle, tokio::task::AbortHandle) {
         let tl = Arc::clone(timeline);
         let h = Arc::clone(handler);
@@ -784,6 +819,13 @@ impl ClientFfi {
                         visible.push(false);
                         visible_ids.push(String::new());
                     }
+                }
+                if matches!(ch, TimelineChannel::Room) {
+                    super::thread::apply_thread_chip_overrides(
+                        snapshot.iter_mut(),
+                        &rid,
+                        &chip_overrides,
+                    );
                 }
                 if !cancelled_stream.load(Ordering::Acquire) {
                     {
@@ -843,6 +885,7 @@ impl ClientFfi {
                                 .await;
                             }
                             if !cancelled_stream.load(Ordering::Acquire) {
+                                apply_chip_overrides_to_ops(&mut ops, &ch, &rid, &chip_overrides);
                                 emit_timeline_batch(ops, &h, &ch, &rid);
                             }
                         }
@@ -868,6 +911,7 @@ impl ClientFfi {
                                     &show_membership_events,
                                     &ch,
                                     &cancelled_stream,
+                                    &chip_overrides,
                                 )
                                 .await;
                             }
@@ -956,6 +1000,7 @@ impl ClientFfi {
                         self.search_index_ctx(),
                         self.media_ctx(),
                         Arc::clone(&self.show_membership_events),
+                        Arc::clone(&self.thread_chip_overrides),
                     );
                     existing.abort_tasks = vec![abort, fetch_abort];
                     existing.cancelled = new_cancelled;
@@ -1031,6 +1076,7 @@ impl ClientFfi {
             self.search_index_ctx(),
             self.media_ctx(),
             Arc::clone(&self.show_membership_events),
+            Arc::clone(&self.thread_chip_overrides),
         );
 
         // A freshly-built timeline renders from whatever's already in the
@@ -1732,6 +1778,7 @@ impl ClientFfi {
             self.search_index_ctx(),
             self.media_ctx(),
             Arc::clone(&self.show_membership_events),
+            Arc::clone(&self.thread_chip_overrides),
         );
 
         self.timelines.write().insert(

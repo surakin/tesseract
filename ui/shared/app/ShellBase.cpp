@@ -10113,6 +10113,13 @@ void ShellBase::handle_thread_reset_ui_(std::string room_id,
         rows.push_back(tesseract::views::make_row_data(*ev, my_user_id_));
     }
 
+    // Every thread reset comes from a freshly-built subscribe_thread timeline
+    // with no reply details resolved yet. Dedup entries for these rows were
+    // recorded against the previous (now dropped) timeline, so leaving them
+    // would skip the fetch and leave a reopened thread's quotes unresolved.
+    for (const auto& rid : reply_ids)
+        reply_details_requested_.erase(rid);
+
     // A full reset can land a reply row and its quoted target in the same
     // snapshot (see handle_timeline_reset_ui_'s identical rationale for the
     // main timeline) — retry both delivery targets against the whole
