@@ -4828,7 +4828,7 @@ private:
                 ctx.canvas.draw_text(*body_lo, {tx, text_y + name_h + kLineGap},
                                      ctx.theme.palette.text_muted);
                 paint_span_images(spans, *body_lo, ctx, tx,
-                                  text_y + name_h + kLineGap);
+                                  text_y + name_h + kLineGap, tx + tw);
             }
         }
 
@@ -5473,8 +5473,13 @@ private:
     // glyph), so there's nothing to paint over here.
     void paint_span_images(const std::vector<tk::TextSpan>& spans,
                            tk::TextLayout& layout, tk::PaintCtx& ctx,
-                           float ox, float oy) const
+                           float ox, float oy, float max_right = 0.0f) const
     {
+        // max_right > 0: skip any inline image whose box would end past this
+        // x — backstop for elided single-line layouts (reply quote card) on a
+        // backend that still reports rects for text hidden by the ellipsis.
+        auto past_right = [&](float x, float w)
+        { return max_right > 0.0f && x + w > max_right + 0.5f; };
         // Deliberately NOT layout.ascent(): for a wrapped (multi-line) body
         // — the common case — TextLayout::ascent() has no single "this
         // line's ascent" to report and instead returns the *whole layout's*
@@ -5635,6 +5640,8 @@ private:
                                 scale > 0.0f
                                     ? std::round((r.y + oy + dy) * scale) / scale
                                     : r.y + oy + dy;
+                            if (past_right(dst_x, dst_w))
+                                continue;
                             ctx.canvas.draw_image(
                                 *bmp, {dst_x, dst_y, dst_w, dst_h});
                         }
@@ -5652,6 +5659,8 @@ private:
                         for (const tk::Rect& r :
                              layout.selection_rects(boff, boff + len))
                         {
+                            if (past_right(r.x + ox, r.w))
+                                continue;
                             ctx.canvas.draw_image(
                                 *img, {r.x + ox, r.y + oy, r.w, r.h});
                         }

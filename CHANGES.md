@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(tk): a mention pill past the ellipsis in a reply quote card no longer draws outside the card. DirectWrite still reported rects for trimmed text; the card also now skips any pill that doesn't fit. Windows build; user-verified live. Qt6/GTK4/macOS share the guard, unbuilt
 - fix(threads): the thread root's latest-reply preview no longer drops to just "N replies". The room timeline now re-applies the thread list's preview to every root row it emits, since matrix-sdk-ui re-sends the root (e.g. on a thread read-receipt echo) with an unloaded latest reply. Windows build + cargo thread tests 37/37; user-verified live. Qt6/GTK4/macOS share the code, unbuilt
 - fix(threads): opening a thread is now instant instead of waiting out the room-switch gate's timeout; resolved reply quotes now release the gate in every list, and reopening a thread re-requests its reply quotes. Windows build + ctest 179/179 (gate/thread/reply subset); user-verified live. Qt6/GTK4/macOS share the code, unbuilt
 - fix(threads): the thread panel no longer opens empty; its message list never got the room-switch gate's timeout hook, so one unresolved dependency hid it for good. Windows build; user-verified live. Qt6/GTK4/macOS share the code, unbuilt

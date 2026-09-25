@@ -823,8 +823,15 @@ public:
         std::vector<Rect> out;
         out.reserve(actual);
         for (UINT32 i = 0; i < actual; ++i)
+        {
+            // Text hidden by ellipsis trimming still hit-tests at its
+            // untrimmed position; reporting it would let callers paint inline
+            // objects (mention pills) past the ellipsis.
+            if (hits[i].isTrimmed)
+                continue;
             out.push_back({hits[i].left, hits[i].top,
                            hits[i].width, hits[i].height});
+        }
         return out;
     }
 
