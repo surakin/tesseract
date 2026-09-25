@@ -1,0 +1,278 @@
+# ---------------------------------------------------------------------------
+# Publishes a release to every public channel once it's marked as released.
+#
+# Release flow:
+#   1. Push a vX.Y.Z tag. package.yml builds every package and creates a
+#      GitHub *pre-release* with the user-facing assets; the Store MSIX is
+#      kept as a workflow artifact on that run instead.
+#   2. Test the pre-release.
+#   3. Untick "Set as a pre-release" on the release (web UI, or
+#      `gh release edit vX.Y.Z --prerelease=false`). That fires the
+#      `release: released` event, which runs this workflow:
+#        - docs:        deploys docs/ (marketing site) to gh-pages
+#        - flatpak-repo: imports the release's .flatpak bundle into the
+#                        self-hosted OSTree repo, signs it, deploys to gh-pages
+#        - store:       submits package.yml's Store MSIX artifact to Partner
+#                        Center
+#        - winget:      opens the winget-pkgs update PR (disabled, see below)
+#
+# Everything published here is the exact build that was tested as the
+# pre-release — nothing is rebuilt.
+#
+# Caveats:
+#   - `release` events only run workflow files on the default branch (main).
+#   - A release edited with the workflow GITHUB_TOKEN doesn't trigger this;
+#     use the web UI, the gh CLI with your own login, or a PAT.
+#   - The Store artifact is kept for 90 days (package.yml's retention-days);
+#     a pre-release older than that has to be re-tagged or rebuilt.
+#
+# Manual runs (Actions tab > Publish Release > Run workflow) take the tag
+# plus per-channel toggles, for re-publishing one channel after a failure.
+#
+# One-time setup, none of it in this repo:
+#   Flatpak: the GPG key and gh-pages setup in packaging/flatpak/README.md.
+#   Store:   an Entra ID (Azure AD) app registered and given the Manager role
+#            on this Partner Center account (Partner Center > Account
+#            settings > Users > Microsoft Entra applications), and at least
+#            one submission already published manually through Partner
+#            Center — msstore's update flow does not create the first one.
+#   Winget:  the first manual submission in packaging/winget/README.md.
+#
+# Repo configuration (Settings > Secrets and variables > Actions):
+#   Variables:
+#     TESSERACT_MSIX_STORE_PRODUCT_ID   Partner Center's Store product ID
+#   Secrets:
+#     FLATPAK_GPG_PRIVATE_KEY, FLATPAK_GPG_PASSPHRASE, FLATPAK_GPG_KEY_ID
+#     AZURE_AD_TENANT_ID, AZURE_AD_APPLICATION_CLIENT_ID,
+#     AZURE_AD_APPLICATION_SECRET, SELLER_ID
+#     WINGET_TOKEN   GitHub PAT (classic, public_repo scope) for an account
+#                    that can open PRs against microsoft/winget-pkgs
+# ---------------------------------------------------------------------------
+
+name: Publish Release
+
+on:
+  release:
+    types: [released]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to publish, e.g. v0.8.25'
+        required: true
+      docs:
+        description: 'Deploy the docs site'
+        type: boolean
+        default: true
+      flatpak:
+        description: 'Publish the Flatpak repo'
+        type: boolean
+        default: true
+      store:
+        description: 'Submit to the Microsoft Store'
+        type: boolean
+        default: true
+      winget:
+        description: 'Submit the winget-pkgs update (currently disabled)'
+        type: boolean
+        default: false
+
+env:
+  TAG: ${{ github.event.release.tag_name || inputs.tag }}
+
+concurrency:
+  group: publish-release-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # GitHub Pages — docs/ (marketing site), from the released tag. gh-pages is
+  # layered (keep_files: true) by every job that publishes to it, so this only
+  # touches the docs-sourced paths at the branch root.
+  # ---------------------------------------------------------------------------
+  docs:
+    name: GitHub Pages (docs site)
+    if: github.event_name == 'release' || inputs.docs
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.TAG }}
+
+      - name: Deploy docs/ to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: docs
+          publish_branch: gh-pages
+          keep_files: true
+
+  # ---------------------------------------------------------------------------
+  # Flatpak — import the release's .flatpak bundle (built and signed by
+  # package.yml's flatpak job) into a fresh OSTree repo, sign it, and deploy it
+  # to gh-pages/flatpak-repo/. keep_files: true preserves earlier releases'
+  # objects so users' update/rollback history keeps working. Runs after docs
+  # so the two gh-pages pushes never race, but still runs if docs was skipped
+  # or failed.
+  # ---------------------------------------------------------------------------
+  flatpak-repo:
+    name: Flatpak repo (sign & publish)
+    needs: docs
+    if: ${{ !cancelled() && (github.event_name == 'release' || inputs.flatpak) }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      # Only for the static .flatpakrepo/.flatpakref files deployed alongside
+      # the repo.
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.TAG }}
+
+      - name: Install flatpak + ostree
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y flatpak ostree
+
+      - name: Download the release's Flatpak bundle
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern "tesseract-${TAG}.flatpak" --dir bundle
+
+      # Same ephemeral-keyring setup as package.yml's flatpak job: loopback
+      # pinentry plus a pre-cached passphrase, since gpgme can't prompt in
+      # headless CI. Discarded with the runner.
+      - name: Import Flatpak signing key
+        env:
+          FLATPAK_GPG_PRIVATE_KEY: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}
+          FLATPAK_GPG_PASSPHRASE: ${{ secrets.FLATPAK_GPG_PASSPHRASE }}
+        run: |
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -m 700 -p "$GNUPGHOME"
+          cat > "$GNUPGHOME/gpg-agent.conf" <<'EOF'
+          allow-loopback-pinentry
+          allow-preset-passphrase
+          EOF
+          echo "pinentry-mode loopback" > "$GNUPGHOME/gpg.conf"
+          gpgconf --kill gpg-agent || true
+          echo "$FLATPAK_GPG_PRIVATE_KEY" | base64 -d | gpg --batch --import
+          if [ -n "$FLATPAK_GPG_PASSPHRASE" ]; then
+            preset_bin=$(find /usr/lib* -name gpg-preset-passphrase 2>/dev/null | head -1)
+            for keygrip in $(gpg --batch --with-colons --with-keygrip --list-secret-keys \
+                              | awk -F: '$1=="grp"{print $10}'); do
+              "$preset_bin" --preset "$keygrip" <<< "$FLATPAK_GPG_PASSPHRASE"
+            done
+          fi
+          echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
+
+      - name: Import bundle into a signed repo
+        run: |
+          ostree init --mode=archive-z2 --repo=repo
+          flatpak build-import-bundle \
+            --gpg-sign="${{ secrets.FLATPAK_GPG_KEY_ID }}" \
+            repo "bundle/tesseract-${TAG}.flatpak"
+
+      - name: Update repo metadata (appstream, static deltas, prune)
+        run: |
+          flatpak build-update-repo --generate-static-deltas --prune --prune-depth=20 \
+            --gpg-sign="${{ secrets.FLATPAK_GPG_KEY_ID }}" repo
+
+      - name: Smoke-test the repo
+        run: |
+          set -eux
+          ostree refs --repo=repo | tee /dev/stderr | grep -qx 'app/io.github.surakin.Tesseract/x86_64/master'
+          test -f repo/summary
+          test -f repo/summary.sig
+
+      - name: Assemble the Flatpak Pages deploy
+        run: |
+          mkdir -p pages-deploy
+          cp -r repo pages-deploy/flatpak-repo
+          cp packaging/flatpak/tesseract.flatpakrepo pages-deploy/
+          cp packaging/flatpak/io.github.surakin.Tesseract.flatpakref pages-deploy/
+
+      - name: Deploy Flatpak repo to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: pages-deploy
+          publish_branch: gh-pages
+          keep_files: true
+
+  # ---------------------------------------------------------------------------
+  # Microsoft Store — submit the Store MSIX that package.yml's windows job
+  # built for this tag. Partner Center signs it on ingestion and rejects a
+  # new submission while an earlier one is still in certification.
+  # ---------------------------------------------------------------------------
+  store:
+    name: Microsoft Store submission
+    if: github.event_name == 'release' || inputs.store
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      actions: read
+
+    steps:
+      # A tag push run's head branch is the tag name.
+      - name: Download the Store MSIX from package.yml's run for this tag
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow package.yml \
+                     --branch "$TAG" --event push --status success --limit 1 \
+                     --json databaseId --jq '.[0].databaseId')
+          if [ -z "$run_id" ]; then
+            echo "::error::No successful package.yml run found for $TAG"
+            exit 1
+          fi
+          echo "Using package.yml run $run_id"
+          if ! gh run download "$run_id" --repo "$GITHUB_REPOSITORY" \
+                 --name tesseract-msix-store --dir msix; then
+            echo "::error::Couldn't download tesseract-msix-store from run $run_id — it may have expired (90-day retention)"
+            exit 1
+          fi
+          test -f msix/Tesseract-store-x64.msix
+
+      - name: Configure Microsoft Store CLI
+        uses: microsoft/microsoft-store-apppublisher@v1.4
+
+      - name: Reconfigure store credentials
+        run: |
+          msstore reconfigure `
+            --tenantId ${{ secrets.AZURE_AD_TENANT_ID }} `
+            --sellerId ${{ secrets.SELLER_ID }} `
+            --clientId ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }} `
+            --clientSecret ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
+
+      # The positional argument is a project directory msstore would try to
+      # detect a WinUI/MAUI/Electron/... project in; a prebuilt package goes
+      # through --inputFile instead.
+      - name: Publish to Store
+        run: msstore publish --inputFile "${{ github.workspace }}/msix/Tesseract-store-x64.msix" --appId ${{ vars.TESSERACT_MSIX_STORE_PRODUCT_ID }}
+
+  # ---------------------------------------------------------------------------
+  # winget — open the winget-pkgs manifest update PR for the NSIS installer.
+  # DISABLED until the first manual submission (packaging/winget/README.md)
+  # is live upstream: winget-releaser wraps `wingetcreate update`, which needs
+  # an existing upstream manifest to diff against. To enable, drop the
+  # leading `false &&` from `if:`.
+  # ---------------------------------------------------------------------------
+  winget:
+    name: Submit winget-pkgs update
+    if: ${{ false && (github.event_name == 'release' || inputs.winget) }}
+    runs-on: windows-latest
+
+    steps:
+      - name: Submit package update
+        uses: vedantmgoyal2009/winget-releaser@v2
+        with:
+          identifier: Tesseract.Matrix
+          installers-regex: 'Tesseract-.*-AMD64\.exe$'
+          release-tag: ${{ env.TAG }}
+          token: ${{ secrets.WINGET_TOKEN }}

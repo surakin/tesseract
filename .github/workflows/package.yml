@@ -7,10 +7,10 @@ on:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Windows — NSIS installer (.exe)
+  # Windows — NSIS installer (.exe) + Store MSIX, from one build
   # ---------------------------------------------------------------------------
   windows:
-    name: Windows (NSIS)
+    name: Windows (NSIS + Store MSIX)
     runs-on: windows-latest
     permissions:
       contents: read
@@ -37,8 +37,10 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install resvg-py (icon generation)
-        run: pip install resvg-py
+      # Pillow composites the non-square MSIX assets (wide tile, splash
+      # screen) — see ui/icons/generate_msix_assets.py.
+      - name: Install resvg-py and Pillow (icon generation)
+        run: pip install resvg-py pillow
 
       - name: Install NSIS
         run: choco install nsis --no-progress -y
@@ -107,6 +109,10 @@ jobs:
         # available on the runner (3.14) regardless of PATH.
         # TESSERACT_WIN_SIGN_CERT/_PASS (when the secret above was present)
         # signs the NSIS .exe at build time.
+        # The TESSERACT_MSIX_* repo variables (not secret — they're baked
+        # into every shipped AppxManifest.xml anyway) give the Store MSIX its
+        # Partner Center identity. The same exe keeps TESSERACT_GITHUB_REPO:
+        # a packaged install turns the update check off at runtime.
         env:
           TESSERACT_WIN_SIGN_PASS: ${{ secrets.TESSERACT_WIN_SIGN_PFX_PASSWORD }}
         run: |
@@ -115,7 +121,13 @@ jobs:
             $signArgs += "-DTESSERACT_WIN_SIGN_CERT=${{ steps.sign.outputs.cert_path }}"
             $signArgs += "-DTESSERACT_WIN_SIGN_PASS=$env:TESSERACT_WIN_SIGN_PASS"
           }
-          cmake --preset windows-release "-DPython3_EXECUTABLE=${{ steps.python.outputs.python-path }}" "-DTESSERACT_GITHUB_REPO=${{ github.repository }}" @signArgs
+          cmake --preset windows-release `
+            "-DPython3_EXECUTABLE=${{ steps.python.outputs.python-path }}" `
+            "-DTESSERACT_GITHUB_REPO=${{ github.repository }}" `
+            "-DTESSERACT_MSIX_STORE_IDENTITY_NAME=${{ vars.TESSERACT_MSIX_STORE_IDENTITY_NAME }}" `
+            "-DTESSERACT_MSIX_STORE_PUBLISHER=${{ vars.TESSERACT_MSIX_STORE_PUBLISHER }}" `
+            "-DTESSERACT_MSIX_PUBLISHER_DISPLAY_NAME=${{ vars.TESSERACT_MSIX_PUBLISHER_DISPLAY_NAME }}" `
+            @signArgs
 
       - name: Build
         run: cmake --build build/windows-release
@@ -130,11 +142,27 @@ jobs:
           path: build/windows-release/Tesseract-*.exe
           if-no-files-found: error
 
-      # These four build jobs run in parallel with no `needs` between them, so
-      # a failure here wouldn't otherwise stop the others mid-flight — cancel
+      # Repackages the exe built above — no second compile.
+      - name: Stage, pack and validate MSIX
+        run: cmake --build build/windows-release --target msix-stage msix-pack msix-validate
+
+      # A workflow artifact, not a release asset: it's unsigned (Partner
+      # Center signs it on ingestion). publish-release.yml submits this exact
+      # file to the Store once the release is marked as released. 90 days is
+      # the maximum retention — it has to outlive the time the pre-release
+      # spends being tested.
+      - name: Upload Store MSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tesseract-msix-store
+          path: build/windows-release/msix/Tesseract-store-x64.msix
+          if-no-files-found: error
+          retention-days: 90
+
+      # The build jobs run in parallel with no `needs` between them, so a
+      # failure here wouldn't otherwise stop the others mid-flight — cancel
       # the whole run so a broken build doesn't burn runner minutes on the
-      # rest. Same step is duplicated in the other three build jobs plus
-      # pages-docs/flatpak below.
+      # rest. Same step is duplicated in every other build job below.
       - name: Cancel workflow run on failure
         if: failure()
         env:
@@ -411,52 +439,20 @@ jobs:
         run: gh run cancel ${{ github.run_id }} --repo ${{ github.repository }}
 
   # ---------------------------------------------------------------------------
-  # GitHub Pages — publish docs/ (marketing site) to gh-pages. Kept as its
-  # own first job, separate from the Flatpak publish below: gh-pages is
-  # layered (keep_files: true) by every job that publishes to it, so this
-  # only ever touches the docs-sourced paths at the branch root and never
-  # races or clobbers the flatpak job's own deploy.
-  # ---------------------------------------------------------------------------
-  pages-docs:
-    name: GitHub Pages (docs site)
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-      actions: write
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Deploy docs/ to gh-pages
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: docs
-          publish_branch: gh-pages
-          keep_files: true
-
-      - name: Cancel workflow run on failure
-        if: failure()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh run cancel ${{ github.run_id }} --repo ${{ github.repository }}
-
-  # ---------------------------------------------------------------------------
-  # Linux x86_64 — Flatpak: signed, offline sandboxed build, published as a
-  # self-hosted OSTree repo on GitHub Pages (see packaging/flatpak/README.md
-  # for the one-time GPG/Pages setup this depends on) plus a single-file
-  # .flatpak bundle attached to the GitHub Release below. Runs only on an
-  # actual version tag push — see build-platform.yml for on-demand manual
-  # publishing off any ref.
+  # Linux x86_64 — Flatpak: signed, offline sandboxed build, producing the
+  # single-file .flatpak bundle attached to the GitHub Release below. Nothing
+  # is published to the self-hosted OSTree repo here — publish-release.yml
+  # imports this exact bundle into it once the release is marked as released
+  # (see packaging/flatpak/README.md for the one-time GPG/Pages setup). Runs
+  # only on an actual version tag push — see build-platform.yml for
+  # on-demand manual publishing off any ref.
   # ---------------------------------------------------------------------------
   flatpak:
-    name: Linux x86_64 (Flatpak, sign & publish)
+    name: Linux x86_64 (Flatpak bundle)
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: pages-docs
     runs-on: ubuntu-24.04
     permissions:
-      contents: write
+      contents: read
       actions: write
 
     steps:
@@ -514,7 +510,8 @@ jobs:
       # Imported into an ephemeral GNUPGHOME under RUNNER_TEMP, used only to
       # sign, then discarded when the runner is torn down — never written to
       # the checkout or committed anywhere. Not optional: a missing/invalid
-      # key fails the job rather than silently publishing unsigned.
+      # key fails the job here, at pre-release time, rather than only once
+      # publish-release.yml needs the same key to sign the published repo.
       - name: Import Flatpak signing key
         env:
           FLATPAK_GPG_PRIVATE_KEY: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}
@@ -561,11 +558,6 @@ jobs:
       - name: Smoke-test the built tree
         run: test -x build-dir/files/bin/tesseract-matrix
 
-      - name: Update repo metadata (static deltas, prune)
-        run: |
-          flatpak build-update-repo --generate-static-deltas --prune --prune-depth=20 \
-            --gpg-sign="${{ secrets.FLATPAK_GPG_KEY_ID }}" repo
-
       - name: Build single-file bundle
         run: |
           flatpak build-bundle repo "tesseract-v${TESSERACT_VERSION}.flatpak" \
@@ -578,25 +570,6 @@ jobs:
           path: tesseract-v*.flatpak
           if-no-files-found: error
 
-      # docs/ is handled by the pages-docs job above; this only stages the
-      # Flatpak-specific paths, and keep_files: true below preserves
-      # whatever pages-docs (and any prior release's flatpak-repo/ OSTree
-      # objects) already published.
-      - name: Assemble the Flatpak Pages deploy
-        run: |
-          mkdir -p pages-deploy
-          cp -r repo pages-deploy/flatpak-repo
-          cp packaging/flatpak/tesseract.flatpakrepo pages-deploy/
-          cp packaging/flatpak/io.github.surakin.Tesseract.flatpakref pages-deploy/
-
-      - name: Deploy Flatpak repo to gh-pages
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: pages-deploy
-          publish_branch: gh-pages
-          keep_files: true
-
       - name: Cancel workflow run on failure
         if: failure()
         env:
@@ -604,7 +577,10 @@ jobs:
         run: gh run cancel ${{ github.run_id }} --repo ${{ github.repository }}
 
   # ---------------------------------------------------------------------------
-  # GitHub Release — attach all four artifacts when a version tag is pushed
+  # GitHub Release — create the pre-release with every user-facing artifact
+  # when a version tag is pushed (the Store MSIX stays a workflow artifact on
+  # this run). Marking it as released in the GitHub UI triggers
+  # publish-release.yml.
   # ---------------------------------------------------------------------------
   release:
     name: Create GitHub Release

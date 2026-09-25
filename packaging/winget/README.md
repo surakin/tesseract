@@ -108,8 +108,11 @@ since that depends on the actual built `.exe`.
 
 ## Subsequent releases (automated)
 
-Once the package exists upstream, [`.github/workflows/winget-publish.yml`](../../.github/workflows/winget-publish.yml)
-handles version bumps automatically on every GitHub Release: it runs
+Once the package exists upstream, the `winget` job in
+[`.github/workflows/publish-release.yml`](../../.github/workflows/publish-release.yml)
+handles version bumps automatically when a GitHub pre-release is marked as
+released. It ships disabled (`if: ${{ false && ... }}`) until the first
+submission above is live — drop the leading `false &&` to enable it. It runs
 [`vedantmgoyal2009/winget-releaser`](https://github.com/vedantmgoyal2009/winget-releaser),
 which wraps `wingetcreate update --submit` — it diffs the new release's
 installer URL/SHA256 into the existing upstream manifest and opens the PR,

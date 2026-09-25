@@ -29,23 +29,32 @@ GPG-signed OSTree repo that users add as a Flatpak remote — mechanically
 the same thing Flathub is, minus the store listing — published to GitHub
 Pages at `https://surakin.github.io/tesseract/flatpak-repo/`.
 
-**This is fully automatic.** Pushing a `vX.Y.Z` tag triggers the `flatpak`
-job in
-[`.github/workflows/package.yml`](../../.github/workflows/package.yml),
-which regenerates `cargo-sources.json` from that tag's `Cargo.lock`,
-builds and GPG-signs the manifest offline, updates the OSTree repo
-(static deltas, pruned), publishes it to the `gh-pages` branch, and attaches
-a single-file `.flatpak` bundle to the tag's GitHub Release. A separate
-`pages-docs` job in the same workflow publishes this repo's `docs/`
-(the marketing site) to the same branch. Neither job wipes the other's or
-a previous release's content — both deploy with `keep_files: true`, so the
-OSTree repo's own update/rollback history keeps accumulating across
-releases the way Flatpak expects. See "One-time setup" below for the
-prerequisites this depends on (a GPG key, two static files, and the Pages
-branch itself).
+**This is automatic, in two stages.**
 
-For an on-demand real publish without cutting a new tag (recovering from a
-failed run, republishing, one-off testing), use
+1. Pushing a `vX.Y.Z` tag triggers the `flatpak` job in
+   [`.github/workflows/package.yml`](../../.github/workflows/package.yml),
+   which regenerates `cargo-sources.json` from that tag's `Cargo.lock`,
+   builds and GPG-signs the manifest offline, and attaches a single-file
+   `.flatpak` bundle to the tag's GitHub **pre-release**. Nothing reaches
+   the published repo yet.
+2. Marking that release as released (unticking "Set as a pre-release")
+   triggers the `flatpak-repo` job in
+   [`.github/workflows/publish-release.yml`](../../.github/workflows/publish-release.yml),
+   which imports that same bundle into a GPG-signed OSTree repo (static
+   deltas, pruned) and publishes it to the `gh-pages` branch. Its `docs`
+   job publishes this repo's `docs/` (the marketing site) to the same
+   branch first.
+
+Neither deploy wipes the other's or a previous release's content — both
+use `keep_files: true`, so the OSTree repo's own update/rollback history
+keeps accumulating across releases the way Flatpak expects. See "One-time
+setup" below for the prerequisites this depends on (a GPG key, two static
+files, and the Pages branch itself).
+
+To re-publish an existing release (e.g. after a failed `flatpak-repo` run),
+run `publish-release.yml` manually from the Actions tab with its tag and
+only the `flatpak` toggle enabled. For an on-demand publish off an untagged
+ref (one-off testing), use
 [`.github/workflows/build-platform.yml`](../../.github/workflows/build-platform.yml)
 manually with both `flatpak` and `flatpak_publish` inputs enabled — it
 runs the same sign-and-publish steps off whatever ref you dispatch it
@@ -163,8 +172,11 @@ without re-tagging.
 3. Add a `<release version="X.Y.Z" date="YYYY-MM-DD"/>` line (newest first)
    to `io.github.surakin.Tesseract.metainfo.xml`, sourced from `CHANGES.md`.
    CI's `flatpak` job fails the whole publish if this is missing.
-4. Cut the release (`git tag vX.Y.Z && git push github vX.Y.Z`). CI takes it
-   from here — see "Distribution" above.
+4. Cut the release (`git tag vX.Y.Z && git push github vX.Y.Z`). CI builds
+   the pre-release — see "Distribution" above.
+5. Once the pre-release has been tested, mark it as released on GitHub to
+   publish it to the Flatpak repo (and the other channels
+   `publish-release.yml` covers).
 
 `cargo-sources.json` no longer needs manual regeneration before tagging; CI
 regenerates it from the tagged `Cargo.lock` itself. The tracked copy in this
@@ -195,7 +207,7 @@ Required once before the automatic publish flow above can run at all:
 3. **Point GitHub Pages at the `gh-pages` branch** (Settings → Pages →
    Source), instead of `main`. If `gh-pages` doesn't exist yet, create an
    empty one first so the option is selectable, or just wait for the first
-   successful `pages-docs`/`flatpak` run to create it.
+   successful `publish-release.yml` run to create it.
 
 ## Note on Flathub
 

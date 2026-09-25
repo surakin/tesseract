@@ -391,8 +391,8 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # GitHub Pages — publish docs/ (marketing site) to gh-pages on demand.
-  # Independent of the Flatpak inputs; package.yml's pages-docs job is the
-  # automatic tag-push equivalent. Layers with keep_files: true, same as
+  # Independent of the Flatpak inputs; publish-release.yml's docs job is the
+  # automatic on-release equivalent. Layers with keep_files: true, same as
   # that job, so it never disturbs a previously-published flatpak-repo/.
   # ---------------------------------------------------------------------------
   pages-docs:
@@ -417,8 +417,9 @@ jobs:
   # Linux x86_64 — Flatpak. Validate-only by default (offline build + smoke
   # test, no signing, no publish); with flatpak_publish also signs and
   # publishes to GitHub Pages on demand, for recovery/republishing/testing
-  # without needing a new tag push (package.yml's flatpak job is the fully
-  # automatic tag-push path — see packaging/flatpak/README.md).
+  # without needing a new tag push (package.yml's flatpak job plus
+  # publish-release.yml's flatpak-repo job are the automatic release path —
+  # see packaging/flatpak/README.md).
   # ---------------------------------------------------------------------------
   flatpak:
     if: ${{ inputs.flatpak }}

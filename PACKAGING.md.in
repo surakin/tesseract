@@ -91,9 +91,10 @@ identifier is already taken upstream), submitted via PR (there
 is no upload step comparable to Partner Center). It points at the NSIS
 `.exe` from the section above, not either MSIX edition — see
 [packaging/winget/README.md](packaging/winget/README.md) for why, the
-one-time setup, the manual first-submission procedure, and how
-[.github/workflows/winget-publish.yml](.github/workflows/winget-publish.yml)
-automates subsequent version bumps on every GitHub Release.
+one-time setup, the manual first-submission procedure, and how the `winget`
+job in [.github/workflows/publish-release.yml](.github/workflows/publish-release.yml)
+automates subsequent version bumps when a release is marked as released
+(currently disabled until the first submission is live).
 
 ---
 
@@ -115,11 +116,11 @@ identities: a Store edition (uploaded unsigned — Partner Center signs it on
 ingestion) and a direct-distribution edition (signed locally/in CI, updated
 via a generated `.appinstaller`).
 
-Configure the Store build without `-DTESSERACT_GITHUB_REPO` (as
-`msix-store-publish.yml` does): the Store delivers its updates, so the
-GitHub release check and its Settings toggle are compiled out. The build in
-`package.yml` keeps the check for NSIS and the direct edition, even though
-the `msix-pack` targets there also produce a Store package.
+No separate build is needed for either edition: the GitHub release check
+turns itself off at runtime (and its Settings toggle is hidden) whenever
+the app runs from an MSIX package, since the Store or App Installer
+delivers its updates. `package.yml`'s `windows` job therefore builds once
+and produces both the NSIS installer and the Store MSIX from the same exe.
 
 ### Prerequisites
 
@@ -177,9 +178,11 @@ edition.
 
 ### What's still manual
 
-- Store updates are submitted by `msix-store-publish.yml`, run by hand
-  from the Actions tab with a release tag. It builds the Store edition from
-  that tag and uploads it through the Microsoft Store Developer CLI, which
+- Store updates are automatic but gated on the release: `package.yml`'s
+  `windows` job builds and validates the Store edition on every tag
+  push and keeps it as a workflow artifact, and marking the GitHub
+  pre-release as released runs `publish-release.yml`, whose `store` job
+  uploads that artifact through the Microsoft Store Developer CLI, which
   commits the submission for certification. The Partner Center setup it
   needs (Entra ID app, repo secrets and variables) is listed at the top of
   that workflow. Partner Center rejects a new submission while an earlier
@@ -443,8 +446,8 @@ See the MSIX section above for the `TESSERACT_MSIX_*` identity/update variables.
   repo; the generated manifests land in the build tree, not in-source (see
   the "Windows: winget" section above). The published copy lives in
   `microsoft/winget-pkgs`. The very first submission is manual
-  (`wingetcreate submit`); `WINGET_TOKEN` (a PAT with `public_repo` scope)
-  is not yet configured as a repo secret, so
-  [.github/workflows/winget-publish.yml](.github/workflows/winget-publish.yml)
-  won't run until that's added — see
+  (`wingetcreate submit`); the `winget` job in
+  [.github/workflows/publish-release.yml](.github/workflows/publish-release.yml)
+  is disabled until that submission is live, and also needs `WINGET_TOKEN`
+  (a PAT with `public_repo` scope) configured as a repo secret — see
   [packaging/winget/README.md](packaging/winget/README.md).
