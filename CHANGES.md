@@ -11,6 +11,7 @@ Tagged releases summarize all changes since the previous tag.
 - fix(rooms): invite errors in the invite dialog now wrap instead of running past the card edge. Qt6 build + invite tests 13/13; unverified live
 - feat(tk): `tk::Button` supports a leading SVG icon next to its label (`set_leading_icon`); the room info panel's Invite / Export History / Leave Room buttons use Lucide icons. Qt6 build + ctest; user-verified live
 - feat(rooms): the room info panel has an "Invite people" button (shown only with invite permission) that opens a new invite dialog: filter known users and check them, or type/paste one or more full mxids, which become pills once known or resolved on the server. Invites now report per-user results (`invite_user_async` takes a request id), so `/invite` failures also surface. Also fixes the multi-select checkbox tick sitting low in its circle (now a Lucide `check` icon, shared with the forward dialog). Qt6 build + ctest 1949/1949, cargo 713/713; user-verified live. GTK4/Windows/macOS share the code, unbuilt
+- fix(tk): flag-tag emoji sequences (e.g. the Scottish flag) rendered as a bare black flag in-app despite showing correctly in the title bar — emoji-run segmentation didn't treat Unicode tag characters (U+E0000–U+E007F) as part of the preceding cluster; also closes the same gap in Windows' DirectWrite emoji fallback table. macOS build; user-verified live; Qt6/GTK4 share the segmentation fix, unbuilt; Windows fix unbuilt, untested (no Windows toolchain here)
 
 ## v0.8.25 — 2026-09-24
 

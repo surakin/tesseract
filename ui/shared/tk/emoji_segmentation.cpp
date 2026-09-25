@@ -74,7 +74,8 @@ EmojiOnlyClassification classify_emoji_only_utf8(std::string_view utf8)
         if (cp == 0x200D ||                   // ZWJ
             (cp >= 0xFE00 && cp <= 0xFE0F) || // variation selectors
             cp == 0x20E3 ||                   // combining enclosing keycap
-            (cp >= 0x1F3FB && cp <= 0x1F3FF)) // skin-tone modifiers
+            (cp >= 0x1F3FB && cp <= 0x1F3FF) || // skin-tone modifiers
+            (cp >= 0xE0000 && cp <= 0xE007F))   // tag characters (flag sequences)
         {
             ++i;
             continue;
@@ -191,7 +192,8 @@ std::vector<TextSpan> segment_emoji_runs(const TextSpan& src)
         return cp == 0x200D ||
                (cp >= 0xFE00 && cp <= 0xFE0F) ||
                cp == 0x20E3 ||
-               (cp >= 0x1F3FB && cp <= 0x1F3FF);
+               (cp >= 0x1F3FB && cp <= 0x1F3FF) ||
+               (cp >= 0xE0000 && cp <= 0xE007F); // tag characters (flag sequences)
     };
     // Emoji base codepoints (same ranges as is_emoji_only above).
     auto is_emoji_base = [](uint32_t cp) -> bool {

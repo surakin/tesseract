@@ -499,6 +499,7 @@ build_emoji_fallback(ComPtr<IDWriteFactory2>& dwrite,
         {0x1F900, 0x1F9FF}, // Supplemental Symbols and Pictographs
         {0x1FA00, 0x1FA6F}, // Chess Symbols
         {0x1FA70, 0x1FAFF}, // Symbols and Pictographs Extended-A
+        {0xE0000, 0xE007F}, // tag characters (England/Scotland/Wales flag sequences)
     };
     const wchar_t* family[] = {L"Noto Color Emoji"};
 
