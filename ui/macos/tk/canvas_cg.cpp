@@ -800,12 +800,48 @@ public:
     std::vector<tk::Rect> selection_rects(int start_byte,
                                           int end_byte) const override
     {
-        if (start_byte >= end_byte || !frame_)
+        if (start_byte >= end_byte)
             return {};
         CFIndex cf_start = utf8_byte_to_cf(start_byte);
         CFIndex cf_end   = utf8_byte_to_cf(end_byte);
         if (cf_start >= cf_end)
             return {};
+
+        if (!frame_)
+        {
+            // Elided single-line layout (TextTrim::Ellipsis): there's no
+            // CTFrame to walk, only the cached elided CTLine — mirrors
+            // link_at()'s own elide_single_line_ fallback above, which
+            // already relies on this same string-range/offset technique
+            // for hit-testing. Without this branch, inline objects (mention
+            // pills) in an elided layout reserve their box width but never
+            // get a rect to paint into.
+            if (!elide_single_line_ || !ensure_elided_line())
+                return {};
+            CFRange lr = CTLineGetStringRange(elided_line_);
+            CFIndex seg_start = std::max(cf_start, lr.location);
+            CFIndex seg_end   = std::min(cf_end, lr.location + lr.length);
+            if (seg_start >= seg_end)
+                return {};
+            CGFloat dx = 0;
+            if (max_width_ > 0)
+            {
+                if (align_ == kCTTextAlignmentCenter)
+                    dx = CTLineGetPenOffsetForFlush(elided_line_, 0.5,
+                                                    max_width_);
+                else if (align_ == kCTTextAlignmentRight)
+                    dx = CTLineGetPenOffsetForFlush(elided_line_, 1.0,
+                                                    max_width_);
+            }
+            CGFloat x1 =
+                CTLineGetOffsetForStringIndex(elided_line_, seg_start, nullptr);
+            CGFloat x2 =
+                CTLineGetOffsetForStringIndex(elided_line_, seg_end, nullptr);
+            CGFloat h = elided_ascent_ + elided_descent_;
+            return {{static_cast<float>(dx + std::min(x1, x2)), 0.0f,
+                    static_cast<float>(std::abs(x2 - x1)),
+                    static_cast<float>(h)}};
+        }
 
         CFArrayRef lines = CTFrameGetLines(frame_);
         CFIndex n = CFArrayGetCount(lines);

@@ -4800,7 +4800,19 @@ private:
                 body_lo = ctx.factory.build_rich_text(spans, body_st);
             }
             if (!body_lo && !sbody.empty())
-                body_lo = ctx.factory.build_text(sbody, body_st);
+            {
+                // Plain-text reply target (no formatted_body): still
+                // pill-ify a literal "@room", matching the main body's
+                // plain-text fallback (see split_room_mentions's doc
+                // comment / assemble_emote_spans_()).
+                tk::TextSpan whole;
+                whole.text = sbody;
+                spans = split_room_mentions({std::move(whole)}, dark);
+                substitute_image_placeholders(spans);
+                body_lo = ctx.factory.build_rich_text(spans, body_st);
+                if (!body_lo)
+                    body_lo = ctx.factory.build_text(sbody, body_st);
+            }
 
             constexpr float kLineGap = 2.0f;
             float name_h  = name_lo ? name_lo->measure().h : 0.0f;
