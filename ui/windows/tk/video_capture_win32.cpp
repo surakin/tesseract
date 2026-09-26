@@ -73,7 +73,7 @@ void nv12_to_i420(const std::uint8_t* src_y, std::uint32_t src_stride_y,
 tk::VideoCapture::Error classify_hr(HRESULT hr)
 {
     using Error = tk::VideoCapture::Error;
-    if (hr == MF_E_VIDEO_RECORDING_DEVICE_LOCKED ||
+    if (hr == MF_E_VIDEO_RECORDING_DEVICE_PREEMPTED ||
         hr == MF_E_HW_MFT_FAILED_START_STREAMING ||
         hr == HRESULT_FROM_WIN32(ERROR_SHARING_VIOLATION) ||
         hr == HRESULT_FROM_WIN32(ERROR_BUSY))
