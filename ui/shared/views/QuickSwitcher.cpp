@@ -100,7 +100,7 @@ public:
         ns.trim = tk::TextTrim::Ellipsis;
         ns.max_width = text_w;
         auto name_lo = ctx.factory.build_text(
-            room.name.empty() ? std::string("Unnamed room") : room.name, ns);
+            room.name.empty() ? tk::tr("Unnamed room") : room.name, ns);
         if (name_lo)
         {
             const tk::Size sz = name_lo->measure();
@@ -645,9 +645,8 @@ void QuickSwitcher::paint(tk::PaintCtx& ctx)
         es.role = tk::FontRole::Body;
         const std::string empty_msg =
             mode_ == Mode::User
-                ? std::string(
-                      "No matching users — type a full @user:server to chat")
-                : std::string("No rooms");
+                ? tk::tr("No matching users — type a full @user:server to chat")
+                : tk::tr("No rooms");
         auto empty_lo = ctx.factory.build_text(empty_msg, es);
         if (empty_lo)
         {
@@ -682,7 +681,7 @@ void QuickSwitcher::paint_recent_strip_(tk::PaintCtx& ctx)
     style.chip_gap = kRecentChipGap;
     style.avatar_size = kRecentAvatar;
     style.pad_x = kQuickSwitcherPadX;
-    style.caption = "Recent";
+    style.caption = tk::tr("Recent");
     style.highlight_index = pressed_chip_;
     style.highlight_fill = ctx.theme.palette.sidebar_hover;
 

@@ -3317,3 +3317,1706 @@ msgstr "[Çlïçk àñywhéré tö çlöséxxxx]"
 #: ui/shared/views/CameraWidget.cpp
 msgid "Click anywhere to cancel"
 msgstr "[Çlïçk àñywhéré tö çàñçélxxxx]"
+
+#: ui/shared/app/RoomPane.cpp
+msgid "Send reply failed: {0}"
+msgstr "[Séñd réply fàïléd: {0}xxxx]"
+
+#: ui/shared/app/RoomPane.cpp
+msgid "Edit failed: {0}"
+msgstr "[Édït fàïléd: {0}xxx]"
+
+#: ui/shared/app/RoomPane.cpp
+msgid "Failed to cancel message: {0}"
+msgstr "[Fàïléd tö çàñçél méssàgé: {0}xxxxx]"
+
+#: ui/shared/app/RoomPane.cpp
+msgid "Failed to retry sending: {0}"
+msgstr "[Fàïléd tö rétry séñdïñg: {0}xxxxx]"
+
+#: ui/shared/app/RoomPane.cpp
+msgid "Failed to set topic: {0}"
+msgstr "[Fàïléd tö sét töpïç: {0}xxxx]"
+
+#: ui/shared/app/ShellBase.cpp:5700
+msgid "Restoring session…"
+msgstr "[Réstörïñg séssïöñ…xxx]"
+
+#: ui/linux-qt/src/MainWindow.cpp:2161
+msgid "Account %1 expired: %2"
+msgstr "[Àççöùñt %1 éxpïréd: %2xxxx]"
+
+#: ui/linux-qt/src/MainWindow.cpp:2305
+msgid "Sign-in failed: no user id"
+msgstr "[Sïgñ-ïñ fàïléd: ñö ùsér ïdxxxxx]"
+
+#: ui/linux-qt/src/MainWindow.cpp:2341
+msgid "Sign-in failed: empty session"
+msgstr "[Sïgñ-ïñ fàïléd: émpty séssïöñxxxxx]"
+
+#: ui/linux-qt/src/MainWindow.cpp:2370
+msgid "Sign-in failed: couldn't persist matrix store: %1"
+msgstr "[Sïgñ-ïñ fàïléd: çöùldñ't pérsïst màtrïx störé: %1xxxxxxxxx]"
+
+#: ui/linux-qt/src/MainWindow.cpp:2383
+msgid "Sign-in failed: couldn't persist session"
+msgstr "[Sïgñ-ïñ fàïléd: çöùldñ't pérsïst séssïöñxxxxxxxx]"
+
+#: ui/linux-qt/src/MainWindow.cpp:2399
+msgid "Sign-in failed at restore: %1"
+msgstr "[Sïgñ-ïñ fàïléd àt réstöré: %1xxxxx]"
+
+#: ui/linux-qt/src/MainWindow.cpp:2684
+msgid "Subscribe failed: %1"
+msgstr "[Sùbsçrïbé fàïléd: %1xxxx]"
+
+#: ui/linux-qt/src/MainWindow.cpp:2775
+msgid "Jump to date failed: %1"
+msgstr "[Jùmp tö dàté fàïléd: %1xxxx]"
+
+#: ui/linux-qt/src/MainWindow.cpp:3687
+msgid "Log Out %1"
+msgstr "[Lög Öùt %1xx]"
+
+#: ui/linux-qt/src/MainWindow.cpp:3948
+msgid "Sync error: %1"
+msgstr "[Syñç érrör: %1xx]"
+
+#: ui/shared/views/settings/PronounsEditor.cpp
+msgid "Add language"
+msgstr "[Àdd làñgùàgéxx]"
+
+#: ui/shared/views/MessageListView.cpp:5042
+msgid "Add reaction"
+msgstr "[Àdd réàçtïöñxx]"
+
+#: ui/shared/views/MessageListView.cpp:5043 ui/windows/src/Win32Notifier.cpp
+#: ui/macos/src/MainWindowController.mm ui/linux-qt/src/LinuxNotifier.cpp
+#: ui/linux-gtk/src/LinuxNotifier.cpp
+msgid "Reply"
+msgstr "[Réplyx]"
+
+#: ui/shared/views/MessageListView.cpp:5044
+msgid "Reply in thread"
+msgstr "[Réply ïñ thréàdxxx]"
+
+#: ui/windows/src/Win32Notifier.cpp ui/macos/src/MainWindowController.mm
+#: ui/linux-qt/src/LinuxNotifier.cpp ui/linux-gtk/src/LinuxNotifier.cpp
+msgid "Reply…"
+msgstr "[Réply…x]"
+
+#: ui/shared/app/ShellBase.cpp
+msgid "Message not sent"
+msgstr "[Méssàgé ñöt séñtxxx]"
+
+#: ui/shared/app/ShellBase.cpp
+msgid "You're signed out of this account"
+msgstr "[Yöù'ré sïgñéd öùt öf thïs àççöùñtxxxxxx]"
+
+#: ui/shared/app/ShellBase.cpp
+msgid "Couldn't send your reply. Try again from the app."
+msgstr "[Çöùldñ't séñd yöùr réply. Try àgàïñ fröm thé àpp.xxxxxxxxx]"
+
+#: ui/shared/views/MessageListView.cpp:5045
+msgid "Edit"
+msgstr "[Édïtx]"
+
+#: ui/shared/views/MessageListView.cpp:5046
+msgid "More"
+msgstr "[Möréx]"
+
+#: ui/shared/views/RoomListView.h:163
+msgid "Unread"
+msgstr "[Ùñréàdx]"
+
+#: ui/shared/views/IncomingCallBanner.cpp
+msgid "is calling"
+msgstr "[ïs çàllïñgxx]"
+
+#: ui/shared/views/ScreenPickerWidget.cpp ui/shared/views/CallOverlayWidget.cpp
+msgid "Stop sharing"
+msgstr "[Stöp shàrïñgxx]"
+
+#: ui/shared/views/settings/GeneralSection.cpp
+msgid "Startup"
+msgstr "[Stàrtùpx]"
+
+#: ui/shared/views/settings/GeneralSection.cpp
+msgid "Launch Tesseract when you log in"
+msgstr "[Làùñçh Tésséràçt whéñ yöù lög ïñxxxxxx]"
+
+#: ui/shared/views/settings/RoomMediaSection.cpp
+msgid "In private rooms only"
+msgstr "[Ïñ prïvàté rööms öñlyxxxx]"
+
+#: ui/shared/views/ImagePackEditorView.cpp
+msgid "Image pack"
+msgstr "[Ïmàgé pàçkxx]"
+
+#: ui/shared/views/ImagePackEditorView.cpp
+msgid "Usage"
+msgstr "[Ùsàgéx]"
+
+#: ui/shared/views/ImagePackEditorView.cpp
+msgid "Emoji & stickers"
+msgstr "[Émöjï & stïçkérsxxx]"
+
+#: ui/shared/views/ImagePackEditorView.cpp
+msgid "Emoji only"
+msgstr "[Émöjï öñlyxx]"
+
+#: ui/shared/views/ImagePackEditorView.cpp
+msgid "Stickers only"
+msgstr "[Stïçkérs öñlyxx]"
+
+#: ui/shared/views/ImagePackEditorView.cpp
+msgid "Create new pack"
+msgstr "[Çréàté ñéw pàçkxxx]"
+
+#: ui/shared/views/RoomListView.cpp
+msgid "Open in tab"
+msgstr "[Öpéñ ïñ tàbxx]"
+
+#: ui/shared/views/RoomListView.cpp
+msgid "Open in window"
+msgstr "[Öpéñ ïñ wïñdöwxx]"
+
+#: ui/shared/views/RoomListView.cpp
+msgid "Mark as read"
+msgstr "[Màrk às réàdxx]"
+
+#: ui/shared/views/RoomListView.cpp
+msgid "Leave room"
+msgstr "[Léàvé röömxx]"
+
+#: ui/shared/app/ShellBase.cpp ui/shared/views/RoomView.cpp
+msgid "this room"
+msgstr "[thïs röömx]"
+
+#: ui/shared/app/ShellBase.cpp ui/shared/views/RoomView.cpp
+msgid "Leave {0}?"
+msgstr "[Léàvé {0}?xx]"
+
+#: ui/shared/app/ShellBase.cpp ui/shared/views/RoomView.cpp
+msgid "You will stop receiving messages and need to be re-invited to rejoin."
+msgstr "[Yöù wïll stöp réçéïvïñg méssàgés àñd ñééd tö bé ré-ïñvïtéd tö réjöïñ.xxxxxxxxxxxxx]"
+
+#: ui/shared/app/ShellBase.cpp ui/shared/views/RoomView.cpp
+msgid "Leave"
+msgstr "[Léàvéx]"
+
+#: ui/shared/views/RoomSearchBar.cpp
+msgid "Search disabled — indexing is off"
+msgstr "[Séàrçh dïsàbléd — ïñdéxïñg ïs öffxxxxxx]"
+
+#: ui/shared/views/MessageSearchView.cpp
+msgid "Message search is disabled. Enable indexing in Settings to search your messages."
+msgstr "[Méssàgé séàrçh ïs dïsàbléd. Éñàblé ïñdéxïñg ïñ Séttïñgs tö séàrçh yöùr méssàgés.xxxxxxxxxxxxxxxx]"
+
+#: ui/macos/src/AppDelegate.mm
+msgid "File"
+msgstr "[Fïléx]"
+
+#: ui/macos/src/AppDelegate.mm
+msgid "Add Room…"
+msgstr "[Àdd Rööm…x]"
+
+#: ui/macos/src/AppDelegate.mm
+msgid "Find"
+msgstr "[Fïñdx]"
+
+#: ui/macos/src/AppDelegate.mm
+msgid "Find…"
+msgstr "[Fïñd…x]"
+
+#: ui/macos/src/AppDelegate.mm
+msgid "Search Your Messages…"
+msgstr "[Séàrçh Yöùr Méssàgés…xxxx]"
+
+#: ui/macos/src/AppDelegate.mm
+msgid "Go"
+msgstr "[Göx]"
+
+#: ui/macos/src/AppDelegate.mm
+msgid "Go Back"
+msgstr "[Gö Bàçkx]"
+
+#: ui/macos/src/AppDelegate.mm
+msgid "Go Forward"
+msgstr "[Gö Förwàrdxx]"
+
+#: ui/macos/src/AppDelegate.mm
+msgid "Quick Switcher…"
+msgstr "[Qùïçk Swïtçhér…xxx]"
+
+#: ui/macos/src/AppDelegate.mm
+msgid "Cycle Recent Rooms"
+msgstr "[Çyçlé Réçéñt Röömsxxx]"
+
+#: ui/macos/src/AppDelegate.mm
+msgid "Cycle Recent Rooms Backward"
+msgstr "[Çyçlé Réçéñt Rööms Bàçkwàrdxxxxx]"
+
+msgid "Choose a folder for the exported history"
+msgstr "[Çhöösé à földér för thé éxpörtéd hïstöryxxxxxxxx]"
+
+msgid "Join call"
+msgstr "[Jöïñ çàllx]"
+
+msgid "({0} reaction)"
+msgid_plural "({0} reactions)"
+msgstr[0] "[({0} réàçtïöñ)xx]"
+msgstr[1] "[({0} réàçtïöñs)xxx]"
+
+msgid "Reactions"
+msgstr "[Réàçtïöñsx]"
+
+msgid "{0}, {1} reaction"
+msgid_plural "{0}, {1} reactions"
+msgstr[0] "[{0}, {1} réàçtïöñxxx]"
+msgstr[1] "[{0}, {1} réàçtïöñsxxx]"
+
+msgid "reacted by you"
+msgstr "[réàçtéd by yöùxx]"
+
+msgid "Message actions"
+msgstr "[Méssàgé àçtïöñsxxx]"
+
+msgid "Read by {0}"
+msgstr "[Réàd by {0}xx]"
+
+msgid "Unable to decrypt message"
+msgstr "[Ùñàblé tö déçrypt méssàgéxxxxx]"
+
+msgid "Image"
+msgstr "[Ïmàgéx]"
+
+msgid "Sticker"
+msgstr "[Stïçkérx]"
+
+msgid "Audio message"
+msgstr "[Àùdïö méssàgéxx]"
+
+msgid "Video"
+msgstr "[Vïdéöx]"
+
+msgid "Invitation"
+msgstr "[Ïñvïtàtïöñxx]"
+
+msgid "Previous match"
+msgstr "[Prévïöùs màtçhxx]"
+
+msgid "Next match"
+msgstr "[Ñéxt màtçhxx]"
+
+msgid "Choose status emoji"
+msgstr "[Çhöösé stàtùs émöjïxxx]"
+
+msgid "Clear status emoji"
+msgstr "[Çléàr stàtùs émöjïxxx]"
+
+#: ui/shared/views/settings/LanguageSection.cpp
+msgid "French"
+msgstr "[Fréñçhx]"
+
+#: ui/shared/views/settings/LanguageSection.cpp
+msgid "Restart now"
+msgstr "[Réstàrt ñöwxx]"
+
+#: ui/shared/app/ShellBase.cpp
+msgid "End your call before restarting."
+msgstr "[Éñd yöùr çàll béföré réstàrtïñg.xxxxxx]"
+
+#: ui/shared/app/ShellBase.cpp
+msgid "Couldn't restart Tesseract. Please restart it yourself."
+msgstr "[Çöùldñ't réstàrt Tésséràçt. Pléàsé réstàrt ït yöùrsélf.xxxxxxxxxxx]"
+
+#: ui/linux-gtk/src/LinuxNotifier.cpp:269 ui/linux-qt/src/LinuxNotifier.cpp:216
+msgid "Open"
+msgstr "[Öpéñx]"
+
+#: ui/linux-gtk/src/LoginView.cpp:26
+msgid "Open this URL in your browser:"
+msgstr "[Öpéñ thïs ÙRL ïñ yöùr bröwsér:xxxxxx]"
+
+#: ui/linux-gtk/src/MainWindow.cpp:197 ui/linux-qt/src/MainWindow.cpp:4468
+msgid "{0} request in flight"
+msgid_plural "{0} requests in flight"
+msgstr[0] "[{0} réqùést ïñ flïghtxxxx]"
+msgstr[1] "[{0} réqùésts ïñ flïghtxxxx]"
+
+#: ui/linux-gtk/src/MainWindow.cpp:201 ui/linux-qt/src/MainWindow.cpp:4472
+msgid "media: {0} loading · fetch: {1} queued · send: {2} queued"
+msgstr "[médïà: {0} löàdïñg · fétçh: {1} qùéùéd · séñd: {2} qùéùédxxxxxxxxxxx]"
+
+#: ui/linux-gtk/src/MainWindow.cpp:3079 ui/windows/src/MainWindow.cpp:3953
+msgid "Already signed in as {0}"
+msgstr "[Àlréàdy sïgñéd ïñ às {0}xxxx]"
+
+#: ui/linux-gtk/src/MainWindow.cpp:3190
+msgid "_Cancel"
+msgstr "[_Çàñçélx]"
+
+#: ui/linux-gtk/src/MainWindow.cpp:3190
+msgid "_OK"
+msgstr "[_ÖKx]"
+
+#: ui/linux-gtk/src/MainWindow.cpp:3231
+msgid "Save room keys"
+msgstr "[Sàvé rööm kéysxx]"
+
+#: ui/linux-gtk/src/MainWindow.cpp:3260
+msgid "Open room keys"
+msgstr "[Öpéñ rööm kéysxx]"
+
+#: ui/linux-gtk/src/MainWindow.cpp:3291 ui/linux-qt/src/SettingsWidget.cpp:181
+msgid "Room keys exported successfully."
+msgstr "[Rööm kéys éxpörtéd sùççéssfùlly.xxxxxx]"
+
+#: ui/linux-gtk/src/MainWindow.cpp:3307 ui/linux-qt/src/SettingsWidget.cpp:190
+msgid "Room keys imported successfully."
+msgstr "[Rööm kéys ïmpörtéd sùççéssfùlly.xxxxxx]"
+
+#: ui/linux-gtk/src/MainWindow.cpp:4535 ui/windows/src/MainWindow.cpp:3201
+msgid "Images"
+msgstr "[Ïmàgésx]"
+
+#: ui/linux-gtk/src/MainWindow.cpp:5402 ui/linux-qt/src/MainWindow.cpp:4095
+msgid "Downloading encryption keys ({0})…"
+msgstr "[Döwñlöàdïñg éñçryptïöñ kéys ({0})…xxxxxx]"
+
+#: ui/linux-gtk/tk/host_gtk.cpp:3003 ui/linux-gtk/tk/host_gtk.cpp:3022
+msgid "Could not read file"
+msgstr "[Çöùld ñöt réàd fïléxxx]"
+
+#: ui/linux-qt/src/SettingsWidget.cpp:166
+msgid "Export room keys"
+msgstr "[Éxpört rööm kéysxxx]"
+
+#: ui/linux-qt/src/SettingsWidget.cpp:173
+msgid "Import room keys"
+msgstr "[Ïmpört rööm kéysxxx]"
+
+#: ui/linux-qt/src/SettingsWidget.cpp:189
+msgid "Import complete"
+msgstr "[Ïmpört çömplétéxxx]"
+
+#: ui/linux-qt/src/SettingsWidget.cpp:192
+msgid "Import failed"
+msgstr "[Ïmpört fàïlédxx]"
+
+#: ui/macos/src/AppDelegate.mm:213
+msgid "About Tesseract"
+msgstr "[Àböùt Tésséràçtxxx]"
+
+#: ui/macos/src/AppDelegate.mm:221
+msgid "Hide Tesseract"
+msgstr "[Hïdé Tésséràçtxx]"
+
+#: ui/macos/src/AppDelegate.mm:224
+msgid "Quit Tesseract"
+msgstr "[Qùït Tésséràçtxx]"
+
+#: ui/macos/src/AppDelegate.mm:242
+msgid "Undo"
+msgstr "[Ùñdöx]"
+
+#: ui/macos/src/AppDelegate.mm:245
+msgid "Redo"
+msgstr "[Rédöx]"
+
+#: ui/macos/src/AppDelegate.mm:249
+msgid "Cut"
+msgstr "[Çùtx]"
+
+#: ui/macos/src/AppDelegate.mm:255
+msgid "Paste"
+msgstr "[Pàstéx]"
+
+#: ui/macos/src/AppDelegate.mm:258
+msgid "Select All"
+msgstr "[Séléçt Àllxx]"
+
+#: ui/macos/src/AppDelegate.mm:282
+msgid "Insert Emoji…"
+msgstr "[Ïñsért Émöjï…xx]"
+
+#: ui/macos/src/AppDelegate.mm:319
+msgid "Window"
+msgstr "[Wïñdöwx]"
+
+#: ui/macos/src/AppDelegate.mm:320
+msgid "Minimize"
+msgstr "[Mïñïmïzéx]"
+
+#: ui/macos/src/AppDelegate.mm:323
+msgid "Zoom"
+msgstr "[Zöömx]"
+
+#: ui/macos/src/MainWindowController.mm:6604 ui/windows/src/MainWindow.cpp:185
+msgid "OK"
+msgstr "[ÖKx]"
+
+#: ui/macos/src/MainWindowController.mm:8367
+msgid "Could Not Save Sticker"
+msgstr "[Çöùld Ñöt Sàvé Stïçkérxxxx]"
+
+#: ui/macos/tk/screen_capture_macos.mm:140
+msgid "Display {0}"
+msgstr "[Dïsplày {0}xx]"
+
+#: ui/shared/app/RoomPane.cpp:721 ui/shared/app/SettingsController.cpp:93
+msgid "not logged in"
+msgstr "[ñöt löggéd ïñxx]"
+
+#: ui/shared/app/ShellBase.cpp:6759
+msgid "Upload failed"
+msgstr "[Ùplöàd fàïlédxx]"
+
+#: ui/shared/app/ShellBase.cpp:6760
+msgid "Upload failed: {0}"
+msgstr "[Ùplöàd fàïléd: {0}xxx]"
+
+#: ui/shared/app/ShellBase.cpp:7216
+msgid "Fetching older messages…"
+msgstr "[Fétçhïñg öldér méssàgés…xxxx]"
+
+#: ui/shared/app/ShellBase.cpp:7240 ui/shared/views/ThreadListView.cpp:95
+msgid "%b %-d"
+msgstr "[%b %-dx]"
+
+#: ui/shared/app/ShellBase.cpp:7241
+msgid "%b %-d, %Y"
+msgstr "[%b %-d, %Yxx]"
+
+#: ui/shared/app/ShellBase.cpp:7242
+msgid "(oldest: {0})"
+msgstr "[(öldést: {0})xx]"
+
+#: ui/shared/app/ShellBase.cpp:7751
+msgid "Tesseract {0} available"
+msgstr "[Tésséràçt {0} àvàïlàbléxxxx]"
+
+#: ui/shared/app/ShellBase.cpp:8024
+msgid "empty session"
+msgstr "[émpty séssïöñxx]"
+
+#: ui/shared/app/ShellBase.cpp:8065
+msgid "couldn't persist matrix store: {0}"
+msgstr "[çöùldñ't pérsïst màtrïx störé: {0}xxxxxx]"
+
+#: ui/shared/app/ShellBase.cpp:8077
+msgid "couldn't persist session"
+msgstr "[çöùldñ't pérsïst séssïöñxxxx]"
+
+#: ui/shared/app/ShellBase.cpp:8196
+msgid "no user id"
+msgstr "[ñö ùsér ïdxx]"
+
+#: ui/shared/app/ShellBase.cpp:9232
+msgid "{0} is typing…"
+msgstr "[{0} ïs typïñg…xx]"
+
+#: ui/shared/app/ShellBase.cpp:9236
+msgid "{0} and {1} are typing…"
+msgstr "[{0} àñd {1} àré typïñg…xxxx]"
+
+#: ui/shared/app/ShellBase.cpp:9240
+msgid "{0}, {1} and {2} other are typing…"
+msgid_plural "{0}, {1} and {2} others are typing…"
+msgstr[0] "[{0}, {1} àñd {2} öthér àré typïñg…xxxxxx]"
+msgstr[1] "[{0}, {1} àñd {2} öthérs àré typïñg…xxxxxxx]"
+
+#: ui/shared/app/ShellBase.cpp:14513
+msgid "Call failed: {0}"
+msgstr "[Çàll fàïléd: {0}xxx]"
+
+#: ui/shared/app/ShellBase.h:3806
+msgid "New message"
+msgstr "[Ñéw méssàgéxx]"
+
+#: ui/shared/app/SlashCommands.cpp:172
+msgid "(Spoiler: {0})"
+msgstr "[(Spöïlér: {0})xx]"
+
+#: ui/shared/app/SlashCommands.cpp:179
+msgid "(Spoiler)"
+msgstr "[(Spöïlér)x]"
+
+#: ui/shared/app/SlashCommands.cpp:278
+msgid "slaps {0} around a bit with a large trout"
+msgstr "[slàps {0} àröùñd à bït wïth à làrgé tröùtxxxxxxxx]"
+
+#: ui/shared/app/SlashCommands.cpp:312
+msgid "no mxc_uri provided; use /myroomavatar alone to open the image picker"
+msgstr "[ñö mxç_ùrï prövïdéd; ùsé /myröömàvàtàr àlöñé tö öpéñ thé ïmàgé pïçkérxxxxxxxxxxxxx]"
+
+#: ui/shared/tk/i18n.cpp:633
+msgid "Jan"
+msgstr "[Jàñx]"
+
+#: ui/shared/tk/i18n.cpp:633
+msgid "Feb"
+msgstr "[Fébx]"
+
+#: ui/shared/tk/i18n.cpp:633
+msgid "Mar"
+msgstr "[Màrx]"
+
+#: ui/shared/tk/i18n.cpp:633
+msgid "Apr"
+msgstr "[Àprx]"
+
+#: ui/shared/tk/i18n.cpp:633
+msgid "Jun"
+msgstr "[Jùñx]"
+
+#: ui/shared/tk/i18n.cpp:634
+msgid "Jul"
+msgstr "[Jùlx]"
+
+#: ui/shared/tk/i18n.cpp:634
+msgid "Aug"
+msgstr "[Àùgx]"
+
+#: ui/shared/tk/i18n.cpp:634
+msgid "Sep"
+msgstr "[Sépx]"
+
+#: ui/shared/tk/i18n.cpp:634
+msgid "Oct"
+msgstr "[Öçtx]"
+
+#: ui/shared/tk/i18n.cpp:634
+msgid "Nov"
+msgstr "[Ñövx]"
+
+#: ui/shared/tk/i18n.cpp:634
+msgid "Dec"
+msgstr "[Déçx]"
+
+#: ui/shared/tk/i18n.cpp:636
+msgid "Sunday"
+msgstr "[Sùñdàyx]"
+
+#: ui/shared/tk/i18n.cpp:636
+msgid "Monday"
+msgstr "[Möñdàyx]"
+
+#: ui/shared/tk/i18n.cpp:636
+msgid "Tuesday"
+msgstr "[Tùésdàyx]"
+
+#: ui/shared/tk/i18n.cpp:636
+msgid "Wednesday"
+msgstr "[Wédñésdàyx]"
+
+#: ui/shared/tk/i18n.cpp:637
+msgid "Thursday"
+msgstr "[Thùrsdàyx]"
+
+#: ui/shared/tk/i18n.cpp:637
+msgid "Friday"
+msgstr "[Frïdàyx]"
+
+#: ui/shared/tk/i18n.cpp:637
+msgid "Saturday"
+msgstr "[Sàtùrdàyx]"
+
+#: ui/shared/tk/i18n.cpp:639
+msgid "Sun"
+msgstr "[Sùñx]"
+
+#: ui/shared/tk/i18n.cpp:639
+msgid "Mon"
+msgstr "[Möñx]"
+
+#: ui/shared/tk/i18n.cpp:639
+msgid "Tue"
+msgstr "[Tùéx]"
+
+#: ui/shared/tk/i18n.cpp:639
+msgid "Wed"
+msgstr "[Wédx]"
+
+#: ui/shared/tk/i18n.cpp:639
+msgid "Thu"
+msgstr "[Thùx]"
+
+#: ui/shared/tk/i18n.cpp:639
+msgid "Fri"
+msgstr "[Frïx]"
+
+#: ui/shared/tk/i18n.cpp:639
+msgid "Sat"
+msgstr "[Sàtx]"
+
+#: ui/shared/tk/i18n.cpp:641
+msgid "Su"
+msgstr "[Sùx]"
+
+#: ui/shared/tk/i18n.cpp:641
+msgid "Mo"
+msgstr "[Möx]"
+
+#: ui/shared/tk/i18n.cpp:641
+msgid "Tu"
+msgstr "[Tùx]"
+
+#: ui/shared/tk/i18n.cpp:641
+msgid "We"
+msgstr "[Wéx]"
+
+#: ui/shared/tk/i18n.cpp:641
+msgid "Th"
+msgstr "[Thx]"
+
+#: ui/shared/tk/i18n.cpp:641
+msgid "Fr"
+msgstr "[Frx]"
+
+#: ui/shared/tk/i18n.cpp:641
+msgid "Sa"
+msgstr "[Sàx]"
+
+#: ui/shared/tk/i18n.cpp:708 ui/shared/views/settings/AboutSection.cpp:41
+msgid "{0} B"
+msgstr "[{0} Bx]"
+
+#: ui/shared/tk/i18n.cpp:710 ui/shared/views/settings/AboutSection.cpp:43
+msgid "{0} KB"
+msgstr "[{0} KBx]"
+
+#: ui/shared/tk/i18n.cpp:712 ui/shared/views/settings/AboutSection.cpp:45
+msgid "{0} MB"
+msgstr "[{0} MBx]"
+
+#: ui/shared/tk/i18n.cpp:713 ui/shared/views/settings/AboutSection.cpp:49
+msgid "{0} GB"
+msgstr "[{0} GBx]"
+
+#: ui/shared/views/GifController.cpp:90
+msgid "No GIF API key configured"
+msgstr "[Ñö GÏF ÀPÏ kéy çöñfïgùrédxxxxx]"
+
+#: ui/shared/views/GifController.cpp:114
+msgid "No GIFs found"
+msgstr "[Ñö GÏFs föùñdxx]"
+
+#: ui/shared/views/GifController.cpp:134
+msgid "GIF search failed"
+msgstr "[GÏF séàrçh fàïlédxxx]"
+
+#: ui/shared/views/ImagePackEditorView.cpp:365
+msgid "Any"
+msgstr "[Àñyx]"
+
+#: ui/shared/views/InviteCard.cpp:50
+msgid "Block"
+msgstr "[Blöçkx]"
+
+#: ui/shared/views/InviteCard.cpp:302 ui/shared/views/RoomListView.cpp:1185
+msgid "Invited by {0}"
+msgstr "[Ïñvïtéd by {0}xx]"
+
+#. TRANSLATORS: date separator pattern, see tk::format_date.
+#: ui/shared/views/MessageListView.cpp:975
+msgid "%B %-d, %Y"
+msgstr "[%B %-d, %Yxx]"
+
+#: ui/shared/views/MessageListView.cpp:4099
+msgid "(empty message)"
+msgstr "[(émpty méssàgé)xxx]"
+
+#: ui/shared/views/MessageListView.cpp:4903
+msgid "[Spoiler]"
+msgstr "[[Spöïlér]x]"
+
+#: ui/shared/views/MessageListView.cpp:4904
+msgid "[Spoiler: {0}]"
+msgstr "[[Spöïlér: {0}]xx]"
+
+#: ui/shared/views/QuickSwitcher.cpp:648
+msgid "No matching users — type a full @user:server to chat"
+msgstr "[Ñö màtçhïñg ùsérs — typé à fùll @ùsér:sérvér tö çhàtxxxxxxxxxx]"
+
+#: ui/shared/views/QuickSwitcher.cpp:684
+msgid "Recent"
+msgstr "[Réçéñtx]"
+
+#: ui/shared/views/RoomInfoPanel.cpp:54 ui/shared/views/RoomInfoPanel.cpp:179
+msgid "Show all ▾"
+msgstr "[Shöw àll ▾xx]"
+
+#: ui/shared/views/RoomInfoPanel.cpp:70
+msgid "Favourite"
+msgstr "[Fàvöùrïtéx]"
+
+#: ui/shared/views/RoomInfoPanel.cpp:77
+msgid "Low priority"
+msgstr "[Löw prïörïtyxx]"
+
+#: ui/shared/views/RoomInfoPanel.cpp:89
+msgid "All messages"
+msgstr "[Àll méssàgésxx]"
+
+#: ui/shared/views/RoomInfoPanel.cpp:280
+msgid "Show all ({0}) ▾"
+msgstr "[Shöw àll ({0}) ▾xxx]"
+
+#: ui/shared/views/RoomInfoPanel.cpp:352 ui/shared/views/RoomInfoPanel.cpp:771
+msgid "No topic set."
+msgstr "[Ñö töpïç sét.xx]"
+
+#: ui/shared/views/RoomInfoPanel.cpp:815
+msgid "Members ({0})"
+msgstr "[Mémbérs ({0})xx]"
+
+#: ui/shared/views/RoomListView.cpp:104
+msgid "{0} sent an image"
+msgstr "[{0} séñt àñ ïmàgéxxx]"
+
+#: ui/shared/views/RoomListView.cpp:105
+msgid "{0} sent a video"
+msgstr "[{0} séñt à vïdéöxxx]"
+
+#: ui/shared/views/RoomListView.cpp:106
+msgid "{0} sent a GIF"
+msgstr "[{0} séñt à GÏFxx]"
+
+#: ui/shared/views/RoomListView.cpp:107
+msgid "{0} sent a file"
+msgstr "[{0} séñt à fïléxxx]"
+
+#: ui/shared/views/RoomListView.cpp:108
+msgid "{0} sent a voice message"
+msgstr "[{0} séñt à vöïçé méssàgéxxxx]"
+
+#: ui/shared/views/RoomListView.cpp:109
+msgid "{0} sent a sticker"
+msgstr "[{0} séñt à stïçkérxxx]"
+
+#: ui/shared/views/RoomListView.h:216
+msgid "Invitations"
+msgstr "[Ïñvïtàtïöñsxx]"
+
+#: ui/shared/views/RoomListView.h:217
+msgid "Direct Messages"
+msgstr "[Dïréçt Méssàgésxxx]"
+
+#: ui/shared/views/RoomListView.h:217
+msgid "Rooms"
+msgstr "[Röömsx]"
+
+#: ui/shared/views/RoomListView.h:218
+msgid "Spaces"
+msgstr "[Spàçésx]"
+
+#: ui/shared/views/RoomListView.h:218
+msgid "Inactive"
+msgstr "[Ïñàçtïvéx]"
+
+#: ui/shared/views/RoomListView.h:218
+msgid "Available to Join"
+msgstr "[Àvàïlàblé tö Jöïñxxx]"
+
+#: ui/shared/views/RoomListView.h:219
+msgid "Requests to Join"
+msgstr "[Réqùésts tö Jöïñxxx]"
+
+#. TRANSLATORS: month header pattern, see tk::format_date.
+#: ui/shared/views/RoomMediaView.cpp:47
+msgid "%B %Y"
+msgstr "[%B %Yx]"
+
+#: ui/shared/views/RoomSearchBar.cpp:181
+msgid "{0} of {1}"
+msgstr "[{0} öf {1}xx]"
+
+#: ui/shared/views/RoomView.cpp:285
+msgid "Audio call"
+msgstr "[Àùdïö çàllxx]"
+
+#: ui/shared/views/RoomView.cpp:292
+msgid "Video call"
+msgstr "[Vïdéö çàllxx]"
+
+#: ui/shared/views/ThreadListView.cpp:96
+msgid "%-m/%-d/%y"
+msgstr "[%-m/%-d/%yxx]"
+
+#: ui/shared/views/VideoViewerOverlay.cpp:465
+msgid "Unable to play video"
+msgstr "[Ùñàblé tö plày vïdéöxxxx]"
+
+#: ui/shared/views/VideoViewerOverlay.cpp:481
+msgid "Use ⬇ to download and play in an external player"
+msgstr "[Ùsé ⬇ tö döwñlöàd àñd plày ïñ àñ éxtérñàl plàyérxxxxxxxxx]"
+
+#: ui/shared/views/room_chip_strip.cpp:86
+msgid "Unnamed"
+msgstr "[Ùññàmédx]"
+
+#: ui/shared/views/settings/AboutSection.cpp:56
+msgid "Hits: {0}  ·  Misses: {1}"
+msgstr "[Hïts: {0}  ·  Mïssés: {1}xxxxx]"
+
+#: ui/shared/views/settings/AboutSection.cpp:61
+msgid "Hits: {0}  ·  Misses: {1}  ({2}% hit rate)"
+msgstr "[Hïts: {0}  ·  Mïssés: {1}  ({2}% hït ràté)xxxxxxxx]"
+
+#: ui/shared/views/settings/AppearanceSection.cpp:215
+msgid "Light"
+msgstr "[Lïghtx]"
+
+#: ui/shared/views/settings/AppearanceSection.cpp:216
+msgid "Dark"
+msgstr "[Dàrkx]"
+
+#: ui/shared/views/settings/AppearanceSection.cpp:500
+msgid "Group inactive rooms"
+msgstr "[Gröùp ïñàçtïvé röömsxxxx]"
+
+#: ui/shared/views/settings/AppearanceSection.cpp:509
+msgid "1 week"
+msgstr "[1 wéékx]"
+
+#: ui/shared/views/settings/AppearanceSection.cpp:510
+msgid "2 weeks"
+msgstr "[2 wééksx]"
+
+#: ui/shared/views/settings/AppearanceSection.cpp:511
+msgid "1 month"
+msgstr "[1 möñthx]"
+
+#: ui/shared/views/settings/AppearanceSection.cpp:512
+msgid "3 months"
+msgstr "[3 möñthsx]"
+
+#: ui/shared/views/settings/AppearanceSection.cpp:513
+msgid "6 months"
+msgstr "[6 möñthsx]"
+
+#: ui/shared/views/settings/AppearanceSection.cpp:527
+msgid "Scroll to rooms with new messages"
+msgstr "[Sçröll tö rööms wïth ñéw méssàgésxxxxxx]"
+
+#: ui/shared/views/settings/DevicesSection.cpp:39
+msgid "never"
+msgstr "[ñévérx]"
+
+#: ui/shared/views/settings/DevicesSection.cpp:46
+msgid "in the future"
+msgstr "[ïñ thé fùtùréxx]"
+
+#: ui/shared/views/settings/DevicesSection.cpp:53
+msgid "just now"
+msgstr "[jùst ñöwx]"
+
+#: ui/shared/views/settings/DevicesSection.cpp:63
+msgid "{0}mo"
+msgstr "[{0}möx]"
+
+#: ui/shared/views/settings/DevicesSection.cpp:189
+msgid "Open in browser"
+msgstr "[Öpéñ ïñ bröwsérxxx]"
+
+#: ui/shared/views/settings/DevicesSection.cpp:198
+msgid "I've confirmed"
+msgstr "[Ï'vé çöñfïrmédxx]"
+
+#: ui/shared/views/settings/DevicesSection.cpp:221
+msgid "Sign out"
+msgstr "[Sïgñ öùtx]"
+
+#: ui/shared/views/settings/DevicesSection.cpp:342
+msgid "Complete sign-out in the browser, then click \"I've confirmed\"."
+msgstr "[Çömplété sïgñ-öùt ïñ thé bröwsér, théñ çlïçk \"Ï'vé çöñfïrméd\".xxxxxxxxxxxx]"
+
+#: ui/shared/views/settings/DevicesSection.cpp:356
+msgid "Working…"
+msgstr "[Wörkïñg…x]"
+
+#: ui/shared/views/settings/DevicesSection.cpp:554
+msgid "Loading sessions…"
+msgstr "[Löàdïñg séssïöñs…xxx]"
+
+#: ui/shared/views/settings/DevicesSection.cpp:561
+msgid "No sessions."
+msgstr "[Ñö séssïöñs.xx]"
+
+#: ui/shared/views/settings/MediaSection.cpp:46
+msgid "System default"
+msgstr "[Systém défàùltxx]"
+
+#: ui/shared/views/settings/MediaSection.cpp:75
+msgid "Show avatars in invites"
+msgstr "[Shöw àvàtàrs ïñ ïñvïtésxxxx]"
+
+#: ui/shared/views/settings/MediaSection.cpp:87
+msgid "Pre-load full images while scrolling"
+msgstr "[Pré-löàd fùll ïmàgés whïlé sçröllïñgxxxxxxx]"
+
+#: ui/shared/views/settings/PrivacySection.cpp:68
+msgid "Send and receive presence status"
+msgstr "[Séñd àñd réçéïvé préséñçé stàtùsxxxxxx]"
+
+#: ui/shared/views/settings/PrivacySection.cpp:144
+msgid "Check for updates automatically"
+msgstr "[Çhéçk för ùpdàtés àùtömàtïçàllyxxxxxx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:27
+msgid "Afar"
+msgstr "[Àfàrx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:28
+msgid "Abkhazian"
+msgstr "[Àbkhàzïàñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:29
+msgid "Afrikaans"
+msgstr "[Àfrïkààñsx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:30
+msgid "Akan"
+msgstr "[Àkàñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:31
+msgid "Albanian"
+msgstr "[Àlbàñïàñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:32
+msgid "Amharic"
+msgstr "[Àmhàrïçx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:33
+msgid "Arabic"
+msgstr "[Àràbïçx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:34
+msgid "Aragonese"
+msgstr "[Àràgöñéséx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:35
+msgid "Armenian"
+msgstr "[Àrméñïàñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:36
+msgid "Assamese"
+msgstr "[Àssàméséx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:37
+msgid "Avaric"
+msgstr "[Àvàrïçx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:38
+msgid "Avestan"
+msgstr "[Àvéstàñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:39
+msgid "Aymara"
+msgstr "[Àymàràx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:40
+msgid "Azerbaijani"
+msgstr "[Àzérbàïjàñïxx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:41
+msgid "Bambara"
+msgstr "[Bàmbàràx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:42
+msgid "Bashkir"
+msgstr "[Bàshkïrx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:43
+msgid "Basque"
+msgstr "[Bàsqùéx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:44
+msgid "Belarusian"
+msgstr "[Bélàrùsïàñxx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:45
+msgid "Bengali"
+msgstr "[Béñgàlïx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:46
+msgid "Bislama"
+msgstr "[Bïslàmàx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:47
+msgid "Bosnian"
+msgstr "[Bösñïàñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:48
+msgid "Breton"
+msgstr "[Brétöñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:49
+msgid "Bulgarian"
+msgstr "[Bùlgàrïàñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:50
+msgid "Burmese"
+msgstr "[Bùrméséx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:51
+msgid "Catalan"
+msgstr "[Çàtàlàñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:52
+msgid "Chamorro"
+msgstr "[Çhàmörröx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:53
+msgid "Chechen"
+msgstr "[Çhéçhéñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:54
+msgid "Chichewa"
+msgstr "[Çhïçhéwàx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:55
+msgid "Chinese"
+msgstr "[Çhïñéséx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:56
+msgid "Chinese (Simplified)"
+msgstr "[Çhïñésé (Sïmplïfïéd)xxxx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:57
+msgid "Chinese (Traditional)"
+msgstr "[Çhïñésé (Tràdïtïöñàl)xxxx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:58
+msgid "Church Slavic"
+msgstr "[Çhùrçh Slàvïçxx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:59
+msgid "Chuvash"
+msgstr "[Çhùvàshx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:60
+msgid "Cornish"
+msgstr "[Çörñïshx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:61
+msgid "Corsican"
+msgstr "[Çörsïçàñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:62
+msgid "Cree"
+msgstr "[Çrééx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:63
+msgid "Croatian"
+msgstr "[Çröàtïàñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:64
+msgid "Czech"
+msgstr "[Çzéçhx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:65
+msgid "Danish"
+msgstr "[Dàñïshx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:66
+msgid "Divehi"
+msgstr "[Dïvéhïx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:67
+msgid "Dutch"
+msgstr "[Dùtçhx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:68
+msgid "Dzongkha"
+msgstr "[Dzöñgkhàx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:70
+msgid "English (UK)"
+msgstr "[Éñglïsh (ÙK)xx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:71
+msgid "English (US)"
+msgstr "[Éñglïsh (ÙS)xx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:72
+msgid "Esperanto"
+msgstr "[Éspéràñtöx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:73
+msgid "Estonian"
+msgstr "[Éstöñïàñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:74
+msgid "Ewe"
+msgstr "[Éwéx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:75
+msgid "Faroese"
+msgstr "[Fàröéséx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:76
+msgid "Fijian"
+msgstr "[Fïjïàñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:77
+msgid "Finnish"
+msgstr "[Fïññïshx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:79
+msgid "Western Frisian"
+msgstr "[Wéstérñ Frïsïàñxxx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:80
+msgid "Fulah"
+msgstr "[Fùlàhx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:81
+msgid "Scottish Gaelic"
+msgstr "[Sçöttïsh Gàélïçxxx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:82
+msgid "Galician"
+msgstr "[Gàlïçïàñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:83
+msgid "Ganda"
+msgstr "[Gàñdàx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:84
+msgid "Georgian"
+msgstr "[Géörgïàñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:85
+msgid "German"
+msgstr "[Gérmàñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:86
+msgid "Greek"
+msgstr "[Gréékx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:87
+msgid "Kalaallisut"
+msgstr "[Kàlààllïsùtxx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:88
+msgid "Guarani"
+msgstr "[Gùàràñïx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:89
+msgid "Gujarati"
+msgstr "[Gùjàràtïx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:90
+msgid "Haitian Creole"
+msgstr "[Hàïtïàñ Çréöléxx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:91
+msgid "Hausa"
+msgstr "[Hàùsàx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:92
+msgid "Hebrew"
+msgstr "[Hébréwx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:93
+msgid "Herero"
+msgstr "[Héréröx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:94
+msgid "Hindi"
+msgstr "[Hïñdïx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:95
+msgid "Hiri Motu"
+msgstr "[Hïrï Mötùx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:96
+msgid "Hungarian"
+msgstr "[Hùñgàrïàñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:97
+msgid "Icelandic"
+msgstr "[Ïçélàñdïçx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:98
+msgid "Ido"
+msgstr "[Ïdöx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:99
+msgid "Igbo"
+msgstr "[Ïgböx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:100
+msgid "Indonesian"
+msgstr "[Ïñdöñésïàñxx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:101
+msgid "Interlingua"
+msgstr "[Ïñtérlïñgùàxx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:102
+msgid "Interlingue"
+msgstr "[Ïñtérlïñgùéxx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:103
+msgid "Inuktitut"
+msgstr "[Ïñùktïtùtx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:104
+msgid "Inupiaq"
+msgstr "[Ïñùpïàqx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:105
+msgid "Irish"
+msgstr "[Ïrïshx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:106
+msgid "Italian"
+msgstr "[Ïtàlïàñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:107
+msgid "Japanese"
+msgstr "[Jàpàñéséx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:108
+msgid "Javanese"
+msgstr "[Jàvàñéséx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:109
+msgid "Kannada"
+msgstr "[Kàññàdàx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:110
+msgid "Kanuri"
+msgstr "[Kàñùrïx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:111
+msgid "Kashmiri"
+msgstr "[Kàshmïrïx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:112
+msgid "Kazakh"
+msgstr "[Kàzàkhx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:113
+msgid "Khmer"
+msgstr "[Khmérx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:114
+msgid "Kikuyu"
+msgstr "[Kïkùyùx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:115
+msgid "Kinyarwanda"
+msgstr "[Kïñyàrwàñdàxx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:116
+msgid "Kyrgyz"
+msgstr "[Kyrgyzx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:117
+msgid "Komi"
+msgstr "[Kömïx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:118
+msgid "Kongo"
+msgstr "[Köñgöx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:119
+msgid "Korean"
+msgstr "[Köréàñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:120
+msgid "Kuanyama"
+msgstr "[Kùàñyàmàx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:121
+msgid "Kurdish"
+msgstr "[Kùrdïshx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:122
+msgid "Lao"
+msgstr "[Làöx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:123
+msgid "Latin"
+msgstr "[Làtïñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:124
+msgid "Latvian"
+msgstr "[Làtvïàñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:125
+msgid "Limburgish"
+msgstr "[Lïmbùrgïshxx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:126
+msgid "Lingala"
+msgstr "[Lïñgàlàx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:127
+msgid "Lithuanian"
+msgstr "[Lïthùàñïàñxx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:128
+msgid "Luba-Katanga"
+msgstr "[Lùbà-Kàtàñgàxx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:129
+msgid "Luxembourgish"
+msgstr "[Lùxémböùrgïshxx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:130
+msgid "Macedonian"
+msgstr "[Màçédöñïàñxx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:131
+msgid "Malagasy"
+msgstr "[Màlàgàsyx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:132
+msgid "Malay"
+msgstr "[Màlàyx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:133
+msgid "Malayalam"
+msgstr "[Màlàyàlàmx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:134
+msgid "Maltese"
+msgstr "[Màltéséx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:135
+msgid "Manx"
+msgstr "[Màñxx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:136
+msgid "Maori"
+msgstr "[Màörïx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:137
+msgid "Marathi"
+msgstr "[Màràthïx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:138
+msgid "Marshallese"
+msgstr "[Màrshàlléséxx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:139
+msgid "Mongolian"
+msgstr "[Möñgölïàñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:140
+msgid "Nauru"
+msgstr "[Ñàùrùx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:141
+msgid "Navajo"
+msgstr "[Ñàvàjöx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:142
+msgid "North Ndebele"
+msgstr "[Ñörth Ñdébéléxx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:143
+msgid "South Ndebele"
+msgstr "[Söùth Ñdébéléxx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:144
+msgid "Ndonga"
+msgstr "[Ñdöñgàx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:145
+msgid "Nepali"
+msgstr "[Ñépàlïx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:146
+msgid "Norwegian"
+msgstr "[Ñörwégïàñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:147
+msgid "Norwegian Bokmål"
+msgstr "[Ñörwégïàñ Bökmålxxx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:148
+msgid "Norwegian Nynorsk"
+msgstr "[Ñörwégïàñ Ñyñörskxxx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:149
+msgid "Nuosu"
+msgstr "[Ñùösùx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:150
+msgid "Occitan"
+msgstr "[Öççïtàñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:151
+msgid "Ojibwe"
+msgstr "[Öjïbwéx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:152
+msgid "Odia"
+msgstr "[Ödïàx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:153
+msgid "Oromo"
+msgstr "[Örömöx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:154
+msgid "Ossetian"
+msgstr "[Össétïàñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:155
+msgid "Pali"
+msgstr "[Pàlïx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:156
+msgid "Pashto"
+msgstr "[Pàshtöx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:157
+msgid "Persian"
+msgstr "[Pérsïàñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:158
+msgid "Polish"
+msgstr "[Pölïshx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:159
+msgid "Portuguese"
+msgstr "[Pörtùgùéséxx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:160
+msgid "Portuguese (Brazil)"
+msgstr "[Pörtùgùésé (Bràzïl)xxx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:161
+msgid "Punjabi"
+msgstr "[Pùñjàbïx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:162
+msgid "Quechua"
+msgstr "[Qùéçhùàx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:163
+msgid "Romanian"
+msgstr "[Römàñïàñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:164
+msgid "Romansh"
+msgstr "[Römàñshx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:165
+msgid "Rundi"
+msgstr "[Rùñdïx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:166
+msgid "Russian"
+msgstr "[Rùssïàñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:167
+msgid "Northern Sami"
+msgstr "[Ñörthérñ Sàmïxx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:168
+msgid "Samoan"
+msgstr "[Sàmöàñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:169
+msgid "Sango"
+msgstr "[Sàñgöx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:170
+msgid "Sanskrit"
+msgstr "[Sàñskrïtx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:171
+msgid "Sardinian"
+msgstr "[Sàrdïñïàñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:172
+msgid "Serbian"
+msgstr "[Sérbïàñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:173
+msgid "Shona"
+msgstr "[Shöñàx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:174
+msgid "Sindhi"
+msgstr "[Sïñdhïx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:175
+msgid "Sinhala"
+msgstr "[Sïñhàlàx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:176
+msgid "Slovak"
+msgstr "[Slövàkx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:177
+msgid "Slovenian"
+msgstr "[Slövéñïàñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:178
+msgid "Somali"
+msgstr "[Sömàlïx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:179
+msgid "Southern Sotho"
+msgstr "[Söùthérñ Söthöxx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:181
+msgid "Spanish (Mexico)"
+msgstr "[Spàñïsh (Méxïçö)xxx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:182
+msgid "Sundanese"
+msgstr "[Sùñdàñéséx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:183
+msgid "Swahili"
+msgstr "[Swàhïlïx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:184
+msgid "Swati"
+msgstr "[Swàtïx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:185
+msgid "Swedish"
+msgstr "[Swédïshx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:186
+msgid "Tagalog"
+msgstr "[Tàgàlögx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:187
+msgid "Tahitian"
+msgstr "[Tàhïtïàñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:188
+msgid "Tajik"
+msgstr "[Tàjïkx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:189
+msgid "Tamil"
+msgstr "[Tàmïlx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:190
+msgid "Tatar"
+msgstr "[Tàtàrx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:191
+msgid "Telugu"
+msgstr "[Télùgùx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:192
+msgid "Thai"
+msgstr "[Thàïx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:193
+msgid "Tibetan"
+msgstr "[Tïbétàñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:194
+msgid "Tigrinya"
+msgstr "[Tïgrïñyàx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:195
+msgid "Tongan"
+msgstr "[Töñgàñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:196
+msgid "Tsonga"
+msgstr "[Tsöñgàx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:197
+msgid "Tswana"
+msgstr "[Tswàñàx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:198
+msgid "Turkish"
+msgstr "[Tùrkïshx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:199
+msgid "Turkmen"
+msgstr "[Tùrkméñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:200
+msgid "Twi"
+msgstr "[Twïx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:201
+msgid "Uyghur"
+msgstr "[Ùyghùrx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:202
+msgid "Ukrainian"
+msgstr "[Ùkràïñïàñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:203
+msgid "Urdu"
+msgstr "[Ùrdùx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:204
+msgid "Uzbek"
+msgstr "[Ùzbékx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:205
+msgid "Venda"
+msgstr "[Véñdàx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:206
+msgid "Vietnamese"
+msgstr "[Vïétñàméséxx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:207
+msgid "Volapük"
+msgstr "[Völàpükx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:208
+msgid "Walloon"
+msgstr "[Wàllööñx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:209
+msgid "Welsh"
+msgstr "[Wélshx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:210
+msgid "Wolof"
+msgstr "[Wölöfx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:211
+msgid "Xhosa"
+msgstr "[Xhösàx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:212
+msgid "Yiddish"
+msgstr "[Yïddïshx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:213
+msgid "Yoruba"
+msgstr "[Yörùbàx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:214
+msgid "Zhuang"
+msgstr "[Zhùàñgx]"
+
+#: ui/shared/views/settings/bcp47_languages.h:215
+msgid "Zulu"
+msgstr "[Zùlùx]"
+
+#: ui/windows/src/MainWindow.cpp:3201 ui/windows/src/MainWindow.cpp:3237
+msgid "All files"
+msgstr "[Àll fïlésx]"
+
+#: ui/windows/src/MainWindow.cpp:3237 ui/windows/src/RoomWindow.cpp:231
+msgid "Videos"
+msgstr "[Vïdéösx]"
+
+#: ui/windows/src/MainWindow.cpp:6520 ui/windows/src/MainWindow.cpp:6535
+msgid "Key files"
+msgstr "[Kéy fïlésx]"

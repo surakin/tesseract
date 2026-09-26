@@ -184,6 +184,10 @@ public:
     // Also called by RoomWindow for save dialogs in popout windows.
     std::wstring show_save_dialog_(const std::wstring& suggested,
                                    const wchar_t* filter);
+    // An OPENFILENAMEW filter ("Label\0pattern\0...\0") from UTF-8 labels,
+    // so the labels can be translated.
+    static std::wstring file_filter(
+        std::initializer_list<std::pair<std::string, const wchar_t*>> entries);
     void wire_key_dialog_callbacks_();
     // Wires HistoryExportController::show_save_folder_dialog to a native
     // folder picker. Called once per ensure_history_export_controller_()
@@ -553,6 +557,8 @@ private:
     void raise_and_activate_() override;
     void set_window_fullscreen_(bool on) override;
     void rebuild_tray_() override;
+    bool spawn_relaunch_(const std::vector<std::string>& args) override;
+    void quit_app_() override;
     bool is_ctrl_held_() const override;
     void switch_active_account_(const std::string& user_id) override;
     void refresh_account_ui_after_switch_() override;

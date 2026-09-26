@@ -149,7 +149,7 @@ int main(int argc, char* argv[])
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
         !screenshot_mode &&
 #endif
-        !tk::acquire_single_instance_lock().acquired)
+        !tk::acquire_single_instance_lock(plan.instance_lock_wait()).acquired)
     {
         // A hidden/autostart launch with nothing to forward has no meaningful
         // action against an already-running instance — exit quietly.

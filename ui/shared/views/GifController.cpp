@@ -1,5 +1,7 @@
 #include "views/GifController.h"
 
+#include "tk/i18n.h"
+
 #include <tesseract/client.h>
 
 #include <atomic>
@@ -85,7 +87,7 @@ void GifController::run_search(std::string query)
     // silently (this is exactly what made the empty-key case invisible).
     if (key.empty())
     {
-        show_status("No GIF API key configured");
+        show_status(tk::tr("No GIF API key configured"));
         return;
     }
     const std::string ck =
@@ -109,7 +111,7 @@ void GifController::on_results(std::uint64_t request_id,
     }
     if (results.empty())
     {
-        show_status("No GIFs found");
+        show_status(tk::tr("No GIFs found"));
         return;
     }
     popup_->set_results(std::move(results));
@@ -129,7 +131,7 @@ void GifController::on_search_failed(std::uint64_t request_id,
 {
     if (request_id == request_seq_)
     {
-        show_status("GIF search failed");
+        show_status(tk::tr("GIF search failed"));
     }
 }
 

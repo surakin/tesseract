@@ -1,6 +1,7 @@
 #include "host_macos.h"
 #include "audio_playback.h"
 #include "anim_image_cache.h"
+#include "i18n.h"
 #include "canvas_cg.h"
 #include "controls.h"
 #include "macos_accessible.h"
@@ -3783,7 +3784,7 @@ bool Host::ingest_native_file_drop(NSPasteboard* pb, tk::Point pos)
                 std::string reason =
                     err.localizedDescription.UTF8String
                         ? std::string(err.localizedDescription.UTF8String)
-                        : "Could not read file";
+                        : tk::tr("Could not read file");
                 on_file_drop_error_(std::move(reason));
             }
             continue;
@@ -3804,7 +3805,7 @@ bool Host::ingest_native_file_drop(NSPasteboard* pb, tk::Point pos)
                 std::string reason =
                     err.localizedDescription.UTF8String
                         ? std::string(err.localizedDescription.UTF8String)
-                        : "Could not read file";
+                        : tk::tr("Could not read file");
                 on_file_drop_error_(std::move(reason));
             }
             continue;

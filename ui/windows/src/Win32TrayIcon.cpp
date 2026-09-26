@@ -1,6 +1,8 @@
 #include "Win32TrayIcon.h"
 #include "resource.h"
 
+#include "tk/i18n.h"
+
 #include <shellapi.h>
 #include <ole2.h>   // IStream + DEFINE_GUID — required before gdiplus.h
 #include <algorithm>
@@ -414,7 +416,7 @@ void Win32TrayIcon::show_menu()
     {
         return;
     }
-    AppendMenuW(menu, MF_STRING, kMenuShowId, L"Show App");
+    AppendMenuW(menu, MF_STRING, kMenuShowId, widen_capped(tk::tr("Show App"), 256).c_str());
     if (!window_items_.empty())
     {
         AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
@@ -427,7 +429,7 @@ void Win32TrayIcon::show_menu()
         }
     }
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, kMenuQuitId, L"Quit");
+    AppendMenuW(menu, MF_STRING, kMenuQuitId, widen_capped(tk::tr("Quit"), 256).c_str());
 
     POINT pt;
     GetCursorPos(&pt);

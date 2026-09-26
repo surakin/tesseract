@@ -40,17 +40,11 @@ MonthKey compute_month_key(std::uint64_t timestamp_ms)
 #else
     localtime_r(&t, &tm_val);
 #endif
-    constexpr const char* kMonths[] = {
-        "January", "February", "March",     "April",   "May",      "June",
-        "July",    "August",   "September", "October", "November", "December"};
     char key_buf[32];
     std::snprintf(key_buf, sizeof(key_buf), "%04d-%02d",
                  tm_val.tm_year + 1900, tm_val.tm_mon + 1);
-    const std::string month_str = tk::tr(kMonths[tm_val.tm_mon]);
-    char label_buf[32];
-    std::snprintf(label_buf, sizeof(label_buf), "%s %d", month_str.c_str(),
-                 tm_val.tm_year + 1900);
-    return {std::string(key_buf), std::string(label_buf)};
+    // TRANSLATORS: month header pattern, see tk::format_date.
+    return {std::string(key_buf), tk::format_date(tm_val, tk::tr("%B %Y"))};
 }
 
 } // namespace

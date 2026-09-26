@@ -20,6 +20,7 @@
 #include "PopupMenu.h"
 #include "tk/canvas.h"
 #include "tk/host.h"
+#include "tk/i18n.h"
 #include "tk/list_view.h"
 #include "tk/media_kind.h"
 #include "tk/svg.h"
@@ -212,8 +213,10 @@ public:
     // header labels ("Invitations (N)" / "Requests to Join (N)") are
     // constructed dynamically in paint_header.
     static constexpr const char* kSectionTitles[kNumSections] = {
-        "Invitations", "Unread", "Favorites", "Direct Messages", "Rooms",
-        "Call Rooms", "Spaces", "Inactive", "Available to Join", "Requests to Join"};
+        tk::N_("Invitations"), tk::N_("Unread"), tk::N_("Favorites"),
+        tk::N_("Direct Messages"), tk::N_("Rooms"), tk::N_("Call Rooms"),
+        tk::N_("Spaces"), tk::N_("Inactive"), tk::N_("Available to Join"),
+        tk::N_("Requests to Join")};
 
     // Programmatically collapse or expand a section (e.g. to restore saved
     // state on launch). No-op if section is out of range or already in the

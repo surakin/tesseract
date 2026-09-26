@@ -20,7 +20,8 @@ std::size_t LanguagePicker::entry_count_() const
 }
 
 // Rank: 0 = exact code, 1 = code starts-with, 2 = name starts-with,
-// 3 = name substring. Returns -1 for no match at all.
+// 3 = name substring. Returns -1 for no match at all. Names match in both the
+// UI language and English, so "German" still finds "Allemand".
 int LanguagePicker::match_rank_(std::size_t index, std::string_view query) const
 {
     const auto& lang = kBcp47Languages[index];
@@ -30,9 +31,10 @@ int LanguagePicker::match_rank_(std::size_t index, std::string_view query) const
         return 0;
     if (istarts_with(lang.code, query))
         return 1;
-    if (istarts_with(lang.name, query))
+    const std::string local = tk::tr(lang.name.data());
+    if (istarts_with(local, query) || istarts_with(lang.name, query))
         return 2;
-    if (icontains(lang.name, query))
+    if (icontains(local, query) || icontains(lang.name, query))
         return 3;
     return -1;
 }
@@ -45,12 +47,12 @@ std::string LanguagePicker::entry_key_(std::size_t index) const
 std::string LanguagePicker::entry_label_(std::size_t index) const
 {
     const auto& lang = kBcp47Languages[index];
-    return std::string(lang.name) + " (" + std::string(lang.code) + ")";
+    return tk::tr(lang.name.data()) + " (" + std::string(lang.code) + ")";
 }
 
 std::string LanguagePicker::entry_display_(std::size_t index) const
 {
-    return std::string(kBcp47Languages[index].name);
+    return tk::tr(kBcp47Languages[index].name.data());
 }
 
 } // namespace tesseract::views

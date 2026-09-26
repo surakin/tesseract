@@ -8,6 +8,7 @@
 
 #include "tk/canvas.h"
 #include "tk/controls.h"
+#include "tk/i18n.h"
 #include "tk/host.h"
 #include "tk/text_field.h"
 #include "tk/widget.h"
@@ -110,7 +111,7 @@ private:
     bool show_close_button_ = true;
     bool show_paginate_     = true;
     std::string query_;
-    std::string count_text_ = "Type to search";
+    std::string count_text_ = tk::tr("Type to search");
 
     // Child widgets (owned by widget tree).
     tk::Label*       count_label_ = nullptr;

@@ -27,6 +27,7 @@
 #include "tk/anim_decode_session.h"
 #include "tk/audio_capture.h"
 #include "tk/audio_playback.h"
+#include "tk/i18n.h"
 #include <tesseract/call_session.h>
 #include "tk/video_capture.h"
 #include "tk/screen_capture.h"
@@ -165,6 +166,19 @@ public:
     // or window registry changes. Default is a no-op (e.g. a shell with no
     // tray).
     virtual void rebuild_tray_() {}
+
+    // Start a new instance of this app with `args` (argv[1..], UTF-8),
+    // detached from this process. Returns false if it couldn't be started.
+    // Used by restart_app_(); the new instance waits for this one to exit
+    // (see LaunchArgs::relaunch). Default: unsupported.
+    virtual bool spawn_relaunch_(const std::vector<std::string>& /*args*/)
+    {
+        return false;
+    }
+
+    // Quit the whole app (every window), bypassing hide-to-tray — the same
+    // path as the explicit "Quit" menu item. Default no-op.
+    virtual void quit_app_() {}
 
     // Broadcast rebuild_tray_() to every window currently in the
     // AccountManager registry. Call this (on a real ShellBase pointer) after
@@ -3789,7 +3803,7 @@ protected:
         {
             sender = "Tesseract";
             room_name.clear();
-            body = "New message";
+            body = tk::tr("New message");
             avatar_bytes.clear();
             image_bytes.clear();
         }
@@ -5044,6 +5058,11 @@ protected:
                            uint64_t mem_hits, uint64_t mem_misses,
                            uint64_t disk_hits, uint64_t disk_misses)>
             recompute_callback);
+
+    // "Restart now" (e.g. after a language change): start a replacement
+    // instance with relaunch_args(), then quit this one. Refuses (status
+    // message) during a call, and when the new instance can't be started.
+    void restart_app_();
 
     // "Clear all caches" reset, modelled on a logout+login: tear down the
     // account's whole UI (close pop-outs, forget the tab layout, empty the room

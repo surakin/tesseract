@@ -271,6 +271,11 @@ SettingsView::SettingsView()
             on_language_changed(std::move(code));
         }
     };
+    language->on_restart_requested = [this]
+    {
+        if (on_restart_requested)
+            on_restart_requested();
+    };
     language_ = language.get();
 
     // SideTabView — owns the section widgets. "Sessions" sits next to
@@ -807,6 +812,12 @@ void SettingsView::set_known_packs(std::vector<tesseract::ImagePack> all_room_pa
 UserPackEditor* SettingsView::user_pack_editor() const
 {
     return image_packs_ ? image_packs_->user_pack_editor() : nullptr;
+}
+
+void SettingsView::set_language_restart_pending(bool pending)
+{
+    if (language_)
+        language_->set_restart_pending(pending);
 }
 
 void SettingsView::set_cache_sizes(uint64_t local_bytes, uint64_t sdk_bytes,

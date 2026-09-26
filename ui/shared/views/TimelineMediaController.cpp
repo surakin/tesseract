@@ -3,6 +3,7 @@
 #include "MessageListView.h" // MessageRowData (full definition)
 
 #include "icons.h" // kPlaySvg
+#include "tk/i18n.h"
 #include "tk/svg.h"
 #include "tk/theme.h"
 #include "tk/widget.h" // tk::PaintCtx
@@ -57,19 +58,7 @@ std::string tmc_format_mmss(std::uint64_t ms)
 
 std::string tmc_format_size(std::uint64_t bytes)
 {
-    if (bytes < 1024)
-    {
-        return std::to_string(bytes) + " B";
-    }
-    if (bytes < 1024 * 1024)
-    {
-        return std::to_string(bytes / 1024) + " KB";
-    }
-    if (bytes < 1024ull * 1024 * 1024)
-    {
-        return std::to_string(bytes / (1024 * 1024)) + " MB";
-    }
-    return std::to_string(bytes / (1024ull * 1024 * 1024)) + " GB";
+    return tk::format_size(bytes);
 }
 
 } // namespace

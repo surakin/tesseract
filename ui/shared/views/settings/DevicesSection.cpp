@@ -36,35 +36,32 @@ constexpr float kRowRadius   = tesseract::visual::kRadiusSM;
 std::string format_relative_ts(std::uint64_t ts_ms)
 {
     if (ts_ms == 0)
-        return "never";
+        return tk::tr("never");
 
     using namespace std::chrono;
     const auto now =
         duration_cast<milliseconds>(system_clock::now().time_since_epoch())
             .count();
     if (static_cast<std::int64_t>(ts_ms) > now + 60'000)
-        return "in the future"; // clock skew
+        return tk::tr("in the future"); // clock skew
 
     const auto delta_ms = (now > static_cast<std::int64_t>(ts_ms))
                               ? (now - static_cast<std::int64_t>(ts_ms))
                               : 0;
     const auto secs = delta_ms / 1000;
-    char buf[64];
     if (secs < 60)
-        std::snprintf(buf, sizeof(buf), "just now");
-    else if (secs < 3600)
-        std::snprintf(buf, sizeof(buf), "%llum ago",
-                      (unsigned long long)(secs / 60));
+        return tk::tr("just now");
+    // Same short units as the Activity Monitor ("5m", "3h", "2d").
+    std::string span;
+    if (secs < 3600)
+        span = tk::trf(tk::tr("{0}m"), {std::to_string(secs / 60)});
     else if (secs < 86400)
-        std::snprintf(buf, sizeof(buf), "%lluh ago",
-                      (unsigned long long)(secs / 3600));
+        span = tk::trf(tk::tr("{0}h"), {std::to_string(secs / 3600)});
     else if (secs < 86400 * 30)
-        std::snprintf(buf, sizeof(buf), "%llud ago",
-                      (unsigned long long)(secs / 86400));
+        span = tk::trf(tk::tr("{0}d"), {std::to_string(secs / 86400)});
     else
-        std::snprintf(buf, sizeof(buf), "%llumo ago",
-                      (unsigned long long)(secs / (86400 * 30)));
-    return buf;
+        span = tk::trf(tk::tr("{0}mo"), {std::to_string(secs / (86400 * 30))});
+    return tk::trf(tk::tr("{0} ago"), {span});
 }
 
 std::string compose_subline(const tesseract::Client::Device& d)
@@ -189,7 +186,7 @@ void DevicesSection::DeviceRow::rebuild_buttons_()
     if (uia_)
     {
         auto open = tk::create_widget<tk::Button>(
-            this, "Open in browser", std::function<void()>{}, tk::Button::Variant::Subtle);
+            this, tk::tr("Open in browser"), std::function<void()>{}, tk::Button::Variant::Subtle);
         const std::string url = uia_fallback_url_;
         open->set_on_click([url]
         {
@@ -198,7 +195,7 @@ void DevicesSection::DeviceRow::rebuild_buttons_()
         open_btn_ = add_child(std::move(open));
 
         auto confirm = tk::create_widget<tk::Button>(
-            this, "I've confirmed", std::function<void()>{},
+            this, tk::tr("I've confirmed"), std::function<void()>{},
             tk::Button::Variant::Destructive);
         confirm->set_on_click([this]
         {
@@ -208,7 +205,7 @@ void DevicesSection::DeviceRow::rebuild_buttons_()
         confirm_btn_ = add_child(std::move(confirm));
 
         auto cancel = tk::create_widget<tk::Button>(
-            this, "Cancel", std::function<void()>{}, tk::Button::Variant::Subtle);
+            this, tk::tr("Cancel"), std::function<void()>{}, tk::Button::Variant::Subtle);
         const std::string id_for_cancel = device_.id;
         auto on_cancel = on_cancel_;
         cancel->set_on_click([on_cancel, id_for_cancel]
@@ -221,7 +218,7 @@ void DevicesSection::DeviceRow::rebuild_buttons_()
     else if (!device_.is_current)
     {
         auto signout = tk::create_widget<tk::Button>(
-            this, "Sign out", std::function<void()>{},
+            this, tk::tr("Sign out"), std::function<void()>{},
             tk::Button::Variant::Destructive);
         signout->set_on_click([this]
         {
@@ -309,7 +306,7 @@ void DevicesSection::DeviceRow::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         tk::TextStyle name_st;
         name_st.role = tk::FontRole::Title;
         name_layout_ = ctx.factory.build_text(
-            device_.display_name.empty() ? std::string("(no name)")
+            device_.display_name.empty() ? tk::tr("(no name)")
                                          : device_.display_name,
             name_st);
     }
@@ -323,27 +320,27 @@ void DevicesSection::DeviceRow::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     {
         tk::TextStyle chip_st;
         chip_st.role = tk::FontRole::UiSemibold;
-        const char* verif_label = "Unknown";
+        std::string verif_label = tk::tr("Unknown");
         if (device_.verification == tesseract::Client::DeviceVerification::Verified)
-            verif_label = "Verified";
+            verif_label = tk::tr("Verified");
         else if (device_.verification ==
                  tesseract::Client::DeviceVerification::Unverified)
-            verif_label = "Unverified";
+            verif_label = tk::tr("Unverified");
         verif_layout_ = ctx.factory.build_text(verif_label, chip_st);
     }
     if (device_.is_current && !this_dev_layout_)
     {
         tk::TextStyle chip_st;
         chip_st.role = tk::FontRole::UiSemibold;
-        this_dev_layout_ = ctx.factory.build_text("This device", chip_st);
+        this_dev_layout_ = ctx.factory.build_text(tk::tr("This device"), chip_st);
     }
     if (uia_ && !uia_hint_layout_)
     {
         tk::TextStyle hint_st;
         hint_st.role = tk::FontRole::Small;
         uia_hint_layout_ = ctx.factory.build_text(
-            "Complete sign-out in the browser, then click \"I've "
-            "confirmed\".",
+            tk::tr("Complete sign-out in the browser, then click \"I've "
+                   "confirmed\"."),
             hint_st);
     }
     if (!error_.empty() && !error_layout_)
@@ -356,7 +353,7 @@ void DevicesSection::DeviceRow::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     {
         tk::TextStyle busy_st;
         busy_st.role = tk::FontRole::Small;
-        busy_layout_ = ctx.factory.build_text("Working…", busy_st);
+        busy_layout_ = ctx.factory.build_text(tk::tr("Working…"), busy_st);
     }
 
     // Arrange buttons along the right edge at the row's vertical centre.
@@ -475,7 +472,7 @@ void DevicesSection::DeviceRow::paint_before_children(tk::PaintCtx& ctx)
 
 DevicesSection::DevicesSection()
 {
-    group_ = add_group("Sessions");
+    group_ = add_group(tk::tr("Sessions"));
 }
 
 DevicesSection::~DevicesSection() = default;
@@ -554,14 +551,14 @@ void DevicesSection::rebuild_()
 
     if (loading_)
     {
-        auto lbl = tk::create_widget<tk::Label>(this, "Loading sessions…");
+        auto lbl = tk::create_widget<tk::Label>(this, tk::tr("Loading sessions…"));
         loading_label_ = group_->add_widget(std::move(lbl));
         return;
     }
 
     if (devices_.empty())
     {
-        auto lbl = tk::create_widget<tk::Label>(this, "No sessions.");
+        auto lbl = tk::create_widget<tk::Label>(this, tk::tr("No sessions."));
         empty_label_ = group_->add_widget(std::move(lbl));
         return;
     }

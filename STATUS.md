@@ -1,6 +1,6 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-26**. 1993 C++ + 719 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-26**. 2001 C++ + 719 Rust tests.
 
 > **Calls: camera failures detected and explained (2026-09-26, unreleased).**
 > A missing, busy or blocked camera is reported by `tk::VideoCapture` and
@@ -2344,10 +2344,10 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 ## Internationalisation
 
-- **Qt6** — all shell strings wrapped with `QObject::tr()`; `QTranslator` loads `share/translations/tesseract_<locale>.qm` at startup. `i18n_extract_qt` CMake target (guarded by `find_program(lupdate)`) runs `lupdate src/ -ts i18n/qt/tesseract_LANG.ts` to produce a translation template.
-- **GTK4** — all shell strings wrapped with `_(s)` = `gettext(s)`; `bindtextdomain("tesseract", share/locale)` + `textdomain` called in `main()`. `i18n_extract_gtk` CMake target runs `xgettext` to produce `i18n/gtk/tesseract.pot`.
-- Shared views (`ui/shared/views/`) stay in English — translated via each platform's mechanism when strings are passed in by the host.
-- macOS (`NSLocalizedString`) and Win32 (`LoadString`) not yet wired.
+- One mechanism on every platform: `tk::tr` / `trn` / `trf` look strings up in gettext `.mo` catalogs compiled from `i18n/*.po` (English, Spanish, French, plus a pseudo-locale for QA). Shared views and all four shells use it; macOS wraps it as `TkTr()`. Qt's `QObject::tr` and GTK's `gettext` are not used.
+- Language picked in Settings → Language (Auto follows the OS); "Restart now" relaunches into it.
+- `tk::N_` marks literal tables translated at display time; `tk::format_date` formats dates from a translatable strftime-style pattern (so locales can reorder day and month) with catalog month/weekday names; `tk::format_size` gives translated byte units.
+- The `i18n_catalogs_complete` ctest (`i18n/check_i18n.py`) fails when a marked string is missing from any `.po`, or when a shell calls a bare `tr()` / `_()`.
 
 ## Theme
 

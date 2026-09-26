@@ -45,6 +45,19 @@ jobs:
       - name: Install NSIS
         run: choco install nsis --no-progress -y
 
+      # msgfmt compiles i18n/*.po into the .mo catalogs the installer ships;
+      # without it CMake configures fine but packages no translations. Same
+      # binaries as `winget install mlocati.GetText` (winget isn't on the
+      # runner image), pinned by version and checksum.
+      - name: Install gettext (msgfmt)
+        shell: pwsh
+        run: |
+          $zip = "$env:RUNNER_TEMP\gettext.zip"
+          Invoke-WebRequest -Uri "https://github.com/mlocati/gettext-iconv-windows/releases/download/v1.0-v1.19/gettext1.0-iconv1.19-static-64.zip" -OutFile $zip
+          if ((Get-FileHash $zip -Algorithm SHA256).Hash -ne "2b999bc37b56fa052ff98578e9cb188152009f634e3a66aa8ff263a016e9c466") { throw "gettext download checksum mismatch" }
+          Expand-Archive $zip -DestinationPath "$env:RUNNER_TEMP\gettext"
+          "$env:RUNNER_TEMP\gettext\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+
       # The Ninja generator does not auto-activate MSVC like the Visual Studio
       # generator does. Without vcvars on PATH, CMake's compiler probe can't
       # find cl.exe and silently falls back to the runner's bundled MinGW gcc.

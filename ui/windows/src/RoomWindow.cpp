@@ -213,7 +213,7 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
             suggested = L"image";
         std::wstring path = parent_->show_save_dialog_(
             suggested,
-            L"Images\0*.jpg;*.jpeg;*.png;*.gif;*.webp\0All files\0*.*\0\0");
+            MainWindow::file_filter({{tk::tr("Images"), L"*.jpg;*.jpeg;*.png;*.gif;*.webp"}, {tk::tr("All files"), L"*.*"}}).c_str());
         if (!path.empty())
             pane_->save_source_to_file_(std::move(source_url),
                                         wstr_to_utf8(path));
@@ -228,7 +228,7 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
             suggested = L"video.webm";
         std::wstring path = parent_->show_save_dialog_(
             suggested,
-            L"Videos\0*.mp4;*.webm;*.mkv\0All files\0*.*\0\0");
+            MainWindow::file_filter({{tk::tr("Videos"), L"*.mp4;*.webm;*.mkv"}, {tk::tr("All files"), L"*.*"}}).c_str());
         if (!path.empty())
             pane_->save_source_to_file_(std::move(source_json),
                                         wstr_to_utf8(path));
@@ -246,7 +246,7 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
         if (suggested.empty())
             suggested = L"download";
         std::wstring path =
-            parent_->show_save_dialog_(suggested, L"All files\0*.*\0\0");
+            parent_->show_save_dialog_(suggested, MainWindow::file_filter({{tk::tr("All files"), L"*.*"}}).c_str());
         if (path.empty())
             return;
         std::string url = hit.source ? hit.source->fetch_token() : std::string{};
@@ -302,7 +302,7 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
             return;
         auto* ml = room_view_->message_list();
         HMENU menu = CreatePopupMenu();
-        AppendMenuW(menu, MF_STRING, 1, L"Copy");
+        AppendMenuW(menu, MF_STRING, 1, tk::win32::utf8_to_wide(tk::tr("Copy")).c_str());
         POINT pt{};
         GetCursorPos(&pt);
         int cmd = static_cast<int>(TrackPopupMenuEx(

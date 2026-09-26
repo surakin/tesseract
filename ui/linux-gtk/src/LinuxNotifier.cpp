@@ -266,7 +266,7 @@ void LinuxNotifierGtk::notify(const tesseract::Notification& n)
     GVariantBuilder actions_b;
     g_variant_builder_init(&actions_b, G_VARIANT_TYPE("as"));
     g_variant_builder_add(&actions_b, "s", "default");
-    g_variant_builder_add(&actions_b, "s", "Open");
+    g_variant_builder_add(&actions_b, "s", tk::tr("Open").c_str());
     if (legacy_reply_supported_)
     {
         // The label is unused by KDE for this special action id — it renders

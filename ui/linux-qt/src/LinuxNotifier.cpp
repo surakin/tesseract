@@ -213,7 +213,7 @@ void LinuxNotifierQt::notify(const tesseract::Notification& n)
     // Using replaces causes the daemon to update the existing toast in place
     // without re-triggering the animation or sound, making subsequent messages
     // from the same room invisible to the user.
-    QStringList actions{"default", "Open"};
+    QStringList actions{"default", QString::fromStdString(tk::tr("Open"))};
     if (legacy_reply_supported_)
     {
         // The label is unused by KDE for this special action id — it renders

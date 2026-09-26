@@ -10,6 +10,7 @@
 // black — this is a Windows security constraint, not a bug.
 
 #include "screen_capture.h"
+#include "i18n.h"
 
 #include <algorithm>
 #include <atomic>
@@ -114,7 +115,7 @@ public:
                                        name.data(), n, nullptr, nullptr);
                     // id = "monitor:<adapter>:<output>"
                     std::string id = "monitor:" + std::to_string(ai) + ":" + std::to_string(oi);
-                    sources.push_back({id, "Display " + std::to_string(sources.size() + 1), false});
+                    sources.push_back({id, tk::trf(tk::tr("Display {0}"), {std::to_string(sources.size() + 1)}), false});
                 }
                 output->Release();
             }

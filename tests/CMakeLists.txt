@@ -489,3 +489,13 @@ catch_discover_tests(tesseract_tests
 catch_discover_tests(tesseract_tests
     TEST_SPEC "~[keychain]"
 )
+
+# Every translatable UI string has an entry in every i18n/*.po, and the native
+# shells only translate through tk::tr (see i18n/check_i18n.py).
+find_package(Python3 COMPONENTS Interpreter)
+find_program(XGETTEXT_FOR_TESTS xgettext)
+if(Python3_Interpreter_FOUND AND XGETTEXT_FOR_TESTS)
+    add_test(NAME i18n_catalogs_complete
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/i18n/check_i18n.py
+                ${CMAKE_SOURCE_DIR})
+endif()

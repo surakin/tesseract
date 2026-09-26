@@ -5,6 +5,7 @@
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
+#include <thread>
 
 #include <fcntl.h>
 #include <poll.h>
@@ -41,7 +42,8 @@ int make_nonblocking_socket()
         return -1;
     }
     const int flags = fcntl(fd, F_GETFL, 0);
-    if (flags < 0 || fcntl(fd, F_SETFL, flags | O_NONBLOCK) != 0)
+    if (flags < 0 || fcntl(fd, F_SETFL, flags | O_NONBLOCK) != 0 ||
+        fcntl(fd, F_SETFD, FD_CLOEXEC) != 0)
     {
         close(fd);
         return -1;
@@ -106,21 +108,29 @@ ActivationRequest activation_request_for(const tesseract::LaunchArgs& args)
             args.room_id.value_or(std::string{})};
 }
 
-SingleInstanceLock acquire_single_instance_lock()
+SingleInstanceLock acquire_single_instance_lock(std::chrono::milliseconds wait)
 {
     // flock() releases automatically when this process exits, normally or
     // via crash/kill, so there is no explicit cleanup path to maintain.
-    int fd = open(lock_path().c_str(), O_CREAT | O_RDWR, 0600);
+    // O_CLOEXEC: a process this one spawns (a --relaunch) must not inherit
+    // the descriptor, or it would keep the flock held after we exit and then
+    // wait on its own lock.
+    int fd = open(lock_path().c_str(), O_CREAT | O_RDWR | O_CLOEXEC, 0600);
     if (fd < 0)
     {
         // Can't even open the lock file (e.g. /tmp unwritable) — fail open
         // rather than block startup over an unrelated filesystem issue.
         return {true};
     }
-    if (flock(fd, LOCK_EX | LOCK_NB) != 0)
+    const auto deadline = std::chrono::steady_clock::now() + wait;
+    while (flock(fd, LOCK_EX | LOCK_NB) != 0)
     {
-        close(fd);
-        return {false};
+        if (std::chrono::steady_clock::now() >= deadline)
+        {
+            close(fd);
+            return {false};
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
     // Record the owner so a losing launch can find it (single_instance_owner_pid).
     const std::string pid = std::to_string(getpid());

@@ -91,7 +91,7 @@ std::string preview_text_for(const tesseract::RoomInfo& room)
     }
     const std::string& kind   = room.last_message_kind;
     const std::string  sender = room.last_message_sender_name.empty()
-                                    ? std::string("You")
+                                    ? tk::tr("You")
                                     : room.last_message_sender_name;
     if (kind == "text")
     {
@@ -101,12 +101,12 @@ std::string preview_text_for(const tesseract::RoomInfo& room)
         }
         return room.last_message_body;
     }
-    if (kind == "image")   return sender + " sent an image";
-    if (kind == "video")   return sender + " sent a video";
-    if (kind == "gif")     return sender + " sent a GIF";
-    if (kind == "file")    return sender + " sent a file";
-    if (kind == "audio")   return sender + " sent a voice message";
-    if (kind == "sticker") return sender + " sent a sticker";
+    if (kind == "image")   return tk::trf(tk::tr("{0} sent an image"), {sender});
+    if (kind == "video")   return tk::trf(tk::tr("{0} sent a video"), {sender});
+    if (kind == "gif")     return tk::trf(tk::tr("{0} sent a GIF"), {sender});
+    if (kind == "file")    return tk::trf(tk::tr("{0} sent a file"), {sender});
+    if (kind == "audio")   return tk::trf(tk::tr("{0} sent a voice message"), {sender});
+    if (kind == "sticker") return tk::trf(tk::tr("{0} sent a sticker"), {sender});
     return {};
 }
 
@@ -1182,9 +1182,10 @@ private:
         const std::string secondary =
             inv.is_direct
                 ? inv.inviter_user_id
-                : ("Invited by " + (inv.inviter_display_name.empty()
-                                        ? inv.inviter_user_id
-                                        : inv.inviter_display_name));
+                : tk::trf(tk::tr("Invited by {0}"),
+                          {inv.inviter_display_name.empty()
+                               ? inv.inviter_user_id
+                               : inv.inviter_display_name});
 
         // Cache keyed on room_id.
         auto& cache = room_cache_[inv.room_id];
@@ -1393,7 +1394,9 @@ private:
         }
         else
         {
-            meta = std::to_string(s.num_joined_members) + " " + tk::tr("members");
+            meta = tk::trf(tk::trn("{0} member", "{0} members",
+                                   static_cast<long>(s.num_joined_members)),
+                           {std::to_string(s.num_joined_members)});
             if (s.join_rule == "knock")            meta += " \xc2\xb7 " + tk::tr("Knock");
             else if (s.join_rule == "invite")      meta += " \xc2\xb7 " + tk::tr("Invite-only");
             else if (s.join_rule == "restricted")  meta += " \xc2\xb7 " + tk::tr("Restricted");

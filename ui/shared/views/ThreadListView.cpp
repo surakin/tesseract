@@ -87,23 +87,13 @@ std::string format_thread_date(std::uint64_t timestamp_ms)
 
     if (now_t > t && static_cast<std::uint64_t>(now_t - t) < 7u * 86400u)
     {
-        constexpr const char* kDays[] = {"Sun", "Mon", "Tue", "Wed",
-                                         "Thu", "Fri", "Sat"};
-        return tk::tr(kDays[item_tm.tm_wday]);
+        return tk::format_date(item_tm, "%a");
     }
 
-    constexpr const char* kMonths[] = {"Jan", "Feb", "Mar", "Apr",
-                                       "May", "Jun", "Jul", "Aug",
-                                       "Sep", "Oct", "Nov", "Dec"};
-    char buf[24];
+    // TRANSLATORS: date patterns, see tk::format_date.
     if (item_tm.tm_year == now_tm.tm_year)
-        std::snprintf(buf, sizeof(buf), "%s %d",
-                      tk::tr(kMonths[item_tm.tm_mon]).c_str(), item_tm.tm_mday);
-    else
-        std::snprintf(buf, sizeof(buf), "%d/%d/%02d",
-                      item_tm.tm_mon + 1, item_tm.tm_mday,
-                      (item_tm.tm_year + 1900) % 100);
-    return std::string(buf);
+        return tk::format_date(item_tm, tk::tr("%b %-d"));
+    return tk::format_date(item_tm, tk::tr("%-m/%-d/%y"));
 }
 
 } // namespace
@@ -398,10 +388,9 @@ void ThreadListView::paint_row(std::size_t index, tk::PaintCtx& ctx,
     }
 
     // Reply count — bottom right.
-    char count_buf[48];
-    std::snprintf(count_buf, sizeof(count_buf),
-                  t.num_replies == 1 ? "%llu reply" : "%llu replies",
-                  static_cast<unsigned long long>(t.num_replies));
+    const std::string count_buf = tk::trf(
+        tk::trn("{0} reply", "{0} replies", static_cast<long>(t.num_replies)),
+        {std::to_string(t.num_replies)});
     auto count_layout = ctx.factory.build_text(count_buf, cs);
     float count_w = 0.0f;
     if (count_layout)

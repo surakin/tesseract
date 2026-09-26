@@ -5,6 +5,8 @@
 
 #include "GtkSniTrayIcon.h"
 
+#include "tk/i18n.h"
+
 #include <gio/gio.h>
 #include <gdk-pixbuf/gdk-pixbuf.h>
 #include <cairo.h>
@@ -444,7 +446,7 @@ void menu_method(GDBusConnection*, const char*, const char*, const char*,
                 g_variant_new("(ia{sv}av)", -1, &sep_props, &sep_children));
         }
         g_variant_builder_add(&root_children, "v",
-                              make_menu_item(kMenuQuitId, "Quit"));
+                              make_menu_item(kMenuQuitId, tk::tr("Quit").c_str()));
         GVariantBuilder root_props;
         g_variant_builder_init(&root_props, G_VARIANT_TYPE("a{sv}"));
         g_variant_builder_add(&root_props, "{sv}", "children-display",
@@ -477,7 +479,7 @@ void menu_method(GDBusConnection*, const char*, const char*, const char*,
         for (std::size_t i = 0; i < impl->window_items.size(); ++i)
             add_item(kMenuWinBase + static_cast<gint32>(i),
                      impl->window_items[i].first.c_str());
-        add_item(kMenuQuitId, "Quit");
+        add_item(kMenuQuitId, tk::tr("Quit").c_str());
         g_dbus_method_invocation_return_value(invocation,
                                               g_variant_new("(a(ia{sv}))", &out));
         return;

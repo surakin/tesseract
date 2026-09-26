@@ -1,6 +1,7 @@
 #include "room_chip_strip.h"
 
 #include "media_utils.h"
+#include "tk/i18n.h"
 #include "tk/theme.h"
 
 #include <algorithm>
@@ -82,7 +83,7 @@ void paint_room_chips(tk::PaintCtx& ctx, tk::Rect strip,
         ls.trim = tk::TextTrim::Ellipsis;
         ls.max_width = chip.w;
         auto lo = ctx.factory.build_text(
-            room.name.empty() ? std::string("Unnamed") : room.name, ls);
+            room.name.empty() ? tk::tr("Unnamed") : room.name, ls);
         if (lo)
         {
             ctx.canvas.draw_text(*lo,

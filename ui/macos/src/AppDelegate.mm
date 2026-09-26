@@ -112,7 +112,7 @@ static NSString* const kActivateRoomKey = @"room_id";
     // LaunchServices is bypassed. A per-profile flock (not a bundle-id scan)
     // decides, so a named profile started from a terminal runs beside the
     // default one instead of being mistaken for a duplicate.
-    if (!tk::acquire_single_instance_lock().acquired)
+    if (!tk::acquire_single_instance_lock(_launchPlan.instance_lock_wait()).acquired)
     {
         // A duplicate hidden/autostart launch with nothing to forward has no
         // meaningful action against the running instance — terminate

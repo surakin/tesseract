@@ -227,7 +227,18 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/,
         screenshot_mode ? L"io.gnomos.Tesseract.ScreenshotModeMutex" :
 #endif
         single_instance_mutex_name().c_str());
-    if (!single_inst_mutex || GetLastError() == ERROR_ALREADY_EXISTS)
+    bool duplicate = !single_inst_mutex || GetLastError() == ERROR_ALREADY_EXISTS;
+    if (duplicate && single_inst_mutex && launch.relaunch)
+    {
+        // --relaunch: the previous instance is still shutting down. Wait for
+        // it to release the mutex (an abandoned mutex, if it exits without
+        // releasing, is acquired just the same) instead of handing off.
+        const DWORD wait = WaitForSingleObject(
+            single_inst_mutex,
+            static_cast<DWORD>(plan.instance_lock_wait().count()));
+        duplicate = wait != WAIT_OBJECT_0 && wait != WAIT_ABANDONED;
+    }
+    if (duplicate)
     {
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
         if (screenshot_mode)

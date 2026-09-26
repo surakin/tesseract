@@ -432,6 +432,12 @@ public:
     // Fired when the user selects a different language (BCP47 code or "auto").
     std::function<void(std::string)> on_language_changed;
 
+    // Fired by the language section's "Restart now" button.
+    std::function<void()> on_restart_requested;
+
+    // Show / hide the language section's "Restart now" button.
+    void set_language_restart_pending(bool pending);
+
     // ----- tk::Widget overrides ---------------------------------------------
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;

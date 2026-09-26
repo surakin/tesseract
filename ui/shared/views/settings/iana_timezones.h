@@ -2,9 +2,8 @@
 
 // Static table of IANA tzdb zone identifiers, backing TimezonePicker's
 // searchable dropdown for the account settings Timezone field
-// (us.cloke.msc4175.tz). Zone IDs are data values, like this app's
-// pronoun-language codes in bcp47_languages.h — not translated UI chrome
-// (see CLAUDE.md's i18n rule, which applies to UI strings, not data).
+// (us.cloke.msc4175.tz). Zone IDs are data values (IANA identifiers, the
+// same in every locale), not translated UI chrome.
 //
 // Generated from this system's /usr/share/zoneinfo/zone.tab (IANA's
 // per-location table), column 3, deduped and sorted. zone.tab lists every

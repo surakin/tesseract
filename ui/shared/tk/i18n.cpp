@@ -1,5 +1,6 @@
 #include "i18n.h"
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <fstream>
 #include <sstream>
@@ -619,6 +620,97 @@ std::string trn(const char* sing, const char* plur, long n)
 
     // Fallback to English logic
     return (n == 1) ? sing : plur;
+}
+
+namespace
+{
+
+constexpr const char* kMonthNames[12] = {
+    N_("January"), N_("February"), N_("March"),     N_("April"),
+    N_("May"),     N_("June"),     N_("July"),      N_("August"),
+    N_("September"), N_("October"), N_("November"), N_("December")};
+constexpr const char* kMonthAbbrs[12] = {
+    N_("Jan"), N_("Feb"), N_("Mar"), N_("Apr"), N_("May"), N_("Jun"),
+    N_("Jul"), N_("Aug"), N_("Sep"), N_("Oct"), N_("Nov"), N_("Dec")};
+constexpr const char* kWeekdayNames[7] = {
+    N_("Sunday"), N_("Monday"), N_("Tuesday"), N_("Wednesday"),
+    N_("Thursday"), N_("Friday"), N_("Saturday")};
+constexpr const char* kWeekdayAbbrs[7] = {
+    N_("Sun"), N_("Mon"), N_("Tue"), N_("Wed"), N_("Thu"), N_("Fri"), N_("Sat")};
+constexpr const char* kWeekdayInitials[7] = {
+    N_("Su"), N_("Mo"), N_("Tu"), N_("We"), N_("Th"), N_("Fr"), N_("Sa")};
+
+int clamp_index(int i, int n)
+{
+    return (i >= 0 && i < n) ? i : 0;
+}
+
+std::string two_digits(int v)
+{
+    char buf[8];
+    std::snprintf(buf, sizeof(buf), "%02d", v);
+    return buf;
+}
+
+} // namespace
+
+std::string format_date(const std::tm& tm, std::string_view pattern)
+{
+    std::string out;
+    out.reserve(pattern.size() + 16);
+    for (std::size_t i = 0; i < pattern.size(); ++i)
+    {
+        if (pattern[i] != '%' || i + 1 >= pattern.size())
+        {
+            out += pattern[i];
+            continue;
+        }
+        bool no_pad = false;
+        std::size_t j = i + 1;
+        if (pattern[j] == '-' && j + 1 < pattern.size())
+        {
+            no_pad = true;
+            ++j;
+        }
+        switch (pattern[j])
+        {
+        case 'A': out += tr(kWeekdayNames[clamp_index(tm.tm_wday, 7)]); break;
+        case 'a': out += tr(kWeekdayAbbrs[clamp_index(tm.tm_wday, 7)]); break;
+        case 'B': out += tr(kMonthNames[clamp_index(tm.tm_mon, 12)]); break;
+        case 'b': out += tr(kMonthAbbrs[clamp_index(tm.tm_mon, 12)]); break;
+        case 'd':
+            out += no_pad ? std::to_string(tm.tm_mday) : two_digits(tm.tm_mday);
+            break;
+        case 'm':
+            out += no_pad ? std::to_string(tm.tm_mon + 1) : two_digits(tm.tm_mon + 1);
+            break;
+        case 'Y': out += std::to_string(tm.tm_year + 1900); break;
+        case 'y': out += two_digits((tm.tm_year + 1900) % 100); break;
+        case '%': out += '%'; break;
+        default:
+            // Unknown directive: copy it through untouched.
+            out.append(pattern.substr(i, j - i + 1));
+            break;
+        }
+        i = j;
+    }
+    return out;
+}
+
+std::string weekday_initials(int wday)
+{
+    return tr(kWeekdayInitials[clamp_index(wday, 7)]);
+}
+
+std::string format_size(std::uint64_t bytes)
+{
+    if (bytes < 1024)
+        return trf(tr("{0} B"), {std::to_string(bytes)});
+    if (bytes < 1024 * 1024)
+        return trf(tr("{0} KB"), {std::to_string(bytes / 1024)});
+    if (bytes < 1024ull * 1024 * 1024)
+        return trf(tr("{0} MB"), {std::to_string(bytes / (1024 * 1024))});
+    return trf(tr("{0} GB"), {std::to_string(bytes / (1024ull * 1024 * 1024))});
 }
 
 std::string trf(const std::string& fmt, std::initializer_list<std::string> args)

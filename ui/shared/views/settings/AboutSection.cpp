@@ -38,36 +38,28 @@ constexpr float kNaturalW = kAboutSectionLabelW + kAboutSectionLabelGap + 140.0f
 std::string format_bytes(uint64_t n)
 {
     if (n < 1024ULL)
-        return std::to_string(n) + " B";
+        return tk::trf(tk::tr("{0} B"), {std::to_string(n)});
     if (n < 1024ULL * 1024)
-        return std::to_string(n / 1024) + " KB";
+        return tk::trf(tk::tr("{0} KB"), {std::to_string(n / 1024)});
     if (n < 1024ULL * 1024 * 1024)
-        return std::to_string(n / (1024 * 1024)) + " MB";
+        return tk::trf(tk::tr("{0} MB"), {std::to_string(n / (1024 * 1024))});
     char buf[32];
-    std::snprintf(buf, sizeof(buf), "%.1f GB",
+    std::snprintf(buf, sizeof(buf), "%.1f",
                   static_cast<double>(n) / (1024.0 * 1024.0 * 1024.0));
-    return buf;
+    return tk::trf(tk::tr("{0} GB"), {buf});
 }
 
 std::string format_hit_miss(uint64_t hits, uint64_t misses)
 {
     const uint64_t total = hits + misses;
-    char buf[128];
     if (total == 0)
-    {
-        std::snprintf(buf, sizeof(buf), "Hits: 0  ·  Misses: 0");
-    }
-    else
-    {
-        const double rate = 100.0 * static_cast<double>(hits) /
-                            static_cast<double>(total);
-        std::snprintf(buf, sizeof(buf),
-                      "Hits: %llu  ·  Misses: %llu  (%.1f%% hit rate)",
-                      static_cast<unsigned long long>(hits),
-                      static_cast<unsigned long long>(misses),
-                      rate);
-    }
-    return buf;
+        return tk::trf(tk::tr("Hits: {0}  ·  Misses: {1}"), {"0", "0"});
+    const double rate = 100.0 * static_cast<double>(hits) /
+                        static_cast<double>(total);
+    char rate_buf[16];
+    std::snprintf(rate_buf, sizeof(rate_buf), "%.1f", rate);
+    return tk::trf(tk::tr("Hits: {0}  ·  Misses: {1}  ({2}% hit rate)"),
+                   {std::to_string(hits), std::to_string(misses), rate_buf});
 }
 
 // ---------------------------------------------------------------------------

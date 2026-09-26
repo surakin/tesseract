@@ -1,5 +1,7 @@
 #include "theme.h"
 
+#include "i18n.h"
+
 namespace tk
 {
 
@@ -163,11 +165,12 @@ constexpr Palette dark_palette()
 }
 
 constexpr std::array<AccentThemeInfo, 5> kAccentInfos{{
-    {AccentTheme::Blue,   "Blue",   211.0f},
-    {AccentTheme::Forest, "Forest", 146.0f},
-    {AccentTheme::Sunset, "Sunset",  18.0f},
-    {AccentTheme::Violet, "Violet", 268.0f},
-    {AccentTheme::System, "System",   0.0f}, // hue unused; see make_variant
+    // Names are msgids; the Appearance settings translate them for display.
+    {AccentTheme::Blue,   N_("Blue"),   211.0f},
+    {AccentTheme::Forest, N_("Forest"), 146.0f},
+    {AccentTheme::Sunset, N_("Sunset"),  18.0f},
+    {AccentTheme::Violet, N_("Violet"), 268.0f},
+    {AccentTheme::System, N_("System"),   0.0f}, // hue unused; see make_variant
 }};
 
 // Per-accent, per-mode lightness constants for the ~11 accent-dependent

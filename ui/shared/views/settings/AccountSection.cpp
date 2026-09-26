@@ -505,7 +505,7 @@ private:
     mutable std::unique_ptr<tk::TextLayout> value_layout_[2];
     mutable std::unique_ptr<tk::TextLayout> error_layout_[2];
 
-    static constexpr const char* kLabels[2] = {"Timezone", "Bio"};
+    static constexpr const char* kLabels[2] = {tk::N_("Timezone"), tk::N_("Bio")};
 };
 
 AccountSection::ExtendedFields::ExtendedFields()
@@ -806,7 +806,7 @@ void AccountSection::ExtendedFields::paint_after_children(tk::PaintCtx& ctx)
             st.halign    = tk::TextHAlign::Leading;
             st.valign    = tk::TextVAlign::Top;
             st.max_width = kAccountSectionLabelW;
-            label_layout_[i] = ctx.factory.build_text(kLabels[i], st);
+            label_layout_[i] = ctx.factory.build_text(tk::tr(kLabels[i]), st);
         }
         if (label_layout_[i])
         {
@@ -916,7 +916,7 @@ AccountSection::AccountSection()
     row->set_main(tk::Main::End);
     row->set_padding(tk::Edges{0.0f, kAccountSectionPadX, kAccountSectionPadY, kAccountSectionPadX});
     row->add_child(tk::create_widget<tk::Button>(this,
-        "Log Out",
+        tk::tr("Log Out"),
         [this] { if (on_logout) on_logout(); },
         tk::Button::Variant::Destructive));
     add_widget(std::move(row));

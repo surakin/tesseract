@@ -45,13 +45,13 @@ RoomInfoPanelBody::RoomInfoPanelBody()
     edit_topic_btn_->set_icon(kEditSvg, 16.0f);
     edit_topic_btn_->set_accessible_name(tk::tr("Edit topic"));
     save_btn_ = add_child(
-        tk::create_widget<tk::Button>(this, "Save", std::function<void()>{},
+        tk::create_widget<tk::Button>(this, tk::tr("Save"), std::function<void()>{},
                                      tk::Button::Variant::Primary));
     cancel_btn_ = add_child(
-        tk::create_widget<tk::Button>(this, "Cancel", std::function<void()>{},
+        tk::create_widget<tk::Button>(this, tk::tr("Cancel"), std::function<void()>{},
                                      tk::Button::Variant::Subtle));
     expand_btn_ = add_child(
-        tk::create_widget<tk::Button>(this, "Show all \xE2\x96\xBE", std::function<void()>{},
+        tk::create_widget<tk::Button>(this, tk::tr("Show all \xE2\x96\xBE"), std::function<void()>{},
                                      tk::Button::Variant::Subtle));
     invite_btn_ = add_child(
         tk::create_widget<tk::Button>(this, tk::tr("Invite people"), std::function<void()>{},
@@ -67,14 +67,14 @@ RoomInfoPanelBody::RoomInfoPanelBody()
     leave_btn_->set_leading_icon(kLeaveRoomSvg, 16.0f);
 
     // Favourite / Low-priority tag switches (mutually exclusive in the UI).
-    favourite_btn_ = add_child(tk::create_widget<tk::SwitchButton>(this, "Favourite"));
+    favourite_btn_ = add_child(tk::create_widget<tk::SwitchButton>(this, tk::tr("Favourite")));
     favourite_btn_->on_change = [this](bool on) {
         if (on && low_priority_btn_) low_priority_btn_->set_checked(false);
         if (on_favourite_changed) on_favourite_changed(room_id_, on);
         if (on_layout_changed) on_layout_changed(); // repaint both switches
     };
 
-    low_priority_btn_ = add_child(tk::create_widget<tk::SwitchButton>(this, "Low priority"));
+    low_priority_btn_ = add_child(tk::create_widget<tk::SwitchButton>(this, tk::tr("Low priority")));
     low_priority_btn_->on_change = [this](bool on) {
         if (on && favourite_btn_) favourite_btn_->set_checked(false);
         if (on_low_priority_changed) on_low_priority_changed(room_id_, on);
@@ -85,10 +85,10 @@ RoomInfoPanelBody::RoomInfoPanelBody()
     // ensuring its expanded dropdown captures pointer events before leave_btn_.
     auto notif_combo = tk::create_widget<tk::ComboBox>(this);
     notif_combo->set_options({
-        {.label = "Default",      .value = "default"},
-        {.label = "All messages", .value = "all"},
-        {.label = "Mentions",     .value = "mentions"},
-        {.label = "Off",          .value = "off"},
+        {.label = tk::tr("Default"),      .value = "default"},
+        {.label = tk::tr("All messages"), .value = "all"},
+        {.label = tk::tr("Mentions"),     .value = "mentions"},
+        {.label = tk::tr("Off"),          .value = "off"},
     });
     notif_combo->set_selected_value("default");
     notif_combo->on_changed = [this](std::string value) {
@@ -176,7 +176,7 @@ void RoomInfoPanelBody::open(const tesseract::RoomInfo& info)
     topic_spans_ = topic_html_.empty() ? autolink_plain_to_spans(topic_) :
                                          std::vector<tk::TextSpan>{};
 
-    expand_btn_->set_label("Show all \xE2\x96\xBE");
+    expand_btn_->set_label(tk::tr("Show all \xE2\x96\xBE"));
 
     if (notification_combo_)
     {
@@ -277,7 +277,7 @@ void RoomInfoPanelBody::set_members(std::vector<tesseract::RoomMember> members)
 
     const int total = static_cast<int>(members_.size());
     expand_btn_->set_label(
-        std::string("Show all (") + std::to_string(total) + ") \xE2\x96\xBE");
+        tk::trf(tk::tr("Show all ({0}) \xE2\x96\xBE"), {std::to_string(total)}));
 
     if (on_layout_changed) on_layout_changed();
 }
@@ -349,7 +349,7 @@ float RoomInfoPanelBody::measure_topic_height_(tk::CanvasFactory& factory, float
     std::unique_ptr<tk::TextLayout> placeholder;
     if (!lo)
     {
-        placeholder = factory.build_text("No topic set.", st);
+        placeholder = factory.build_text(tk::tr("No topic set."), st);
         lo = placeholder.get();
     }
     if (!lo) return 20.0f; // defensive fallback (~1 Body line)
@@ -711,7 +711,7 @@ void RoomInfoPanelBody::paint_before_children(tk::PaintCtx& ctx)
         st.role      = tk::FontRole::Small;
         st.halign    = tk::TextHAlign::Leading;
         st.max_width = text_max_w;
-        auto lbl = ctx.factory.build_text("Topic", st);
+        auto lbl = ctx.factory.build_text(tk::tr("Topic"), st);
         if (lbl)
         {
             cv.draw_text(*lbl, {bounds_.x + kPadX, section_topic_y},
@@ -768,7 +768,7 @@ void RoomInfoPanelBody::paint_before_children(tk::PaintCtx& ctx)
             tk::TextStyle st{};
             st.role      = tk::FontRole::Body;
             st.max_width = text_max_w;
-            auto lbl = ctx.factory.build_text("No topic set.", st);
+            auto lbl = ctx.factory.build_text(tk::tr("No topic set."), st);
             if (lbl)
             {
                 cv.draw_text(*lbl, {topic_rect_w.x, topic_rect_w.y},
@@ -812,7 +812,8 @@ void RoomInfoPanelBody::paint_before_children(tk::PaintCtx& ctx)
         st.role      = tk::FontRole::Small;
         st.max_width = text_max_w;
         const std::string mem_hdr =
-            "Members (" + std::to_string(static_cast<int>(members_.size())) + ")";
+            tk::trf(tk::tr("Members ({0})"),
+                    {std::to_string(static_cast<int>(members_.size()))});
         auto lbl = ctx.factory.build_text(mem_hdr, st);
         if (lbl)
         {
@@ -948,7 +949,7 @@ void RoomInfoPanelBody::paint_before_children(tk::PaintCtx& ctx)
         st.role      = tk::FontRole::Small;
         st.halign    = tk::TextHAlign::Leading;
         st.max_width = kPanelW - kPadX * 2.0f;
-        auto lbl = ctx.factory.build_text("Notifications", st);
+        auto lbl = ctx.factory.build_text(tk::tr("Notifications"), st);
         if (lbl)
             cv.draw_text(*lbl, {bounds_.x + kPadX, hdr_y}, pal.text_muted);
     }

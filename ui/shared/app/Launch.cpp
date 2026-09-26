@@ -17,6 +17,8 @@ namespace tesseract
 namespace
 {
 
+std::string g_launch_language;
+
 std::string help_for(std::string_view id)
 {
     if (id == "help")
@@ -149,6 +151,7 @@ LaunchPlan prepare_launch(const std::vector<std::string>& args,
     install_crash_handler(Settings::instance().crash_reporting_enabled);
     {
         std::string lang = Settings::instance().language;
+        g_launch_language = lang;
         if ((lang == "auto" || lang.empty()) && hooks.detect_system_lang)
         {
             lang = hooks.detect_system_lang();
@@ -189,6 +192,18 @@ LaunchPlan prepare_launch(const std::vector<std::string>& args,
         return plan;
     }
     return plan;
+}
+
+const std::string& launch_language()
+{
+    return g_launch_language;
+}
+
+std::vector<std::string> relaunch_args()
+{
+    auto args = profile_relaunch_args(profile());
+    args.emplace_back("--relaunch");
+    return args;
 }
 
 } // namespace tesseract

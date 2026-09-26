@@ -42,6 +42,12 @@ struct LaunchArgs
     /// `--logoutall`: sign out every stored account and exit without UI.
     bool logout_all = false;
 
+    /// `--relaunch`: this process was started by a running instance that is
+    /// about to quit (e.g. "Restart now" after a language change). Instead
+    /// of handing off to that instance, wait for it to release the
+    /// single-instance lock, then start normally.
+    bool relaunch = false;
+
     /// `--profile=NAME`: run against an isolated set of config/data/cache
     /// directories. Validated as [A-Za-z0-9_-]{1,32}; invalid names are
     /// dropped with an InvalidValue diagnostic.

@@ -1,6 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 #include <tesseract/launch_args.h>
 
+#include "app/Launch.h"
+
 using tesseract::cli::Diagnostic;
 
 TEST_CASE("parse_launch_args: no args returns defaults")
@@ -183,6 +185,33 @@ TEST_CASE("profile_relaunch_args")
     CHECK(tesseract::profile_relaunch_args("").empty());
     CHECK(tesseract::profile_relaunch_args("work") ==
           std::vector<std::string>{"--profile=work"});
+}
+
+TEST_CASE("parse_launch_args: --relaunch waits for the single-instance lock")
+{
+    auto args = tesseract::parse_launch_args({"--relaunch", "--profile=work"});
+    CHECK(args.relaunch);
+    CHECK(args.diagnostics.empty());
+    CHECK_FALSE(tesseract::parse_launch_args({}).relaunch);
+
+    tesseract::LaunchPlan plan;
+    CHECK(plan.instance_lock_wait().count() == 0);
+    plan.args = args;
+    CHECK(plan.instance_lock_wait().count() > 0);
+}
+
+TEST_CASE("relaunch_args ends with --relaunch")
+{
+    const auto args = tesseract::relaunch_args();
+    REQUIRE_FALSE(args.empty());
+    CHECK(args.back() == "--relaunch");
+}
+
+TEST_CASE("launch_help_text: --relaunch is internal and not listed")
+{
+    const std::string help = tesseract::launch_help_text("tesseract");
+    CHECK(help.find("--relaunch") == std::string::npos);
+    CHECK(help.find("--profile") != std::string::npos);
 }
 
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED

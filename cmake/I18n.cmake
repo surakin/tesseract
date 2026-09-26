@@ -15,22 +15,18 @@
 find_program(XGETTEXT_EXECUTABLE xgettext)
 if(XGETTEXT_EXECUTABLE)
     file(GLOB_RECURSE _i18n_sources
-        "${CMAKE_SOURCE_DIR}/ui/shared/*.cpp"
-        "${CMAKE_SOURCE_DIR}/ui/shared/*.mm"
-        "${CMAKE_SOURCE_DIR}/ui/windows/*.cpp"
-        "${CMAKE_SOURCE_DIR}/ui/windows/*.mm"
-        "${CMAKE_SOURCE_DIR}/ui/macos/*.cpp"
-        "${CMAKE_SOURCE_DIR}/ui/macos/*.mm"
-        "${CMAKE_SOURCE_DIR}/ui/linux-qt/*.cpp"
-        "${CMAKE_SOURCE_DIR}/ui/linux-qt/*.mm"
-        "${CMAKE_SOURCE_DIR}/ui/linux-gtk/*.cpp"
-        "${CMAKE_SOURCE_DIR}/ui/linux-gtk/*.mm"
+        "${CMAKE_SOURCE_DIR}/ui/*.cpp"
+        "${CMAKE_SOURCE_DIR}/ui/*.h"
+        "${CMAKE_SOURCE_DIR}/ui/*.hpp"
+        "${CMAKE_SOURCE_DIR}/ui/*.mm"
     )
+    list(FILTER _i18n_sources EXCLUDE REGEX "/third_party/")
 
     add_custom_target(i18n-extract
         COMMAND ${XGETTEXT_EXECUTABLE}
             --language=C++ --from-code=UTF-8
             --keyword=tr:1 --keyword=trn:1,2 --keyword=trf:1
+            --keyword=N_:1 --keyword=TkTr:1
             --add-comments=TRANSLATORS:
             --package-name=tesseract
             --output=${CMAKE_SOURCE_DIR}/i18n/tesseract.pot

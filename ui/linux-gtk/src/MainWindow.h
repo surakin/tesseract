@@ -369,6 +369,8 @@ private:
     void raise_and_activate_() override;
     void set_window_fullscreen_(bool on) override;
     void rebuild_tray_() override;
+    bool spawn_relaunch_(const std::vector<std::string>& args) override;
+    void quit_app_() override;
     bool is_ctrl_held_() const override;
     void switch_active_account_(const std::string& user_id) override;
     void refresh_account_ui_after_switch_() override;

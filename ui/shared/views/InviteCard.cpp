@@ -32,7 +32,7 @@ constexpr float kReasonH     = 18.0f; // 12 pt — Small role
 InviteCard::InviteCard()
 {
     auto accept = tk::create_widget<tk::Button>(this,
-        "Accept", std::function<void()>{}, tk::Button::Variant::Primary);
+        tk::tr("Accept"), std::function<void()>{}, tk::Button::Variant::Primary);
     accept->set_on_click([this]()
     {
         accept_btn_->set_enabled(false);
@@ -42,12 +42,12 @@ InviteCard::InviteCard()
     accept_btn_ = add_child(std::move(accept));
 
     auto decline = tk::create_widget<tk::Button>(this,
-        "Decline", std::function<void()>{}, tk::Button::Variant::Subtle);
+        tk::tr("Decline"), std::function<void()>{}, tk::Button::Variant::Subtle);
     decline->set_on_click([this]() { if (on_decline) on_decline(); });
     decline_btn_ = add_child(std::move(decline));
 
     auto block = tk::create_widget<tk::Button>(this,
-        "Block", std::function<void()>{}, tk::Button::Variant::Destructive);
+        tk::tr("Block"), std::function<void()>{}, tk::Button::Variant::Destructive);
     block->set_on_click([this]() { if (on_block) on_block(); });
     block_btn_ = add_child(std::move(block));
 
@@ -299,7 +299,7 @@ void InviteCard::paint_before_children(tk::PaintCtx& ctx)
             invite_->inviter_display_name.empty()
                 ? invite_->inviter_user_id
                 : invite_->inviter_display_name;
-        const std::string invited_by_str = "Invited by " + inviter_name;
+        const std::string invited_by_str = tk::trf(tk::tr("Invited by {0}"), {inviter_name});
 
         if (!invited_by_layout_)
         {

@@ -282,14 +282,14 @@ RoomView::RoomView()
             const std::string rid = current_room_info_.id;
             PopupMenu::Item audio;
             audio.svg_icon    = kPhoneSvg;
-            audio.label       = "Audio call";
+            audio.label       = tk::tr("Audio call");
             audio.on_selected = [this, rid]
             {
                 if (on_start_call) on_start_call(rid, "call#default", true);
             };
             PopupMenu::Item video;
             video.svg_icon    = kVideoSvg;
-            video.label       = "Video call";
+            video.label       = tk::tr("Video call");
             video.on_selected = [this, rid]
             {
                 if (on_start_call) on_start_call(rid, "call#default", false);

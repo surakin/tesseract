@@ -8,6 +8,7 @@
 
 #include "tk/canvas.h"
 #include "tk/controls.h"
+#include "tk/i18n.h"
 #include "tk/text_field.h"
 #include "tk/widget.h"
 
@@ -25,8 +26,8 @@ public:
     {
         std::string title;
         std::string body;                   // optional; may be empty
-        std::string confirm_label = "Confirm";
-        std::string cancel_label  = "Cancel";
+        std::string confirm_label = tk::tr("Confirm");
+        std::string cancel_label  = tk::tr("Cancel");
         bool        destructive   = false;  // red confirm button
         // Show a single-line free-text field under the body (e.g. a
         // kick/ban reason). Its trimmed text is handed to `on_reason`

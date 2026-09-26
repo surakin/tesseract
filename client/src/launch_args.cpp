@@ -104,6 +104,9 @@ std::vector<OptionSpec> launch_option_specs(const LaunchHelpFn& help)
         // Written by the OS login-item registration, not typed by users.
         {"autostart", "autostart", '\0', Arity::Flag, "", h("autostart"), false,
          true, {}},
+        // Passed by the app to itself when it restarts; not typed by users.
+        {"relaunch", "relaunch", '\0', Arity::Flag, "", h("relaunch"), false,
+         true, {}},
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
         {"screenshot-dir", "screenshot-dir", '\0', Arity::Required, "DIR",
          h("screenshot-dir"), false, true, {}},
@@ -152,6 +155,7 @@ LaunchArgs parse_launch_args(const std::vector<std::string>& args)
     result.help = parsed.has("help");
     result.version = parsed.has("version");
     result.logout_all = parsed.has("logoutall");
+    result.relaunch = parsed.has("relaunch");
 
     if (auto p = parsed.value("profile"))
     {

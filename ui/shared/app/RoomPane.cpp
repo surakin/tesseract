@@ -718,7 +718,7 @@ void RoomPane::wire_room_view_()
                 ShellBase::RoomSettingsCommitOutcome outcome;
                 if (!sess || !sess->client)
                 {
-                    outcome.error = "not logged in";
+                    outcome.error = tk::tr("not logged in");
                 }
                 else
                 {

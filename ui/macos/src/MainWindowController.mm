@@ -79,6 +79,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <crt_externs.h>
+#include <spawn.h>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -238,6 +240,8 @@ protected:
     void raise_and_activate_() override;
     void set_window_fullscreen_(bool on) override;
     void rebuild_tray_() override;
+    bool spawn_relaunch_(const std::vector<std::string>& args) override;
+    void quit_app_() override;
     bool is_ctrl_held_() const override;
     void focus_forward_picker_field_() override;
     void hide_forward_picker_field_() override;
@@ -2028,6 +2032,45 @@ MacShell::create_secondary_room_window_(const std::string& room_id)
     return tesseract::make_mac_room_window(this, room_id);
 }
 
+bool MacShell::spawn_relaunch_(const std::vector<std::string>& args)
+{
+    // Exec the bundle's binary directly rather than via LaunchServices:
+    // LSMultipleInstancesProhibited would make NSWorkspace/`open` just
+    // re-activate this (still running) instance. A direct launch is what a
+    // terminal launch does; --relaunch makes it wait for our lock.
+    NSString* exe = NSBundle.mainBundle.executablePath;
+    if (!exe)
+        return false;
+    std::string program = exe.fileSystemRepresentation;
+    std::vector<char*> argv;
+    argv.push_back(program.data());
+    std::vector<std::string> owned(args);
+    for (auto& a : owned)
+        argv.push_back(a.data());
+    argv.push_back(nullptr);
+
+    // Pass on only stdin/stdout/stderr; the single-instance lock and every
+    // other descriptor of this process stay behind.
+    posix_spawnattr_t attr;
+    posix_spawn_file_actions_t actions;
+    posix_spawnattr_init(&attr);
+    posix_spawnattr_setflags(&attr, POSIX_SPAWN_CLOEXEC_DEFAULT);
+    posix_spawn_file_actions_init(&actions);
+    for (int fd = 0; fd <= 2; ++fd)
+        posix_spawn_file_actions_addinherit_np(&actions, fd);
+    pid_t pid = 0;
+    const int rc = posix_spawn(&pid, program.c_str(), &actions, &attr,
+                               argv.data(), *_NSGetEnviron());
+    posix_spawn_file_actions_destroy(&actions);
+    posix_spawnattr_destroy(&attr);
+    return rc == 0;
+}
+
+void MacShell::quit_app_()
+{
+    [NSApp terminate:nil];
+}
+
 void MacShell::raise_and_activate_()
 {
     if (ctrl_ && ctrl_.window)
@@ -3624,7 +3667,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
             auto* ml = s->_mainApp->room_view()->message_list();
             NSMenu* menu = [[NSMenu alloc] initWithTitle:@""];
             NSMenuItem* item = [[NSMenuItem alloc]
-                initWithTitle:NSLocalizedString(@"Copy", nil)
+                initWithTitle:TkTr("Copy")
                        action:@selector(copy:)
                 keyEquivalent:@""];
             [menu addItem:item];
@@ -6556,10 +6599,10 @@ void MacShell::apply_window_title_ui_(const std::string& title)
         alert.alertStyle = NSAlertStyleInformational;
         NSSecureTextField* field = [[NSSecureTextField alloc]
             initWithFrame:NSMakeRect(0, 0, 260, 24)];
-        field.placeholderString = @"Passphrase";
+        field.placeholderString = TkTr("Passphrase");
         alert.accessoryView = field;
-        [alert addButtonWithTitle:@"OK"];
-        [alert addButtonWithTitle:@"Cancel"];
+        [alert addButtonWithTitle:TkTr("OK")];
+        [alert addButtonWithTitle:TkTr("Cancel")];
         [alert beginSheetModalForWindow:s.window
                       completionHandler:^(NSModalResponse resp) {
             if (resp == NSAlertFirstButtonReturn) {
@@ -6605,9 +6648,9 @@ void MacShell::apply_window_title_ui_(const std::string& title)
         MainWindowController* s = ws;
         if (!s) return;
         NSAlert* alert = [[NSAlert alloc] init];
-        alert.messageText = ok ? @"Export complete" : @"Export failed";
+        alert.messageText = ok ? TkTr("Export complete") : TkTr("Export failed");
         alert.informativeText = ok
-            ? @"Room keys exported successfully."
+            ? TkTr("Room keys exported successfully.")
             : [NSString stringWithUTF8String:error.c_str()];
         alert.alertStyle = ok ? NSAlertStyleInformational : NSAlertStyleWarning;
         [alert beginSheetModalForWindow:s.window completionHandler:nil];
@@ -6619,9 +6662,9 @@ void MacShell::apply_window_title_ui_(const std::string& title)
         MainWindowController* s = ws;
         if (!s) return;
         NSAlert* alert = [[NSAlert alloc] init];
-        alert.messageText = ok ? @"Import complete" : @"Import failed";
+        alert.messageText = ok ? TkTr("Import complete") : TkTr("Import failed");
         alert.informativeText = ok
-            ? @"Room keys imported successfully."
+            ? TkTr("Room keys imported successfully.")
             : [NSString stringWithUTF8String:error.c_str()];
         alert.alertStyle = ok ? NSAlertStyleInformational : NSAlertStyleWarning;
         [alert beginSheetModalForWindow:s.window completionHandler:nil];
@@ -7879,16 +7922,18 @@ void MacShell::apply_window_title_ui_(const std::string& title)
 
     NSString* text;
     if (room_busy)
-        text = @"Syncing rooms…";
+        text = TkTr("Syncing rooms…");
     else if (reconnecting)
-        text = @"Reconnecting…";
+        text = TkTr("Reconnecting…");
     else if (keys_busy)
-        text = [NSString stringWithFormat:@"Downloading encryption keys (%llu)…",
-                         (unsigned long long)ss.imported_keys];
+        text = [NSString
+            stringWithUTF8String:tk::trf(tk::tr("Downloading encryption keys ({0})…"),
+                                         {std::to_string(ss.imported_keys)})
+                                     .c_str()];
     else if (ss.has_override)
         return; // persistent status override active; don't overwrite with "Connected"
     else
-        text = @"Connected";
+        text = TkTr("Connected");
 
     [self _setStatusLabelText:text];
     _shell->set_sync_progress_shown(room_busy || reconnecting || keys_busy);
@@ -7911,12 +7956,15 @@ void MacShell::apply_window_title_ui_(const std::string& title)
     _inflightDotView.inflightCount = info.count;
     _inflightDotView.spinPhase     = info.spin_phase;
     [_inflightDotView setNeedsDisplay:YES];
-    NSString* first = (info.count == 1)
-        ? @"1 request in flight"
-        : [NSString stringWithFormat:@"%u requests in flight", info.count];
-    NSString* tip = [NSString stringWithFormat:
-        @"%@\nmedia: %zu loading · fetch: %zu queued · send: %zu queued",
-        first, info.media_pending, info.pool_pending, info.mut_pool_pending];
+    const std::string tip_text =
+        tk::trf(tk::trn("{0} request in flight", "{0} requests in flight",
+                        static_cast<long>(info.count)),
+                {std::to_string(info.count)}) +
+        "\n" +
+        tk::trf(tk::tr("media: {0} loading · fetch: {1} queued · send: {2} queued"),
+                {std::to_string(info.media_pending), std::to_string(info.pool_pending),
+                 std::to_string(info.mut_pool_pending)});
+    NSString* tip = [NSString stringWithUTF8String:tip_text.c_str()];
 #ifndef NDEBUG
     if (!info.urls.empty()) {
         tip = [tip stringByAppendingFormat:@"\n── requests ──\n%@",
@@ -8290,8 +8338,8 @@ void MacShell::apply_window_title_ui_(const std::string& title)
                                                _ctxStickerInfoJson);
     NSMenu* menu = [[NSMenu alloc] initWithTitle:@"Sticker"];
     NSMenuItem* item = [[NSMenuItem alloc]
-        initWithTitle:alreadySaved ? @"Already in Saved Stickers"
-                                   : @"Add to Saved Stickers"
+        initWithTitle:alreadySaved ? TkTr("Already in Saved Stickers")
+                                   : TkTr("Add to Saved Stickers")
                action:alreadySaved ? nil : @selector(_onStickerSave:)
         keyEquivalent:@""];
     item.target = self;
@@ -8316,7 +8364,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
     {
         NSAlert* alert = [[NSAlert alloc] init];
         alert.alertStyle = NSAlertStyleWarning;
-        alert.messageText = @"Could Not Save Sticker";
+        alert.messageText = TkTr("Could Not Save Sticker");
         alert.informativeText =
             [NSString stringWithUTF8String:res.message.c_str()] ?: @"";
         [alert beginSheetModalForWindow:self.window completionHandler:nil];

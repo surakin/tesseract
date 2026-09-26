@@ -178,7 +178,8 @@ void RoomSearchBar::set_match_status(int current, int total, bool searching,
     }
     else
     {
-        count_text_ = std::to_string(current) + " of " + std::to_string(total);
+        count_text_ = tk::trf(tk::tr("{0} of {1}"),
+                              {std::to_string(current), std::to_string(total)});
     }
 
     if (count_label_)

@@ -169,14 +169,14 @@ std::optional<SpoilerMessage> build_spoiler_message(std::string_view args)
     const std::string inner = markdown_inline_to_html(args);
     if (has_reason)
     {
-        msg.body = "(Spoiler: " + reason + ") " + std::string(args);
+        msg.body = tk::trf(tk::tr("(Spoiler: {0})"), {reason}) + " " + std::string(args);
         msg.formatted_body =
             "<span data-mx-spoiler=\"" + attr_escape(reason) + "\">" + inner +
             "</span>";
     }
     else
     {
-        msg.body = "(Spoiler) " + std::string(args);
+        msg.body = tk::tr("(Spoiler)") + " " + std::string(args);
         msg.formatted_body = "<span data-mx-spoiler>" + inner + "</span>";
     }
     return msg;
@@ -275,7 +275,7 @@ Result dispatch_compose_send(Client& client,
         name = name.substr(first, last - first + 1);
 
         std::string emote_body =
-            "slaps " + name + " around a bit with a large trout";
+            tk::trf(tk::tr("slaps {0} around a bit with a large trout"), {name});
         return client.send_emote(room_id, emote_body, "");
     }
 
@@ -309,8 +309,8 @@ Result dispatch_compose_send(Client& client,
         {
             while (*sfx == ' ' || *sfx == '\t') ++sfx; // skip separator
             if (*sfx == '\0')
-                return Result{false, "no mxc_uri provided; use /myroomavatar "
-                                     "alone to open the image picker"};
+                return Result{false, tk::tr("no mxc_uri provided; use /myroomavatar "
+                                            "alone to open the image picker")};
             return client.set_user_room_avatar(room_id, sfx);
         }
     }

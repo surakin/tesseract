@@ -1,4 +1,5 @@
 #import "RoomWindowController.h"
+#import "tk_locale.h"
 #include "app/ShellBase.h"
 #include "app/RoomWindowBase.h"
 #include <tesseract/visual.h>
@@ -363,7 +364,7 @@ MacRoomWindow::MacRoomWindow(tesseract::ShellBase* shell,
         auto* ml = room_view_->message_list();
         NSMenu* menu = [[NSMenu alloc] initWithTitle:@""];
         NSMenuItem* item = [[NSMenuItem alloc]
-            initWithTitle:NSLocalizedString(@"Copy", nil)
+            initWithTitle:TkTr("Copy")
                    action:@selector(copy:)
             keyEquivalent:@""];
         [menu addItem:item];

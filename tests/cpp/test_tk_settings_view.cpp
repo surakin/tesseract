@@ -1,7 +1,9 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "views/SettingsView.h"
+#include "views/settings/LanguageSection.h"
 #include "views/settings/UserPackEditor.h"
+#include "tk/controls.h"
 #include "tk/side_tab_view.h"
 #include "tk/widget.h"
 #include "tk_test_surface.h"
@@ -54,7 +56,39 @@ tk::SideTabView* find_tabs(SettingsView& view)
     return nullptr;
 }
 
+tk::Button* find_button(tk::Widget& root, const std::string& label)
+{
+    for (auto& c : root.children())
+    {
+        if (auto* b = dynamic_cast<tk::Button*>(c.get()); b && b->label() == label)
+            return b;
+        if (auto* b = find_button(*c, label))
+            return b;
+    }
+    return nullptr;
+}
+
 } // namespace
+
+TEST_CASE("LanguageSection: Restart now shows only while a restart is pending",
+          "[settings-view]")
+{
+    tesseract::views::LanguageSection section;
+    int restarts = 0;
+    section.on_restart_requested = [&] { ++restarts; };
+
+    auto* restart = find_button(section, "Restart now");
+    REQUIRE(restart);
+    CHECK_FALSE(restart->visible());
+
+    section.set_restart_pending(true);
+    CHECK(restart->visible());
+    restart->click();
+    CHECK(restarts == 1);
+
+    section.set_restart_pending(false);
+    CHECK_FALSE(restart->visible());
+}
 
 TEST_CASE("SettingsView::show_account_section selects the Account tab",
           "[settings-view]")

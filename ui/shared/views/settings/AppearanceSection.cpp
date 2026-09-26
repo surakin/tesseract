@@ -212,9 +212,9 @@ private:
     };
 
     RadioButton buttons_[kButtonCount] = {
-        {"Light", tesseract::Settings::ThemePreference::Light, {}, nullptr},
-        {"Dark", tesseract::Settings::ThemePreference::Dark, {}, nullptr},
-        {"System", tesseract::Settings::ThemePreference::System, {}, nullptr},
+        {tk::N_("Light"), tesseract::Settings::ThemePreference::Light, {}, nullptr},
+        {tk::N_("Dark"), tesseract::Settings::ThemePreference::Dark, {}, nullptr},
+        {tk::N_("System"), tesseract::Settings::ThemePreference::System, {}, nullptr},
     };
 
     tesseract::Settings::ThemePreference selected_ =
@@ -497,7 +497,7 @@ AppearanceSection::AppearanceSection()
         };
 
         auto cb = tk::create_widget<tk::CheckButton>(
-            this, "Group inactive rooms", s.group_inactive_rooms);
+            this, tk::tr("Group inactive rooms"), s.group_inactive_rooms);
         group_inactive_cb_ = rl_group->add_widget(std::move(cb));
         group_inactive_cb_->on_change = [this](bool v)
         {
@@ -506,11 +506,11 @@ AppearanceSection::AppearanceSection()
 
         auto combo = tk::create_widget<tk::ComboBox>(this);
         combo->set_options({
-            {"1 week",   "7"},
-            {"2 weeks",  "14"},
-            {"1 month",  "30"},
-            {"3 months", "90"},
-            {"6 months", "180"},
+            {tk::tr("1 week"),   "7"},
+            {tk::tr("2 weeks"),  "14"},
+            {tk::tr("1 month"),  "30"},
+            {tk::tr("3 months"), "90"},
+            {tk::tr("6 months"), "180"},
         });
         combo->set_selected_value(
             std::to_string(s.inactive_room_threshold_days));
@@ -524,7 +524,7 @@ AppearanceSection::AppearanceSection()
         };
 
         auto autoscroll = tk::create_widget<tk::CheckButton>(
-            this, "Scroll to rooms with new messages", s.autoscroll_unread_rooms);
+            this, tk::tr("Scroll to rooms with new messages"), s.autoscroll_unread_rooms);
         autoscroll_cb_ = rl_group->add_widget(std::move(autoscroll));
         autoscroll_cb_->on_change = [this](bool v)
         {

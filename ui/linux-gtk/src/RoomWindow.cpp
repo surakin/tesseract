@@ -1,5 +1,6 @@
 #include "RoomWindow.h"
 #include "MainWindow.h"
+#include "tk/i18n.h"
 #include "views/ComposePopups.h"
 #include "views/EmojiPicker.h"
 #include "views/PopoutRoomWidget.h"
@@ -11,7 +12,6 @@
 
 #include <string_view>
 
-#include "gettext_shorthand.h"
 
 namespace gtk4
 {
@@ -144,7 +144,7 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     {
         std::string suggested = filename_hint.empty() ? "image" : filename_hint;
         GtkFileDialog* dlg = gtk_file_dialog_new();
-        gtk_file_dialog_set_title(dlg, "Save image");
+        gtk_file_dialog_set_title(dlg, tk::tr("Save image").c_str());
         gtk_file_dialog_set_initial_name(dlg, suggested.c_str());
         struct Ctx { RoomWindow* self; std::string src; };
         auto* ctx = new Ctx{this, std::move(source_url)};
@@ -177,7 +177,7 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         else if (mime_type == "video/webm")
             suggested = "video.webm";
         GtkFileDialog* dlg = gtk_file_dialog_new();
-        gtk_file_dialog_set_title(dlg, "Save video");
+        gtk_file_dialog_set_title(dlg, tk::tr("Save video").c_str());
         gtk_file_dialog_set_initial_name(dlg, suggested.c_str());
         struct Ctx { RoomWindow* self; std::string src; };
         auto* ctx = new Ctx{this, std::move(source_json)};
@@ -220,7 +220,7 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     {
         std::string suggested = hit.file_name.empty() ? "download" : hit.file_name;
         GtkFileDialog* dlg = gtk_file_dialog_new();
-        gtk_file_dialog_set_title(dlg, "Save file");
+        gtk_file_dialog_set_title(dlg, tk::tr("Save file").c_str());
         gtk_file_dialog_set_initial_name(dlg, suggested.c_str());
         struct Ctx { RoomWindow* self; std::string src; };
         auto* ctx = new Ctx{this, hit.source ? hit.source->fetch_token() : std::string{}};
@@ -293,7 +293,7 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         if (!copy_ctx_menu_)
         {
             GMenu* menu = g_menu_new();
-            g_menu_append(menu, _("Copy"), "copy-sel.copy");
+            g_menu_append(menu, tk::tr("Copy").c_str(), "copy-sel.copy");
             copy_ctx_menu_ = gtk_popover_menu_new_from_model(G_MENU_MODEL(menu));
             gtk_popover_set_has_arrow(GTK_POPOVER(copy_ctx_menu_), FALSE);
             gtk_widget_set_parent(copy_ctx_menu_, surface_->widget());

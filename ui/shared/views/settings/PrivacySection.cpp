@@ -34,13 +34,11 @@ std::string privacy_format_bytes(std::uint64_t bytes)
     {
         double mb = static_cast<double>(bytes) / 1'000'000.0;
         char buf[32];
-        std::snprintf(buf, sizeof(buf), "~%.1f MB", mb);
-        return buf;
+        std::snprintf(buf, sizeof(buf), "%.1f", mb);
+        return "~" + tk::trf(tk::tr("{0} MB"), {buf});
     }
     std::uint64_t kb = (bytes + 999u) / 1000u;
-    char buf[32];
-    std::snprintf(buf, sizeof(buf), "~%llu KB", static_cast<unsigned long long>(kb));
-    return buf;
+    return "~" + tk::trf(tk::tr("{0} KB"), {std::to_string(kb)});
 }
 
 // "March 2024" from a Unix-ms timestamp; empty when 0.
@@ -55,13 +53,7 @@ std::string month_year(std::uint64_t ts_ms)
 #else
     localtime_r(&t, &tm);
 #endif
-    static const char* kMonths[] = {
-        "January", "February", "March",     "April",   "May",      "June",
-        "July",    "August",   "September", "October", "November", "December"};
-    int m = tm.tm_mon;
-    if (m < 0 || m > 11)
-        m = 0;
-    return tk::tr(kMonths[m]) + " " + std::to_string(tm.tm_year + 1900);
+    return tk::format_date(tm, tk::tr("%B %Y"));
 }
 } // namespace
 
@@ -73,7 +65,7 @@ PrivacySection::PrivacySection()
     auto* presence_group = add_group(tk::tr("Presence"));
 
     auto presence_cb = tk::create_widget<tk::CheckButton>(
-        this, "Send and receive presence status", s.send_presence);
+        this, tk::tr("Send and receive presence status"), s.send_presence);
     presence_cb_ = presence_group->add_widget(std::move(presence_cb));
     presence_cb_->on_change = [this](bool v)
     {
@@ -149,7 +141,7 @@ PrivacySection::PrivacySection()
     {
         auto* updates_group = add_group(tk::tr("Updates"));
         auto updates_cb = tk::create_widget<tk::CheckButton>(
-            this, "Check for updates automatically", s.check_for_updates);
+            this, tk::tr("Check for updates automatically"), s.check_for_updates);
         check_updates_cb_ = updates_group->add_widget(std::move(updates_cb));
         check_updates_cb_->on_change = [this](bool v)
         {

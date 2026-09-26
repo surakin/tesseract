@@ -2,6 +2,7 @@
 
 #include <tesseract/launch_args.h>
 
+#include <chrono>
 #include <functional>
 #include <optional>
 #include <string>
@@ -62,6 +63,15 @@ struct LaunchPlan
     {
         return has_forwardable_intent() || !start_hidden();
     }
+
+    /// How long to wait for the single-instance lock before treating this
+    /// launch as a duplicate. Zero, except for a --relaunch, where the
+    /// previous instance is still shutting down.
+    std::chrono::milliseconds instance_lock_wait() const
+    {
+        return args.relaunch ? std::chrono::seconds(15)
+                             : std::chrono::milliseconds(0);
+    }
 };
 
 /// Run the shared startup steps, in order:
@@ -79,5 +89,14 @@ LaunchPlan prepare_launch(const std::vector<std::string>& args,
 
 /// The translated --help text.
 std::string launch_help_text(std::string_view program_name);
+
+/// The Settings::language value this process applied at startup ("auto",
+/// "en", ...). Changing the setting takes effect only after a restart, so
+/// the UI compares against this to know whether one is pending.
+const std::string& launch_language();
+
+/// Arguments for a process that replaces this one: the active --profile
+/// plus --relaunch (see LaunchArgs::relaunch).
+std::vector<std::string> relaunch_args();
 
 } // namespace tesseract

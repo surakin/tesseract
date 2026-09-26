@@ -1,6 +1,7 @@
 #include "CallWindow.h"
 #include "MainWindow.h"
 
+#include "tk/i18n.h"
 #include "views/CallOverlayWidget.h"
 
 #include <QCloseEvent>
@@ -15,7 +16,7 @@ CallWindow::CallWindow(MainWindow* parent_shell)
       tesseract::CallWindowBase(parent_shell)
 {
     setAttribute(Qt::WA_DeleteOnClose, false); // lifetime managed externally
-    setWindowTitle(QStringLiteral("Call"));
+    setWindowTitle(QString::fromStdString(tk::tr("Call")));
     setMinimumSize(static_cast<int>(tesseract::visual::kMinCallWindowWidth),
                     static_cast<int>(tesseract::visual::kMinCallWindowHeight));
     resize(640, 480);

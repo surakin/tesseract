@@ -4,6 +4,7 @@
 // CGRequestScreenCaptureAccess before starting.
 // Frames arrive as NV12 CVPixelBuffers and are deinterleaved to I420.
 #include "screen_capture.h"
+#include "i18n.h"
 
 #import <AVFoundation/AVFoundation.h>
 #import <CoreGraphics/CoreGraphics.h>
@@ -136,7 +137,7 @@ public:
                     for (SCDisplay* d in content.displays)
                     {
                         std::string id = "display:" + std::to_string(d.displayID);
-                        out->push_back({id, "Display " + std::to_string(out->size() + 1), false});
+                        out->push_back({id, tk::trf(tk::tr("Display {0}"), {std::to_string(out->size() + 1)}), false});
                     }
                     for (SCWindow* w in content.windows)
                     {

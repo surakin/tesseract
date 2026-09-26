@@ -1,6 +1,7 @@
 #include "RoomWindow.h"
 #include "MainWindow.h"
 
+#include "tk/i18n.h"
 #include "views/ComposePopups.h"
 #include "views/ImageViewerOverlay.h"
 #include "views/PopoutRoomWidget.h"
@@ -111,8 +112,8 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     {
         std::string suggested = filename_hint.empty() ? "image" : filename_hint;
         QString path = QFileDialog::getSaveFileName(
-            this, tr("Save image"), QString::fromStdString(suggested),
-            tr("Images (*.jpg *.jpeg *.png *.gif *.webp);;All files (*.*)"));
+            this, QString::fromStdString(tk::tr("Save image")), QString::fromStdString(suggested),
+            QString::fromStdString(tk::tr("Images (*.jpg *.jpeg *.png *.gif *.webp);;All files (*.*)")));
         if (!path.isEmpty())
             pane_->save_source_to_file_(std::move(source_url), path.toStdString());
     };
@@ -125,8 +126,8 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         else if (mime_type == "video/webm")
             suggested = "video.webm";
         QString path = QFileDialog::getSaveFileName(
-            this, tr("Save video"), QString::fromStdString(suggested),
-            tr("Videos (*.mp4 *.webm *.mkv);;All files (*.*)"));
+            this, QString::fromStdString(tk::tr("Save video")), QString::fromStdString(suggested),
+            QString::fromStdString(tk::tr("Videos (*.mp4 *.webm *.mkv);;All files (*.*)")));
         if (!path.isEmpty())
             pane_->save_source_to_file_(std::move(source_json), path.toStdString());
     };
@@ -154,8 +155,8 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     {
         std::string suggested = hit.file_name.empty() ? "download" : hit.file_name;
         QString path = QFileDialog::getSaveFileName(
-            this, tr("Save file"), QString::fromStdString(suggested),
-            tr("All files (*.*)"));
+            this, QString::fromStdString(tk::tr("Save file")), QString::fromStdString(suggested),
+            QString::fromStdString(tk::tr("All files (*.*)")));
         if (path.isEmpty())
             return;
         std::string url = hit.source ? hit.source->fetch_token() : std::string{};
@@ -198,7 +199,7 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         auto* menu = new QMenu(this);
         menu->setAttribute(Qt::WA_DeleteOnClose);
         menu->setStyleSheet(tk::qt6::build_menu_qss(surface_->theme()));
-        QAction* copyAct = menu->addAction(tr("Copy"));
+        QAction* copyAct = menu->addAction(QString::fromStdString(tk::tr("Copy")));
         QObject::connect(copyAct, &QAction::triggered, [ml]()
         {
             ml->copy_selection();

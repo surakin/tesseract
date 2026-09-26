@@ -2,6 +2,7 @@
 
 #include "SettingsGroup.h"
 
+#include "tk/i18n.h"
 #include "tk/theme.h"
 #include "tk/widget.h"
 
@@ -72,7 +73,7 @@ public:
             ls.valign    = tk::TextVAlign::Top;
             ls.trim      = tk::TextTrim::Ellipsis;
             ls.max_width = kServerSectionLabelW;
-            label_layout_ = ctx.factory.build_text("Homeserver", ls);
+            label_layout_ = ctx.factory.build_text(tk::tr("Homeserver"), ls);
 
             tk::TextStyle vs;
             vs.role      = tk::FontRole::Body;
@@ -102,7 +103,7 @@ private:
 
 ServerSection::ServerSection()
 {
-    group_ = add_group("Server");
+    group_ = add_group(tk::tr("Server"));
     row_ = group_->add_widget(std::make_unique<HomeserverRow>());
     // Hidden until set_server_info() supplies a URL, so the page reports
     // zero height when no server info has been fetched yet.

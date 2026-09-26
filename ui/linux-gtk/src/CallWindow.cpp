@@ -1,6 +1,7 @@
 #include "CallWindow.h"
 #include "MainWindow.h"
 
+#include "tk/i18n.h"
 #include "views/CallOverlayWidget.h"
 
 namespace gtk4
@@ -20,7 +21,7 @@ CallWindow::CallWindow(MainWindow* parent_shell)
     if (parent_shell && parent_shell->application())
         gtk_window_set_application(window_, parent_shell->application());
 
-    gtk_window_set_title(window_, "Call");
+    gtk_window_set_title(window_, tk::tr("Call").c_str());
     gtk_window_set_default_size(window_, 640, 480);
 
     surface_ = std::make_unique<tk::gtk4::Surface>(tk::Theme::light());

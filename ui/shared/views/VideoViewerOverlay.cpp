@@ -462,7 +462,7 @@ void VideoViewerOverlay::paint(tk::PaintCtx& ctx)
             tk::TextStyle st{};
             st.role      = tk::FontRole::UiSemibold;
             st.max_width = video_rect_.w - 32.0f;
-            auto lo      = ctx.factory.build_text("Unable to play video", st);
+            auto lo      = ctx.factory.build_text(tk::tr("Unable to play video"), st);
             if (lo)
             {
                 tk::Size sz = lo->measure();
@@ -478,7 +478,7 @@ void VideoViewerOverlay::paint(tk::PaintCtx& ctx)
             sub.max_width = video_rect_.w - 32.0f;
             // \xe2\xac\x87 = ⬇  (matches the save button glyph)
             auto sub_lo = ctx.factory.build_text(
-                "Use \xe2\xac\x87 to download and play in an external player",
+                tk::tr("Use \xe2\xac\x87 to download and play in an external player"),
                 sub);
             if (sub_lo)
             {

@@ -168,7 +168,7 @@ version) are noted where relevant.
 - General (launch at login; low power mode: Auto/On/Off)
 - Privacy (presence controls; search index toggle with live stats and on-disk size; update-checker opt-in)
 - Media (automatic full-media fetch; microphone/speaker/camera device selection)
-- Language (Auto / English / Spanish; restart to apply)
+- Language (Auto / English / Spanish / French; restart to apply)
 - About (version, with branded view)
 
 ## Composer
@@ -185,7 +185,7 @@ version) are noted where relevant.
 ## Not yet implemented
 
 - **Accessibility**: screen-reader support is in place but incomplete — Windows UIA, macOS NSAccessibility, and Qt6/GTK4 bridges exist, but not every widget and view is mapped yet
-- **Localization**: only English and Spanish so far (Settings → Language: Auto/English/Spanish, takes effect after restart) — more languages are opportunistic/contributor-driven
+- **Localization**: English, Spanish and French so far (Settings → Language: Auto/English/Spanish/French, takes effect after restart) — more languages are opportunistic/contributor-driven
 - **Background push on macOS / Windows** (Linux uses Unified Push; in-app notifications elsewhere)
 - **Space child ordering** and "suggested room" flags (creating spaces and adding/removing their rooms are implemented)
 - **3PID management**, **account deactivation**, **identity server settings**

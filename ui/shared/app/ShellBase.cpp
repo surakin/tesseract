@@ -1,5 +1,6 @@
 #include "app/ShellBase.h"
 #include "app/EventHandlerBase.h"
+#include "app/Launch.h"
 #include <tesseract/crash_handler.h>
 #include <tesseract/version.h>
 #include "app/MediaPlaybackHub.h"
@@ -5056,6 +5057,16 @@ void ShellBase::wire_settings_view_(views::SettingsView* view)
         s.camera_device_id = std::move(id);
         s.save_to_disk(tesseract::config_dir());
     };
+    view->set_language_restart_pending(
+        tesseract::Settings::instance().language != tesseract::launch_language());
+    view->on_language_changed = [view](std::string code)
+    {
+        auto& s = tesseract::Settings::instance();
+        s.language = std::move(code);
+        s.save_to_disk(tesseract::config_dir());
+        view->set_language_restart_pending(s.language != tesseract::launch_language());
+    };
+    view->on_restart_requested = [this] { restart_app_(); };
     view->on_clear_caches = [this, view]
     {
         clear_all_caches_([view](uint64_t local, uint64_t sdk, uint64_t memory,
@@ -5565,6 +5576,24 @@ void ShellBase::push_own_status_to_strip_()
     if (main_app_ && main_app_->user_info())
         main_app_->user_info()->set_status(own_extended_profile_.status_emoji,
                                            own_extended_profile_.status_text);
+}
+
+void ShellBase::restart_app_()
+{
+    // Quitting drops the call; make the user end it deliberately, like
+    // clear_all_caches_() does.
+    if (active_call())
+    {
+        show_status_message_(tk::tr("End your call before restarting."));
+        return;
+    }
+    tesseract::Settings::instance().save_to_disk(tesseract::config_dir());
+    if (!spawn_relaunch_(tesseract::relaunch_args()))
+    {
+        show_status_message_(tk::tr("Couldn't restart Tesseract. Please restart it yourself."));
+        return;
+    }
+    quit_app_();
 }
 
 void ShellBase::open_settings_to_account_tab_()
@@ -6726,9 +6755,9 @@ void ShellBase::handle_upload_complete_ui_(std::uint64_t request_id,
     if (!ok)
     {
         std::fprintf(stderr, "[upload] failed: %s\n", message.c_str());
-        std::string status = "Upload failed";
-        if (!message.empty())
-            status += ": " + message;
+        std::string status = message.empty()
+                                 ? tk::tr("Upload failed")
+                                 : tk::trf(tk::tr("Upload failed: {0}"), {message});
         show_status_message_(std::move(status));
     }
 }
@@ -7184,7 +7213,7 @@ void ShellBase::in_room_search_maybe_paginate_(bool at_oldest_boundary)
     // using the oldest *loaded event* (front of the message list) — this
     // advances each batch even when no new matches have appeared yet.
     {
-        std::string status = "Fetching older messages\xe2\x80\xa6";
+        std::string status = tk::tr("Fetching older messages\xe2\x80\xa6");
         std::uint64_t ts_ms = 0;
         {
             auto* ml = room_view_ ? room_view_->message_list() : nullptr;
@@ -7205,18 +7234,12 @@ void ShellBase::in_room_search_maybe_paginate_(bool at_oldest_boundary)
             localtime_r(&t, &tm_val);
             localtime_r(&now, &now_tm);
 #endif
-            constexpr const char* kMon[] = {
-                "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
-            char buf[32];
-            if (tm_val.tm_year == now_tm.tm_year)
-                std::snprintf(buf, sizeof(buf), " (oldest: %s %d)",
-                              kMon[tm_val.tm_mon], tm_val.tm_mday);
-            else
-                std::snprintf(buf, sizeof(buf), " (oldest: %s %d, %d)",
-                              kMon[tm_val.tm_mon], tm_val.tm_mday,
-                              tm_val.tm_year + 1900);
-            status += buf;
+            // TRANSLATORS: date patterns, see tk::format_date.
+            const std::string date =
+                tm_val.tm_year == now_tm.tm_year
+                    ? tk::format_date(tm_val, tk::tr("%b %-d"))
+                    : tk::format_date(tm_val, tk::tr("%b %-d, %Y"));
+            status += " " + tk::trf(tk::tr("(oldest: {0})"), {date});
         }
         // Set synchronously on the UI thread so the text is visible before
         // paginate_back_async() fires its completion callback via PostMessage.
@@ -7725,7 +7748,8 @@ void ShellBase::trigger_update_check_()
 #endif
     update_checker_->check_async([this](std::string version, std::string url) {
         show_status_message_(
-            "[Tesseract " + version + " available](" + url + ")",
+            "[" + tk::trf(tk::tr("Tesseract {0} available"), {version}) + "](" +
+                url + ")",
             0,
             true);
     });
@@ -7997,7 +8021,7 @@ ShellBase::FinalizeLoginIO ShellBase::finalize_login_blocking_(
     const std::string session_json = pending_client->export_session();
     if (session_json.empty())
     {
-        out.error = "empty session";
+        out.error = tk::tr("empty session");
         return io;
     }
 
@@ -8038,7 +8062,7 @@ ShellBase::FinalizeLoginIO ShellBase::finalize_login_blocking_(
                 ec2);
             if (ec2)
             {
-                out.error = "couldn't persist matrix store: " + ec2.message();
+                out.error = tk::trf(tk::tr("couldn't persist matrix store: {0}"), {ec2.message()});
                 return io;
             }
             std::filesystem::remove_all(pending_temp_dir, ec2);
@@ -8050,7 +8074,7 @@ ShellBase::FinalizeLoginIO ShellBase::finalize_login_blocking_(
     if (!tesseract::SessionStore::save_account_with_key(user_id, session_json,
                                                         store_key))
     {
-        out.error = "couldn't persist session";
+        out.error = tk::tr("couldn't persist session");
         return io;
     }
 
@@ -8169,7 +8193,7 @@ void ShellBase::finalize_login_async_(std::function<void(FinalizeLoginResult)> d
     if (user_id.empty())
     {
         FinalizeLoginResult out;
-        out.error = "no user id";
+        out.error = tk::tr("no user id");
         done(std::move(out));
         return;
     }
@@ -9205,14 +9229,17 @@ static std::string format_typing_text(const std::vector<std::string>& names)
     }
     if (names.size() == 1)
     {
-        return names[0] + " is typing\xe2\x80\xa6";
+        return tk::trf(tk::tr("{0} is typing\xe2\x80\xa6"), {names[0]});
     }
     if (names.size() == 2)
     {
-        return names[0] + " and " + names[1] + " are typing\xe2\x80\xa6";
+        return tk::trf(tk::tr("{0} and {1} are typing\xe2\x80\xa6"),
+                       {names[0], names[1]});
     }
-    return names[0] + ", " + names[1] + ", and " +
-           std::to_string(names.size() - 2) + " others are typing\xe2\x80\xa6";
+    const long others = static_cast<long>(names.size() - 2);
+    return tk::trf(tk::trn("{0}, {1} and {2} other are typing\xe2\x80\xa6",
+                           "{0}, {1} and {2} others are typing\xe2\x80\xa6", others),
+                   {names[0], names[1], std::to_string(others)});
 }
 
 void ShellBase::handle_account_prefs_updated_ui_(std::string user_id,
@@ -13004,7 +13031,7 @@ ShellBase::RoomSettingsCommitOutcome ShellBase::apply_room_settings_(
     RoomSettingsCommitOutcome out;
     if (!client)
     {
-        out.error = "not logged in";
+        out.error = tk::tr("not logged in");
         return out;
     }
     std::vector<std::string> errors;
@@ -14483,7 +14510,7 @@ void ShellBase::start_call(const std::string& room_id, const std::string& slot_i
     auto result = client_->rtc_start_call(room_id, slot_id, audio_only);
     if (!result.ok)
     {
-        show_status_message_("Call failed: " + result.message);
+        show_status_message_(tk::trf(tk::tr("Call failed: {0}"), {result.message}));
         return;
     }
 

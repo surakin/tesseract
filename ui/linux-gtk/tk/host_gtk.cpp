@@ -1,5 +1,6 @@
 #include "host_gtk.h"
 #include "anim_image_cache.h"
+#include "i18n.h"
 #include "canvas_cairo.h"
 #include "device_listing.h"
 #include "gst_hw_probe.h"
@@ -2999,7 +3000,7 @@ public:
         if (!info)
         {
             if (on_file_drop_error_)
-                on_file_drop_error_("Could not read file");
+                on_file_drop_error_(tk::tr("Could not read file"));
             return false;
         }
         const goffset sz = g_file_info_get_size(info);
@@ -3018,7 +3019,7 @@ public:
         if (!gb)
         {
             if (on_file_drop_error_)
-                on_file_drop_error_("Could not read file");
+                on_file_drop_error_(tk::tr("Could not read file"));
             g_object_unref(info);
             return false;
         }

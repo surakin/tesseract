@@ -1,6 +1,7 @@
 #include "DatePickerView.h"
 
 #include "tk/host.h"
+#include "tk/i18n.h"
 #include "tk/theme.h"
 
 #include <algorithm>
@@ -15,11 +16,6 @@ namespace tesseract::views
 namespace
 {
 
-static const char* const kMonthNames[12] = {
-    "January", "February", "March",     "April",   "May",      "June",
-    "July",    "August",   "September", "October", "November", "December"};
-static const char* const kDowLabels[7] = {"Su", "Mo", "Tu", "We",
-                                          "Th", "Fr", "Sa"};
 
 // UTF-8 single angle quotation marks used as prev/next navigation glyphs.
 static constexpr char kPrevGlyph[] = "\xE2\x80\xB9"; // U+2039 ‹
@@ -712,7 +708,9 @@ void DatePickerView::rebuild_cells_(tk::CanvasFactory& factory)
     year_layout_.reset();
     tk::TextStyle hdr{};
     hdr.role = tk::FontRole::UiSemibold;
-    month_layout_ = factory.build_text(kMonthNames[view_month_ - 1], hdr);
+    std::tm month_tm{};
+    month_tm.tm_mon = view_month_ - 1;
+    month_layout_ = factory.build_text(tk::format_date(month_tm, "%B"), hdr);
     year_layout_  = factory.build_text(std::to_string(view_year_), hdr);
 }
 
@@ -740,7 +738,7 @@ void DatePickerView::ensure_layouts_(tk::CanvasFactory& factory)
         {
             tk::TextStyle ts{};
             ts.role = tk::FontRole::Small;
-            layouts_[1 + i] = factory.build_text(kDowLabels[i], ts);
+            layouts_[1 + i] = factory.build_text(tk::weekday_initials(i), ts);
         }
     }
 
@@ -749,7 +747,7 @@ void DatePickerView::ensure_layouts_(tk::CanvasFactory& factory)
     {
         tk::TextStyle ts{};
         ts.role = tk::FontRole::UiSemibold;
-        layouts_[8] = factory.build_text("Today", ts);
+        layouts_[8] = factory.build_text(tk::tr("Today"), ts);
     }
 
     // Navigation glyphs.

@@ -1,5 +1,7 @@
 #include "SettingsWidget.h"
 
+#include "tk/i18n.h"
+
 #include <QFileDialog>
 #include <QInputDialog>
 #include <QMessageBox>
@@ -152,7 +154,7 @@ void SettingsWidget::set_controller(tesseract::SettingsController* ctrl)
     {
         bool ok = false;
         QString pass = QInputDialog::getText(
-            this, QString::fromStdString(title), "Passphrase:",
+            this, QString::fromStdString(title), QString::fromStdString(tk::tr("Passphrase")),
             QLineEdit::Password, "", &ok);
         if (ok && !pass.isEmpty())
             cb(pass.toStdString());
@@ -161,33 +163,33 @@ void SettingsWidget::set_controller(tesseract::SettingsController* ctrl)
         [this](std::string suggested, std::function<void(std::string)> cb)
     {
         QString path = QFileDialog::getSaveFileName(
-            this, "Export Room Keys", QString::fromStdString(suggested));
+            this, QString::fromStdString(tk::tr("Export room keys")), QString::fromStdString(suggested));
         if (!path.isEmpty())
             cb(path.toStdString());
     };
     ctrl->show_open_file_dialog =
         [this](std::function<void(std::string)> cb)
     {
-        QString path = QFileDialog::getOpenFileName(this, "Import Room Keys");
+        QString path = QFileDialog::getOpenFileName(this, QString::fromStdString(tk::tr("Import room keys")));
         if (!path.isEmpty())
             cb(path.toStdString());
     };
     ctrl->on_export_keys_result = [this](bool ok, std::string error)
     {
         if (ok)
-            QMessageBox::information(this, "Export complete",
-                                     "Room keys exported successfully.");
+            QMessageBox::information(this, QString::fromStdString(tk::tr("Export complete")),
+                                     QString::fromStdString(tk::tr("Room keys exported successfully.")));
         else
-            QMessageBox::warning(this, "Export failed",
+            QMessageBox::warning(this, QString::fromStdString(tk::tr("Export failed")),
                                  QString::fromStdString(error));
     };
     ctrl->on_import_keys_result = [this](bool ok, std::string error)
     {
         if (ok)
-            QMessageBox::information(this, "Import complete",
-                                     "Room keys imported successfully.");
+            QMessageBox::information(this, QString::fromStdString(tk::tr("Import complete")),
+                                     QString::fromStdString(tk::tr("Room keys imported successfully.")));
         else
-            QMessageBox::warning(this, "Import failed",
+            QMessageBox::warning(this, QString::fromStdString(tk::tr("Import failed")),
                                  QString::fromStdString(error));
     };
 

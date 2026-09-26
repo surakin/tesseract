@@ -1,5 +1,6 @@
 #include "host_win32.h"
 #include "anim_image_cache.h"
+#include "i18n.h"
 #include "canvas_d2d.h"
 #include "controls.h"
 #include "win32_accessible.h"
@@ -4918,7 +4919,7 @@ private:
         if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &fa))
         {
             if (host_)
-                host_->fire_file_drop_error("Could not read file");
+                host_->fire_file_drop_error(tk::tr("Could not read file"));
             return false;
         }
         ULARGE_INTEGER sz{};
@@ -4935,7 +4936,7 @@ private:
         if (h == INVALID_HANDLE_VALUE)
         {
             if (host_)
-                host_->fire_file_drop_error("Could not read file");
+                host_->fire_file_drop_error(tk::tr("Could not read file"));
             return false;
         }
 

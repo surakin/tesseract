@@ -1,5 +1,6 @@
 #include "LoginView.h"
 
+#include "tk/i18n.h"
 #include "tk/theme.h"
 
 namespace gtk4
@@ -22,7 +23,7 @@ LoginView::LoginView()
         {
             if (!tesseract::Client::open_in_browser(url))
             {
-                sh->set_status("Open this URL in your browser:\n" + url);
+                sh->set_status(tk::tr("Open this URL in your browser:") + "\n" + url);
                 surf->relayout();
             }
         });

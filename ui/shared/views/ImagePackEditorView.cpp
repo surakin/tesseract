@@ -362,7 +362,8 @@ void ImagePackSectionList::paint_header_(tk::PaintCtx& ctx, std::size_t pack_idx
         }
     }
 
-    static const char* const kSegLabels[3] = {"Any", "Emoji", "Sticker"};
+    static const char* const kSegLabels[3] = {tk::N_("Any"), tk::N_("Emoji"),
+                                              tk::N_("Sticker")};
     for (int seg = 0; seg < 3; ++seg)
     {
         const tk::Rect sr{origin.x + sec.usage_rect[seg].x,

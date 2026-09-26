@@ -207,3 +207,58 @@ TEST_CASE("set_locale fallback: lang-REGION tries lang prefix", "[i18n]")
     tk::set_locale(tmp_dir(), "xx_YY");
     CHECK(tk::tr("Bye") == "Adios");
 }
+
+namespace
+{
+
+std::tm make_tm(int year, int mon, int mday, int wday)
+{
+    std::tm tm{};
+    tm.tm_year = year - 1900;
+    tm.tm_mon  = mon - 1;
+    tm.tm_mday = mday;
+    tm.tm_wday = wday;
+    return tm;
+}
+
+} // namespace
+
+TEST_CASE("tk::format_date renders English patterns without a catalog", "[i18n]")
+{
+    tk::set_locale(tmp_dir(), "no-such-locale");
+    const std::tm tm = make_tm(2024, 3, 5, 2); // Tuesday 5 March 2024
+
+    CHECK(tk::format_date(tm, "%B %-d, %Y") == "March 5, 2024");
+    CHECK(tk::format_date(tm, "%a %b %d") == "Tue Mar 05");
+    CHECK(tk::format_date(tm, "%A") == "Tuesday");
+    CHECK(tk::format_date(tm, "%-m/%-d/%y") == "3/5/24");
+    CHECK(tk::format_date(tm, "100%% %Q") == "100% %Q"); // unknown directive kept
+    CHECK(tk::weekday_initials(0) == "Su");
+}
+
+TEST_CASE("tk::format_date takes the pattern and names from the catalog", "[i18n]")
+{
+    std::string meta = "Content-Type: text/plain; charset=UTF-8\n"
+                       "Plural-Forms: nplurals=2; plural=(n > 1);\n";
+    auto mo = build_mo({
+        {"", meta},
+        {"%B %-d, %Y", "%-d %B %Y"},
+        {"March", "mars"},
+        {"Tue", "mar."},
+        {"{0} KB", "{0} Ko"},
+    });
+    write_tmp_mo(mo, "tesseract.test_dates.mo");
+    tk::set_locale(tmp_dir(), "test_dates");
+
+    const std::tm tm = make_tm(2024, 3, 5, 2);
+    CHECK(tk::format_date(tm, tk::tr("%B %-d, %Y")) == "5 mars 2024");
+    CHECK(tk::format_date(tm, "%a") == "mar.");
+    CHECK(tk::format_size(3 * 1024) == "3 Ko");
+    CHECK(tk::format_size(512) == "512 B"); // untranslated unit falls back
+}
+
+TEST_CASE("tk::N_ marks a literal without translating it", "[i18n]")
+{
+    static constexpr const char* kLabel = tk::N_("Timezone");
+    CHECK(std::strcmp(kLabel, "Timezone") == 0);
+}

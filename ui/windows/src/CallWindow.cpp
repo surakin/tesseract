@@ -4,6 +4,7 @@
 #include "Win32Taskbar.h"
 #include "resource.h"
 
+#include "tk/i18n.h"
 #include "views/CallOverlayWidget.h"
 
 #include <cmath>
@@ -49,7 +50,7 @@ CallWindow::CallWindow(MainWindow* parent_shell)
 
     hwnd_ = CreateWindowExW(
         0, kClassName,
-        L"Call",
+        tk::win32::utf8_to_wide(tk::tr("Call")).c_str(),
         WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT,
         640, 480,

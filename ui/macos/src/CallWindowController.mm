@@ -1,4 +1,5 @@
 #import "CallWindowController.h"
+#import "tk_locale.h"
 
 #include "app/ShellBase.h"
 #include "tk/host_macos.h"
@@ -66,7 +67,7 @@ MacCallWindow::MacCallWindow(tesseract::ShellBase* shell)
                                                     defer:NO];
     win.minSize = NSMakeSize(tesseract::visual::kMinCallWindowWidth,
                               tesseract::visual::kMinCallWindowHeight);
-    [win setTitle:@"Call"];
+    [win setTitle:TkTr("Call")];
     [win center];
 
     surface_ = std::make_unique<tk::macos::Surface>(tk::Theme::light());

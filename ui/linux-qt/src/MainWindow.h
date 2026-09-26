@@ -369,6 +369,8 @@ private:
     void raise_and_activate_() override;
     void set_window_fullscreen_(bool on) override;
     void rebuild_tray_() override;
+    bool spawn_relaunch_(const std::vector<std::string>& args) override;
+    void quit_app_() override;
     void start_search_provider_if_needed_();
     void start_mpris_if_needed_();
     bool is_ctrl_held_() const override;

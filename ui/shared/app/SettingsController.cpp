@@ -1,6 +1,7 @@
 #include "SettingsController.h"
 
 #include "tesseract/paths.h"
+#include "tk/i18n.h"
 #include "tesseract/settings.h"
 
 namespace tesseract
@@ -89,7 +90,7 @@ void SettingsController::upload_avatar()
         post_to_ui_(guarded([this]()
         {
             if (on_avatar_result)
-                on_avatar_result(false, "not logged in");
+                on_avatar_result(false, tk::tr("not logged in"));
         }));
         return;
     }
@@ -182,7 +183,7 @@ void SettingsController::remove_avatar()
         post_to_ui_(guarded([this]()
         {
             if (on_avatar_result)
-                on_avatar_result(false, "not logged in");
+                on_avatar_result(false, tk::tr("not logged in"));
         }));
         return;
     }
@@ -480,7 +481,7 @@ void SettingsController::save_user_pack_changes(
         post_to_ui_(guarded([this]()
         {
             if (on_user_pack_save_result)
-                on_user_pack_save_result(false, "not logged in");
+                on_user_pack_save_result(false, tk::tr("not logged in"));
         }));
         return;
     }
@@ -584,7 +585,7 @@ void SettingsController::rename_device(std::string device_id, std::string name)
         post_to_ui_(guarded([this, device_id]() mutable
         {
             if (on_device_renamed)
-                on_device_renamed(std::move(device_id), false, "not logged in");
+                on_device_renamed(std::move(device_id), false, tk::tr("not logged in"));
         }));
         return;
     }
@@ -620,7 +621,7 @@ void SettingsController::delete_device(std::string device_id)
         post_to_ui_(guarded([this, device_id]() mutable
         {
             if (on_device_deleted)
-                on_device_deleted(std::move(device_id), false, "not logged in");
+                on_device_deleted(std::move(device_id), false, tk::tr("not logged in"));
         }));
         return;
     }
@@ -680,7 +681,7 @@ void SettingsController::confirm_device_deletion(std::string device_id,
         post_to_ui_(guarded([this, device_id]() mutable
         {
             if (on_device_deleted)
-                on_device_deleted(std::move(device_id), false, "not logged in");
+                on_device_deleted(std::move(device_id), false, tk::tr("not logged in"));
         }));
         return;
     }
@@ -718,7 +719,7 @@ void SettingsController::set_display_name(std::string name)
         post_to_ui_(guarded([this]()
         {
             if (on_name_result)
-                on_name_result(false, "not logged in");
+                on_name_result(false, tk::tr("not logged in"));
         }));
         return;
     }
@@ -748,7 +749,7 @@ void SettingsController::export_room_keys()
         return;
 
     show_passphrase_prompt(
-        "Export room keys",
+        tk::tr("Export room keys"),
         [this](std::string passphrase)
         {
             if (passphrase.empty())
@@ -767,7 +768,7 @@ void SettingsController::export_room_keys()
                          passphrase = std::move(passphrase)]() mutable
                         {
                             auto result = c ? c->export_room_keys(path, passphrase)
-                                           : tesseract::Result{false, "not logged in"};
+                                           : tesseract::Result{false, tk::tr("not logged in")};
                             post_to_ui_(guarded(
                                 [this, result = std::move(result)]()
                                 {
@@ -792,7 +793,7 @@ void SettingsController::import_room_keys()
                 return;
 
             show_passphrase_prompt(
-                "Import room keys",
+                tk::tr("Import room keys"),
                 [this, path = std::move(path)](std::string passphrase) mutable
                 {
                     if (passphrase.empty())
@@ -804,7 +805,7 @@ void SettingsController::import_room_keys()
                          passphrase = std::move(passphrase)]() mutable
                         {
                             auto result = c ? c->import_room_keys(path, passphrase)
-                                           : tesseract::Result{false, "not logged in"};
+                                           : tesseract::Result{false, tk::tr("not logged in")};
                             post_to_ui_(guarded(
                                 [this, result = std::move(result)]()
                                 {
