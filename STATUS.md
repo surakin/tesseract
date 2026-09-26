@@ -1,6 +1,6 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-26**. 1985 C++ + 719 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-26**. 1987 C++ + 719 Rust tests.
 
 > **Member moderation: kick, ban, unban (2026-09-24, unreleased).**
 > Right-clicking a member row in `RoomInfoPanelBody` opens a `PopupMenu`
@@ -451,6 +451,15 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-09-26**
 > v0.8.21).** The key-verification dialog's recovery-key field now takes
 > keyboard focus as soon as its "Enter your recovery key" step opens,
 > instead of requiring a click first. Windows build-verified.
+
+<!-- -->
+
+> **Account picker: all accounts shown, scrolls past 8 (2026-09-26).**
+> The picker no longer keeps the row count from its first open, so
+> accounts added or removed later show up correctly; it shows at most 8
+> rows and scrolls the rest (`AccountPicker::kMaxVisibleRows`). Qt6
+> build + ctest 1987/1987, user-verified live; GTK4/Windows/macOS share
+> the code, unbuilt.
 
 <!-- -->
 

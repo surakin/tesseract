@@ -5,15 +5,25 @@
 // NSPanel, Win32 child WS_POPUP). The active account row carries the
 // indicator dot; selecting any other row fires `on_select(user_id)` and the
 // host calls `MainWindow::switch_active_account` then dismisses the popover.
+// At most `kMaxVisibleRows` rows are shown at once; beyond that the rows
+// scroll inside a tk::ScrollView. Every shell sizes its popup from
+// measure(), so the cap applies on all four platforms.
 
 #include "UserInfo.h"
 #include "tk/canvas.h"
 #include "tk/widget.h"
 
+#include <cstddef>
+
 #include <functional>
 #include <memory>
 #include <string>
 #include <vector>
+
+namespace tk
+{
+class ScrollView;
+}
 
 namespace tesseract::views
 {
@@ -30,11 +40,14 @@ struct AccountEntry
 class AccountPicker : public tk::Widget
 {
 public:
+    static constexpr std::size_t kMaxVisibleRows = 8;
+
     AccountPicker();
     ~AccountPicker() override = default;
 
-    /// Replace the current row set. Rebuilds child `UserInfo` widgets in
-    /// place; safe to call on every popover open.
+    /// Replace the current row set. Updates the child `UserInfo` rows in
+    /// place when the count is unchanged, rebuilds them otherwise; safe to
+    /// call on every popover open.
     void set_entries(std::vector<AccountEntry> entries);
 
     /// Resolves an mxc:// to a decoded image. Threaded down to every child
@@ -56,16 +69,24 @@ public:
         return entries_;
     }
 
+    const std::vector<UserInfo*>& rows() const
+    {
+        return rows_;
+    }
+
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     void paint_before_children(tk::PaintCtx&) override;
 
 private:
     void rebuild_rows();
+    void bind_row_(UserInfo& row, const AccountEntry& e);
 
     std::vector<AccountEntry> entries_;
     ImageProvider image_provider_;
-    std::vector<UserInfo*> rows_; // borrowed; ownership in `children()`
+    tk::ScrollView* scroll_ = nullptr; // owned via children()
+    tk::Widget* column_ = nullptr; // owned by scroll_; parent of every row
+    std::vector<UserInfo*> rows_; // borrowed; ownership in column_
 };
 
 } // namespace tesseract::views

@@ -40,6 +40,26 @@ struct TkAccountPickerStage
     }
 };
 
+std::vector<AccountEntry> n_entries(int n)
+{
+    std::vector<AccountEntry> out;
+    for (int i = 0; i < n; ++i)
+    {
+        const std::string id = std::to_string(i);
+        out.push_back(AccountEntry{"@user" + id + ":example.org", "User " + id,
+                                   "", i == 0});
+    }
+    return out;
+}
+
+float one_row_height(LayoutCtx& lc)
+{
+    tesseract::views::UserInfo one_row;
+    one_row.set_display_name("Alice");
+    one_row.set_user_id("@alice:example.org");
+    return one_row.measure(lc, {320.0f, 0.0f}).h;
+}
+
 std::vector<AccountEntry> two_entries()
 {
     return {
@@ -91,7 +111,7 @@ TEST_CASE("AccountPicker fires on_select with the clicked row's user_id",
 
     // The two rows are stacked top-to-bottom from y=0. Click in the middle
     // of the second row.
-    const auto& kids = picker.children();
+    const auto& kids = picker.rows();
     REQUIRE(kids.size() == 2);
     auto row1_bounds = kids[1]->bounds();
     const tk::Point click{
@@ -100,7 +120,7 @@ TEST_CASE("AccountPicker fires on_select with the clicked row's user_id",
     };
 
     Widget* claimer = picker.dispatch_pointer_down(click);
-    REQUIRE(claimer == kids[1].get());
+    REQUIRE(claimer == kids[1]);
     claimer->on_pointer_up({click.x - row1_bounds.x, click.y - row1_bounds.y},
                            /*inside_self=*/true);
 
@@ -114,13 +134,11 @@ TEST_CASE("AccountPicker active indicator paints on only the active row",
     AccountPicker picker;
     picker.set_entries(two_entries());
 
-    const auto& kids = picker.children();
+    const auto& kids = picker.rows();
     REQUIRE(kids.size() == 2);
 
-    auto* row_a = dynamic_cast<tesseract::views::UserInfo*>(kids[0].get());
-    auto* row_b = dynamic_cast<tesseract::views::UserInfo*>(kids[1].get());
-    REQUIRE(row_a);
-    REQUIRE(row_b);
+    auto* row_a = kids[0];
+    auto* row_b = kids[1];
 
     CHECK(row_a->active_indicator()); // alice is the active entry
     CHECK_FALSE(row_b->active_indicator());
@@ -147,4 +165,62 @@ TEST_CASE("AccountPicker image_provider propagates to every row",
     REQUIRE(requested.size() == 2);
     CHECK(requested[0] == "mxc://x/a");
     CHECK(requested[1] == "mxc://x/b");
+}
+
+TEST_CASE("AccountPicker picks up accounts added or removed after first build",
+          "[tk][view][account_picker]")
+{
+    // Every shell keeps one picker alive and re-calls set_entries() on each
+    // open, so a login/logout between opens must change the row count.
+    TkAccountPickerStage st;
+    AccountPicker picker;
+    picker.set_entries(n_entries(3));
+    REQUIRE(picker.rows().size() == 3);
+
+    picker.set_entries(n_entries(4));
+    REQUIRE(picker.rows().size() == 4);
+    CHECK(picker.rows()[3]->user_id() == "@user3:example.org");
+
+    std::string got;
+    picker.on_select = [&](const std::string& uid) { got = uid; };
+    st.run(picker, {0, 0, 320, 400});
+    const auto b = picker.rows()[3]->bounds();
+    const tk::Point click{b.x + b.w * 0.5f, b.y + b.h * 0.5f};
+    Widget* claimer = picker.dispatch_pointer_down(click);
+    REQUIRE(claimer == picker.rows()[3]);
+    claimer->on_pointer_up({click.x - b.x, click.y - b.y}, /*inside_self=*/true);
+    CHECK(got == "@user3:example.org");
+
+    picker.set_entries(n_entries(2));
+    CHECK(picker.rows().size() == 2);
+}
+
+TEST_CASE("AccountPicker caps its height at kMaxVisibleRows and scrolls the rest",
+          "[tk][view][account_picker]")
+{
+    TkAccountPickerStage st;
+    auto lc = st.layout_ctx();
+    const float row_h = one_row_height(lc);
+    REQUIRE(row_h > 0.0f);
+
+    AccountPicker picker;
+    picker.set_entries(n_entries(AccountPicker::kMaxVisibleRows));
+    CHECK(picker.measure(lc, {320.0f, 0.0f}).h ==
+          Catch::Approx(AccountPicker::kMaxVisibleRows * row_h));
+
+    const int total = static_cast<int>(AccountPicker::kMaxVisibleRows) + 3;
+    picker.set_entries(n_entries(total));
+    const float h = picker.measure(lc, {320.0f, 0.0f}).h;
+    CHECK(h == Catch::Approx(AccountPicker::kMaxVisibleRows * row_h));
+
+    picker.arrange(lc, {0, 0, 320, h});
+    const float last_top_before = picker.rows().back()->bounds().y;
+    CHECK(last_top_before >= h); // overflow row starts below the viewport
+
+    // Wheel down: the scroll view moves the rows up on the next arrange.
+    picker.dispatch_wheel({160.0f, h * 0.5f}, 0.0f, 1000.0f);
+    picker.arrange(lc, {0, 0, 320, h});
+    CHECK(picker.rows().back()->bounds().y < last_top_before);
+    CHECK(picker.rows().back()->bounds().y + row_h ==
+          Catch::Approx(h).margin(0.5f));
 }
