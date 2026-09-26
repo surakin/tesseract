@@ -2992,3 +2992,304 @@ msgstr "[Bàññéd by {0}xx]"
 #, c++-format
 msgid "Couldn't unban {0}"
 msgstr "[Çöùldñ't ùñbàñ {0}xxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Save to file…"
+msgstr "[Sàvé tö fïlé…xx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Saved."
+msgstr "[Sàvéd.x]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Couldn't save the file."
+msgstr "[Çöùldñ't sàvé thé fïlé.xxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+#, c++-format
+msgid "Couldn't save the file: {0}"
+msgstr "[Çöùldñ't sàvé thé fïlé: {0}xxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Unlocking your messages…"
+msgstr "[Ùñlöçkïñg yöùr méssàgés…xxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Securing your messages…"
+msgstr "[Séçùrïñg yöùr méssàgés…xxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Done."
+msgstr "[Döñé.x]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Protect your messages"
+msgstr "[Prötéçt yöùr méssàgésxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Confirm it's you"
+msgstr "[Çöñfïrm ït's yöùxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Your messages are end-to-end encrypted. A recovery key lets you read them again if you sign in on a new device or lose this one."
+msgstr "[Yöùr méssàgés àré éñd-tö-éñd éñçryptéd. À réçövéry kéy léts yöù réàd thém àgàïñ ïf yöù sïgñ ïñ öñ à ñéw dévïçé ör lösé thïs öñé.xxxxxxxxxxxxxxxxxxxxxxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "To read your encrypted messages on this device, confirm it's you with your recovery key or with another device where you're signed in."
+msgstr "[Tö réàd yöùr éñçryptéd méssàgés öñ thïs dévïçé, çöñfïrm ït's yöù wïth yöùr réçövéry kéy ör wïth àñöthér dévïçé whéré yöù'ré sïgñéd ïñ.xxxxxxxxxxxxxxxxxxxxxxxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Use a passphrase instead"
+msgstr "[Ùsé à pàssphràsé ïñstéàdxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Create recovery key"
+msgstr "[Çréàté réçövéry kéyxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Continue"
+msgstr "[Çöñtïñùéx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Skip for now"
+msgstr "[Skïp för ñöwxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Choose a passphrase"
+msgstr "[Çhöösé à pàssphràséxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Pick something memorable that you don't use anywhere else."
+msgstr "[Pïçk söméthïñg mémöràblé thàt yöù döñ't ùsé àñywhéré élsé.xxxxxxxxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Passphrase"
+msgstr "[Pàssphràséxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Confirm passphrase"
+msgstr "[Çöñfïrm pàssphràséxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "The passphrases don't match."
+msgstr "[Thé pàssphràsés döñ't màtçh.xxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Enter your recovery key"
+msgstr "[Éñtér yöùr réçövéry kéyxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "If you set a passphrase instead, enter that."
+msgstr "[Ïf yöù sét à pàssphràsé ïñstéàd, éñtér thàt.xxxxxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Use another device instead"
+msgstr "[Ùsé àñöthér dévïçé ïñstéàdxxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Unlock"
+msgstr "[Ùñlöçkx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Save your recovery key"
+msgstr "[Sàvé yöùr réçövéry kéyxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Keep it somewhere safe, like a password manager. You'll need it to read your messages if you sign in on a new device."
+msgstr "[Kéép ït söméwhéré sàfé, lïké à pàsswörd màñàgér. Yöù'll ñééd ït tö réàd yöùr méssàgés ïf yöù sïgñ ïñ öñ à ñéw dévïçé.xxxxxxxxxxxxxxxxxxxxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "I've saved my recovery key"
+msgstr "[Ï'vé sàvéd my réçövéry kéyxxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "You're all set. Your messages are protected."
+msgstr "[Yöù'ré àll sét. Yöùr méssàgés àré prötéçtéd.xxxxxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "You're all set. Your encrypted messages are available on this device."
+msgstr "[Yöù'ré àll sét. Yöùr éñçryptéd méssàgés àré àvàïlàblé öñ thïs dévïçé.xxxxxxxxxxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Resetting encryption"
+msgstr "[Réséttïñg éñçryptïöñxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Approve the reset in the browser window that just opened. This will continue once you've confirmed."
+msgstr "[Àpprövé thé rését ïñ thé bröwsér wïñdöw thàt jùst öpéñéd. Thïs wïll çöñtïñùé öñçé yöù'vé çöñfïrméd.xxxxxxxxxxxxxxxxxxx]"
+
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "Export room keys…"
+msgstr "[Éxpört rööm kéys…xxx]"
+
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "Import room keys…"
+msgstr "[Ïmpört rööm kéys…xxx]"
+
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "Reset encryption…"
+msgstr "[Rését éñçryptïöñ…xxx]"
+
+#: ui/shared/views/SettingsView.cpp
+msgid "Reset encryption?"
+msgstr "[Rését éñçryptïöñ?xxx]"
+
+#: ui/shared/views/SettingsView.cpp
+msgid "Only do this if you've lost your recovery key and have no other signed-in device. Messages you can't read now will stay unreadable, and your other devices and the people you chat with will need to confirm you again. You'll get a new recovery key right after."
+msgstr "[Öñly dö thïs ïf yöù'vé löst yöùr réçövéry kéy àñd hàvé ñö öthér sïgñéd-ïñ dévïçé. Méssàgés yöù çàñ't réàd ñöw wïll stày ùñréàdàblé, àñd yöùr öthér dévïçés àñd thé péöplé yöù çhàt wïth wïll ñééd tö çöñfïrm yöù àgàïñ. Yöù'll gét à ñéw réçövéry kéy rïght àftér.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]"
+
+#: ui/shared/views/VerificationBanner.cpp
+msgid "Confirm it's you to read your encrypted messages on this device."
+msgstr "[Çöñfïrm ït's yöù tö réàd yöùr éñçryptéd méssàgés öñ thïs dévïçé.xxxxxxxxxxxx]"
+
+#: ui/shared/views/EncryptionReminderBanner.cpp
+msgid "Remind me later"
+msgstr "[Rémïñd mé làtérxxx]"
+
+#: ui/shared/views/EncryptionReminderBanner.cpp
+msgid "Your messages aren't backed up yet."
+msgstr "[Yöùr méssàgés àréñ't bàçkéd ùp yét.xxxxxxx]"
+
+#: ui/shared/views/EncryptionReminderBanner.cpp
+msgid "Your encrypted messages are locked on this device."
+msgstr "[Yöùr éñçryptéd méssàgés àré löçkéd öñ thïs dévïçé.xxxxxxxxxx]"
+
+#: ui/shared/views/EncryptionReminderBanner.cpp
+msgid "Set up recovery"
+msgstr "[Sét ùp réçövéryxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "The request was cancelled or timed out."
+msgstr "[Thé réqùést wàs çàñçélléd ör tïméd öùt.xxxxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "The emoji didn't match, so nothing was confirmed. If you didn't start this, someone else may be trying to get into your account."
+msgstr "[Thé émöjï dïdñ't màtçh, sö ñöthïñg wàs çöñfïrméd. Ïf yöù dïdñ't stàrt thïs, söméöñé élsé mày bé tryïñg tö gét ïñtö yöùr àççöùñt.xxxxxxxxxxxxxxxxxxxxxxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Choose how to unlock your encrypted messages on this device."
+msgstr "[Çhöösé höw tö ùñlöçk yöùr éñçryptéd méssàgés öñ thïs dévïçé.xxxxxxxxxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Use another device"
+msgstr "[Ùsé àñöthér dévïçéxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Approve from a device where you're already signed in"
+msgstr "[Àpprövé fröm à dévïçé whéré yöù'ré àlréàdy sïgñéd ïñxxxxxxxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Enter recovery key"
+msgstr "[Éñtér réçövéry kéyxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Or the passphrase you chose instead"
+msgstr "[Ör thé pàssphràsé yöù çhösé ïñstéàdxxxxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "I've lost my recovery key and other devices"
+msgstr "[Ï'vé löst my réçövéry kéy àñd öthér dévïçésxxxxxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "If you've lost both your recovery key and every other signed-in device, you can start over with a new recovery key. Messages you can't read now will stay unreadable, and people you chat with will see that your security details changed."
+msgstr "[Ïf yöù'vé löst böth yöùr réçövéry kéy àñd évéry öthér sïgñéd-ïñ dévïçé, yöù çàñ stàrt övér wïth à ñéw réçövéry kéy. Méssàgés yöù çàñ't réàd ñöw wïll stày ùñréàdàblé, àñd péöplé yöù çhàt wïth wïll séé thàt yöùr séçùrïty détàïls çhàñgéd.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Reset encryption"
+msgstr "[Rését éñçryptïöñxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Check your other device"
+msgstr "[Çhéçk yöùr öthér dévïçéxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Starting verification…"
+msgstr "[Stàrtïñg vérïfïçàtïöñ…xxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Open Tesseract (or another Matrix app) on a device where you're signed in and accept the request."
+msgstr "[Öpéñ Tésséràçt (ör àñöthér Màtrïx àpp) öñ à dévïçé whéré yöù'ré sïgñéd ïñ àñd àççépt thé réqùést.xxxxxxxxxxxxxxxxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Was this you?"
+msgstr "[Wàs thïs yöù?xx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Verification request"
+msgstr "[Vérïfïçàtïöñ réqùéstxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+#, c++-format
+msgid "Your device “{0}” wants to confirm it's you so it can read your encrypted messages."
+msgstr "[Yöùr dévïçé “{0}” wàñts tö çöñfïrm ït's yöù sö ït çàñ réàd yöùr éñçryptéd méssàgés.xxxxxxxxxxxxxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+#, c++-format
+msgid "{0} wants to verify you. You'll compare emoji to make sure you're talking to the right person."
+msgstr "[{0} wàñts tö vérïfy yöù. Yöù'll çömpàré émöjï tö màké sùré yöù'ré tàlkïñg tö thé rïght pérsöñ.xxxxxxxxxxxxxxxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Not me"
+msgstr "[Ñöt méx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Compare emoji"
+msgstr "[Çömpàré émöjïxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Check that the other device shows the same emoji in the same order."
+msgstr "[Çhéçk thàt thé öthér dévïçé shöws thé sàmé émöjï ïñ thé sàmé ördér.xxxxxxxxxxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "They match"
+msgstr "[Théy màtçhxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "They don't match"
+msgstr "[Théy döñ't màtçhxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Couldn't confirm"
+msgstr "[Çöùldñ't çöñfïrmxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Your other device is confirmed and can now read your encrypted messages."
+msgstr "[Yöùr öthér dévïçé ïs çöñfïrméd àñd çàñ ñöw réàd yöùr éñçryptéd méssàgés.xxxxxxxxxxxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Verified. You can trust you're talking to the right person."
+msgstr "[Vérïfïéd. Yöù çàñ trùst yöù'ré tàlkïñg tö thé rïght pérsöñ.xxxxxxxxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "This verification is no longer active."
+msgstr "[Thïs vérïfïçàtïöñ ïs ñö löñgér àçtïvé.xxxxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "The other device didn't finish confirming in time."
+msgstr "[Thé öthér dévïçé dïdñ't fïñïsh çöñfïrmïñg ïñ tïmé.xxxxxxxxxx]"
+
+#: ui/shared/app/ShellBase.cpp
+msgid "Save recovery key"
+msgstr "[Sàvé réçövéry kéyxxx]"
+
+#: ui/shared/app/ShellBase.cpp
+msgid "The file couldn't be written."
+msgstr "[Thé fïlé çöùldñ't bé wrïttéñ.xxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+#, c++-format
+msgid "Approve the reset as {0} in the browser window that just opened. If the browser is signed in as a different account, sign out there first, or copy the link into a private window."
+msgstr "[Àpprövé thé rését às {0} ïñ thé bröwsér wïñdöw thàt jùst öpéñéd. Ïf thé bröwsér ïs sïgñéd ïñ às à dïfféréñt àççöùñt, sïgñ öùt théré fïrst, ör çöpy thé lïñk ïñtö à prïvàté wïñdöw.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+#, c++-format
+msgid "Still waiting? Check that you approved it as {0}, not another account."
+msgstr "[Stïll wàïtïñg? Çhéçk thàt yöù àpprövéd ït às {0}, ñöt àñöthér àççöùñt.xxxxxxxxxxxxxx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Copy link"
+msgstr "[Çöpy lïñkx]"
+
+#: ui/shared/views/EncryptionSetupOverlay.cpp
+msgid "Link copied"
+msgstr "[Lïñk çöpïédxx]"

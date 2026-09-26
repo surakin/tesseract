@@ -1,6 +1,7 @@
 #pragma once
 #include "types.h"
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -515,6 +516,14 @@ public:
     /// is true when the device is now fully cross-signed. Called once at
     /// startup with the current state and again on every transition.
     virtual void on_verification_state_changed(bool /*is_verified*/)
+    {
+    }
+
+    /// The account's recovery state changed (0 = Unknown, 1 = Disabled,
+    /// 2 = Enabled, 3 = Incomplete) — e.g. after another device shared its
+    /// secrets following an emoji verification. No initial call; read
+    /// Client::recovery_state() for the current value.
+    virtual void on_recovery_state_changed(std::uint8_t /*state*/)
     {
     }
 

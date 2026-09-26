@@ -1019,6 +1019,15 @@ void EventHandlerBridge::on_verification_state_changed(bool verified) const
           });
 }
 
+void EventHandlerBridge::on_recovery_state_changed(std::uint8_t state) const
+{
+    with_handler("on_recovery_state_changed", slot_,
+          [&](tesseract::IEventHandler* handler_)
+          {
+              handler_->on_recovery_state_changed(state);
+          });
+}
+
 void EventHandlerBridge::on_typing_changed(
     rust::Str room_id, const rust::Vec<rust::String>& user_ids) const
 {

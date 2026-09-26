@@ -36,6 +36,8 @@ set(_tk_sources
     app/PowerPolicy.cpp
     app/ThreadPanelController.h
     app/ThreadPanelController.cpp
+    app/EncryptionFlowController.h
+    app/EncryptionFlowController.cpp
     app/SearchBackend.h
     app/SearchBackend.cpp
     app/MediaPlaybackHub.h
@@ -171,8 +173,10 @@ set(_tk_sources
     views/ThreadListView.cpp
     views/ThreadView.h
     views/ThreadView.cpp
-    views/VerificationBanner.h
-    views/VerificationBanner.cpp
+    views/EncryptionReminderBanner.h
+    views/EncryptionReminderBanner.cpp
+    views/sas_emoji_tiles.h
+    views/sas_emoji_tiles.cpp
     views/DatePickerView.h
     views/DatePickerView.cpp
     views/RoomHeader.h
@@ -506,6 +510,7 @@ set(_icon_svgs
     "${_lucide_dir}/lucide-user-round.svg"
     "${_lucide_dir}/lucide-user-round-minus.svg"
     "${_lucide_dir}/lucide-ban.svg"
+    "${_lucide_dir}/lucide-chevron-right.svg"
 )
 
 add_custom_command(

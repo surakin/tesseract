@@ -339,6 +339,12 @@ public:
     // start_sync() later re-attaches over this (harmless) and does the
     // actual spawning.
     void attach_event_handler(IEventHandler* handler);
+
+    // While the full sync is withheld (see attach_event_handler): run an
+    // encryption-only sync — uploads this device's keys and carries
+    // verification / secret-sharing traffic, without the room-list sync.
+    // start_sync() stops it and takes over.
+    void start_encryption_sync();
     /// Signals shutdown (session flush + stop channel) without stop_sync()'s
     /// exclusive lock, so it can run immediately even while a concurrent
     /// call (send_message, subscribe_room, ...) is mid-flight. Call this
@@ -2057,6 +2063,12 @@ public:
     /// identity synced from another device (keys absent).
     bool have_cross_signing_keys() const;
 
+    /// Whether another of our devices, signed by our own identity, can confirm
+    /// this one via emoji verification. Correct on an unverified device (unlike
+    /// list_devices()'s verification flag, which needs this device trusted) and
+    /// before the first sync. Blocks on the network — worker thread only.
+    bool has_devices_to_verify_against() const;
+
     /// Bootstrap cross-signing + key backup for a fresh account.
     /// Pass an empty `passphrase` to generate a random recovery key; non-empty
     /// to derive the key from the passphrase. Progress is reported via
@@ -2141,6 +2153,8 @@ public:
     /// other devices. On success, `IEventHandler::on_verification_request`
     /// fires on the remote device; locally, a request-watcher is started and
     /// `on_verification_request(incoming=false)` fires when the remote accepts.
+    // On success, `message` is the new flow id (so a decline / timeout before
+    // any device accepts can be matched to it).
     Result request_self_verification();
 
     /// Accept an incoming verification request identified by `flow_id`.

@@ -1,7 +1,16 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/EncryptionFlowController.h"
 #include "app/ShellBase.h"
 #include "views/EncryptionSetupOverlay.h"
+
+#include <tesseract/account_session.h>
+#include <tesseract/client.h>
+#include <tesseract/settings.h>
+
+#include <memory>
+#include <string>
+#include <vector>
 
 using tesseract::ShellBase;
 using tesseract::views::EncryptionSetupOverlay;
@@ -36,11 +45,17 @@ struct ShellEncryptionSetupTestShell : ShellEncryptionSetupWithAccountManager, S
         std::function<void(std::vector<uint8_t>, std::string)>) override {}
 
     // ── New pure virtuals (Task 11) ───────────────────────────────────────
-    void raise_and_activate_() override {}
+    int raised_ = 0;
+    void raise_and_activate_() override { ++raised_; }
     std::unique_ptr<tk::AudioPlayback> make_call_audio_output_() override { return nullptr; }
     tesseract::CallWindowBase* create_call_window_() override { return nullptr; }
     bool is_ctrl_held_() const override { return false; }
-    void switch_active_account_(const std::string&) override {}
+    std::vector<std::string> switched_to_;
+    void switch_active_account_(const std::string& uid) override
+    {
+        switched_to_.push_back(uid);
+        active_account_ = am_.find(uid);
+    }
     void refresh_account_ui_after_switch_() override {}
     void bind_settings_controller_() override {}
     void spawn_main_window_(std::shared_ptr<tesseract::AccountSession>) override {}
@@ -69,7 +84,13 @@ struct ShellEncryptionSetupTestShell : ShellEncryptionSetupWithAccountManager, S
     bool read_device_verified_() const override { return device_verified_stub_; }
     bool read_have_cross_signing_keys_() const override { return have_keys_stub_; }
 
+    std::int64_t now_s_ = 1'000'000;
+    std::int64_t wall_clock_s_() const override { return now_s_; }
+
     // ── Expose internals for test inspection ─────────────────────────────
+    using ShellBase::my_user_id_;
+    using ShellBase::active_account_;
+    using ShellBase::handle_verification_request_ui_;
     using ShellBase::check_encryption_setup_;
     using ShellBase::encryption_setup_shown_;
     using ShellBase::encryption_setup_dismissed_;
@@ -137,6 +158,38 @@ TEST_CASE("Incomplete state → Recover overlay shown", "[shell][encryption]")
     CHECK(shell.last_mode_ == EncryptionSetupOverlay::Mode::Recover);
 }
 
+TEST_CASE("Enabled + foreign identity on an unconfirmed device → Recover",
+          "[shell][encryption]")
+{
+    // What the old "verify this device" banner used to prompt for now opens
+    // the one dialog.
+    ShellEncryptionSetupTestShell shell;
+    shell.recovery_state_stub_  = 2;
+    shell.identity_exists_stub_ = true;
+    shell.have_keys_stub_       = false;
+    shell.device_verified_stub_ = false;
+    shell.check_encryption_setup_();
+    REQUIRE(shell.overlay_shown_);
+    CHECK(shell.last_mode_ == EncryptionSetupOverlay::Mode::Recover);
+}
+
+TEST_CASE("A snoozed reminder also holds back the automatic dialog",
+          "[shell][encryption]")
+{
+    ShellEncryptionSetupTestShell shell;
+    shell.my_user_id_          = "@snooze-test:example.org";
+    shell.recovery_state_stub_ = 1;
+    auto& snoozes = tesseract::Settings::instance().encryption_reminder_snoozed_until;
+    snoozes[shell.my_user_id_] = shell.now_s_ + 60;
+    shell.check_encryption_setup_();
+    CHECK_FALSE(shell.overlay_shown_);
+
+    shell.now_s_ += 61; // snooze over
+    shell.check_encryption_setup_();
+    CHECK(shell.overlay_shown_);
+    snoozes.erase(shell.my_user_id_);
+}
+
 TEST_CASE("Enabled state → overlay NOT shown", "[shell][encryption]")
 {
     ShellEncryptionSetupTestShell shell;
@@ -175,4 +228,141 @@ TEST_CASE("encryption_setup_dismissed_ prevents overlay from showing",
     shell.encryption_setup_dismissed_ = true;
     shell.check_encryption_setup_();
     CHECK_FALSE(shell.overlay_shown_);
+}
+
+// ── EncryptionFlowController rules ──────────────────────────────────────────
+
+using tesseract::EncryptionFlowController;
+using Reminder = EncryptionFlowController::Reminder;
+
+TEST_CASE("Reminder: fresh account without recovery → SetupNeeded",
+          "[encryption][flow]")
+{
+    CHECK(EncryptionFlowController::reminder_for(1, true, false) == Reminder::SetupNeeded);
+    CHECK(EncryptionFlowController::reminder_for(1, false, false) == Reminder::SetupNeeded);
+}
+
+TEST_CASE("Reminder: unconfirmed device on a foreign identity → Locked",
+          "[encryption][flow]")
+{
+    CHECK(EncryptionFlowController::reminder_for(2, false, true) == Reminder::Locked);
+    CHECK(EncryptionFlowController::reminder_for(1, false, true) == Reminder::Locked);
+    CHECK(EncryptionFlowController::reminder_for(0, false, true) == Reminder::Locked);
+}
+
+TEST_CASE("Reminder: Incomplete recovery → Locked only while unconfirmed",
+          "[encryption][flow]")
+{
+    CHECK(EncryptionFlowController::reminder_for(3, false, false) == Reminder::Locked);
+    // Just verified via another device; its secrets haven't arrived yet.
+    CHECK(EncryptionFlowController::reminder_for(3, true, false) == Reminder::None);
+    CHECK(EncryptionFlowController::reminder_for(3, true, true) == Reminder::None);
+}
+
+TEST_CASE("Reminder: nothing to do → None", "[encryption][flow]")
+{
+    CHECK(EncryptionFlowController::reminder_for(2, true, false) == Reminder::None);
+    CHECK(EncryptionFlowController::reminder_for(0, true, false) == Reminder::None);
+    // Confirmed device, identity made elsewhere, no recovery: can't fix it
+    // from here and messages are readable.
+    CHECK(EncryptionFlowController::reminder_for(1, true, true) == Reminder::None);
+}
+
+TEST_CASE("Snooze window", "[encryption][flow]")
+{
+    const std::int64_t until = 1000 + EncryptionFlowController::kSnoozeSeconds;
+    CHECK(EncryptionFlowController::snoozed(until, 1000));
+    CHECK(EncryptionFlowController::snoozed(until, until - 1));
+    CHECK_FALSE(EncryptionFlowController::snoozed(until, until));
+    CHECK_FALSE(EncryptionFlowController::snoozed(0, 1000)); // never snoozed
+}
+
+TEST_CASE("Incoming requests are refused only while the dialog is busy",
+          "[encryption][flow]")
+{
+    using Action = EncryptionFlowController::IncomingAction;
+    CHECK(EncryptionFlowController::on_incoming(false, false) == Action::Show);
+    CHECK(EncryptionFlowController::on_incoming(true, false) == Action::Show);
+    CHECK(EncryptionFlowController::on_incoming(true, true) == Action::RefuseBusy);
+    // A hidden dialog's stale step can't block anything.
+    CHECK(EncryptionFlowController::on_incoming(false, true) == Action::Show);
+}
+
+TEST_CASE("Flow bookkeeping", "[encryption][flow]")
+{
+    EncryptionFlowController f;
+    CHECK_FALSE(f.has_flow());
+    f.set_awaiting_outgoing(true);
+    CHECK(f.awaiting_outgoing());
+    f.begin({.id = "flow1", .user_id = "@me:x", .incoming = false});
+    CHECK(f.is_flow("flow1"));
+    CHECK_FALSE(f.is_flow("flow2"));
+    CHECK_FALSE(f.awaiting_outgoing()); // adopted
+    f.clear();
+    CHECK_FALSE(f.has_flow());
+    CHECK_FALSE(f.is_flow("flow1"));
+}
+
+// ── Verification requests for a background account ──────────────────────────
+
+namespace
+{
+std::shared_ptr<tesseract::AccountSession> make_account(const std::string& uid)
+{
+    auto s = std::make_shared<tesseract::AccountSession>();
+    s->user_id = uid;
+    s->client  = std::make_unique<tesseract::Client>();
+    return s;
+}
+} // namespace
+
+TEST_CASE("An incoming request for a background account switches to it and "
+          "raises the window",
+          "[shell][encryption]")
+{
+    ShellEncryptionSetupTestShell shell;
+    auto alice = make_account("@alice:example.org");
+    auto bob   = make_account("@bob:example.org");
+    shell.am_.add_account(alice);
+    shell.am_.add_account(bob);
+    shell.active_account_ = alice;
+
+    shell.handle_verification_request_ui_("@bob:example.org", "flow1", "@bob:example.org",
+                                          "PHONE", /*incoming=*/true);
+    REQUIRE(shell.switched_to_.size() == 1);
+    CHECK(shell.switched_to_[0] == "@bob:example.org");
+    CHECK(shell.raised_ == 1);
+}
+
+TEST_CASE("A request for the active account doesn't switch or raise",
+          "[shell][encryption]")
+{
+    ShellEncryptionSetupTestShell shell;
+    auto alice = make_account("@alice:example.org");
+    shell.am_.add_account(alice);
+    shell.active_account_ = alice;
+
+    shell.handle_verification_request_ui_("@alice:example.org", "flow1",
+                                          "@alice:example.org", "PHONE", true);
+    CHECK(shell.switched_to_.empty());
+    CHECK(shell.raised_ == 0);
+}
+
+TEST_CASE("Background-account events that aren't new requests are ignored",
+          "[shell][encryption]")
+{
+    ShellEncryptionSetupTestShell shell;
+    auto alice = make_account("@alice:example.org");
+    auto bob   = make_account("@bob:example.org");
+    shell.am_.add_account(alice);
+    shell.am_.add_account(bob);
+    shell.active_account_ = alice;
+
+    // An accepted outgoing flow, and a request for an account we don't have.
+    shell.handle_verification_request_ui_("@bob:example.org", "flow1", "@bob:example.org",
+                                          "PHONE", /*incoming=*/false);
+    shell.handle_verification_request_ui_("@carol:example.org", "flow2",
+                                          "@carol:example.org", "PHONE", true);
+    CHECK(shell.switched_to_.empty());
+    CHECK(shell.raised_ == 0);
 }

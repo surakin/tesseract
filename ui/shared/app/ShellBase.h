@@ -21,6 +21,7 @@
 #include "app/HistoryExportController.h"
 #include "app/SettingsController.h"
 #include "app/status_links.h"
+#include "app/EncryptionFlowController.h"
 #include "app/ThreadPanelController.h"
 #include "app/UpdateChecker.h"
 #include "tk/anim_decode_session.h"
@@ -1213,8 +1214,12 @@ protected:
     std::shared_ptr<AccountSession> pending_sync_session_;
 
     // ── Cross-signing / SAS device verification ───────────────────────────────
-    bool verification_banner_dismissed_ = false;
-    std::string active_verification_flow_id_; // "" = no flow in progress
+    // The in-progress interactive verification + reminder-strip rules. Every
+    // encryption interaction runs through the one dialog
+    // (views::EncryptionSetupOverlay); see the "Encryption flow" helpers.
+    EncryptionFlowController encryption_flow_;
+    bool foreign_identity_known_true_ = false; // see foreign_identity_cached_()
+    std::optional<bool> last_device_verified_;  // to notice verification changes
 
     // ── Pagination ────────────────────────────────────────────────────────────
     struct PaginationState
@@ -1932,7 +1937,7 @@ protected:
     //   - clears per-account, room-id-keyed state (current_room_id_, tabs_,
     //     active_tab_idx_, space_stack_, pagination_, reply_details_requested_)
     //     so it can't bleed into the incoming account;
-    //   - saves the outgoing account's verification-banner state, resets server
+    //   - forgets any in-progress interactive verification, resets server
     //     info, swaps active_account_ + the client_ / event_handler_ aliases and
     //     the my_user_id_ / my_display_name_ / my_avatar_url_ identity;
     //   - computes pending_restore_rooms_ from open_rooms / last_room (rotating
@@ -1940,7 +1945,6 @@ protected:
     //   - rebinds settings_controller_ (client + up_connector) when present;
     //   - swaps the per_account_rooms_ / per_account_invites_ snapshots into
     //     rooms_ / invites_, fires on_invites_updated_(), drops current_invite_;
-    //   - loads the incoming account's verification_banner_dismissed_;
     //   - persists the on-disk index (active = the new uid).
     // It does NOT touch native widgets (user strip, room-list view, message
     // surface, status bar, tray) — the shell does that in
@@ -2450,12 +2454,39 @@ protected:
     // Platform integrations may mirror that list into an OS-native surface.
     virtual void on_recent_room_visited_(const RoomInfo&) {}
 
-    // Raise the encryption-setup modal overlay in the appropriate mode.
-    // Each platform shell implements this to show EncryptionSetupOverlay
-    // as a full-window overlay on its MainAppWidget. Pure virtual so every
-    // shell is required to implement it (Tasks 9–12).
+    // Raise the encryption dialog in `mode`: reset it, wire it
+    // (wire_encryption_setup_callbacks_), show it, relayout. Virtual only so
+    // tests can observe it without a MainAppWidget.
     virtual void show_encryption_setup_overlay_(
-        tesseract::views::EncryptionSetupOverlay::Mode mode) = 0;
+        tesseract::views::EncryptionSetupOverlay::Mode mode);
+
+    // ── Encryption flow (the dialog + its reminder strip) ────────────────────
+    // Show / hide / re-kind the reminder strip from the live recovery and
+    // verification state and the per-account snooze. Pass `device_verified`
+    // when the caller has just read it (the per-sync-tick path) to skip
+    // re-reading it.
+    void refresh_encryption_reminder_(std::optional<bool> device_verified = std::nullopt);
+    // The recovery state changed (EventHandlerBase nudge): drop cached
+    // identity facts and refresh the strip.
+    void handle_recovery_state_changed_ui_();
+    // foreign_cross_signing_identity_(), remembered once true until the
+    // verification or recovery state changes or the account switches — it
+    // runs every sync tick on an unconfirmed device and costs two blocking
+    // crypto-store reads. A false answer isn't cached: the identity can
+    // arrive with a later keys query without any state change.
+    bool foreign_identity_cached_();
+    // The strip's ✕: hide it for EncryptionFlowController::kSnoozeSeconds.
+    void snooze_encryption_reminder_();
+    // Ask the SDK (async) whether another verified device exists, and tell
+    // the dialog so its Choose step can offer "Use another device".
+    void refresh_other_device_availability_();
+    // Broadcast a self-verification request to our other devices (async).
+    void start_self_verification_();
+    // Cancel the in-progress interactive verification, if any (async).
+    void cancel_active_verification_();
+    // Wall-clock seconds since the epoch, for the reminder snooze. Virtual so
+    // tests can move time.
+    virtual std::int64_t wall_clock_s_() const;
 
     // Start the MSC4108 QR grant login flow: wires all callbacks on QRGrantView
     // and shows the overlay. QRGrantView owns its check-code tk::TextField
@@ -2917,6 +2948,25 @@ protected:
     // Called from pick_and_set_room_avatar_ and SettingsController.
     virtual void pick_image_file_(
         std::function<void(std::vector<uint8_t>, std::string)> cb) = 0;
+
+    // Open a native save-file dialog suggesting `suggested_name`; `cb` gets the
+    // chosen path (never called on cancel). The default forwards to the
+    // settings controller's dialog hook, which Win32 / GTK4 / macOS bind for
+    // the controller's whole lifetime; Qt6 binds that hook only while the
+    // Settings window exists, so it overrides both of these.
+    virtual bool has_save_file_dialog_() const
+    {
+        return settings_controller_ && settings_controller_->show_save_file_dialog;
+    }
+    // `title` is the dialog's (translated) title; the settings-controller
+    // fallback's dialogs carry their own fixed titles and ignore it.
+    virtual void pick_save_file_(std::string /*title*/, std::string suggested_name,
+                                 std::function<void(std::string)> cb)
+    {
+        if (has_save_file_dialog_())
+            settings_controller_->show_save_file_dialog(std::move(suggested_name),
+                                                        std::move(cb));
+    }
 
     // (Re)construct settings_controller_ with the three standard callbacks
     // (forwarding to post_to_ui_ / run_async_ / pick_image_file_) and wire its
@@ -4014,28 +4064,20 @@ protected:
         client_->get_server_info_async(next_request_id_++);
     }
 
-    // ── Verification banner hooks (default no-op) ──────────────────────────────
-    virtual void handle_verification_request_ui_(std::string /*flow_id*/,
-                                                 std::string /*user_id*/,
-                                                 std::string /*device_id*/,
-                                                 bool /*incoming*/)
-    {
-    }
-    virtual void handle_sas_ready_ui_(std::string /*flow_id*/,
-                                      std::vector<VerificationEmoji> /*emojis*/)
-    {
-    }
-    void dismiss_encryption_setup_after_verification_();
-    virtual void handle_verification_done_ui_(std::string /*flow_id*/)
-    {
-    }
-    virtual void handle_verification_cancelled_ui_(std::string /*flow_id*/,
-                                                   std::string /*reason*/)
-    {
-    }
-    virtual void handle_verification_state_ui_(bool /*is_verified*/)
-    {
-    }
+    // ── Interactive verification events (marshalled by EventHandlerBase) ─────
+    // All shared: they drive the encryption dialog and reminder strip, which
+    // are the only verification UI. Shells don't override these.
+    // `account_uid` is the account whose client received the event (it need
+    // not be the active one); `user_id` / `device_id` are the other party.
+    void handle_verification_request_ui_(std::string account_uid, std::string flow_id,
+                                         std::string user_id, std::string device_id,
+                                         bool incoming);
+    void handle_sas_ready_ui_(std::string flow_id,
+                              std::vector<VerificationEmoji> emojis);
+    void handle_verification_done_ui_(std::string flow_id);
+    void handle_verification_cancelled_ui_(std::string flow_id, std::string reason);
+    // Updates the avatar warning dot and the reminder strip.
+    void handle_verification_state_ui_(bool is_verified);
 
     // ── Presence (receive-side) ───────────────────────────────────────────────
     // Maps bare Matrix user ID → last-received PresenceState.

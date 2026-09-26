@@ -12,7 +12,7 @@ foreach(_entry
         "copy|kCopySvg"
         "play|kPlaySvg" "join|kJoinSvg" "jump-to-date|kJumpToDateSvg"
         "threadlist|kThreadListSvg" "search|kSearchSvg" "chevron-up|kChevronUpSvg"
-        "chevron-down|kChevronDownSvg" "forward|kForwardSvg"
+        "chevron-down|kChevronDownSvg" "chevron-right|kChevronRightSvg" "forward|kForwardSvg"
         "arrow-left|kArrowLeftSvg"
         "phone|kPhoneSvg" "phone-off|kPhoneOffSvg" "mic-off|kMicOffSvg"
         "video|kVideoSvg" "video-off|kVideoOffSvg"

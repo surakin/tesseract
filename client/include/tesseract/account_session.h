@@ -79,10 +79,6 @@ struct AccountSession
     /// switch_active_account can restore the correct banner state.
     bool unverified = false;
 
-    /// UI state: true after the user dismisses the verification banner for this
-    /// account. Persists across account switches within the same app session.
-    bool verification_banner_dismissed = false;
-
 };
 
 } // namespace tesseract

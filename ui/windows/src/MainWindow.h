@@ -158,17 +158,6 @@ public:
     void
     handle_backup_progress_ui_(tesseract::BackupProgress progress) override;
     void refresh_pickers_packs_() override;
-    void handle_verification_request_ui_(std::string flow_id,
-                                         std::string user_id,
-                                         std::string device_id,
-                                         bool incoming) override;
-    void handle_sas_ready_ui_(
-        std::string flow_id,
-        std::vector<tesseract::VerificationEmoji> emojis) override;
-    void handle_verification_done_ui_(std::string flow_id) override;
-    void handle_verification_cancelled_ui_(std::string flow_id,
-                                           std::string reason) override;
-    void handle_verification_state_ui_(bool is_verified) override;
     void handle_notification_ui_(std::string user_id, std::string room_id,
                                  std::string room_name, std::string sender,
                                  std::string body, bool is_mention,
@@ -371,7 +360,6 @@ private:
 
     // Borrowed sub-view pointers (extracted from main_app_ for convenience).
     tesseract::views::RoomListView* room_list_view_ = nullptr;
-    tesseract::views::VerificationBanner* verif_shared_ = nullptr;
     tesseract::views::ImageViewerOverlay* img_viewer_ = nullptr;
     tesseract::views::VideoViewerOverlay* vid_viewer_ = nullptr;
     tesseract::views::RoomMediaView* room_media_view_ = nullptr;
@@ -468,8 +456,6 @@ private:
     std::wstring inflight_tip_text_;
     bool low_power_active_win_ = false;
 
-    bool verif_banner_visible_ = false;
-
     // Multi-account state: account_manager_ (ref), active_account_, client_,
     // event_handler_, per_account_rooms_, pending_login_client_,
     // pending_login_temp_dir_, pending_login_is_add_account_,
@@ -517,7 +503,6 @@ private:
     static constexpr UINT_PTR kAnimTimerId = 0xA01u;
     static constexpr UINT_PTR kInflightTimerId = 0xA02u;
     static constexpr UINT_PTR kScrollDebounceTimerId = 4;
-    static constexpr UINT_PTR kVerifDoneTimerId = 5;
     static constexpr UINT_PTR kMarkReadTimerId = 6;
     static constexpr UINT_PTR kStatusClearTimerId = 7;
     static constexpr UINT_PTR kPresenceTickTimerId = 8;
@@ -551,8 +536,6 @@ private:
     void on_my_knocks_updated_() override;
     void on_space_children_cache_ready_ui_() override;
     void on_space_unjoined_summaries_ready_ui_(const std::string&) override;
-    void show_encryption_setup_overlay_(
-        tesseract::views::EncryptionSetupOverlay::Mode mode) override;
     void on_tray_unread_changed_(bool has_unread,
                                  bool has_highlight) override;
     void on_account_badges_changed_(bool other_accounts_unread) override;

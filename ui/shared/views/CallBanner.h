@@ -4,7 +4,7 @@
 // live call the user is not part of. A state of the room, not an event: it has
 // no dismiss and no timeout; the shell hides it (clear()) once the user has
 // joined. Shows the avatars of the members in the call and a Join button.
-// Mirrors the PinnedBanner / VerificationBanner layout contract: fixed
+// Mirrors the PinnedBanner / EncryptionReminderBanner layout contract: fixed
 // kBannerH, shown/hidden by the shell, drives on_layout_changed so the parent
 // RoomView reflows.
 

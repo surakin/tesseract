@@ -119,17 +119,6 @@ private:
     void
     handle_backup_progress_ui_(tesseract::BackupProgress progress) override;
     void refresh_pickers_packs_() override;
-    void handle_verification_request_ui_(std::string flow_id,
-                                         std::string user_id,
-                                         std::string device_id,
-                                         bool incoming) override;
-    void handle_sas_ready_ui_(
-        std::string flow_id,
-        std::vector<tesseract::VerificationEmoji> emojis) override;
-    void handle_verification_done_ui_(std::string flow_id) override;
-    void handle_verification_cancelled_ui_(std::string flow_id,
-                                           std::string reason) override;
-    void handle_verification_state_ui_(bool is_verified) override;
     void handle_notification_ui_(std::string user_id, std::string room_id,
                                  std::string room_name, std::string sender,
                                  std::string body, bool is_mention,
@@ -324,8 +313,6 @@ private:
     void on_my_knocks_updated_() override;
     void on_space_children_cache_ready_ui_() override;
     void on_space_unjoined_summaries_ready_ui_(const std::string&) override;
-    void show_encryption_setup_overlay_(
-        tesseract::views::EncryptionSetupOverlay::Mode mode) override;
     void on_tray_unread_changed_(bool has_unread,
                                  bool has_highlight) override;
     void on_account_badges_changed_(bool other_accounts_unread) override;
@@ -538,8 +525,6 @@ private:
     guint mark_read_timer_id_ = 0;
     void refresh_sync_status();
     static gboolean on_sync_status_debounce_(gpointer user_data);
-
-    tesseract::views::VerificationBanner* verif_shared_ = nullptr;
 
     GtkWidget*       user_popover_      = nullptr;
 

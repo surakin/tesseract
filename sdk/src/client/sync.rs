@@ -44,10 +44,226 @@ impl ClientFfi {
         self.handler = Some(handler);
     }
 
+    /// Register the to-device `m.key.verification.request` handler, once.
+    ///
+    /// Registers a to-device event handler for `m.key.verification.request`
+    /// so the UI is notified when another device initiates a SAS flow with
+    /// this one. After the SDK processes the event internally, we retrieve
+    /// the `VerificationRequest` object and store the flow_id → user_id
+    /// mapping so subsequent API calls can do the lookup.
+    ///
+    /// Called from both `start_encryption_sync` (a fresh login's gated
+    /// phase) and `start_sync`; whichever runs first registers it.
+    fn register_verification_request_handler(
+        &mut self,
+        client: &Client,
+        handler: &Arc<Mutex<SendHandler>>,
+    ) {
+        if self.verification_request_handler_registered {
+            return;
+        }
+        self.verification_request_handler_registered = true;
+        {
+            use matrix_sdk::ruma::events::{
+                key::verification::request::ToDeviceKeyVerificationRequestEventContent,
+                ToDeviceEvent,
+            };
+            let h = Arc::clone(handler);
+            let flow_users = Arc::clone(&self.verification_flow_users);
+            let emoji_cache = Arc::clone(&self.sas_emoji_cache);
+            let tasks = Arc::clone(&self.verification_tasks);
+
+            self.event_handler_handles.push(client.add_event_handler(
+                move |ev: ToDeviceEvent<ToDeviceKeyVerificationRequestEventContent>,
+                      client: Client| {
+                    let h = Arc::clone(&h);
+                    let flow_users = Arc::clone(&flow_users);
+                    let emoji_cache = Arc::clone(&emoji_cache);
+                    let tasks = Arc::clone(&tasks);
+                    async move {
+                        let flow_id = ev.content.transaction_id.to_string();
+                        let user_id = ev.sender.as_str().to_owned();
+                        let device_id = ev.content.from_device.as_str().to_owned();
+
+                        // Ignore the request this device just broadcast itself.
+                        // request_self_verification() sends an
+                        // m.key.verification.request to all of our other
+                        // sessions; the homeserver can echo that to-device
+                        // event back to the sender. Without this guard the echo
+                        // is treated as an incoming request and pops a "verify
+                        // this device" prompt on the very device that started
+                        // the flow. A request is our own echo when it comes
+                        // from our user *and* our own device_id.
+                        if user_id
+                            == client
+                                .user_id()
+                                .map(|u| u.as_str().to_owned())
+                                .unwrap_or_default()
+                            && client
+                                .device_id()
+                                .map(|d| d.as_str() == device_id)
+                                .unwrap_or(false)
+                        {
+                            return;
+                        }
+
+                        // The OlmMachine processes the to-device event and
+                        // adds the request to its internal map asynchronously.
+                        // A single fixed sleep silently drops the request on
+                        // slow hardware / under sync load, so poll with a
+                        // bounded backoff (≈ 50+100+200+400+800+1600 ≈ 3.15s
+                        // total) instead.
+                        let mut req = None;
+                        let mut delay_ms = 50u64;
+                        for _ in 0..6 {
+                            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                            req = client
+                                .encryption()
+                                .get_verification_request(&ev.sender, &flow_id)
+                                .await;
+                            if req.is_some() {
+                                break;
+                            }
+                            delay_ms *= 2;
+                        }
+                        if let Some(req) = req {
+                            lock_or_recover(&flow_users).insert(flow_id.clone(), user_id.clone());
+                            {
+                                let guard = h.lock();
+                                guard.on_verification_request(&flow_id, &user_id, &device_id, true);
+                            }
+                            // Spawn a watcher so we can surface request-level
+                            // transitions (Done / Cancelled) that occur before
+                            // start_sas is called.
+                            let h2 = Arc::clone(&h);
+                            let flow_users2 = Arc::clone(&flow_users);
+                            let emoji_cache2 = Arc::clone(&emoji_cache);
+                            let flow_id2 = flow_id.clone();
+                            let tasks2 = Arc::clone(&tasks);
+                            let handle = tokio::spawn(verification::watch_verification_request(
+                                req,
+                                flow_id2,
+                                h2,
+                                flow_users2,
+                                emoji_cache2,
+                                tasks,
+                            ));
+                            lock_or_recover(&tasks2).push(handle.abort_handle());
+                        } else {
+                            tracing::warn!(
+                                "verification request {flow_id} from {user_id} \
+                                 not visible after retries; dropped",
+                            );
+                        }
+                    }
+                },
+            ));
+        }
+    }
+
+    /// Run an encryption-only sliding sync (to-device + E2EE extensions, no
+    /// room lists) while a fresh login's full sync is withheld behind the
+    /// encryption dialog. It uploads this device's keys (so other devices can
+    /// find it), delivers verification traffic both ways, and receives
+    /// shared secrets — without the room-list sync that would slow the
+    /// dialog's recovery operations. Same shape as matrix-sdk-ui's
+    /// `EncryptionSyncService` (same "encryption" connection id), built from
+    /// public API because that type's permit is test-only. Needs the handler
+    /// from `attach_event_handler`. `start_sync` / `stop_sync` stop it.
+    pub fn start_encryption_sync(&mut self) {
+        let (Some(client), Some(handler)) = (self.client.clone(), self.handler.clone()) else {
+            return;
+        };
+        if self.encryption_presync.is_some() {
+            return;
+        }
+        let _rt_guard = self.rt.enter();
+        self.register_verification_request_handler(&client, &handler);
+
+        use matrix_sdk::ruma::api::client::sync::sync_events::v5 as http;
+        use matrix_sdk::ruma::assign;
+        let built = self.rt.block_on(async {
+            client
+                .sliding_sync("encryption")?
+                .with_to_device_extension(
+                    assign!(http::request::ToDevice::default(), { enabled: Some(true) }),
+                )
+                .with_e2ee_extension(
+                    assign!(http::request::E2EE::default(), { enabled: Some(true) }),
+                )
+                .build()
+                .await
+        });
+        let sliding_sync = match built {
+            Ok(ss) => ss,
+            Err(e) => {
+                tracing::warn!("encryption presync: build failed: {e}");
+                return;
+            }
+        };
+
+        let stopping = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let task = {
+            let ss = sliding_sync.clone();
+            let stopping = Arc::clone(&stopping);
+            self.rt.spawn(async move {
+                use futures_util::StreamExt;
+                use std::sync::atomic::Ordering;
+                // `sync()` ends on error or on `stop_sync()`; restart it with a
+                // short backoff unless we're being stopped.
+                while !stopping.load(Ordering::Acquire) {
+                    {
+                        let stream = ss.sync();
+                        futures_util::pin_mut!(stream);
+                        while let Some(res) = stream.next().await {
+                            if let Err(e) = res {
+                                tracing::warn!("encryption presync: {e}");
+                                break;
+                            }
+                        }
+                    }
+                    if stopping.load(Ordering::Acquire) {
+                        break;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                }
+            })
+        };
+        self.encryption_presync = Some(EncryptionPresync { sliding_sync, stopping, task });
+    }
+
+    /// Stop the encryption-only presync, if running, and wait (bounded) for
+    /// it to wind down — SyncService's own encryption sync reuses the same
+    /// sliding-sync connection, so the two must never overlap.
+    fn stop_encryption_sync(&mut self) {
+        let Some(presync) = self.encryption_presync.take() else {
+            return;
+        };
+        presync.stopping.store(true, std::sync::atomic::Ordering::Release);
+        if let Err(e) = presync.sliding_sync.stop_sync() {
+            tracing::warn!("encryption presync: stop failed: {e}");
+        }
+        let task = presync.task;
+        let abort = task.abort_handle();
+        let finished = self.rt.block_on(async {
+            tokio::time::timeout(std::time::Duration::from_secs(10), task).await
+        });
+        if finished.is_err() {
+            // Dropping the JoinHandle would only detach it; it must not keep
+            // polling the connection SyncService is about to take over.
+            tracing::warn!("encryption presync: did not stop within 10s; aborting");
+            abort.abort();
+        }
+    }
+
     pub fn start_sync(&mut self, handler: UniquePtr<EventHandlerBridge>) {
         let Some(client) = self.client.clone() else {
             return;
         };
+
+        // The gated phase's encryption-only sync hands over to SyncService,
+        // which runs its own on the same connection.
+        self.stop_encryption_sync();
 
         let (stop_tx, stop_rx) = watch::channel(false);
         let stop_tx_auth = stop_tx.clone();
@@ -820,109 +1036,9 @@ impl ClientFfi {
             self.spawn_tracked("verification-state-watcher", watch_verification_state(h, client_clone, stop_rx));
         }
 
-        // Incoming verification request handler.
-        //
-        // Registers a to-device event handler for `m.key.verification.request`
-        // so the UI is notified when another device initiates a SAS flow with
-        // this one. After the SDK processes the event internally, we retrieve
-        // the `VerificationRequest` object and store the flow_id → user_id
-        // mapping so subsequent API calls can do the lookup.
-        {
-            use matrix_sdk::ruma::events::{
-                key::verification::request::ToDeviceKeyVerificationRequestEventContent,
-                ToDeviceEvent,
-            };
-            let h = Arc::clone(&handler);
-            let flow_users = Arc::clone(&self.verification_flow_users);
-            let emoji_cache = Arc::clone(&self.sas_emoji_cache);
-            let tasks = Arc::clone(&self.verification_tasks);
-
-            self.event_handler_handles.push(client.add_event_handler(
-                move |ev: ToDeviceEvent<ToDeviceKeyVerificationRequestEventContent>,
-                      client: Client| {
-                    let h = Arc::clone(&h);
-                    let flow_users = Arc::clone(&flow_users);
-                    let emoji_cache = Arc::clone(&emoji_cache);
-                    let tasks = Arc::clone(&tasks);
-                    async move {
-                        let flow_id = ev.content.transaction_id.to_string();
-                        let user_id = ev.sender.as_str().to_owned();
-                        let device_id = ev.content.from_device.as_str().to_owned();
-
-                        // Ignore the request this device just broadcast itself.
-                        // request_self_verification() sends an
-                        // m.key.verification.request to all of our other
-                        // sessions; the homeserver can echo that to-device
-                        // event back to the sender. Without this guard the echo
-                        // is treated as an incoming request and pops a "verify
-                        // this device" prompt on the very device that started
-                        // the flow. A request is our own echo when it comes
-                        // from our user *and* our own device_id.
-                        if user_id
-                            == client
-                                .user_id()
-                                .map(|u| u.as_str().to_owned())
-                                .unwrap_or_default()
-                            && client
-                                .device_id()
-                                .map(|d| d.as_str() == device_id)
-                                .unwrap_or(false)
-                        {
-                            return;
-                        }
-
-                        // The OlmMachine processes the to-device event and
-                        // adds the request to its internal map asynchronously.
-                        // A single fixed sleep silently drops the request on
-                        // slow hardware / under sync load, so poll with a
-                        // bounded backoff (≈ 50+100+200+400+800+1600 ≈ 3.15s
-                        // total) instead.
-                        let mut req = None;
-                        let mut delay_ms = 50u64;
-                        for _ in 0..6 {
-                            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
-                            req = client
-                                .encryption()
-                                .get_verification_request(&ev.sender, &flow_id)
-                                .await;
-                            if req.is_some() {
-                                break;
-                            }
-                            delay_ms *= 2;
-                        }
-                        if let Some(req) = req {
-                            lock_or_recover(&flow_users).insert(flow_id.clone(), user_id.clone());
-                            {
-                                let guard = h.lock();
-                                guard.on_verification_request(&flow_id, &user_id, &device_id, true);
-                            }
-                            // Spawn a watcher so we can surface request-level
-                            // transitions (Done / Cancelled) that occur before
-                            // start_sas is called.
-                            let h2 = Arc::clone(&h);
-                            let flow_users2 = Arc::clone(&flow_users);
-                            let emoji_cache2 = Arc::clone(&emoji_cache);
-                            let flow_id2 = flow_id.clone();
-                            let tasks2 = Arc::clone(&tasks);
-                            let handle = tokio::spawn(verification::watch_verification_request(
-                                req,
-                                flow_id2,
-                                h2,
-                                flow_users2,
-                                emoji_cache2,
-                                tasks,
-                            ));
-                            lock_or_recover(&tasks2).push(handle.abort_handle());
-                        } else {
-                            tracing::warn!(
-                                "verification request {flow_id} from {user_id} \
-                                 not visible after retries; dropped",
-                            );
-                        }
-                    }
-                },
-            ));
-        }
+        // Incoming verification request handler (no-op when the
+        // encryption-only presync already registered it).
+        self.register_verification_request_handler(&client, &handler);
 
         // Account-data image-pack watcher: set `packs_dirty` whenever the user
         // pack or emote-rooms subscription changes so the notable-update loop
@@ -1068,6 +1184,7 @@ impl ClientFfi {
 
     pub fn stop_sync(&mut self) {
         self.request_stop();
+        self.stop_encryption_sync();
         // Detach the handler so a sync-task callback that fires after this
         // point (tokio abort only *requests* cancellation) observes a null
         // handler and drops, instead of dereferencing the about-to-be-
@@ -1081,6 +1198,7 @@ impl ClientFfi {
             for eh in self.event_handler_handles.drain(..) {
                 client.remove_event_handler(eh);
             }
+            self.verification_request_handler_registered = false;
         }
         // Every task aborted below is collected here and actually awaited
         // (bounded) at the end of this function — see the block_on at the
@@ -1695,8 +1813,9 @@ async fn watch_presence(
     }
 }
 
-/// Recovery-state watcher: re-emit a backup-progress snapshot on every
-/// `Recovery::state_stream()` transition so the UI re-queries needs_recovery().
+/// Recovery-state watcher: on every `Recovery::state_stream()` transition,
+/// re-emit a backup-progress snapshot (the UI re-queries needs_recovery()) and
+/// fire `on_recovery_state_changed` with the new state.
 async fn watch_recovery_state(
     h: Arc<Mutex<SendHandler>>,
     client: Client,
@@ -1711,7 +1830,7 @@ async fn watch_recovery_state(
             _ = stop_rx.changed() => {
                 if *stop_rx.borrow() { break; }
             }
-            Some(_state) = rec_stream.next() => {
+            Some(state) = rec_stream.next() => {
                 // Re-emit a snapshot; the UI re-queries needs_recovery().
                 {
                     let guard = h.lock();
@@ -1720,6 +1839,13 @@ async fn watch_recovery_state(
                         imported_keys: imported.load(Ordering::Relaxed),
                         total_keys:    0,
                     });
+                    // Moves on its own after an emoji verification
+                    // (Incomplete → Enabled once the other device's secrets
+                    // arrive) or when recovery is set up / reset elsewhere;
+                    // the encryption reminder must follow it.
+                    guard.on_recovery_state_changed(
+                        super::recovery::recovery_state_code(state),
+                    );
                 }
             }
             else => break,

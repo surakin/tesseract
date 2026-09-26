@@ -11,7 +11,7 @@
 //     UserInfo (kUserStripH)
 //   1px Separator
 //   Chat panel (flex)
-//     VerificationBanner (variable height, hidden by default)
+//     EncryptionReminderBanner (48px, hidden by default)
 //     RoomView (flex)
 //   ImageViewerOverlay (full widget bounds, hidden by default)
 //   VideoViewerOverlay (full widget bounds, hidden by default)
@@ -46,7 +46,7 @@
 #include "RoomListView.h"
 #include "RoomView.h"
 #include "UserInfo.h"
-#include "VerificationBanner.h"
+#include "EncryptionReminderBanner.h"
 #include "VideoViewerOverlay.h"
 #include "CallOverlayWidget.h"
 #include "ScreenPickerWidget.h"
@@ -97,7 +97,10 @@ public:
 
     // ── Banner visibility ─────────────────────────────────────────────────
 
-    void show_verif_banner(bool show);
+    void show_encryption_reminder(bool show);
+    // Whether the reminder is requested (it may still be hidden behind the
+    // encryption dialog).
+    bool encryption_reminder_requested() const;
 
     // ── Chat panel content switching ──────────────────────────────────────
 
@@ -271,9 +274,9 @@ public:
     {
         return space_root_;
     }
-    VerificationBanner* verif_banner() const
+    EncryptionReminderBanner* encryption_reminder() const
     {
-        return verif_banner_;
+        return reminder_banner_;
     }
     ImageViewerOverlay* image_viewer() const
     {
@@ -417,7 +420,7 @@ private:
 
     // Chat panel children
     ChatPanelWidget* chat_panel_ = nullptr;
-    VerificationBanner* verif_banner_ = nullptr;
+    EncryptionReminderBanner* reminder_banner_ = nullptr;
     tk::TabBar* tab_bar_ = nullptr;
     RoomView*        room_view_    = nullptr;
     InviteCard*      invite_card_  = nullptr;

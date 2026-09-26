@@ -354,121 +354,6 @@ void MainWindow::on_startup_restore_progress_ui_(const std::string& status)
     }
 }
 
-void MainWindow::handle_verification_state_ui_(bool is_verified)
-{
-    if (!main_app_ || !verif_shared_)
-    {
-        return;
-    }
-    if (main_app_->user_info())
-    {
-        main_app_->user_info()->set_warning_dot(!is_verified);
-    }
-    if (is_verified)
-    {
-        main_app_->show_verif_banner(false);
-        main_app_surface_->relayout();
-        return;
-    }
-    // Only prompt when there is actually an identity to verify against. On a
-    // fresh/only device our own login-time bootstrap holds the cross-signing
-    // keys, so "verify this device" is a dead end — check_encryption_setup_
-    // drives the Fresh setup overlay instead.
-    if (!foreign_cross_signing_identity_())
-    {
-        main_app_->show_verif_banner(false);
-        main_app_surface_->relayout();
-        return;
-    }
-    if (verification_banner_dismissed_)
-    {
-        return;
-    }
-    if (!main_app_->verif_banner()->visible())
-    {
-        active_verification_flow_id_.clear();
-        verif_shared_->set_state(
-            tesseract::views::VerificationBanner::State::Prompt);
-        main_app_->show_verif_banner(true);
-        main_app_surface_->relayout();
-    }
-}
-
-void MainWindow::handle_verification_request_ui_(std::string flow_id,
-                                                 std::string /*user_id*/,
-                                                 std::string /*device_id*/,
-                                                 bool incoming)
-{
-    if (!main_app_ || !verif_shared_)
-    {
-        return;
-    }
-    active_verification_flow_id_ = flow_id;
-    if (incoming)
-    {
-        verif_shared_->set_state(
-            tesseract::views::VerificationBanner::State::IncomingRequest);
-    }
-    else
-    {
-        verif_shared_->set_state(
-            tesseract::views::VerificationBanner::State::Waiting);
-        if (client_)
-        {
-            client_->start_sas(flow_id);
-        }
-    }
-    main_app_->show_verif_banner(true);
-    main_app_surface_->relayout();
-}
-
-void MainWindow::handle_sas_ready_ui_(
-    std::string /*flow_id*/, std::vector<tesseract::VerificationEmoji> emojis)
-{
-    if (!main_app_ || !verif_shared_)
-    {
-        return;
-    }
-    verif_shared_->set_emojis(emojis);
-    main_app_->show_verif_banner(true);
-    main_app_surface_->relayout();
-}
-
-void MainWindow::handle_verification_done_ui_(std::string /*flow_id*/)
-{
-    dismiss_encryption_setup_after_verification_();
-    if (!main_app_ || !verif_shared_)
-    {
-        return;
-    }
-    verif_shared_->set_state(tesseract::views::VerificationBanner::State::Done);
-    main_app_surface_->relayout();
-    // Hide after 1.5 s. The payload is a guarded() closure — built here,
-    // synchronously (`this` is definitely alive) — so it no-ops instead of
-    // touching a freed window if this fires after the window is destroyed.
-    gtk_post_timeout(1500, guarded([this]
-    {
-        if (verif_shared_ && verif_shared_->on_done)
-        {
-            verif_shared_->on_done();
-        }
-    }));
-}
-
-void MainWindow::handle_verification_cancelled_ui_(std::string /*flow_id*/,
-                                                   std::string reason)
-{
-    if (!main_app_ || !verif_shared_)
-    {
-        return;
-    }
-    verif_shared_->set_state(
-        tesseract::views::VerificationBanner::State::Cancelled);
-    verif_shared_->set_cancel_reason(std::move(reason));
-    main_app_->show_verif_banner(true);
-    main_app_surface_->relayout();
-}
-
 // ---------------------------------------------------------------------------
 // User context menu helpers — trampoline + cleanup for g_signal_connect_data
 // ---------------------------------------------------------------------------
@@ -706,7 +591,6 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
         main_app_ = main_app_owner.get();
         room_list_view_ = main_app_->room_list_view();
         room_view_ = main_app_->room_view();
-        verif_shared_ = main_app_->verif_banner();
         img_viewer_ = main_app_->image_viewer();
         vid_viewer_ = main_app_->video_viewer();
         room_media_view_ = main_app_->room_media_view();
@@ -1985,70 +1869,6 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                     client_->fetch_source_bytes_async(req_id, src);
                 }
             });
-
-        // Verification banner callbacks.
-        verif_shared_->on_verify = [this]
-        {
-            if (client_)
-            {
-                client_->request_self_verification();
-            }
-        };
-        verif_shared_->on_accept = [this]
-        {
-            if (client_ && !active_verification_flow_id_.empty())
-            {
-                client_->accept_verification(active_verification_flow_id_);
-                client_->start_sas(active_verification_flow_id_);
-            }
-        };
-        verif_shared_->on_match = [this]
-        {
-            if (client_ && !active_verification_flow_id_.empty())
-            {
-                if (verif_shared_)
-                {
-                    verif_shared_->set_state(
-                        tesseract::views::VerificationBanner::State::
-                            Confirming);
-                }
-                main_app_surface_->relayout();
-                client_->confirm_sas(active_verification_flow_id_);
-            }
-        };
-        verif_shared_->on_mismatch = [this]
-        {
-            if (client_ && !active_verification_flow_id_.empty())
-            {
-                client_->cancel_verification(active_verification_flow_id_);
-            }
-        };
-        verif_shared_->on_cancel = [this]
-        {
-            if (client_ && !active_verification_flow_id_.empty())
-            {
-                client_->cancel_verification(active_verification_flow_id_);
-            }
-        };
-        verif_shared_->on_dismiss = [this]
-        {
-            verification_banner_dismissed_ = true;
-            main_app_->show_verif_banner(false);
-            main_app_surface_->relayout();
-        };
-        verif_shared_->on_done = [this]
-        {
-            main_app_->show_verif_banner(false);
-            main_app_surface_->relayout();
-        };
-        verif_shared_->on_use_recovery_key = [this]
-        {
-            main_app_->show_verif_banner(false);
-            // The recovery-key entry path now lives in the encryption-setup
-            // overlay (Recover mode); the old inline RecoveryBanner was removed.
-            show_encryption_setup_overlay_(
-                tesseract::views::EncryptionSetupOverlay::Mode::Recover);
-        };
 
         // The room-list search field is wired in
         // ShellBase::wire_main_app_widget_() (shared across all four shells).
@@ -5384,29 +5204,6 @@ void MainWindow::cache_rgba_image_(const tk::CacheKey& key, int w, int h,
 }
 
 // ---------------------------------------------------------------------------
-// EncryptionSetupOverlay wiring (GTK4 shell)
-// ---------------------------------------------------------------------------
-
-void MainWindow::show_encryption_setup_overlay_(
-    tesseract::views::EncryptionSetupOverlay::Mode mode)
-{
-    if (!main_app_)
-        return;
-    auto* ov = main_app_->encryption_setup();
-    if (!ov)
-        return;
-
-    // Reconfigure the overlay (clears prior callbacks + field text) before
-    // wiring the shared callbacks via ShellBase.
-    ov->reset(mode);
-
-    wire_encryption_setup_callbacks_(*ov, main_app_surface_->host());
-
-    main_app_->show_encryption_setup(true);
-    main_app_surface_->relayout();
-}
-
-// ---------------------------------------------------------------------------
 
 void MainWindow::push_notification(const std::string& user_id,
                                    const std::string& room_id,
@@ -6330,7 +6127,7 @@ void MainWindow::refresh_account_ui_after_switch_()
 
     if (main_app_)
     {
-        main_app_->show_verif_banner(false);
+        main_app_->show_encryption_reminder(false);
     }
     if (main_app_surface_)
     {
@@ -6404,7 +6201,6 @@ void MainWindow::logout_active_account()
             }
         }
     }
-    verification_banner_dismissed_ = false;
 
     // logged_out is already known true here (early-returned above
     // otherwise); a background logout failure still surfaces separately

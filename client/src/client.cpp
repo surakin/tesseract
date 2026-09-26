@@ -325,13 +325,21 @@ void Client::start_sync(IEventHandler* handler)
 {
     MUT_FFI;
     // Detach any prior slot (e.g. a previous start_sync without an intervening
-    // stop_sync) so its bridge stops dispatching, then publish a fresh slot.
-    if (impl_->handler_slot)
+    // stop_sync) so its bridge stops dispatching, then publish a fresh slot —
+    // unless it already routes to this same handler (attach_event_handler +
+    // start_encryption_sync during a gated login): callbacks registered then
+    // (the incoming-verification handler, an in-flight verification's
+    // watchers) hold that slot's bridge and must keep working after the
+    // handover.
+    if (!impl_->handler_slot || impl_->handler_slot->load() != handler)
     {
-        impl_->handler_slot->detach();
+        if (impl_->handler_slot)
+        {
+            impl_->handler_slot->detach();
+        }
+        impl_->handler_slot =
+            std::make_shared<tesseract_ffi::HandlerSlot>(handler);
     }
-    impl_->handler_slot =
-        std::make_shared<tesseract_ffi::HandlerSlot>(handler);
     impl_->ffi->start_sync(
         std::make_unique<tesseract_ffi::EventHandlerBridge>(
             impl_->handler_slot));
@@ -349,6 +357,12 @@ void Client::attach_event_handler(IEventHandler* handler)
     impl_->ffi->attach_event_handler(
         std::make_unique<tesseract_ffi::EventHandlerBridge>(
             impl_->handler_slot));
+}
+
+void Client::start_encryption_sync()
+{
+    MUT_FFI;
+    impl_->ffi->start_encryption_sync();
 }
 
 void Client::request_stop()
@@ -2941,6 +2955,16 @@ bool Client::have_cross_signing_keys() const
     }
     SH_FFI;
     return impl_->ffi->have_cross_signing_keys();
+}
+
+bool Client::has_devices_to_verify_against() const
+{
+    if (!impl_)
+    {
+        return false;
+    }
+    SH_FFI;
+    return impl_->ffi->has_devices_to_verify_against();
 }
 
 Result Client::enable_recovery(const std::string& passphrase)

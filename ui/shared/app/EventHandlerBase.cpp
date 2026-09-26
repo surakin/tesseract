@@ -727,11 +727,11 @@ void EventHandlerBase::on_verification_request(const std::string& flow_id,
                                                bool incoming)
 {
     shell()->post_to_ui_(
-        [shell = shell(), fid = flow_id, uid = user_id, did = device_id,
-         inc = incoming]() mutable
+        [shell = shell(), account = user_id_, fid = flow_id, uid = user_id,
+         did = device_id, inc = incoming]() mutable
         {
-            shell->handle_verification_request_ui_(
-                std::move(fid), std::move(uid), std::move(did), inc);
+            shell->handle_verification_request_ui_(std::move(account), std::move(fid),
+                                                   std::move(uid), std::move(did), inc);
         });
 }
 
@@ -790,6 +790,17 @@ void EventHandlerBase::on_verification_state_changed(bool is_verified)
             {
                 shell->handle_verification_state_ui_(v);
             }
+        });
+}
+
+void EventHandlerBase::on_recovery_state_changed(std::uint8_t /*state*/)
+{
+    // The shell re-reads the live state itself; this is just the nudge.
+    shell()->post_to_ui_(
+        [shell = shell(), uid = user_id_]()
+        {
+            if (shell->active_account_ && shell->active_account_->user_id == uid)
+                shell->handle_recovery_state_changed_ui_();
         });
 }
 

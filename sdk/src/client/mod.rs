@@ -410,6 +410,14 @@ use std::sync::atomic::AtomicU64;
 #[cfg(not(test))]
 use std::sync::atomic::{AtomicBool, Ordering};
 
+/// A running encryption-only sliding sync; see `ClientFfi::start_encryption_sync`.
+#[cfg(not(test))]
+pub(super) struct EncryptionPresync {
+    pub(super) sliding_sync: matrix_sdk::SlidingSync,
+    pub(super) stopping: Arc<std::sync::atomic::AtomicBool>,
+    pub(super) task: tokio::task::JoinHandle<()>,
+}
+
 #[cfg(not(test))]
 pub(super) struct SendHandler(pub(super) UniquePtr<EventHandlerBridge>);
 #[cfg(not(test))]
@@ -635,6 +643,18 @@ pub struct ClientFfi {
     /// so they stop firing into a destroyed handler.
     #[cfg(not(test))]
     pub(super) event_handler_handles: Vec<matrix_sdk::event_handler::EventHandlerHandle>,
+    /// Whether the to-device `m.key.verification.request` handler is in
+    /// `event_handler_handles` already. Registered by whichever of
+    /// `start_encryption_sync` / `start_sync` runs first (never twice, or every
+    /// incoming request would be reported twice); reset by `stop_sync`.
+    #[cfg(not(test))]
+    pub(super) verification_request_handler_registered: bool,
+    /// The encryption-only sliding sync (`start_encryption_sync`) that runs
+    /// while a fresh login's full sync is withheld behind the encryption
+    /// dialog. `start_sync` / `stop_sync` stop it (it shares the "encryption"
+    /// sliding-sync connection with SyncService's own encryption sync).
+    #[cfg(not(test))]
+    pub(super) encryption_presync: Option<EncryptionPresync>,
     /// Latest known backup state code (see BACKUP_STATE_* constants).
     /// Updated by the backup watcher task and read by `backup_state()`.
     #[cfg(not(test))]
@@ -1167,6 +1187,10 @@ impl ClientFfi {
             sync_tasks: Vec::new(),
             #[cfg(not(test))]
             event_handler_handles: Vec::new(),
+            #[cfg(not(test))]
+            verification_request_handler_registered: false,
+            #[cfg(not(test))]
+            encryption_presync: None,
             #[cfg(not(test))]
             backup_state_code: Arc::new(std::sync::atomic::AtomicU8::new(BACKUP_STATE_UNKNOWN)),
             #[cfg(not(test))]

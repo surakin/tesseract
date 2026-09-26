@@ -108,6 +108,15 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
         main_window_geometry.valid = (main_window_geometry.w > 0 && main_window_geometry.h > 0);
     }
 
+    encryption_reminder_snoozed_until.clear();
+    if (j.contains("encryption_reminder_snoozed_until") &&
+        j["encryption_reminder_snoozed_until"].is_object())
+    {
+        for (const auto& [uid, until] : j["encryption_reminder_snoozed_until"].items())
+            if (until.is_number_integer())
+                encryption_reminder_snoozed_until[uid] = until.get<std::int64_t>();
+    }
+
     popout_windows.clear();
     if (j.contains("popout_windows") && j["popout_windows"].is_array())
     {
@@ -275,6 +284,14 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
             pws.push_back(std::move(pw));
         }
         j["popout_windows"] = std::move(pws);
+    }
+
+    if (!encryption_reminder_snoozed_until.empty())
+    {
+        nlohmann::json snoozes = nlohmann::json::object();
+        for (const auto& [uid, until] : encryption_reminder_snoozed_until)
+            snoozes[uid] = until;
+        j["encryption_reminder_snoozed_until"] = std::move(snoozes);
     }
 
     auto path = config_dir / "app_settings.json";

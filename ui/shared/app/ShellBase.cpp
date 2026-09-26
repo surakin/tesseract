@@ -43,9 +43,18 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cerrno>
 #include <cstdio>
+#include <cstring>
+#ifndef _WIN32
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 #include <ctime>
+#include <filesystem>
 #include <fstream>
+#include <system_error>
 #include <thread>
 
 namespace tesseract
@@ -1535,6 +1544,11 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
     { return account_manager_.thumbnail_cache().peek(tk::CacheKey::media(mxc)); };
 
     app->set_avatar_provider(avatar_lookup);
+    if (auto* reminder = app->encryption_reminder())
+    {
+        reminder->on_open    = [this] { reopen_encryption_setup_(); };
+        reminder->on_dismiss = [this] { snooze_encryption_reminder_(); };
+    }
     app->on_space_header = [this]
     {
         if (!space_stack_.empty())
@@ -8118,6 +8132,11 @@ ShellBase::FinalizeLoginIO ShellBase::finalize_login_blocking_(
         // later calls the real start_sync(), which re-attaches (harmlessly)
         // and spawns the sync tasks this deliberately skips for now.
         session->client->attach_event_handler(session->bridge.get());
+        // Keep the crypto side alive meanwhile: uploads this device's keys and
+        // carries verification traffic both ways, so "Use another device"
+        // and requests from the user's other devices work from the dialog
+        // without the room-list sync that slows recovery operations down.
+        session->client->start_encryption_sync();
     }
     else
     {
@@ -8321,12 +8340,19 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     cancel_debounce_(DebounceSlot::MessageSearch);
     search_pending_queries_.clear();
 
-    // Save the outgoing account's banner state before switching.
-    if (active_account_)
-    {
-        active_account_->verification_banner_dismissed =
-            verification_banner_dismissed_;
-    }
+    // An interactive verification belongs to the outgoing account's client:
+    // its events stop routing here. Cancel it on that client (still active at
+    // this point) and take down the dialog if it's showing it, or its buttons
+    // would act on the wrong account.
+    if (auto* o = main_app_ ? main_app_->encryption_setup() : nullptr;
+        o && o->visible() &&
+        (o->in_verification_step() ||
+         o->step() == views::EncryptionSetupOverlay::Step::VerifyFailed ||
+         o->mode() == views::EncryptionSetupOverlay::Mode::Verify))
+        main_app_->show_encryption_setup(false);
+    cancel_active_verification_();
+    foreign_identity_known_true_ = false;
+    last_device_verified_.reset();
 
     // Multi-window: release the outgoing account's dedicated mapping if it points
     // at this window; the incoming account is claimed at the tail of the switch.
@@ -8459,9 +8485,6 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     current_knock_status_room_id_.clear();
     knock_requests_panel_room_id_.clear();
     current_room_knock_requests_.clear();
-
-    // Load the incoming account's banner state.
-    verification_banner_dismissed_ = sess.verification_banner_dismissed;
 
     // Persist the active selection on disk (active = the new uid).
     auto index = tesseract::SessionStore::load_index();
@@ -11758,7 +11781,7 @@ void ShellBase::clear_all_caches_(
         show_status_message_(tk::tr("End your call before clearing the cache."));
         return;
     }
-    if (!active_verification_flow_id_.empty())
+    if (encryption_flow_.has_flow())
     {
         show_status_message_(
             tk::tr("Finish verifying your device before clearing the cache."));
@@ -13095,14 +13118,6 @@ bool ShellBase::foreign_cross_signing_identity_() const
     return read_own_identity_exists_() && !read_have_cross_signing_keys_();
 }
 
-void ShellBase::dismiss_encryption_setup_after_verification_()
-{
-    encryption_setup_dismissed_ = true;
-    if (main_app_)
-        main_app_->show_encryption_setup(false);
-    request_relayout_();
-}
-
 void ShellBase::handle_offline_ui_()
 {
     offline_ = true;
@@ -13125,6 +13140,69 @@ void ShellBase::handle_enable_recovery_progress_ui_(uint8_t  step,
     if (auto* ov = main_app_ ? main_app_->encryption_setup() : nullptr)
         ov->advance_progress(step, recovery_key, backed_up, total);
 }
+
+namespace
+{
+// Backstop for the dialog's Confirming step (after "They match").
+constexpr int kConfirmTimeoutMs = 30'000;
+
+// Write `text` (a secret — the recovery key) to the UTF-8 `path`. On POSIX
+// the file is owner-only (0600) from the moment it exists — including when
+// overwriting an existing file — and failing to make it so is an error, not
+// a silently world-readable key. Windows has no mode bits; files in the
+// user's profile already inherit per-user ACLs.
+bool write_private_text_file_(const std::string& path, const std::string& text,
+                              std::string& error)
+{
+#ifdef _WIN32
+    namespace fs = std::filesystem;
+    const fs::path p(reinterpret_cast<const char8_t*>(path.c_str()));
+    std::ofstream f(p, std::ios::binary | std::ios::trunc);
+    if (f) f.write(text.data(), static_cast<std::streamsize>(text.size()));
+    if (f) f.close();
+    if (!f)
+    {
+        error = tk::tr("The file couldn't be written.");
+        return false;
+    }
+    return true;
+#else
+    const int fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+    if (fd < 0)
+    {
+        error = std::strerror(errno);
+        return false;
+    }
+    auto fail = [&](int err) {
+        error = std::strerror(err);
+        ::close(fd);
+        return false;
+    };
+    // O_CREAT's mode only applies to a new file; tighten an existing one
+    // before any of the secret goes in.
+    if (::fchmod(fd, S_IRUSR | S_IWUSR) != 0) return fail(errno);
+    const char* data = text.data();
+    std::size_t left = text.size();
+    while (left > 0)
+    {
+        const ssize_t n = ::write(fd, data, left);
+        if (n < 0)
+        {
+            if (errno == EINTR) continue;
+            return fail(errno);
+        }
+        data += n;
+        left -= static_cast<std::size_t>(n);
+    }
+    if (::close(fd) != 0)
+    {
+        error = std::strerror(errno);
+        return false;
+    }
+    return true;
+#endif
+}
+} // namespace
 
 void ShellBase::wire_encryption_setup_callbacks_(
     views::EncryptionSetupOverlay& ov, tk::Host& host)
@@ -13155,28 +13233,109 @@ void ShellBase::wire_encryption_setup_callbacks_(
         });
     };
 
-    ov.on_request_sas = [this]() {
-        encryption_setup_dismissed_ = true;
-        if (main_app_) main_app_->show_encryption_setup(false);
-        release_pending_sync_gate_();
+    // "Use another device" / "Try again": the dialog has already moved to
+    // its waiting step. A gated first sync stays gated — the encryption-only
+    // presync (Client::start_encryption_sync) carries the to-device traffic.
+    ov.on_request_sas = [this]() { start_self_verification_(); };
+    ov.on_retry_verification = [this]() { start_self_verification_(); };
+
+    ov.on_cancel_verification = [this]() { cancel_active_verification_(); };
+
+    ov.on_accept_request = [this]() {
+        if (!encryption_flow_.has_flow()) return;
+        const std::string fid = encryption_flow_.flow().id;
         auto sess = active_account_;
-        run_async_mut_([sess]() {
+        run_async_mut_([this, sess, fid]() {
             if (!sess || !sess->client) return;
-            sess->client->request_self_verification();
+            auto r = sess->client->accept_verification(fid);
+            if (r.ok) r = sess->client->start_sas(fid);
+            if (r.ok) return;
+            post_to_ui_alive_([this, fid, msg = std::string(r.message)]() {
+                if (!encryption_flow_.is_flow(fid)) return;
+                encryption_flow_.clear();
+                if (auto* o = main_app_ ? main_app_->encryption_setup() : nullptr)
+                    o->verification_failed(msg, false);
+                request_relayout_();
+            });
         });
+    };
+
+    ov.on_decline_request = [this]() {
+        cancel_active_verification_();
+        // Back to where the user was (Recover's chooser), or close.
+        if (auto* o = main_app_ ? main_app_->encryption_setup() : nullptr)
+            o->return_to_start();
         request_relayout_();
     };
 
+    // The dialog is now on Confirming, which has no button of its own: every
+    // way out of it must come from here (a failed confirm, or the backstop
+    // timeout) or from the SDK's done / cancelled events.
+    ov.on_sas_match = [this]() {
+        auto fail = [this](const std::string& fid, std::string msg) {
+            if (!fid.empty() && !encryption_flow_.is_flow(fid)) return; // resolved
+            cancel_active_verification_();
+            if (auto* o = main_app_ ? main_app_->encryption_setup() : nullptr;
+                o && o->step() == views::EncryptionSetupOverlay::Step::Confirming)
+                o->verification_failed(std::move(msg), false);
+            request_relayout_();
+        };
+        if (!encryption_flow_.has_flow())
+        {
+            fail({}, tk::tr("This verification is no longer active."));
+            return;
+        }
+        const std::string fid = encryption_flow_.flow().id;
+        auto sess = active_account_;
+        run_async_mut_([this, sess, fid, fail]() {
+            if (!sess || !sess->client) return;
+            auto r = sess->client->confirm_sas(fid);
+            if (r.ok) return;
+            post_to_ui_alive_([fid, fail, msg = std::string(r.message)]() { fail(fid, msg); });
+        });
+        post_to_ui_after_(kConfirmTimeoutMs, guarded([fid, fail]() {
+            fail(fid, tk::tr("The other device didn't finish confirming in time."));
+        }));
+    };
+
+    // The dialog shows its own "didn't match" explanation; the SDK's cancel
+    // echo that follows is then ignored (verification_failed is idempotent).
+    ov.on_sas_mismatch = [this]() { cancel_active_verification_(); };
+
+    ov.on_reset_encryption = [this]() { begin_crypto_identity_reset_(); };
+
     ov.on_close = [this]() {
-        encryption_setup_dismissed_ = true;
+        auto* o = main_app_ ? main_app_->encryption_setup() : nullptr;
+        // Closing mid-verification abandons it on both sides.
+        if (o && o->in_verification_step()) cancel_active_verification_();
+        // A dismissed *setup* isn't raised again automatically this session
+        // (the reminder strip takes over); answering a request isn't setup.
+        if (!o || o->mode() != views::EncryptionSetupOverlay::Mode::Verify)
+            encryption_setup_dismissed_ = true;
         if (main_app_) main_app_->show_encryption_setup(false);
         release_pending_sync_gate_();
+        refresh_encryption_reminder_();
         request_relayout_();
     };
 
     ov.on_copy_to_clipboard = [host_ptr](std::string text) {
         host_ptr->set_clipboard_text(text);
     };
+
+    if (has_save_file_dialog_())
+    {
+        ov.on_save_to_file = [this](std::string key) {
+            pick_save_file_(
+                tk::tr("Save recovery key"), "tesseract-recovery-key.txt",
+                [this, key = std::move(key)](std::string path) {
+                    std::string error;
+                    const bool ok = write_private_text_file_(path, key + "\n", error);
+                    if (auto* o = main_app_ ? main_app_->encryption_setup() : nullptr)
+                        o->key_save_result(ok, error);
+                    request_relayout_();
+                });
+        };
+    }
 
     ov.on_layout_changed = [this]() { request_relayout_(); };
 }
@@ -13213,6 +13372,14 @@ void ShellBase::check_encryption_setup_()
 {
     if (encryption_setup_shown_ || encryption_setup_dismissed_)
         return;
+    // "Remind me later" on the reminder strip covers the automatic dialog too.
+    {
+        const auto& snoozes = Settings::instance().encryption_reminder_snoozed_until;
+        auto it = snoozes.find(my_user_id_);
+        if (it != snoozes.end() &&
+            EncryptionFlowController::snoozed(it->second, wall_clock_s_()))
+            return;
+    }
 
     using Mode      = tesseract::views::EncryptionSetupOverlay::Mode;
     const uint8_t state = read_recovery_state_();
@@ -13244,14 +13411,352 @@ void ShellBase::check_encryption_setup_()
         encryption_setup_shown_ = true;
         show_encryption_setup_overlay_(Mode::Recover);
     }
-    // Unknown (0) and Enabled (2): do nothing; re-checked on next tick.
+    else if (state == 2 && !read_device_verified_() && foreign_identity_cached_())
+    {
+        // Recovery is fine account-wide but this device was never confirmed
+        // against the identity (what the old "verify this device" banner
+        // used to prompt for) — same unlock choices.
+        encryption_setup_shown_ = true;
+        show_encryption_setup_overlay_(Mode::Recover);
+    }
+    // Unknown (0), or Enabled (2) on a confirmed device: nothing to do;
+    // re-checked on the next tick.
 }
 
 void ShellBase::reopen_encryption_setup_()
 {
     encryption_setup_dismissed_ = false;
     encryption_setup_shown_     = false;
-    check_encryption_setup_();
+    // User-initiated: bypass the snooze check_encryption_setup_ honours.
+    using Reminder = EncryptionFlowController::Reminder;
+    const Reminder kind = EncryptionFlowController::reminder_for(
+        read_recovery_state_(), read_device_verified_(),
+        foreign_cross_signing_identity_());
+    if (kind == Reminder::None)
+    {
+        check_encryption_setup_();
+        return;
+    }
+    encryption_setup_shown_ = true;
+    show_encryption_setup_overlay_(kind == Reminder::SetupNeeded
+                                       ? views::EncryptionSetupOverlay::Mode::Fresh
+                                       : views::EncryptionSetupOverlay::Mode::Recover);
+}
+
+// ── Encryption flow ───────────────────────────────────────────────────────────
+
+void ShellBase::show_encryption_setup_overlay_(views::EncryptionSetupOverlay::Mode mode)
+{
+    if (!main_app_) return;
+    auto* ov = main_app_->encryption_setup();
+    if (!ov || !main_app_->host()) return;
+
+    // Reconfigure the overlay (clears prior callbacks + field text) before
+    // wiring the shared callbacks.
+    ov->reset(mode);
+    wire_encryption_setup_callbacks_(*ov, *main_app_->host());
+    if (mode == views::EncryptionSetupOverlay::Mode::Recover)
+        refresh_other_device_availability_();
+
+    main_app_->show_encryption_setup(true);
+    request_relayout_();
+}
+
+std::int64_t ShellBase::wall_clock_s_() const
+{
+    return std::chrono::duration_cast<std::chrono::seconds>(
+               std::chrono::system_clock::now().time_since_epoch())
+        .count();
+}
+
+bool ShellBase::foreign_identity_cached_()
+{
+    if (!foreign_identity_known_true_)
+        foreign_identity_known_true_ = foreign_cross_signing_identity_();
+    return foreign_identity_known_true_;
+}
+
+void ShellBase::handle_recovery_state_changed_ui_()
+{
+    foreign_identity_known_true_ = false;
+    refresh_encryption_reminder_();
+}
+
+void ShellBase::refresh_encryption_reminder_(std::optional<bool> device_verified)
+{
+    if (!main_app_) return;
+    auto* banner = main_app_->encryption_reminder();
+    if (!banner) return;
+
+    using Reminder = EncryptionFlowController::Reminder;
+    Reminder kind = Reminder::None;
+    if (active_account_ && client_)
+    {
+        // Runs on every sync tick: only pay for the identity lookups when
+        // reminder_for() would look at the answer.
+        const bool    verified = device_verified.value_or(read_device_verified_());
+        const uint8_t state    = read_recovery_state_();
+        const bool    foreign  = (!verified || state == 1) && foreign_identity_cached_();
+        kind = EncryptionFlowController::reminder_for(state, verified, foreign);
+    }
+
+    bool show = kind != Reminder::None;
+    if (show)
+    {
+        const auto& snoozes = Settings::instance().encryption_reminder_snoozed_until;
+        auto it = snoozes.find(my_user_id_);
+        if (it != snoozes.end() &&
+            EncryptionFlowController::snoozed(it->second, wall_clock_s_()))
+            show = false;
+    }
+    const auto new_kind = kind == Reminder::SetupNeeded
+                              ? views::EncryptionReminderBanner::Kind::SetupNeeded
+                              : views::EncryptionReminderBanner::Kind::Locked;
+    if (show == main_app_->encryption_reminder_requested() &&
+        (!show || banner->kind() == new_kind))
+        return; // unchanged — the common case on a sync tick
+    if (show) banner->set_kind(new_kind);
+    main_app_->show_encryption_reminder(show);
+    request_relayout_();
+}
+
+void ShellBase::snooze_encryption_reminder_()
+{
+    if (my_user_id_.empty()) return;
+    auto& s = Settings::instance();
+    s.encryption_reminder_snoozed_until[my_user_id_] =
+        wall_clock_s_() + EncryptionFlowController::kSnoozeSeconds;
+    s.save_to_disk(tesseract::config_dir());
+    refresh_encryption_reminder_();
+}
+
+void ShellBase::refresh_other_device_availability_()
+{
+    auto sess = active_account_;
+    run_async_mut_([this, sess]() {
+        if (!sess || !sess->client) return;
+        // Not list_devices()'s Verified flag: for our own devices that also
+        // requires *this* device to be trusted, so it's always false exactly
+        // where this question is asked.
+        const bool has = sess->client->has_devices_to_verify_against();
+        post_to_ui_alive_([this, sess, has]() {
+            if (sess != active_account_) return;
+            if (auto* o = main_app_ ? main_app_->encryption_setup() : nullptr)
+                o->set_has_verified_other_device(has);
+            request_relayout_();
+        });
+    });
+}
+
+void ShellBase::start_self_verification_()
+{
+    encryption_flow_.clear();
+    encryption_flow_.set_awaiting_outgoing(true);
+    auto sess = active_account_;
+    run_async_mut_([this, sess]() {
+        if (!sess || !sess->client) return;
+        auto r = sess->client->request_self_verification();
+        post_to_ui_alive_([this, sess, ok = r.ok, msg = std::string(r.message)]() {
+            if (sess != active_account_)
+            {
+                // Switched away while it was being sent: don't leave it
+                // pending on the other devices.
+                if (ok)
+                    run_async_mut_([sess, fid = msg]() {
+                        if (sess && sess->client) sess->client->cancel_verification(fid);
+                    });
+                return;
+            }
+            if (!ok)
+            {
+                encryption_flow_.set_awaiting_outgoing(false);
+                if (auto* o = main_app_ ? main_app_->encryption_setup() : nullptr)
+                    o->verification_failed(msg, true);
+                request_relayout_();
+                return;
+            }
+            if (!encryption_flow_.awaiting_outgoing())
+            {
+                // The user cancelled while the request was being sent.
+                run_async_mut_([sess, fid = msg]() {
+                    if (sess && sess->client) sess->client->cancel_verification(fid);
+                });
+                return;
+            }
+            // Track the request from now on, not only once a device accepts:
+            // a decline or timeout arrives as a cancel for this id before any
+            // Ready does.
+            encryption_flow_.begin({.id = msg, .user_id = my_user_id_,
+                                    .incoming = false, .own_user = true,
+                                    .this_device_unverified = !read_device_verified_()});
+        });
+    });
+}
+
+void ShellBase::cancel_active_verification_()
+{
+    const std::string fid = encryption_flow_.flow().id;
+    encryption_flow_.clear(); // also drops a still-pending outgoing request
+    if (fid.empty()) return;
+    auto sess = active_account_;
+    run_async_mut_([sess, fid]() {
+        if (sess && sess->client) sess->client->cancel_verification(fid);
+    });
+}
+
+void ShellBase::handle_verification_request_ui_(std::string account_uid, std::string flow_id,
+                                                std::string user_id, std::string device_id,
+                                                bool incoming)
+{
+    auto* ov = main_app_ ? main_app_->encryption_setup() : nullptr;
+
+    // A background account of this window received it: answer it on that
+    // account, not in the active one's dialog (whose client doesn't know
+    // the flow).
+    if (!active_account_ || account_uid != active_account_->user_id)
+    {
+        auto target = account_manager_.find(account_uid);
+        // Only requests *to* us matter; an accepted outgoing one can't
+        // belong to a background account's (never shown) dialog.
+        if (!incoming || !target || !target->client)
+            return;
+        if (ov && ov->visible() && ov->busy())
+        {
+            // Switching now would throw away e.g. a just-created recovery key
+            // on screen; turn the request away on its own account instead.
+            run_async_mut_([target, flow_id]() {
+                if (target->client) target->client->cancel_verification(flow_id);
+            });
+            return;
+        }
+        switch_active_account_(account_uid);
+        if (!active_account_ || active_account_->user_id != account_uid)
+            return; // switch refused
+        raise_and_activate_(); // the user just started this on their other device
+        ov = main_app_ ? main_app_->encryption_setup() : nullptr;
+    }
+
+    auto sess = active_account_;
+
+    if (!incoming)
+    {
+        // Our outgoing request was accepted. Only adopt it if the dialog is
+        // still waiting for it (tracked since it was sent, or — if Ready beat
+        // the send result here — still awaited); anything else is cancelled.
+        const bool ours = (encryption_flow_.is_flow(flow_id) &&
+                           !encryption_flow_.flow().incoming) ||
+                          (!encryption_flow_.has_flow() && encryption_flow_.awaiting_outgoing());
+        if (!ours || !ov || !ov->visible())
+        {
+            run_async_mut_([sess, flow_id]() {
+                if (sess && sess->client) sess->client->cancel_verification(flow_id);
+            });
+            return;
+        }
+        encryption_flow_.begin({.id = flow_id, .user_id = user_id,
+                                .device_id = device_id, .incoming = false,
+                                .own_user = user_id == my_user_id_,
+                                .this_device_unverified = !read_device_verified_()});
+        run_async_mut_([sess, flow_id]() {
+            if (sess && sess->client) sess->client->start_sas(flow_id);
+        });
+        ov->show_waiting();
+        request_relayout_();
+        return;
+    }
+
+    if (!ov) return;
+    using Action = EncryptionFlowController::IncomingAction;
+    if (EncryptionFlowController::on_incoming(ov->visible(), ov->busy()) ==
+            Action::RefuseBusy ||
+        encryption_flow_.has_flow())
+    {
+        // Mid-setup (the new recovery key may be on screen) or already
+        // verifying: turn the newcomer away rather than yank the dialog.
+        run_async_mut_([sess, flow_id]() {
+            if (sess && sess->client) sess->client->cancel_verification(flow_id);
+        });
+        return;
+    }
+
+    const bool own = user_id == my_user_id_;
+    encryption_flow_.begin({.id = flow_id, .user_id = user_id, .device_id = device_id,
+                            .incoming = true, .own_user = own,
+                            .this_device_unverified = !read_device_verified_()});
+    if (!ov->visible())
+        show_encryption_setup_overlay_(views::EncryptionSetupOverlay::Mode::Verify);
+    ov->show_incoming_request(own ? device_id : user_id, own);
+    request_relayout_();
+
+    // Name the device the way the user named it, once known.
+    if (own)
+    {
+        run_async_mut_([this, sess, flow_id, device_id]() {
+            if (!sess || !sess->client) return;
+            std::string name;
+            for (const auto& d : sess->client->list_devices())
+                if (d.id == device_id && !d.display_name.empty()) name = d.display_name;
+            if (name.empty()) return;
+            post_to_ui_alive_([this, flow_id, name]() {
+                if (!encryption_flow_.is_flow(flow_id)) return;
+                if (auto* o = main_app_ ? main_app_->encryption_setup() : nullptr)
+                    o->set_peer(name);
+                request_relayout_();
+            });
+        });
+    }
+}
+
+void ShellBase::handle_sas_ready_ui_(std::string flow_id,
+                                     std::vector<VerificationEmoji> emojis)
+{
+    if (!encryption_flow_.is_flow(flow_id)) return;
+    auto* ov = main_app_ ? main_app_->encryption_setup() : nullptr;
+    if (!ov || !ov->visible()) return;
+    ov->show_emojis(std::move(emojis));
+    request_relayout_();
+}
+
+void ShellBase::handle_verification_done_ui_(std::string flow_id)
+{
+    if (!encryption_flow_.is_flow(flow_id)) return;
+    const auto flow = encryption_flow_.flow();
+    encryption_flow_.clear();
+
+    using DoneKind = views::EncryptionSetupOverlay::DoneKind;
+    const DoneKind kind = !flow.own_user                ? DoneKind::UserVerified
+                        : flow.this_device_unverified   ? DoneKind::Unlocked
+                                                        : DoneKind::OtherDeviceConfirmed;
+    if (kind == DoneKind::Unlocked)
+        encryption_setup_dismissed_ = true; // nothing left to set up here
+
+    if (auto* ov = main_app_ ? main_app_->encryption_setup() : nullptr; ov && ov->visible())
+        ov->verification_done(kind);
+    refresh_encryption_reminder_();
+    request_relayout_();
+}
+
+void ShellBase::handle_verification_cancelled_ui_(std::string flow_id, std::string reason)
+{
+    if (!encryption_flow_.is_flow(flow_id)) return;
+    const bool we_started = !encryption_flow_.flow().incoming;
+    encryption_flow_.clear();
+    auto* ov = main_app_ ? main_app_->encryption_setup() : nullptr;
+    if (!ov || !ov->visible() || !ov->in_verification_step()) return;
+    ov->verification_failed(std::move(reason), we_started);
+    request_relayout_();
+}
+
+void ShellBase::handle_verification_state_ui_(bool is_verified)
+{
+    if (last_device_verified_ != is_verified)
+    {
+        last_device_verified_        = is_verified;
+        foreign_identity_known_true_ = false;
+    }
+    if (main_app_ && main_app_->user_info())
+        main_app_->user_info()->set_warning_dot(!is_verified);
+    refresh_encryption_reminder_(is_verified);
 }
 
 std::function<void()> ShellBase::verify_session_menu_callback_()
@@ -13296,11 +13801,14 @@ void ShellBase::begin_crypto_identity_reset_()
             if (!sess || !sess->client) return;
             sess->client->cancel_reset_crypto_identity();
         });
-        encryption_setup_dismissed_ = true;
-        if (main_app_)
-            main_app_->show_encryption_setup(false);
-        request_relayout_();
+        // Same exit as any other close: in particular it releases a gated
+        // first sync — the reset is reachable from the gated login dialog
+        // (Recover › I've lost… › Reset encryption).
+        auto* o = main_app_ ? main_app_->encryption_setup() : nullptr;
+        if (o && o->on_close)
+            o->on_close();
     };
+    ov->set_reset_account(my_user_id_);
     ov->begin_reset_wait();
     request_relayout_();
 
@@ -13328,6 +13836,7 @@ void ShellBase::begin_crypto_identity_reset_()
             {
                 // Wait for the user to approve in the browser; the SDK polls
                 // and fires on_crypto_reset_result when it resolves.
+                o->set_reset_approval_url(url);
                 tesseract::Client::open_in_browser(url);
             }
             request_relayout_();
@@ -13341,7 +13850,7 @@ void ShellBase::handle_crypto_reset_result_ui_(bool ok, std::string message)
     if (!o)
         return;
     if (ok)
-        o->reset_approved(); // → Fresh recovery-key setup (ChooseMethod)
+        o->reset_approved(); // → Fresh recovery-key setup (Intro)
     else
         o->report_reset_error(message);
     request_relayout_();

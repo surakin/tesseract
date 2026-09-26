@@ -162,15 +162,15 @@ PrivacySection::PrivacySection()
     auto* enc_group = add_group(tk::tr("Encryption"));
 
     enc_group->add_widget(tk::create_widget<tk::Button>(
-        this, "Export room keys…",
+        this, tk::tr("Export room keys…"),
         [this] { if (on_export_keys) on_export_keys(); }));
 
     enc_group->add_widget(tk::create_widget<tk::Button>(
-        this, "Import room keys…",
+        this, tk::tr("Import room keys…"),
         [this] { if (on_import_keys) on_import_keys(); }));
 
     enc_group->add_widget(tk::create_widget<tk::Button>(
-        this, "Reset cryptographic identity…",
+        this, tk::tr("Reset encryption…"),
         [this] { if (on_reset_identity) on_reset_identity(); },
         tk::Button::Variant::Destructive));
 }

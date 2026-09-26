@@ -533,23 +533,23 @@ TEST_CASE("MainAppWidget space nav routes header and back clicks",
     CHECK(back == 1);
 }
 
-TEST_CASE("MainAppWidget hides verification banner behind encryption setup",
+TEST_CASE("MainAppWidget hides the encryption reminder behind the encryption dialog",
           "[tk][widget]")
 {
     auto app_owner = tk::create_root_widget<MainAppWidget>(nullptr);
     MainAppWidget& app = *app_owner;
 
-    app.show_verif_banner(true);
-    REQUIRE(app.verif_banner()->visible() == true);
+    app.show_encryption_reminder(true);
+    REQUIRE(app.encryption_reminder()->visible() == true);
     app.show_encryption_setup(true);
-    CHECK(app.verif_banner()->visible() == false);
+    CHECK(app.encryption_reminder()->visible() == false);
     app.show_encryption_setup(false);
-    CHECK(app.verif_banner()->visible() == true);
+    CHECK(app.encryption_reminder()->visible() == true);
 
-    app.show_verif_banner(false);
+    app.show_encryption_reminder(false);
     app.show_encryption_setup(true);
-    app.show_verif_banner(true);
-    CHECK(app.verif_banner()->visible() == false);
+    app.show_encryption_reminder(true);
+    CHECK(app.encryption_reminder()->visible() == false);
 }
 
 TEST_CASE("MainAppWidget offline banner shifts chat content",

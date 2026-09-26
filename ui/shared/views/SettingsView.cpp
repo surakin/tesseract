@@ -351,16 +351,18 @@ SettingsView::SettingsView()
             [this] { if (on_clear_caches) on_clear_caches(); });
     };
 
-    // PrivacySection: route "Reset cryptographic identity" through the shared
-    // ConfirmDialog — destructive, so guard it behind an explicit confirm.
+    // PrivacySection: route "Reset encryption" (a cryptographic identity
+    // reset) through the shared ConfirmDialog — destructive, so guard it
+    // behind an explicit confirm.
     privacy_->on_reset_identity = [this]
     {
         confirm_dialog_->open(
-            {.title         = tk::tr("Reset your cryptographic identity?"),
-             .body          = tk::tr("This creates a brand-new identity and replaces your "
-                              "key backup. Your other sessions and the people you "
-                              "chat with will need to verify you again. You'll set up "
-                              "a new recovery key right after."),
+            {.title         = tk::tr("Reset encryption?"),
+             .body          = tk::tr("Only do this if you've lost your recovery key and "
+                              "have no other signed-in device. Messages you can't "
+                              "read now will stay unreadable, and your other devices "
+                              "and the people you chat with will need to confirm you "
+                              "again. You'll get a new recovery key right after."),
              .confirm_label = tk::tr("Reset"),
              .cancel_label  = tk::tr("Cancel"),
              .destructive   = true},

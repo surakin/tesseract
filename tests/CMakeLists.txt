@@ -60,7 +60,7 @@ add_executable(tesseract_tests
     cpp/test_resizable_sidebar.cpp
     cpp/test_unread_prefetch.cpp
     cpp/test_tk_emoji_picker.cpp
-    cpp/test_tk_verification_banner.cpp
+    cpp/test_tk_encryption_reminder_banner.cpp
     cpp/test_tk_compose_bar.cpp
     cpp/test_tk_user_info.cpp
     cpp/test_tk_user_profile_panel.cpp

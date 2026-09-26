@@ -197,17 +197,6 @@ private:
     void
     handle_backup_progress_ui_(tesseract::BackupProgress progress) override;
     void refresh_pickers_packs_() override;
-    void handle_verification_request_ui_(std::string flow_id,
-                                         std::string user_id,
-                                         std::string device_id,
-                                         bool incoming) override;
-    void handle_sas_ready_ui_(
-        std::string flow_id,
-        std::vector<tesseract::VerificationEmoji> emojis) override;
-    void handle_verification_done_ui_(std::string flow_id) override;
-    void handle_verification_cancelled_ui_(std::string flow_id,
-                                           std::string reason) override;
-    void handle_verification_state_ui_(bool is_verified) override;
     void handle_notification_ui_(std::string user_id, std::string room_id,
                                  std::string room_name, std::string sender,
                                  std::string body, bool is_mention,
@@ -298,8 +287,6 @@ private:
     void on_account_badges_changed_(bool other_accounts_unread) override;
     void on_media_bytes_ready_(const tk::CacheKey& cache_key, MediaKind kind,
                                std::vector<uint8_t> bytes) override;
-    void show_encryption_setup_overlay_(
-        tesseract::views::EncryptionSetupOverlay::Mode mode) override;
 
     DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w,
                                int max_h) override;
@@ -317,6 +304,9 @@ private:
         override;
     void pick_image_file_(
         std::function<void(std::vector<uint8_t>, std::string)> cb) override;
+    bool has_save_file_dialog_() const override { return true; }
+    void pick_save_file_(std::string title, std::string suggested_name,
+                         std::function<void(std::string)> cb) override;
     void bind_settings_controller_() override;
     // No pure-virtual bind_*_() hook exists for HistoryExportController (by
     // design — see HistoryExportController.h), so this is called explicitly

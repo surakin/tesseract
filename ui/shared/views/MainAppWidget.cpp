@@ -382,9 +382,9 @@ public:
         offline_banner_ = add_child(std::move(offline));
         offline_banner_->set_visible(false);
 
-        auto ver = std::make_unique<VerificationBanner>();
-        verif_banner_ = add_child(std::move(ver));
-        verif_banner_->set_visible(false);
+        auto reminder = std::make_unique<EncryptionReminderBanner>();
+        reminder_banner_ = add_child(std::move(reminder));
+        reminder_banner_->set_visible(false);
 
         auto tb = tk::create_widget<tk::TabBar>(this);
         tab_bar_ = add_child(std::move(tb));
@@ -395,7 +395,7 @@ public:
     }
 
     OfflineBannerWidget* offline_banner() const { return offline_banner_; }
-    VerificationBanner* verif_banner() const { return verif_banner_; }
+    EncryptionReminderBanner* encryption_reminder() const { return reminder_banner_; }
     tk::TabBar* tab_bar() const { return tab_bar_; }
     ChatContentStack* chat_content() const { return chat_content_; }
 
@@ -405,15 +405,17 @@ public:
             offline_banner_->set_visible(offline);
     }
 
-    void set_verification_requested(bool show)
+    bool reminder_requested() const { return reminder_requested_; }
+
+    void set_reminder_requested(bool show)
     {
-        verif_requested_ = show;
-        update_verification_visibility_();
+        reminder_requested_ = show;
+        update_reminder_visibility_();
     }
 
-    void refresh_verification_visibility()
+    void refresh_reminder_visibility()
     {
-        update_verification_visibility_();
+        update_reminder_visibility_();
     }
 
     void set_tab_bar_visible(bool visible)
@@ -440,13 +442,13 @@ public:
             y += kOfflineBannerH;
         }
 
-        update_verification_visibility_();
-        if (verif_banner_ && verif_banner_->visible())
+        update_reminder_visibility_();
+        if (reminder_banner_ && reminder_banner_->visible())
         {
-            const float verif_h =
-                verif_banner_->measure(ctx, {bounds.w, bounds.h - (y - bounds.y)}).h;
-            verif_banner_->arrange(ctx, {bounds.x, y, bounds.w, verif_h});
-            y += verif_h;
+            const float reminder_h =
+                reminder_banner_->measure(ctx, {bounds.w, bounds.h - (y - bounds.y)}).h;
+            reminder_banner_->arrange(ctx, {bounds.x, y, bounds.w, reminder_h});
+            y += reminder_h;
         }
 
         if (tab_bar_visible_ && tab_bar_)
@@ -463,21 +465,21 @@ public:
         }
     }
 
-    std::function<bool()> verification_suppressed;
+    std::function<bool()> reminder_suppressed;
 
 private:
-    void update_verification_visibility_()
+    void update_reminder_visibility_()
     {
-        const bool suppressed = verification_suppressed && verification_suppressed();
-        if (verif_banner_)
-            verif_banner_->set_visible(verif_requested_ && !suppressed);
+        const bool suppressed = reminder_suppressed && reminder_suppressed();
+        if (reminder_banner_)
+            reminder_banner_->set_visible(reminder_requested_ && !suppressed);
     }
 
     OfflineBannerWidget* offline_banner_ = nullptr;
-    VerificationBanner* verif_banner_ = nullptr;
+    EncryptionReminderBanner* reminder_banner_ = nullptr;
     tk::TabBar* tab_bar_ = nullptr;
     ChatContentStack* chat_content_ = nullptr;
-    bool verif_requested_ = false;
+    bool reminder_requested_ = false;
     bool tab_bar_visible_ = false;
 };
 
@@ -1023,11 +1025,11 @@ MainAppWidget::MainAppWidget()
     };
 
     chat_panel_ = root_layout_->chat_panel();
-    chat_panel_->verification_suppressed = [this]
+    chat_panel_->reminder_suppressed = [this]
     {
         return encryption_setup_ && encryption_setup_->visible();
     };
-    verif_banner_ = chat_panel_->verif_banner();
+    reminder_banner_ = chat_panel_->encryption_reminder();
     tab_bar_ = chat_panel_->tab_bar();
     ChatContentStack* chat_content = chat_panel_->chat_content();
 
@@ -1212,12 +1214,17 @@ void MainAppWidget::set_avatar_provider(
     }
 }
 
-void MainAppWidget::show_verif_banner(bool show)
+void MainAppWidget::show_encryption_reminder(bool show)
 {
     if (chat_panel_)
     {
-        chat_panel_->set_verification_requested(show);
+        chat_panel_->set_reminder_requested(show);
     }
+}
+
+bool MainAppWidget::encryption_reminder_requested() const
+{
+    return chat_panel_ && chat_panel_->reminder_requested();
 }
 
 void MainAppWidget::set_offline(bool offline)
@@ -1595,7 +1602,7 @@ void MainAppWidget::show_encryption_setup(bool show)
     }
     if (chat_panel_)
     {
-        chat_panel_->refresh_verification_visibility();
+        chat_panel_->refresh_reminder_visibility();
     }
 }
 

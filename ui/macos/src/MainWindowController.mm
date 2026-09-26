@@ -153,15 +153,14 @@ public:
     void request_repaint_() override;
     void on_invites_updated_() override;
     void on_my_knocks_updated_() override;
-    void handle_verification_state_ui_(bool is_verified) override;
+    // Called from the controller after an account switch.
+    using ShellBase::handle_verification_state_ui_;
 
 protected:
     void on_rooms_updated_() override;
     void apply_window_title_ui_(const std::string& title) override;
     void on_space_children_cache_ready_ui_() override;
     void on_space_unjoined_summaries_ready_ui_(const std::string&) override;
-    void show_encryption_setup_overlay_(
-        tesseract::views::EncryptionSetupOverlay::Mode mode) override;
     void on_tray_unread_changed_(bool has_unread,
                                  bool has_highlight) override;
     void on_account_badges_changed_(bool other_accounts_unread) override;
@@ -206,16 +205,6 @@ protected:
     void
     handle_backup_progress_ui_(tesseract::BackupProgress progress) override;
     void refresh_pickers_packs_() override;
-    void handle_verification_request_ui_(std::string flow_id,
-                                         std::string user_id,
-                                         std::string device_id,
-                                         bool incoming) override;
-    void handle_sas_ready_ui_(
-        std::string flow_id,
-        std::vector<tesseract::VerificationEmoji> emojis) override;
-    void handle_verification_done_ui_(std::string flow_id) override;
-    void handle_verification_cancelled_ui_(std::string flow_id,
-                                           std::string reason) override;
     void handle_notification_ui_(std::string user_id, std::string room_id,
                                  std::string room_name, std::string sender,
                                  std::string body, bool is_mention,
@@ -430,8 +419,6 @@ public:
     void set_avatar_url(std::string u) { my_avatar_url_ = std::move(u); }
 
     // Misc state accessors
-    bool foreign_cross_signing_identity() const
-        { return foreign_cross_signing_identity_(); }
     const tesseract::ExtendedProfile& own_extended_profile() const
         { return own_extended_profile_; }
     void set_stats_settings_view(tesseract::views::SettingsView* v)
@@ -510,10 +497,8 @@ public:
     // directly — no forwarder needed.
     void start_search_stats_poll();
     void stop_search_stats_poll();
-    bool verification_banner_dismissed() const;
     bool is_secondary_window_startup() const;
     bool is_pinned_window() const;
-    void set_verification_banner_dismissed(bool b);
 
     // Misc one-liners
     void init_pool_callbacks();
@@ -577,9 +562,6 @@ public:
     bool space_stack_empty() const;
     const std::string& current_space() const;
     const std::vector<std::string>* space_children(const std::string& id) const;
-
-    // Verification
-    const std::string& verification_flow_id() const;
 
     // Misc one-shot state
     const std::vector<tesseract::InviteInfo>* invites_ptr() const;
@@ -753,14 +735,6 @@ public:
     using ShellBase::main_room_pane_;
     tk::macos::Surface* app_surface_ = nullptr;
 
-    // Public forwarder for the protected ShellBase virtual so ObjC++ code can
-    // call it through _shell without a friend declaration.
-    void show_encryption_setup(
-        tesseract::views::EncryptionSetupOverlay::Mode mode)
-    {
-        show_encryption_setup_overlay_(mode);
-    }
-
     // settings_controller_ now lives in ShellBase (created/reset via
     // ensure_settings_controller_); exposed above via a using-declaration.
 
@@ -869,11 +843,6 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
 - (void)loginViewDidCancel:(LoginView*)view;
 - (void)_openAccountPicker;
 - (void)handleBackupProgress:(tesseract::BackupProgress)progress;
-- (void)handleVerificationState:(BOOL)isVerified;
-- (void)handleVerificationRequest:(std::string)flowId incoming:(BOOL)incoming;
-- (void)handleSasReady:(std::vector<tesseract::VerificationEmoji>)emojis;
-- (void)handleVerificationDone;
-- (void)handleVerificationCancelled:(std::string)reason;
 
 - (void)onRoomSelected:(std::string)roomId;
 // Push ShellBase::compose_window_title_()'s string to the OS window title.
@@ -1130,27 +1099,6 @@ void MacShell::on_space_unjoined_summaries_ready_ui_(const std::string&)
     {
         [ctrl_ _refreshRoomList];
     }
-}
-
-void MacShell::show_encryption_setup_overlay_(
-    tesseract::views::EncryptionSetupOverlay::Mode mode)
-{
-    MainWindowController* c = ctrl_;
-    if (!c || !main_app_)
-        return;
-    auto* ov = main_app_->encryption_setup();
-    if (!ov)
-        return;
-
-    // Reconfigure the overlay (clears prior callbacks + field text) before
-    // wiring the shared callbacks via ShellBase.
-    ov->reset(mode);
-
-    wire_encryption_setup_callbacks_(*ov, app_surface_->host());
-
-    main_app_->show_encryption_setup(true);
-    if (app_surface_)
-        app_surface_->relayout();
 }
 
 void MacShell::on_tray_unread_changed_(bool has_unread, bool has_highlight)
@@ -1934,59 +1882,6 @@ void MacShell::refresh_pickers_packs_()
     room_view_->refresh_emoticon_packs();
 }
 
-void MacShell::handle_verification_state_ui_(bool is_verified)
-{
-    MainWindowController* c = ctrl_;
-    if (c)
-    {
-        [c handleVerificationState:is_verified ? YES : NO];
-    }
-}
-
-void MacShell::handle_verification_request_ui_(std::string flow_id,
-                                               std::string /*user_id*/,
-                                               std::string /*device_id*/,
-                                               bool incoming)
-{
-    active_verification_flow_id_ = std::move(flow_id);
-    MainWindowController* c = ctrl_;
-    if (c)
-    {
-        [c handleVerificationRequest:active_verification_flow_id_
-                            incoming:incoming ? YES : NO];
-    }
-}
-
-void MacShell::handle_sas_ready_ui_(
-    std::string /*flow_id*/, std::vector<tesseract::VerificationEmoji> emojis)
-{
-    MainWindowController* c = ctrl_;
-    if (c)
-    {
-        [c handleSasReady:std::move(emojis)];
-    }
-}
-
-void MacShell::handle_verification_done_ui_(std::string /*flow_id*/)
-{
-    dismiss_encryption_setup_after_verification_();
-    MainWindowController* c = ctrl_;
-    if (c)
-    {
-        [c handleVerificationDone];
-    }
-}
-
-void MacShell::handle_verification_cancelled_ui_(std::string /*flow_id*/,
-                                                 std::string reason)
-{
-    MainWindowController* c = ctrl_;
-    if (c)
-    {
-        [c handleVerificationCancelled:std::move(reason)];
-    }
-}
-
 void MacShell::handle_notification_ui_(std::string user_id, std::string room_id,
                                        std::string room_name,
                                        std::string sender, std::string body,
@@ -2617,13 +2512,9 @@ void MacShell::show_status_message(std::string msg)
     { show_status_message_(std::move(msg)); }
 void MacShell::start_search_stats_poll() { start_search_index_stats_poll_(); }
 void MacShell::stop_search_stats_poll()  { stop_search_index_stats_poll_(); }
-bool MacShell::verification_banner_dismissed() const
-    { return verification_banner_dismissed_; }
 bool MacShell::is_secondary_window_startup() const
     { return is_secondary_window_startup_(); }
 bool MacShell::is_pinned_window() const    { return is_pinned_window_; }
-void MacShell::set_verification_banner_dismissed(bool b)
-    { verification_banner_dismissed_ = b; }
 void MacShell::init_pool_callbacks() { init_pool_callbacks_(); }
 bool MacShell::tick_anim()           { return tick_anim_(); }
 bool MacShell::tick_inflight()        { return inflight_tick_(); }
@@ -2728,8 +2619,6 @@ void MacShell::push_space(const std::string& room_id,
     space_nav_frames_.push_back(SpaceNavFrame::capture(rlv));
     space_stack_.push_back(room_id);
 }
-const std::string& MacShell::verification_flow_id() const
-    { return active_verification_flow_id_; }
 const std::vector<tesseract::InviteInfo>* MacShell::invites_ptr() const
     { return &invites_; }
 const std::vector<tesseract::KnockedRoomInfo>* MacShell::my_knocks_ptr() const
@@ -2814,7 +2703,6 @@ void MacShell::apply_window_title_ui_(const std::string& title)
     // Borrowed sub-view aliases (set after building _mainAppSurface).
     tesseract::views::RoomListView* _roomListView;      // via _mainApp
     tesseract::views::RoomView* _roomView;              // via _mainApp
-    tesseract::views::VerificationBanner* _verifShared; // via _mainApp
     tesseract::views::ImageViewerOverlay* _imgViewer;   // via _mainApp
     tesseract::views::VideoViewerOverlay* _vidViewer;   // via _mainApp
     tesseract::views::RoomMediaView* _roomMediaView;    // via _mainApp
@@ -3231,7 +3119,6 @@ void MacShell::apply_window_title_ui_(const std::string& title)
         // Wire borrowed sub-view aliases.
         _roomListView = _mainApp->room_list_view();
         _roomView = _mainApp->room_view();
-        _verifShared = _mainApp->verif_banner();
         _imgViewer = _mainApp->image_viewer();
         _vidViewer = _mainApp->video_viewer();
         _roomMediaView = _mainApp->room_media_view();
@@ -3543,99 +3430,6 @@ void MacShell::apply_window_title_ui_(const std::string& title)
                     s->_mainApp->hide_room_preview();
             };
         }
-
-        // VerificationBanner callbacks.
-        _mainApp->verif_banner()->on_verify = [weakSelf]
-        {
-            MainWindowController* s = weakSelf;
-            if (s && s->_shell->client_)
-            {
-                s->_shell->client_->request_self_verification();
-            }
-        };
-        _mainApp->verif_banner()->on_accept = [weakSelf]
-        {
-            MainWindowController* s = weakSelf;
-            if (!s || !s->_shell->client_)
-            {
-                return;
-            }
-            s->_shell->client_->accept_verification(
-                s->_shell->verification_flow_id());
-            s->_shell->client_->start_sas(
-                s->_shell->verification_flow_id());
-        };
-        _mainApp->verif_banner()->on_match = [weakSelf]
-        {
-            MainWindowController* s = weakSelf;
-            if (!s || !s->_shell->client_)
-            {
-                return;
-            }
-            s->_shell->client_->confirm_sas(
-                s->_shell->verification_flow_id());
-            if (s->_verifShared)
-            {
-                s->_verifShared->set_state(
-                    tesseract::views::VerificationBanner::State::Confirming);
-            }
-            if (s->_mainAppSurface)
-            {
-                s->_mainAppSurface->relayout();
-            }
-        };
-        _mainApp->verif_banner()->on_mismatch = [weakSelf]
-        {
-            MainWindowController* s = weakSelf;
-            if (s && s->_shell->client_)
-            {
-                s->_shell->client_->cancel_verification(
-                    s->_shell->verification_flow_id());
-            }
-        };
-        _mainApp->verif_banner()->on_cancel = [weakSelf]
-        {
-            MainWindowController* s = weakSelf;
-            if (s && s->_shell->client_)
-            {
-                s->_shell->client_->cancel_verification(
-                    s->_shell->verification_flow_id());
-            }
-        };
-        _mainApp->verif_banner()->on_dismiss = [weakSelf]
-        {
-            MainWindowController* s = weakSelf;
-            if (!s)
-            {
-                return;
-            }
-            s->_shell->set_verification_banner_dismissed(true);
-            s->_mainApp->show_verif_banner(false);
-            s->_mainAppSurface->relayout();
-        };
-        _mainApp->verif_banner()->on_done = [weakSelf]
-        {
-            MainWindowController* s = weakSelf;
-            if (!s)
-            {
-                return;
-            }
-            s->_mainApp->show_verif_banner(false);
-            s->_mainAppSurface->relayout();
-        };
-        _mainApp->verif_banner()->on_use_recovery_key = [weakSelf]
-        {
-            MainWindowController* s = weakSelf;
-            if (!s)
-            {
-                return;
-            }
-            s->_mainApp->show_verif_banner(false);
-            // The recovery-key entry path now lives in the encryption-setup
-            // overlay (Recover mode); the old inline RecoveryBanner was removed.
-            s->_shell->show_encryption_setup(
-                tesseract::views::EncryptionSetupOverlay::Mode::Recover);
-        };
 
         // Image + video viewers: providers / repaint / on_close come from
         // RoomPane::wire_room_view_ via construct_main_room_pane() above;
@@ -5324,12 +5118,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
                     if (auto* qsf = app->quick_switcher()->search_field())
                         qsf->set_visible(false);
                     if (auto* ov = app->encryption_setup())
-                    {
-                        if (auto* pf = ov->passphrase_field())
-                            pf->set_visible(false);
-                        if (auto* kf = ov->key_field())
-                            kf->set_visible(false);
-                    }
+                        ov->hide_native_fields();
                     return;
                 }
                 // Otherwise text_area_ self-positions via ComposeBar's own
@@ -7011,7 +6800,7 @@ void MacShell::apply_window_title_ui_(const std::string& title)
 
     if (_mainApp)
     {
-        _mainApp->show_verif_banner(false);
+        _mainApp->show_encryption_reminder(false);
         _mainAppSurface->relayout();
     }
 
@@ -7866,106 +7655,6 @@ void MacShell::apply_window_title_ui_(const std::string& title)
 // updateRoomsForUserId: was the old ObjC EventBridge hook. EventHandlerBase now
 // calls ShellBase::push_rooms_() directly, which invokes on_rooms_updated_()
 // → _refreshRoomList + restore-room logic. No ObjC forwarding needed.
-
-- (void)handleVerificationState:(BOOL)isVerified
-{
-    if (!_mainApp || !_mainAppSurface)
-    {
-        return;
-    }
-    if (_mainApp->user_info())
-    {
-        _mainApp->user_info()->set_warning_dot(isVerified ? NO : YES);
-    }
-    // Only prompt when there is actually an identity to verify against. On a
-    // fresh/only device our own login-time bootstrap holds the cross-signing
-    // keys, so "verify this device" is a dead end — check_encryption_setup_
-    // drives the Fresh setup overlay instead.
-    if (!isVerified && !_shell->verification_banner_dismissed()
-        && _shell->foreign_cross_signing_identity())
-    {
-        if (!_verifShared->visible())
-        {
-            _verifShared->set_state(
-                tesseract::views::VerificationBanner::State::Prompt);
-            _mainApp->show_verif_banner(true);
-            _mainAppSurface->relayout();
-        }
-    }
-    else if (_verifShared->visible())
-    {
-        _mainApp->show_verif_banner(false);
-        _mainAppSurface->relayout();
-    }
-}
-
-- (void)handleVerificationRequest:(std::string)flowId incoming:(BOOL)incoming
-{
-    if (!_verifShared || !_mainAppSurface)
-    {
-        return;
-    }
-    if (incoming)
-    {
-        _verifShared->set_state(
-            tesseract::views::VerificationBanner::State::IncomingRequest);
-    }
-    else
-    {
-        _verifShared->set_state(
-            tesseract::views::VerificationBanner::State::Waiting);
-        if (_shell->client_)
-        {
-            _shell->client_->start_sas(_shell->verification_flow_id());
-        }
-    }
-    _mainApp->show_verif_banner(true);
-    _mainAppSurface->relayout();
-}
-
-- (void)handleSasReady:(std::vector<tesseract::VerificationEmoji>)emojis
-{
-    if (!_verifShared || !_mainAppSurface)
-    {
-        return;
-    }
-    _verifShared->set_emojis(emojis);
-    _mainApp->show_verif_banner(true);
-    _mainAppSurface->relayout();
-}
-
-- (void)handleVerificationDone
-{
-    if (!_verifShared || !_mainAppSurface)
-    {
-        return;
-    }
-    _verifShared->set_state(tesseract::views::VerificationBanner::State::Done);
-    _mainAppSurface->relayout();
-    __weak MainWindowController* weakSelf = self;
-    dispatch_after(
-        dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)),
-        dispatch_get_main_queue(), ^{
-            MainWindowController* s = weakSelf;
-            if (s && s->_verifShared && s->_verifShared->on_done)
-            {
-                s->_verifShared->on_done();
-            }
-        });
-}
-
-- (void)handleVerificationCancelled:(std::string)reason
-{
-    if (!_verifShared || !_mainAppSurface)
-    {
-        return;
-    }
-    _verifShared->set_state(
-        tesseract::views::VerificationBanner::State::Cancelled);
-    _verifShared->set_cancel_reason(std::move(reason));
-    _mainApp->show_verif_banner(true);
-    _mainAppSurface->relayout();
-}
 
 - (void)handleBackupProgress:(tesseract::BackupProgress)progress
 {

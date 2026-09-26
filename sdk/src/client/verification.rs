@@ -212,8 +212,10 @@ pub(super) async fn watch_sas(
 
 impl ClientFfi {
     /// Initiate an `m.key.verification.request` to every other device of the
-    /// current user. `on_verification_request(incoming=false)` fires when one
-    /// device accepts; the UI should then call `start_sas(flow_id)`.
+    /// current user. On success the result's message is the new flow id, so
+    /// the UI can track (and cancel, or hear a decline for) the request before
+    /// any device answers. `on_verification_request(incoming=false)` fires
+    /// when one device accepts; the UI should then call `start_sas(flow_id)`.
     #[cfg(not(test))]
     pub fn request_self_verification(&self) -> OpResult {
         let Some(client) = self.client.clone() else {
@@ -252,6 +254,7 @@ impl ClientFfi {
             let flow_id = req.flow_id().to_owned();
             let user_id = req.own_user_id().as_str().to_owned();
             lock_or_recover(&flow_users).insert(flow_id.clone(), user_id);
+            let reported_flow_id = flow_id.clone();
 
             let tasks_for_register = Arc::clone(&tasks);
             let handle = tokio::spawn(watch_verification_request(
@@ -263,9 +266,9 @@ impl ClientFfi {
                 tasks,
             ));
             lock_or_recover(&tasks_for_register).push(handle.abort_handle());
-            Ok::<(), anyhow::Error>(())
+            Ok::<String, anyhow::Error>(reported_flow_id)
         }) {
-            Ok(()) => ok(""),
+            Ok(flow_id) => ok(&flow_id),
             Err(e) => err(e.to_string()),
         }
     }

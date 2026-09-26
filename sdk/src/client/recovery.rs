@@ -51,13 +51,7 @@ impl ClientFfi {
         let Some(client) = self.client.as_ref() else {
             return 0;
         };
-        use matrix_sdk::encryption::recovery::RecoveryState;
-        match client.encryption().recovery().state() {
-            RecoveryState::Unknown => 0,
-            RecoveryState::Disabled => 1,
-            RecoveryState::Enabled => 2,
-            RecoveryState::Incomplete => 3,
-        }
+        recovery_state_code(client.encryption().recovery().state())
     }
 
     #[cfg(test)]
@@ -134,6 +128,43 @@ impl ClientFfi {
 
     #[cfg(test)]
     pub fn have_cross_signing_keys(&self) -> bool {
+        false
+    }
+
+    /// Whether another of our devices can confirm this one via emoji
+    /// verification: signed by our own identity, E2EE-capable, not dehydrated.
+    /// Wraps matrix-sdk's `has_devices_to_verify_against`, which runs the
+    /// initial `/keys/query` itself — so it answers correctly even while this
+    /// device is unverified (`Device::is_verified()` would report every other
+    /// device as unverified then) and before the first sync has fetched keys.
+    /// Blocks on the network; call from a worker thread.
+    #[cfg(not(test))]
+    pub fn has_devices_to_verify_against(&self) -> bool {
+        let Some(client) = self.client.clone() else {
+            return false;
+        };
+        let _guard = super::InFlightGuard::new(
+            &self.in_flight,
+            &self.handler,
+            #[cfg(debug_assertions)]
+            &self.in_flight_urls,
+            #[cfg(debug_assertions)]
+            "encryption/has_devices_to_verify_against".to_string(),
+        );
+        self.rt.block_on(async move {
+            client
+                .encryption()
+                .has_devices_to_verify_against()
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::warn!("has_devices_to_verify_against: {e}");
+                    false
+                })
+        })
+    }
+
+    #[cfg(test)]
+    pub fn has_devices_to_verify_against(&self) -> bool {
         false
     }
 
@@ -416,5 +447,34 @@ impl ClientFfi {
     #[cfg(test)]
     pub fn import_room_keys(&self, _path: &str, _passphrase: &str) -> OpResult {
         err("not logged in")
+    }
+}
+
+/// The FFI encoding of a [`RecoveryState`] shared by `recovery_state()` and the
+/// `on_recovery_state_changed` watcher: 0 = Unknown, 1 = Disabled,
+/// 2 = Enabled, 3 = Incomplete.
+pub(super) fn recovery_state_code(
+    state: matrix_sdk::encryption::recovery::RecoveryState,
+) -> u8 {
+    use matrix_sdk::encryption::recovery::RecoveryState;
+    match state {
+        RecoveryState::Unknown => 0,
+        RecoveryState::Disabled => 1,
+        RecoveryState::Enabled => 2,
+        RecoveryState::Incomplete => 3,
+    }
+}
+
+#[cfg(test)]
+mod recovery_state_code_tests {
+    use super::recovery_state_code;
+    use matrix_sdk::encryption::recovery::RecoveryState;
+
+    #[test]
+    fn codes_match_the_ui_contract() {
+        assert_eq!(recovery_state_code(RecoveryState::Unknown), 0);
+        assert_eq!(recovery_state_code(RecoveryState::Disabled), 1);
+        assert_eq!(recovery_state_code(RecoveryState::Enabled), 2);
+        assert_eq!(recovery_state_code(RecoveryState::Incomplete), 3);
     }
 }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+#include <map>
 #include <filesystem>
 
 // Runtime-mutable application settings. Today every field is hardcoded to
@@ -226,6 +228,12 @@ public:
 
     WindowGeometry           main_window_geometry;
     std::vector<PopoutEntry> popout_windows;
+
+    // ── Encryption reminder ──────────────────────────────────────────
+    // user_id → unix seconds until which the "set up recovery / unlock this
+    // device" reminder strip (and the automatic encryption dialog) stay
+    // hidden. Device-local on purpose: it's this device that's locked.
+    std::map<std::string, std::int64_t> encryption_reminder_snoozed_until;
 
     // ── Room list ─────────────────────────────────────────────────────
     // Group rooms with no activity for `inactive_room_threshold_days` into a

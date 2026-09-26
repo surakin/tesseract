@@ -842,130 +842,6 @@ void MainWindow::refresh_pickers_packs_()
         sp->invalidate_image_cache();
 }
 
-void MainWindow::handle_verification_state_ui_(bool is_verified)
-{
-    if (!main_app_)
-    {
-        return;
-    }
-    if (main_app_->user_info())
-    {
-        main_app_->user_info()->set_warning_dot(!is_verified);
-    }
-    // Only prompt when there is actually an identity to verify against. On a
-    // fresh/only device our own login-time bootstrap holds the cross-signing
-    // keys, so "verify this device" is a dead end — check_encryption_setup_
-    // drives the Fresh setup overlay instead.
-    if (!is_verified && !verification_banner_dismissed_
-        && foreign_cross_signing_identity_())
-    {
-        if (!verif_banner_visible_)
-        {
-            if (verif_shared_)
-            {
-                verif_shared_->set_state(
-                    tesseract::views::VerificationBanner::State::Prompt);
-            }
-            main_app_->show_verif_banner(true);
-            verif_banner_visible_ = true;
-            if (main_app_surface_)
-            {
-                main_app_surface_->relayout();
-            }
-        }
-    }
-    else
-    {
-        if (verif_banner_visible_)
-        {
-            main_app_->show_verif_banner(false);
-            verif_banner_visible_ = false;
-            if (main_app_surface_)
-            {
-                main_app_surface_->relayout();
-            }
-        }
-    }
-}
-
-void MainWindow::handle_verification_request_ui_(std::string flow_id,
-                                                 std::string /*user_id*/,
-                                                 std::string /*device_id*/,
-                                                 bool incoming)
-{
-    active_verification_flow_id_ = std::move(flow_id);
-    if (!verif_shared_)
-    {
-        return;
-    }
-    if (incoming)
-    {
-        verif_shared_->set_state(
-            tesseract::views::VerificationBanner::State::IncomingRequest);
-    }
-    else
-    {
-        verif_shared_->set_state(
-            tesseract::views::VerificationBanner::State::Waiting);
-        if (client_)
-        {
-            client_->start_sas(active_verification_flow_id_);
-        }
-    }
-    if (main_app_surface_)
-    {
-        main_app_surface_->relayout();
-    }
-}
-
-void MainWindow::handle_sas_ready_ui_(
-    std::string /*flow_id*/, std::vector<tesseract::VerificationEmoji> emojis)
-{
-    if (!verif_shared_)
-    {
-        return;
-    }
-    verif_shared_->set_emojis(emojis);
-    if (main_app_surface_)
-    {
-        main_app_surface_->relayout();
-    }
-}
-
-void MainWindow::handle_verification_done_ui_(std::string /*flow_id*/)
-{
-    dismiss_encryption_setup_after_verification_();
-    if (!verif_shared_)
-    {
-        return;
-    }
-    verif_shared_->set_state(tesseract::views::VerificationBanner::State::Done);
-    if (main_app_surface_)
-    {
-        main_app_surface_->relayout();
-    }
-    if (hwnd_)
-    {
-        SetTimer(hwnd_, kVerifDoneTimerId, 1500, nullptr);
-    }
-}
-
-void MainWindow::handle_verification_cancelled_ui_(std::string /*flow_id*/,
-                                                   std::string reason)
-{
-    if (!verif_shared_)
-    {
-        return;
-    }
-    verif_shared_->set_state(
-        tesseract::views::VerificationBanner::State::Cancelled);
-    verif_shared_->set_cancel_reason(std::move(reason));
-    if (main_app_surface_)
-    {
-        main_app_surface_->relayout();
-    }
-}
-
 void MainWindow::handle_notification_ui_(
     std::string user_id, std::string room_id, std::string room_name,
     std::string sender, std::string body, bool is_mention,
@@ -1683,15 +1559,6 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             }
             return 0;
         }
-        if (wParam == kVerifDoneTimerId)
-        {
-            KillTimer(hwnd, kVerifDoneTimerId);
-            if (self->verif_shared_ && self->verif_shared_->on_done)
-            {
-                self->verif_shared_->on_done();
-            }
-            return 0;
-        }
         if (wParam == kMarkReadTimerId)
         {
             KillTimer(hwnd, kMarkReadTimerId);
@@ -2074,7 +1941,6 @@ void MainWindow::on_create(HWND hwnd)
         // Wire borrowed sub-view pointers.
         room_list_view_ = main_app_->room_list_view();
         room_view_ = main_app_->room_view();
-        verif_shared_ = main_app_->verif_banner();
         img_viewer_ = main_app_->image_viewer();
         vid_viewer_ = main_app_->video_viewer();
         room_media_view_ = main_app_->room_media_view();
@@ -3318,86 +3184,6 @@ void MainWindow::on_create(HWND hwnd)
         // pack_name_field()/paste_catcher() — so no shell-side wiring is
         // needed for any of them.
 
-        // ── VerificationBanner callbacks ─────────────────────────────────────
-        verif_shared_->on_verify = [this]
-        {
-            if (client_)
-            {
-                client_->request_self_verification();
-            }
-        };
-        verif_shared_->on_accept = [this]
-        {
-            if (client_)
-            {
-                client_->accept_verification(active_verification_flow_id_);
-                client_->start_sas(active_verification_flow_id_);
-            }
-        };
-        verif_shared_->on_match = [this]
-        {
-            if (client_)
-            {
-                client_->confirm_sas(active_verification_flow_id_);
-            }
-            if (verif_shared_)
-            {
-                verif_shared_->set_state(
-                    tesseract::views::VerificationBanner::State::Confirming);
-            }
-            if (main_app_surface_)
-            {
-                main_app_surface_->relayout();
-            }
-        };
-        verif_shared_->on_mismatch = [this]
-        {
-            if (client_)
-            {
-                client_->cancel_verification(active_verification_flow_id_);
-            }
-        };
-        verif_shared_->on_cancel = [this]
-        {
-            if (client_)
-            {
-                client_->cancel_verification(active_verification_flow_id_);
-            }
-        };
-        verif_shared_->on_dismiss = [this]
-        {
-            verification_banner_dismissed_ = true;
-            main_app_->show_verif_banner(false);
-            verif_banner_visible_ = false;
-            if (main_app_surface_)
-            {
-                main_app_surface_->relayout();
-            }
-        };
-        verif_shared_->on_done = [this]
-        {
-            main_app_->show_verif_banner(false);
-            verif_banner_visible_ = false;
-            if (main_app_surface_)
-            {
-                main_app_surface_->relayout();
-            }
-        };
-        verif_shared_->on_use_recovery_key = [this]
-        {
-            main_app_->show_verif_banner(false);
-            verif_banner_visible_ = false;
-            // The recovery-key entry path now lives in the encryption-setup
-            // overlay (Recover mode); the old inline recovery-key banner was
-            // removed.
-            show_encryption_setup_overlay_(
-                tesseract::views::EncryptionSetupOverlay::Mode::Recover);
-            if (main_app_surface_)
-            {
-                main_app_surface_->relayout();
-            }
-        };
-
         // ── Image + video viewers ──────────────────────────────────────────
         // Providers / repaint / on_close come from RoomPane::wire_room_view_
         // via main_room_pane_->attach() above; only the video player is
@@ -3611,12 +3397,7 @@ void MainWindow::on_create(HWND hwnd)
                     if (auto* sf = main_app_->room_list_view()->search_field())
                         sf->set_visible(false);
                     if (auto* ov = main_app_->encryption_setup())
-                    {
-                        if (auto* pf = ov->passphrase_field())
-                            pf->set_visible(false);
-                        if (auto* kf = ov->key_field())
-                            kf->set_visible(false);
-                    }
+                        ov->hide_native_fields();
                     if (auto* tf = main_app_->room_view()->room_info_panel()->topic_field())
                         tf->set_visible(false);
                 }
@@ -6118,9 +5899,8 @@ void MainWindow::refresh_account_ui_after_switch_()
 
     if (main_app_)
     {
-        main_app_->show_verif_banner(false);
+        main_app_->show_encryption_reminder(false);
     }
-    verif_banner_visible_ = false;
     if (main_app_surface_)
     {
         main_app_surface_->relayout();
@@ -6297,15 +6077,13 @@ void MainWindow::logout_active_account()
         if (main_app_)
         {
             main_app_->clear_content();
-            main_app_->show_verif_banner(false);
+            main_app_->show_encryption_reminder(false);
         }
         if (main_app_surface_)
         {
             main_app_surface_->relayout();
         }
     }
-    verification_banner_dismissed_ = false;
-    verif_banner_visible_ = false;
 
     if (!result.has_remaining)
     {
@@ -6827,30 +6605,6 @@ std::wstring MainWindow::show_save_dialog_(const std::wstring& suggested,
     if (GetSaveFileNameW(&ofn))
         return buf;
     return {};
-}
-
-// ---------------------------------------------------------------------------
-// EncryptionSetupOverlay — Win32 wiring
-// ---------------------------------------------------------------------------
-
-void MainWindow::show_encryption_setup_overlay_(
-    tesseract::views::EncryptionSetupOverlay::Mode mode)
-{
-    if (!main_app_)
-        return;
-    auto* ov = main_app_->encryption_setup();
-    if (!ov)
-        return;
-
-    // Reconfigure the overlay (clears prior callbacks + field text) before
-    // wiring the shared callbacks via ShellBase.
-    ov->reset(mode);
-
-    wire_encryption_setup_callbacks_(*ov, main_app_surface_->host());
-
-    main_app_->show_encryption_setup(true);
-    if (main_app_surface_)
-        main_app_surface_->relayout();
 }
 
 std::vector<tk::Rect> MainWindow::get_screen_work_areas_() const

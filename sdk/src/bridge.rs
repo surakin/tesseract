@@ -1511,6 +1511,12 @@ pub mod ffi {
         /// "Verify this device" banner.
         fn on_verification_state_changed(self: &EventHandlerBridge, verified: bool);
 
+        /// Fired when the account's recovery state changes (e.g. Incomplete →
+        /// Enabled once another device has shared its secrets after an emoji
+        /// verification). Same encoding as `recovery_state()`: 0 = Unknown,
+        /// 1 = Disabled, 2 = Enabled, 3 = Incomplete.
+        fn on_recovery_state_changed(self: &EventHandlerBridge, state: u8);
+
         /// Fired when the set of typing users in `room_id` changes. `typing_user_ids`
         /// contains the localpart of each typing user (excluding the local user).
         /// An empty vec means no one is typing.
@@ -2045,6 +2051,11 @@ pub mod ffi {
         /// spawns the sync tasks.
         fn attach_event_handler(self: &mut ClientFfi, handler: UniquePtr<EventHandlerBridge>);
         fn start_sync(self: &mut ClientFfi, handler: UniquePtr<EventHandlerBridge>);
+        /// While a fresh login's full sync is withheld behind the encryption
+        /// dialog: run an encryption-only sliding sync (key upload, to-device
+        /// verification traffic, secret sharing — no room lists). Needs
+        /// `attach_event_handler` first; `start_sync` hands over from it.
+        fn start_encryption_sync(self: &mut ClientFfi);
         /// Signals shutdown (session flush + stop channel) without the
         /// exclusive lock `stop_sync` needs, so it can run immediately even
         /// while a concurrent `&self` call (send_message, subscribe_room,
@@ -3824,6 +3835,11 @@ pub mod ffi {
         /// another device (keys absent → Recover).
         fn have_cross_signing_keys(self: &ClientFfi) -> bool;
 
+        /// Whether another of our devices (cross-signed by our identity) can
+        /// confirm this one via emoji verification. Runs the initial keys
+        /// query itself; blocks on the network.
+        fn has_devices_to_verify_against(self: &ClientFfi) -> bool;
+
         /// Unlock the server-side secret storage with a recovery key or
         /// passphrase, import the cross-signing private keys + backup
         /// decryption key into this device, and start downloading historical
@@ -3865,8 +3881,9 @@ pub mod ffi {
         // ----- SAS device verification -----
 
         /// Send an `m.key.verification.request` to-device event to every other
-        /// device of the current user. When one accepts, `on_verification_request`
-        /// fires with `incoming = false` and the UI should call `start_sas`.
+        /// device of the current user. On success `message` is the new flow id.
+        /// When one accepts, `on_verification_request` fires with
+        /// `incoming = false` and the UI should call `start_sas`.
         fn request_self_verification(self: &ClientFfi) -> OpResult;
 
         /// Accept an incoming verification request identified by `flow_id`.

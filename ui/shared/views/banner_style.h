@@ -4,7 +4,7 @@
 namespace tesseract::views
 {
 
-// Warm-yellow banner tint shared by RecoveryBanner and VerificationBanner —
+// Warm-yellow banner tint shared by EncryptionReminderBanner and the other notice strips —
 // always a notice, not a decorative element.
 inline constexpr float kBannerPadX       = 12.0f;
 inline constexpr float kBannerPadY       = 8.0f;

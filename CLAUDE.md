@@ -35,7 +35,8 @@ ui/
                   EmojiPicker, StickerPicker, AccountPicker;
                   ImageViewerOverlay, VideoViewerOverlay, ShortcodePopup;
                   SettingsView, JoinRoomView, UserInfo;
-                  RecoveryBanner, VerificationBanner;
+                  EncryptionSetupOverlay (the one encryption dialog: recovery-key
+                  setup, unlocking, SAS emoji verification) + EncryptionReminderBanner;
                   html_spans (HTML→TextSpan / →BodyBlocks), table_layout
                   (Markdown-table grid fitting), map_tiles, media_utils
                   (Markdown→HTML lives in client/src/markdown.cpp, Rust-backed)

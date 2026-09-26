@@ -399,66 +399,6 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                 QPoint(static_cast<int>(world.x), static_cast<int>(world.y))));
         };
 
-        // ---- Verification banner ----
-        mainApp_->verif_banner()->on_verify = [this]
-        {
-            if (client_)
-            {
-                client_->request_self_verification();
-            }
-        };
-        mainApp_->verif_banner()->on_accept = [this]
-        {
-            if (client_ && !active_verification_flow_id_.empty())
-            {
-                client_->accept_verification(active_verification_flow_id_);
-                client_->start_sas(active_verification_flow_id_);
-            }
-        };
-        mainApp_->verif_banner()->on_match = [this]
-        {
-            if (client_ && !active_verification_flow_id_.empty())
-            {
-                mainApp_->verif_banner()->set_state(
-                    tesseract::views::VerificationBanner::State::Confirming);
-                mainAppSurface_->relayout();
-                client_->confirm_sas(active_verification_flow_id_);
-            }
-        };
-        mainApp_->verif_banner()->on_mismatch = [this]
-        {
-            if (client_ && !active_verification_flow_id_.empty())
-            {
-                client_->cancel_verification(active_verification_flow_id_);
-            }
-        };
-        mainApp_->verif_banner()->on_cancel = [this]
-        {
-            if (client_ && !active_verification_flow_id_.empty())
-            {
-                client_->cancel_verification(active_verification_flow_id_);
-            }
-        };
-        mainApp_->verif_banner()->on_dismiss = [this]
-        {
-            verification_banner_dismissed_ = true;
-            mainApp_->show_verif_banner(false);
-            mainAppSurface_->relayout();
-        };
-        mainApp_->verif_banner()->on_done = [this]
-        {
-            mainApp_->show_verif_banner(false);
-            mainAppSurface_->relayout();
-        };
-        mainApp_->verif_banner()->on_use_recovery_key = [this]
-        {
-            mainApp_->show_verif_banner(false);
-            // The recovery-key entry path now lives in the encryption-setup
-            // overlay (Recover mode); the old inline RecoveryBanner was removed.
-            show_encryption_setup_overlay_(
-                tesseract::views::EncryptionSetupOverlay::Mode::Recover);
-        };
-
         // ---- Image + video viewers ----
         // Providers / repaint / on_close come from RoomPane::wire_room_view_
         // via main_room_pane_->attach() above; only the video player is
@@ -3218,6 +3158,15 @@ void MainWindow::wire_history_export_dialog_callbacks_()
     };
 }
 
+void MainWindow::pick_save_file_(std::string title, std::string suggested_name,
+                                 std::function<void(std::string)> cb)
+{
+    const QString path = QFileDialog::getSaveFileName(
+        this, QString::fromStdString(title), QString::fromStdString(suggested_name));
+    if (!path.isEmpty())
+        cb(path.toStdString());
+}
+
 void MainWindow::pick_image_file_(
     std::function<void(std::vector<uint8_t>, std::string)> cb)
 {
@@ -4666,7 +4615,7 @@ void MainWindow::refresh_account_ui_after_switch_()
 
     if (mainApp_)
     {
-        mainApp_->show_verif_banner(false);
+        mainApp_->show_encryption_reminder(false);
         mainAppSurface_->relayout();
     }
 
@@ -4740,7 +4689,6 @@ void MainWindow::logoutActiveAccount()
             mainAppSurface_->relayout();
         }
     }
-    verification_banner_dismissed_ = false;
 
     if (!result.has_remaining)
     {
@@ -4871,137 +4819,6 @@ void MainWindow::doLogout()
 }
 
 // ── Cross-signing / SAS verification hooks ────────────────────────────────────
-
-void MainWindow::handle_verification_state_ui_(bool is_verified)
-{
-    if (!mainApp_)
-    {
-        return;
-    }
-    if (mainApp_->user_info())
-    {
-        mainApp_->user_info()->set_warning_dot(!is_verified);
-    }
-    if (is_verified)
-    {
-        mainApp_->show_verif_banner(false);
-        mainAppSurface_->relayout();
-        return;
-    }
-    // Only prompt when there is actually an identity to verify against. On a
-    // fresh/only device our own login-time bootstrap holds the cross-signing
-    // keys, so "verify this device" is a dead end — check_encryption_setup_
-    // drives the Fresh setup overlay instead.
-    if (!foreign_cross_signing_identity_())
-    {
-        mainApp_->show_verif_banner(false);
-        mainAppSurface_->relayout();
-        return;
-    }
-    if (verification_banner_dismissed_)
-    {
-        return;
-    }
-    if (!mainApp_->verif_banner()->visible())
-    {
-        active_verification_flow_id_.clear();
-        mainApp_->verif_banner()->set_state(
-            tesseract::views::VerificationBanner::State::Prompt);
-        mainApp_->show_verif_banner(true);
-        mainAppSurface_->relayout();
-    }
-}
-
-void MainWindow::show_encryption_setup_overlay_(
-    tesseract::views::EncryptionSetupOverlay::Mode mode)
-{
-    if (!mainApp_) return;
-    auto* ov = mainApp_->encryption_setup();
-    if (!ov) return;
-
-    // Reconfigure the overlay (clears prior callbacks + field text) before
-    // wiring the shared callbacks via ShellBase.
-    ov->reset(mode);
-
-    wire_encryption_setup_callbacks_(*ov, mainAppSurface_->host());
-
-    mainApp_->show_encryption_setup(true);
-    mainAppSurface_->relayout();
-}
-
-void MainWindow::handle_verification_request_ui_(std::string flow_id,
-                                                 std::string /*user_id*/,
-                                                 std::string /*device_id*/,
-                                                 bool incoming)
-{
-    if (!mainApp_)
-    {
-        return;
-    }
-    active_verification_flow_id_ = flow_id;
-    if (incoming)
-    {
-        mainApp_->verif_banner()->set_state(
-            tesseract::views::VerificationBanner::State::IncomingRequest);
-    }
-    else
-    {
-        mainApp_->verif_banner()->set_state(
-            tesseract::views::VerificationBanner::State::Waiting);
-        if (client_)
-        {
-            client_->start_sas(flow_id);
-        }
-    }
-    mainApp_->show_verif_banner(true);
-    mainAppSurface_->relayout();
-}
-
-void MainWindow::handle_sas_ready_ui_(
-    std::string /*flow_id*/, std::vector<tesseract::VerificationEmoji> emojis)
-{
-    if (!mainApp_)
-    {
-        return;
-    }
-    mainApp_->verif_banner()->set_emojis(emojis);
-    mainApp_->show_verif_banner(true);
-    mainAppSurface_->relayout();
-}
-
-void MainWindow::handle_verification_done_ui_(std::string /*flow_id*/)
-{
-    dismiss_encryption_setup_after_verification_();
-    if (!mainApp_)
-    {
-        return;
-    }
-    mainApp_->verif_banner()->set_state(
-        tesseract::views::VerificationBanner::State::Done);
-    mainAppSurface_->relayout();
-    QTimer::singleShot(1500, this,
-                       [this]
-                       {
-                           if (mainApp_ && mainApp_->verif_banner()->on_done)
-                           {
-                               mainApp_->verif_banner()->on_done();
-                           }
-                       });
-}
-
-void MainWindow::handle_verification_cancelled_ui_(std::string /*flow_id*/,
-                                                   std::string reason)
-{
-    if (!mainApp_)
-    {
-        return;
-    }
-    mainApp_->verif_banner()->set_state(
-        tesseract::views::VerificationBanner::State::Cancelled);
-    mainApp_->verif_banner()->set_cancel_reason(std::move(reason));
-    mainApp_->show_verif_banner(true);
-    mainAppSurface_->relayout();
-}
 
 tk::ThemeMode MainWindow::os_color_scheme_() const
 {
