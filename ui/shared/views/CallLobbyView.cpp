@@ -18,12 +18,19 @@ constexpr float kLobbyActionBtnH  = 40.0f;
 constexpr float kLobbyActionBtnGap= 12.0f;
 constexpr float kLobbyActionRowH  = 80.0f;
 constexpr float kLobbyToggleIconPx= 22.0f;
+constexpr float kLobbyErrorRowH   = 28.0f;
 } // namespace
 
 CallLobbyView::CallLobbyView()
 {
     auto tile = std::make_unique<ParticipantTile>();
     preview_tile_ = add_child(std::move(tile));
+
+    auto err_label = tk::create_widget<tk::Label>(this, "");
+    err_label->set_halign(tk::TextHAlign::Center);
+    err_label->set_wrap(true);
+    err_label->set_visible(false);
+    cam_error_label_ = add_child(std::move(err_label));
 
     auto mic = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
                                             tk::Button::Variant::Icon);
@@ -56,9 +63,12 @@ CallLobbyView::CallLobbyView()
     join_btn_->set_on_click(
         [this]
         {
+            const bool cam_failed = cam_error_ != tk::VideoCapture::Error::None;
             if (on_join)
-                on_join(room_id_, slot_id_, /*audio_only=*/!cam_enabled_,
-                        /*start_audio_muted=*/!mic_enabled_);
+                on_join(room_id_, slot_id_,
+                        /*audio_only=*/!cam_enabled_ && !cam_failed,
+                        /*start_audio_muted=*/!mic_enabled_,
+                        /*start_video_muted=*/cam_failed);
             close();
         });
 
@@ -86,6 +96,7 @@ void CallLobbyView::open(std::string room_id, std::string slot_id,
     slot_id_ = std::move(slot_id);
     mic_enabled_ = true;
     cam_enabled_ = !default_audio_only;
+    set_camera_error_(tk::VideoCapture::Error::None);
     open_ = true;
     set_visible(true);
 
@@ -120,11 +131,11 @@ void CallLobbyView::start_camera_()
 {
     if (capture_) return;
 
+    set_camera_error_(tk::VideoCapture::Error::None);
     capture_ = tk::VideoCapture::create();
     if (!capture_)
     {
-        // No camera available — fall back to the avatar tile permanently.
-        cam_enabled_ = false;
+        set_camera_error_(tk::VideoCapture::Error::NoDevice);
         return;
     }
 
@@ -139,6 +150,9 @@ void CallLobbyView::start_camera_()
             frame_h_ = h;
         });
     capture_->start();
+    // Synchronous failures (no device node, permission) are known already.
+    if (capture_ && capture_->error() != tk::VideoCapture::Error::None)
+        set_camera_error_(capture_->error());
 }
 
 void CallLobbyView::stop_camera_()
@@ -151,6 +165,24 @@ void CallLobbyView::stop_camera_()
     std::lock_guard<std::mutex> lk(frame_mu_);
     pending_frame_.reset();
     frame_w_ = frame_h_ = 0;
+}
+
+void CallLobbyView::set_camera_error_(tk::VideoCapture::Error err)
+{
+    cam_error_ = err;
+    const bool failed = err != tk::VideoCapture::Error::None;
+    if (failed)
+    {
+        stop_camera_();
+        cam_enabled_ = false;
+        apply_preview_state_();
+    }
+    if (cam_error_label_)
+    {
+        cam_error_label_->set_text(tk::VideoCapture::describe(err));
+        cam_error_label_->set_visible(failed);
+    }
+    if (failed && repaint_requester_) repaint_requester_();
 }
 
 void CallLobbyView::apply_preview_state_()
@@ -190,6 +222,13 @@ void CallLobbyView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     if (preview_tile_)
         preview_tile_->arrange(ctx, {bounds.x + kLobbyPadX, preview_y,
                                      bounds.w - kLobbyPadX * 2.0f, preview_h});
+    // Camera failure reason: a strip along the bottom of the preview, just
+    // above the toggles it explains.
+    if (cam_error_label_)
+        cam_error_label_->arrange(
+            ctx, {bounds.x + kLobbyPadX,
+                  std::max(preview_y, toggle_y - kLobbyErrorRowH),
+                  bounds.w - kLobbyPadX * 2.0f, kLobbyErrorRowH});
 
     // Mic/camera toggle row, centred.
     const float toggle_total_w = kLobbyToggleBtnSz * 2.0f + kLobbyToggleBtnGap;
@@ -226,6 +265,12 @@ void CallLobbyView::paint(tk::PaintCtx& ctx)
     // themes.
     ctx.canvas.fill_rect(bounds_, ctx.theme.palette.bg);
 
+    // A capture failure is posted from a backend thread (or during start());
+    // the lobby repaints continuously while the camera is on, so polling here
+    // picks it up without marshalling a callback.
+    if (capture_ && capture_->error() != tk::VideoCapture::Error::None)
+        set_camera_error_(capture_->error());
+
     // Pull in the latest camera frame (captured on a background thread) and
     // hand it to the preview tile here, on the UI thread — mirrors
     // CameraWidget's paint-time frame pickup.
@@ -244,6 +289,8 @@ void CallLobbyView::paint(tk::PaintCtx& ctx)
     }
 
     if (preview_tile_) preview_tile_->paint(ctx);
+    if (cam_error_label_ && cam_error_label_->visible())
+        cam_error_label_->paint(ctx);
 
     if (mic_btn_)
     {

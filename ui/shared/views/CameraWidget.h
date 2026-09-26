@@ -16,8 +16,9 @@ namespace tesseract::views
 
 // Full-surface overlay that shows a live mirrored camera preview with a
 // 3-second countdown, then fires on_frame_captured with a BGRA8888 still
-// frame and dismisses itself.  If no camera is available, on_dismissed is
-// called immediately on the first paint without showing any UI.
+// frame and dismisses itself.  If the camera can't be used (none present,
+// busy in another app, permission denied), the overlay shows why and waits
+// for a click to dismiss instead of vanishing silently.
 //
 // Lifecycle:
 //   1. open() — starts the camera; the countdown clock starts when the first
@@ -49,8 +50,12 @@ public:
                        std::uint32_t w, std::uint32_t h)>
         on_frame_captured;
 
-    // Fired when the widget closes (after capture or on cancel/no-camera).
+    // Fired when the widget closes (after capture, cancel, or dismissing
+    // the camera-error message).
     std::function<void()> on_dismissed;
+
+    // The camera failure being shown, or None.
+    tk::VideoCapture::Error error() const { return error_; }
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
@@ -69,6 +74,11 @@ private:
     bool opened_    = false;
     bool captured_  = false;
     bool dismissed_ = false;
+    tk::VideoCapture::Error error_ = tk::VideoCapture::Error::None;
+
+    // Polls the capture for a failure; on one, releases the camera.
+    void check_error_();
+    void paint_error_(tk::PaintCtx& ctx);
 
     void do_capture_();
     void do_dismiss_();

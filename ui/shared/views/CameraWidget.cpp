@@ -2,6 +2,7 @@
 
 #include "tk/canvas.h"
 #include "tk/host.h"
+#include "tk/i18n.h"
 
 #include <algorithm>
 #include <cmath>
@@ -27,7 +28,7 @@ void CameraWidget::open()
     capture_ = tk::VideoCapture::create();
     if (!capture_)
     {
-        // No camera — dismiss on the next paint cycle.
+        error_ = tk::VideoCapture::Error::NoDevice;
         return;
     }
 
@@ -43,6 +44,48 @@ void CameraWidget::open()
         });
 
     capture_->start();
+    check_error_();
+}
+
+void CameraWidget::check_error_()
+{
+    if (!capture_ || error_ != tk::VideoCapture::Error::None)
+        return;
+    const auto err = capture_->error();
+    if (err == tk::VideoCapture::Error::None)
+        return;
+    error_ = err;
+    capture_->stop();
+    capture_.reset();
+}
+
+void CameraWidget::paint_error_(tk::PaintCtx& ctx)
+{
+    const tk::Rect bounds = bounds_;
+    ctx.canvas.fill_rect(bounds, tk::Color::rgba(0, 0, 0, 210));
+
+    tk::TextStyle st;
+    st.role      = tk::FontRole::Body;
+    st.halign    = tk::TextHAlign::Center;
+    st.valign    = tk::TextVAlign::Top;
+    st.max_width = std::max(0.0f, bounds.w - 32.0f);
+    if (auto lo = ctx.factory.build_text(tk::VideoCapture::describe(error_), st))
+    {
+        const tk::Size sz = lo->measure();
+        const float tx = bounds.x + (bounds.w - sz.w) * 0.5f;
+        const float ty = bounds.y + (bounds.h - sz.h) * 0.5f;
+        ctx.canvas.draw_text(*lo, {tx, ty}, tk::Color::rgba(255, 255, 255, 230));
+    }
+
+    st.halign    = tk::TextHAlign::Leading;
+    st.max_width = -1.0f;
+    if (auto lo = ctx.factory.build_text(tk::tr("Click anywhere to close"), st))
+    {
+        const tk::Size sz = lo->measure();
+        const float tx = bounds.x + (bounds.w - sz.w) * 0.5f;
+        const float ty = bounds.y + bounds.h - sz.h - 16.0f;
+        ctx.canvas.draw_text(*lo, {tx, ty}, tk::Color::rgba(255, 255, 255, 140));
+    }
 }
 
 void CameraWidget::dismiss()
@@ -64,15 +107,17 @@ void CameraWidget::paint_before_children(tk::PaintCtx& ctx)
 {
     const tk::Rect bounds = bounds_;
 
-    // No camera — fire on_dismissed without showing any UI.
-    if (opened_ && !capture_)
-    {
-        do_dismiss_();
-        return;
-    }
-
     if (!opened_ || dismissed_)
         return;
+
+    // Failures land on a backend thread; this overlay repaints continuously
+    // while live, so polling here picks them up.
+    check_error_();
+    if (error_ != tk::VideoCapture::Error::None)
+    {
+        paint_error_(ctx);
+        return;
+    }
 
     // Dark scrim.
     ctx.canvas.fill_rect(bounds, tk::Color::rgba(0, 0, 0, 210));
@@ -139,7 +184,7 @@ void CameraWidget::paint_before_children(tk::PaintCtx& ctx)
         st.halign    = tk::TextHAlign::Leading;
         st.valign    = tk::TextVAlign::Top;
         st.max_width = -1.0f;
-        if (auto lo = ctx.factory.build_text("Click anywhere to cancel", st))
+        if (auto lo = ctx.factory.build_text(tk::tr("Click anywhere to cancel"), st))
         {
             const tk::Size sz = lo->measure();
             const float tx = bounds.x + (bounds.w - sz.w) * 0.5f;

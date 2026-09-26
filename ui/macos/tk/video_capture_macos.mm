@@ -6,8 +6,10 @@
 // AVFoundation converts natively in hardware, no software colour conversion.
 //
 // Camera permission: if not yet granted, requests access asynchronously and
-// starts the pipeline in the completion handler.  If access is denied, start()
-// returns silently (audio-only session / selfie silently does nothing).
+// starts the pipeline in the completion handler. Denial is reported as
+// Error::PermissionDenied; a device held by another app, a session runtime
+// error, or the device being unplugged are reported through the same error
+// callback.
 
 #include "video_capture.h"
 
@@ -16,6 +18,7 @@
 #import <AVFoundation/AVFoundation.h>
 #import <CoreVideo/CoreVideo.h>
 #include <cstring>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -155,10 +158,35 @@
 namespace
 {
 
+tk::VideoCapture::Error classify_ns_error(NSError* err)
+{
+    using Error = tk::VideoCapture::Error;
+    if (!err || ![err.domain isEqualToString:AVFoundationErrorDomain])
+        return Error::Failed;
+    switch (err.code)
+    {
+    case AVErrorDeviceInUseByAnotherApplication:
+    case AVErrorDeviceAlreadyUsedByAnotherSession:
+        return Error::Busy;
+    case AVErrorApplicationIsNotAuthorizedToUseDevice:
+        return Error::PermissionDenied;
+    case AVErrorDeviceNotConnected:
+    case AVErrorDeviceWasDisconnected:
+        return Error::NoDevice;
+    default:
+        return Error::Failed;
+    }
+}
+
 class VideoCaptureMacOS : public tk::VideoCapture
 {
 public:
-    ~VideoCaptureMacOS() override { stop(); }
+    ~VideoCaptureMacOS() override
+    {
+        stop();
+        // Invalidate any permission completion still queued for main.
+        alive_.reset();
+    }
 
     void set_callback(tk::VideoCapture::FrameCallback cb) override
     {
@@ -174,21 +202,42 @@ public:
 
     void start() override
     {
-        if (running_)
+        if (running_ || start_pending_)
             return;
+        clear_error_();
 
+        const AVAuthorizationStatus status =
+            [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo];
+        if (status == AVAuthorizationStatusDenied ||
+            status == AVAuthorizationStatusRestricted)
+        {
+            report_error_(Error::PermissionDenied);
+            return;
+        }
+
+        start_pending_ = true;
+        std::weak_ptr<int> weak = alive_;
         [AVCaptureDevice
             requestAccessForMediaType:AVMediaTypeVideo
                     completionHandler:^(BOOL granted) {
-                        if (granted)
-                            dispatch_async(dispatch_get_main_queue(), ^{
+                        dispatch_async(dispatch_get_main_queue(), ^{
+                            if (weak.expired())
+                                return; // capture destroyed meanwhile
+                            if (!start_pending_)
+                                return; // stop() ran meanwhile
+                            start_pending_ = false;
+                            if (granted)
                                 start_session_();
-                            });
+                            else
+                                report_error_(Error::PermissionDenied);
+                        });
                     }];
     }
 
     void stop() override
     {
+        start_pending_ = false;
+        remove_observers_();
         if (!running_)
             return;
         running_ = false;
@@ -214,13 +263,19 @@ private:
                 device = [AVCaptureDevice defaultDeviceWithMediaType:AVMediaTypeVideo];
         }
         if (!device)
+        {
+            report_error_(Error::NoDevice);
             return;
+        }
 
         NSError* err = nil;
         AVCaptureDeviceInput* input =
             [AVCaptureDeviceInput deviceInputWithDevice:device error:&err];
         if (!input || err)
+        {
+            report_error_(classify_ns_error(err));
             return;
+        }
 
         session_ = [[AVCaptureSession alloc] init];
         session_.sessionPreset = AVCaptureSessionPreset640x480;
@@ -228,6 +283,9 @@ private:
         if (![session_ canAddInput:input])
         {
             session_ = nil;
+            // An exclusive hold by another app is the usual reason.
+            report_error_(device.inUseByAnotherApplication ? Error::Busy
+                                                           : Error::Failed);
             return;
         }
         [session_ addInput:input];
@@ -249,13 +307,57 @@ private:
         if (![session_ canAddOutput:output])
         {
             session_ = nil;
+            report_error_(Error::Failed);
             return;
         }
         [session_ addOutput:output];
+        add_observers_(device);
         [session_ startRunning];
         running_ = true;
     }
 
+    // Observer blocks run on the main queue and capture a raw `this`;
+    // stop() (and so the destructor) removes them first.
+    void add_observers_(AVCaptureDevice* device)
+    {
+        NSNotificationCenter* nc = [NSNotificationCenter defaultCenter];
+        NSOperationQueue* main   = [NSOperationQueue mainQueue];
+        runtime_error_observer_ =
+            [nc addObserverForName:AVCaptureSessionRuntimeErrorNotification
+                            object:session_
+                             queue:main
+                        usingBlock:^(NSNotification* note) {
+                            NSError* e = note.userInfo[AVCaptureSessionErrorKey];
+                            report_error_(classify_ns_error(e));
+                        }];
+        disconnect_observer_ =
+            [nc addObserverForName:AVCaptureDeviceWasDisconnectedNotification
+                            object:device
+                             queue:main
+                        usingBlock:^(NSNotification*) {
+                            report_error_(Error::NoDevice);
+                        }];
+    }
+
+    void remove_observers_()
+    {
+        NSNotificationCenter* nc = [NSNotificationCenter defaultCenter];
+        if (runtime_error_observer_)
+        {
+            [nc removeObserver:runtime_error_observer_];
+            runtime_error_observer_ = nil;
+        }
+        if (disconnect_observer_)
+        {
+            [nc removeObserver:disconnect_observer_];
+            disconnect_observer_ = nil;
+        }
+    }
+
+    std::shared_ptr<int>    alive_    = std::make_shared<int>(0);
+    bool                    start_pending_ = false;
+    id                      runtime_error_observer_ = nil;
+    id                      disconnect_observer_    = nil;
     bool                    running_  = false;
     AVCaptureSession*       session_  = nil;
     TKVideoCaptureDelegate* delegate_ = [[TKVideoCaptureDelegate alloc] init];
@@ -268,11 +370,8 @@ namespace tk
 
 std::unique_ptr<VideoCapture> make_video_capture_macos()
 {
-    AVAuthorizationStatus status =
-        [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo];
-    if (status == AVAuthorizationStatusDenied ||
-        status == AVAuthorizationStatusRestricted)
-        return nullptr;
+    // Permission denial is no longer a nullptr here: start() reports it as
+    // Error::PermissionDenied so the UI can say why the camera is missing.
     return std::make_unique<VideoCaptureMacOS>();
 }
 

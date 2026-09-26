@@ -123,6 +123,10 @@ impl ClientFfi {
         stride_u: u32,
         stride_v: u32,
     ) {
+        // The first frame after an unmute request performs the deferred
+        // unmute, which spawns onto the runtime (see rtc_set_audio_muted);
+        // frames arrive on capture threads with no runtime context.
+        let _guard = self.rt.enter();
         if let Some(session) = &self.active_rtc_call {
             session.push_video_frame_i420(y, u, v, width, height, stride_y, stride_u, stride_v);
         }

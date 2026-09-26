@@ -247,10 +247,15 @@ public:
     // available) capture routing, and calls rtc_start_call on the client.
     // No-op when a call is already active. start_audio_muted mutes the mic
     // immediately after joining — the lobby's mic toggle feeds this.
+    // start_video_muted joins as a video call with the camera off (video
+    // button still available) — used when the lobby's camera failed, so the
+    // user can retry once the device is free instead of being stuck in an
+    // audio-only call.
     void start_call(const std::string& room_id,
                     const std::string& slot_id        = "call#default",
                     bool               audio_only      = false,
-                    bool               start_audio_muted = false);
+                    bool               start_audio_muted = false,
+                    bool               start_video_muted = false);
     // End the active call and tear down all call resources. No-op when idle.
     void end_call();
     // Returns the active CallSession, or nullptr when not in a call.
@@ -3545,6 +3550,17 @@ protected:
     void start_screen_share_();
     void stop_screen_share_();
 
+    // Camera capture for the active call. Started when the call starts with
+    // video and whenever the user turns video back on; stopped when video is
+    // turned off, so the camera is released while muted and a device that
+    // was busy or absent is retried from scratch on the next toggle.
+    void start_call_video_capture_();
+    void stop_call_video_capture_();
+    // UI thread: the camera failed (absent, busy, denied, died mid-call).
+    // Drops the capture, mutes the video track, flips the overlay's video
+    // button to off, and tells the user why.
+    void handle_call_video_error_(tk::VideoCapture::Error err);
+
     // Fetch the device's current OS location (tk::LocationProvider) and send
     // it to `room_id` as an m.location event. Called from each shell's
     // on_location hook when the user accepts /location. Reports failure via
@@ -3630,6 +3646,9 @@ protected:
 protected:
     std::unique_ptr<CallSession>                call_session_;
     std::unique_ptr<tk::VideoCapture>           call_video_capture_;
+    // Bumped per start_call_video_capture_(); error callbacks posted by an
+    // older capture compare against it and drop themselves.
+    std::uint64_t                               call_video_capture_gen_ = 0;
     std::unique_ptr<tk::ScreenCapture>          screen_capture_;
     std::unique_ptr<tk::LocationProvider>       location_provider_;
     // Background worker that fills in screen-picker tile thumbnails (see

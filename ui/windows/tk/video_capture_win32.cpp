@@ -12,12 +12,18 @@
 //
 // Frames are delivered on the MF reader thread via OnReadSample; the
 // FrameCallback / BgraCallback must be thread-safe.
+//
+// Errors: a camera held by another app usually activates fine and only fails
+// once streaming starts, as a failed OnReadSample (device locked / hardware
+// MFT failed to start). That source is dead — re-issuing ReadSample just
+// fails again forever — so the first failure is reported and reading stops.
 
 #include "video_capture.h"
 
 #include <tesseract/settings.h>
 
 #include <mfapi.h>
+#include <mferror.h>
 #include <mfidl.h>
 #include <mfreadwrite.h>
 #include <windows.h>
@@ -60,6 +66,25 @@ void nv12_to_i420(const std::uint8_t* src_y, std::uint32_t src_stride_y,
             v[col] = uv[col * 2 + 1];
         }
     }
+}
+
+// HRESULT_FROM_WIN32 is an inline function in current SDKs, so it can't be a
+// case label — hence the if-chain.
+tk::VideoCapture::Error classify_hr(HRESULT hr)
+{
+    using Error = tk::VideoCapture::Error;
+    if (hr == MF_E_VIDEO_RECORDING_DEVICE_LOCKED ||
+        hr == MF_E_HW_MFT_FAILED_START_STREAMING ||
+        hr == HRESULT_FROM_WIN32(ERROR_SHARING_VIOLATION) ||
+        hr == HRESULT_FROM_WIN32(ERROR_BUSY))
+        return Error::Busy;
+    if (hr == E_ACCESSDENIED)
+        return Error::PermissionDenied;
+    if (hr == MF_E_VIDEO_RECORDING_DEVICE_INVALIDATED ||
+        hr == HRESULT_FROM_WIN32(ERROR_DEVICE_NOT_CONNECTED) ||
+        hr == HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND))
+        return Error::NoDevice;
+    return Error::Failed;
 }
 
 class VideoCaptureWin32
@@ -111,11 +136,19 @@ public:
 
     HRESULT STDMETHODCALLTYPE OnReadSample(HRESULT hr,
                                             DWORD /*stream_index*/,
-                                            DWORD /*stream_flags*/,
+                                            DWORD stream_flags,
                                             LONGLONG /*timestamp*/,
                                             IMFSample* sample) override
     {
-        if (!running_.load() || FAILED(hr) || !sample)
+        if (running_.load() &&
+            (FAILED(hr) || (stream_flags & MF_SOURCE_READERF_ERROR)))
+        {
+            // Dead source: stop reading (no ReadSample re-issue) and report.
+            // stop() still releases the reader when the owner reacts.
+            report_error_(FAILED(hr) ? classify_hr(hr) : Error::Failed);
+            return S_OK;
+        }
+        if (!running_.load() || !sample)
         {
             if (reader_ && running_.load())
                 reader_->ReadSample(MF_SOURCE_READER_FIRST_VIDEO_STREAM,
@@ -163,6 +196,7 @@ public:
     {
         if (running_.load())
             return;
+        clear_error_();
 
         IMFAttributes* attrs = nullptr;
         MFCreateAttributes(&attrs, 3);
@@ -188,6 +222,7 @@ public:
         if (count == 0)
         {
             attrs->Release();
+            report_error_(Error::NoDevice);
             return;
         }
 
@@ -217,7 +252,7 @@ public:
         }
 
         IMFMediaSource* source = nullptr;
-        devices[selected]->ActivateObject(IID_PPV_ARGS(&source));
+        HRESULT hr = devices[selected]->ActivateObject(IID_PPV_ARGS(&source));
         for (UINT32 i = 0; i < count; ++i)
             devices[i]->Release();
         CoTaskMemFree(devices);
@@ -225,14 +260,19 @@ public:
         if (!source)
         {
             attrs->Release();
+            report_error_(FAILED(hr) ? classify_hr(hr) : Error::Failed);
             return;
         }
 
-        HRESULT hr = MFCreateSourceReaderFromMediaSource(source, attrs, &reader_);
+        hr = MFCreateSourceReaderFromMediaSource(source, attrs, &reader_);
         source->Release();
         attrs->Release();
         if (FAILED(hr))
+        {
+            reader_ = nullptr;
+            report_error_(classify_hr(hr));
             return;
+        }
 
         IMFMediaType* type = nullptr;
         MFCreateMediaType(&type);
@@ -278,8 +318,10 @@ public:
         }
 
         running_.store(true);
-        reader_->ReadSample(MF_SOURCE_READER_FIRST_VIDEO_STREAM,
-                            0, nullptr, nullptr, nullptr, nullptr);
+        hr = reader_->ReadSample(MF_SOURCE_READER_FIRST_VIDEO_STREAM,
+                                 0, nullptr, nullptr, nullptr, nullptr);
+        if (FAILED(hr))
+            report_error_(classify_hr(hr));
     }
 
     void stop() override

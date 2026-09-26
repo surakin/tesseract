@@ -14401,6 +14401,63 @@ void ShellBase::push_call_audio_bgnd_(const std::int16_t* samples,
         call_audio_output_->push_frame(samples, sample_count, sample_rate, num_channels);
 }
 
+void ShellBase::start_call_video_capture_()
+{
+    if (call_video_capture_)
+        return;
+    const std::uint64_t gen = ++call_video_capture_gen_;
+    // Errors can fire synchronously from start() or later from a capture
+    // thread; either way handle them on a fresh UI-thread turn.
+    auto on_error = [this, gen](tk::VideoCapture::Error err)
+    {
+        post_to_ui_alive_(
+            [this, gen, err]
+            {
+                if (gen == call_video_capture_gen_)
+                    handle_call_video_error_(err);
+            });
+    };
+
+    auto vc = tk::VideoCapture::create();
+    if (!vc)
+    {
+        on_error(tk::VideoCapture::Error::NoDevice);
+        return;
+    }
+    vc->set_callback(
+        [this](const tk::VideoCapture::Frame& f)
+        {
+            client_->rtc_push_video_frame_i420(
+                f.y, f.u, f.v, f.width, f.height,
+                f.stride_y, f.stride_u, f.stride_v);
+        });
+    vc->set_error_callback(on_error);
+    call_video_capture_ = std::move(vc);
+    call_video_capture_->start();
+}
+
+void ShellBase::stop_call_video_capture_()
+{
+    ++call_video_capture_gen_;
+    if (call_video_capture_)
+    {
+        call_video_capture_->stop();
+        call_video_capture_.reset();
+    }
+}
+
+void ShellBase::handle_call_video_error_(tk::VideoCapture::Error err)
+{
+    if (!call_session_)
+        return;
+    stop_call_video_capture_();
+    call_session_->mute_video(true);
+    call_overlay_state_.video_muted = true;
+    if (auto* ov = active_call_overlay_())
+        ov->set_video_muted(true);
+    show_status_message_(tk::VideoCapture::describe(err));
+}
+
 views::CallOverlayWidget::Mode ShellBase::overlay_mode_from_settings_() const
 {
     switch (Settings::instance().call_overlay_mode)
@@ -14417,7 +14474,8 @@ views::CallOverlayWidget::Mode ShellBase::overlay_mode_from_settings_() const
 }
 
 void ShellBase::start_call(const std::string& room_id, const std::string& slot_id,
-                           bool audio_only, bool start_audio_muted)
+                           bool audio_only, bool start_audio_muted,
+                           bool start_video_muted)
 {
     if (call_session_ || !client_)
         return;
@@ -14440,27 +14498,20 @@ void ShellBase::start_call(const std::string& room_id, const std::string& slot_i
     call_overlay_state_ = {};
     call_overlay_state_.show_video_button = !audio_only;
     call_overlay_state_.audio_muted       = start_audio_muted;
+    call_overlay_state_.video_muted       = !audio_only && start_video_muted;
     call_overlay_state_.local_user_id     = my_user_id_;
 
-    if (!audio_only)
+    if (!audio_only && !start_video_muted)
     {
-        auto vc = tk::VideoCapture::create();
-        if (vc)
-        {
-            vc->set_callback(
-                [this](const tk::VideoCapture::Frame& f)
-                {
-                    client_->rtc_push_video_frame_i420(
-                        f.y, f.u, f.v, f.width, f.height,
-                        f.stride_y, f.stride_u, f.stride_v);
-                });
-            vc->start();
-            call_video_capture_ = std::move(vc);
-        }
+        // The camera track is published muted; this asks for it to go live
+        // on the first real frame, so a missing or busy camera never sends
+        // placeholder video.
+        start_call_video_capture_();
+        call_session_->mute_video(false);
     }
     else
     {
-        // Audio-only: publish video track muted so no frames are sent.
+        // Audio-only or camera off: keep the video track muted.
         call_session_->mute_video(true);
     }
 
@@ -14553,7 +14604,7 @@ void ShellBase::request_call_(const std::string& room_id, const std::string& slo
         });
 
     lobby->on_join = [this](const std::string& rid, const std::string& sid,
-                            bool ao, bool muted)
+                            bool ao, bool muted, bool video_muted)
     {
         // If a different room's call is still active (LeaveAndJoin), end it
         // before joining — start_call() no-ops while call_session_ is
@@ -14561,7 +14612,7 @@ void ShellBase::request_call_(const std::string& room_id, const std::string& slo
         // room switch that opened this lobby.
         if (call_session_ && call_session_->room_id() != rid)
             end_call();
-        start_call(rid, sid, ao, muted);
+        start_call(rid, sid, ao, muted, video_muted);
     };
     lobby->on_cancel = [] {};
 
@@ -14640,7 +14691,7 @@ void ShellBase::end_call()
             w->room_view()->header()->set_call_active(false);
     }
 
-    call_video_capture_.reset();
+    stop_call_video_capture_();
     if (screen_capture_)
     {
         screen_capture_->stop();
@@ -14730,7 +14781,7 @@ void ShellBase::handle_rtc_session_ended_ui_(std::uint64_t session_id,
     }
 
     call_session_->on_session_ended({});
-    call_video_capture_.reset();
+    stop_call_video_capture_();
     {
         std::lock_guard<std::mutex> lock(call_audio_mutex_);
         call_audio_output_.reset();
@@ -14898,7 +14949,17 @@ void ShellBase::on_call_overlay_mode_requested_(views::CallOverlayWidget::Mode m
         };
         ov->on_toggle_video = [this](bool muted)
         {
-            if (call_session_) call_session_->mute_video(muted);
+            if (!call_session_) return;
+            if (muted)
+            {
+                call_session_->mute_video(true);
+                stop_call_video_capture_();
+            }
+            else
+            {
+                start_call_video_capture_();
+                call_session_->mute_video(false);
+            }
         };
         ov->on_toggle_screen_share = [this](bool sharing)
         {

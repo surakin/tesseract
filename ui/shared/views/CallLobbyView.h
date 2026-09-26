@@ -14,6 +14,10 @@
 // started/stopped independently of any real CallSession (none exists yet
 // at the lobby stage). The mic toggle is local-only UI state pre-join —
 // there is no CallSession to mute and no audio level meter.
+//
+// Camera failures (none present, busy in another app, permission denied)
+// switch the camera toggle off and show the reason under the preview;
+// turning the camera back on retries with a fresh capture.
 
 #include "ParticipantTile.h"
 
@@ -45,6 +49,9 @@ public:
     // Stops capture and hides the view. Safe to call when already closed.
     void close();
     bool is_open() const { return open_; }
+    // Last camera failure since the camera was (re)enabled; None when fine.
+    tk::VideoCapture::Error camera_error() const { return cam_error_; }
+    bool camera_enabled() const { return cam_enabled_; }
     // The room this lobby is currently showing (empty while closed) — lets
     // callers distinguish "still the same room" repeat calls from an actual
     // switch away, since is_open() alone can't tell those apart.
@@ -55,10 +62,12 @@ public:
     void set_local_user_id(std::string id) { local_user_id_ = std::move(id); }
     void set_repaint_requester(std::function<void()> fn);
 
-    // room_id, slot_id, audio_only (camera was left off), start_audio_muted
-    // (mic was left off).
+    // room_id, slot_id, audio_only (camera was deliberately left off),
+    // start_audio_muted (mic was left off), start_video_muted (the camera
+    // failed — join as a video call with video off so it can be retried).
     std::function<void(const std::string& room_id, const std::string& slot_id,
-                       bool audio_only, bool start_audio_muted)> on_join;
+                       bool audio_only, bool start_audio_muted,
+                       bool start_video_muted)> on_join;
     std::function<void()> on_cancel;
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
@@ -71,6 +80,7 @@ private:
     void start_camera_();
     void stop_camera_();
     void apply_preview_state_();
+    void set_camera_error_(tk::VideoCapture::Error err);
 
     bool        open_ = false;
     std::string room_id_;
@@ -79,6 +89,7 @@ private:
 
     bool mic_enabled_ = true;
     bool cam_enabled_ = true;
+    tk::VideoCapture::Error cam_error_ = tk::VideoCapture::Error::None;
 
     std::unique_ptr<tk::VideoCapture>          capture_;
     std::mutex                                 frame_mu_;
@@ -90,6 +101,7 @@ private:
     tk::Button*      cam_btn_      = nullptr;
     tk::Button*      join_btn_     = nullptr;
     tk::Button*      cancel_btn_   = nullptr;
+    tk::Label*       cam_error_label_ = nullptr;
 
     std::function<const tk::Image*(const std::string&)> avatar_provider_;
     std::function<void()>                                repaint_requester_;

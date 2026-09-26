@@ -3293,3 +3293,27 @@ msgstr "[Çöpy lïñkx]"
 #: ui/shared/views/EncryptionSetupOverlay.cpp
 msgid "Link copied"
 msgstr "[Lïñk çöpïédxx]"
+
+#: ui/shared/tk/video_capture.cpp
+msgid "No camera found."
+msgstr "[Ñö çàmérà föùñd.xxx]"
+
+#: ui/shared/tk/video_capture.cpp
+msgid "The camera is being used by another app."
+msgstr "[Thé çàmérà ïs béïñg ùséd by àñöthér àpp.xxxxxxxx]"
+
+#: ui/shared/tk/video_capture.cpp
+msgid "Camera access is blocked. Check your system privacy settings."
+msgstr "[Çàmérà àççéss ïs blöçkéd. Çhéçk yöùr systém prïvàçy séttïñgs.xxxxxxxxxxxx]"
+
+#: ui/shared/tk/video_capture.cpp
+msgid "The camera could not be started."
+msgstr "[Thé çàmérà çöùld ñöt bé stàrtéd.xxxxxx]"
+
+#: ui/shared/views/CameraWidget.cpp
+msgid "Click anywhere to close"
+msgstr "[Çlïçk àñywhéré tö çlöséxxxx]"
+
+#: ui/shared/views/CameraWidget.cpp
+msgid "Click anywhere to cancel"
+msgstr "[Çlïçk àñywhéré tö çàñçélxxxx]"

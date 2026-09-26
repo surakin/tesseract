@@ -243,6 +243,14 @@ pub struct LiveKitRoom {
     video_source: NativeVideoSource,
     audio_publication: LocalTrackPublication,
     video_publication: LocalTrackPublication,
+    /// The user asked for video but no real camera frame has arrived since.
+    /// The camera track is published muted and only unmuted by the next
+    /// `push_video_frame_i420`: until a real frame lands, `NativeVideoSource`
+    /// feeds its own keepalive frames (an all-zero I420 buffer — green, not
+    /// black) and remote clients would render those instead of an avatar.
+    /// A mutex rather than an atomic so a concurrent mute can't be undone by
+    /// a frame thread that already decided to unmute.
+    video_unmute_pending: StdMutex<bool>,
     /// Drop-if-busy flag: prevents queuing more than one pending video frame
     /// callback at a time (avoids flooding the UI thread at 30fps Ã— N callers).
     video_frame_in_flight: Arc<AtomicBool>,
@@ -348,6 +356,9 @@ impl LiveKitRoom {
             "camera",
             RtcVideoSource::Native(video_source.clone()),
         );
+        // Published muted (the AddTrack request carries track.is_muted()):
+        // see `video_unmute_pending`.
+        local_video.mute();
         // simulcast=false: single VP8 layer.
         // source=Camera: signals to the SFU what kind of track this is.
         let video_opts_pub = TrackPublishOptions {
@@ -363,20 +374,7 @@ impl LiveKitRoom {
         // Emit local participant immediately so the call overlay populates even
         // when no remote participants have joined yet.
         if let Some(ref s) = sink {
-            let local = room.local_participant();
-            let local_identity = local.identity().as_str().to_owned();
-            let (local_user_id, local_device_id) = split_identity(&local_identity);
-            s.on_participant_joined(
-                session_id,
-                RtcParticipantInfo {
-                    participant_id: local_identity,
-                    user_id: local_user_id,
-                    device_id: local_device_id,
-                    is_audio_muted: false,
-                    is_video_muted: false,
-                    is_screen_sharing: false,
-                },
-            );
+            s.on_participant_joined(session_id, local_participant_info(&room.local_participant()));
         }
 
         let local_identity = room.local_participant().identity().as_str().to_owned();
@@ -402,6 +400,7 @@ impl LiveKitRoom {
             video_source,
             audio_publication,
             video_publication,
+            video_unmute_pending: StdMutex::new(false),
             video_frame_in_flight,
             local_video_in_flight,
             screen_source: StdMutex::new(None),
@@ -425,11 +424,16 @@ impl LiveKitRoom {
         }
     }
 
+    /// Muting is immediate; unmuting is deferred to the next real camera
+    /// frame (see `video_unmute_pending`), so a camera that is missing or
+    /// held by another app never goes live as a placeholder stream.
     pub fn set_video_muted(&self, muted: bool) {
+        let mut pending = self.video_unmute_pending.lock().unwrap_or_else(|e| e.into_inner());
         if muted {
+            *pending = false;
             self.video_publication.mute();
-        } else {
-            self.video_publication.unmute();
+        } else if self.video_publication.is_muted() {
+            *pending = true;
         }
     }
 
@@ -464,6 +468,13 @@ impl LiveKitRoom {
             buffer: buf,
         };
         self.video_source.capture_frame(&frame);
+        {
+            let mut pending = self.video_unmute_pending.lock().unwrap_or_else(|e| e.into_inner());
+            if *pending {
+                *pending = false;
+                self.video_publication.unmute();
+            }
+        }
 
         // Self-view loopback: deliver a decoded RGBA copy to the call overlay so
         // the local participant cell shows the camera feed without a round-trip

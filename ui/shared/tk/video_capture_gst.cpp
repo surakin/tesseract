@@ -14,6 +14,13 @@
 //
 // Frames are delivered on a GStreamer streaming thread; the FrameCallback /
 // BgraCallback must be thread-safe.
+//
+// Errors: v4l2src is a live source, so a device held by another process does
+// not fail set_state(PLAYING) — the failure surfaces later as an ERROR
+// message on the pipeline bus, posted from the streaming thread. Nobody runs
+// a GMainLoop over this bus (the Qt6 shell has none), so a sync handler
+// classifies errors on the posting thread and drops every message, which
+// also keeps the bus queue from growing unbounded.
 
 #include "video_capture.h"
 
@@ -22,6 +29,8 @@
 #include <gst/app/gstappsink.h>
 #include <gst/gst.h>
 
+#include <algorithm>
+#include <cctype>
 #include <mutex>
 #include <string>
 
@@ -37,6 +46,7 @@ public:
     {
         if (running_)
             return;
+        clear_error_();
 
         const char* format = bgra_mode_ ? "BGRA" : "I420";
         // Build pipeline with a named v4l2src; set the device property
@@ -83,15 +93,22 @@ public:
                 gst_object_unref(pipeline_);
                 pipeline_ = nullptr;
             }
+            report_error_(Error::Failed);
             return;
+        }
+
+        if (GstBus* bus = gst_element_get_bus(pipeline_))
+        {
+            gst_bus_set_sync_handler(bus, on_bus_sync_, this, nullptr);
+            gst_object_unref(bus);
         }
 
         sink_ = gst_bin_get_by_name(GST_BIN(pipeline_), "vsink");
         if (!sink_)
         {
             g_warning("tesseract video capture: could not find appsink element");
-            gst_object_unref(pipeline_);
-            pipeline_ = nullptr;
+            release_pipeline_();
+            report_error_(Error::Failed);
             return;
         }
 
@@ -102,10 +119,13 @@ public:
         if (ret == GST_STATE_CHANGE_FAILURE)
         {
             g_warning("tesseract video capture: pipeline failed to reach PLAYING state");
+            // The bus handler has usually already reported a specific cause
+            // (no device / busy); this generic one is dropped in that case.
+            report_error_(Error::Failed);
+            gst_element_set_state(pipeline_, GST_STATE_NULL);
             gst_object_unref(sink_);
             sink_ = nullptr;
-            gst_object_unref(pipeline_);
-            pipeline_ = nullptr;
+            release_pipeline_();
             return;
         }
 
@@ -126,8 +146,7 @@ public:
                 gst_object_unref(sink_);
                 sink_ = nullptr;
             }
-            gst_object_unref(pipeline_);
-            pipeline_ = nullptr;
+            release_pipeline_();
         }
     }
 
@@ -148,6 +167,70 @@ public:
     }
 
 private:
+    // Detaches the bus handler (it holds a raw `this`) and drops the pipeline.
+    void release_pipeline_()
+    {
+        if (GstBus* bus = gst_element_get_bus(pipeline_))
+        {
+            gst_bus_set_sync_handler(bus, nullptr, nullptr, nullptr);
+            gst_object_unref(bus);
+        }
+        gst_object_unref(pipeline_);
+        pipeline_ = nullptr;
+    }
+
+    static Error classify_(const GError* err, const gchar* debug)
+    {
+        // v4l2src only carries errno text ("Device or resource busy",
+        // "Permission denied") in the debug string, and a device another
+        // process is streaming from can fail as a buffer-pool/allocation
+        // error rather than GST_RESOURCE_ERROR_BUSY — so check the text first.
+        std::string text = err && err->message ? err->message : "";
+        if (debug)
+            text.append(" ").append(debug);
+        std::transform(text.begin(), text.end(), text.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (text.find("busy") != std::string::npos)
+            return Error::Busy;
+        if (text.find("permission denied") != std::string::npos)
+            return Error::PermissionDenied;
+
+        if (err && err->domain == GST_RESOURCE_ERROR)
+        {
+            switch (err->code)
+            {
+            case GST_RESOURCE_ERROR_BUSY:
+                return Error::Busy;
+            case GST_RESOURCE_ERROR_NOT_AUTHORIZED:
+                return Error::PermissionDenied;
+            case GST_RESOURCE_ERROR_NOT_FOUND:
+            case GST_RESOURCE_ERROR_OPEN_READ:
+            case GST_RESOURCE_ERROR_OPEN_READ_WRITE:
+                return Error::NoDevice;
+            default:
+                break;
+            }
+        }
+        return Error::Failed;
+    }
+
+    static GstBusSyncReply on_bus_sync_(GstBus*, GstMessage* msg, gpointer user_data)
+    {
+        if (GST_MESSAGE_TYPE(msg) == GST_MESSAGE_ERROR)
+        {
+            auto* self = static_cast<VideoCaptureGst*>(user_data);
+            GError* err  = nullptr;
+            gchar* debug = nullptr;
+            gst_message_parse_error(msg, &err, &debug);
+            g_warning("tesseract video capture: %s (%s)",
+                      err ? err->message : "?", debug ? debug : "");
+            self->report_error_(classify_(err, debug));
+            if (err) g_error_free(err);
+            g_free(debug);
+        }
+        return GST_BUS_DROP;
+    }
+
     static GstFlowReturn on_new_sample_(GstElement* sink, gpointer user_data)
     {
         auto* self = static_cast<VideoCaptureGst*>(user_data);

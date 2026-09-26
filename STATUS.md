@@ -1,6 +1,14 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-09-26**. 1987 C++ + 719 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-09-26**. 1993 C++ + 719 Rust tests.
+
+> **Calls: camera failures detected and explained (2026-09-26, unreleased).**
+> A missing, busy or blocked camera is reported by `tk::VideoCapture` and
+> explained in calls, the lobby and `/selfie`; the camera track stays muted
+> until a real frame arrives, and turning video on retries the device.
+> Qt6 build + ctest 1993/1993; user-verified live. Windows/macOS unbuilt.
+
+<!-- -->
 
 > **Member moderation: kick, ban, unban (2026-09-24, unreleased).**
 > Right-clicking a member row in `RoomInfoPanelBody` opens a `PopupMenu`

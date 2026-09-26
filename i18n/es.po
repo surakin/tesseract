@@ -3223,3 +3223,27 @@ msgstr "Copiar enlace"
 #: ui/shared/views/EncryptionSetupOverlay.cpp
 msgid "Link copied"
 msgstr "Enlace copiado"
+
+#: ui/shared/tk/video_capture.cpp
+msgid "No camera found."
+msgstr "No se encontró ninguna cámara."
+
+#: ui/shared/tk/video_capture.cpp
+msgid "The camera is being used by another app."
+msgstr "Otra aplicación está usando la cámara."
+
+#: ui/shared/tk/video_capture.cpp
+msgid "Camera access is blocked. Check your system privacy settings."
+msgstr "El acceso a la cámara está bloqueado. Revisa la configuración de privacidad del sistema."
+
+#: ui/shared/tk/video_capture.cpp
+msgid "The camera could not be started."
+msgstr "No se pudo iniciar la cámara."
+
+#: ui/shared/views/CameraWidget.cpp
+msgid "Click anywhere to close"
+msgstr "Haz clic en cualquier lugar para cerrar"
+
+#: ui/shared/views/CameraWidget.cpp
+msgid "Click anywhere to cancel"
+msgstr "Haz clic en cualquier lugar para cancelar"
