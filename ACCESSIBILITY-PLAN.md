@@ -105,7 +105,7 @@ Continue directly from the spike — two shells sharing one adapter is the stron
 **Two product decisions to flag for explicit sign-off when reached** (not pure engineering calls):
 - **`MessageListView` per-message AT structure**: one flattened node per message bubble (sender+timestamp+body as a single `access_name`) vs. a subtree (sender as header, body as static text, reactions as a group of toggle buttons, read receipts as a live region). Leaning toward flattened bubble + subtree only for the interactive/dynamic parts, to avoid AT-tree explosion — but this determines the actual reading experience and should be a product call, not just an engineering default.
 - **`ComposeBar`**: check early whether its text buffer is still routed through the native `tk::NativeTextArea` overlay (per `CLAUDE.md`, text input stays native "so IME and selection behave correctly per-OS"). If so, the OS-native control (real Win32 EDIT/NSTextView/QLineEdit/GtkEntry) may already have working AT support with zero AccessKit involvement — shrinking `ComposeBar`'s burden to only the hand-painted chrome around it (attachments, mention autocomplete, formatting toolbar). Cheap to verify, changes scope significantly.
-- Every new accessible-name string must go through `tk::tr()`/`trn()`/`trf()` with `.po` entries added to `i18n/es.po` and `i18n/pseudo.po`, per existing i18n policy.
+- Every new accessible-name string must go through `tk::tr()`/`trn()`/`trf()` with `.po` entries added to `i18n/es.po`, `i18n/fr.po` and `i18n/pseudo.po`, per existing i18n policy.
 
 ## Phase 5 — Broader accessibility (parallel track, no AccessKit dependency)
 
