@@ -25,11 +25,13 @@ Values can be given as `--opt=value` or `--opt value`, and short options as `-p 
 
 An unknown option or a bad value prints a warning on stderr (`tesseract: warning: …`) and startup continues. Arguments that belong to the toolkit, such as Qt's `-platform wayland` or AppKit's `-NS…` user-default overrides, are passed through without a warning.
 
-`--autostart` is also accepted but not listed in `--help`. The OS login-item entry writes it; it behaves like `--hidden` and marks the launch as automatic.
+`--autostart` is also accepted but not listed in `--help`. The OS login-item entry writes it; it marks the launch as automatic. Whether a login-item launch shows the window is controlled by the **Start minimized to system tray** setting (Settings → General), not by `--autostart` itself.
 
 ## When an instance is already running
 
-A second launch forwards its URI and `--open-*` action to the running instance of the same profile, raises that window, and exits. A `--hidden` or `--autostart` launch that has nothing to forward exits quietly without raising anything.
+A second launch forwards its URI and `--open-*` action to the running instance of the same profile, raises that window, and exits.
+
+A launch started by the OS login item that has nothing to forward exits quietly without raising anything. The same is true of an explicit `--hidden` launch. Every other user-started launch raises the running window — including one that asked to start hidden via the **Start minimized to system tray** setting, so an app living in the tray stays reachable from its launcher icon.
 
 ## Profiles
 

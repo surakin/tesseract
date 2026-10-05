@@ -74,6 +74,40 @@ generators) doesn't activate MSVC on its own. It's a no-op if a dev shell is
 already active or `cl.exe` is already on `PATH`, so running from a Developer
 Command Prompt still works exactly as before.
 
+### Windows from Linux (compile check)
+
+The `windows-xwin-*` presets cross-compile the Win32 build from Linux with
+`clang-cl` + `lld-link` against the MSVC ABI. They use a Microsoft CRT and
+Windows SDK downloaded by [xwin](https://github.com/Jake-Shadle/xwin). The
+whole stack builds and links, including the calls stack. This catches
+Win32-shell compile and link errors without a Windows machine. Release
+artifacts are still built natively on Windows CI.
+
+```bash
+# Arch: clang lld llvm; Debian/Ubuntu: clang clang-tools lld llvm
+cmake/toolchains/xwin-setup.sh --accept-license   # once; ~1.1 GB download
+cmake --preset windows-xwin-debug
+cmake --build build/windows-xwin-debug            # → ui/windows/Tesseract.exe
+```
+
+The setup script installs `xwin` and the `x86_64-pc-windows-msvc` Rust target,
+then unpacks the CRT and SDK into `~/.cache/xwin/splat`. Set `XWIN_ROOT` to use
+another location. Running it means accepting Microsoft's license for those
+components. The script also restores the mixed-case C++/WinRT header names that
+xwin leaves out, and creates a venv with `resvg-py` for the icon generator.
+
+The target is MSVC rather than MinGW because `webrtc-sys` links LiveKit's
+prebuilt `libwebrtc`, and that library only ships built with MSVC. Notes:
+
+- On this path, the root `CMakeLists.txt` gives Cargo its settings through
+  environment variables. It does not write `.cargo/config.toml`, so your own
+  config is left alone.
+- MSIX packaging is skipped.
+- `tesseract_tests.exe` also builds. With Wine registered as a binfmt
+  handler, Catch2's test discovery runs it during the build. Wine has no
+  DirectComposition, so tests that create a D2D canvas fail under Wine. Don't
+  use `ctest` here as a pass/fail signal.
+
 ## Calls / MatrixRTC
 
 Native voice and video calls via LiveKit/WebRTC are built by default on every
@@ -105,7 +139,8 @@ required. Subsequent builds use the cached copy.
 
 All presets live in `CMakePresets.json`:
 
-`windows-debug`, `windows-release`, `linux-debug`, `linux-release`,
+`windows-debug`, `windows-release`, `windows-xwin-debug`,
+`windows-xwin-release` (Linux host, see above), `linux-debug`, `linux-release`,
 `macos-appkit-arm64-debug`, `macos-appkit-arm64-release`,
 `macos-appkit-x86_64-debug`, `macos-appkit-x86_64-release`.
 
@@ -148,6 +183,22 @@ The three archives (`tesseract_sdk_bridge_cxx`, `tesseract_client`,
 `tesseract_sdk_ffi-static`) have a circular dependency through the FFI. They are
 linked with `WHOLE_ARCHIVE` to guarantee all symbols are present regardless of
 link order.
+
+### Build-directory size
+
+- **Cargo incremental compilation** is off by default for the Rust SDK crate.
+  Its cache costs several GB per build directory, and cargo never deletes the
+  cache of a superseded configuration (any env/flag change starts a fresh
+  one). `-DTESSERACT_CARGO_INCREMENTAL=ON` turns it back on for faster
+  rebuilds while iterating on `sdk/src/*.rs`.
+- **Compressed debug info** (Linux): object files build with `-gz=zlib` and
+  executables link with `--compress-debug-sections=zlib`. Every UI and test
+  executable carries the whole Rust archive's debug info, so this roughly
+  halves Debug executables. gdb, lldb and addr2line read it transparently.
+- **Stale cargo artifacts** still accumulate under `<build>/cargo/build/` when
+  the crate's configuration changes, as old `libtesseract_sdk_ffi-<hash>.a`
+  copies (~2 GB each in Debug). Delete all but the newest, or use
+  `cargo sweep`.
 
 ### Unity builds and precompiled headers
 
