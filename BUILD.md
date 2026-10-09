@@ -50,7 +50,7 @@ Notes on the less obvious deps:
 ### macOS / AppKit
 
 ```bash
-brew install ninja cmake opus
+brew install ninja cmake opus resvg   # resvg renders the app icon; without Homebrew: cargo install resvg
 xcode-select --install   # Xcode Command Line Tools
 # Rust toolchain + native macOS targets (pick the one matching the preset):
 #   rustup toolchain install stable
@@ -199,6 +199,14 @@ link order.
   the crate's configuration changes, as old `libtesseract_sdk_ffi-<hash>.a`
   copies (~2 GB each in Debug). Delete all but the newest, or use
   `cargo sweep`.
+
+### Feature options
+
+`-DTESSERACT_ENABLE_SILENT_RECOVERY_SETUP=OFF` (default `ON`) brings back the
+encryption setup dialog for accounts without recovery. With it on, Tesseract
+sets recovery up by itself, keeps the key in the OS secure storage until the
+user saves it, reminds them to save it, and unlocks a re-signed-in device with
+the stored key.
 
 ### Unity builds and precompiled headers
 
