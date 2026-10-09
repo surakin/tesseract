@@ -4,6 +4,7 @@
 #include "views/SlashCommandPopup.h"
 
 #include <tesseract/bot_command.h>
+#include <tesseract/client.h> // tesseract::Result
 
 #include <functional>
 #include <optional>
@@ -61,6 +62,11 @@ public:
         // event. Called instead of dispatch_compose_send when the user accepts
         // /location. No-op if unset.
         std::function<void()> on_location;
+        // Send an arg-less command ("/poll", "/leave", "/shrug", ...) through the
+        // shell's normal composer send path (ShellBase::dispatch_room_send_), so
+        // a command behaves identically with or without the popup open. Called
+        // instead of the direct dispatch_compose_send fallback when set.
+        std::function<tesseract::Result(const std::string& body)> send_command;
         // MSC4391 bot commands currently known for the active room (already
         // filtered to joined senders — see Client::list_room_bot_commands).
         // Called on every keystroke while the popup could be shown; no-op

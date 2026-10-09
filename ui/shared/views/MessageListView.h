@@ -25,6 +25,7 @@
 #include "views/RoomSwitchGateKeeper.h"
 #include "views/SpoilerRevealer.h"
 #include "views/TimelineMediaController.h"
+#include "views/PollCardDisplay.h"
 #include "views/UrlPreviewCardDisplay.h"
 #include "views/TimelineVideoPlaylist.h"
 #include "views/map_tiles.h"
@@ -71,6 +72,14 @@ struct UrlPreviewData
     }
 };
 
+struct PollAnswerRow
+{
+    std::string id;
+    std::string text;
+    std::uint32_t votes = 0;
+    bool mine = false;
+};
+
 struct MessageRowData
 {
     enum class Kind
@@ -96,6 +105,7 @@ struct MessageRowData
         Membership,         // m.room.member state-event row
         RoomName,           // m.room.name state-event row
         RoomTombstone,      // m.room.tombstone state-event row ("X upgraded this room")
+        Poll,               // m.poll.start (MSC3381)
     };
 
     Kind kind = Kind::Text;
@@ -226,6 +236,13 @@ struct MessageRowData
     bool location_awaiting_fix = false;
     std::uint64_t location_live_expires_ms = 0;
     std::uint64_t location_updated_ms = 0;
+
+    // Poll (MSC3381, Kind::Poll only); `body` carries the question.
+    std::vector<PollAnswerRow> poll_answers;
+    std::uint32_t poll_max_selections = 1;
+    bool poll_ended = false;
+    bool poll_results_visible = false;
+    std::uint32_t poll_total_votes = 0;
     bool map_viewport_touched = false; // user panned/zoomed; stop following the pin
 
     // MSC3440 threads. Mirror of tesseract::Event's thread fields. Used by
@@ -605,6 +622,14 @@ public:
                        const std::string& key,
                        const std::string& source_mxc)>
         on_reaction_toggled;
+
+    // Poll (MSC3381) card. `on_poll_vote` receives the full new selection
+    // (answer ids) for the poll event; `on_poll_end_requested` asks the host to
+    // close the poll (the host confirms). Unset (e.g. in the thread panel)
+    // makes poll cards read-only: no hit rects, hover cursor or a11y actions.
+    std::function<void(const std::string& event_id, std::vector<std::string> answer_ids)>
+        on_poll_vote;
+    std::function<void(const std::string& event_id)> on_poll_end_requested;
 
     // Add-reaction button (the trailing "+" pseudo-chip that appears on
     // row hover). The host should open the emoji picker anchored near
@@ -1614,6 +1639,15 @@ private:
     UrlPreviewCardDisplay previews_;
     bool press_preview_ = false;
     std::string press_preview_url_;
+
+    // Poll cards: layout/paint/geometry live in `polls_`; the view keeps the
+    // pointer-press FSM (the pressed hit) and decides interactivity.
+    PollCardDisplay polls_;
+    bool poll_interactive_(const MessageRowData& m) const;
+    bool poll_end_shown_(const MessageRowData& m) const;
+    void fire_poll_hit_(const PollCardDisplay::Hit& hit);
+    bool press_poll_ = false;
+    PollCardDisplay::Hit press_poll_hit_;
 
     // Shared per-message body-text cache, keyed by event_id. A single shaped
     // layout is built once (by measure_body_text or paint_body_text, whichever

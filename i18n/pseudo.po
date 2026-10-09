@@ -3626,6 +3626,10 @@ msgstr "[{0} séñt à vöïçé méssàgéxxxx]"
 msgid "{0} sent a sticker"
 msgstr "[{0} séñt à stïçkérxxx]"
 
+#, c++-format
+msgid "{0} started a poll"
+msgstr "[{0} stärtéd à pöllxxx]"
+
 #: ui/shared/views/RoomListView.cpp:352 ui/shared/views/RoomListView.cpp:485
 #, c++-format
 msgid "Invitations ({0})"
@@ -6421,3 +6425,104 @@ msgstr "[Wàïtïñg för löçàtïöñ…xxxx]"
 #: ui/shared/views/MessageListView.cpp
 msgid "Live location ended"
 msgstr "[Lïvé löçàtïöñ éñdédxxx]"
+
+#: ui/shared/views/poll_logic.cpp
+msgid "Select one option"
+msgstr "[Séléçt öñé öptïöñxx]"
+
+#: ui/shared/views/poll_logic.cpp
+#, c++-format
+msgid "Select up to {0} option"
+msgid_plural "Select up to {0} options"
+msgstr[0] "[Séléçt ùp tö {0} öptïöñxxxx]"
+msgstr[1] "[Séléçt ùp tö {0} öptïöñsxxxx]"
+
+#: ui/shared/views/poll_logic.cpp
+msgid "Results will be shown when the poll ends"
+msgstr "[Résùlts wïll bé shöwñ whéñ thé pöll éñdsxxxxxx]"
+
+#: ui/shared/views/poll_logic.cpp
+msgid "Poll"
+msgstr "[Pöllx]"
+
+#: ui/shared/views/poll_logic.cpp
+#, c++-format
+msgid "{0} vote"
+msgid_plural "{0} votes"
+msgstr[0] "[{0} vötéx]"
+msgstr[1] "[{0} vötésx]"
+
+#: ui/shared/views/poll_logic.cpp
+#, c++-format
+msgid "Poll ended · {0} vote"
+msgid_plural "Poll ended · {0} votes"
+msgstr[0] "[Pöll éñdéd · {0} vötéxxx]"
+msgstr[1] "[Pöll éñdéd · {0} vötésxxx]"
+
+#: ui/shared/views/MessageListView.cpp
+#, c++-format
+msgid "{0}, {1}%"
+msgstr "[{0}, {1}%x]"
+
+#: ui/shared/views/MessageListView.cpp ui/shared/views/PollCardDisplay.cpp ui/shared/views/RoomView.cpp
+msgid "End poll"
+msgstr "[Éñd pöllx]"
+
+#: ui/shared/views/RoomView.cpp
+msgid "End this poll?"
+msgstr "[Éñd thïs pöll?xx]"
+
+#: ui/shared/views/RoomView.cpp
+msgid "Voting will close and the final results will be shown to everyone."
+msgstr "[Vötïñg wïll çlösé àñd thé fïñàl résùlts wïll bé shöwñ tö évéryöñé.xxxxxxxxxxxxx]"
+
+#: ui/shared/views/PollCardDisplay.cpp
+#, c++-format
+msgid "{0}% ({1})"
+msgstr "[{0}% ({1})xx]"
+
+#: ui/shared/views/CreatePollDialog.h
+#, c++-format
+msgid "Create poll in {0}"
+msgstr "[Çréàté pöll ïñ {0}xxxx]"
+
+#: ui/shared/views/CreatePollDialog.cpp
+msgid "Create poll"
+msgstr "[Çréàté pöllxx]"
+
+#: ui/shared/views/CreatePollDialog.cpp
+msgid "Question"
+msgstr "[Qùéstïöñx]"
+
+#: ui/shared/views/CreatePollDialog.cpp
+#, c++-format
+msgid "Option {0}"
+msgstr "[Öptïöñ {0}xx]"
+
+#: ui/shared/views/CreatePollDialog.cpp
+msgid "Add option"
+msgstr "[Àdd öptïöñxx]"
+
+#: ui/shared/views/CreatePollDialog.cpp
+msgid "Remove option"
+msgstr "[Rémövé öptïöñxx]"
+
+#: ui/shared/views/CreatePollDialog.cpp
+msgid "Allow multiple answers"
+msgstr "[Àllöw mùltïplé àñswérsxxxx]"
+
+#: ui/shared/views/CreatePollDialog.cpp
+msgid "Hide results until the poll ends"
+msgstr "[Hïdé résùlts ùñtïl thé pöll éñdsxxxxxx]"
+
+#: ui/shared/views/CreatePollDialog.cpp
+msgid "Enter a question and at least two different options"
+msgstr "[Éñtér à qùéstïöñ àñd àt léàst twö dïfféréñt öptïöñsxxxxxxxxxx]"
+
+#: ui/shared/app/SlashCommands.cpp
+msgid "Create a poll"
+msgstr "[Çréàté à pöllxx]"
+
+#: ui/shared/app/ShellBase_rooms.cpp
+msgid "Couldn't send the poll"
+msgstr "[Çöùldñ't séñd thé pöllxxxx]"

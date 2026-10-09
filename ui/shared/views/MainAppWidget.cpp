@@ -1163,6 +1163,12 @@ MainAppWidget::MainAppWidget()
     auto export_dialog = std::make_unique<ExportHistoryDialog>();
     export_history_dialog_ = overlay_stack_->add_child(std::move(export_dialog));
 
+    // Create-poll form — same open()/close()-gated treatment.
+    create_poll_dialog_ = overlay_stack_->add_child(std::make_unique<CreatePollDialog>());
+    create_poll_dialog_->on_layout_changed = [this]() {
+        notify_layout_changed_();
+    };
+
     // Keyboard shortcuts list — same open()/close()-gated treatment.
     shortcuts_overlay_ = overlay_stack_->add_child(
         tk::create_root_widget<KeyboardShortcutsOverlay>(host));
@@ -1491,6 +1497,11 @@ bool MainAppWidget::dismiss_top_transient_()
         shortcuts_overlay_->close();
         return true;
     }
+    if (create_poll_dialog_ && create_poll_dialog_->is_open())
+    {
+        create_poll_dialog_->close();
+        return true;
+    }
     if (confirm_dialog_ && confirm_dialog_->is_open())
     {
         confirm_dialog_->close();
@@ -1553,6 +1564,8 @@ tk::Widget* MainAppWidget::active_transient_overlay_() const
         return quick_switcher_;
     if (shortcuts_overlay_ && shortcuts_overlay_->is_open())
         return shortcuts_overlay_;
+    if (create_poll_dialog_ && create_poll_dialog_->is_open())
+        return create_poll_dialog_;
     if (confirm_dialog_ && confirm_dialog_->is_open())
         return confirm_dialog_;
     if (vid_viewer_ && vid_viewer_->is_open())
@@ -1939,6 +1952,7 @@ bool MainAppWidget::any_modal_open_() const
 {
     const bool existing_modals =
            (confirm_dialog_    && confirm_dialog_->is_open()) ||
+           (create_poll_dialog_ && create_poll_dialog_->is_open()) ||
            (shortcuts_overlay_ && shortcuts_overlay_->is_open()) ||
            (room_view_         && room_view_->is_overlay_open()) ||
            (img_viewer_        && img_viewer_->is_open()) ||

@@ -446,7 +446,7 @@ impl ClientFfi {
     /// event to live in *that* Timeline's items vector — they derive
     /// toggle / local-echo state from there.
     #[cfg(not(test))]
-    async fn timeline_for_event(
+    pub(crate) async fn timeline_for_event(
         &self,
         room_id: &matrix_sdk::ruma::OwnedRoomId,
         event_id: &matrix_sdk::ruma::EventId,
@@ -482,6 +482,19 @@ impl ClientFfi {
     /// for their own `RoomMessageEventContent`-based sends.
     #[cfg(not(test))]
     pub(crate) fn dispatch_room_msg_(&self, room_id: &str, content: RoomMessageEventContent) -> OpResult {
+        self.dispatch_room_content_(room_id, content.into(), "send/message")
+    }
+
+    /// Send arbitrary message-like content to a room: through the live
+    /// timeline when subscribed (local echo), else straight via `Room::send`.
+    #[cfg(not(test))]
+    #[cfg_attr(not(debug_assertions), allow(unused_variables))]
+    pub(crate) fn dispatch_room_content_(
+        &self,
+        room_id: &str,
+        content: matrix_sdk::ruma::events::AnyMessageLikeEventContent,
+        label: &str,
+    ) -> OpResult {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
@@ -492,7 +505,7 @@ impl ClientFfi {
             #[cfg(debug_assertions)]
             &self.in_flight_urls,
             #[cfg(debug_assertions)]
-            "send/message".to_string(),
+            label.to_string(),
         );
         // Use the live timeline if subscribed — local echo fires immediately.
         {
@@ -501,7 +514,7 @@ impl ClientFfi {
                 guard.get(&room_id).map(|h| h.timeline.clone())
             };
             if let Some(timeline) = maybe_tl {
-                return match self.block_on_cancellable(async move { timeline.send(content.into()).await }) {
+                return match self.block_on_cancellable(async move { timeline.send(content).await }) {
                     Some(Ok(_)) => ok(""),
                     Some(Err(e)) => err(e.to_string()),
                     None => err("cancelled"),

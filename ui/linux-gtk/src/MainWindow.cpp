@@ -1025,6 +1025,12 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                 main_app_->open_camera_overlay();
             };
             sh.on_location = [this] { send_current_location_(current_room_id_); };
+            sh.send_command = [this](const std::string& body) -> tesseract::Result
+            {
+                const auto out = dispatch_room_send_(current_room_id_, body, std::string{});
+                return out.handled_as_command ? tesseract::Result{true, ""}
+                                              : out.send_result;
+            };
             sh.bot_commands = [this]() -> std::vector<tesseract::CommandDescription>
             {
                 return client_ ? client_->list_room_bot_commands(current_room_id_)

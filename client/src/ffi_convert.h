@@ -805,6 +805,26 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e)
         return ev;
     }
 
+    if (msg_type == "m.poll")
+    {
+        auto ev = std::make_unique<PollEvent>();
+        assign_base(*ev, e);
+        ev->max_selections = e.poll_max_selections;
+        ev->ended = e.poll_ended;
+        ev->results_visible = e.poll_results_visible;
+        ev->total_votes = e.poll_total_votes;
+        for (const auto& a : e.poll_answers)
+        {
+            PollAnswer pa;
+            pa.id = std::string(a.id);
+            pa.text = std::string(a.text);
+            pa.votes = a.votes;
+            pa.mine = a.mine;
+            ev->answers.push_back(std::move(pa));
+        }
+        return ev;
+    }
+
     if (msg_type == "m.room.pinned_events")
     {
         auto ev = std::make_unique<PinnedStateEvent>();

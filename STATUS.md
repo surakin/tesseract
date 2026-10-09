@@ -1,6 +1,13 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-10-09**. 2338 C++ + 805 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-10-09**. 2369 C++ + 818 Rust tests.
+
+> **Polls (2026-10-09).**
+> MSC3381 polls (unstable event types) show in the timeline with live results;
+> vote, end a poll you created (or any poll with redact power) behind a confirm
+> dialog, create one with `/poll`. Undisclosed polls hide counts until ended;
+> keyboard/screen-reader operable; thread-panel polls read-only. Qt6 build +
+> ctest 2369/2369, cargo 818.
 
 > **Live location display (2026-10-09).**
 > MSC3489 live shares show the latest position on the map, move with each

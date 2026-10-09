@@ -28,6 +28,7 @@ mod media_origin;
 mod media_queue;
 mod notifications;
 mod pins;
+mod polls;
 mod profile_fields;
 mod qr_grant;
 mod recovery;
@@ -2371,6 +2372,21 @@ fn latest_event_preview(value: &matrix_sdk::latest_events::LatestEventValue) -> 
                         thumbnail_url: url,
                     }
                 }
+                AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::UnstablePollStart(ev)) => {
+                    use matrix_sdk::ruma::events::poll::unstable_start::UnstablePollStartEventContent;
+                    let Some(orig) = ev.as_original() else {
+                        return LatestPreview::default();
+                    };
+                    match &orig.content {
+                        UnstablePollStartEventContent::New(c) => LatestPreview {
+                            kind: "poll".to_owned(),
+                            text: c.poll_start.question.text.clone(),
+                            ..Default::default()
+                        },
+                        // An edit of a poll is not a new "latest message".
+                        _ => LatestPreview::default(),
+                    }
+                }
                 _ => LatestPreview::default(),
             }
         }
@@ -2400,10 +2416,22 @@ fn latest_event_sender(
                 AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::Sticker(ev)) => {
                     ev.as_original().map(|e| e.sender.clone())
                 }
+                AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::UnstablePollStart(ev)) => {
+                    ev.as_original().map(|e| e.sender.clone())
+                }
                 _ => None,
             }
         }
         _ => None,
+    }
+}
+
+/// Permalink-preview body for a poll start; an edit event carries no question.
+fn poll_permalink_preview(question: &str) -> String {
+    if question.is_empty() {
+        "(poll)".to_owned()
+    } else {
+        format!("(poll) {question}")
     }
 }
 
@@ -2414,6 +2442,16 @@ fn extract_local_preview(content: &matrix_sdk::store::SerializableEventContent) 
     };
     let msgtype = match c {
         AnyMessageLikeEventContent::RoomMessage(c) => c.msgtype,
+        // Your own poll while it is still sending (mirrors latest_event_preview).
+        AnyMessageLikeEventContent::UnstablePollStart(
+            matrix_sdk::ruma::events::poll::unstable_start::UnstablePollStartEventContent::New(c),
+        ) => {
+            return LatestPreview {
+                kind: "poll".to_owned(),
+                text: c.poll_start.question.text.clone(),
+                ..Default::default()
+            }
+        }
         _ => return LatestPreview::default(),
     };
     let text_kind = |body: &str, formatted: Option<&str>| -> LatestPreview {
@@ -2669,6 +2707,22 @@ async fn resolve_pinned_event(
                 Some(orig.sender.clone()),
                 u64::from(orig.origin_server_ts.0),
                 "(sticker)".to_owned(),
+            )
+        }
+        AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::UnstablePollStart(p)) => {
+            use matrix_sdk::ruma::events::poll::unstable_start::UnstablePollStartEventContent;
+            let Some(orig) = p.as_original() else {
+                out.body_preview = "(deleted)".to_owned();
+                return out;
+            };
+            let question = match &orig.content {
+                UnstablePollStartEventContent::New(c) => c.poll_start.question.text.clone(),
+                _ => String::new(),
+            };
+            (
+                Some(orig.sender.clone()),
+                u64::from(orig.origin_server_ts.0),
+                poll_permalink_preview(&question),
             )
         }
         _ => {
@@ -5016,6 +5070,35 @@ mod tests_latest_event_body {
             "content": { "msgtype": "m.text", "body": "   " }
         }));
         assert_eq!(latest_event_preview(&v), LatestPreview::default());
+    }
+
+    #[test]
+    fn local_is_sending_poll_has_question_preview() {
+        use matrix_sdk::ruma::events::poll::unstable_start::UnstablePollStartEventContent;
+        let new = crate::client::polls::build_poll_start(
+            "Lunch?",
+            &["Pizza".to_owned(), "Sushi".to_owned()],
+            1,
+            true,
+        )
+        .unwrap();
+        let content = SerializableEventContent::new(&AnyMessageLikeEventContent::UnstablePollStart(
+            UnstablePollStartEventContent::New(new),
+        ))
+        .unwrap();
+        let v = LatestEventValue::LocalIsSending(LocalLatestEventValue {
+            timestamp: MilliSecondsSinceUnixEpoch(ruma::uint!(0)),
+            content,
+        });
+        let p = latest_event_preview(&v);
+        assert_eq!(p.kind, "poll");
+        assert_eq!(p.text, "Lunch?");
+    }
+
+    #[test]
+    fn poll_permalink_preview_falls_back_without_question() {
+        assert_eq!(super::poll_permalink_preview(""), "(poll)");
+        assert_eq!(super::poll_permalink_preview("Lunch?"), "(poll) Lunch?");
     }
 
     #[test]

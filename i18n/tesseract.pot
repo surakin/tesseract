@@ -3882,6 +3882,10 @@ msgstr ""
 msgid "{0} sent a sticker"
 msgstr ""
 
+#, c++-format
+msgid "{0} started a poll"
+msgstr ""
+
 #: ui/shared/views/RoomListView.cpp:358 ui/shared/views/RoomListView.cpp:491
 #, c++-format
 msgid "Invitations ({0})"
@@ -6547,4 +6551,105 @@ msgstr ""
 
 #: ui/shared/views/MessageListView.cpp
 msgid "Live location ended"
+msgstr ""
+
+#: ui/shared/views/poll_logic.cpp
+msgid "Select one option"
+msgstr ""
+
+#: ui/shared/views/poll_logic.cpp
+#, c++-format
+msgid "Select up to {0} option"
+msgid_plural "Select up to {0} options"
+msgstr[0] ""
+msgstr[1] ""
+
+#: ui/shared/views/poll_logic.cpp
+msgid "Results will be shown when the poll ends"
+msgstr ""
+
+#: ui/shared/views/poll_logic.cpp
+msgid "Poll"
+msgstr ""
+
+#: ui/shared/views/poll_logic.cpp
+#, c++-format
+msgid "{0} vote"
+msgid_plural "{0} votes"
+msgstr[0] ""
+msgstr[1] ""
+
+#: ui/shared/views/poll_logic.cpp
+#, c++-format
+msgid "Poll ended · {0} vote"
+msgid_plural "Poll ended · {0} votes"
+msgstr[0] ""
+msgstr[1] ""
+
+#: ui/shared/views/MessageListView.cpp
+#, c++-format
+msgid "{0}, {1}%"
+msgstr ""
+
+#: ui/shared/views/MessageListView.cpp ui/shared/views/PollCardDisplay.cpp ui/shared/views/RoomView.cpp
+msgid "End poll"
+msgstr ""
+
+#: ui/shared/views/RoomView.cpp
+msgid "End this poll?"
+msgstr ""
+
+#: ui/shared/views/RoomView.cpp
+msgid "Voting will close and the final results will be shown to everyone."
+msgstr ""
+
+#: ui/shared/views/PollCardDisplay.cpp
+#, c++-format
+msgid "{0}% ({1})"
+msgstr ""
+
+#: ui/shared/views/CreatePollDialog.h
+#, c++-format
+msgid "Create poll in {0}"
+msgstr ""
+
+#: ui/shared/views/CreatePollDialog.cpp
+msgid "Create poll"
+msgstr ""
+
+#: ui/shared/views/CreatePollDialog.cpp
+msgid "Question"
+msgstr ""
+
+#: ui/shared/views/CreatePollDialog.cpp
+#, c++-format
+msgid "Option {0}"
+msgstr ""
+
+#: ui/shared/views/CreatePollDialog.cpp
+msgid "Add option"
+msgstr ""
+
+#: ui/shared/views/CreatePollDialog.cpp
+msgid "Remove option"
+msgstr ""
+
+#: ui/shared/views/CreatePollDialog.cpp
+msgid "Allow multiple answers"
+msgstr ""
+
+#: ui/shared/views/CreatePollDialog.cpp
+msgid "Hide results until the poll ends"
+msgstr ""
+
+#: ui/shared/views/CreatePollDialog.cpp
+msgid "Enter a question and at least two different options"
+msgstr ""
+
+#: ui/shared/app/SlashCommands.cpp
+msgid "Create a poll"
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp
+msgid "Couldn't send the poll"
 msgstr ""

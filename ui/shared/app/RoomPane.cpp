@@ -1,5 +1,6 @@
 #include "app/RoomPane.h"
 #include "app/ShellBase.h"
+#include "app/SlashCommands.h"
 #include "views/ForwardRoomPicker.h"
 #include "views/ImageViewerOverlay.h"
 #include "views/RoomMediaView.h"
@@ -964,6 +965,14 @@ void RoomPane::wire_room_view_()
     {
         toggle_reaction_(event_id, key, source_mxc);
     };
+    rv->on_poll_vote = [this](const std::string& event_id, std::vector<std::string> ids)
+    {
+        vote_poll_(event_id, std::move(ids));
+    };
+    rv->on_poll_end_requested = [this](const std::string& event_id)
+    {
+        end_poll_(event_id);
+    };
     rv->on_receipt_needed = [this](const std::string& event_id)
     {
         send_receipt_(event_id);
@@ -1498,6 +1507,16 @@ void RoomPane::wire_room_view_()
     {
         if (!pane_client_() || room_id_.empty() || thread_root_.empty())
             return;
+        // /poll has no thread form: open the create-poll dialog (the poll posts
+        // to the room's main timeline) instead of sending the literal text.
+        if (tesseract::is_slash_command_no_arg(body, "poll"))
+        {
+            shell_->open_create_poll_dialog_(room_id_, session_());
+            if (auto* ta = compose_text_area_())
+                ta->set_text("");
+            rv->set_current_text({});
+            return;
+        }
         // RoomView passes an always-empty `formatted` (it has no access to the
         // native text area's draft) — rebuild it here the same way on_send
         // does, so thread sends keep mentions and MSC2545 custom emoji.
@@ -2686,6 +2705,36 @@ void RoomPane::toggle_reaction_(const std::string& event_id,
     });
 }
 
+void RoomPane::vote_poll_(const std::string& event_id, std::vector<std::string> ids)
+{
+    if (event_id.empty() || room_id_.empty() || !pane_client_())
+    {
+        return;
+    }
+    auto sess = session_();
+    auto rid = room_id_;
+    auto eid = event_id;
+    run_async_mut_([sess, rid, eid, ids = std::move(ids)]() mutable {
+        if (!sess || !sess->client) return;
+        sess->client->send_poll_response(rid, eid, ids);
+    });
+}
+
+void RoomPane::end_poll_(const std::string& event_id)
+{
+    if (event_id.empty() || room_id_.empty() || !pane_client_())
+    {
+        return;
+    }
+    auto sess = session_();
+    auto rid = room_id_;
+    auto eid = event_id;
+    run_async_mut_([sess, rid, eid]() mutable {
+        if (!sess || !sess->client) return;
+        sess->client->end_poll(rid, eid);
+    });
+}
+
 void RoomPane::send_receipt_(const std::string& event_id)
 {
     shell_->maybe_send_read_receipt_(room_id_, event_id, session_());
@@ -3562,6 +3611,15 @@ void RoomPane::wire_slash_hooks_(views::SlashCommandController::Hooks& hooks)
     {
         shell_->show_status_message_(
             tk::trf(tk::tr("Command failed: {0}"), {std::move(error)}), 8000);
+    };
+    // Arg-less commands accepted from the popup take the same path as a typed
+    // and sent command (interception ladder + send pipeline + error report).
+    hooks.send_command = [this](const std::string& body) -> tesseract::Result
+    {
+        const auto out =
+            shell_->dispatch_room_send_(room_id_, body, std::string{}, session_());
+        return out.handled_as_command ? tesseract::Result{true, ""}
+                                      : out.send_result;
     };
     // on_selfie is intentionally left unset here: it needs a main-window-only
     // selfie-camera overlay this class has no knowledge of. on_location is

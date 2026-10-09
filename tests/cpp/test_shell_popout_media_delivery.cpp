@@ -133,7 +133,7 @@ TEST_CASE(
 
 namespace
 {
-std::shared_ptr<tesseract::AccountSession> make_session(const std::string& uid)
+std::shared_ptr<tesseract::AccountSession> make_popout_session(const std::string& uid)
 {
     auto sess = std::make_shared<tesseract::AccountSession>();
     sess->user_id = uid;
@@ -145,8 +145,8 @@ TEST_CASE("each account can have its own pop-out of the same room",
           "[shell][popout][accounts]")
 {
     PopoutMediaShell s;
-    auto alice = make_session("@alice:example.org");
-    auto bob = make_session("@bob:example.org");
+    auto alice = make_popout_session("@alice:example.org");
+    auto bob = make_popout_session("@bob:example.org");
     const std::string room = "!shared:example.org";
     const auto grp = s.media_group_for_room_(room);
 

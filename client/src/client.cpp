@@ -1221,6 +1221,30 @@ Result Client::send_location(const std::string& room_id, double lat, double lon,
     return from_ffi(impl_->ffi->send_location(room_id, lat, lon, body));
 }
 
+Result Client::send_poll(const std::string& room_id, const std::string& question,
+                         const std::vector<std::string>& answers,
+                         std::uint32_t max_selections, bool disclosed)
+{
+    SH_FFI;
+    return from_ffi(impl_->ffi->send_poll(room_id, question, to_rust_strings(answers),
+                                          max_selections, disclosed));
+}
+
+Result Client::send_poll_response(const std::string& room_id,
+                                  const std::string& poll_event_id,
+                                  const std::vector<std::string>& answer_ids)
+{
+    SH_FFI;
+    return from_ffi(impl_->ffi->send_poll_response(room_id, poll_event_id,
+                                                   to_rust_strings(answer_ids)));
+}
+
+Result Client::end_poll(const std::string& room_id, const std::string& poll_event_id)
+{
+    SH_FFI;
+    return from_ffi(impl_->ffi->end_poll(room_id, poll_event_id));
+}
+
 Result Client::send_edit(const std::string& room_id,
                          const std::string& event_id,
                          const std::string& new_body,

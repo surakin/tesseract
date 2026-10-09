@@ -496,6 +496,33 @@ void RoomView::wire_message_list_callbacks_(MessageListView* ml)
     {
         if (on_reaction_toggled) on_reaction_toggled(event_id, key, source_mxc);
     };
+    ml->on_poll_vote = [this](const std::string& event_id,
+                              std::vector<std::string> answer_ids)
+    {
+        if (on_poll_vote) on_poll_vote(event_id, std::move(answer_ids));
+    };
+    ml->on_poll_end_requested = [this](const std::string& event_id)
+    {
+        // Ending a poll is irreversible: confirm first (fires directly when
+        // no confirm provider is wired, like the other confirm helpers).
+        auto fire = [this, event_id]()
+        {
+            if (on_poll_end_requested) on_poll_end_requested(event_id);
+        };
+        if (!confirm_provider_)
+        {
+            fire();
+            return;
+        }
+        ConfirmDialog::Options opts;
+        opts.title         = tk::tr("End this poll?");
+        opts.body          = tk::tr("Voting will close and the final results will "
+                                    "be shown to everyone.");
+        opts.confirm_label = tk::tr("End poll");
+        opts.cancel_label  = tk::tr("Cancel");
+        opts.destructive   = false;
+        confirm_provider_(std::move(opts), std::move(fire));
+    };
     ml->on_add_reaction_requested =
         [this](const std::string& event_id, tk::Rect anchor)
     {
@@ -2145,6 +2172,12 @@ void RoomView::set_thread_panel(ThreadPanelState state,
             {
                 if (on_thread_receipt_needed) on_thread_receipt_needed(event_id);
             };
+            // Polls are read-only inside the thread panel for now:
+            // wire_message_list_callbacks_ set the vote/end callbacks, and an
+            // unset callback is what makes a poll card inert (no hit rects,
+            // hover cursor or a11y actions).
+            ml->on_poll_vote = nullptr;
+            ml->on_poll_end_requested = nullptr;
         }
         thread_view_->on_close = [this]
         {

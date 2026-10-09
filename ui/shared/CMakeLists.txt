@@ -179,6 +179,12 @@ set(_tk_sources
     views/TimelineMediaController.cpp
     views/UrlPreviewCardDisplay.h
     views/UrlPreviewCardDisplay.cpp
+    views/poll_logic.h
+    views/poll_logic.cpp
+    views/PollCardDisplay.h
+    views/PollCardDisplay.cpp
+    views/CreatePollDialog.h
+    views/CreatePollDialog.cpp
     views/TimelineVideoPlaylist.h
     views/TimelineVideoPlaylist.cpp
     views/LocationMapPanner.h

@@ -21,6 +21,7 @@
 #include "views/EncryptionSetupOverlay.h"
 #include "views/JoinRoomView.h"
 #include "views/ConfirmDialog.h"
+#include "views/CreatePollDialog.h"
 #include "views/MainAppWidget.h"
 #include "views/VideoViewerOverlay.h"
 #include "views/RoomListView.h"
@@ -848,6 +849,35 @@ void ShellBase::invite_users_(
     }
 }
 
+void ShellBase::open_create_poll_dialog_(const std::string& room_id,
+                                         const std::shared_ptr<AccountSession>& on_behalf_of)
+{
+    auto* dlg = main_app_ ? main_app_->create_poll_dialog() : nullptr;
+    const auto acting = acting_session_(on_behalf_of);
+    if (!dlg || !acting || !acting->client)
+        return;
+    // Bound here at open time, not at shell construction, so every shell gets
+    // the wiring from this one call site.
+    // The poll may target a room other than the one the main window shows
+    // (pop-out / thread composer), so name it in the dialog title.
+    std::string room_name = room_id;
+    if (const auto* r = room_by_id_(room_id); r && !r->name.empty())
+        room_name = r->name;
+    dlg->open([this, room_id, acting](views::PollDraft d) {
+        run_async_mut_([this, acting, room_id, d = std::move(d)]() {
+            if (!acting->client)
+                return;
+            const auto r = acting->client->send_poll(
+                room_id, d.question, d.options, views::poll_draft_max_selections(d),
+                !d.hide_results);
+            if (!r.ok && r.message != "cancelled")
+                post_to_ui_alive_([this]() {
+                    show_status_message_(tk::tr("Couldn't send the poll"), 6000);
+                });
+        });
+    }, std::move(room_name));
+}
+
 ShellBase::RoomSendOutcome ShellBase::dispatch_room_send_(
     const std::string& room_id, const std::string& body,
     const std::string& formatted_body,
@@ -869,6 +899,12 @@ ShellBase::RoomSendOutcome ShellBase::dispatch_room_send_(
     if (tesseract::is_slash_command_no_arg(body, "myroomavatar"))
     {
         pick_and_set_room_avatar_(room_id, acting);
+        out.handled_as_command = true;
+        return out;
+    }
+    if (tesseract::is_slash_command_no_arg(body, "poll"))
+    {
+        open_create_poll_dialog_(room_id, acting);
         out.handled_as_command = true;
         return out;
     }

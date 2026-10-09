@@ -344,6 +344,16 @@ pub mod ffi {
         senders: Vec<String>,
     }
 
+    /// One answer of a poll (MSC3381) as the UI shows it.
+    struct PollAnswerFfi {
+        id: String,
+        text: String,
+        /// Votes for this answer; always 0 while an undisclosed poll is open.
+        votes: u32,
+        /// The current user's latest valid vote includes this answer.
+        mine: bool,
+    }
+
     /// One MSC4095 bundled URL preview carried inline on a `TimelineEvent`
     /// (`com.beeper.linkpreviews` / `m.url_previews`). The sender generated
     /// this preview; the client renders it without contacting the homeserver's
@@ -615,6 +625,11 @@ pub mod ffi {
         location_live_expires_ms: u64,
         location_updated_ms: u64,
         location_awaiting_fix: bool,
+        poll_answers: Vec<PollAnswerFfi>,
+        poll_max_selections: u32,
+        poll_ended: bool,
+        poll_results_visible: bool,
+        poll_total_votes: u32,
         // ----- MSC3440 threads -----
         /// Event ID of the thread root when this event is an in-thread reply
         /// (`content().thread_root()`); empty otherwise.
@@ -2663,6 +2678,33 @@ pub mod ffi {
             lon: f64,
             body: &str,
         ) -> OpResult;
+
+        /// Start an MSC3381 poll (unstable event type) in `room_id`. `answers`
+        /// must hold 2-20 non-empty strings; `max_selections` is clamped to
+        /// 1..=answers.len(). `disclosed == false` hides results until the
+        /// poll ends (enforced by clients).
+        fn send_poll(
+            self: &ClientFfi,
+            room_id: &str,
+            question: &str,
+            answers: &Vec<String>,
+            max_selections: u32,
+            disclosed: bool,
+        ) -> OpResult;
+
+        /// Cast or replace the current user's vote. `answer_ids` is the full
+        /// selection (empty clears the vote). Routed to whichever subscribed
+        /// timeline (room or thread) holds the poll.
+        fn send_poll_response(
+            self: &ClientFfi,
+            room_id: &str,
+            poll_event_id: &str,
+            answer_ids: &Vec<String>,
+        ) -> OpResult;
+
+        /// Close a poll. The caller is responsible for checking the user is
+        /// the creator or has redaction power.
+        fn end_poll(self: &ClientFfi, room_id: &str, poll_event_id: &str) -> OpResult;
 
         /// Send an image to `room_id`. `bytes` are the already-encoded image
         /// payload (PNG/JPEG/etc. as identified by `mime_type`); the SDK

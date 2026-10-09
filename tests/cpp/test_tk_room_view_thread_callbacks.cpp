@@ -69,6 +69,26 @@ TEST_CASE("Opening the thread panel wires reply/edit/delete on its message list"
     CHECK(static_cast<bool>(ml->on_sender_clicked));
 }
 
+TEST_CASE("Thread panel poll cards are read-only; the main timeline's are not",
+          "[tk][view][room][thread][poll]")
+{
+    TkRoomViewThreadCallbacksStage st;
+    auto view_owner = tk::create_root_widget<RoomView>(nullptr);
+    RoomView& view = *view_owner;
+    open_room_and_thread(view);
+    st.run(view, {0, 0, 800, 600});
+
+    auto* tml = view.thread_view()->message_list();
+    REQUIRE(tml != nullptr);
+    CHECK_FALSE(static_cast<bool>(tml->on_poll_vote));
+    CHECK_FALSE(static_cast<bool>(tml->on_poll_end_requested));
+
+    auto* mml = view.message_list();
+    REQUIRE(mml != nullptr);
+    CHECK(static_cast<bool>(mml->on_poll_vote));
+    CHECK(static_cast<bool>(mml->on_poll_end_requested));
+}
+
 TEST_CASE("Thread message-list more-button fires RoomView::on_delete_requested",
           "[tk][view][room][thread]")
 {

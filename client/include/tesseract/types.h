@@ -33,6 +33,7 @@ enum class EventType
     Membership, // m.room.member state-event row (join/leave/kick/ban/invite/knock/…)
     RoomName, // m.room.name state-event timeline row
     RoomTombstone, // m.room.tombstone: this room was upgraded to another
+    Poll, // MSC3381 poll start (appended: enum ints are pinned by tests)
 };
 
 /// One `m.room.member` membership transition, computed server-side by
@@ -423,6 +424,32 @@ struct LocationEvent : public Event
     LocationEvent()
     {
         type = EventType::Location;
+    }
+};
+
+/// One option of a poll with its current tally.
+struct PollAnswer
+{
+    std::string id;
+    std::string text;
+    std::uint32_t votes = 0;
+    bool mine = false;
+};
+
+/// An MSC3381 poll start with live results. `body` carries the question;
+/// vote counts are zeroed while an undisclosed poll is open
+/// (`results_visible == false`), but `mine` is always accurate.
+struct PollEvent : public Event
+{
+    std::vector<PollAnswer> answers;
+    std::uint32_t max_selections = 1;
+    bool ended = false;
+    bool results_visible = false;
+    std::uint32_t total_votes = 0;
+
+    PollEvent()
+    {
+        type = EventType::Poll;
     }
 };
 

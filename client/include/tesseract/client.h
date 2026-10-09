@@ -960,6 +960,23 @@ public:
     Result send_location(const std::string& room_id, double lat, double lon,
                         const std::string& body);
 
+    /// Send an MSC3381 poll start (`question`, `answers`, up to
+    /// `max_selections` choices; `disclosed` = results visible before the
+    /// poll ends). Blocks like `send_reaction`; call from a worker thread.
+    Result send_poll(const std::string& room_id, const std::string& question,
+                     const std::vector<std::string>& answers,
+                     std::uint32_t max_selections, bool disclosed);
+
+    /// Cast (or replace) our vote on `poll_event_id` with `answer_ids`.
+    /// Blocks like `send_reaction`; call from a worker thread.
+    Result send_poll_response(const std::string& room_id,
+                              const std::string& poll_event_id,
+                              const std::vector<std::string>& answer_ids);
+
+    /// End the poll `poll_event_id` (sends the poll end event). Blocks like
+    /// `send_reaction`; call from a worker thread.
+    Result end_poll(const std::string& room_id, const std::string& poll_event_id);
+
     /// Request async resolution of the replied-to event whose ID is
     /// `event_id` in `room_id`. `thread_root` empty resolves against the
     /// main timeline (requires `subscribe_room`); non-empty resolves against

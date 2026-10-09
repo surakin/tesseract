@@ -916,8 +916,8 @@ async fn apply_thread_chips(
                 | MsgLikeKind::Redacted
                 | MsgLikeKind::Sticker(_) => true,
                 // Thread replies are excluded from the Room channel.
-                MsgLikeKind::Message(_) => thread_root.is_none(),
-                // Reactions, polls, and other kinds are filtered out.
+                MsgLikeKind::Message(_) | MsgLikeKind::Poll(_) => thread_root.is_none(),
+                // Reactions and other kinds are filtered out.
                 _ => false,
             },
             _ => false,

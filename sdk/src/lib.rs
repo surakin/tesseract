@@ -173,6 +173,14 @@ pub mod ffi {
     }
 
     #[derive(Debug, PartialEq, Default, Clone)]
+    pub struct PollAnswerFfi {
+        pub id: String,
+        pub text: String,
+        pub votes: u32,
+        pub mine: bool,
+    }
+
+    #[derive(Debug, PartialEq, Default, Clone)]
     pub struct UrlPreviewFfi {
         pub matched_url: String,
         pub title: String,
@@ -282,6 +290,11 @@ pub mod ffi {
         pub location_live_expires_ms: u64,
         pub location_updated_ms: u64,
         pub location_awaiting_fix: bool,
+        pub poll_answers: Vec<PollAnswerFfi>,
+        pub poll_max_selections: u32,
+        pub poll_ended: bool,
+        pub poll_results_visible: bool,
+        pub poll_total_votes: u32,
         pub thread_root_id: String,
         pub is_thread_root: bool,
         pub thread_reply_count: u64,

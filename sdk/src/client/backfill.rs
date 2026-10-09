@@ -978,6 +978,14 @@ pub(super) fn preview_from_timeline_content(content: &TimelineItemContent) -> La
             kind: "sticker".to_owned(),
             ..Default::default()
         },
+        TimelineItemContent::MsgLike(MsgLikeContent {
+            kind: MsgLikeKind::Poll(state),
+            ..
+        }) => LatestPreview {
+            kind: "poll".to_owned(),
+            text: state.results().question,
+            ..Default::default()
+        },
         _ => LatestPreview::default(),
     }
 }

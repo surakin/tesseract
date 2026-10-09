@@ -3,6 +3,9 @@
 #include "app/ShellBase.h"
 #include "shell_test_double.h"
 
+#include "views/MainAppWidget.h"
+
+#include <tesseract/account_session.h>
 #include <tesseract/client.h>
 
 #include <functional>
@@ -54,7 +57,9 @@ struct SendShell : tesseract::test::TestShellBase
     }
     std::vector<std::string> status_messages;
 
+    using ShellBase::active_account_;
     using ShellBase::client_;
+    using ShellBase::main_app_;
     using ShellBase::dispatch_room_send_;
     using ShellBase::report_unsent_message_;
     using ShellBase::pending_room_actions_;
@@ -136,4 +141,37 @@ TEST_CASE("report_unsent_message_ surfaces a failed send and ignores success "
                              tesseract::Result{false, "boom"});
     REQUIRE_FALSE(s.status_messages.empty());
     CHECK(s.status_messages.front() == "Message not sent: boom");
+}
+
+TEST_CASE("dispatch_room_send_ routes /poll to the create-poll dialog",
+          "[shell][dispatch_room_send][poll]")
+{
+    // Declared first so it outlives the shell's queued work.
+    auto app = tk::create_root_widget<tesseract::views::MainAppWidget>(nullptr);
+    SendShell s;
+    auto sess = std::make_shared<tesseract::AccountSession>();
+    sess->user_id = "@a:x";
+    sess->client  = std::make_unique<tesseract::Client>();
+    s.active_account_ = sess;
+    s.client_         = sess->client.get();
+    s.main_app_       = app.get();
+
+    REQUIRE(app->create_poll_dialog());
+    CHECK_FALSE(app->create_poll_dialog()->is_open());
+    auto out = s.dispatch_room_send_("!r:x", "/poll", "");
+    CHECK(out.handled_as_command);
+    CHECK(app->create_poll_dialog()->is_open());
+    CHECK(s.pending_room_actions_.empty());
+    s.main_app_ = nullptr;
+}
+
+TEST_CASE("dispatch_room_send_ /poll without a main app is a safe no-op",
+          "[shell][dispatch_room_send][poll]")
+{
+    tesseract::Client client;
+    SendShell s;
+    s.client_ = &client;
+    auto out = s.dispatch_room_send_("!r:x", "/poll", "");
+    CHECK(out.handled_as_command);
+    CHECK(s.pending_room_actions_.empty());
 }

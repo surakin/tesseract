@@ -29,6 +29,7 @@
 
 #include "ConfirmDialog.h"
 #include "KeyboardShortcutsOverlay.h"
+#include "CreatePollDialog.h"
 #include "ExportHistoryDialog.h"
 #include "CameraWidget.h"
 #include "EncryptionSetupOverlay.h"
@@ -304,6 +305,10 @@ public:
     {
         return confirm_dialog_;
     }
+    CreatePollDialog* create_poll_dialog() const
+    {
+        return create_poll_dialog_;
+    }
     ExportHistoryDialog* export_history_dialog() const
     {
         return export_history_dialog_;
@@ -461,6 +466,9 @@ private:
     // dismissing it never cancels an in-progress export — see
     // ExportHistoryDialog.h's class doc.
     ExportHistoryDialog* export_history_dialog_ = nullptr;
+
+    // "Create poll" form (/poll). Same open()/close()-gated overlay treatment.
+    CreatePollDialog* create_poll_dialog_ = nullptr;
 
     // Read-only keyboard shortcuts list (Ctrl+/ / F1).
     KeyboardShortcutsOverlay* shortcuts_overlay_ = nullptr;

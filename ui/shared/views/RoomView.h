@@ -526,6 +526,11 @@ public:
     std::function<void(std::string event_id, std::string key,
                        std::string source_mxc)>
         on_reaction_toggled;
+    // MSC3381 polls. on_poll_vote carries the full new selection of answer
+    // ids; on_poll_end_requested fires only after the user confirmed.
+    std::function<void(std::string event_id, std::vector<std::string> answer_ids)>
+        on_poll_vote;
+    std::function<void(std::string event_id)> on_poll_end_requested;
     std::function<void(std::string url)> on_link_clicked;
     std::function<void(std::string url)> on_link_hovered;
     std::function<void(std::string event_id)> on_receipt_needed;

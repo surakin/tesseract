@@ -476,6 +476,8 @@ public:
     void delete_event_(const std::string& event_id);
     void toggle_reaction_(const std::string& event_id, const std::string& key,
                           const std::string& source_mxc);
+    void vote_poll_(const std::string& event_id, std::vector<std::string> ids);
+    void end_poll_(const std::string& event_id);
     void send_receipt_(const std::string& event_id);
     // Read the room's m.fully_read event id off the UI thread and hand it to
     // the timeline's unread pill.

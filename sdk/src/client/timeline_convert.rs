@@ -141,6 +141,11 @@ pub(super) fn ffi_event_defaults() -> TimelineEvent {
         location_live_expires_ms: 0,
         location_updated_ms: 0,
         location_awaiting_fix: false,
+        poll_answers: Vec::new(),
+        poll_max_selections: 0,
+        poll_ended: false,
+        poll_results_visible: false,
+        poll_total_votes: 0,
         thread_root_id: String::new(),
         is_thread_root: false,
         thread_reply_count: 0,
@@ -500,6 +505,48 @@ pub(crate) fn live_location_fields(
     }
 }
 
+/// MSC3381: anything that is not explicitly "disclosed" (including unknown
+/// custom kinds) is treated as undisclosed.
+pub(crate) fn poll_is_disclosed(kind: &matrix_sdk::ruma::events::poll::start::PollKind) -> bool {
+    matches!(kind, matrix_sdk::ruma::events::poll::start::PollKind::Disclosed)
+}
+
+pub(crate) struct PollFields {
+    pub answers: Vec<crate::ffi::PollAnswerFfi>,
+    pub total_votes: u32,
+    pub results_visible: bool,
+}
+
+/// Map a poll's answers + voter lists to the FFI shape. Counts are withheld
+/// (zeroed) while an undisclosed poll is open — MSC3381 leaves enforcing that
+/// to clients, and doing it here means the UI never holds the counts. The
+/// user's own selection is always reported.
+pub(crate) fn poll_fields(
+    answers: &[(String, String, Vec<String>)],
+    disclosed: bool,
+    ended: bool,
+    me: &str,
+) -> PollFields {
+    let results_visible = disclosed || ended;
+    let mut total_votes = 0u32;
+    let answers = answers
+        .iter()
+        .map(|(id, text, voters)| {
+            let n = u32::try_from(voters.len()).unwrap_or(u32::MAX);
+            if results_visible {
+                total_votes = total_votes.saturating_add(n);
+            }
+            crate::ffi::PollAnswerFfi {
+                id: id.clone(),
+                text: text.clone(),
+                votes: if results_visible { n } else { 0 },
+                mine: voters.iter().any(|v| v == me),
+            }
+        })
+        .collect();
+    PollFields { answers, total_votes, results_visible }
+}
+
 /// Compute the human-readable action for a m.room.pinned_events state-event
 /// change. `new_pinned` and `old_pinned` are the new and previous event-ID
 /// lists respectively (as any `AsRef<str>` slice — `&[&str]` or
@@ -634,6 +681,10 @@ pub(crate) fn msglike_snippet(content: &TimelineItemContent) -> String {
             kind: MsgLikeKind::Sticker(_),
             ..
         }) => "(sticker)".to_owned(),
+        TimelineItemContent::MsgLike(MsgLikeContent {
+            kind: MsgLikeKind::Poll(_),
+            ..
+        }) => "(poll)".to_owned(),
         TimelineItemContent::MsgLike(MsgLikeContent {
             kind: MsgLikeKind::Redacted,
             ..
@@ -1199,6 +1250,110 @@ pub(super) async fn timeline_item_to_ffi(
             thread_latest_sender_name,
             thread_latest_body,
             thread_latest_ts,
+            ..ffi_event_defaults()
+        });
+    }
+
+    // MSC3381 poll. matrix-sdk-ui aggregates responses/ends into PollState and
+    // updates this one item in place (VectorDiff::Set) as votes arrive.
+    if let TimelineItemContent::MsgLike(MsgLikeContent {
+        kind: MsgLikeKind::Poll(state),
+        ..
+    }) = event_item.content()
+    {
+        let r = state.results();
+        // Anything that is not explicitly "disclosed" is treated as
+        // undisclosed (MSC3381: unknown kinds fall back to undisclosed).
+        let disclosed = poll_is_disclosed(&r.kind);
+        let ended = r.end_time.is_some();
+        let answers: Vec<(String, String, Vec<String>)> = r
+            .answers
+            .iter()
+            .map(|a| {
+                (
+                    a.id.clone(),
+                    a.text.clone(),
+                    r.votes.get(&a.id).cloned().unwrap_or_default(),
+                )
+            })
+            .collect();
+        let f = poll_fields(&answers, disclosed, ended, me.map_or("", |u| u.as_str()));
+        let SenderProfileFfi {
+            sender_name,
+            sender_avatar_url,
+            sender_status_emoji,
+            sender_status_text,
+        } = sender_profile_ffi(event_item.sender_profile());
+        let reactions = collect_reactions(event_item, room, me).await;
+        let read_receipts = collect_read_receipts(event_item, room, me).await;
+        let (
+            in_reply_to_id,
+            in_reply_to_sender_name,
+            in_reply_to_body,
+            in_reply_to_formatted_body,
+            in_reply_to_image_url,
+            in_reply_to_image_encrypted_json,
+        ) = extract_in_reply_to(event_item);
+        let thread_root_id = event_item
+            .content()
+            .thread_root()
+            .map(|id| id.to_string())
+            .unwrap_or_default();
+        let (
+            is_thread_root,
+            thread_reply_count,
+            thread_latest_sender_name,
+            thread_latest_body,
+            thread_latest_ts,
+        ) = match event_item.content().thread_summary() {
+            None => (false, 0u64, String::new(), String::new(), 0u64),
+            Some(summary) => {
+                let count = summary.num_replies as u64;
+                let (name, body, _formatted, ts) = match &summary.latest_event {
+                    TimelineDetails::Ready(embedded) => embedded_event_preview(embedded),
+                    _ => (String::new(), String::new(), String::new(), 0u64),
+                };
+                (true, count, name, body, ts)
+            }
+        };
+        return Some(TimelineEvent {
+            event_id: event_item
+                .event_id()
+                .map(|id| id.to_string())
+                .unwrap_or_default(),
+            room_id: room_id.to_owned(),
+            sender: event_item.sender().to_string(),
+            sender_name,
+            sender_avatar_url,
+            sender_status_emoji,
+            sender_status_text,
+            body: r.question.clone(),
+            timestamp: event_item.timestamp().get().into(),
+            msg_type: "m.poll".to_owned(),
+            is_edited: r.has_been_edited,
+            reactions,
+            read_receipts,
+            in_reply_to_id,
+            in_reply_to_sender_name,
+            in_reply_to_body,
+            in_reply_to_formatted_body,
+            in_reply_to_image_url,
+            in_reply_to_image_encrypted_json,
+            pending_state: pending_state.clone(),
+            pending_error: pending_error.clone(),
+            pending_recoverable,
+            pending_txn_id: pending_txn_id.clone(),
+            thread_root_id,
+            is_thread_root,
+            thread_reply_count,
+            thread_latest_sender_name,
+            thread_latest_body,
+            thread_latest_ts,
+            poll_answers: f.answers,
+            poll_max_selections: u32::try_from(r.max_selections).unwrap_or(u32::MAX).max(1),
+            poll_ended: ended,
+            poll_results_visible: f.results_visible,
+            poll_total_votes: f.total_votes,
             ..ffi_event_defaults()
         });
     }
@@ -2161,5 +2316,71 @@ mod live_location_tests {
     fn expiry_saturates() {
         let f = live_location_fields(None, 0, true, u64::MAX - 1, u64::MAX);
         assert_eq!(f.expires_ms, u64::MAX);
+    }
+}
+
+#[cfg(test)]
+mod poll_fields_tests {
+    use super::*;
+    use matrix_sdk::ruma::events::poll::start::PollKind;
+
+    #[test]
+    fn poll_kind_disclosed_mapping() {
+        assert!(poll_is_disclosed(&PollKind::Disclosed));
+        assert!(!poll_is_disclosed(&PollKind::Undisclosed));
+        let custom: PollKind = serde_json::from_str("\"org.example.weird\"").unwrap();
+        assert!(!poll_is_disclosed(&custom));
+    }
+
+    fn answers() -> Vec<(String, String, Vec<String>)> {
+        vec![
+            ("a".into(), "Alpha".into(), vec!["@me:x".into(), "@bob:x".into()]),
+            ("b".into(), "Beta".into(), vec!["@carol:x".into()]),
+            ("c".into(), "Gamma".into(), vec![]),
+        ]
+    }
+
+    #[test]
+    fn disclosed_open_poll_shows_counts_and_my_vote() {
+        let f = poll_fields(&answers(), true, false, "@me:x");
+        assert!(f.results_visible);
+        assert_eq!(f.total_votes, 3);
+        assert_eq!(f.answers[0].votes, 2);
+        assert!(f.answers[0].mine);
+        assert!(!f.answers[1].mine);
+        assert_eq!(f.answers[2].votes, 0);
+    }
+
+    #[test]
+    fn undisclosed_open_poll_hides_counts_but_keeps_my_vote() {
+        let f = poll_fields(&answers(), false, false, "@me:x");
+        assert!(!f.results_visible);
+        assert_eq!(f.total_votes, 0);
+        assert!(f.answers.iter().all(|a| a.votes == 0));
+        assert!(f.answers[0].mine, "own selection must still show");
+    }
+
+    #[test]
+    fn ended_poll_reveals_counts_even_if_undisclosed() {
+        let f = poll_fields(&answers(), false, true, "@me:x");
+        assert!(f.results_visible);
+        assert_eq!(f.total_votes, 3);
+        assert_eq!(f.answers[0].votes, 2);
+    }
+
+    #[test]
+    fn order_ids_and_text_are_preserved() {
+        let f = poll_fields(&answers(), true, false, "@nobody:x");
+        let ids: Vec<&str> = f.answers.iter().map(|a| a.id.as_str()).collect();
+        assert_eq!(ids, ["a", "b", "c"]);
+        assert_eq!(f.answers[1].text, "Beta");
+        assert!(f.answers.iter().all(|a| !a.mine));
+    }
+
+    #[test]
+    fn empty_answer_list_is_fine() {
+        let f = poll_fields(&[], true, false, "@me:x");
+        assert!(f.answers.is_empty());
+        assert_eq!(f.total_votes, 0);
     }
 }

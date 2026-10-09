@@ -198,6 +198,7 @@ const std::vector<SlashCommandDescriptor>& available_commands()
         {"gif",          "<search>",          tk::tr("Search for a GIF to send")},
         {"selfie",       "",                  tk::tr("Take a selfie and attach it")},
         {"location",     "",                  tk::tr("Share your current location")},
+        {"poll",         "",                  tk::tr("Create a poll")},
     };
     return kCommands;
 }

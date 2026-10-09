@@ -1,4 +1,5 @@
 #include "MessageListView.h"
+#include "views/poll_logic.h"
 #include "format.h"
 #include "html_spans.h"
 #include "IrcFormat.h"
@@ -624,6 +625,18 @@ MessageRowData make_row_data(const tesseract::Event& ev,
         row.location_awaiting_fix = loc.awaiting_fix;
         row.location_live_expires_ms = loc.live_expires_ms;
         row.location_updated_ms = loc.updated_ms;
+        break;
+    }
+    case tesseract::EventType::Poll:
+    {
+        const auto& p = static_cast<const tesseract::PollEvent&>(ev);
+        row.kind = Kind::Poll;
+        row.poll_max_selections = std::max<std::uint32_t>(1, p.max_selections);
+        row.poll_ended = p.ended;
+        row.poll_results_visible = p.results_visible;
+        row.poll_total_votes = p.total_votes;
+        for (const auto& a : p.answers)
+            row.poll_answers.push_back({a.id, a.text, a.votes, a.mine});
         break;
     }
     case tesseract::EventType::Redacted:
@@ -1524,6 +1537,8 @@ std::string message_access_body(const MessageRowData& m)
         if (m.location_live_share)
             return live_location_status_text(m, live_now_ms());
         return tk::tr("Location");
+    case Kind::Poll:
+        return m.body.empty() ? tk::tr("Poll") : m.body;
     default:
         break;
     }
@@ -3122,6 +3137,9 @@ public:
         case Kind::Location:
             nat = std::min(w, 320.0f);
             break;
+        case Kind::Poll:
+            nat = owner_.polls_.width(w);
+            break;
         default:
             nat = w;
             break;
@@ -3790,6 +3808,67 @@ public:
             out.push_back(std::move(group));
         }
 
+        // ── Poll options ───────────────────────────────────────────────
+        if (m.kind == Kind::Poll && !m.poll_answers.empty())
+        {
+            // Always exposed (read-only polls too) so screen readers get the
+            // options and results; activation is attached only when interactive.
+            const bool interactive =
+                poll_card_interactive(m, static_cast<bool>(v->on_poll_vote));
+            tk::AccessNode group;
+            group.role = tk::Role::Group;
+            group.name = m.body.empty() ? tk::tr("Poll") : m.body;
+            group.description = poll_status_text(m);
+            group.subtree_id = "poll";
+            std::vector<std::string> mine;
+            for (const auto& a : m.poll_answers)
+                if (a.mine)
+                    mine.push_back(a.id);
+            std::size_t idx = 0;
+            for (const auto& a : m.poll_answers)
+            {
+                tk::AccessNode opt;
+                opt.role = m.poll_max_selections > 1 ? tk::Role::CheckBox
+                                                     : tk::Role::RadioButton;
+                // Index (not answer id) keeps foreign polls with duplicate ids distinct.
+                opt.subtree_id = "poll:" + std::to_string(idx++) + ":" + a.id;
+                opt.state.checked = a.mine;
+                opt.name = m.poll_results_visible
+                               ? tk::trf(tk::tr("{0}, {1}%"),
+                                         {a.text, std::to_string(poll_percent(
+                                                      a.votes, m.poll_total_votes))})
+                               : a.text;
+                if (interactive)
+                {
+                    const std::string aid = a.id;
+                    const auto max = m.poll_max_selections;
+                    opt.activate = [v, ev, mine, aid, max]
+                    {
+                        auto next = next_poll_selection(mine, aid, max);
+                        if (!next || !v->on_poll_vote)
+                            return false;
+                        v->on_poll_vote(ev, std::move(*next));
+                        return true;
+                    };
+                }
+                group.children.push_back(std::move(opt));
+            }
+            if (interactive && owner_.poll_end_shown_(m))
+            {
+                tk::AccessNode end = action_node_(tk::tr("End poll"),
+                                                  [v, ev]
+                                                  {
+                                                      if (!v->on_poll_end_requested)
+                                                          return false;
+                                                      v->on_poll_end_requested(ev);
+                                                      return true;
+                                                  });
+                end.subtree_id = "poll:end";
+                group.children.push_back(std::move(end));
+            }
+            out.push_back(std::move(group));
+        }
+
         // ── Hover-action pill — same gating as paint_hover_action_pill_ ──
         tk::AccessNode actions;
         actions.role = tk::Role::Group;
@@ -3845,8 +3924,10 @@ public:
             const bool can_pin    = owner_.can_pin_;
             const bool is_pinned =
                 owner_.pinned_event_ids_.count(m.event_id) != 0;
-            const bool can_forward = m.pending_state ==
-                                     MessageRowData::PendingState::None;
+            // A poll can't be forwarded (it would re-send as an unrelated poll).
+            const bool can_forward = m.kind != Kind::Poll &&
+                                     m.pending_state ==
+                                         MessageRowData::PendingState::None;
             actions.children.push_back(action_node_(
                 tk::tr("More options"),
                 [v, ev, can_delete, can_pin, is_pinned, can_forward]
@@ -4858,6 +4939,9 @@ private:
             }
             return quote_h + kMapRowH + desc_h;
         }
+        case MessageRowData::Kind::Poll:
+            return quote_h + owner_.polls_.height(m, ctx.factory, col_w,
+                                                  owner_.poll_end_shown_(m));
         // Virtual items are handled before this function is called.
         case MessageRowData::Kind::DaySeparator:
         case MessageRowData::Kind::ReadMarker:
@@ -5274,6 +5358,10 @@ private:
             }
             return waiting ? bottom : (live_status.empty() ? y + kMapRowH : bottom);
         }
+        case MessageRowData::Kind::Poll:
+            return owner_.polls_.paint(m, ctx, x, y, col_w,
+                                       owner_.poll_interactive_(m),
+                                       owner_.poll_end_shown_(m));
         // Virtual items are handled before this function is called.
         case MessageRowData::Kind::DaySeparator:
         case MessageRowData::Kind::ReadMarker:
@@ -8269,6 +8357,41 @@ void MessageListView::set_can_pin(bool can_pin)
     }
 }
 
+bool MessageListView::poll_interactive_(const MessageRowData& m) const
+{
+    return poll_card_interactive(m, static_cast<bool>(on_poll_vote));
+}
+
+bool MessageListView::poll_end_shown_(const MessageRowData& m) const
+{
+    return poll_interactive_(m) && poll_show_end_button(m, can_redact_others_) &&
+           static_cast<bool>(on_poll_end_requested);
+}
+
+void MessageListView::fire_poll_hit_(const PollCardDisplay::Hit& hit)
+{
+    if (hit.type == PollCardDisplay::Hit::Type::EndButton)
+    {
+        if (on_poll_end_requested)
+            on_poll_end_requested(hit.event_id);
+        return;
+    }
+    if (!on_poll_vote)
+        return;
+    for (const auto& m : messages_)
+    {
+        if (m.event_id != hit.event_id || m.kind != MessageRowData::Kind::Poll)
+            continue;
+        std::vector<std::string> mine;
+        for (const auto& a : m.poll_answers)
+            if (a.mine)
+                mine.push_back(a.id);
+        if (auto next = next_poll_selection(mine, hit.answer_id, m.poll_max_selections))
+            on_poll_vote(hit.event_id, std::move(*next));
+        return;
+    }
+}
+
 void MessageListView::set_can_redact_others(bool can_redact_others)
 {
     if (can_redact_others_ == can_redact_others)
@@ -9156,6 +9279,9 @@ bool MessageListView::on_pointer_move(tk::Point local)
                 }
             }
         }
+        // Poll answer / End poll hover: same pointing-hand treatment.
+        if (new_link_url.empty() && polls_.hit_test(world))
+            new_link_url = "poll://";
         // Quote block hover: clicking jumps to the original message, so show
         // the pointing-hand cursor the same way file and preview cards do.
         if (new_link_url.empty())
@@ -9739,6 +9865,7 @@ void MessageListView::clear_hit_geometry_()
     map_panner_.clear_geometry();
     quote_block_geom_.clear();
     previews_.clear_geometry();
+    polls_.clear_geometry();
     chip_hit_rects_.clear();
 }
 
@@ -10247,6 +10374,7 @@ bool MessageListView::on_pointer_down(tk::Point local)
                                           pinned_event_ids_.end();
                 press_more_can_forward_ =
                     m.kind != MessageRowData::Kind::Redacted &&
+                    m.kind != MessageRowData::Kind::Poll &&
                     m.pending_state == MessageRowData::PendingState::None;
                 return true;
             }
@@ -10291,6 +10419,17 @@ bool MessageListView::on_pointer_down(tk::Point local)
                 press_quote_event_id_ = eid;
                 return true;
             }
+        }
+    }
+
+    // Poll card hit-test (geometry only exists for interactive cards).
+    {
+        tk::Point world{local.x + bounds().x, local.y + bounds().y};
+        if (const auto* hit = polls_.hit_test(world))
+        {
+            press_poll_ = true;
+            press_poll_hit_ = *hit;
+            return true;
         }
     }
 
@@ -10971,6 +11110,22 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
         press_link_url_.clear();
         if (inside_self)
             open_link_(url);
+        return;
+    }
+
+    if (press_poll_)
+    {
+        const PollCardDisplay::Hit pressed = std::move(press_poll_hit_);
+        press_poll_ = false;
+        press_poll_hit_ = {};
+        if (inside_self)
+        {
+            tk::Point world{local.x + bounds().x, local.y + bounds().y};
+            const auto* now = polls_.hit_test(world);
+            if (now && now->type == pressed.type && now->event_id == pressed.event_id &&
+                now->answer_id == pressed.answer_id)
+                fire_poll_hit_(*now);
+        }
         return;
     }
 

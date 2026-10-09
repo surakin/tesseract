@@ -4261,6 +4261,17 @@ private:
                     c->_shell->send_current_location(
                         c->_shell->current_room_id_);
             };
+            sh.send_command = [sc](const std::string& body) -> tesseract::Result
+            {
+                MainWindowController* c = sc;
+                if (!c)
+                    return tesseract::Result{true, ""};
+                // MacShell::send_room_message wraps dispatch_room_send_ (same
+                // path as a typed-and-sent command).
+                return c->_shell->send_room_message(body, std::string{})
+                           ? tesseract::Result{true, ""}
+                           : tesseract::Result{false, std::string{}};
+            };
             sh.bot_commands = [sc]() -> std::vector<tesseract::CommandDescription>
             {
                 MainWindowController* c = sc;

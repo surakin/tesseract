@@ -2715,6 +2715,12 @@ protected:
     void pick_and_set_room_avatar_(const std::string& room_id,
     const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
 
+    // Open the shared "Create poll" form for `room_id` (the /poll command).
+    // The create callback is bound here, at open time, so every shell gets
+    // the wiring from this one call site.
+    void open_create_poll_dialog_(const std::string& room_id,
+                                  const std::shared_ptr<AccountSession>& on_behalf_of = nullptr);
+
     // Room Settings view support ------------------------------------------
 
     // Open a file picker, upload the selected image as raw media (never

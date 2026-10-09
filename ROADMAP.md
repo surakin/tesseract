@@ -114,6 +114,16 @@ and in-progress work, as a single backlog ordered by priority/urgency.
   touch all four platform shells' `MainWindow.cpp`/`.mm` files — **Windows
   and macOS still need an on-platform build + smoke test** before this is
   considered fully verified.
+- **Polls (MSC3381) follow-ups.** (1) The matrix-sdk-ui timeline does not
+  check who sent a poll end event (MSC3381: only the creator or a user with
+  redaction power may end it), so any member can close a poll as displayed;
+  needs an upstream fix. (2) Stable `m.poll.*` events are not displayed (the
+  pinned SDK handles the unstable types only). (3) Thread-panel poll cards are
+  read-only; `/poll` from a thread composer or pop-out opens the create dialog
+  (titled with the target room) and the poll posts to the room's main timeline. (4) Possible bug:
+  `visible_in_room` in `sdk/src/client/thread.rs` may filter out
+  `LiveLocation` timeline items from the thread-panel counting predicate (its
+  comment names only polls/reactions); verify and fix separately.
 
 ## Tier 4 — Open questions, decide-don't-build-yet
 

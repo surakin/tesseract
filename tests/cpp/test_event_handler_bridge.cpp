@@ -235,6 +235,33 @@ TEST_CASE("make_event dispatches m.location to LocationEvent",
     CHECK(loc->description == "New York");
 }
 
+TEST_CASE("make_event dispatches m.poll to PollEvent", "[ffi][make_event][poll]")
+{
+    auto ffi = make_ffi_event("m.poll");
+    ffi.body = "Lunch?";
+    ffi.poll_max_selections = 2;
+    ffi.poll_ended = true;
+    ffi.poll_results_visible = true;
+    ffi.poll_total_votes = 3;
+    tesseract_ffi::PollAnswerFfi a;
+    a.id = "a"; a.text = "Pizza"; a.votes = 2; a.mine = true;
+    ffi.poll_answers.push_back(a);
+
+    auto ev = tesseract::make_event(ffi);
+    REQUIRE(ev->type == tesseract::EventType::Poll);
+    const auto& p = static_cast<const tesseract::PollEvent&>(*ev);
+    CHECK(p.body == "Lunch?");
+    CHECK(p.max_selections == 2);
+    CHECK(p.ended);
+    CHECK(p.results_visible);
+    CHECK(p.total_votes == 3);
+    REQUIRE(p.answers.size() == 1);
+    CHECK(p.answers[0].id == "a");
+    CHECK(p.answers[0].text == "Pizza");
+    CHECK(p.answers[0].votes == 2);
+    CHECK(p.answers[0].mine);
+}
+
 TEST_CASE("make_event carries live-location share fields",
           "[ffi][make_event][location]")
 {

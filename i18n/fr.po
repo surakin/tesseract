@@ -3781,6 +3781,10 @@ msgstr "{0} a envoyé un message vocal"
 msgid "{0} sent a sticker"
 msgstr "{0} a envoyé un autocollant"
 
+#: ui/shared/views/RoomListView.cpp:116
+msgid "{0} started a poll"
+msgstr "{0} a lancé un sondage"
+
 #: ui/shared/views/RoomListView.h:216
 msgid "Invitations"
 msgstr "Invitations"
@@ -5736,3 +5740,104 @@ msgstr "En attente de la position…"
 #: ui/shared/views/MessageListView.cpp
 msgid "Live location ended"
 msgstr "Position en direct terminée"
+
+#: ui/shared/views/poll_logic.cpp
+msgid "Select one option"
+msgstr "Sélectionnez une option"
+
+#: ui/shared/views/poll_logic.cpp
+#, c++-format
+msgid "Select up to {0} option"
+msgid_plural "Select up to {0} options"
+msgstr[0] "Sélectionnez jusqu'à {0} option"
+msgstr[1] "Sélectionnez jusqu'à {0} options"
+
+#: ui/shared/views/poll_logic.cpp
+msgid "Results will be shown when the poll ends"
+msgstr "Les résultats seront affichés à la fin du sondage"
+
+#: ui/shared/views/poll_logic.cpp
+msgid "Poll"
+msgstr "Sondage"
+
+#: ui/shared/views/poll_logic.cpp
+#, c++-format
+msgid "{0} vote"
+msgid_plural "{0} votes"
+msgstr[0] "{0} vote"
+msgstr[1] "{0} votes"
+
+#: ui/shared/views/poll_logic.cpp
+#, c++-format
+msgid "Poll ended · {0} vote"
+msgid_plural "Poll ended · {0} votes"
+msgstr[0] "Sondage terminé · {0} vote"
+msgstr[1] "Sondage terminé · {0} votes"
+
+#: ui/shared/views/MessageListView.cpp
+#, c++-format
+msgid "{0}, {1}%"
+msgstr "{0}, {1} %"
+
+#: ui/shared/views/MessageListView.cpp ui/shared/views/PollCardDisplay.cpp ui/shared/views/RoomView.cpp
+msgid "End poll"
+msgstr "Terminer le sondage"
+
+#: ui/shared/views/RoomView.cpp
+msgid "End this poll?"
+msgstr "Terminer ce sondage ?"
+
+#: ui/shared/views/RoomView.cpp
+msgid "Voting will close and the final results will be shown to everyone."
+msgstr "Le vote sera clos et les résultats finaux seront affichés à tous."
+
+#: ui/shared/views/PollCardDisplay.cpp
+#, c++-format
+msgid "{0}% ({1})"
+msgstr "{0} % ({1})"
+
+#: ui/shared/views/CreatePollDialog.h
+#, c++-format
+msgid "Create poll in {0}"
+msgstr "Créer un sondage dans {0}"
+
+#: ui/shared/views/CreatePollDialog.cpp
+msgid "Create poll"
+msgstr "Créer un sondage"
+
+#: ui/shared/views/CreatePollDialog.cpp
+msgid "Question"
+msgstr "Question"
+
+#: ui/shared/views/CreatePollDialog.cpp
+#, c++-format
+msgid "Option {0}"
+msgstr "Option {0}"
+
+#: ui/shared/views/CreatePollDialog.cpp
+msgid "Add option"
+msgstr "Ajouter une option"
+
+#: ui/shared/views/CreatePollDialog.cpp
+msgid "Remove option"
+msgstr "Supprimer l'option"
+
+#: ui/shared/views/CreatePollDialog.cpp
+msgid "Allow multiple answers"
+msgstr "Autoriser plusieurs réponses"
+
+#: ui/shared/views/CreatePollDialog.cpp
+msgid "Hide results until the poll ends"
+msgstr "Masquer les résultats jusqu'à la fin du sondage"
+
+#: ui/shared/views/CreatePollDialog.cpp
+msgid "Enter a question and at least two different options"
+msgstr "Saisis une question et au moins deux options différentes"
+
+#: ui/shared/app/SlashCommands.cpp
+msgid "Create a poll"
+msgstr "Créer un sondage"
+
+#: ui/shared/app/ShellBase_rooms.cpp
+msgid "Couldn't send the poll"
+msgstr "Impossible d'envoyer le sondage"

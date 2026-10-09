@@ -234,18 +234,29 @@ void SlashCommandController::accept(const SlashCommandSuggestion& s)
         }
 
         // No args — dispatch immediately, then clear the composer.
-        tesseract::Client* c = hooks_.client ? hooks_.client() : nullptr;
-        std::string rid = hooks_.room_id ? hooks_.room_id() : std::string{};
-        if (!c || rid.empty())
+        const std::string body = "/" + s.name;
+        if (hooks_.send_command)
         {
-            // Account torn down while the popup was open — nothing to send.
-            return;
+            // Normal send path: intercepts /poll, /leave, ... exactly like a
+            // typed-and-sent command.
+            const tesseract::Result r = hooks_.send_command(body);
+            if (!r && hooks_.on_command_failed)
+                hooks_.on_command_failed(r.message);
         }
-        std::string body = "/" + s.name;
-        const tesseract::Result r =
-            tesseract::dispatch_compose_send(*c, rid, body, std::string{});
-        if (!r && hooks_.on_command_failed)
-            hooks_.on_command_failed(r.message);
+        else
+        {
+            tesseract::Client* c = hooks_.client ? hooks_.client() : nullptr;
+            std::string rid = hooks_.room_id ? hooks_.room_id() : std::string{};
+            if (!c || rid.empty())
+            {
+                // Account torn down while the popup was open — nothing to send.
+                return;
+            }
+            const tesseract::Result r =
+                tesseract::dispatch_compose_send(*c, rid, body, std::string{});
+            if (!r && hooks_.on_command_failed)
+                hooks_.on_command_failed(r.message);
+        }
         text_area_->set_text("");
         if (hooks_.clear_composer)
         {
