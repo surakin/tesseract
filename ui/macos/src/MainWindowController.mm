@@ -1177,7 +1177,7 @@ void MacShell::on_media_bytes_ready_(const tk::CacheKey& key,
             is_thumb ? account_manager_.thumbnail_cache() : account_manager_.image_cache();
         if (still_cache.contains(key) || account_manager_.anim_cache().has(key))
             return;
-        const auto [max_w, max_h] = media_prefetch_decode_clamp_(kind);
+        const auto [max_w, max_h] = media_decode_clamp_(kind, key);
         // finish_first_frame runs once per asset (frame 0, or a decoded
         // still image) — repaint/relayout/notify hooks that shouldn't
         // re-run per frame.

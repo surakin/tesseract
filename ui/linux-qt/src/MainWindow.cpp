@@ -2987,7 +2987,7 @@ void MainWindow::on_media_bytes_ready_(const tk::CacheKey& cache_key,
     {
         return;
     }
-    const auto [max_w, max_h] = media_prefetch_decode_clamp_(kind);
+    const auto [max_w, max_h] = media_decode_clamp_(kind, cache_key);
     // finish_first_frame runs once per asset (frame 0, or a decoded still
     // image) — repaint/relayout/notify hooks that shouldn't re-run per frame.
     auto finish_first_frame = [this, cache_key, kind]()

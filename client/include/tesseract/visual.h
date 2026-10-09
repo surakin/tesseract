@@ -126,6 +126,9 @@ inline constexpr int kMsgMaxWidth = 520;
 inline constexpr int kMaxInlineImageWidth = 320;
 inline constexpr int kMaxInlineImageHeight = 200;
 inline constexpr int kStickerSize = 256;
+// Sticker picker grid cell edge (logical px); the picker decodes stickers at
+// this size times the display scale instead of kStickerSize.
+inline constexpr int kStickerPickerCell = 96;
 
 // Decode bound for the lightbox full-resolution viewer. Large enough that the
 // 8x zoom cap still looks crisp; bounded so a huge source can't trip Qt's

@@ -224,6 +224,16 @@ void ShellBase::evict_media_bytes_(const tk::CacheKey& key) const
 
 // ── Pre-paint disk-cache media prefetch ─────────────────────────────────────
 
+std::pair<int, int> ShellBase::media_decode_clamp_(MediaKind kind,
+                                                   const tk::CacheKey& cache_key)
+{
+    if (cache_key.usage == tk::CacheUsage::PickerSticker)
+    {
+        return {cache_key.w, cache_key.h};
+    }
+    return media_prefetch_decode_clamp_(kind);
+}
+
 std::pair<int, int> ShellBase::media_prefetch_decode_clamp_(MediaKind kind)
 {
     switch (kind)
@@ -667,13 +677,6 @@ void ShellBase::run_media_prefetch_()
         // Neither picker is ever add_child'd into the widget tree (see
         // RoomView::emoji_picker()'s doc comment) — visibility lives on
         // RoomView itself, not the picker's own visible_in_tree().
-        if (auto* sp = rv->sticker_picker(); sp && rv->sticker_picker_visible())
-        {
-            for (auto& k : sp->collect_prefetchable_media_keys())
-            {
-                keys.push_back(std::move(k));
-            }
-        }
         if (auto* ep = rv->emoji_picker(); ep && rv->emoji_picker_visible())
         {
             for (auto& k : ep->collect_prefetchable_media_keys())
@@ -714,8 +717,12 @@ void ShellBase::fetch_media_pipeline_(
     std::string cache_key, tk::CacheKey disk_key, std::string inflight_key,
     std::uint64_t group_id, tesseract::Client::MediaReqKind kind,
     std::string source, std::uint32_t w, std::uint32_t h, bool animated,
-    MediaKind out_kind)
+    MediaKind out_kind, std::optional<tk::CacheKey> out_key)
 {
+    // The key the decoded result is stored under; the plain media key unless
+    // the caller (picker stickers) wants its own entry.
+    const tk::CacheKey deliver_key =
+        out_key ? std::move(*out_key) : tk::CacheKey::media(cache_key);
     MediaFetchSpec spec;
     spec.group_id = group_id;
     // cache_key is the row's media fetch_token (what the view's image_provider
@@ -747,7 +754,7 @@ void ShellBase::fetch_media_pipeline_(
             : tesseract::Client::MediaPriority::Normal;
         client_->fetch_media_async(id, group_id, kind, source, w, h, animated, prio);
     };
-    spec.on_empty_ = [this, cache_key, out_kind]
+    spec.on_empty_ = [this, cache_key, out_kind, deliver_key]
     {
         note_media_fetch_failed_(cache_key);
         // Release the decode-dedup guard set at dispatch time so a retry
@@ -755,10 +762,10 @@ void ShellBase::fetch_media_pipeline_(
         // for up to kDecodePendingWindowMs. No-op for kinds that never set
         // it (avatars/tiles).
         media_decode_pending_until_ms_.erase(cache_key);
-        on_media_bytes_ready_(tk::CacheKey::media(cache_key), out_kind, {});
+        on_media_bytes_ready_(deliver_key, out_kind, {});
     };
     spec.deliver_ =
-        [this, cache_key, out_kind, animated,
+        [this, cache_key, out_kind, animated, deliver_key,
          gen = avatar_mode_gen_](std::vector<std::uint8_t>&& bytes)
     {
         note_media_fetch_ok_(cache_key);
@@ -781,7 +788,7 @@ void ShellBase::fetch_media_pipeline_(
             deliver_animated_avatar_(cache_key, out_kind, std::move(bytes));
             return;
         }
-        on_media_bytes_ready_(tk::CacheKey::media(cache_key), out_kind, std::move(bytes));
+        on_media_bytes_ready_(deliver_key, out_kind, std::move(bytes));
     };
     run_media_fetch_(std::move(spec));
 }

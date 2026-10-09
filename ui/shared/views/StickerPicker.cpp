@@ -124,37 +124,6 @@ std::size_t StickerPicker::item_count() const
     return current_items_.size();
 }
 
-std::vector<tk::MediaPrefetchKey> StickerPicker::collect_prefetchable_media_keys() const
-{
-    std::vector<tk::MediaPrefetchKey> keys;
-    if (!grid_)
-    {
-        return keys;
-    }
-    // Small lookahead margin (roughly a row or two, depending on picker
-    // width) so a quick scroll doesn't briefly show an unwarmed sticker
-    // while the fetch races the scroll — not the whole tab, just enough to
-    // stay ahead of typical scroll speed. run_media_prefetch_impl_'s
-    // max_items cap still bounds total work per pre-paint pass.
-    constexpr int kPrefetchLookaheadCells = 8;
-    const auto [lo, hi] = tk::grid_prefetch_range(
-        *grid_, current_items_.size(), kPrefetchLookaheadCells);
-    if (hi < lo)
-    {
-        return keys;
-    }
-    keys.reserve(static_cast<std::size_t>(hi - lo + 1));
-    for (int i = lo; i <= hi; ++i)
-    {
-        const auto& entry = current_items_[static_cast<std::size_t>(i)];
-        if (!entry.url.empty())
-        {
-            keys.push_back({tk::CacheKey::media(entry.url), tk::MediaKind::MediaImage});
-        }
-    }
-    return keys;
-}
-
 void StickerPicker::paint_cell(std::size_t index, tk::PaintCtx& ctx,
                                tk::Rect bounds, bool selected, bool hovered)
 {

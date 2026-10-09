@@ -31,6 +31,9 @@ enum class CacheUsage : std::uint8_t
     GifSource,      // url-keyed GIF-picker strip original bytes. media_disk_cache_.
     GifPreview,     // url-keyed GIF-picker decoded static preview (per-window).
     PillBitmap,     // hash-keyed rasterized mention-pill bitmap.
+    PickerSticker,  // mxc-keyed sticker decoded at the picker cell size.
+                    // image_cache_ / anim_cache_. Uses id + w + h; the
+                    // downloaded bytes are shared with CacheUsage::Media.
 };
 
 // Typed replacement for the hand-rolled string-prefix scheme every
@@ -66,6 +69,7 @@ struct CacheKey
     static CacheKey gif_source(std::string url);
     static CacheKey gif_preview(std::string url);
     static CacheKey pill_bitmap(std::size_t hash);
+    static CacheKey picker_sticker(std::string id, int w, int h);
 };
 
 struct CacheKeyHash

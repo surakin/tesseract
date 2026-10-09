@@ -146,6 +146,7 @@ struct MediaPrefetchTestShell : tesseract::test::TestShellBase
     using ShellBase::DecodedImage;
     using ShellBase::MediaPrefetchKey;
     using ShellBase::media_prefetch_decode_clamp_;
+    using ShellBase::media_decode_clamp_;
     using ShellBase::media_prefetch_supports_kind_;
     using ShellBase::run_media_prefetch_impl_;
     using ShellBase::store_decoded_media_;
@@ -554,4 +555,21 @@ TEST_CASE("run_media_prefetch_impl_ skips a key the network path is already fetc
     // Did not compete with the in-flight network fetch's own decode step.
     CHECK(s.decode_calls == 0);
     CHECK(s.media_prefetch_in_flight().count(key) == 0);
+}
+
+TEST_CASE("media_decode_clamp_ takes a picker sticker's size from its key",
+          "[media-prefetch]")
+{
+    const auto picker = tk::CacheKey::picker_sticker("mxc://b/s", 192, 192);
+    CHECK(MediaPrefetchTestShell::media_decode_clamp_(
+              ShellBase::MediaKind::Sticker, picker) ==
+          std::pair<int, int>{192, 192});
+    // A plain sticker key keeps the timeline's kStickerSize clamp.
+    CHECK(MediaPrefetchTestShell::media_decode_clamp_(
+              ShellBase::MediaKind::Sticker, tk::CacheKey::media("mxc://b/s")) ==
+          MediaPrefetchTestShell::media_prefetch_decode_clamp_(
+              ShellBase::MediaKind::Sticker));
+    // Same mxc at different sizes never shares an entry with the plain key.
+    CHECK(picker != tk::CacheKey::media("mxc://b/s"));
+    CHECK(picker != tk::CacheKey::picker_sticker("mxc://b/s", 96, 96));
 }

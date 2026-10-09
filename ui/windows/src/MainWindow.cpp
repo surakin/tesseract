@@ -4991,7 +4991,7 @@ void MainWindow::on_media_bytes_ready_(const tk::CacheKey& cache_key,
         if ((is_thumb ? account_manager_.thumbnail_cache() : account_manager_.image_cache()).contains(cache_key) ||
             account_manager_.anim_cache().has(cache_key))
             return;
-        const auto [max_w, max_h] = media_prefetch_decode_clamp_(kind);
+        const auto [max_w, max_h] = media_decode_clamp_(kind, cache_key);
         // finish_first_frame runs once something (frame 0, or a decoded
         // still image) has just landed in a cache — repaint/relayout/notify
         // hooks that only need to fire once per asset, not once per frame.

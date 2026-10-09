@@ -33,6 +33,8 @@ std::string CacheKey::to_string() const
             return "gifpreview:" + id;
         case CacheUsage::PillBitmap:
             return "pill:" + id;
+        case CacheUsage::PickerSticker:
+            return "pickersticker" + std::to_string(w) + "x" + std::to_string(h) + ":" + id;
     }
     return id;
 }
@@ -81,6 +83,11 @@ CacheKey CacheKey::gif_source(std::string url)
 CacheKey CacheKey::gif_preview(std::string url)
 {
     return CacheKey{CacheUsage::GifPreview, std::move(url)};
+}
+
+CacheKey CacheKey::picker_sticker(std::string id, int w, int h)
+{
+    return CacheKey{CacheUsage::PickerSticker, std::move(id), w, h};
 }
 
 CacheKey CacheKey::pill_bitmap(std::size_t hash)

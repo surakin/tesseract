@@ -7,6 +7,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ### 2026-10-09
 
+- fix(stickers): the sticker picker decodes stickers at its cell size (96 px × display scale) into its own cache entry instead of the timeline's 256 px one, and no longer goes through the pre-paint prefetch; shells share the downloaded bytes. Qt6 build + ctest 2372/2372, user-verified Qt6
 - fix(stickers): opening the sticker picker with many animated stickers no longer decodes every frame of every visible one; the picker now loads stickers through the timeline's windowed decode and repaints as they land, and uncached stickers no longer get stuck blank behind the pre-paint prefetch guard. Qt6 build + ctest 2371/2371, user-verified Qt6
 - fix(qt): mouse-wheel scrolling is full speed again on Wayland with Qt 6.12, which now reports a pixel delta for wheel notches that was being read as a touchpad. Qt6 build, user-verified Qt6 (mouse)
 - fix(timeline): a reply quote of a message with a code block or inline code no longer draws past the quote card on Qt6; the single-line truncation now measures code in the monospace face. Qt6 build, user-verified Qt6
