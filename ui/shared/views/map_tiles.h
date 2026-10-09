@@ -1,7 +1,11 @@
 #pragma once
 #include "tk/canvas.h"
 #include <cmath>
+#include <iomanip>
+#include <locale>
+#include <sstream>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -116,13 +120,43 @@ inline std::string tile_url(TileCoord t)
            std::to_string(t.x) + "/" + std::to_string(t.y) + ".png";
 }
 
+/// Locale-independent fixed-point text of `v` with 6 decimals. std::to_string
+/// follows the process numeric locale, so a comma-decimal locale produced
+/// "51,500800" and a broken URL.
+inline std::string coord_text(double v)
+{
+    std::ostringstream os;
+    os.imbue(std::locale::classic());
+    os << std::fixed << std::setprecision(6) << v;
+    return os.str();
+}
+
 /// URL for the openstreetmap.org web viewer, centered on `lat`/`lon` with a
 /// marker dropped at that point.
 inline std::string osm_view_url(double lat, double lon, int zoom)
 {
-    return "https://www.openstreetmap.org/?mlat=" + std::to_string(lat) +
-           "&mlon=" + std::to_string(lon) + "#map=" + std::to_string(zoom) +
-           "/" + std::to_string(lat) + "/" + std::to_string(lon);
+    return "https://www.openstreetmap.org/?mlat=" + coord_text(lat) +
+           "&mlon=" + coord_text(lon) + "#map=" + std::to_string(zoom) +
+           "/" + coord_text(lat) + "/" + coord_text(lon);
+}
+
+/// URL to open when a location card is clicked. A location whose body is a
+/// maps URL opens that verbatim (the sender's exact link), except for an
+/// openstreetmap.org link containing ',': messages sent from a comma-decimal
+/// locale carry "mlat=51,5008" links that don't resolve, so those are rebuilt
+/// from the card's coordinates.
+inline std::string location_click_url(std::string_view body, double lat,
+                                      double lon, int zoom)
+{
+    const bool body_is_url =
+        body.starts_with("http://") || body.starts_with("https://");
+    if (!body_is_url)
+        return osm_view_url(lat, lon, zoom);
+    const bool broken_osm =
+        (body.starts_with("https://www.openstreetmap.org/") ||
+         body.starts_with("https://openstreetmap.org/")) &&
+        body.find(',') != std::string_view::npos;
+    return broken_osm ? osm_view_url(lat, lon, zoom) : std::string(body);
 }
 
 } // namespace tesseract::views

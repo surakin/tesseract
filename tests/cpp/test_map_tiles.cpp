@@ -1,6 +1,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include "views/map_tiles.h"
 #include <cmath>
+#include <clocale>
+#include <locale>
+#include <string>
 
 using namespace tesseract::views;
 
@@ -77,4 +80,44 @@ TEST_CASE("tile_pixel_origin places viewport-centre tile near map centre",
     float map_cy = map_rect.y + map_rect.h / 2.0f;
     CHECK(std::abs(origin.x - map_cx) <= 256.0f);
     CHECK(std::abs(origin.y - map_cy) <= 256.0f);
+}
+
+TEST_CASE("osm_view_url uses '.' decimals under a comma-decimal locale",
+          "[map_tiles]")
+{
+    // std::to_string follows the C locale (LC_NUMERIC). Switch to a real
+    // comma-decimal one when the machine has it; otherwise this only pins the
+    // exact output.
+    const char* applied = nullptr;
+    for (const char* name : {"de_DE.UTF-8", "de_DE.utf8", "fr_FR.UTF-8",
+                             "fr_FR.utf8", "es_ES.UTF-8", "es_ES.utf8"})
+    {
+        if ((applied = std::setlocale(LC_NUMERIC, name)))
+            break;
+    }
+    const std::string url = osm_view_url(51.5008, -0.1247, 15);
+    std::setlocale(LC_NUMERIC, "C");
+
+    CHECK(url == "https://www.openstreetmap.org/?mlat=51.500800&mlon=-0.124700"
+                 "#map=15/51.500800/-0.124700");
+    CHECK(url.find(',') == std::string::npos);
+    INFO("comma locale applied: " << (applied ? applied : "none installed"));
+}
+
+TEST_CASE("location_click_url repairs comma-decimal OSM bodies only",
+          "[map_tiles]")
+{
+    const std::string fixed = "https://www.openstreetmap.org/?mlat=51.500800"
+                              "&mlon=-0.124700#map=15/51.500800/-0.124700";
+    // Broken link from a comma-decimal sender: rebuilt from the coordinates.
+    CHECK(location_click_url("https://www.openstreetmap.org/?mlat=51,500800"
+                             "&mlon=-0,124700#map=15/51,500800/-0,124700",
+                             51.5008, -0.1247, 15) == fixed);
+    // Valid OSM link and other providers: opened verbatim.
+    CHECK(location_click_url(fixed, 1, 2, 3) == fixed);
+    const std::string g = "https://www.google.com/maps/@41.4,-2.1,15z";
+    CHECK(location_click_url(g, 1, 2, 3) == g);
+    // Non-URL body: synthesized link.
+    CHECK(location_click_url("Alice shared her location", 51.5008, -0.1247,
+                             15) == fixed);
 }

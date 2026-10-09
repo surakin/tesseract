@@ -10784,13 +10784,9 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
             on_link_clicked)
         {
             const MessageRowData& m = messages_[ri];
-            const std::string& body = m.location_description;
-            bool body_is_url = body.starts_with("http://") ||
-                                body.starts_with("https://");
-            on_link_clicked(body_is_url
-                                 ? body
-                                 : osm_view_url(m.location_lat, m.location_lon,
-                                                 m.map_viewport.zoom));
+            on_link_clicked(location_click_url(m.location_description,
+                                               m.location_lat, m.location_lon,
+                                               m.map_viewport.zoom));
         }
         return;
     }

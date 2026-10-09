@@ -1,6 +1,6 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-10-09**. 2369 C++ + 818 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-10-09**. 2371 C++ + 818 Rust tests.
 
 > **Polls (2026-10-09).**
 > MSC3381 polls (unstable event types) show in the timeline with live results;
