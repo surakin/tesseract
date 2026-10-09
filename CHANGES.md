@@ -7,6 +7,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ### 2026-10-09
 
+- fix(timeline): a reply quote of a message with a code block or inline code no longer draws past the quote card on Qt6; the single-line truncation now measures code in the monospace face. Qt6 build, user-verified Qt6
 - fix(compose): mentions inserted in a reply are now sent as real mentions (link + `m.mentions`), so bridges such as WhatsApp detect them. Qt6 build, user-verified Qt6
 - feat(timeline): polls (MSC3381) show in the timeline with live results; you can vote, end a poll you created (or any poll if you can redact) after a confirmation, and create one with `/poll`. Undisclosed polls hide counts until ended, the room list shows "started a poll", and polls are keyboard and screen-reader operable; sends the unstable event types, and thread-panel polls are read-only. Qt6 build + ctest 2369/2369 + cargo 818
 - fix(maps): OpenStreetMap links sent with locations no longer break for senders whose locale uses a decimal comma (`mlat=51,5008`), and clicking such an old location card opens a corrected link. Qt6 build + ctest 2371/2371
