@@ -490,8 +490,9 @@ void ShellBase::run_media_prefetch_impl_(
                 // store stays the one and only UI callback this task posts —
                 // media_prefetch_in_flight_ and the batch caches are all
                 // UI-thread-only, hence the hop.
+                const std::string key_id = key.id;
                 post_to_ui_(
-                    [this, batch, became_ready,
+                    [this, batch, became_ready, kind, group_id, key_id,
                      disk_key = std::move(disk_key)]
                     {
                         media_prefetch_in_flight_.erase(disk_key);
@@ -506,6 +507,19 @@ void ShellBase::run_media_prefetch_impl_(
                             // for the rest of the guard's window even
                             // though nothing is actually in flight.
                             media_decode_pending_until_ms_.erase(disk_key);
+                            // Hand off to the lazy fetch directly: the paint
+                            // that ran right after this prefetch dispatch hit
+                            // the guard above and returned without fetching,
+                            // and the next paint's prefetch would just
+                            // re-dispatch and re-set it, so a view with no
+                            // fetch trigger outside paint (the sticker
+                            // picker) would never load this key.
+                            if (kind != MediaKind::RoomAvatar &&
+                                kind != MediaKind::UserAvatar)
+                            {
+                                ensure_media_image_(key_id, 0, 0, group_id,
+                                                    kind);
+                            }
                             return;
                         }
                         if (!batch->deadline_passed.load(std::memory_order_acquire))

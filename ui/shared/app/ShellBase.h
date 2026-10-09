@@ -4491,7 +4491,20 @@ protected:
             {
                 return img;
             }
-            ensure_picker_image_(cache_key, is_sticker);
+            if (is_sticker)
+            {
+                // Same lazy path (and decode size) as the timeline sticker:
+                // animated stickers decode windowed, keeping only a few
+                // frames resident instead of every frame of every visible
+                // cell.
+                ensure_media_image_(cache_key, visual::kStickerSize,
+                                    visual::kStickerSize, 0,
+                                    MediaKind::Sticker);
+            }
+            else
+            {
+                ensure_picker_image_(cache_key, false);
+            }
             return nullptr;
         };
     }
