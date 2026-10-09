@@ -7,6 +7,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ### 2026-10-09
 
+- fix(qt): mouse-wheel scrolling is full speed again on Wayland with Qt 6.12, which now reports a pixel delta for wheel notches that was being read as a touchpad. Qt6 build, user-verified Qt6 (mouse)
 - fix(timeline): a reply quote of a message with a code block or inline code no longer draws past the quote card on Qt6; the single-line truncation now measures code in the monospace face. Qt6 build, user-verified Qt6
 - fix(compose): mentions inserted in a reply are now sent as real mentions (link + `m.mentions`), so bridges such as WhatsApp detect them. Qt6 build, user-verified Qt6
 - feat(timeline): polls (MSC3381) show in the timeline with live results; you can vote, end a poll you created (or any poll if you can redact) after a confirmation, and create one with `/poll`. Undisclosed polls hide counts until ended, the room list shows "started a poll", and polls are keyboard and screen-reader operable; sends the unstable event types, and thread-panel polls are read-only. Qt6 build + ctest 2369/2369 + cargo 818
