@@ -2557,14 +2557,17 @@ void RoomPane::send_reply_(const std::string& reply_event_id,
     auto sess = session_();
     auto rid = room_id_;
     auto reply_id = reply_event_id;
-    auto body_copy = body;
-    shell_->submit_room_send_(sess, rid, body_copy,
-                              [this, sess, rid, reply_id, body_copy,
+    // Rebuild from the composer's draft (as on_send does) so mention pills
+    // become matrix.to links + m.mentions instead of flattened text.
+    auto msg = draft_outgoing_message_(body);
+    shell_->submit_room_send_(sess, rid, msg.body,
+                              [this, sess, rid, reply_id, msg,
                                ui = ui_poster(shell_poster(shell_))](const std::string& previews) mutable {
         if (!ui.owner_alive()) // owner gone before the job started
             return;
         if (!sess || !sess->client) return;
-        auto res = sess->client->send_reply(rid, reply_id, body_copy, "", previews);
+        auto res = sess->client->send_reply(rid, reply_id, msg.body,
+                                            msg.formatted_body, previews);
         if (res)
             return;
         ui([this, message = res.message]() mutable {
