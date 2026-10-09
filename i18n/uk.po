@@ -6029,7 +6029,7 @@ msgstr "уйгурська"
 
 #: ui/shared/views/settings/bcp47_languages.h:205
 msgid "Ukrainian"
-msgstr "українська"
+msgstr "Українська"
 
 #: ui/shared/views/settings/bcp47_languages.h:206
 msgid "Urdu"
