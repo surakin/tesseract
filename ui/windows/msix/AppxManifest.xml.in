@@ -71,7 +71,10 @@
              parser (see ui/windows/src/main.cpp) — packaged installs rely on
              this declaration instead of the HKCU registry registration the
              unpackaged/NSIS build writes at first launch. -->
-        <uap3:Extension Category="windows.protocol">
+        <!-- Parameters is only accepted when the extension declares a trust
+             EntryPoint (MakeAppx error 80080204 otherwise). -->
+        <uap3:Extension Category="windows.protocol"
+            EntryPoint="Windows.FullTrustApplication">
           <uap3:Protocol Name="matrix" Parameters="-- &quot;%1&quot;">
             <uap:DisplayName>Tesseract (Matrix)</uap:DisplayName>
           </uap3:Protocol>
