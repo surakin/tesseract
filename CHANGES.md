@@ -5,6 +5,10 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+### 2026-10-10
+
+- feat(i18n): Norwegian Bokmål translation (`nb.po`, Element Web terminology) and a Language picker entry. `msgfmt -c` clean, Qt6/GTK4 build + `i18n_catalogs_complete`
+
 ### 2026-10-09
 
 - fix(stickers): the sticker picker decodes stickers at its cell size (96 px × display scale) into its own cache entry instead of the timeline's 256 px one, and no longer goes through the pre-paint prefetch; shells share the downloaded bytes. Qt6 build + ctest 2372/2372, user-verified Qt6

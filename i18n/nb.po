@@ -1,0 +1,4479 @@
+# Norwegian Bokmål translation of Tesseract.
+# Copyright (C) 2026 The Tesseract Authors
+# This file is distributed under the same license as the tesseract package.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: tesseract\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-05-31 22:52+0200\n"
+"PO-Revision-Date: 2026-10-10 00:00+0000\n"
+"Last-Translator: \n"
+"Language-Team: Norwegian Bokmål\n"
+"Language: nb\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Call"
+msgstr "Ring"
+
+msgid "Quit"
+msgstr "Avslutt"
+
+msgid "Reply"
+msgstr "Svar"
+
+msgid "Open"
+msgstr "Åpne"
+
+msgid "Reply…"
+msgstr "Svar…"
+
+msgid "Send"
+msgstr "Send"
+
+msgid "Open this URL in your browser:"
+msgstr "Åpne denne nettadressen i nettleseren din:"
+
+msgid "{0} request in flight"
+msgid_plural "{0} requests in flight"
+msgstr[0] "{0} forespørsel underveis"
+msgstr[1] "{0} forespørsler underveis"
+
+msgid "media: {0} loading · fetch: {1} queued · send: {2} queued"
+msgstr "media: {0} lastes · henting: {1} i kø · sending: {2} i kø"
+
+msgid "File exceeds the upload limit"
+msgstr "Filen er over opplastingsgrensen"
+
+msgid "Save image"
+msgstr "Lagre bilde"
+
+msgid "Save video"
+msgstr "Lagre video"
+
+msgid "Save file"
+msgstr "Lagre fil"
+
+msgid "Not logged in"
+msgstr "Ikke logget inn"
+
+msgid "Low power mode — background sync paused"
+msgstr "Strømsparingsmodus – bakgrunnssynkronisering er satt på pause"
+
+msgid "Connected"
+msgstr "Tilkoblet"
+
+msgid "Restoring session…"
+msgstr "Gjenoppretter økt…"
+
+msgid "Already signed in as {0}"
+msgstr "Du er allerede logget inn som {0}"
+
+msgid "Sign-in failed: {0}"
+msgstr "Innlogging mislyktes: {0}"
+
+msgid "Choose a folder for the exported history"
+msgstr "Velg en mappe for den eksporterte historikken"
+
+msgid "_Cancel"
+msgstr "_Avbryt"
+
+msgid "_OK"
+msgstr "_OK"
+
+msgid "Passphrase"
+msgstr "Passfrase"
+
+msgid "Save room keys"
+msgstr "Lagre romnøkler"
+
+msgid "Open room keys"
+msgstr "Åpne romnøkler"
+
+msgid "Room keys exported successfully."
+msgstr "Romnøklene ble eksportert."
+
+msgid "Room keys imported successfully."
+msgstr "Romnøklene ble importert."
+
+msgid "Select image"
+msgstr "Velg bilde"
+
+msgid "Images"
+msgstr "Bilder"
+
+msgid "Syncing rooms…"
+msgstr "Synkroniserer rom…"
+
+msgid "Reconnecting…"
+msgstr "Kobler til på nytt…"
+
+msgid "Downloading encryption keys ({0})…"
+msgstr "Laster ned krypteringsnøkler ({0})…"
+
+msgid "Add to Saved Stickers"
+msgstr "Legg til i lagrede klistremerker"
+
+msgid "Copy"
+msgstr "Kopier"
+
+msgid "Signed out"
+msgstr "Logget ut"
+
+msgid "Could not read file"
+msgstr "Kunne ikke lese filen"
+
+msgid "Show App"
+msgstr "Vis appen"
+
+msgid "Images (*.jpg *.jpeg *.png *.gif *.webp);;All files (*.*)"
+msgstr "Bilder (*.jpg *.jpeg *.png *.gif *.webp);;Alle filer (*.*)"
+
+msgid "All files (*.*)"
+msgstr "Alle filer (*.*)"
+
+msgid "Videos (*.mp4 *.webm *.mkv);;All files (*.*)"
+msgstr "Videoer (*.mp4 *.webm *.mkv);;Alle filer (*.*)"
+
+msgid "Already in Saved Stickers"
+msgstr "Allerede i lagrede klistremerker"
+
+msgid "Restoring sessions…"
+msgstr "Gjenoppretter økter…"
+
+msgid "Already signed in as %1"
+msgstr "Du er allerede logget inn som %1"
+
+msgid "Sign-in failed: %1"
+msgstr "Innlogging mislyktes: %1"
+
+msgid "Images (*.png *.jpg *.jpeg *.gif *.webp)"
+msgstr "Bilder (*.png *.jpg *.jpeg *.gif *.webp)"
+
+msgid "Add Account"
+msgstr "Legg til konto"
+
+msgid "Signed out of %1"
+msgstr "Logget ut av %1"
+
+msgid "Export room keys"
+msgstr "Eksporter romnøkler"
+
+msgid "Import room keys"
+msgstr "Importer romnøkler"
+
+msgid "Export complete"
+msgstr "Eksporten er fullført"
+
+msgid "Export failed"
+msgstr "Eksporten mislyktes"
+
+msgid "Import complete"
+msgstr "Importen er fullført"
+
+msgid "Import failed"
+msgstr "Importen mislyktes"
+
+msgid "About Tesseract"
+msgstr "Om Tesseract"
+
+msgid "Settings…"
+msgstr "Innstillinger…"
+
+msgid "Hide Tesseract"
+msgstr "Skjul Tesseract"
+
+msgid "Quit Tesseract"
+msgstr "Avslutt Tesseract"
+
+msgid "File"
+msgstr "Fil"
+
+msgid "Add Room…"
+msgstr "Legg til rom…"
+
+msgid "Edit"
+msgstr "Rediger"
+
+msgid "Undo"
+msgstr "Angre"
+
+msgid "Redo"
+msgstr "Gjør om"
+
+msgid "Cut"
+msgstr "Klipp ut"
+
+msgid "Paste"
+msgstr "Lim inn"
+
+msgid "Select All"
+msgstr "Velg alt"
+
+msgid "Find"
+msgstr "Søk"
+
+msgid "Find…"
+msgstr "Søk…"
+
+msgid "Search Your Messages…"
+msgstr "Søk i meldingene dine…"
+
+msgid "Insert Emoji…"
+msgstr "Sett inn emoji…"
+
+msgid "Go"
+msgstr "Gå"
+
+msgid "Go Back"
+msgstr "Tilbake"
+
+msgid "Go Forward"
+msgstr "Fremover"
+
+msgid "Quick Switcher…"
+msgstr "Hurtigbytte…"
+
+msgid "Room Info"
+msgstr "Rominfo"
+
+msgid "Cycle Recent Rooms"
+msgstr "Bla gjennom siste rom"
+
+msgid "Cycle Recent Rooms Backward"
+msgstr "Bla bakover gjennom siste rom"
+
+msgid "Window"
+msgstr "Vindu"
+
+msgid "Minimize"
+msgstr "Minimer"
+
+msgid "Zoom"
+msgstr "Zoom"
+
+msgid "Help"
+msgstr "Hjelp"
+
+msgid "Keyboard Shortcuts"
+msgstr "Hurtigtaster"
+
+msgid "OK"
+msgstr "OK"
+
+msgid "Cancel"
+msgstr "Avbryt"
+
+msgid "Could Not Save Sticker"
+msgstr "Kunne ikke lagre klistremerket"
+
+msgid "Display {0}"
+msgstr "Skjerm {0}"
+
+msgid "History of {0}"
+msgstr "Historikk for {0}"
+
+msgid "Exported {0}"
+msgstr "Eksportert {0}"
+
+msgid "Unable to decrypt this message"
+msgstr "Kunne ikke dekryptere denne meldingen"
+
+msgid "Message deleted"
+msgstr "Melding slettet"
+
+msgid "(edited)"
+msgstr "(redigert)"
+
+msgid "Attachment: {0}"
+msgstr "Vedlegg: {0}"
+
+msgid "Attachment too large: {0}"
+msgstr "Vedlegget er for stort: {0}"
+
+msgid "Image unavailable: {0}"
+msgstr "Bildet er utilgjengelig: {0}"
+
+msgid "In reply to {0}"
+msgstr "Som svar til {0}"
+
+msgid "Reactions: {0}"
+msgstr "Reaksjoner: {0}"
+
+msgid "{0} joined the room"
+msgstr "{0} ble med i rommet"
+
+msgid "{0} left the room"
+msgstr "{0} forlot rommet"
+
+msgid "{0} was banned by {1}"
+msgstr "{0} ble bannlyst av {1}"
+
+msgid "{0} was banned"
+msgstr "{0} ble bannlyst"
+
+msgid "{0} was unbanned by {1}"
+msgstr "Bannlysingen av {0} ble opphevet av {1}"
+
+msgid "{0} is no longer banned"
+msgstr "{0} er ikke lenger bannlyst"
+
+msgid "{0} was removed by {1}"
+msgstr "{0} ble fjernet av {1}"
+
+msgid "{0} was removed"
+msgstr "{0} ble fjernet"
+
+msgid "{0} was invited by {1}"
+msgstr "{0} ble invitert av {1}"
+
+msgid "{0} received an invitation"
+msgstr "{0} fikk en invitasjon"
+
+msgid "{0} was removed and banned by {1}"
+msgstr "{0} ble fjernet og bannlyst av {1}"
+
+msgid "{0} was kicked and banned"
+msgstr "{0} ble fjernet og bannlyst"
+
+msgid "{0} has accepted the invitation"
+msgstr "{0} har godtatt invitasjonen"
+
+msgid "{0} has rejected the invitation"
+msgstr "{0} har avslått invitasjonen"
+
+msgid "{0}'s invitation was revoked by {1}"
+msgstr "Invitasjonen til {0} ble trukket tilbake av {1}"
+
+msgid "{0}'s invitation was revoked"
+msgstr "Invitasjonen til {0} ble trukket tilbake"
+
+msgid "{0} requested to join"
+msgstr "{0} ba om å få bli med"
+
+msgid "{0}'s request to join was approved by {1}"
+msgstr "Forespørselen fra {0} om å bli med ble godkjent av {1}"
+
+msgid "{0}'s join request was approved"
+msgstr "Forespørselen fra {0} om å bli med ble godkjent"
+
+msgid "{0}'s request to join was withdrawn"
+msgstr "{0} trakk tilbake forespørselen om å bli med"
+
+msgid "{0}'s request to join was denied by {1}"
+msgstr "Forespørselen fra {0} om å bli med ble avslått av {1}"
+
+msgid "{0}'s join request was denied"
+msgstr "Forespørselen fra {0} om å bli med ble avslått"
+
+msgid "{0}. Reason: {1}"
+msgstr "{0}. Årsak: {1}"
+
+msgid "Show this help and exit"
+msgstr "Vis denne hjelpeteksten og avslutt"
+
+msgid "Show the version and exit"
+msgstr "Vis versjonen og avslutt"
+
+msgid "Use a separate profile with its own accounts and settings"
+msgstr "Bruk en egen profil med egne kontoer og innstillinger"
+
+msgid "Start in the tray without showing the window"
+msgstr "Start i systemfeltet uten å vise vinduet"
+
+msgid "Set the log level (error, warn, info, debug, trace)"
+msgstr "Angi loggnivå (error, warn, info, debug, trace)"
+
+msgid "Log more detail (same as --log-level=debug)"
+msgstr "Logg flere detaljer (samme som --log-level=debug)"
+
+msgid "Open the room with this ID"
+msgstr "Åpne rommet med denne ID-en"
+
+msgid "Open the quick switcher"
+msgstr "Åpne hurtigbytte"
+
+msgid "Open message search"
+msgstr "Åpne meldingssøk"
+
+msgid "Open Settings"
+msgstr "Åpne innstillinger"
+
+msgid "Sign out of every account and exit"
+msgstr "Logg ut av alle kontoer og avslutt"
+
+msgid "Tesseract is running. Quit it first, then try again."
+msgstr "Tesseract kjører. Avslutt det først og prøv igjen."
+
+msgid "The account list could not be read. Nothing was changed."
+msgstr "Kontolisten kunne ikke leses. Ingenting ble endret."
+
+msgid "No accounts to sign out."
+msgstr "Ingen kontoer å logge ut av."
+
+msgid "Signed out {0}"
+msgstr "Logget ut {0}"
+
+msgid "Removed {0} from this device, but the server sign-out failed: {1}"
+msgstr "{0} ble fjernet fra denne enheten, men utloggingen på tjeneren mislyktes: {1}"
+
+msgid "[OPTIONS] [MATRIX-URI]"
+msgstr "[VALG] [MATRIX-URI]"
+
+msgid "Usage:"
+msgstr "Bruk:"
+
+msgid "Options:"
+msgstr "Valg:"
+
+msgid "Switch to this account to open this room."
+msgstr "Bytt til denne kontoen for å åpne dette rommet."
+
+msgid "Switch to this account to verify users."
+msgstr "Bytt til denne kontoen for å verifisere brukere."
+
+msgid "Couldn't update the identity: {0}"
+msgstr "Kunne ikke oppdatere identiteten: {0}"
+
+msgid "Failed to set topic: {0}"
+msgstr "Kunne ikke angi emne: {0}"
+
+msgid "not logged in"
+msgstr "ikke logget inn"
+
+msgid "Image decode failed"
+msgstr "Kunne ikke dekode bildet"
+
+msgid "Jump to date failed: {0}"
+msgstr "Kunne ikke hoppe til datoen: {0}"
+
+msgid "Send reply failed: {0}"
+msgstr "Kunne ikke sende svaret: {0}"
+
+msgid "Edit failed: {0}"
+msgstr "Kunne ikke redigere: {0}"
+
+msgid "Copied to clipboard"
+msgstr "Kopiert til utklippstavlen"
+
+msgid "Failed to retry sending: {0}"
+msgstr "Kunne ikke prøve å sende på nytt: {0}"
+
+msgid "Failed to cancel message: {0}"
+msgstr "Kunne ikke avbryte meldingen: {0}"
+
+msgid "Command failed: {0}"
+msgstr "Kommandoen mislyktes: {0}"
+
+msgid "Voice message"
+msgstr "Talemelding"
+
+msgid "this room"
+msgstr "dette rommet"
+
+msgid "Leave {0}?"
+msgstr "Forlate {0}?"
+
+msgid "You will stop receiving messages and need to be re-invited to rejoin."
+msgstr "Du slutter å motta meldinger og må inviteres på nytt for å bli med igjen."
+
+msgid "Leave"
+msgstr "Forlat"
+
+msgid "Message not sent: {0}"
+msgstr "Meldingen ble ikke sendt: {0}"
+
+msgid "End your call before restarting."
+msgstr "Avslutt samtalen før du starter på nytt."
+
+msgid "Couldn't restart Tesseract. Please restart it yourself."
+msgstr "Kunne ikke starte Tesseract på nytt. Start det på nytt selv."
+
+msgid "Couldn't invite {0}"
+msgstr "Kunne ikke invitere {0}"
+
+msgid "Couldn't kick {0}"
+msgstr "Kunne ikke kaste ut {0}"
+
+msgid "Couldn't ban {0}"
+msgstr "Kunne ikke bannlyse {0}"
+
+msgid "Couldn't unban {0}"
+msgstr "Kunne ikke oppheve bannlysingen av {0}"
+
+msgid "complete room action"
+msgstr "fullføre romhandlingen"
+
+msgid "accept invite"
+msgstr "godta invitasjonen"
+
+msgid "join room"
+msgstr "bli med i rommet"
+
+msgid "leave room"
+msgstr "forlate rommet"
+
+msgid "leave space"
+msgstr "forlate området"
+
+msgid "create room"
+msgstr "opprette rommet"
+
+msgid "send join request"
+msgstr "sende forespørsel om å bli med"
+
+msgid "accept join request"
+msgstr "godta forespørselen om å bli med"
+
+msgid "add room to space"
+msgstr "legge rommet til i området"
+
+msgid "remove room from space"
+msgstr "fjerne rommet fra området"
+
+msgid "Couldn't {0}"
+msgstr "Kunne ikke {0}"
+
+msgid "Request sent"
+msgstr "Forespørsel sendt"
+
+msgid "Upload failed"
+msgstr "Opplastingen mislyktes"
+
+msgid "Upload failed: {0}"
+msgstr "Opplastingen mislyktes: {0}"
+
+msgid "Fetching older messages…"
+msgstr "Henter eldre meldinger…"
+
+msgid "%b %-d"
+msgstr "%-d. %b"
+
+msgid "%b %-d, %Y"
+msgstr "%-d. %b %Y"
+
+msgid "(oldest: {0})"
+msgstr "(eldste: {0})"
+
+msgid "Activity Monitor"
+msgstr "Aktivitetsovervåker"
+
+msgid "The Activity Monitor is not available on this platform yet."
+msgstr "Aktivitetsovervåkeren er ikke tilgjengelig på denne plattformen ennå."
+
+msgid "Tesseract {0} available"
+msgstr "Tesseract {0} er tilgjengelig"
+
+msgid "Keyboard Shortcuts…"
+msgstr "Hurtigtaster…"
+
+msgid "Verify this session…"
+msgstr "Verifiser denne økten…"
+
+msgid "Add Account…"
+msgstr "Legg til konto…"
+
+msgid "Add device via QR…"
+msgstr "Legg til enhet via QR…"
+
+msgid "Log Out {0}"
+msgstr "Logg ut {0}"
+
+msgid "empty session"
+msgstr "tom økt"
+
+msgid "couldn't persist matrix store: {0}"
+msgstr "kunne ikke lagre Matrix-lageret: {0}"
+
+msgid "couldn't persist session"
+msgstr "kunne ikke lagre økten"
+
+msgid "no user id"
+msgstr "ingen bruker-ID"
+
+msgid "Sign out failed: {0}"
+msgstr "Utlogging mislyktes: {0}"
+
+msgid "{0} is typing…"
+msgstr "{0} skriver…"
+
+msgid "{0} and {1} are typing…"
+msgstr "{0} og {1} skriver…"
+
+msgid "{0}, {1} and {2} other are typing…"
+msgid_plural "{0}, {1} and {2} others are typing…"
+msgstr[0] "{0}, {1} og {2} annen skriver…"
+msgstr[1] "{0}, {1} og {2} andre skriver…"
+
+msgid "End your call before clearing the cache."
+msgstr "Avslutt samtalen før du tømmer hurtigbufferen."
+
+msgid "Finish verifying your device before clearing the cache."
+msgstr "Fullfør verifiseringen av enheten din før du tømmer hurtigbufferen."
+
+msgid "Couldn't clear the cache: this account's session is missing."
+msgstr "Kunne ikke tømme hurtigbufferen: økten til denne kontoen mangler."
+
+msgid "Clearing cache…"
+msgstr "Tømmer hurtigbufferen…"
+
+msgid "Cache cleared."
+msgstr "Hurtigbufferen er tømt."
+
+msgid "Cache cleared, but reloading failed: {0}"
+msgstr "Hurtigbufferen er tømt, men ny lasting mislyktes: {0}"
+
+msgid "Subscribe failed: {0}"
+msgstr "Abonnering mislyktes: {0}"
+
+msgid "Exporting history…"
+msgstr "Eksporterer historikk…"
+
+msgid "Exporting history… {0} messages"
+msgstr "Eksporterer historikk… {0} meldinger"
+
+msgid "Failed to upload avatar: {0}"
+msgstr "Kunne ikke laste opp avataren: {0}"
+
+msgid "Failed to set room avatar: {0}"
+msgstr "Kunne ikke angi romavatar: {0}"
+
+msgid "Avatar updated for this room"
+msgstr "Avataren er oppdatert for dette rommet"
+
+msgid "The file couldn't be written."
+msgstr "Filen kunne ikke skrives."
+
+msgid "This verification is no longer active."
+msgstr "Denne verifiseringen er ikke lenger aktiv."
+
+msgid "The other device didn't finish confirming in time."
+msgstr "Den andre enheten fullførte ikke bekreftelsen i tide."
+
+msgid "Save recovery key"
+msgstr "Lagre gjenopprettingsnøkkel"
+
+msgid "Couldn't read your recovery key from this computer's secure storage."
+msgstr "Kunne ikke lese gjenopprettingsnøkkelen din fra den sikre lagringen på denne datamaskinen."
+
+msgid "Finish the current verification first."
+msgstr "Fullfør den pågående verifiseringen først."
+
+msgid "Sync error: reconnecting…"
+msgstr "Synkroniseringsfeil: kobler til på nytt…"
+
+msgid "Reconnecting session…"
+msgstr "Kobler til økten på nytt…"
+
+msgid "Reconnected"
+msgstr "Tilkoblet igjen"
+
+msgid "Session expired; please log in again."
+msgstr "Økten har utløpt. Logg inn på nytt."
+
+msgid "Location services aren't available on this device."
+msgstr "Posisjonstjenester er ikke tilgjengelige på denne enheten."
+
+msgid "Fetching your location…"
+msgstr "Henter posisjonen din…"
+
+msgid "Location permission denied."
+msgstr "Tilgang til posisjon ble avslått."
+
+msgid "Location is currently unavailable."
+msgstr "Posisjon er ikke tilgjengelig for øyeblikket."
+
+msgid "Timed out waiting for your location."
+msgstr "Tidsavbrudd mens vi ventet på posisjonen din."
+
+msgid "Couldn't get your location."
+msgstr "Kunne ikke hente posisjonen din."
+
+msgid "Location sent."
+msgstr "Posisjon sendt."
+
+msgid "You're signed out of this account"
+msgstr "Du er logget ut av denne kontoen"
+
+msgid "Couldn't send your reply. Try again from the app."
+msgstr "Kunne ikke sende svaret ditt. Prøv igjen fra appen."
+
+msgid "Message not sent"
+msgstr "Meldingen ble ikke sendt"
+
+msgid "Call failed: {0}"
+msgstr "Samtalen mislyktes: {0}"
+
+msgid "Call disconnected due to a network error."
+msgstr "Samtalen ble brutt på grunn av en nettverksfeil."
+
+msgid "Call ended due to a media error."
+msgstr "Samtalen ble avsluttet på grunn av en mediefeil."
+
+msgid "This call is not supported on your device."
+msgstr "Denne samtalen støttes ikke på enheten din."
+
+msgid "Call ended due to an encryption error."
+msgstr "Samtalen ble avsluttet på grunn av en krypteringsfeil."
+
+msgid "The call ended unexpectedly."
+msgstr "Samtalen ble uventet avsluttet."
+
+msgid "New message"
+msgstr "Ny melding"
+
+msgid "(Spoiler: {0})"
+msgstr "(Spoiler: {0})"
+
+msgid "(Spoiler)"
+msgstr "(Spoiler)"
+
+msgid "Send an action message"
+msgstr "Send en handlingsmelding"
+
+msgid "Append ¯\\_(ツ)_/¯"
+msgstr "Legg til ¯\\_(ツ)_/¯"
+
+msgid "Slap someone with a large trout"
+msgstr "Slå noen med en stor ørret"
+
+msgid "Send a hidden spoiler message"
+msgstr "Send en skjult spoilermelding"
+
+msgid "Set your display name in this room"
+msgstr "Angi visningsnavnet ditt i dette rommet"
+
+msgid "Set or reset your avatar in this room"
+msgstr "Angi eller tilbakestill avataren din i dette rommet"
+
+msgid "Join a room by alias or ID"
+msgstr "Bli med i et rom via alias eller ID"
+
+msgid "Leave the current room"
+msgstr "Forlat det gjeldende rommet"
+
+msgid "Invite a user to the current room"
+msgstr "Inviter en bruker til det gjeldende rommet"
+
+msgid "Search for a GIF to send"
+msgstr "Søk etter en GIF å sende"
+
+msgid "Take a selfie and attach it"
+msgstr "Ta en selfie og legg den ved"
+
+msgid "Share your current location"
+msgstr "Del posisjonen din"
+
+msgid "Avatar reset for this room"
+msgstr "Avataren er tilbakestilt for dette rommet"
+
+msgid "slaps {0} around a bit with a large trout"
+msgstr "slår {0} litt rundt med en stor ørret"
+
+msgid "no image URL provided; use /myroomavatar alone to open the image picker"
+msgstr "ingen bilde-URL oppgitt. Bruk /myroomavatar alene for å åpne bildevelgeren"
+
+msgid "expected an mxc:// or http(s) image URL, or \"reset\""
+msgstr "forventet en mxc://- eller http(s)-URL til et bilde, eller \"reset\""
+
+msgid "text"
+msgstr "tekst"
+
+msgid "number"
+msgstr "tall"
+
+msgid "yes/no"
+msgstr "ja/nei"
+
+msgid "user"
+msgstr "bruker"
+
+msgid "server"
+msgstr "tjener"
+
+msgid "room"
+msgstr "rom"
+
+msgid "event"
+msgstr "hendelse"
+
+msgid "{0} (comma-separated)"
+msgstr "{0} (kommaseparert)"
+
+msgid "list"
+msgstr "liste"
+
+msgid "Press Enter to send"
+msgstr "Trykk Enter for å sende"
+
+msgid "{0}: {1}"
+msgstr "{0}: {1}"
+
+msgid "optional"
+msgstr "valgfri"
+
+msgid "Missing required argument: {0}"
+msgstr "Mangler påkrevd argument: {0}"
+
+msgid "Too many arguments"
+msgstr "For mange argumenter"
+
+msgid "{0} must be a valid {1}"
+msgstr "{0} har ugyldig verdi. Forventet: {1}"
+
+msgid "January"
+msgstr "januar"
+
+msgid "February"
+msgstr "februar"
+
+msgid "March"
+msgstr "mars"
+
+msgid "April"
+msgstr "april"
+
+msgid "May"
+msgstr "mai"
+
+msgid "June"
+msgstr "juni"
+
+msgid "July"
+msgstr "juli"
+
+msgid "August"
+msgstr "august"
+
+msgid "September"
+msgstr "september"
+
+msgid "October"
+msgstr "oktober"
+
+msgid "November"
+msgstr "november"
+
+msgid "December"
+msgstr "desember"
+
+msgid "Jan"
+msgstr "jan"
+
+msgid "Feb"
+msgstr "feb"
+
+msgid "Mar"
+msgstr "mar"
+
+msgid "Apr"
+msgstr "apr"
+
+msgid "Jun"
+msgstr "jun"
+
+msgid "Jul"
+msgstr "jul"
+
+msgid "Aug"
+msgstr "aug"
+
+msgid "Sep"
+msgstr "sep"
+
+msgid "Oct"
+msgstr "okt"
+
+msgid "Nov"
+msgstr "nov"
+
+msgid "Dec"
+msgstr "des"
+
+msgid "Sunday"
+msgstr "søndag"
+
+msgid "Monday"
+msgstr "mandag"
+
+msgid "Tuesday"
+msgstr "tirsdag"
+
+msgid "Wednesday"
+msgstr "onsdag"
+
+msgid "Thursday"
+msgstr "torsdag"
+
+msgid "Friday"
+msgstr "fredag"
+
+msgid "Saturday"
+msgstr "lørdag"
+
+msgid "Sun"
+msgstr "søn"
+
+msgid "Mon"
+msgstr "man"
+
+msgid "Tue"
+msgstr "tir"
+
+msgid "Wed"
+msgstr "ons"
+
+msgid "Thu"
+msgstr "tor"
+
+msgid "Fri"
+msgstr "fre"
+
+msgid "Sat"
+msgstr "lør"
+
+msgid "Su"
+msgstr "sø"
+
+msgid "Mo"
+msgstr "ma"
+
+msgid "Tu"
+msgstr "ti"
+
+msgid "We"
+msgstr "on"
+
+msgid "Th"
+msgstr "to"
+
+msgid "Fr"
+msgstr "fr"
+
+msgid "Sa"
+msgstr "lø"
+
+msgid "{0} B"
+msgstr "{0} B"
+
+msgid "{0} KB"
+msgstr "{0} kB"
+
+msgid "{0} MB"
+msgstr "{0} MB"
+
+msgid "{0} GB"
+msgstr "{0} GB"
+
+msgid "Esc"
+msgstr "Esc"
+
+msgid "Enter"
+msgstr "Enter"
+
+msgid "Space"
+msgstr "Mellomrom"
+
+msgid "Tab"
+msgstr "Tab"
+
+msgid "Home"
+msgstr "Home"
+
+msgid "End"
+msgstr "End"
+
+msgid "Page Up"
+msgstr "Page Up"
+
+msgid "Page Down"
+msgstr "Page Down"
+
+msgid "Backspace"
+msgstr "Backspace"
+
+msgid "Delete"
+msgstr "Delete"
+
+msgid "Menu"
+msgstr "Meny"
+
+msgid "Ctrl"
+msgstr "Ctrl"
+
+msgid "Alt"
+msgstr "Alt"
+
+msgid "Shift"
+msgstr "Skift"
+
+msgid "Win"
+msgstr "Win"
+
+msgid "Super"
+msgstr "Super"
+
+msgid "Link {0} of {1}: {2} — press Enter to open"
+msgstr "Lenke {0} av {1}: {2} – trykk Enter for å åpne"
+
+msgid "Entire Screen"
+msgstr "Hele skjermen"
+
+msgid "Select Window"
+msgstr "Velg vindu"
+
+msgid "Share Screen"
+msgstr "Del skjermen"
+
+msgid "Blue"
+msgstr "Blå"
+
+msgid "Forest"
+msgstr "Skog"
+
+msgid "Sunset"
+msgstr "Solnedgang"
+
+msgid "Violet"
+msgstr "Fiolett"
+
+msgid "System"
+msgstr "System"
+
+msgid "No camera found."
+msgstr "Fant ikke noe kamera."
+
+msgid "The camera is being used by another app."
+msgstr "Kameraet brukes av en annen app."
+
+msgid "Camera access is blocked. Check your system privacy settings."
+msgstr "Tilgang til kameraet er blokkert. Sjekk personverninnstillingene i systemet."
+
+msgid "The camera could not be started."
+msgstr "Kameraet kunne ikke startes."
+
+msgid "Runs continuously"
+msgstr "Kjører kontinuerlig"
+
+msgid "Periodic"
+msgstr "Periodisk"
+
+msgid "On demand"
+msgstr "Ved behov"
+
+msgid "Thread pool"
+msgstr "Trådpulje"
+
+msgid "{0}s"
+msgstr "{0}s"
+
+msgid "{0}m"
+msgstr "{0}m"
+
+msgid "{0}h"
+msgstr "{0}t"
+
+msgid "{0}d"
+msgstr "{0}d"
+
+msgid "{0} jobs · {1} running · {2} with errors"
+msgstr "{0} jobber · {1} kjører · {2} med feil"
+
+msgid "Running"
+msgstr "Kjører"
+
+msgid "Running for {0}"
+msgstr "Har kjørt i {0}"
+
+msgid "Error"
+msgstr "Feil"
+
+msgid "Not run yet"
+msgstr "Ikke kjørt ennå"
+
+msgid "{0} ago"
+msgstr "{0} siden"
+
+msgid "{0} run"
+msgid_plural "{0} runs"
+msgstr[0] "{0} kjøring"
+msgstr[1] "{0} kjøringer"
+
+msgid "Join"
+msgstr "Bli med"
+
+msgid "Create"
+msgstr "Opprett"
+
+msgid "Browse"
+msgstr "Bla gjennom"
+
+msgid "Change avatar"
+msgstr "Endre avatar"
+
+msgid "Remove avatar"
+msgstr "Fjern avatar"
+
+msgid "Video call in progress"
+msgstr "Videosamtale pågår"
+
+msgid "Voice call in progress"
+msgstr "Talesamtale pågår"
+
+msgid "Call in progress"
+msgstr "Samtale pågår"
+
+msgid "Join call"
+msgstr "Bli med i samtalen"
+
+msgid "Mute microphone"
+msgstr "Slå av mikrofonen"
+
+msgid "Unmute microphone"
+msgstr "Slå på mikrofonen"
+
+msgid "Turn camera off"
+msgstr "Slå av kameraet"
+
+msgid "Turn camera on"
+msgstr "Slå på kameraet"
+
+msgid "Move call window"
+msgstr "Flytt samtalevinduet"
+
+msgid "Use the arrow keys to move it"
+msgstr "Bruk piltastene for å flytte det"
+
+msgid "Leave call"
+msgstr "Forlat samtalen"
+
+msgid "{0} joined the call"
+msgstr "{0} ble med i samtalen"
+
+msgid "{0} left the call"
+msgstr "{0} forlot samtalen"
+
+msgid "Stop sharing screen"
+msgstr "Slutt å dele skjermen"
+
+msgid "Share screen"
+msgstr "Del skjermen"
+
+msgid "Expand call"
+msgstr "Utvid samtalen"
+
+msgid "Collapse call"
+msgstr "Minimer samtalen"
+
+msgid "Dock call"
+msgstr "Fest samtalen"
+
+msgid "Pop out call"
+msgstr "Åpne samtalen i eget vindu"
+
+msgid "Click anywhere to close"
+msgstr "Klikk hvor som helst for å lukke"
+
+msgid "Click anywhere to cancel"
+msgstr "Klikk hvor som helst for å avbryte"
+
+msgid "Message…"
+msgstr "Melding…"
+
+msgid "Emoji"
+msgstr "Emoji"
+
+msgid "Stickers"
+msgstr "Klistremerker"
+
+msgid "Remove attachment"
+msgstr "Fjern vedlegg"
+
+msgid "Cancel editing"
+msgstr "Avbryt redigering"
+
+msgid "Cancel reply"
+msgstr "Avbryt svar"
+
+msgid "Cancel recording"
+msgstr "Avbryt opptak"
+
+msgid "Sending…"
+msgstr "Sender…"
+
+msgid "Stop recording"
+msgstr "Stopp opptak"
+
+msgid "Editing message"
+msgstr "Redigerer melding"
+
+msgid "Replying to {0}"
+msgstr "Svarer til {0}"
+
+msgid "Message {0}"
+msgstr "Melding til {0}"
+
+msgid "Attachment"
+msgstr "Vedlegg"
+
+msgid "Attachment: {0}, {1}"
+msgstr "Vedlegg: {0}, {1}"
+
+msgid "Confirm"
+msgstr "Bekreft"
+
+msgid "Room name"
+msgstr "Romnavn"
+
+msgid "Topic (optional)"
+msgstr "Emne (valgfritt)"
+
+msgid "Room alias (optional)"
+msgstr "Romalias (valgfritt)"
+
+msgid "Invite people (optional) — Matrix IDs, one per line or comma-separated"
+msgstr "Inviter folk (valgfritt) – Matrix-ID-er, én per linje eller kommaseparert"
+
+msgid "Reason (optional)"
+msgstr "Årsak (valgfritt)"
+
+msgid "Sent as plain text, even in encrypted rooms"
+msgstr "Sendes som ren tekst, også i krypterte rom"
+
+msgid "Private"
+msgstr "Privat"
+
+msgid "Public"
+msgstr "Offentlig"
+
+msgid "Sets the initial join rule, history visibility, and directory listing. Private: invite-only, unlisted. Public: anyone can join, listed. Fine-grained options (Knock, Restricted) can be set afterward in Room Settings → Security & Privacy."
+msgstr "Bestemmer hvem som kan bli med, hvor synlig historikken er og om rommet står i katalogen. Privat: bare med invitasjon, ikke oppført. Offentlig: alle kan bli med, oppført. Finere valg (Be om å bli med, Begrenset) kan angis senere under Rominnstillinger → Sikkerhet og personvern."
+
+msgid "Encrypt this room"
+msgstr "Krypter dette rommet"
+
+msgid "Create Room"
+msgstr "Opprett rom"
+
+msgid "Create Space"
+msgstr "Opprett område"
+
+msgid "Create Call Room"
+msgstr "Opprett samtalerom"
+
+msgid "Space name"
+msgstr "Områdenavn"
+
+msgid "Call room name"
+msgstr "Navn på samtalerommet"
+
+msgid "Space alias (optional)"
+msgstr "Områdealias (valgfritt)"
+
+msgid "Sent as plain text, even in encrypted spaces"
+msgstr "Sendes som ren tekst, også i krypterte områder"
+
+msgid "Couldn't create space."
+msgstr "Kunne ikke opprette området."
+
+msgid "Couldn't create call room."
+msgstr "Kunne ikke opprette samtalerommet."
+
+msgid "Couldn't create room."
+msgstr "Kunne ikke opprette rommet."
+
+msgid "Create a Room"
+msgstr "Opprett et rom"
+
+msgid "Creating space…"
+msgstr "Oppretter område…"
+
+msgid "Creating call room…"
+msgstr "Oppretter samtalerom…"
+
+msgid "Creating room…"
+msgstr "Oppretter rom…"
+
+#. TRANSLATORS: month header pattern, see tk::format_date.
+msgid "%B %Y"
+msgstr "%B %Y"
+
+msgid "Previous month"
+msgstr "Forrige måned"
+
+msgid "Next month"
+msgstr "Neste måned"
+
+msgid "Today"
+msgstr "I dag"
+
+#. TRANSLATORS: date separator pattern, see tk::format_date.
+msgid "%B %-d, %Y"
+msgstr "%-d. %B %Y"
+
+msgid "Search emoji"
+msgstr "Søk etter emoji"
+
+msgid "Frequently Used"
+msgstr "Ofte brukt"
+
+msgid "Remind me later"
+msgstr "Påminn meg senere"
+
+msgid "Your messages aren't backed up yet."
+msgstr "Meldingene dine er ikke sikkerhetskopiert ennå."
+
+msgid "Your encrypted messages are locked on this device."
+msgstr "De krypterte meldingene dine er låst på denne enheten."
+
+msgid "Save your recovery key so you never lose your messages."
+msgstr "Lagre gjenopprettingsnøkkelen din, så mister du aldri meldingene dine."
+
+msgid "Set up recovery"
+msgstr "Sett opp gjenoppretting"
+
+msgid "Show me"
+msgstr "Vis meg"
+
+msgid "Unlock"
+msgstr "Lås opp"
+
+msgid "Save to file…"
+msgstr "Lagre til fil…"
+
+msgid "Skip for now"
+msgstr "Hopp over foreløpig"
+
+msgid "Use a passphrase instead"
+msgstr "Bruk en passfrase i stedet"
+
+msgid "Back"
+msgstr "Tilbake"
+
+msgid "I've lost my recovery key and other devices"
+msgstr "Jeg har mistet gjenopprettingsnøkkelen og de andre enhetene mine"
+
+msgid "Not me"
+msgstr "Ikke meg"
+
+msgid "Sign out and delete the key"
+msgstr "Logg ut og slett nøkkelen"
+
+msgid "Turn off backup"
+msgstr "Slå av sikkerhetskopiering"
+
+msgid "I've saved my recovery key"
+msgstr "Jeg har lagret gjenopprettingsnøkkelen"
+
+msgid "Also keep it on this device"
+msgstr "Behold den også på denne enheten"
+
+msgid "Confirm passphrase"
+msgstr "Bekreft passfrase"
+
+msgid "Recovery key or passphrase"
+msgstr "Gjenopprettingsnøkkel eller passfrase"
+
+msgid "Saved."
+msgstr "Lagret."
+
+msgid "Couldn't save the file."
+msgstr "Kunne ikke lagre filen."
+
+msgid "Couldn't save the file: {0}"
+msgstr "Kunne ikke lagre filen: {0}"
+
+msgid "Unlocking your messages…"
+msgstr "Låser opp meldingene dine…"
+
+msgid "Securing your messages…"
+msgstr "Sikrer meldingene dine…"
+
+msgid "Done."
+msgstr "Ferdig."
+
+msgid "Confirming…"
+msgstr "Bekrefter…"
+
+msgid "The request was cancelled or timed out."
+msgstr "Forespørselen ble avbrutt eller gikk ut på tid."
+
+msgid "Turning off backup…"
+msgstr "Slår av sikkerhetskopiering…"
+
+msgid "The codes didn't match, so nothing was confirmed. If you didn't start this, someone else may be trying to get into your account."
+msgstr "Kodene stemte ikke overens, så ingenting ble bekreftet. Hvis du ikke startet dette selv, kan noen andre prøve å få tilgang til kontoen din."
+
+msgid "You're all set. Your messages are protected."
+msgstr "Alt er klart. Meldingene dine er beskyttet."
+
+msgid "You're all set. Your encrypted messages are available on this device."
+msgstr "Alt er klart. De krypterte meldingene dine er tilgjengelige på denne enheten."
+
+msgid "Your other device is confirmed and can now read your encrypted messages."
+msgstr "Den andre enheten er bekreftet og kan nå lese de krypterte meldingene dine."
+
+msgid "Verified. You can trust you're talking to the right person."
+msgstr "Verifisert. Du kan være trygg på at du snakker med riktig person."
+
+msgid "Backup is off. Your encrypted messages are kept only on your devices."
+msgstr "Sikkerhetskopiering er av. De krypterte meldingene dine lagres bare på enhetene dine."
+
+msgid "Confirm it's you"
+msgstr "Bekreft at det er deg"
+
+msgid "Choose how to unlock your encrypted messages on this device."
+msgstr "Velg hvordan du vil låse opp de krypterte meldingene dine på denne enheten."
+
+msgid "Use another device"
+msgstr "Bruk en annen enhet"
+
+msgid "Approve from a device where you're already signed in"
+msgstr "Godkjenn fra en enhet der du allerede er logget inn"
+
+msgid "Enter recovery key"
+msgstr "Skriv inn gjenopprettingsnøkkel"
+
+msgid "Or the passphrase you chose instead"
+msgstr "Eller passfrasen du valgte i stedet"
+
+msgid "Reset encryption?"
+msgstr "Tilbakestille kryptering?"
+
+msgid "If you've lost both your recovery key and every other signed-in device, you can start over with a new recovery key. Messages you can't read now will stay unreadable, and people you chat with will see that your security details changed."
+msgstr "Hvis du har mistet både gjenopprettingsnøkkelen og alle andre enheter du er logget inn på, kan du begynne på nytt med en ny gjenopprettingsnøkkel. Meldinger du ikke kan lese nå, forblir uleselige, og de du chatter med, vil se at sikkerhetsdetaljene dine er endret."
+
+msgid "Reset encryption"
+msgstr "Tilbakestill kryptering"
+
+msgid "Waiting for {0}"
+msgstr "Venter på {0}"
+
+msgid "{0} needs to accept the verification request in their Matrix app."
+msgstr "{0} må godta verifiseringsforespørselen i Matrix-appen sin."
+
+msgid "Check your other device"
+msgstr "Sjekk den andre enheten din"
+
+msgid "Starting verification…"
+msgstr "Starter verifisering…"
+
+msgid "Open Tesseract (or another Matrix app) on a device where you're signed in and accept the request."
+msgstr "Åpne Tesseract (eller en annen Matrix-app) på en enhet der du er logget inn, og godta forespørselen."
+
+msgid "Was this you?"
+msgstr "Var det deg?"
+
+msgid "Verification request"
+msgstr "Verifiseringsforespørsel"
+
+msgid "Your device “{0}” wants to confirm it's you so it can read your encrypted messages."
+msgstr "Enheten din «{0}» vil bekrefte at det er deg, slik at den kan lese de krypterte meldingene dine."
+
+msgid "{0} wants to verify you. You'll compare a few numbers to make sure you're talking to the right person."
+msgstr "{0} vil verifisere deg. Dere sammenligner noen tall for å forsikre dere om at du snakker med riktig person."
+
+msgid "Continue"
+msgstr "Fortsett"
+
+msgid "Decline"
+msgstr "Avslå"
+
+msgid "Compare numbers"
+msgstr "Sammenlign tall"
+
+msgid "Check that the other device shows the same numbers in the same order."
+msgstr "Sjekk at den andre enheten viser de samme tallene i samme rekkefølge."
+
+msgid "Check that {0} sees the same numbers in the same order."
+msgstr "Sjekk at {0} ser de samme tallene i samme rekkefølge."
+
+msgid "Numbers: {0}, {1}, {2}"
+msgstr "Tall: {0}, {1}, {2}"
+
+msgid "Or compare these emoji:"
+msgstr "Eller sammenlign disse emojiene:"
+
+msgid "{0}. {1}"
+msgstr "{0}. {1}"
+
+msgid "They match"
+msgstr "De stemmer"
+
+msgid "They don't match"
+msgstr "De stemmer ikke"
+
+msgid "Couldn't confirm"
+msgstr "Kunne ikke bekrefte"
+
+msgid "Try again"
+msgstr "Prøv igjen"
+
+msgid "Close"
+msgstr "Lukk"
+
+msgid "Your messages are now backed up"
+msgstr "Meldingene dine er nå sikkerhetskopiert"
+
+msgid "Protect your messages"
+msgstr "Beskytt meldingene dine"
+
+msgid "Save your recovery key before you sign out"
+msgstr "Lagre gjenopprettingsnøkkelen din før du logger ut"
+
+msgid "Keep your messages safe"
+msgstr "Hold meldingene dine trygge"
+
+msgid "Tesseract turned on secure backup for your encrypted messages and made a recovery key for your account. You'll need that key to read your messages if you sign in on a new device or lose this one, so a reminder at the top of the window will help you save it."
+msgstr "Tesseract har slått på kryptert sikkerhetskopiering av de krypterte meldingene dine og laget en gjenopprettingsnøkkel for kontoen din. Du trenger nøkkelen for å lese meldingene dine hvis du logger inn på en ny enhet eller mister denne, så en påminnelse øverst i vinduet hjelper deg å lagre den."
+
+msgid "Your messages are end-to-end encrypted. A recovery key lets you read them again if you sign in on a new device or lose this one."
+msgstr "Meldingene dine er ende-til-ende-krypterte. Med en gjenopprettingsnøkkel kan du lese dem igjen hvis du logger inn på en ny enhet eller mister denne."
+
+msgid "Your recovery key isn't saved anywhere but this device yet. Without it, you won't be able to read your old messages after you sign in again. If you sign out without saving it, it stays on this computer so you can sign back in; on a shared computer, delete it instead."
+msgstr "Gjenopprettingsnøkkelen din er foreløpig ikke lagret noe annet sted enn på denne enheten. Uten den kan du ikke lese de gamle meldingene dine etter at du har logget inn på nytt. Hvis du logger ut uten å lagre den, blir den liggende på denne datamaskinen slik at du kan logge inn igjen. På en delt datamaskin bør du slette den i stedet."
+
+msgid "Tesseract made a recovery key for your account. If you lose this device or sign out, it's the only way to read your old messages again. Keep a copy somewhere safe, like a password manager, or print it out."
+msgstr "Tesseract har laget en gjenopprettingsnøkkel for kontoen din. Hvis du mister denne enheten eller logger ut, er den den eneste måten å lese de gamle meldingene dine på. Ta vare på en kopi et trygt sted, for eksempel i en passordbehandler, eller skriv den ut."
+
+msgid "To read your encrypted messages on this device, confirm it's you with your recovery key or with another device where you're signed in."
+msgstr "For å lese de krypterte meldingene dine på denne enheten må du bekrefte at det er deg, enten med gjenopprettingsnøkkelen eller med en annen enhet du er logget inn på."
+
+msgid "Create recovery key"
+msgstr "Opprett gjenopprettingsnøkkel"
+
+msgid "Show my recovery key"
+msgstr "Vis gjenopprettingsnøkkelen min"
+
+msgid "Sign out without saving"
+msgstr "Logg ut uten å lagre"
+
+msgid "Choose a passphrase"
+msgstr "Velg en passfrase"
+
+msgid "Pick something memorable that you don't use anywhere else."
+msgstr "Velg noe du husker, og som du ikke bruker andre steder."
+
+msgid "The passphrases don't match."
+msgstr "Passfrasene er ikke like."
+
+msgid "Enter your recovery key"
+msgstr "Skriv inn gjenopprettingsnøkkelen din"
+
+msgid "If you set a passphrase instead, enter that."
+msgstr "Hvis du har satt en passfrase i stedet, skriver du den inn."
+
+msgid "{0} {1}%"
+msgstr "{0} {1}%"
+
+msgid "Save your recovery key"
+msgstr "Lagre gjenopprettingsnøkkelen din"
+
+msgid "Keep it somewhere safe, like a password manager. You'll need it to read your messages if you sign in on a new device."
+msgstr "Ta vare på den et trygt sted, for eksempel i en passordbehandler. Du trenger den for å lese meldingene dine hvis du logger inn på en ny enhet."
+
+msgid "Recovery key: {0}"
+msgstr "Gjenopprettingsnøkkel: {0}"
+
+msgid "Tesseract keeps it in this computer's secure storage, so it can unlock your messages by itself if you reinstall. Anyone who can open that storage could read your messages too."
+msgstr "Tesseract lagrer den i den sikre lagringen på denne datamaskinen, slik at den kan låse opp meldingene dine av seg selv hvis du installerer på nytt. Alle som får åpnet den lagringen, kan også lese meldingene dine."
+
+msgid "Sign out"
+msgstr "Logg ut"
+
+msgid "Resetting encryption"
+msgstr "Tilbakestiller kryptering"
+
+msgid "Approve the reset in the browser window that just opened. This will continue once you've confirmed."
+msgstr "Godkjenn tilbakestillingen i nettleservinduet som nettopp åpnet seg. Dette fortsetter når du har bekreftet."
+
+msgid "Approve the reset as {0} in the browser window that just opened. If the browser is signed in as a different account, sign out there first, or copy the link into a private window."
+msgstr "Godkjenn tilbakestillingen som {0} i nettleservinduet som nettopp åpnet seg. Hvis nettleseren er logget inn med en annen konto, må du logge ut der først eller kopiere lenken til et privat vindu."
+
+msgid "Still waiting? Check that you approved it as {0}, not another account."
+msgstr "Venter det fortsatt? Sjekk at du godkjente som {0}, ikke som en annen konto."
+
+msgid "Link copied"
+msgstr "Lenke kopiert"
+
+msgid "Copy link"
+msgstr "Kopier lenke"
+
+msgid "Include images"
+msgstr "Ta med bilder"
+
+msgid "Package as a .zip file"
+msgstr "Pakk som .zip-fil"
+
+msgid "Export"
+msgstr "Eksporter"
+
+msgid "Resume export"
+msgstr "Fortsett eksporten"
+
+msgid "Start new export"
+msgstr "Start ny eksport"
+
+msgid "Stop & save"
+msgstr "Stopp og lagre"
+
+msgid "Go to that export"
+msgstr "Gå til eksporten"
+
+msgid "HTML"
+msgstr "HTML"
+
+msgid "Plain text"
+msgstr "Ren tekst"
+
+msgid "All history"
+msgstr "Hele historikken"
+
+msgid "Last 24 hours"
+msgstr "Siste 24 timer"
+
+msgid "Last 7 days"
+msgstr "Siste 7 dager"
+
+msgid "Last 30 days"
+msgstr "Siste 30 dager"
+
+msgid "Last 3 months"
+msgstr "Siste 3 måneder"
+
+msgid "Last year"
+msgstr "Siste år"
+
+msgid "Finalizing export… ({0} of {1})"
+msgstr "Fullfører eksporten… ({0} av {1})"
+
+msgid "Finalizing export…"
+msgstr "Fullfører eksporten…"
+
+msgid "{0} — back to {1}"
+msgstr "{0} – tilbake til {1}"
+
+msgid "{0} messages — now at {1}"
+msgstr "{0} meldinger – nå ved {1}"
+
+msgid "Reading messages — now at {0}"
+msgstr "Leser meldinger – nå ved {0}"
+
+msgid "{0} messages exported"
+msgstr "{0} meldinger eksportert"
+
+msgid "Export History of {0}"
+msgstr "Eksporter historikk for {0}"
+
+msgid "A previous export of this room was interrupted after {0} messages. Resume it, or start over?"
+msgstr "En tidligere eksport av dette rommet ble avbrutt etter {0} meldinger. Vil du fortsette den eller begynne på nytt?"
+
+msgid "Exporting {0}"
+msgstr "Eksporterer {0}"
+
+msgid "Exporting back to {0}"
+msgstr "Eksporterer tilbake til {0}"
+
+msgid "Export in progress"
+msgstr "Eksport pågår"
+
+msgid "Currently exporting {0}."
+msgstr "Eksporterer {0} nå."
+
+msgid "Export cancelled"
+msgstr "Eksporten ble avbrutt"
+
+msgid "Unnamed room"
+msgstr "Rom uten navn"
+
+msgid "Search rooms…"
+msgstr "Søk etter rom…"
+
+msgid "Forward"
+msgstr "Videresend"
+
+msgid "Dismiss"
+msgstr "Avvis"
+
+msgid "Forward message"
+msgstr "Videresend melding"
+
+msgid "No rooms"
+msgstr "Ingen rom"
+
+msgid "Forward ({0})"
+msgstr "Videresend ({0})"
+
+msgid "Forwarding to {0} room…"
+msgid_plural "Forwarding to {0} rooms…"
+msgstr[0] "Videresender til {0} rom…"
+msgstr[1] "Videresender til {0} rom…"
+
+msgid "Failed to forward to {0}: {1}"
+msgstr "Kunne ikke videresende til {0}: {1}"
+
+msgid "Forwarded to {0} room"
+msgid_plural "Forwarded to {0} rooms"
+msgstr[0] "Videresendt til {0} rom"
+msgstr[1] "Videresendt til {0} rom"
+
+msgid "No GIF API key configured"
+msgstr "Ingen GIF-API-nøkkel er satt opp"
+
+msgid "No GIFs found"
+msgstr "Fant ingen GIF-er"
+
+msgid "GIF search failed"
+msgstr "GIF-søket mislyktes"
+
+msgid "{0} ({1})"
+msgstr "{0} ({1})"
+
+msgid "{0}'s verified identity was reset."
+msgstr "Den verifiserte identiteten til {0} ble tilbakestilt."
+
+msgid "{0}'s identity was reset."
+msgstr "Identiteten til {0} ble tilbakestilt."
+
+msgid "Withdraw verification"
+msgstr "Trekk tilbake verifiseringen"
+
+msgid "Any"
+msgstr "Alle"
+
+msgid "Sticker"
+msgstr "Klistremerke"
+
+msgid "Unnamed pack"
+msgstr "Pakke uten navn"
+
+msgid "Pack: {0}"
+msgstr "Pakke: {0}"
+
+msgid "Rename {0}"
+msgstr "Gi {0} nytt navn"
+
+msgid "Remove pack {0}"
+msgstr "Fjern pakken {0}"
+
+msgid "(no shortcode)"
+msgstr "(ingen kortkode)"
+
+msgid "Edit shortcode {0}"
+msgstr "Rediger kortkoden {0}"
+
+msgid "Remove {0}"
+msgstr "Fjern {0}"
+
+msgid "Pack name"
+msgstr "Pakkenavn"
+
+msgid "New pack name"
+msgstr "Nytt pakkenavn"
+
+msgid "Shortcode"
+msgstr "Kortkode"
+
+msgid "No image packs yet — create one above."
+msgstr "Ingen bildepakker ennå – opprett en ovenfor."
+
+msgid "Drop image"
+msgstr "Slipp bildet her"
+
+msgid "Accept"
+msgstr "Godta"
+
+msgid "Block"
+msgstr "Blokker"
+
+msgid "Invited by {0}"
+msgstr "Invitert av {0}"
+
+msgid "Reason: {0}"
+msgstr "Årsak: {0}"
+
+msgid "{0} invited you to a direct message"
+msgstr "{0} inviterte deg til en direktemelding"
+
+msgid "{0} invited you to {1}"
+msgstr "{0} inviterte deg til {1}"
+
+msgid "Already in room"
+msgstr "Allerede i rommet"
+
+msgid "Looking up…"
+msgstr "Slår opp…"
+
+msgid "User not found"
+msgstr "Fant ikke brukeren"
+
+msgid "Search people or enter @user:server"
+msgstr "Søk etter folk eller skriv @bruker:tjener"
+
+msgid "Invite"
+msgstr "Inviter"
+
+msgid "Invite to room"
+msgstr "Inviter til rommet"
+
+msgid "Invite to {0}"
+msgstr "Inviter til {0}"
+
+msgid "No matching people"
+msgstr "Fant ingen personer"
+
+msgid "Inviting {0} person…"
+msgid_plural "Inviting {0} people…"
+msgstr[0] "Inviterer {0} person…"
+msgstr[1] "Inviterer {0} personer…"
+
+msgid "Failed to invite {0}: {1}"
+msgstr "Kunne ikke invitere {0}: {1}"
+
+msgid "Invited {0} person"
+msgid_plural "Invited {0} people"
+msgstr[0] "{0} person invitert"
+msgstr[1] "{0} personer invitert"
+
+msgid "Invite ({0})"
+msgstr "Inviter ({0})"
+
+msgid "Topic links"
+msgstr "Lenker i emnet"
+
+msgid "#room:server.org"
+msgstr "#room:server.org"
+
+msgid "Look up"
+msgstr "Slå opp"
+
+msgid "Request to Join"
+msgstr "Be om å bli med"
+
+msgid "Looking up room…"
+msgstr "Slår opp rommet…"
+
+msgid "Sending request…"
+msgstr "Sender forespørsel…"
+
+msgid "Joining room…"
+msgstr "Blir med i rommet…"
+
+msgid "Room not found."
+msgstr "Fant ikke rommet."
+
+msgid "{0} member"
+msgid_plural "{0} members"
+msgstr[0] "{0} medlem"
+msgstr[1] "{0} medlemmer"
+
+msgid "Join a Room"
+msgstr "Bli med i et rom"
+
+msgid "{0}, {1}"
+msgstr "{0}, {1}"
+
+msgid "Deny"
+msgstr "Avslå"
+
+msgid "Deny & Ban"
+msgstr "Avslå og bannlys"
+
+msgid "Requests to Join ({0})"
+msgstr "Forespørsler om å bli med ({0})"
+
+msgid "No pending requests"
+msgstr "Ingen ventende forespørsler"
+
+msgid "Request pending"
+msgstr "Forespørselen venter"
+
+msgid "Cancel Request"
+msgstr "Avbryt forespørselen"
+
+msgid "Loading map…"
+msgstr "Laster kart…"
+
+msgid "Sign in to Matrix"
+msgstr "Logg inn på Matrix"
+
+msgid "Your account or server - e.g. @alice:matrix.org or matrix.org"
+msgstr "Kontoen eller tjeneren din – f.eks. @alice:matrix.org eller matrix.org"
+
+msgid "?"
+msgstr "?"
+
+msgid "Sign in"
+msgstr "Logg inn"
+
+msgid "Your homeserver is where your account lives — similar to choosing an email provider. Not sure? matrix.org is a good default and works with anyone on Matrix."
+msgstr "Hjemmetjeneren din er der kontoen din ligger – omtrent som å velge e-postleverandør. Usikker? matrix.org er et godt utgangspunkt og fungerer med alle på Matrix."
+
+msgid "Sign in with password"
+msgstr "Logg inn med passord"
+
+msgid "Matrix ID"
+msgstr "Matrix-ID"
+
+msgid "Password"
+msgstr "Passord"
+
+msgid "New here? Create an account"
+msgstr "Ny her? Opprett en konto"
+
+msgid "Checking…"
+msgstr "Sjekker…"
+
+msgid "Could not reach this server"
+msgstr "Kunne ikke nå denne tjeneren"
+
+msgid "matrix.org"
+msgstr "matrix.org"
+
+msgid "@user:example.org"
+msgstr "@bruker:example.org"
+
+msgid "Checking how you can sign in to this server…"
+msgstr "Sjekker hvordan du kan logge inn på denne tjeneren…"
+
+msgid "Cancelling…"
+msgstr "Avbryter…"
+
+msgid "Please enter your Matrix ID and password."
+msgstr "Skriv inn Matrix-ID-en og passordet ditt."
+
+msgid "Connection Error"
+msgstr "Tilkoblingsfeil"
+
+msgid "Retry"
+msgstr "Prøv igjen"
+
+msgid "Sign In"
+msgstr "Logg inn"
+
+msgid "No Internet Connection"
+msgstr "Ingen internettilkobling"
+
+msgid "Tesseract couldn't detect an internet connection. Check your Wi-Fi or network settings, then try again."
+msgstr "Tesseract fant ingen internettilkobling. Sjekk Wi-Fi- eller nettverksinnstillingene dine og prøv igjen."
+
+msgid "Space home"
+msgstr "Områdets startside"
+
+msgid "No internet connection — reconnecting…"
+msgstr "Ingen internettilkobling – kobler til på nytt…"
+
+msgid "Resize sidebar"
+msgstr "Endre størrelse på sidefeltet"
+
+msgid "Enter collapses or expands it; Left and Right resize it"
+msgstr "Enter slår sidefeltet sammen eller ut. Venstre og høyre piltast endrer størrelsen"
+
+msgid "Save"
+msgstr "Lagre"
+
+msgid "Full screen"
+msgstr "Fullskjerm"
+
+msgid "Exit full screen"
+msgstr "Avslutt fullskjerm"
+
+msgid "Notify the whole room"
+msgstr "Varsle hele rommet"
+
+msgid "Yesterday"
+msgstr "I går"
+
+msgid "{0} withdrew {1} request to join"
+msgstr "{0} trakk tilbake forespørselen om å bli med"
+
+msgid "{0} changed their avatar"
+msgstr "{0} endret avataren sin"
+
+msgid "{0} removed their avatar"
+msgstr "{0} fjernet avataren sin"
+
+msgid "{0} changed their display name to {1}"
+msgstr "{0} endret visningsnavnet sitt til {1}"
+
+msgid "{0} removed their display name"
+msgstr "{0} fjernet visningsnavnet sitt"
+
+msgid "{0} changed their display name and avatar"
+msgstr "{0} endret visningsnavnet og avataren sin"
+
+msgid "{0} removed the room name"
+msgstr "{0} fjernet romnavnet"
+
+msgid "{0} set the room name to {1}"
+msgstr "{0} satte romnavnet til {1}"
+
+msgid "{0} changed the room name to {1}"
+msgstr "{0} endret romnavnet til {1}"
+
+msgid "{0} upgraded this room"
+msgstr "{0} oppgraderte dette rommet"
+
+msgid "{0} and {1}"
+msgstr "{0} og {1}"
+
+msgid "{0}, {1} and {2} other"
+msgid_plural "{0}, {1} and {2} others"
+msgstr[0] "{0}, {1} og {2} annen"
+msgstr[1] "{0}, {1} og {2} andre"
+
+msgid "{0} was banned from the room"
+msgid_plural "{0} were banned from the room"
+msgstr[0] "{0} ble bannlyst fra rommet"
+msgstr[1] "{0} ble bannlyst fra rommet"
+
+msgid "{0} was unbanned"
+msgid_plural "{0} were unbanned"
+msgstr[0] "{0} er ikke lenger bannlyst"
+msgstr[1] "{0} er ikke lenger bannlyst"
+
+msgid "{0} was removed from the room"
+msgid_plural "{0} were removed from the room"
+msgstr[0] "{0} ble fjernet fra rommet"
+msgstr[1] "{0} ble fjernet fra rommet"
+
+msgid "{0} was invited"
+msgid_plural "{0} were invited"
+msgstr[0] "{0} ble invitert"
+msgstr[1] "{0} ble invitert"
+
+msgid "{0} was removed and banned"
+msgid_plural "{0} were removed and banned"
+msgstr[0] "{0} ble fjernet og bannlyst"
+msgstr[1] "{0} ble fjernet og bannlyst"
+
+msgid "{0} accepted the invitation"
+msgid_plural "{0} accepted their invitations"
+msgstr[0] "{0} godtok invitasjonen"
+msgstr[1] "{0} godtok invitasjonene"
+
+msgid "{0} rejected the invitation"
+msgid_plural "{0} rejected their invitations"
+msgstr[0] "{0} avslo invitasjonen"
+msgstr[1] "{0} avslo invitasjonene"
+
+msgid "{0} had {1} invitation revoked"
+msgid_plural "{0} had {1} invitations revoked"
+msgstr[0] "Invitasjonen til {0} ble trukket tilbake"
+msgstr[1] "Invitasjonene til {0} ble trukket tilbake"
+
+msgid "{0}'s request to join was approved"
+msgid_plural "{0}'s requests to join were approved"
+msgstr[0] "Forespørselen fra {0} om å bli med ble godkjent"
+msgstr[1] "Forespørslene fra {0} om å bli med ble godkjent"
+
+msgid "{0} cancelled {1} request to join"
+msgid_plural "{0} cancelled {1} requests to join"
+msgstr[0] "{0} trakk tilbake forespørselen om å bli med"
+msgstr[1] "{0} trakk tilbake forespørslene om å bli med"
+
+msgid "{0}'s request to join was denied"
+msgid_plural "{0}'s requests to join were denied"
+msgstr[0] "Forespørselen fra {0} om å bli med ble avslått"
+msgstr[1] "Forespørslene fra {0} om å bli med ble avslått"
+
+msgid "{0} updated their avatar"
+msgid_plural "{0} updated their avatars"
+msgstr[0] "{0} oppdaterte avataren sin"
+msgstr[1] "{0} oppdaterte avatarene sine"
+
+msgid "{0} cleared their avatar"
+msgid_plural "{0} cleared their avatars"
+msgstr[0] "{0} fjernet avataren sin"
+msgstr[1] "{0} fjernet avatarene sine"
+
+msgid "{0} updated their display name"
+msgid_plural "{0} updated their display names"
+msgstr[0] "{0} oppdaterte visningsnavnet sitt"
+msgstr[1] "{0} oppdaterte visningsnavnene sine"
+
+msgid "{0} cleared their display name"
+msgid_plural "{0} cleared their display names"
+msgstr[0] "{0} fjernet visningsnavnet sitt"
+msgstr[1] "{0} fjernet visningsnavnene sine"
+
+msgid "{0} updated their display name and avatar"
+msgid_plural "{0} updated their display names and avatars"
+msgstr[0] "{0} oppdaterte visningsnavnet og avataren sin"
+msgstr[1] "{0} oppdaterte visningsnavnene og avatarene sine"
+
+msgid "Unable to decrypt message"
+msgstr "Kunne ikke dekryptere meldingen"
+
+msgid "Image"
+msgstr "Bilde"
+
+msgid "Audio message"
+msgstr "Lydmelding"
+
+msgid "Video"
+msgstr "Video"
+
+msgid "Location"
+msgstr "Posisjon"
+
+msgid ", "
+msgstr ", "
+
+msgid "; "
+msgstr "; "
+
+msgid "Table, {0} rows, {1} columns: {2}"
+msgstr "Tabell, {0} rader, {1} kolonner: {2}"
+
+msgid "New messages"
+msgstr "Nye meldinger"
+
+msgid "This room continues an older conversation."
+msgstr "Dette rommet er en fortsettelse av en eldre samtale."
+
+msgid "Start of conversation"
+msgstr "Starten av samtalen"
+
+msgid "{0} {1}"
+msgstr "{0} {1}"
+
+msgid "started a video call"
+msgstr "startet en videosamtale"
+
+msgid "started a voice call"
+msgstr "startet en talesamtale"
+
+msgid "started a call"
+msgstr "startet en samtale"
+
+msgid "{0}; {1}"
+msgstr "{0}; {1}"
+
+msgid "{0} ({1}): {2}"
+msgstr "{0} ({1}): {2}"
+
+msgid "not sent"
+msgstr "ikke sendt"
+
+msgid "sending"
+msgstr "sender"
+
+msgid "in reply"
+msgstr "som svar"
+
+msgid "replying to {0}"
+msgstr "svarer til {0}"
+
+msgid "edited"
+msgstr "redigert"
+
+msgid "{0} reply in thread"
+msgid_plural "{0} replies in thread"
+msgstr[0] "{0} svar i tråd"
+msgstr[1] "{0} svar i tråd"
+
+msgid "{0} reaction"
+msgid_plural "{0} reactions"
+msgstr[0] "{0} reaksjon"
+msgstr[1] "{0} reaksjoner"
+
+msgid "View profile of {0}"
+msgstr "Vis profilen til {0}"
+
+msgid "Reveal spoiler"
+msgstr "Vis spoiler"
+
+msgid "Jump to replied message"
+msgstr "Hopp til meldingen det svares på"
+
+msgid "Link preview: {0}"
+msgstr "Lenkeforhåndsvisning: {0}"
+
+msgid "Open thread, {0} reply"
+msgid_plural "Open thread, {0} replies"
+msgstr[0] "Åpne tråd, {0} svar"
+msgstr[1] "Åpne tråd, {0} svar"
+
+msgid "Show hidden media"
+msgstr "Vis skjult media"
+
+msgid "Open image"
+msgstr "Åpne bilde"
+
+msgid "Play video"
+msgstr "Spill av video"
+
+msgid "Open file"
+msgstr "Åpne fil"
+
+msgid "Pause"
+msgstr "Pause"
+
+msgid "Play"
+msgstr "Spill av"
+
+msgid "Reactions"
+msgstr "Reaksjoner"
+
+msgid "{0}, {1} reaction"
+msgid_plural "{0}, {1} reactions"
+msgstr[0] "{0}, {1} reaksjon"
+msgstr[1] "{0}, {1} reaksjoner"
+
+msgid "reacted by you"
+msgstr "reagert på av deg"
+
+msgid "Message actions"
+msgstr "Meldingshandlinger"
+
+msgid "Add reaction"
+msgstr "Legg til reaksjon"
+
+msgid "Reply in thread"
+msgstr "Svar i tråd"
+
+msgid "More options"
+msgstr "Flere valg"
+
+msgid "Retry sending"
+msgstr "Prøv å sende på nytt"
+
+msgid "Cancel sending"
+msgstr "Avbryt sending"
+
+msgid "Read by {0}"
+msgstr "Lest av {0}"
+
+msgid "{0} reply"
+msgid_plural "{0} replies"
+msgstr[0] "{0} svar"
+msgstr[1] "{0} svar"
+
+msgid "Load video"
+msgstr "Last inn video"
+
+msgid "Load sticker"
+msgstr "Last inn klistremerke"
+
+msgid "Load image"
+msgstr "Last inn bilde"
+
+msgid "(empty message)"
+msgstr "(tom melding)"
+
+msgid "Original message unavailable"
+msgstr "Den opprinnelige meldingen er utilgjengelig"
+
+msgid "[Spoiler]"
+msgstr "[Spoiler]"
+
+msgid "[Spoiler: {0}]"
+msgstr "[Spoiler: {0}]"
+
+msgid "Jump to first unread"
+msgstr "Hopp til første uleste"
+
+msgid "View older messages"
+msgstr "Vis eldre meldinger"
+
+msgid "More"
+msgstr "Mer"
+
+msgid "Reacted with :"
+msgstr "Reagerte med :"
+
+msgid "Reacted by:"
+msgstr "Reagert av:"
+
+msgid "Reacted with "
+msgstr "Reagerte med "
+
+msgid "{0} ({1} of {2})"
+msgstr "{0} ({1} av {2})"
+
+msgid "Unknown room"
+msgstr "Ukjent rom"
+
+msgid "Search your messages…"
+msgstr "Søk i meldingene dine…"
+
+msgid "Message search is disabled. Enable indexing in Settings to search your messages."
+msgstr "Meldingssøk er slått av. Slå på indeksering i innstillingene for å søke i meldingene dine."
+
+msgid "Type to search your messages"
+msgstr "Skriv for å søke i meldingene dine"
+
+msgid "No matches"
+msgstr "Ingen treff"
+
+msgid "Searching…"
+msgstr "Søker…"
+
+msgid "Unpin"
+msgstr "Løsne"
+
+msgid "Pin"
+msgstr "Fest"
+
+msgid "Previous pinned message"
+msgstr "Forrige festede melding"
+
+msgid "Next pinned message"
+msgstr "Neste festede melding"
+
+msgid "Pinned messages"
+msgstr "Festede meldinger"
+
+msgid "{0} of {1}"
+msgstr "{0} av {1}"
+
+msgid "Jump to pinned message: {0}"
+msgstr "Hopp til festet melding: {0}"
+
+msgid "Setting up secure channel…"
+msgstr "Setter opp sikker kanal…"
+
+msgid "Scan this QR code with your Matrix app"
+msgstr "Skann denne QR-koden med Matrix-appen din"
+
+msgid "Enter the numeric code shown on the new device:"
+msgstr "Skriv inn tallkoden som vises på den nye enheten:"
+
+msgid "Approve the sign-in in your browser…"
+msgstr "Godkjenn innloggingen i nettleseren din…"
+
+msgid "Device added successfully."
+msgstr "Enheten ble lagt til."
+
+msgid "Jump to a room, or @user to start a chat…"
+msgstr "Hopp til et rom, eller skriv @bruker for å starte en chat…"
+
+msgid "No matching users — type a full @user:server to chat"
+msgstr "Ingen treff på brukere – skriv en full @bruker:tjener for å chatte"
+
+msgid "Recent"
+msgstr "Nylige"
+
+msgid "Read at {0}"
+msgstr "Lest kl. {0}"
+
+msgid "Read by {0} person"
+msgid_plural "Read by {0} people"
+msgstr[0] "Lest av {0} person"
+msgstr[1] "Lest av {0} personer"
+
+msgid "{0}, {1}, {2}"
+msgstr "{0}, {1}, {2}"
+
+msgid "Search"
+msgstr "Søk"
+
+msgid "No rooms found."
+msgstr "Fant ingen rom."
+
+msgid "Homeserver"
+msgstr "Hjemmetjener"
+
+msgid "Loading rooms…"
+msgstr "Laster rom…"
+
+msgid "Jump to Date"
+msgstr "Hopp til dato"
+
+msgid "Room info"
+msgstr "Rominfo"
+
+msgid "Threads"
+msgstr "Tråder"
+
+msgid "Threads (unread messages)"
+msgstr "Tråder (uleste meldinger)"
+
+msgid "Encrypted room"
+msgstr "Kryptert rom"
+
+msgid "View room avatar"
+msgstr "Vis romavatar"
+
+msgid "Media"
+msgstr "Media"
+
+msgid "Requests to join"
+msgstr "Forespørsler om å bli med"
+
+msgid "Edit topic"
+msgstr "Rediger emne"
+
+msgid "Show all ▾"
+msgstr "Vis alle ▾"
+
+msgid "Invite people"
+msgstr "Inviter folk"
+
+msgid "Export History"
+msgstr "Eksporter historikk"
+
+msgid "Leave Room"
+msgstr "Forlat rommet"
+
+msgid "Favourite"
+msgstr "Favoritt"
+
+msgid "Low priority"
+msgstr "Lav prioritet"
+
+msgid "Default"
+msgstr "Standard"
+
+msgid "All messages"
+msgstr "Alle meldinger"
+
+msgid "Mentions"
+msgstr "Omtaler"
+
+msgid "Off"
+msgstr "Av"
+
+msgid "Encrypted"
+msgstr "Kryptert"
+
+msgid "Bridged"
+msgstr "Brokoblet"
+
+msgid "Show all ({0}) ▾"
+msgstr "Vis alle ({0}) ▾"
+
+msgid "No topic set."
+msgstr "Ingen emne er satt."
+
+msgid "Member {0} of {1}"
+msgstr "Medlem {0} av {1}"
+
+msgid "Topic"
+msgstr "Emne"
+
+msgid "Members ({0})"
+msgstr "Medlemmer ({0})"
+
+msgid "Notifications"
+msgstr "Varsler"
+
+msgid "Media ({0})"
+msgstr "Media ({0})"
+
+msgid "Show profile"
+msgstr "Vis profil"
+
+msgid "Kick user…"
+msgstr "Kast ut bruker…"
+
+msgid "Ban user…"
+msgstr "Bannlys bruker…"
+
+msgid "Room settings"
+msgstr "Rominnstillinger"
+
+msgid "Replaced by a newer room"
+msgstr "Erstattet av et nyere rom"
+
+msgid "You"
+msgstr "Du"
+
+msgid "{0} sent an image"
+msgstr "{0} sendte et bilde"
+
+msgid "{0} sent a video"
+msgstr "{0} sendte en video"
+
+msgid "{0} sent a GIF"
+msgstr "{0} sendte en GIF"
+
+msgid "{0} sent a file"
+msgstr "{0} sendte en fil"
+
+msgid "{0} sent a voice message"
+msgstr "{0} sendte en talemelding"
+
+msgid "{0} sent a sticker"
+msgstr "{0} sendte et klistremerke"
+
+msgid "{0} started a poll"
+msgstr "{0} startet en avstemning"
+
+msgid "Invitations ({0})"
+msgstr "Invitasjoner ({0})"
+
+msgid "Inactive ({0})"
+msgstr "Inaktive ({0})"
+
+msgid "Invitation"
+msgstr "Invitasjon"
+
+msgid "Loading…"
+msgstr "Laster…"
+
+msgid "Fetching room details…"
+msgstr "Henter romdetaljer…"
+
+msgid "Knock"
+msgstr "Be om å bli med"
+
+msgid "Invite-only"
+msgstr "Kun med invitasjon"
+
+msgid "Restricted"
+msgstr "Begrenset"
+
+msgid "Open in tab"
+msgstr "Åpne i fane"
+
+msgid "Open in window"
+msgstr "Åpne i vindu"
+
+msgid "Mark as read"
+msgstr "Merk som lest"
+
+msgid "Leave room"
+msgstr "Forlat rommet"
+
+msgid "Invitations"
+msgstr "Invitasjoner"
+
+msgid "Unread"
+msgstr "Uleste"
+
+msgid "Favorites"
+msgstr "Favoritter"
+
+msgid "Direct Messages"
+msgstr "Direktemeldinger"
+
+msgid "Rooms"
+msgstr "Rom"
+
+msgid "Call Rooms"
+msgstr "Samtalerom"
+
+msgid "Spaces"
+msgstr "Områder"
+
+msgid "Inactive"
+msgstr "Inaktive"
+
+msgid "Available to Join"
+msgstr "Tilgjengelig å bli med i"
+
+msgid "Requests to Join"
+msgstr "Forespørsler om å bli med"
+
+msgid "{0}, from {1}"
+msgstr "{0}, fra {1}"
+
+msgid "{0} item"
+msgid_plural "{0} items"
+msgstr[0] "{0} element"
+msgstr[1] "{0} elementer"
+
+msgid "Media — {0}"
+msgstr "Media – {0}"
+
+msgid "No media in this room yet"
+msgstr "Ingen media i dette rommet ennå"
+
+msgid "Loading media…"
+msgstr "Laster media…"
+
+msgid "Knock to join"
+msgstr "Be om å bli med"
+
+msgid "Knock (restricted)"
+msgstr "Be om å bli med (begrenset)"
+
+msgid "{0} members · {1}"
+msgstr "{0} medlemmer · {1}"
+
+msgid "This room has been replaced and is no longer active."
+msgstr "Dette rommet er erstattet og er ikke lenger aktivt."
+
+msgid "Go to the new room"
+msgstr "Gå til det nye rommet"
+
+msgid "Join the new room"
+msgstr "Bli med i det nye rommet"
+
+msgid "Find in conversation…"
+msgstr "Søk i samtalen…"
+
+msgid "Previous match"
+msgstr "Forrige treff"
+
+msgid "Next match"
+msgstr "Neste treff"
+
+msgid "Paginate"
+msgstr "Last inn flere"
+
+msgid "Type to search"
+msgstr "Skriv for å søke"
+
+msgid "Search disabled — indexing is off"
+msgstr "Søk er slått av – indeksering er av"
+
+msgid "General"
+msgstr "Generelt"
+
+msgid "Security & Privacy"
+msgstr "Sikkerhet og personvern"
+
+msgid "Permissions"
+msgstr "Tillatelser"
+
+msgid "Moderation"
+msgstr "Moderering"
+
+msgid "Emojis & Stickers"
+msgstr "Emojier og klistremerker"
+
+msgid "Bridge"
+msgstr "Bro"
+
+msgid "Leave Space"
+msgstr "Forlat område"
+
+msgid "Space Settings"
+msgstr "Områdeinnstillinger"
+
+msgid "Room Settings"
+msgstr "Rominnstillinger"
+
+msgid "Audio call"
+msgstr "Talesamtale"
+
+msgid "Video call"
+msgstr "Videosamtale"
+
+msgid "Delete message"
+msgstr "Slett melding"
+
+msgid "Unpin message"
+msgstr "Løsne melding"
+
+msgid "Pin message"
+msgstr "Fest melding"
+
+msgid "Copy event source"
+msgstr "Kopier hendelseskilde"
+
+msgid "Deny and ban this user?"
+msgstr "Avslå og bannlyse denne brukeren?"
+
+msgid "They will be removed from the room and unable to rejoin or knock again unless unbanned."
+msgstr "Brukeren fjernes fra rommet og kan ikke bli med eller be om å bli med igjen med mindre bannlysingen oppheves."
+
+msgid "Ban {0}?"
+msgstr "Bannlyse {0}?"
+
+msgid "They will be removed from the room and unable to rejoin unless unbanned."
+msgstr "Brukeren fjernes fra rommet og kan ikke bli med igjen med mindre bannlysingen oppheves."
+
+msgid "Ban"
+msgstr "Bannlys"
+
+msgid "Remove {0} from the room?"
+msgstr "Fjerne {0} fra rommet?"
+
+msgid "They can rejoin if the room allows it."
+msgstr "Brukeren kan bli med igjen hvis rommet tillater det."
+
+msgid "Kick"
+msgstr "Kast ut"
+
+msgid "Screen {0}"
+msgstr "Skjerm {0}"
+
+msgid "Select what to share"
+msgstr "Velg hva som skal deles"
+
+msgid "Screen"
+msgstr "Skjerm"
+
+msgid "← Back"
+msgstr "← Tilbake"
+
+msgid "Account"
+msgstr "Konto"
+
+msgid "Sessions"
+msgstr "Økter"
+
+msgid "Appearance"
+msgstr "Utseende"
+
+msgid "Privacy"
+msgstr "Personvern"
+
+msgid "Server"
+msgstr "Tjener"
+
+msgid "Language"
+msgstr "Språk"
+
+msgid "About"
+msgstr "Om"
+
+msgid "Advanced"
+msgstr "Avansert"
+
+msgid "Log out?"
+msgstr "Logge ut?"
+
+msgid "You will need to sign in again to access your messages."
+msgstr "Du må logge inn på nytt for å få tilgang til meldingene dine."
+
+msgid "Log Out"
+msgstr "Logg ut"
+
+msgid "Clear all caches?"
+msgstr "Tømme alle hurtigbuffere?"
+
+msgid "Deletes all downloaded media and cached message history for this account, and closes open tabs and pop-out windows. Your rooms and messages reload from the server afterwards. Your sign-in and encryption keys are kept, so you stay logged in and verified."
+msgstr "Sletter all nedlastet media og hurtigbufret meldingshistorikk for denne kontoen, og lukker åpne faner og frittstående vinduer. Rommene og meldingene dine lastes inn på nytt fra tjeneren etterpå. Innloggingen og krypteringsnøklene beholdes, så du forblir innlogget og verifisert."
+
+msgid "Clear"
+msgstr "Tøm"
+
+msgid "Only do this if you've lost your recovery key and have no other signed-in device. Messages you can't read now will stay unreadable, and your other devices and the people you chat with will need to confirm you again. You'll get a new recovery key right after."
+msgstr "Gjør dette bare hvis du har mistet gjenopprettingsnøkkelen og ikke har noen annen enhet du er logget inn på. Meldinger du ikke kan lese nå, forblir uleselige, og de andre enhetene dine og de du chatter med, må bekrefte deg på nytt. Du får en ny gjenopprettingsnøkkel med en gang."
+
+msgid "Reset"
+msgstr "Tilbakestill"
+
+msgid "Could not add keyword \"{0}\""
+msgstr "Kunne ikke legge til nøkkelordet \"{0}\""
+
+msgid "Could not remove keyword \"{0}\""
+msgstr "Kunne ikke fjerne nøkkelordet \"{0}\""
+
+msgid "Default skin tone"
+msgstr "Standard hudtone"
+
+msgid "Light skin tone"
+msgstr "Lys hudtone"
+
+msgid "Medium-light skin tone"
+msgstr "Middels lys hudtone"
+
+msgid "Medium skin tone"
+msgstr "Middels hudtone"
+
+msgid "Medium-dark skin tone"
+msgstr "Middels mørk hudtone"
+
+msgid "Dark skin tone"
+msgstr "Mørk hudtone"
+
+msgid "Skin tone"
+msgstr "Hudtone"
+
+msgid "via {0}"
+msgstr "via {0}"
+
+msgid "Add {0} to space"
+msgstr "Legg {0} til i området"
+
+msgid "Search your rooms…"
+msgstr "Søk i rommene dine…"
+
+msgid "No more rooms to add."
+msgstr "Ingen flere rom å legge til."
+
+msgid "You don't have permission to add rooms to this space."
+msgstr "Du har ikke tillatelse til å legge til rom i dette området."
+
+msgid "Press Delete to remove it from the space"
+msgstr "Trykk Delete for å fjerne det fra området"
+
+msgid "This space has no rooms yet."
+msgstr "Dette området har ingen rom ennå."
+
+msgid "You don't have permission to remove rooms from this space."
+msgstr "Du har ikke tillatelse til å fjerne rom fra dette området."
+
+msgid "Space settings"
+msgstr "Områdeinnstillinger"
+
+msgid "{0} room"
+msgid_plural "{0} rooms"
+msgstr[0] "{0} rom"
+msgstr[1] "{0} rom"
+
+msgid "{0} available to join"
+msgid_plural "{0} available to join"
+msgstr[0] "{0} tilgjengelig å bli med i"
+msgstr[1] "{0} tilgjengelig å bli med i"
+
+msgid "Explore the rooms in this space from the room list."
+msgstr "Utforsk rommene i dette området fra romlisten."
+
+msgid "Drag rooms between the two lists to add or remove them, or select one and press Enter to add / Delete to remove."
+msgstr "Dra rom mellom de to listene for å legge dem til eller fjerne dem, eller velg ett og trykk Enter for å legge til / Delete for å fjerne."
+
+msgid "Search stickers"
+msgstr "Søk etter klistremerker"
+
+msgid "%-m/%-d/%y"
+msgstr "%-d.%-m.%y"
+
+msgid "Mark all threads as read"
+msgstr "Merk alle tråder som lest"
+
+msgid "Search threads…"
+msgstr "Søk i tråder…"
+
+msgid " (unread)"
+msgstr " (ulest)"
+
+msgid "Set status"
+msgstr "Angi status"
+
+msgid "Click to set status"
+msgstr "Klikk for å angi status"
+
+msgid "View avatar"
+msgstr "Vis avatar"
+
+msgid "×"
+msgstr "×"
+
+msgid "Message"
+msgstr "Melding"
+
+msgid "Ignore"
+msgstr "Ignorer"
+
+msgid "Verify"
+msgstr "Verifiser"
+
+msgid "Open DM"
+msgstr "Åpne direktemelding"
+
+msgid "Verified"
+msgstr "Verifisert"
+
+msgid "Not verified"
+msgstr "Ikke verifisert"
+
+msgid "Not verified · verify this device first"
+msgstr "Ikke verifisert · verifiser denne enheten først"
+
+msgid "Verified identity was reset"
+msgstr "Den verifiserte identiteten ble tilbakestilt"
+
+msgid "In a call"
+msgstr "I en samtale"
+
+msgid "Pronouns"
+msgstr "Pronomen"
+
+msgid "Timezone"
+msgstr "Tidssone"
+
+msgid "Bio"
+msgstr "Bio"
+
+msgid "Status"
+msgstr "Status"
+
+msgid "Activity"
+msgstr "Aktivitet"
+
+msgid "Unable to play video"
+msgstr "Kunne ikke spille av videoen"
+
+msgid "Use ⬇ to download and play in an external player"
+msgstr "Bruk ⬇ for å laste ned og spille av i en ekstern spiller"
+
+msgid "Playback speed: {0}"
+msgstr "Avspillingshastighet: {0}"
+
+msgid "Knock+Restricted"
+msgstr "Be om å bli med + begrenset"
+
+msgid "Invite only"
+msgstr "Kun med invitasjon"
+
+msgid "Unknown"
+msgstr "Ukjent"
+
+msgid "Unnamed"
+msgstr "Uten navn"
+
+msgid "Hits: {0}  ·  Misses: {1}"
+msgstr "Treff: {0}  ·  Bom: {1}"
+
+msgid "Hits: {0}  ·  Misses: {1}  ({2}% hit rate)"
+msgstr "Treff: {0}  ·  Bom: {1}  ({2} % treffrate)"
+
+msgid "Storage"
+msgstr "Lagring"
+
+msgid "In-memory cache"
+msgstr "Hurtigbuffer i minnet"
+
+msgid "Local cache"
+msgstr "Lokal hurtigbuffer"
+
+msgid "SDK store"
+msgstr "SDK-lager"
+
+msgid "Clear all caches"
+msgstr "Tøm alle hurtigbuffere"
+
+msgid "Display name"
+msgstr "Visningsnavn"
+
+msgid "Short biography"
+msgstr "Kort biografi"
+
+msgid "Use historical MSC2545 compatibility"
+msgstr "Bruk historisk MSC2545-kompatibilitet"
+
+msgid "When enabled, reads unstable-named MSC2545 fields from account data in addition to the stable names, and enables your personal image pack. Disable for strict stable-name-only behavior."
+msgstr "Når dette er på, leses MSC2545-felt med ustabile navn fra kontodata i tillegg til de stabile navnene, og din personlige bildepakke aktiveres. Slå av for å bruke bare de stabile navnene."
+
+msgid "Developer"
+msgstr "Utvikler"
+
+msgid "Enable developer mode"
+msgstr "Slå på utviklermodus"
+
+msgid "Open Activity Monitor"
+msgstr "Åpne aktivitetsovervåkeren"
+
+msgid "Diagnostics"
+msgstr "Diagnostikk"
+
+msgid "Save a local crash report if the app crashes"
+msgstr "Lagre en lokal krasjrapport hvis appen krasjer"
+
+msgid "When enabled, a plain-text stack trace is written to a file on this device if the app crashes. Nothing is sent anywhere automatically — you can find and share the file yourself if you want to report a bug."
+msgstr "Når dette er på, skrives en stakksporing som ren tekst til en fil på denne enheten hvis appen krasjer. Ingenting sendes automatisk – du kan finne filen og dele den selv hvis du vil rapportere en feil."
+
+msgid "Your own messages appear on the right, in a subtle rounded bubble."
+msgstr "Dine egne meldinger vises til høyre, i en diskret avrundet boble."
+
+msgid "A monospaced, mIRC-style timeline: every line is \"[time] <nick>\" with a colour per person."
+msgstr "En tidslinje med fast bredde i mIRC-stil: hver linje er \"[tid] <kallenavn>\", med en egen farge per person."
+
+msgid "Every message is flush left, with the sender's avatar in the gutter."
+msgstr "Alle meldinger står til venstre, med avsenderens avatar i margen."
+
+msgid "Light"
+msgstr "Lys"
+
+msgid "Dark"
+msgstr "Mørk"
+
+msgid "Theme"
+msgstr "Tema"
+
+msgid "Accent color"
+msgstr "Aksentfarge"
+
+msgid "Layout"
+msgstr "Oppsett"
+
+msgid "Message layout"
+msgstr "Meldingsoppsett"
+
+msgid "Classic"
+msgstr "Klassisk"
+
+msgid "Bubbles"
+msgstr "Bobler"
+
+msgid "IRC"
+msgstr "IRC"
+
+msgid "Room list"
+msgstr "Romliste"
+
+msgid "Group unread rooms"
+msgstr "Grupper uleste rom"
+
+msgid "Group inactive rooms"
+msgstr "Grupper inaktive rom"
+
+msgid "1 week"
+msgstr "1 uke"
+
+msgid "2 weeks"
+msgstr "2 uker"
+
+msgid "1 month"
+msgstr "1 måned"
+
+msgid "3 months"
+msgstr "3 måneder"
+
+msgid "6 months"
+msgstr "6 måneder"
+
+msgid "Scroll to rooms with new messages"
+msgstr "Bla til rom med nye meldinger"
+
+msgid "Timeline"
+msgstr "Tidslinje"
+
+msgid "Show room join/leave events"
+msgstr "Vis hendelser når folk blir med i eller forlater rom"
+
+msgid "Animate avatars"
+msgstr "Animer avatarer"
+
+msgid "Show status emoji next to names"
+msgstr "Vis statusemoji ved siden av navn"
+
+msgid "never"
+msgstr "aldri"
+
+msgid "in the future"
+msgstr "i fremtiden"
+
+msgid "just now"
+msgstr "akkurat nå"
+
+msgid "{0}mo"
+msgstr "{0} md"
+
+msgid "(no name)"
+msgstr "(uten navn)"
+
+msgid "This device"
+msgstr "Denne enheten"
+
+msgid "Unverified"
+msgstr "Uverifisert"
+
+msgid "Open in browser"
+msgstr "Åpne i nettleser"
+
+msgid "I've confirmed"
+msgstr "Jeg har bekreftet"
+
+msgid "Complete sign-out in the browser, then click \"I've confirmed\"."
+msgstr "Fullfør utloggingen i nettleseren, og klikk deretter på \"Jeg har bekreftet\"."
+
+msgid "Working…"
+msgstr "Jobber…"
+
+msgid "Loading sessions…"
+msgstr "Laster økter…"
+
+msgid "No sessions."
+msgstr "Ingen økter."
+
+msgid "No system tray icon is available on this system, so closing the window always quits Tesseract."
+msgstr "Det finnes ikke noe ikon i systemfeltet på dette systemet, så Tesseract avsluttes alltid når du lukker vinduet."
+
+msgid "Closing the window quits Tesseract."
+msgstr "Tesseract avsluttes når du lukker vinduet."
+
+msgid "Closing the window minimizes Tesseract to the taskbar."
+msgstr "Når du lukker vinduet, minimeres Tesseract til oppgavelinjen."
+
+msgid "Closing the window hides it to the system tray. Tesseract keeps running - use the tray icon's Quit menu item to exit."
+msgstr "Når du lukker vinduet, skjules det i systemfeltet. Tesseract fortsetter å kjøre – bruk Avslutt i menyen til ikonet i systemfeltet for å avslutte."
+
+msgid "Background prefetching, search indexing and bridge checks are always paused. Message sync and encryption are never affected."
+msgstr "Forhåndshenting i bakgrunnen, søkeindeksering og brokontroller er alltid satt på pause. Meldingssynkronisering og kryptering påvirkes aldri."
+
+msgid "Background work always runs, even on battery."
+msgstr "Bakgrunnsarbeid kjører alltid, også på batteri."
+
+msgid "Pauses background prefetching, search indexing and bridge checks while on battery or when the system energy saver is on. Message sync and encryption are never affected."
+msgstr "Setter forhåndshenting i bakgrunnen, søkeindeksering og brokontroller på pause når du går på batteri eller systemets strømsparing er på. Meldingssynkronisering og kryptering påvirkes aldri."
+
+msgid "Startup"
+msgstr "Oppstart"
+
+msgid "Launch Tesseract when you log in"
+msgstr "Start Tesseract når jeg logger inn"
+
+msgid "Start minimized to system tray"
+msgstr "Start minimert til systemfeltet"
+
+msgid "When I close the window"
+msgstr "Når jeg lukker vinduet"
+
+msgid "Power"
+msgstr "Strøm"
+
+msgid "Low power mode"
+msgstr "Strømsparingsmodus"
+
+msgid "Auto"
+msgstr "Auto"
+
+msgid "On"
+msgstr "På"
+
+msgid "Minimize to taskbar"
+msgstr "Minimer til oppgavelinjen"
+
+msgid "Hide to system tray"
+msgstr "Skjul i systemfeltet"
+
+msgid "Your Sticker Pack"
+msgstr "Din klistremerkepakke"
+
+msgid "Subscribed Packs"
+msgstr "Abonnerte pakker"
+
+msgid "No image packs found yet."
+msgstr "Ingen bildepakker funnet ennå."
+
+msgid "English"
+msgstr "Engelsk"
+
+msgid "Spanish"
+msgstr "Spansk"
+
+msgid "French"
+msgstr "Fransk"
+
+msgid "German"
+msgstr "Tysk"
+
+msgid "Changes take effect after restart."
+msgstr "Endringer trer i kraft etter omstart."
+
+msgid "Restart now"
+msgstr "Start på nytt nå"
+
+msgid "System default"
+msgstr "Systemstandard"
+
+msgid "Media previews"
+msgstr "Forhåndsvisning av media"
+
+msgid "Always"
+msgstr "Alltid"
+
+msgid "In private rooms only"
+msgstr "Bare i private rom"
+
+msgid "Never"
+msgstr "Aldri"
+
+msgid "Show avatars in invites"
+msgstr "Vis avatarer i invitasjoner"
+
+msgid "Pre-load full images while scrolling"
+msgstr "Forhåndslast hele bilder under rulling"
+
+msgid "Capture devices"
+msgstr "Opptaksenheter"
+
+msgid "Microphone"
+msgstr "Mikrofon"
+
+msgid "Speaker"
+msgstr "Høyttaler"
+
+msgid "Camera"
+msgstr "Kamera"
+
+msgid "Alex"
+msgstr "Alex"
+
+msgid "Hello my friend!"
+msgstr "Hei, venn!"
+
+msgid "Hi! How are you?"
+msgstr "Hei! Hvordan går det?"
+
+msgid "Remove keyword \"{0}\""
+msgstr "Fjern nøkkelordet \"{0}\""
+
+msgid "Enable notifications on this device"
+msgstr "Slå på varsler på denne enheten"
+
+msgid "Hide message content in notifications"
+msgstr "Skjul meldingsinnhold i varsler"
+
+msgid "Show image & sticker previews in notifications"
+msgstr "Vis forhåndsvisning av bilder og klistremerker i varsler"
+
+msgid "Mentions & Keywords"
+msgstr "Omtaler og nøkkelord"
+
+msgid "Notify me for @mentions"
+msgstr "Varsle meg ved @-omtaler"
+
+msgid "Notify me when @room is used"
+msgstr "Varsle meg når @room brukes"
+
+msgid "Notify me for all messages"
+msgstr "Varsle meg om alle meldinger"
+
+msgid "Notify on keywords"
+msgstr "Varsle ved nøkkelord"
+
+msgid "Add a keyword…"
+msgstr "Legg til et nøkkelord…"
+
+msgid "Add"
+msgstr "Legg til"
+
+msgid "Presence"
+msgstr "Tilstedeværelse"
+
+msgid "Send and receive presence status"
+msgstr "Send og motta tilstedeværelsesstatus"
+
+msgid "Send Google Maps / OpenStreetMap links as locations"
+msgstr "Send lenker fra Google Maps / OpenStreetMap som posisjoner"
+
+msgid "When a composed message is nothing but a Google Maps or OpenStreetMap link, send it as an interactive location instead of plain text. Resolving some link formats (shortlinks) requires an outbound network request to the maps provider before sending."
+msgstr "Når en melding du skriver bare består av en lenke til Google Maps eller OpenStreetMap, sendes den som en interaktiv posisjon i stedet for som ren tekst. For å løse opp enkelte lenkeformater (kortlenker) må det gjøres en utgående nettverksforespørsel til karttjenesten før sending."
+
+msgid "Link previews"
+msgstr "Lenkeforhåndsvisning"
+
+msgid "Your homeserver doesn't provide link previews, so links you receive won't show a preview."
+msgstr "Hjemmetjeneren din tilbyr ikke lenkeforhåndsvisning, så lenker du mottar, vises uten forhåndsvisning."
+
+msgid "Include link previews in messages I send"
+msgstr "Ta med lenkeforhåndsvisning i meldinger jeg sender"
+
+msgid "Fetch link previews directly instead of through my homeserver"
+msgstr "Hent lenkeforhåndsvisning direkte i stedet for via hjemmetjeneren min"
+
+msgid "Before sending a message that contains links, ask your homeserver for a preview of each link and attach it to the message, so recipients see it without fetching it themselves. Sending such messages can take a few seconds longer."
+msgstr "Før en melding med lenker sendes, ber Tesseract hjemmetjeneren din om en forhåndsvisning av hver lenke og legger den ved meldingen, slik at mottakerne ser den uten å hente den selv. Det kan ta noen sekunder ekstra å sende slike meldinger."
+
+msgid "Fetch the linked pages from this device instead of asking your homeserver, falling back to the homeserver if that fails. Every site you link will see your IP address. Addresses on your local network are never fetched."
+msgstr "Hent de lenkede sidene fra denne enheten i stedet for å spørre hjemmetjeneren din, og bruk hjemmetjeneren hvis det mislykkes. Alle nettsteder du lenker til, får se IP-adressen din. Adresser på det lokale nettverket hentes aldri."
+
+msgid "Index messages for search (stores decrypted text on this device)"
+msgstr "Indekser meldinger for søk (lagrer dekryptert tekst på denne enheten)"
+
+msgid "Indexing your messages…"
+msgstr "Indekserer meldingene dine…"
+
+msgid "Updates"
+msgstr "Oppdateringer"
+
+msgid "Check for updates automatically"
+msgstr "Se etter oppdateringer automatisk"
+
+msgid "Encryption"
+msgstr "Kryptering"
+
+msgid "Exclude insecure devices (takes effect after restart)"
+msgstr "Utelat usikre enheter (trer i kraft etter omstart)"
+
+msgid "Only send encrypted messages to devices their owner has verified, and hide messages sent from devices that aren't. This device must be verified to send, and people whose clients don't verify their devices won't see your messages."
+msgstr "Send krypterte meldinger bare til enheter som eieren har verifisert, og skjul meldinger fra enheter som ikke er verifisert. Denne enheten må være verifisert for å kunne sende, og folk hvis klienter ikke verifiserer enhetene sine, vil ikke se meldingene dine."
+
+msgid "Export room keys…"
+msgstr "Eksporter romnøkler…"
+
+msgid "Import room keys…"
+msgstr "Importer romnøkler…"
+
+msgid "Reset encryption…"
+msgstr "Tilbakestill kryptering…"
+
+msgid "up to date"
+msgstr "oppdatert"
+
+msgid "indexing…"
+msgstr "indekserer…"
+
+msgid "{0} messages across {1} rooms · {2}"
+msgstr "{0} meldinger i {1} rom · {2}"
+
+msgid "Covers messages since {0}"
+msgstr "Omfatter meldinger siden {0}"
+
+msgid "Pronouns (e.g. she/her)"
+msgstr "Pronomen (f.eks. hun/henne)"
+
+msgid "Remove pronoun language"
+msgstr "Fjern pronomenspråk"
+
+msgid "+ Add language"
+msgstr "+ Legg til språk"
+
+msgid "Bridge Detection"
+msgstr "Brodeteksjon"
+
+msgid "Tesseract flagged this room as bridged to another chat network because it found a bridge indicator (MSC2346) published by a bridge bot in the room. That indicator isn't always published correctly, so if this room isn't actually bridged, turn the override on below to stop treating it as one."
+msgstr "Tesseract har markert dette rommet som brokoblet til et annet chattenettverk, fordi det fant en broindikator (MSC2346) publisert av en bro-bot i rommet. Indikatoren blir ikke alltid publisert riktig, så hvis dette rommet egentlig ikke er brokoblet, kan du slå på overstyringen nedenfor for å slutte å behandle det som det."
+
+msgid "This room isn't actually bridged"
+msgstr "Dette rommet er egentlig ikke brokoblet"
+
+msgid "Copy room ID"
+msgstr "Kopier rom-ID"
+
+msgid "Room ID"
+msgstr "Rom-ID"
+
+msgid "Name"
+msgstr "Navn"
+
+msgid "Room Address"
+msgstr "Romadresse"
+
+msgid "Use global default"
+msgstr "Bruk global standard"
+
+msgid "Banned by {0}"
+msgstr "Bannlyst av {0}"
+
+msgid "Unban"
+msgstr "Opphev bannlysing"
+
+msgid "Unban (you don't have permission to lift this ban)"
+msgstr "Opphev bannlysing (du har ikke tillatelse til å oppheve denne bannlysingen)"
+
+msgid "Banned users"
+msgstr "Bannlyste brukere"
+
+msgid "No banned users"
+msgstr "Ingen bannlyste brukere"
+
+msgid "Moderator"
+msgstr "Moderator"
+
+msgid "Admin"
+msgstr "Admin"
+
+msgid "Custom ({0})"
+msgstr "Egendefinert ({0})"
+
+msgid "This change would prevent you from editing permissions again."
+msgstr "Denne endringen ville hindret deg i å redigere tillatelser igjen."
+
+msgid "No one else in this room would be able to edit permissions if you did this."
+msgstr "Ingen andre i dette rommet ville kunne redigere tillatelser hvis du gjorde dette."
+
+msgid "Default Role"
+msgstr "Standardrolle"
+
+msgid "New members"
+msgstr "Nye medlemmer"
+
+msgid "Messages"
+msgstr "Meldinger"
+
+msgid "Send messages"
+msgstr "Send meldinger"
+
+msgid "Remove messages sent by others"
+msgstr "Fjern meldinger sendt av andre"
+
+msgid "Membership"
+msgstr "Medlemskap"
+
+msgid "Invite users"
+msgstr "Inviter brukere"
+
+msgid "Kick users"
+msgstr "Kast ut brukere"
+
+msgid "Ban users"
+msgstr "Bannlys brukere"
+
+msgid "Calls"
+msgstr "Samtaler"
+
+msgid "Start calls"
+msgstr "Start samtaler"
+
+msgid "Change settings"
+msgstr "Endre innstillinger"
+
+msgid "Change permissions"
+msgstr "Endre tillatelser"
+
+msgid "Notify everyone (@room)"
+msgstr "Varsle alle (@room)"
+
+msgid "Once enabled, encryption cannot be turned off."
+msgstr "Når kryptering først er slått på, kan den ikke slås av igjen."
+
+msgid "Who can join"
+msgstr "Hvem kan bli med"
+
+msgid "Guest Access"
+msgstr "Gjestetilgang"
+
+msgid "Allow guests to join"
+msgstr "La gjester bli med"
+
+msgid "History Visibility"
+msgstr "Synlighet for historikk"
+
+msgid "Anyone"
+msgstr "Alle"
+
+msgid "Members"
+msgstr "Medlemmer"
+
+msgid "Members (since invited)"
+msgstr "Medlemmer (siden invitasjon)"
+
+msgid "Members (since joined)"
+msgstr "Medlemmer (siden de ble med)"
+
+msgid "{0} (managed elsewhere)"
+msgstr "{0} (styres et annet sted)"
+
+msgid "Choose status emoji"
+msgstr "Velg statusemoji"
+
+msgid "Clear status emoji"
+msgstr "Fjern statusemoji"
+
+msgid "What's your status?"
+msgstr "Hva er statusen din?"
+
+msgid "Timezone (e.g. Europe/London)"
+msgstr "Tidssone (f.eks. Europe/Oslo)"
+
+msgid "Afar"
+msgstr "Afar"
+
+msgid "Abkhazian"
+msgstr "Abkhasisk"
+
+msgid "Afrikaans"
+msgstr "Afrikaans"
+
+msgid "Akan"
+msgstr "Akan"
+
+msgid "Albanian"
+msgstr "Albansk"
+
+msgid "Amharic"
+msgstr "Amharisk"
+
+msgid "Arabic"
+msgstr "Arabisk"
+
+msgid "Aragonese"
+msgstr "Aragonsk"
+
+msgid "Armenian"
+msgstr "Armensk"
+
+msgid "Assamese"
+msgstr "Assamesisk"
+
+msgid "Avaric"
+msgstr "Avarisk"
+
+msgid "Avestan"
+msgstr "Avestisk"
+
+msgid "Aymara"
+msgstr "Aymara"
+
+msgid "Azerbaijani"
+msgstr "Aserbajdsjansk"
+
+msgid "Bambara"
+msgstr "Bambara"
+
+msgid "Bashkir"
+msgstr "Basjkirsk"
+
+msgid "Basque"
+msgstr "Baskisk"
+
+msgid "Belarusian"
+msgstr "Hviterussisk"
+
+msgid "Bengali"
+msgstr "Bengali"
+
+msgid "Bislama"
+msgstr "Bislama"
+
+msgid "Bosnian"
+msgstr "Bosnisk"
+
+msgid "Breton"
+msgstr "Bretonsk"
+
+msgid "Bulgarian"
+msgstr "Bulgarsk"
+
+msgid "Burmese"
+msgstr "Burmesisk"
+
+msgid "Catalan"
+msgstr "Katalansk"
+
+msgid "Chamorro"
+msgstr "Chamorro"
+
+msgid "Chechen"
+msgstr "Tsjetsjensk"
+
+msgid "Chichewa"
+msgstr "Chichewa"
+
+msgid "Chinese"
+msgstr "Kinesisk"
+
+msgid "Chinese (Simplified)"
+msgstr "Kinesisk (forenklet)"
+
+msgid "Chinese (Traditional)"
+msgstr "Kinesisk (tradisjonell)"
+
+msgid "Church Slavic"
+msgstr "Kirkeslavisk"
+
+msgid "Chuvash"
+msgstr "Tsjuvasjisk"
+
+msgid "Cornish"
+msgstr "Kornisk"
+
+msgid "Corsican"
+msgstr "Korsikansk"
+
+msgid "Cree"
+msgstr "Cree"
+
+msgid "Croatian"
+msgstr "Kroatisk"
+
+msgid "Czech"
+msgstr "Tsjekkisk"
+
+msgid "Danish"
+msgstr "Dansk"
+
+msgid "Divehi"
+msgstr "Divehi"
+
+msgid "Dutch"
+msgstr "Nederlandsk"
+
+msgid "Dzongkha"
+msgstr "Dzongkha"
+
+msgid "English (UK)"
+msgstr "Engelsk (Storbritannia)"
+
+msgid "English (US)"
+msgstr "Engelsk (USA)"
+
+msgid "Esperanto"
+msgstr "Esperanto"
+
+msgid "Estonian"
+msgstr "Estisk"
+
+msgid "Ewe"
+msgstr "Ewe"
+
+msgid "Faroese"
+msgstr "Færøysk"
+
+msgid "Fijian"
+msgstr "Fijiansk"
+
+msgid "Finnish"
+msgstr "Finsk"
+
+msgid "Western Frisian"
+msgstr "Vestfrisisk"
+
+msgid "Fulah"
+msgstr "Fulfulde"
+
+msgid "Scottish Gaelic"
+msgstr "Skotsk-gælisk"
+
+msgid "Galician"
+msgstr "Galisisk"
+
+msgid "Ganda"
+msgstr "Luganda"
+
+msgid "Georgian"
+msgstr "Georgisk"
+
+msgid "Greek"
+msgstr "Gresk"
+
+msgid "Kalaallisut"
+msgstr "Grønlandsk"
+
+msgid "Guarani"
+msgstr "Guarani"
+
+msgid "Gujarati"
+msgstr "Gujarati"
+
+msgid "Haitian Creole"
+msgstr "Haitisk kreolsk"
+
+msgid "Hausa"
+msgstr "Hausa"
+
+msgid "Hebrew"
+msgstr "Hebraisk"
+
+msgid "Herero"
+msgstr "Herero"
+
+msgid "Hindi"
+msgstr "Hindi"
+
+msgid "Hiri Motu"
+msgstr "Hiri motu"
+
+msgid "Hungarian"
+msgstr "Ungarsk"
+
+msgid "Icelandic"
+msgstr "Islandsk"
+
+msgid "Ido"
+msgstr "Ido"
+
+msgid "Igbo"
+msgstr "Igbo"
+
+msgid "Indonesian"
+msgstr "Indonesisk"
+
+msgid "Interlingua"
+msgstr "Interlingua"
+
+msgid "Interlingue"
+msgstr "Interlingue"
+
+msgid "Inuktitut"
+msgstr "Inuktitut"
+
+msgid "Inupiaq"
+msgstr "Inupiak"
+
+msgid "Irish"
+msgstr "Irsk"
+
+msgid "Italian"
+msgstr "Italiensk"
+
+msgid "Japanese"
+msgstr "Japansk"
+
+msgid "Javanese"
+msgstr "Javanesisk"
+
+msgid "Kannada"
+msgstr "Kannada"
+
+msgid "Kanuri"
+msgstr "Kanuri"
+
+msgid "Kashmiri"
+msgstr "Kasjmiri"
+
+msgid "Kazakh"
+msgstr "Kasakhisk"
+
+msgid "Khmer"
+msgstr "Khmer"
+
+msgid "Kikuyu"
+msgstr "Kikuyu"
+
+msgid "Kinyarwanda"
+msgstr "Kinyarwanda"
+
+msgid "Kyrgyz"
+msgstr "Kirgisisk"
+
+msgid "Komi"
+msgstr "Komi"
+
+msgid "Kongo"
+msgstr "Kongo"
+
+msgid "Korean"
+msgstr "Koreansk"
+
+msgid "Kuanyama"
+msgstr "Kuanyama"
+
+msgid "Kurdish"
+msgstr "Kurdisk"
+
+msgid "Lao"
+msgstr "Laotisk"
+
+msgid "Latin"
+msgstr "Latin"
+
+msgid "Latvian"
+msgstr "Latvisk"
+
+msgid "Limburgish"
+msgstr "Limburgsk"
+
+msgid "Lingala"
+msgstr "Lingala"
+
+msgid "Lithuanian"
+msgstr "Litauisk"
+
+msgid "Luba-Katanga"
+msgstr "Luba-Katanga"
+
+msgid "Luxembourgish"
+msgstr "Luxembourgsk"
+
+msgid "Macedonian"
+msgstr "Makedonsk"
+
+msgid "Malagasy"
+msgstr "Malagassisk"
+
+msgid "Malay"
+msgstr "Malayisk"
+
+msgid "Malayalam"
+msgstr "Malayalam"
+
+msgid "Maltese"
+msgstr "Maltesisk"
+
+msgid "Manx"
+msgstr "Manx"
+
+msgid "Maori"
+msgstr "Maori"
+
+msgid "Marathi"
+msgstr "Marathi"
+
+msgid "Marshallese"
+msgstr "Marshallesisk"
+
+msgid "Mongolian"
+msgstr "Mongolsk"
+
+msgid "Nauru"
+msgstr "Nauruisk"
+
+msgid "Navajo"
+msgstr "Navajo"
+
+msgid "North Ndebele"
+msgstr "Nord-ndebele"
+
+msgid "South Ndebele"
+msgstr "Sør-ndebele"
+
+msgid "Ndonga"
+msgstr "Ndonga"
+
+msgid "Nepali"
+msgstr "Nepali"
+
+msgid "Norwegian"
+msgstr "Norsk"
+
+msgid "Norwegian Bokmål"
+msgstr "Norsk bokmål"
+
+msgid "Norwegian Nynorsk"
+msgstr "Norsk nynorsk"
+
+msgid "Nuosu"
+msgstr "Nuosu"
+
+msgid "Occitan"
+msgstr "Oksitansk"
+
+msgid "Ojibwe"
+msgstr "Ojibwe"
+
+msgid "Odia"
+msgstr "Odia"
+
+msgid "Oromo"
+msgstr "Oromo"
+
+msgid "Ossetian"
+msgstr "Ossetisk"
+
+msgid "Pali"
+msgstr "Pali"
+
+msgid "Pashto"
+msgstr "Pashto"
+
+msgid "Persian"
+msgstr "Persisk"
+
+msgid "Polish"
+msgstr "Polsk"
+
+msgid "Portuguese"
+msgstr "Portugisisk"
+
+msgid "Portuguese (Brazil)"
+msgstr "Portugisisk (Brasil)"
+
+msgid "Punjabi"
+msgstr "Punjabi"
+
+msgid "Quechua"
+msgstr "Quechua"
+
+msgid "Romanian"
+msgstr "Rumensk"
+
+msgid "Romansh"
+msgstr "Retoromansk"
+
+msgid "Rundi"
+msgstr "Rundi"
+
+msgid "Russian"
+msgstr "Russisk"
+
+msgid "Northern Sami"
+msgstr "Nordsamisk"
+
+msgid "Samoan"
+msgstr "Samoansk"
+
+msgid "Sango"
+msgstr "Sango"
+
+msgid "Sanskrit"
+msgstr "Sanskrit"
+
+msgid "Sardinian"
+msgstr "Sardinsk"
+
+msgid "Serbian"
+msgstr "Serbisk"
+
+msgid "Shona"
+msgstr "Shona"
+
+msgid "Sindhi"
+msgstr "Sindhi"
+
+msgid "Sinhala"
+msgstr "Singalesisk"
+
+msgid "Slovak"
+msgstr "Slovakisk"
+
+msgid "Slovenian"
+msgstr "Slovensk"
+
+msgid "Somali"
+msgstr "Somali"
+
+msgid "Southern Sotho"
+msgstr "Sør-sotho"
+
+msgid "Spanish (Mexico)"
+msgstr "Spansk (Mexico)"
+
+msgid "Sundanese"
+msgstr "Sundanesisk"
+
+msgid "Swahili"
+msgstr "Swahili"
+
+msgid "Swati"
+msgstr "Swati"
+
+msgid "Swedish"
+msgstr "Svensk"
+
+msgid "Tagalog"
+msgstr "Tagalog"
+
+msgid "Tahitian"
+msgstr "Tahitisk"
+
+msgid "Tajik"
+msgstr "Tadsjikisk"
+
+msgid "Tamil"
+msgstr "Tamil"
+
+msgid "Tatar"
+msgstr "Tatarisk"
+
+msgid "Telugu"
+msgstr "Telugu"
+
+msgid "Thai"
+msgstr "Thai"
+
+msgid "Tibetan"
+msgstr "Tibetansk"
+
+msgid "Tigrinya"
+msgstr "Tigrinja"
+
+msgid "Tongan"
+msgstr "Tongansk"
+
+msgid "Tsonga"
+msgstr "Tsonga"
+
+msgid "Tswana"
+msgstr "Tswana"
+
+msgid "Turkish"
+msgstr "Tyrkisk"
+
+msgid "Turkmen"
+msgstr "Turkmensk"
+
+msgid "Twi"
+msgstr "Twi"
+
+msgid "Uyghur"
+msgstr "Uigurisk"
+
+msgid "Ukrainian"
+msgstr "Ukrainsk"
+
+msgid "Urdu"
+msgstr "Urdu"
+
+msgid "Uzbek"
+msgstr "Usbekisk"
+
+msgid "Venda"
+msgstr "Venda"
+
+msgid "Vietnamese"
+msgstr "Vietnamesisk"
+
+msgid "Volapük"
+msgstr "Volapük"
+
+msgid "Walloon"
+msgstr "Vallonsk"
+
+msgid "Welsh"
+msgstr "Walisisk"
+
+msgid "Wolof"
+msgstr "Wolof"
+
+msgid "Xhosa"
+msgstr "Xhosa"
+
+msgid "Yiddish"
+msgstr "Jiddisk"
+
+msgid "Yoruba"
+msgstr "Joruba"
+
+msgid "Zhuang"
+msgstr "Zhuang"
+
+msgid "Zulu"
+msgstr "Zulu"
+
+msgid "United States"
+msgstr "USA"
+
+msgid "United Kingdom"
+msgstr "Storbritannia"
+
+msgid "Australia"
+msgstr "Australia"
+
+msgid "Canada"
+msgstr "Canada"
+
+msgid "Ireland"
+msgstr "Irland"
+
+msgid "New Zealand"
+msgstr "New Zealand"
+
+msgid "India"
+msgstr "India"
+
+msgid "South Africa"
+msgstr "Sør-Afrika"
+
+msgid "Brazil"
+msgstr "Brasil"
+
+msgid "Portugal"
+msgstr "Portugal"
+
+msgid "Spain"
+msgstr "Spania"
+
+msgid "Mexico"
+msgstr "Mexico"
+
+msgid "Argentina"
+msgstr "Argentina"
+
+msgid "Colombia"
+msgstr "Colombia"
+
+msgid "Chile"
+msgstr "Chile"
+
+msgid "Peru"
+msgstr "Peru"
+
+msgid "Venezuela"
+msgstr "Venezuela"
+
+msgid "Latin America"
+msgstr "Latin-Amerika"
+
+msgid "France"
+msgstr "Frankrike"
+
+msgid "Belgium"
+msgstr "Belgia"
+
+msgid "Switzerland"
+msgstr "Sveits"
+
+msgid "Luxembourg"
+msgstr "Luxembourg"
+
+msgid "Germany"
+msgstr "Tyskland"
+
+msgid "Austria"
+msgstr "Østerrike"
+
+msgid "Italy"
+msgstr "Italia"
+
+msgid "Netherlands"
+msgstr "Nederland"
+
+msgid "China"
+msgstr "Kina"
+
+msgid "Taiwan"
+msgstr "Taiwan"
+
+msgid "Hong Kong"
+msgstr "Hongkong"
+
+msgid "Singapore"
+msgstr "Singapore"
+
+msgid "Japan"
+msgstr "Japan"
+
+msgid "South Korea"
+msgstr "Sør-Korea"
+
+msgid "Russia"
+msgstr "Russland"
+
+msgid "Ukraine"
+msgstr "Ukraina"
+
+msgid "Poland"
+msgstr "Polen"
+
+msgid "Sweden"
+msgstr "Sverige"
+
+msgid "Norway"
+msgstr "Norge"
+
+msgid "Denmark"
+msgstr "Danmark"
+
+msgid "Finland"
+msgstr "Finland"
+
+msgid "Turkey"
+msgstr "Tyrkia"
+
+msgid "Greece"
+msgstr "Hellas"
+
+msgid "Israel"
+msgstr "Israel"
+
+msgid "Egypt"
+msgstr "Egypt"
+
+msgid "Saudi Arabia"
+msgstr "Saudi-Arabia"
+
+msgid "United Arab Emirates"
+msgstr "De forente arabiske emirater"
+
+msgid "Philippines"
+msgstr "Filippinene"
+
+msgid "Indonesia"
+msgstr "Indonesia"
+
+msgid "Malaysia"
+msgstr "Malaysia"
+
+msgid "Thailand"
+msgstr "Thailand"
+
+msgid "Vietnam"
+msgstr "Vietnam"
+
+msgid "Simplified"
+msgstr "Forenklet"
+
+msgid "Traditional"
+msgstr "Tradisjonell"
+
+msgid "Cyrillic"
+msgstr "Kyrillisk"
+
+msgid "Arabic script"
+msgstr "Arabisk skrift"
+
+msgid "Show keyboard shortcuts"
+msgstr "Vis hurtigtaster"
+
+msgid "Jump to a room"
+msgstr "Hopp til et rom"
+
+msgid "Find in this room"
+msgstr "Søk i dette rommet"
+
+msgid "Search your messages"
+msgstr "Søk i meldingene dine"
+
+msgid "Show room info"
+msgstr "Vis rominfo"
+
+msgid "Open settings"
+msgstr "Åpne innstillinger"
+
+msgid "Move to the next / previous control"
+msgstr "Gå til neste / forrige kontroll"
+
+msgid "Activate the focused control"
+msgstr "Aktiver den fokuserte kontrollen"
+
+msgid "Open the menu for the focused item"
+msgstr "Åpne menyen for det fokuserte elementet"
+
+msgid "Close the open dialog, panel or menu"
+msgstr "Lukk den åpne dialogen, panelet eller menyen"
+
+msgid "Go back to the previous room"
+msgstr "Gå tilbake til forrige rom"
+
+msgid "Go forward to the next room"
+msgstr "Gå fremover til neste rom"
+
+msgid "Cycle through recent rooms"
+msgstr "Bla gjennom siste rom"
+
+msgid "Cycle through recent rooms backward"
+msgstr "Bla bakover gjennom siste rom"
+
+msgid "Scroll up / down a page"
+msgstr "Rull en side opp / ned"
+
+msgid "Scroll to the top / bottom"
+msgstr "Rull til toppen / bunnen"
+
+msgid "Select the previous / next message"
+msgstr "Velg forrige / neste melding"
+
+msgid "Move a page of messages up / down"
+msgstr "Flytt en side med meldinger opp / ned"
+
+msgid "Select the oldest loaded message"
+msgstr "Velg den eldste innlastede meldingen"
+
+msgid "Select the newest message"
+msgstr "Velg den nyeste meldingen"
+
+msgid "Jump to the first unread message"
+msgstr "Hopp til første uleste melding"
+
+msgid "Step through links and attachments in a message"
+msgstr "Gå gjennom lenker og vedlegg i en melding"
+
+msgid "Open the selected part or the message's actions"
+msgstr "Åpne den valgte delen eller handlingene for meldingen"
+
+msgid "Copy the selected text or message"
+msgstr "Kopier den valgte teksten eller meldingen"
+
+msgid "Go back to the message box"
+msgstr "Gå tilbake til meldingsfeltet"
+
+msgid "Send the message"
+msgstr "Send meldingen"
+
+msgid "Start a new line"
+msgstr "Start en ny linje"
+
+msgid "Edit your last message (in an empty message box)"
+msgstr "Rediger den siste meldingen din (i et tomt meldingsfelt)"
+
+msgid "Move through suggestions and results"
+msgstr "Gå gjennom forslag og resultater"
+
+msgid "Choose the highlighted suggestion"
+msgstr "Velg det uthevede forslaget"
+
+msgid "Choose a skin tone for the selected emoji"
+msgstr "Velg hudtone for den valgte emojien"
+
+msgid "Remove the selected room from the space"
+msgstr "Fjern det valgte rommet fra området"
+
+msgid "Move by day / week"
+msgstr "Flytt én dag / uke om gangen"
+
+msgid "Go to the start / end of the week"
+msgstr "Gå til starten / slutten av uken"
+
+msgid "Previous year"
+msgstr "Forrige år"
+
+msgid "Next year"
+msgstr "Neste år"
+
+msgid "Go to today"
+msgstr "Gå til i dag"
+
+msgid "Pick the selected date"
+msgstr "Velg den valgte datoen"
+
+msgid "Zoom in"
+msgstr "Zoom inn"
+
+msgid "Zoom out"
+msgstr "Zoom ut"
+
+msgid "Fit the image to the window"
+msgstr "Tilpass bildet til vinduet"
+
+msgid "Pan a zoomed image"
+msgstr "Panorer et zoomet bilde"
+
+msgid "Play / pause a video"
+msgstr "Spill av / pause video"
+
+msgid "Skip back 5 seconds"
+msgstr "Hopp 5 sekunder tilbake"
+
+msgid "Skip forward 5 seconds"
+msgstr "Hopp 5 sekunder frem"
+
+msgid "Restart the video"
+msgstr "Start videoen på nytt"
+
+msgid "Navigation"
+msgstr "Navigasjon"
+
+msgid "Message box"
+msgstr "Meldingsfelt"
+
+msgid "Pickers and lists"
+msgstr "Velgere og lister"
+
+msgid "Date picker"
+msgstr "Datovelger"
+
+msgid "Image and video viewer"
+msgstr "Bilde- og videovisning"
+
+msgid "All files"
+msgstr "Alle filer"
+
+msgid "Videos"
+msgstr "Videoer"
+
+msgid "Key files"
+msgstr "Nøkkelfiler"
+
+msgid "Unread messages"
+msgstr "Uleste meldinger"
+
+msgid "Next unread room"
+msgstr "Neste uleste rom"
+
+msgid "Hang up"
+msgstr "Legg på"
+
+msgid "Recent rooms"
+msgstr "Siste rom"
+
+msgid "Open quick switcher"
+msgstr "Åpne hurtigbytte"
+
+msgid "Search messages"
+msgstr "Søk i meldinger"
+
+msgid "Smileys & People"
+msgstr "Smilefjes og personer"
+
+msgid "Animals & Nature"
+msgstr "Dyr og natur"
+
+msgid "Food & Drink"
+msgstr "Mat og drikke"
+
+msgid "Activities"
+msgstr "Aktiviteter"
+
+msgid "Travel & Places"
+msgstr "Reise og steder"
+
+msgid "Objects"
+msgstr "Objekter"
+
+msgid "Symbols"
+msgstr "Symboler"
+
+msgid "Flags"
+msgstr "Flagg"
+
+msgid "Network"
+msgstr "Nettverk"
+
+msgid "Proxy"
+msgstr "Proxy"
+
+msgid "Use system proxy"
+msgstr "Bruk systemets proxy"
+
+msgid "No proxy"
+msgstr "Ingen proxy"
+
+msgid "Proxy URL:"
+msgstr "Proxy-URL:"
+
+msgid "Manual"
+msgstr "Manuell"
+
+msgid "http://proxy.example.com:8080"
+msgstr "http://proxy.example.com:8080"
+
+msgid "HTTP and HTTPS proxies. Calls' audio/video can't go through an HTTP proxy."
+msgstr "HTTP- og HTTPS-proxyer. Lyd og video i samtaler kan ikke gå gjennom en HTTP-proxy."
+
+msgid "Enter a valid http:// or https:// proxy URL."
+msgstr "Skriv inn en gyldig proxy-URL som starter med http:// eller https://."
+
+msgid "Live location · updated {0}"
+msgstr "Live-posisjon · oppdatert {0}"
+
+msgid "Waiting for location…"
+msgstr "Venter på posisjon…"
+
+msgid "Live location ended"
+msgstr "Live-posisjonen er avsluttet"
+
+msgid "Select one option"
+msgstr "Velg ett alternativ"
+
+msgid "Select up to {0} option"
+msgid_plural "Select up to {0} options"
+msgstr[0] "Velg opptil {0} alternativ"
+msgstr[1] "Velg opptil {0} alternativer"
+
+msgid "Results will be shown when the poll ends"
+msgstr "Resultatene vises når avstemningen avsluttes"
+
+msgid "Poll"
+msgstr "Avstemning"
+
+msgid "{0} vote"
+msgid_plural "{0} votes"
+msgstr[0] "{0} stemme"
+msgstr[1] "{0} stemmer"
+
+msgid "Poll ended · {0} vote"
+msgid_plural "Poll ended · {0} votes"
+msgstr[0] "Avstemningen er avsluttet · {0} stemme"
+msgstr[1] "Avstemningen er avsluttet · {0} stemmer"
+
+msgid "{0}, {1}%"
+msgstr "{0}, {1}%"
+
+msgid "End poll"
+msgstr "Avslutt avstemningen"
+
+msgid "End this poll?"
+msgstr "Avslutte denne avstemningen?"
+
+msgid "Voting will close and the final results will be shown to everyone."
+msgstr "Stemmegivningen stenges, og sluttresultatet vises for alle."
+
+msgid "{0}% ({1})"
+msgstr "{0}% ({1})"
+
+msgid "Create poll in {0}"
+msgstr "Opprett avstemning i {0}"
+
+msgid "Create poll"
+msgstr "Opprett avstemning"
+
+msgid "Question"
+msgstr "Spørsmål"
+
+msgid "Option {0}"
+msgstr "Alternativ {0}"
+
+msgid "Add option"
+msgstr "Legg til alternativ"
+
+msgid "Remove option"
+msgstr "Fjern alternativ"
+
+msgid "Allow multiple answers"
+msgstr "Tillat flere svar"
+
+msgid "Hide results until the poll ends"
+msgstr "Skjul resultatene til avstemningen er over"
+
+msgid "Enter a question and at least two different options"
+msgstr "Skriv inn et spørsmål og minst to ulike alternativer"
+
+msgid "Create a poll"
+msgstr "Opprett en avstemning"
+
+msgid "Couldn't send the poll"
+msgstr "Kunne ikke sende avstemningen"

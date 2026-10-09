@@ -163,7 +163,7 @@ dev_group->add_widget(std::make_unique<tk::Label>(tk::tr("Microphone")));
 - **Dates and sizes:** use `tk::format_date(tm, tk::tr("%B %-d, %Y"))` and `tk::format_size(bytes)`, not hand-rolled month tables or `" KB"` suffixes.
 - **Native shells translate through `tk::tr` too.** A bare `tr()` in a Qt `QObject` is `QObject::tr` (no translator installed) and GTK's `_()` is unbound gettext; both always return English. On macOS use `TkTr("…")`; on Win32 convert the `tk::tr` result to UTF-16.
 
-After adding new strings, add the corresponding `msgid`/`msgstr` entries to every `.po` file under `i18n/` (currently `de.po`, `es.po`, `fr.po`, and `pseudo.po`). Strings added without `.po` entries will silently fall back to English and will never be translated. The `i18n_catalogs_complete` ctest (`i18n/check_i18n.py`) fails and lists what's missing, and it also flags bare `tr()` / `_()` calls in the shells.
+After adding new strings, add the corresponding `msgid`/`msgstr` entries to every `.po` file under `i18n/` (currently `de.po`, `es.po`, `fr.po`, `nb.po`, and `pseudo.po`). Strings added without `.po` entries will silently fall back to English and will never be translated. The `i18n_catalogs_complete` ctest (`i18n/check_i18n.py`) fails and lists what's missing, and it also flags bare `tr()` / `_()` calls in the shells.
 
 Include `ui/shared/tk/i18n.h` to access `tk::tr`, `tk::trn`, `tk::trf`, `tk::N_`, `tk::format_date`, and `tk::format_size`.
 
