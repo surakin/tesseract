@@ -7,7 +7,7 @@ msgstr ""
 "Project-Id-Version: tesseract\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2026-10-08 22:23+0200\n"
-"PO-Revision-Date: 2026-10-09 21:33+0300\n"
+"PO-Revision-Date: 2026-10-09 22:00+0300\n"
 "Last-Translator: \n"
 "Language-Team: Ukrainian\n"
 "Language: uk\n"
@@ -599,125 +599,125 @@ msgstr "{0} вилучено та заблоковано користуваче�
 #: ui/shared/views/MessageListView.cpp:1104
 #, c++-format
 msgid "{0} was kicked and banned"
-msgstr ""
+msgstr "{0} вилучено з кімнати й заблоковано"
 
 #: ui/shared/app/HistoryExportController.cpp:119
 #: ui/shared/views/MessageListView.cpp:1106
 #, c++-format
 msgid "{0} has accepted the invitation"
-msgstr ""
+msgstr "{0}: запрошення прийнято"
 
 #: ui/shared/app/HistoryExportController.cpp:120
 #: ui/shared/views/MessageListView.cpp:1108
 #, c++-format
 msgid "{0} has rejected the invitation"
-msgstr ""
+msgstr "{0}: запрошення відхилено"
 
 #: ui/shared/app/HistoryExportController.cpp:121
 #: ui/shared/views/MessageListView.cpp:1111
 #, c++-format
 msgid "{0}'s invitation was revoked by {1}"
-msgstr ""
+msgstr "Запрошення для {0} відкликано користувачем {1}"
 
 #: ui/shared/app/HistoryExportController.cpp:122
 #: ui/shared/views/MessageListView.cpp:1112
 #, c++-format
 msgid "{0}'s invitation was revoked"
-msgstr ""
+msgstr "Запрошення для {0} відкликано"
 
 #: ui/shared/app/HistoryExportController.cpp:123
 #: ui/shared/views/MessageListView.cpp:1114
 #: ui/shared/views/MessageListView.cpp:1234
 #, c++-format
 msgid "{0} requested to join"
-msgstr ""
+msgstr "{0}: надіслано запит на приєднання"
 
 #: ui/shared/app/HistoryExportController.cpp:124
 #: ui/shared/views/MessageListView.cpp:1117
 #, c++-format
 msgid "{0}'s request to join was approved by {1}"
-msgstr ""
+msgstr "Запит {0} на приєднання схвалено користувачем {1}"
 
 #: ui/shared/app/HistoryExportController.cpp:125
 #: ui/shared/views/MessageListView.cpp:1119
 #, c++-format
 msgid "{0}'s join request was approved"
-msgstr ""
+msgstr "Запит {0} на приєднання схвалено"
 
 #: ui/shared/app/HistoryExportController.cpp:126
 #, c++-format
 msgid "{0}'s request to join was withdrawn"
-msgstr ""
+msgstr "Запит {0} на приєднання відкликано"
 
 #: ui/shared/app/HistoryExportController.cpp:127
 #: ui/shared/views/MessageListView.cpp:1124
 #, c++-format
 msgid "{0}'s request to join was denied by {1}"
-msgstr ""
+msgstr "Запит {0} на приєднання відхилено користувачем {1}"
 
 #: ui/shared/app/HistoryExportController.cpp:128
 #: ui/shared/views/MessageListView.cpp:1126
 #, c++-format
 msgid "{0}'s join request was denied"
-msgstr ""
+msgstr "Запит {0} на приєднання відхилено"
 
 #: ui/shared/app/HistoryExportController.cpp:129
 #: ui/shared/views/MessageListView.cpp:11837
 #, c++-format
 msgid "{0}. Reason: {1}"
-msgstr ""
+msgstr "{0}. Причина: {1}"
 
 #: ui/shared/app/Launch.cpp:26
 msgid "Show this help and exit"
-msgstr ""
+msgstr "Показати цю довідку й завершити роботу"
 
 #: ui/shared/app/Launch.cpp:30
 msgid "Show the version and exit"
-msgstr ""
+msgstr "Показати версію й завершити роботу"
 
 #: ui/shared/app/Launch.cpp:34
 msgid "Use a separate profile with its own accounts and settings"
-msgstr ""
+msgstr "Використовувати окремий профіль зі своїми обліковими записами й налаштуваннями"
 
 #: ui/shared/app/Launch.cpp:38
 msgid "Start in the tray without showing the window"
-msgstr ""
+msgstr "Запустити в системному лотку, не показуючи вікно"
 
 #: ui/shared/app/Launch.cpp:42
 msgid "Set the log level (error, warn, info, debug, trace)"
-msgstr ""
+msgstr "Установити рівень журналювання (error, warn, info, debug, trace)"
 
 #: ui/shared/app/Launch.cpp:46
 msgid "Log more detail (same as --log-level=debug)"
-msgstr ""
+msgstr "Докладніше журналювання (те саме, що --log-level=debug)"
 
 #: ui/shared/app/Launch.cpp:50
 msgid "Open the room with this ID"
-msgstr ""
+msgstr "Відкрити кімнату з цим ідентифікатором"
 
 #: ui/shared/app/Launch.cpp:54
 msgid "Open the quick switcher"
-msgstr ""
+msgstr "Відкрити швидке перемикання"
 
 #: ui/shared/app/Launch.cpp:58
 msgid "Open message search"
-msgstr ""
+msgstr "Відкрити пошук повідомлень"
 
 #: ui/shared/app/Launch.cpp:62
 msgid "Open Settings"
-msgstr ""
+msgstr "Відкрити налаштування"
 
 #: ui/shared/app/Launch.cpp:66
 msgid "Sign out of every account and exit"
-msgstr ""
+msgstr "Вийти з усіх облікових записів і завершити роботу"
 
 #: ui/shared/app/Launch.cpp:90
 msgid "Tesseract is running. Quit it first, then try again."
-msgstr ""
+msgstr "Tesseract уже запущено. Спершу завершіть його роботу, а потім спробуйте ще раз."
 
 #: ui/shared/app/Launch.cpp:97
 msgid "The account list could not be read. Nothing was changed."
-msgstr ""
+msgstr "Не вдалося прочитати список облікових записів. Зміни не внесено."
 
 #: ui/shared/app/Launch.cpp:102
 msgid "No accounts to sign out."
@@ -726,7 +726,7 @@ msgstr "Немає облікових записів для виходу."
 #: ui/shared/app/Launch.cpp:111
 #, c++-format
 msgid "Signed out {0}"
-msgstr ""
+msgstr "Вихід з облікового запису {0} виконано"
 
 #: ui/shared/app/Launch.cpp:117
 #, c++-format
@@ -735,28 +735,28 @@ msgstr "{0} вилучено з цього пристрою, але не вда�
 
 #: ui/shared/app/Launch.cpp:132
 msgid "[OPTIONS] [MATRIX-URI]"
-msgstr ""
+msgstr "[ПАРАМЕТРИ] [MATRIX-URI]"
 
 #: ui/shared/app/Launch.cpp:133
 msgid "Usage:"
-msgstr ""
+msgstr "Використання:"
 
 #: ui/shared/app/Launch.cpp:133
 msgid "Options:"
-msgstr ""
+msgstr "Параметри:"
 
 #: ui/shared/app/RoomPane.cpp:350
 msgid "Switch to this account to open this room."
-msgstr ""
+msgstr "Перемкніться на цей обліковий запис, щоб відкрити кімнату."
 
 #: ui/shared/app/RoomPane.cpp:370
 msgid "Switch to this account to verify users."
-msgstr ""
+msgstr "Перемкніться на цей обліковий запис, щоб підтвердити особи користувачів."
 
 #: ui/shared/app/RoomPane.cpp:388 ui/shared/app/RoomPane.cpp:2751
 #, c++-format
 msgid "Couldn't update the identity: {0}"
-msgstr ""
+msgstr "Не вдалося оновити особу: {0}"
 
 #: ui/shared/app/RoomPane.cpp:572
 #, c++-format
@@ -773,16 +773,16 @@ msgstr "Не вдалося встановити тему: {0}"
 #: ui/shared/app/SettingsController.cpp:816
 #: ui/shared/app/SettingsController.cpp:855 ui/shared/app/ShellBase.cpp:14534
 msgid "not logged in"
-msgstr ""
+msgstr "не виконано вхід"
 
 #: ui/shared/app/RoomPane.cpp:1221
 msgid "Image decode failed"
-msgstr ""
+msgstr "Не вдалося декодувати зображення"
 
 #: ui/shared/app/RoomPane.cpp:1793
 #, c++-format
 msgid "Jump to date failed: {0}"
-msgstr ""
+msgstr "Не вдалося перейти до дати: {0}"
 
 #: ui/shared/app/RoomPane.cpp:2522
 #, c++-format
@@ -797,7 +797,7 @@ msgstr "Не вдалося відредагувати: {0}"
 #: ui/shared/app/RoomPane.cpp:2618 ui/shared/app/RoomPane.cpp:4058
 #: ui/shared/views/RoomSettingsView.cpp:184
 msgid "Copied to clipboard"
-msgstr ""
+msgstr "Скопійовано до буфера обміну"
 
 #: ui/shared/app/RoomPane.cpp:2686
 #, c++-format
@@ -812,17 +812,17 @@ msgstr "Не вдалося скасувати надсилання повідо
 #: ui/shared/app/RoomPane.cpp:3533
 #, c++-format
 msgid "Command failed: {0}"
-msgstr ""
+msgstr "Не вдалося виконати команду: {0}"
 
 #: ui/shared/app/ShellBase.cpp:2382 ui/shared/views/ComposeBar.cpp:226
 #: ui/shared/views/ComposeBar.cpp:558 ui/shared/views/ComposeBar.cpp:1655
 #: ui/shared/views/MessageListView.cpp:1463
 msgid "Voice message"
-msgstr ""
+msgstr "Голосове повідомлення"
 
 #: ui/shared/app/ShellBase.cpp:4803 ui/shared/views/RoomView.cpp:1078
 msgid "this room"
-msgstr ""
+msgstr "цю кімнату"
 
 #: ui/shared/app/ShellBase.cpp:4806 ui/shared/views/RoomView.cpp:1080
 #, c++-format
@@ -831,7 +831,7 @@ msgstr "Вийти з {0}?"
 
 #: ui/shared/app/ShellBase.cpp:4807 ui/shared/views/RoomView.cpp:1081
 msgid "You will stop receiving messages and need to be re-invited to rejoin."
-msgstr ""
+msgstr "Ви більше не отримуватимете повідомлень і для повторного приєднання вам знадобиться нове запрошення."
 
 #: ui/shared/app/ShellBase.cpp:4809 ui/shared/views/RoomView.cpp:1083
 msgid "Leave"
@@ -844,80 +844,80 @@ msgstr "Повідомлення не надіслано: {0}"
 
 #: ui/shared/app/ShellBase.cpp:6284
 msgid "End your call before restarting."
-msgstr ""
+msgstr "Завершіть виклик, перш ніж перезапускати програму."
 
 #: ui/shared/app/ShellBase.cpp:6290
 msgid "Couldn't restart Tesseract. Please restart it yourself."
-msgstr ""
+msgstr "Не вдалося перезапустити Tesseract. Перезапустіть програму самостійно."
 
 #: ui/shared/app/ShellBase.cpp:7179
 #, c++-format
 msgid "Couldn't invite {0}"
-msgstr ""
+msgstr "Не вдалося запросити {0}"
 
 #: ui/shared/app/ShellBase.cpp:7200
 #, c++-format
 msgid "Couldn't kick {0}"
-msgstr ""
+msgstr "Не вдалося вилучити {0} з кімнати"
 
 #: ui/shared/app/ShellBase.cpp:7203
 #, c++-format
 msgid "Couldn't ban {0}"
-msgstr ""
+msgstr "Не вдалося заблокувати {0}"
 
 #: ui/shared/app/ShellBase.cpp:7206
 #, c++-format
 msgid "Couldn't unban {0}"
-msgstr ""
+msgstr "Не вдалося зняти блокування з {0}"
 
 #: ui/shared/app/ShellBase.cpp:7233
 msgid "complete room action"
-msgstr ""
+msgstr "завершити дію в кімнаті"
 
 #: ui/shared/app/ShellBase.cpp:7237
 msgid "accept invite"
-msgstr ""
+msgstr "прийняти запрошення"
 
 #: ui/shared/app/ShellBase.cpp:7240
 msgid "join room"
-msgstr ""
+msgstr "приєднатися до кімнати"
 
 #: ui/shared/app/ShellBase.cpp:7243
 msgid "leave room"
-msgstr ""
+msgstr "залишити кімнату"
 
 #: ui/shared/app/ShellBase.cpp:7246
 msgid "leave space"
-msgstr ""
+msgstr "залишити простір"
 
 #: ui/shared/app/ShellBase.cpp:7249
 msgid "create room"
-msgstr ""
+msgstr "створити кімнату"
 
 #: ui/shared/app/ShellBase.cpp:7252
 msgid "send join request"
-msgstr ""
+msgstr "надіслати запит на приєднання"
 
 #: ui/shared/app/ShellBase.cpp:7255
 msgid "accept join request"
-msgstr ""
+msgstr "прийняти запит на приєднання"
 
 #: ui/shared/app/ShellBase.cpp:7258
 msgid "add room to space"
-msgstr ""
+msgstr "додати кімнату до простору"
 
 #: ui/shared/app/ShellBase.cpp:7261
 msgid "remove room from space"
-msgstr ""
+msgstr "вилучити кімнату з простору"
 
 #: ui/shared/app/ShellBase.cpp:7264
 #, c++-format
 msgid "Couldn't {0}"
-msgstr ""
+msgstr "Не вдалося: {0}"
 
 #: ui/shared/app/ShellBase.cpp:7373
 msgid "Request sent"
-msgstr ""
+msgstr "Запит надіслано"
 
 #: ui/shared/app/ShellBase.cpp:7459
 msgid "Upload failed"
@@ -930,38 +930,38 @@ msgstr "Не вдалося завантажити: {0}"
 
 #: ui/shared/app/ShellBase.cpp:7923
 msgid "Fetching older messages…"
-msgstr ""
+msgstr "Завантаження старіших повідомлень…"
 
 #: ui/shared/app/ShellBase.cpp:7947 ui/shared/views/ThreadListView.cpp:95
 #, c-format
 msgid "%b %-d"
-msgstr ""
+msgstr "%b %-d"
 
 #: ui/shared/app/ShellBase.cpp:7948
 msgid "%b %-d, %Y"
-msgstr ""
+msgstr "%b %-d, %Y"
 
 #: ui/shared/app/ShellBase.cpp:7949
 #, c++-format
 msgid "(oldest: {0})"
-msgstr ""
+msgstr "(найстаріше: {0})"
 
 #: ui/shared/app/ShellBase.cpp:8189
 msgid "Activity Monitor"
-msgstr ""
+msgstr "Монітор активності"
 
 #: ui/shared/app/ShellBase.cpp:8193
 msgid "The Activity Monitor is not available on this platform yet."
-msgstr ""
+msgstr "Монітор активності ще недоступний на цій платформі."
 
 #: ui/shared/app/ShellBase.cpp:8489
 #, c++-format
 msgid "Tesseract {0} available"
-msgstr ""
+msgstr "Доступна версія Tesseract {0}"
 
 #: ui/shared/app/ShellBase.cpp:8549
 msgid "Keyboard Shortcuts…"
-msgstr ""
+msgstr "Комбінації клавіш…"
 
 #: ui/shared/app/ShellBase.cpp:8552
 msgid "Verify this session…"
@@ -978,51 +978,51 @@ msgstr "Додати пристрій за допомогою QR-коду…"
 #: ui/shared/app/ShellBase.cpp:8558
 #, c++-format
 msgid "Log Out {0}"
-msgstr ""
+msgstr "Вийти з облікового запису {0}"
 
 #: ui/shared/app/ShellBase.cpp:8773
 msgid "empty session"
-msgstr ""
+msgstr "порожній сеанс"
 
 #: ui/shared/app/ShellBase.cpp:8814
 #, c++-format
 msgid "couldn't persist matrix store: {0}"
-msgstr ""
+msgstr "не вдалося зберегти сховище Matrix: {0}"
 
 #: ui/shared/app/ShellBase.cpp:8826
 msgid "couldn't persist session"
-msgstr ""
+msgstr "не вдалося зберегти сеанс"
 
 #: ui/shared/app/ShellBase.cpp:8949
 msgid "no user id"
-msgstr ""
+msgstr "немає ідентифікатора користувача"
 
 #: ui/shared/app/ShellBase.cpp:9557
 #, c++-format
 msgid "Sign out failed: {0}"
-msgstr ""
+msgstr "Не вдалося вийти: {0}"
 
 #: ui/shared/app/ShellBase.cpp:10361
 #, c++-format
 msgid "{0} is typing…"
-msgstr ""
+msgstr "{0} пише…"
 
 #: ui/shared/app/ShellBase.cpp:10365
 #, c++-format
 msgid "{0} and {1} are typing…"
-msgstr ""
+msgstr "{0} і {1} пишуть…"
 
 #: ui/shared/app/ShellBase.cpp:10369
 #, c++-format
 msgid "{0}, {1} and {2} other are typing…"
 msgid_plural "{0}, {1} and {2} others are typing…"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "{0}, {1} та ще {2} користувач пише…"
+msgstr[1] "{0}, {1} та ще {2} користувачі пишуть…"
+msgstr[2] "{0}, {1} та ще {2} користувачів пишуть…"
 
 #: ui/shared/app/ShellBase.cpp:13059
 msgid "End your call before clearing the cache."
-msgstr ""
+msgstr "Завершіть виклик, перш ніж очищати кеш."
 
 #: ui/shared/app/ShellBase.cpp:13065
 msgid "Finish verifying your device before clearing the cache."
@@ -1038,26 +1038,26 @@ msgstr "Очищення кешу…"
 
 #: ui/shared/app/ShellBase.cpp:13299
 msgid "Cache cleared."
-msgstr ""
+msgstr "Кеш очищено."
 
 #: ui/shared/app/ShellBase.cpp:13304
 #, c++-format
 msgid "Cache cleared, but reloading failed: {0}"
-msgstr ""
+msgstr "Кеш очищено, але не вдалося перезавантажити: {0}"
 
 #: ui/shared/app/ShellBase.cpp:13694
 #, c++-format
 msgid "Subscribe failed: {0}"
-msgstr ""
+msgstr "Не вдалося підписатися: {0}"
 
 #: ui/shared/app/ShellBase.cpp:14321
 msgid "Exporting history…"
-msgstr ""
+msgstr "Експорт історії…"
 
 #: ui/shared/app/ShellBase.cpp:14328
 #, c++-format
 msgid "Exporting history… {0} messages"
-msgstr ""
+msgstr "Експорт історії… повідомлень: {0}"
 
 #: ui/shared/app/ShellBase.cpp:14384
 #, c++-format
@@ -1071,15 +1071,15 @@ msgstr "Не вдалося встановити аватар кімнати: {0
 
 #: ui/shared/app/ShellBase.cpp:14393 ui/shared/app/SlashCommands.cpp:213
 msgid "Avatar updated for this room"
-msgstr ""
+msgstr "Аватар кімнати оновлено"
 
 #: ui/shared/app/ShellBase.cpp:14713
 msgid "The file couldn't be written."
-msgstr ""
+msgstr "Не вдалося записати файл."
 
 #: ui/shared/app/ShellBase.cpp:14840
 msgid "This verification is no longer active."
-msgstr ""
+msgstr "Ця перевірка більше не активна."
 
 #: ui/shared/app/ShellBase.cpp:14852
 msgid "The other device didn't finish confirming in time."
@@ -1095,19 +1095,19 @@ msgstr "Не вдалося прочитати ключ відновлення �
 
 #: ui/shared/app/ShellBase.cpp:15594
 msgid "Finish the current verification first."
-msgstr ""
+msgstr "Спершу завершіть поточну перевірку."
 
 #: ui/shared/app/ShellBase.cpp:16007
 msgid "Sync error: reconnecting…"
-msgstr ""
+msgstr "Помилка синхронізації: повторне підключення…"
 
 #: ui/shared/app/ShellBase.cpp:16024
 msgid "Reconnecting session…"
-msgstr ""
+msgstr "Повторне підключення сеансу…"
 
 #: ui/shared/app/ShellBase.cpp:16043
 msgid "Reconnected"
-msgstr ""
+msgstr "Підключення відновлено"
 
 #: ui/shared/app/ShellBase.cpp:16058
 msgid "Session expired; please log in again."
@@ -1115,39 +1115,39 @@ msgstr "Термін дії сеансу завершився; увійдіть 
 
 #: ui/shared/app/ShellBase.cpp:16371
 msgid "Location services aren't available on this device."
-msgstr ""
+msgstr "Служби геолокації недоступні на цьому пристрої."
 
 #: ui/shared/app/ShellBase.cpp:16379
 msgid "Fetching your location…"
-msgstr ""
+msgstr "Визначення вашого місцезнаходження…"
 
 #: ui/shared/app/ShellBase.cpp:16392
 msgid "Location permission denied."
-msgstr ""
+msgstr "У доступі до місцезнаходження відмовлено."
 
 #: ui/shared/app/ShellBase.cpp:16395
 msgid "Location is currently unavailable."
-msgstr ""
+msgstr "Місцезнаходження наразі недоступне."
 
 #: ui/shared/app/ShellBase.cpp:16398
 msgid "Timed out waiting for your location."
-msgstr ""
+msgstr "Час очікування на визначення місцезнаходження вичерпано."
 
 #: ui/shared/app/ShellBase.cpp:16401
 msgid "Couldn't get your location."
-msgstr ""
+msgstr "Не вдалося визначити ваше місцезнаходження."
 
 #: ui/shared/app/ShellBase.cpp:16414
 msgid "Location sent."
-msgstr ""
+msgstr "Місцезнаходження надіслано."
 
 #: ui/shared/app/ShellBase.cpp:16436
 msgid "You're signed out of this account"
-msgstr ""
+msgstr "Ви вийшли з цього облікового запису"
 
 #: ui/shared/app/ShellBase.cpp:16452
 msgid "Couldn't send your reply. Try again from the app."
-msgstr ""
+msgstr "Не вдалося надіслати відповідь. Спробуйте ще раз у програмі."
 
 #: ui/shared/app/ShellBase.cpp:16467 ui/shared/views/MessageListView.cpp:7774
 msgid "Message not sent"
@@ -1168,7 +1168,7 @@ msgstr "Дзвінок завершено через помилку медіа."
 
 #: ui/shared/app/ShellBase.cpp:16850
 msgid "This call is not supported on your device."
-msgstr ""
+msgstr "Цей виклик не підтримується на вашому пристрої."
 
 #: ui/shared/app/ShellBase.cpp:16852
 msgid "Call ended due to an encryption error."
@@ -1176,20 +1176,20 @@ msgstr "Дзвінок завершено через помилку шифрув
 
 #: ui/shared/app/ShellBase.cpp:16854
 msgid "The call ended unexpectedly."
-msgstr ""
+msgstr "Виклик несподівано завершився."
 
 #: ui/shared/app/ShellBase.h:4080
 msgid "New message"
-msgstr ""
+msgstr "Нове повідомлення"
 
 #: ui/shared/app/SlashCommands.cpp:173
 #, c++-format
 msgid "(Spoiler: {0})"
-msgstr ""
+msgstr "(Спойлер: {0})"
 
 #: ui/shared/app/SlashCommands.cpp:180
 msgid "(Spoiler)"
-msgstr ""
+msgstr "(Спойлер)"
 
 #: ui/shared/app/SlashCommands.cpp:189
 msgid "Send an action message"
@@ -1197,11 +1197,11 @@ msgstr "Надіслати повідомлення-дію"
 
 #: ui/shared/app/SlashCommands.cpp:190
 msgid "Append ¯\\_(ツ)_/¯"
-msgstr ""
+msgstr "Додати ¯\\_(ツ)_/¯"
 
 #: ui/shared/app/SlashCommands.cpp:191
 msgid "Slap someone with a large trout"
-msgstr ""
+msgstr "Дати комусь ляпаса великою фореллю"
 
 #: ui/shared/app/SlashCommands.cpp:192
 msgid "Send a hidden spoiler message"
@@ -1213,7 +1213,7 @@ msgstr "Встановити відображуване ім’я для ціє�
 
 #: ui/shared/app/SlashCommands.cpp:194
 msgid "Set or reset your avatar in this room"
-msgstr ""
+msgstr "Установити або скинути аватар у цій кімнаті"
 
 #: ui/shared/app/SlashCommands.cpp:195
 msgid "Join a room by alias or ID"
@@ -1233,46 +1233,46 @@ msgstr "Знайти GIF для надсилання"
 
 #: ui/shared/app/SlashCommands.cpp:199
 msgid "Take a selfie and attach it"
-msgstr ""
+msgstr "Зробити селфі й прикріпити його"
 
 #: ui/shared/app/SlashCommands.cpp:200
 msgid "Share your current location"
-msgstr ""
+msgstr "Поділитися поточним місцезнаходженням"
 
 #: ui/shared/app/SlashCommands.cpp:213
 msgid "Avatar reset for this room"
-msgstr ""
+msgstr "Аватар кімнати скинуто"
 
 #: ui/shared/app/SlashCommands.cpp:291
 #, c++-format
 msgid "slaps {0} around a bit with a large trout"
-msgstr ""
+msgstr "трохи ляскає {0} великою фореллю"
 
 #: ui/shared/app/SlashCommands.cpp:329
 msgid "no image URL provided; use /myroomavatar alone to open the image picker"
-msgstr ""
+msgstr "URL-адресу зображення не вказано; введіть лише /myroomavatar, щоб відкрити вибір зображення"
 
 #: ui/shared/app/SlashCommands.cpp:347
 msgid "expected an mxc:// or http(s) image URL, or \"reset\""
-msgstr ""
+msgstr "очікується URL-адреса зображення mxc:// або http(s), або «reset»"
 
 #: ui/shared/app/SlashCommands.cpp:561 ui/shared/app/SlashCommands.cpp:568
 #: ui/shared/app/SlashCommands.cpp:585 ui/shared/app/SlashCommands.cpp:588
 #: ui/shared/app/SlashCommands.cpp:590 ui/shared/app/SlashCommands.cpp:592
 msgid "text"
-msgstr ""
+msgstr "текст"
 
 #: ui/shared/app/SlashCommands.cpp:562
 msgid "number"
-msgstr ""
+msgstr "число"
 
 #: ui/shared/app/SlashCommands.cpp:563
 msgid "yes/no"
-msgstr ""
+msgstr "так/ні"
 
 #: ui/shared/app/SlashCommands.cpp:564
 msgid "user"
-msgstr ""
+msgstr "користувач"
 
 #: ui/shared/app/SlashCommands.cpp:565
 msgid "server"
@@ -1280,24 +1280,24 @@ msgstr "сервер"
 
 #: ui/shared/app/SlashCommands.cpp:566 ui/shared/app/SlashCommands.cpp:570
 msgid "room"
-msgstr ""
+msgstr "кімната"
 
 #: ui/shared/app/SlashCommands.cpp:571
 msgid "event"
-msgstr ""
+msgstr "подія"
 
 #: ui/shared/app/SlashCommands.cpp:574
 #, c++-format
 msgid "{0} (comma-separated)"
-msgstr ""
+msgstr "{0} (розділяйте комами)"
 
 #: ui/shared/app/SlashCommands.cpp:576
 msgid "list"
-msgstr ""
+msgstr "список"
 
 #: ui/shared/app/SlashCommands.cpp:600
 msgid "Press Enter to send"
-msgstr ""
+msgstr "Натисніть Enter, щоб надіслати"
 
 #: ui/shared/app/SlashCommands.cpp:603 ui/shared/views/CallBanner.cpp:169
 #: ui/shared/views/ComposeBar.cpp:1543 ui/shared/views/KnockStatusCard.cpp:37
@@ -1305,231 +1305,231 @@ msgstr ""
 #: ui/shared/views/MessageListView.cpp:3456 ui/shared/views/PinnedBanner.cpp:93
 #, c++-format
 msgid "{0}: {1}"
-msgstr ""
+msgstr "{0}: {1}"
 
 #: ui/shared/app/SlashCommands.cpp:606
 msgid "optional"
-msgstr ""
+msgstr "необов’язково"
 
 #: ui/shared/app/SlashCommands.cpp:622
 #, c++-format
 msgid "Missing required argument: {0}"
-msgstr ""
+msgstr "Не вказано обов’язковий аргумент: {0}"
 
 #: ui/shared/app/SlashCommands.cpp:625
 msgid "Too many arguments"
-msgstr ""
+msgstr "Забагато аргументів"
 
 #: ui/shared/app/SlashCommands.cpp:639
 #, c++-format
 msgid "{0} must be a valid {1}"
-msgstr ""
+msgstr "{0} має бути коректним значенням типу «{1}»"
 
 #: ui/shared/tk/i18n.cpp:629
 msgid "January"
-msgstr ""
+msgstr "січень"
 
 #: ui/shared/tk/i18n.cpp:629
 msgid "February"
-msgstr ""
+msgstr "лютий"
 
 #: ui/shared/tk/i18n.cpp:629
 msgid "March"
-msgstr ""
+msgstr "березень"
 
 #: ui/shared/tk/i18n.cpp:629
 msgid "April"
-msgstr ""
+msgstr "квітень"
 
 #: ui/shared/tk/i18n.cpp:630 ui/shared/tk/i18n.cpp:633
 msgid "May"
-msgstr ""
+msgstr "травень"
 
 #: ui/shared/tk/i18n.cpp:630
 msgid "June"
-msgstr ""
+msgstr "червень"
 
 #: ui/shared/tk/i18n.cpp:630
 msgid "July"
-msgstr ""
+msgstr "липень"
 
 #: ui/shared/tk/i18n.cpp:630
 msgid "August"
-msgstr ""
+msgstr "серпень"
 
 #: ui/shared/tk/i18n.cpp:631
 msgid "September"
-msgstr ""
+msgstr "вересень"
 
 #: ui/shared/tk/i18n.cpp:631
 msgid "October"
-msgstr ""
+msgstr "жовтень"
 
 #: ui/shared/tk/i18n.cpp:631
 msgid "November"
-msgstr ""
+msgstr "листопад"
 
 #: ui/shared/tk/i18n.cpp:631
 msgid "December"
-msgstr ""
+msgstr "грудень"
 
 #: ui/shared/tk/i18n.cpp:633
 msgid "Jan"
-msgstr ""
+msgstr "січ"
 
 #: ui/shared/tk/i18n.cpp:633
 msgid "Feb"
-msgstr ""
+msgstr "лют"
 
 #: ui/shared/tk/i18n.cpp:633
 msgid "Mar"
-msgstr ""
+msgstr "бер"
 
 #: ui/shared/tk/i18n.cpp:633
 msgid "Apr"
-msgstr ""
+msgstr "квіт"
 
 #: ui/shared/tk/i18n.cpp:633
 msgid "Jun"
-msgstr ""
+msgstr "черв"
 
 #: ui/shared/tk/i18n.cpp:634
 msgid "Jul"
-msgstr ""
+msgstr "лип"
 
 #: ui/shared/tk/i18n.cpp:634
 msgid "Aug"
-msgstr ""
+msgstr "серп"
 
 #: ui/shared/tk/i18n.cpp:634
 msgid "Sep"
-msgstr ""
+msgstr "вер"
 
 #: ui/shared/tk/i18n.cpp:634
 msgid "Oct"
-msgstr ""
+msgstr "жовт"
 
 #: ui/shared/tk/i18n.cpp:634
 msgid "Nov"
-msgstr ""
+msgstr "лист"
 
 #: ui/shared/tk/i18n.cpp:634
 msgid "Dec"
-msgstr ""
+msgstr "груд"
 
 #: ui/shared/tk/i18n.cpp:636
 msgid "Sunday"
-msgstr ""
+msgstr "неділя"
 
 #: ui/shared/tk/i18n.cpp:636
 msgid "Monday"
-msgstr ""
+msgstr "понеділок"
 
 #: ui/shared/tk/i18n.cpp:636
 msgid "Tuesday"
-msgstr ""
+msgstr "вівторок"
 
 #: ui/shared/tk/i18n.cpp:636
 msgid "Wednesday"
-msgstr ""
+msgstr "середа"
 
 #: ui/shared/tk/i18n.cpp:637
 msgid "Thursday"
-msgstr ""
+msgstr "четвер"
 
 #: ui/shared/tk/i18n.cpp:637
 msgid "Friday"
-msgstr ""
+msgstr "п’ятниця"
 
 #: ui/shared/tk/i18n.cpp:637
 msgid "Saturday"
-msgstr ""
+msgstr "субота"
 
 #: ui/shared/tk/i18n.cpp:639
 msgid "Sun"
-msgstr ""
+msgstr "нд"
 
 #: ui/shared/tk/i18n.cpp:639
 msgid "Mon"
-msgstr ""
+msgstr "пн"
 
 #: ui/shared/tk/i18n.cpp:639
 msgid "Tue"
-msgstr ""
+msgstr "вт"
 
 #: ui/shared/tk/i18n.cpp:639
 msgid "Wed"
-msgstr ""
+msgstr "ср"
 
 #: ui/shared/tk/i18n.cpp:639
 msgid "Thu"
-msgstr ""
+msgstr "чт"
 
 #: ui/shared/tk/i18n.cpp:639
 msgid "Fri"
-msgstr ""
+msgstr "пт"
 
 #: ui/shared/tk/i18n.cpp:639
 msgid "Sat"
-msgstr ""
+msgstr "сб"
 
 #: ui/shared/tk/i18n.cpp:641
 msgid "Su"
-msgstr ""
+msgstr "Нд"
 
 #: ui/shared/tk/i18n.cpp:641
 msgid "Mo"
-msgstr ""
+msgstr "Пн"
 
 #: ui/shared/tk/i18n.cpp:641
 msgid "Tu"
-msgstr ""
+msgstr "Вт"
 
 #: ui/shared/tk/i18n.cpp:641
 msgid "We"
-msgstr ""
+msgstr "Ср"
 
 #: ui/shared/tk/i18n.cpp:641
 msgid "Th"
-msgstr ""
+msgstr "Чт"
 
 #: ui/shared/tk/i18n.cpp:641
 msgid "Fr"
-msgstr ""
+msgstr "Пт"
 
 #: ui/shared/tk/i18n.cpp:641
 msgid "Sa"
-msgstr ""
+msgstr "Сб"
 
 #: ui/shared/tk/i18n.cpp:708 ui/shared/views/settings/AboutSection.cpp:41
 #, c++-format
 msgid "{0} B"
-msgstr ""
+msgstr "{0} B"
 
 #: ui/shared/tk/i18n.cpp:710 ui/shared/views/settings/AboutSection.cpp:43
 #: ui/shared/views/settings/PrivacySection.cpp:41
 #, c++-format
 msgid "{0} KB"
-msgstr ""
+msgstr "{0} KB"
 
 #: ui/shared/tk/i18n.cpp:712 ui/shared/views/settings/AboutSection.cpp:45
 #: ui/shared/views/settings/PrivacySection.cpp:38
 #, c++-format
 msgid "{0} MB"
-msgstr ""
+msgstr "{0} MB"
 
 #: ui/shared/tk/i18n.cpp:713 ui/shared/views/settings/AboutSection.cpp:49
 #, c++-format
 msgid "{0} GB"
-msgstr ""
+msgstr "{0} GB"
 
 #: ui/shared/tk/key_chord.cpp:47
 msgid "Esc"
-msgstr ""
+msgstr "Esc"
 
 #: ui/shared/tk/key_chord.cpp:48
 msgid "Enter"
-msgstr ""
+msgstr "Enter"
 
 #: ui/shared/tk/key_chord.cpp:49
 msgid "Space"
@@ -1537,27 +1537,27 @@ msgstr "Простір"
 
 #: ui/shared/tk/key_chord.cpp:51
 msgid "Tab"
-msgstr ""
+msgstr "Tab"
 
 #: ui/shared/tk/key_chord.cpp:56
 msgid "Home"
-msgstr ""
+msgstr "Home"
 
 #: ui/shared/tk/key_chord.cpp:57
 msgid "End"
-msgstr ""
+msgstr "End"
 
 #: ui/shared/tk/key_chord.cpp:58
 msgid "Page Up"
-msgstr ""
+msgstr "Page Up"
 
 #: ui/shared/tk/key_chord.cpp:59
 msgid "Page Down"
-msgstr ""
+msgstr "Page Down"
 
 #: ui/shared/tk/key_chord.cpp:60
 msgid "Backspace"
-msgstr ""
+msgstr "Backspace"
 
 #: ui/shared/tk/key_chord.cpp:61
 msgid "Delete"
@@ -1565,65 +1565,65 @@ msgstr "Видалити"
 
 #: ui/shared/tk/key_chord.cpp:63
 msgid "Menu"
-msgstr ""
+msgstr "Menu"
 
 #: ui/shared/tk/key_chord.cpp:142
 msgid "Ctrl"
-msgstr ""
+msgstr "Ctrl"
 
 #: ui/shared/tk/key_chord.cpp:144
 msgid "Alt"
-msgstr ""
+msgstr "Alt"
 
 #: ui/shared/tk/key_chord.cpp:146
 msgid "Shift"
-msgstr ""
+msgstr "Shift"
 
 #: ui/shared/tk/key_chord.cpp:148
 msgid "Win"
-msgstr ""
+msgstr "Win"
 
 #: ui/shared/tk/key_chord.cpp:148
 msgid "Super"
-msgstr ""
+msgstr "Super"
 
 #: ui/shared/tk/keyboard_target.cpp:45
 #, c++-format
 msgid "Link {0} of {1}: {2} — press Enter to open"
-msgstr ""
+msgstr "Посилання {0} з {1}: {2} — натисніть Enter, щоб відкрити"
 
 #: ui/shared/tk/screen_capture_gst.cpp:28
 msgid "Entire Screen"
-msgstr ""
+msgstr "Увесь екран"
 
 #: ui/shared/tk/screen_capture_gst.cpp:29
 msgid "Select Window"
-msgstr ""
+msgstr "Вибрати вікно"
 
 #: ui/shared/tk/screen_capture_portal.cpp:153
 msgid "Share Screen"
-msgstr ""
+msgstr "Показ екрана"
 
 #: ui/shared/tk/theme.cpp:169
 msgid "Blue"
-msgstr ""
+msgstr "Синій"
 
 #: ui/shared/tk/theme.cpp:170
 msgid "Forest"
-msgstr ""
+msgstr "Ліс"
 
 #: ui/shared/tk/theme.cpp:171
 msgid "Sunset"
-msgstr ""
+msgstr "Захід сонця"
 
 #: ui/shared/tk/theme.cpp:172
 msgid "Violet"
-msgstr ""
+msgstr "Фіолетовий"
 
 #: ui/shared/tk/theme.cpp:173
 #: ui/shared/views/settings/AppearanceSection.cpp:217
 msgid "System"
-msgstr ""
+msgstr "Система"
 
 #: ui/shared/tk/video_capture.cpp:67
 msgid "No camera found."
@@ -1643,56 +1643,56 @@ msgstr "Не вдалося запустити камеру."
 
 #: ui/shared/views/ActivityMonitorView.cpp:18
 msgid "Runs continuously"
-msgstr ""
+msgstr "Виконується безперервно"
 
 #: ui/shared/views/ActivityMonitorView.cpp:20
 msgid "Periodic"
-msgstr ""
+msgstr "Періодично"
 
 #: ui/shared/views/ActivityMonitorView.cpp:22
 msgid "On demand"
-msgstr ""
+msgstr "На вимогу"
 
 #: ui/shared/views/ActivityMonitorView.cpp:24
 msgid "Thread pool"
-msgstr ""
+msgstr "Пул потоків"
 
 #: ui/shared/views/ActivityMonitorView.cpp:39
 #, c++-format
 msgid "{0}s"
-msgstr ""
+msgstr "{0} с"
 
 #: ui/shared/views/ActivityMonitorView.cpp:41
 #: ui/shared/views/settings/DevicesSection.cpp:57
 #, c++-format
 msgid "{0}m"
-msgstr ""
+msgstr "{0} хв"
 
 #: ui/shared/views/ActivityMonitorView.cpp:43
 #: ui/shared/views/settings/DevicesSection.cpp:59
 #, c++-format
 msgid "{0}h"
-msgstr ""
+msgstr "{0} год"
 
 #: ui/shared/views/ActivityMonitorView.cpp:44
 #: ui/shared/views/settings/DevicesSection.cpp:61
 #, c++-format
 msgid "{0}d"
-msgstr ""
+msgstr "{0} дн"
 
 #: ui/shared/views/ActivityMonitorView.cpp:67
 #, c++-format
 msgid "{0} jobs · {1} running · {2} with errors"
-msgstr ""
+msgstr "Завдань: {0} · виконуються: {1} · з помилками: {2}"
 
 #: ui/shared/views/ActivityMonitorView.cpp:138
 msgid "Running"
-msgstr ""
+msgstr "Виконується"
 
 #: ui/shared/views/ActivityMonitorView.cpp:139
 #, c++-format
 msgid "Running for {0}"
-msgstr ""
+msgstr "Виконується протягом {0}"
 
 #: ui/shared/views/ActivityMonitorView.cpp:141
 msgid "Error"
@@ -1700,21 +1700,21 @@ msgstr "Помилка"
 
 #: ui/shared/views/ActivityMonitorView.cpp:146
 msgid "Not run yet"
-msgstr ""
+msgstr "Ще не виконувалося"
 
 #: ui/shared/views/ActivityMonitorView.cpp:147
 #: ui/shared/views/settings/DevicesSection.cpp:64
 #, c++-format
 msgid "{0} ago"
-msgstr ""
+msgstr "{0} тому"
 
 #: ui/shared/views/ActivityMonitorView.cpp:157
 #, c++-format
 msgid "{0} run"
 msgid_plural "{0} runs"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "{0} запуск"
+msgstr[1] "{0} запуски"
+msgstr[2] "{0} запусків"
 
 #: ui/shared/views/AddRoomView.cpp:48 ui/shared/views/CallBanner.cpp:33
 #: ui/shared/views/JoinRoomView.cpp:82 ui/shared/views/JoinRoomView.cpp:267
@@ -1732,11 +1732,11 @@ msgstr "Створити"
 
 #: ui/shared/views/AddRoomView.cpp:48
 msgid "Browse"
-msgstr ""
+msgstr "Переглянути"
 
 #: ui/shared/views/AvatarEditControl.cpp:92
 msgid "Change avatar"
-msgstr ""
+msgstr "Змінити аватар"
 
 #: ui/shared/views/AvatarEditControl.cpp:94
 msgid "Remove avatar"
@@ -1748,7 +1748,7 @@ msgstr "Триває відеодзвінок"
 
 #: ui/shared/views/CallBanner.cpp:108 ui/shared/views/CallBanner.cpp:160
 msgid "Voice call in progress"
-msgstr ""
+msgstr "Триває голосовий виклик"
 
 #: ui/shared/views/CallBanner.cpp:109 ui/shared/views/CallBanner.cpp:161
 msgid "Call in progress"
@@ -1784,11 +1784,11 @@ msgstr "Увімкнути камеру"
 
 #: ui/shared/views/CallOverlayWidget.cpp:45
 msgid "Move call window"
-msgstr ""
+msgstr "Перемістити вікно виклику"
 
 #: ui/shared/views/CallOverlayWidget.cpp:46
 msgid "Use the arrow keys to move it"
-msgstr ""
+msgstr "Перемістіть його клавішами зі стрілками"
 
 #: ui/shared/views/CallOverlayWidget.cpp:95
 msgid "Leave call"
@@ -1797,44 +1797,44 @@ msgstr "Завершити дзвінок"
 #: ui/shared/views/CallOverlayWidget.cpp:311
 #, c++-format
 msgid "{0} joined the call"
-msgstr ""
+msgstr "Приєднання до виклику: {0}"
 
 #: ui/shared/views/CallOverlayWidget.cpp:314
 #, c++-format
 msgid "{0} left the call"
-msgstr ""
+msgstr "Вихід із виклику: {0}"
 
 #: ui/shared/views/CallOverlayWidget.cpp:811
 msgid "Stop sharing screen"
-msgstr ""
+msgstr "Зупинити показ екрана"
 
 #: ui/shared/views/CallOverlayWidget.cpp:812
 msgid "Share screen"
-msgstr ""
+msgstr "Показати екран"
 
 #: ui/shared/views/CallOverlayWidget.cpp:830
 msgid "Expand call"
-msgstr ""
+msgstr "Розгорнути виклик"
 
 #: ui/shared/views/CallOverlayWidget.cpp:831
 msgid "Collapse call"
-msgstr ""
+msgstr "Згорнути виклик"
 
 #: ui/shared/views/CallOverlayWidget.cpp:846
 msgid "Dock call"
-msgstr ""
+msgstr "Закріпити виклик"
 
 #: ui/shared/views/CallOverlayWidget.cpp:847
 msgid "Pop out call"
-msgstr ""
+msgstr "Відкріпити виклик"
 
 #: ui/shared/views/CameraWidget.cpp:82
 msgid "Click anywhere to close"
-msgstr ""
+msgstr "Клацніть будь-де, щоб закрити"
 
 #: ui/shared/views/CameraWidget.cpp:187
 msgid "Click anywhere to cancel"
-msgstr ""
+msgstr "Клацніть будь-де, щоб скасувати"
 
 #: ui/shared/views/ComposeBar.cpp:150
 msgid "Message…"
@@ -1844,11 +1844,11 @@ msgstr "Повідомлення…"
 #: ui/shared/views/ImagePackEditorView.cpp:148
 #: ui/shared/views/ImagePackEditorView.cpp:464
 msgid "Emoji"
-msgstr ""
+msgstr "Емодзі"
 
 #: ui/shared/views/ComposeBar.cpp:200 ui/shared/views/ComposeBar.cpp:1653
 msgid "Stickers"
-msgstr ""
+msgstr "Стікери"
 
 #: ui/shared/views/ComposeBar.cpp:241
 msgid "Remove attachment"
@@ -1872,7 +1872,7 @@ msgstr "Надсилання…"
 
 #: ui/shared/views/ComposeBar.cpp:557 ui/shared/views/ComposeBar.cpp:1654
 msgid "Stop recording"
-msgstr ""
+msgstr "Зупинити запис"
 
 #: ui/shared/views/ComposeBar.cpp:1244 ui/shared/views/ComposeBar.cpp:1539
 msgid "Editing message"
@@ -1891,16 +1891,16 @@ msgstr "Повідомлення від {0}"
 
 #: ui/shared/views/ComposeBar.cpp:1550
 msgid "Attachment"
-msgstr ""
+msgstr "Вкладення"
 
 #: ui/shared/views/ComposeBar.cpp:1551
 #, c++-format
 msgid "Attachment: {0}, {1}"
-msgstr ""
+msgstr "Вкладення: {0}, {1}"
 
 #: ui/shared/views/ConfirmDialog.h:29 ui/shared/views/QRGrantView.cpp:53
 msgid "Confirm"
-msgstr ""
+msgstr "Підтвердити"
 
 #: ui/shared/views/CreateRoomView.cpp:95 ui/shared/views/CreateRoomView.cpp:220
 msgid "Room name"
@@ -1908,7 +1908,7 @@ msgstr "Назва кімнати"
 
 #: ui/shared/views/CreateRoomView.cpp:99
 msgid "Topic (optional)"
-msgstr ""
+msgstr "Тема (необов’язково)"
 
 #: ui/shared/views/CreateRoomView.cpp:109
 #: ui/shared/views/CreateRoomView.cpp:225
@@ -1922,7 +1922,7 @@ msgstr "Запросити людей (необов’язково) — Matrix I
 #: ui/shared/views/CreateRoomView.cpp:125 ui/shared/views/JoinRoomView.cpp:72
 #: ui/shared/views/QuickSwitcher.cpp:237 ui/shared/views/RoomView.cpp:1136
 msgid "Reason (optional)"
-msgstr ""
+msgstr "Причина (необов’язково)"
 
 #: ui/shared/views/CreateRoomView.cpp:130
 #: ui/shared/views/CreateRoomView.cpp:231
@@ -1932,13 +1932,13 @@ msgstr "Надіслано звичайним текстом, навіть у з
 #: ui/shared/views/CreateRoomView.cpp:135
 #: ui/shared/views/RoomPreviewView.cpp:88 ui/shared/views/media_utils.h:145
 msgid "Private"
-msgstr ""
+msgstr "Приватна"
 
 #: ui/shared/views/CreateRoomView.cpp:136
 #: ui/shared/views/RoomPreviewView.cpp:83 ui/shared/views/media_utils.h:125
 #: ui/shared/views/settings/RoomSecuritySection.cpp:37
 msgid "Public"
-msgstr ""
+msgstr "Публічна"
 
 #: ui/shared/views/CreateRoomView.cpp:140
 msgid ""
@@ -1947,6 +1947,11 @@ msgid ""
 "grained options (Knock, Restricted) can be set afterward in Room Settings → "
 "Security & Privacy."
 msgstr ""
+"Установлює початкове правило приєднання, видимість історії та показ у каталозі. "
+"Приватна: лише за запрошенням, не відображається в каталозі. Публічна: може "
+"приєднатися будь-хто, відображається в каталозі. Точніші параметри (запит на "
+"приєднання, обмежений доступ) можна налаштувати пізніше в розділі «Налаштування "
+"кімнати» → «Безпека й приватність»."
 
 #: ui/shared/views/CreateRoomView.cpp:146
 #: ui/shared/views/settings/RoomSecuritySection.cpp:19
@@ -1983,15 +1988,15 @@ msgstr "Надіслано звичайним текстом, навіть у з
 
 #: ui/shared/views/CreateRoomView.cpp:361
 msgid "Couldn't create space."
-msgstr ""
+msgstr "Не вдалося створити простір."
 
 #: ui/shared/views/CreateRoomView.cpp:362
 msgid "Couldn't create call room."
-msgstr ""
+msgstr "Не вдалося створити кімнату для виклику."
 
 #: ui/shared/views/CreateRoomView.cpp:363
 msgid "Couldn't create room."
-msgstr ""
+msgstr "Не вдалося створити кімнату."
 
 #: ui/shared/views/CreateRoomView.cpp:530
 msgid "Create a Room"
@@ -1999,31 +2004,31 @@ msgstr "Створити кімнату"
 
 #: ui/shared/views/CreateRoomView.cpp:626
 msgid "Creating space…"
-msgstr ""
+msgstr "Створення простору…"
 
 #: ui/shared/views/CreateRoomView.cpp:627
 msgid "Creating call room…"
-msgstr ""
+msgstr "Створення кімнати для виклику…"
 
 #: ui/shared/views/CreateRoomView.cpp:628
 msgid "Creating room…"
-msgstr ""
+msgstr "Створення кімнати…"
 
 #. TRANSLATORS: month header pattern, see tk::format_date.
 #: ui/shared/views/DatePickerView.cpp:565 ui/shared/views/RoomMediaView.cpp:47
 #: ui/shared/views/settings/PrivacySection.cpp:56
 msgid "%B %Y"
-msgstr ""
+msgstr "%B %Y"
 
 #: ui/shared/views/DatePickerView.cpp:586
 #: ui/shared/views/shortcut_registry.cpp:138
 msgid "Previous month"
-msgstr ""
+msgstr "Попередній місяць"
 
 #: ui/shared/views/DatePickerView.cpp:588
 #: ui/shared/views/shortcut_registry.cpp:140
 msgid "Next month"
-msgstr ""
+msgstr "Наступний місяць"
 
 #: ui/shared/views/DatePickerView.cpp:590
 #: ui/shared/views/DatePickerView.cpp:603
@@ -2031,13 +2036,13 @@ msgstr ""
 #: ui/shared/views/MessageListView.cpp:1038
 #: ui/shared/views/ThreadListView.cpp:74
 msgid "Today"
-msgstr ""
+msgstr "Сьогодні"
 
 #. TRANSLATORS: date separator pattern, see tk::format_date.
 #: ui/shared/views/DatePickerView.cpp:596
 #: ui/shared/views/MessageListView.cpp:1057
 msgid "%B %-d, %Y"
-msgstr ""
+msgstr "%B %-d, %Y"
 
 #: ui/shared/views/EmojiPicker.cpp:78
 msgid "Search emoji"
@@ -2045,16 +2050,16 @@ msgstr "Шукати емодзі"
 
 #: ui/shared/views/EmojiPicker.cpp:570
 msgid "Frequently Used"
-msgstr ""
+msgstr "Часто використовувані"
 
 #: ui/shared/views/EncryptionReminderBanner.cpp:35
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1203
 msgid "Remind me later"
-msgstr ""
+msgstr "Нагадати пізніше"
 
 #: ui/shared/views/EncryptionReminderBanner.cpp:52
 msgid "Your messages aren't backed up yet."
-msgstr ""
+msgstr "Резервну копію ваших повідомлень ще не створено."
 
 #: ui/shared/views/EncryptionReminderBanner.cpp:54
 msgid "Your encrypted messages are locked on this device."
@@ -2075,7 +2080,7 @@ msgstr "Показати"
 #: ui/shared/views/EncryptionReminderBanner.cpp:67
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1274
 msgid "Unlock"
-msgstr ""
+msgstr "Розблокувати"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:148
 msgid "Save to file…"
@@ -2085,7 +2090,7 @@ msgstr "Зберегти у файл…"
 #: ui/shared/views/EncryptionSetupOverlay.cpp:975
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1204
 msgid "Skip for now"
-msgstr ""
+msgstr "Поки що пропустити"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:164
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1185
@@ -2101,7 +2106,7 @@ msgstr "Натомість використати парольну фразу"
 #: ui/shared/views/LoginView.cpp:165 ui/shared/views/MainAppWidget.cpp:47
 #: ui/shared/views/RoomHeader.cpp:79
 msgid "Back"
-msgstr ""
+msgstr "Назад"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:167
 #: ui/shared/views/EncryptionSetupOverlay.cpp:973
@@ -2111,7 +2116,7 @@ msgstr "Я втратив(-ла) ключ відновлення та інші �
 #: ui/shared/views/EncryptionSetupOverlay.cpp:169
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1047
 msgid "Not me"
-msgstr ""
+msgstr "Це не я"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:170
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1197
@@ -2146,34 +2151,34 @@ msgstr "Збережено."
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:264
 msgid "Couldn't save the file."
-msgstr ""
+msgstr "Не вдалося зберегти файл."
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:265
 #, c++-format
 msgid "Couldn't save the file: {0}"
-msgstr ""
+msgstr "Не вдалося зберегти файл: {0}"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:322
 msgid "Unlocking your messages…"
-msgstr ""
+msgstr "Розблокування ваших повідомлень…"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:323
 #: ui/shared/views/EncryptionSetupOverlay.cpp:326
 msgid "Securing your messages…"
-msgstr ""
+msgstr "Захист ваших повідомлень…"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:332
 msgid "Done."
-msgstr ""
+msgstr "Готово."
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:453
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1104
 msgid "Confirming…"
-msgstr ""
+msgstr "Підтвердження…"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:528
 msgid "The request was cancelled or timed out."
-msgstr ""
+msgstr "Запит скасовано або час очікування вичерпано."
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:599
 msgid "Turning off backup…"
@@ -2184,10 +2189,12 @@ msgid ""
 "The codes didn't match, so nothing was confirmed. If you didn't start this, "
 "someone else may be trying to get into your account."
 msgstr ""
+"Коди не збігаються, тому нічого не підтверджено. Якщо ви не починали цю "
+"перевірку, хтось інший може намагатися отримати доступ до вашого облікового запису."
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:656
 msgid "You're all set. Your messages are protected."
-msgstr ""
+msgstr "Усе готово. Ваші повідомлення захищено."
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:658
 msgid "You're all set. Your encrypted messages are available on this device."
@@ -2196,11 +2203,11 @@ msgstr "Готово. Ваші зашифровані повідомлення �
 #: ui/shared/views/EncryptionSetupOverlay.cpp:661
 msgid ""
 "Your other device is confirmed and can now read your encrypted messages."
-msgstr ""
+msgstr "Ваш інший пристрій підтверджено, тепер він може читати зашифровані повідомлення."
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:664
 msgid "Verified. You can trust you're talking to the right person."
-msgstr ""
+msgstr "Перевірку пройдено. Ви можете бути певні, що спілкуєтеся з потрібною людиною."
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:667
 msgid "Backup is off. Your encrypted messages are kept only on your devices."
@@ -2209,7 +2216,7 @@ msgstr "Резервне копіювання вимкнено. Ваші заш�
 #: ui/shared/views/EncryptionSetupOverlay.cpp:944
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1138
 msgid "Confirm it's you"
-msgstr ""
+msgstr "Підтвердьте, що це ви"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:946
 #: ui/shared/views/EncryptionSetupOverlay.cpp:950
@@ -2244,6 +2251,10 @@ msgid ""
 "stay unreadable, and people you chat with will see that your security "
 "details changed."
 msgstr ""
+"Якщо ви втратили і ключ відновлення, і всі інші пристрої, на яких виконано "
+"вхід, можна почати спочатку з новим ключем відновлення. Повідомлення, які "
+"ви не можете прочитати зараз, так і залишаться недоступними для читання, а "
+"люди, з якими ви спілкуєтеся, побачать, що ваші дані безпеки змінилися."
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:991
 msgid "Reset encryption"
@@ -2252,12 +2263,12 @@ msgstr "Скинути шифрування"
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1002
 #, c++-format
 msgid "Waiting for {0}"
-msgstr ""
+msgstr "Очікування на {0}"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1003
 #, c++-format
 msgid "{0} needs to accept the verification request in their Matrix app."
-msgstr ""
+msgstr "{0} має прийняти запит на перевірку у своєму застосунку Matrix."
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1011
 msgid "Check your other device"
@@ -2265,51 +2276,51 @@ msgstr "Перевірте інший пристрій"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1012
 msgid "Starting verification…"
-msgstr ""
+msgstr "Початок перевірки…"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1015
 msgid ""
 "Open Tesseract (or another Matrix app) on a device where you're signed in "
 "and accept the request."
-msgstr ""
+msgstr "Відкрийте Tesseract (або інший застосунок Matrix) на пристрої, де ви ввійшли, і прийміть запит."
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1030
 msgid "Was this you?"
-msgstr ""
+msgstr "Це були ви?"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1031
 msgid "Verification request"
-msgstr ""
+msgstr "Запит на перевірку"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1034
 #, c++-format
 msgid ""
 "Your device “{0}” wants to confirm it's you so it can read your encrypted "
 "messages."
-msgstr ""
+msgstr "Ваш пристрій «{0}» хоче підтвердити, що це ви, щоб мати змогу читати зашифровані повідомлення."
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1038
 #, c++-format
 msgid ""
 "{0} wants to verify you. You'll compare a few numbers to make sure you're "
 "talking to the right person."
-msgstr ""
+msgstr "{0} хоче перевірити вас. Ви порівняєте кілька чисел, щоб упевнитися, що спілкуєтеся з потрібною людиною."
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1045
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1190
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1243
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1435
 msgid "Continue"
-msgstr ""
+msgstr "Продовжити"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1047
 #: ui/shared/views/InviteCard.cpp:45
 msgid "Decline"
-msgstr ""
+msgstr "Відхилити"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1056
 msgid "Compare numbers"
-msgstr ""
+msgstr "Порівняти числа"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1059
 msgid "Check that the other device shows the same numbers in the same order."
@@ -2318,16 +2329,16 @@ msgstr "Переконайтеся, що на іншому пристрої по
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1061
 #, c++-format
 msgid "Check that {0} sees the same numbers in the same order."
-msgstr ""
+msgstr "Переконайтеся, що {0} бачить ті самі числа в тому самому порядку."
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1069
 #, c++-format
 msgid "Numbers: {0}, {1}, {2}"
-msgstr ""
+msgstr "Числа: {0}, {1}, {2}"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1077
 msgid "Or compare these emoji:"
-msgstr ""
+msgstr "Або порівняйте ці емодзі:"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1088
 #: ui/shared/views/ExportHistoryDialog.cpp:484
@@ -2335,24 +2346,24 @@ msgstr ""
 #: ui/shared/views/SpaceChildRoomGrid.cpp:178
 #, c++-format
 msgid "{0}. {1}"
-msgstr ""
+msgstr "{0}. {1}"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1092
 msgid "They match"
-msgstr ""
+msgstr "Збігаються"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1093
 msgid "They don't match"
-msgstr ""
+msgstr "Не збігаються"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1117
 msgid "Couldn't confirm"
-msgstr ""
+msgstr "Не вдалося підтвердити"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1121
 #: ui/shared/views/QRGrantView.cpp:83
 msgid "Try again"
-msgstr ""
+msgstr "Спробувати ще раз"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1121
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1471
@@ -2370,11 +2381,11 @@ msgstr "Закрити"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1134
 msgid "Your messages are now backed up"
-msgstr ""
+msgstr "Для ваших повідомлень створено резервну копію"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1135
 msgid "Protect your messages"
-msgstr ""
+msgstr "Захистити повідомлення"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1136
 msgid "Save your recovery key before you sign out"
@@ -2382,7 +2393,7 @@ msgstr "Збережіть ключ відновлення перед виход
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1137
 msgid "Keep your messages safe"
-msgstr ""
+msgstr "Захистіть свої повідомлення"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1141
 msgid ""
@@ -2391,12 +2402,16 @@ msgid ""
 "you sign in on a new device or lose this one, so a reminder at the top of "
 "the window will help you save it."
 msgstr ""
+"Tesseract увімкнув захищене резервне копіювання зашифрованих повідомлень і "
+"створив ключ відновлення для вашого облікового запису. Цей ключ знадобиться, "
+"щоб читати повідомлення після входу на новому пристрої або втрати цього, "
+"тому нагадування вгорі вікна допоможе вам зберегти його."
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1148
 msgid ""
 "Your messages are end-to-end encrypted. A recovery key lets you read them "
 "again if you sign in on a new device or lose this one."
-msgstr ""
+msgstr "Ваші повідомлення зашифровано наскрізним шифруванням. Ключ відновлення дасть змогу знову читати їх після входу на новому пристрої або втрати цього."
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1152
 msgid ""
@@ -2405,6 +2420,10 @@ msgid ""
 "out without saving it, it stays on this computer so you can sign back in; on "
 "a shared computer, delete it instead."
 msgstr ""
+"Ваш ключ відновлення поки що збережено лише на цьому пристрої. Без нього ви "
+"не зможете читати старі повідомлення після повторного входу. Якщо ви вийдете, "
+"не зберігши ключ, він залишиться на цьому комп’ютері, щоб ви могли знову "
+"увійти; на спільному комп’ютері натомість видаліть його."
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1159
 msgid ""
@@ -2412,12 +2431,16 @@ msgid ""
 "sign out, it's the only way to read your old messages again. Keep a copy "
 "somewhere safe, like a password manager, or print it out."
 msgstr ""
+"Tesseract створив ключ відновлення для вашого облікового запису. Якщо ви "
+"втратите цей пристрій або вийдете, це буде єдиний спосіб знову читати старі "
+"повідомлення. Збережіть копію в надійному місці, наприклад у менеджері паролів, "
+"або роздрукуйте її."
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1164
 msgid ""
 "To read your encrypted messages on this device, confirm it's you with your "
 "recovery key or with another device where you're signed in."
-msgstr ""
+msgstr "Щоб читати зашифровані повідомлення на цьому пристрої, підтвердьте свою особу ключем відновлення або іншим пристроєм, на якому ви ввійшли."
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1188
 msgid "Create recovery key"
@@ -2429,7 +2452,7 @@ msgstr "Показати мій ключ відновлення"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1202
 msgid "Sign out without saving"
-msgstr ""
+msgstr "Вийти без збереження"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1211
 msgid "Choose a passphrase"
@@ -2437,7 +2460,7 @@ msgstr "Виберіть парольну фразу"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1212
 msgid "Pick something memorable that you don't use anywhere else."
-msgstr ""
+msgstr "Виберіть щось пам’ятне, чого ви більше ніде не використовуєте."
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1234
 msgid "The passphrases don't match."
@@ -2454,7 +2477,7 @@ msgstr "Якщо ви вибрали парольну фразу, введіть
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1314
 #, c++-format
 msgid "{0} {1}%"
-msgstr ""
+msgstr "{0} {1}%"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1338
 msgid "Save your recovery key"
@@ -2464,7 +2487,7 @@ msgstr "Зберегти ключ відновлення"
 msgid ""
 "Keep it somewhere safe, like a password manager. You'll need it to read your "
 "messages if you sign in on a new device."
-msgstr ""
+msgstr "Зберігайте її в надійному місці, наприклад у менеджері паролів. Вона знадобиться, щоб читати повідомлення після входу на новому пристрої."
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1361
 #, c++-format
@@ -2476,12 +2499,12 @@ msgid ""
 "Tesseract keeps it in this computer's secure storage, so it can unlock your "
 "messages by itself if you reinstall. Anyone who can open that storage could "
 "read your messages too."
-msgstr ""
+msgstr "Tesseract зберігає її в захищеному сховищі цього комп’ютера, щоб після перевстановлення самостійно розблокувати ваші повідомлення. Будь-хто, хто має доступ до цього сховища, також зможе читати ваші повідомлення."
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1470
 #: ui/shared/views/settings/DevicesSection.cpp:221
 msgid "Sign out"
-msgstr ""
+msgstr "Вийти"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1481
 msgid "Resetting encryption"
@@ -2491,7 +2514,7 @@ msgstr "Скидання шифрування"
 msgid ""
 "Approve the reset in the browser window that just opened. This will continue "
 "once you've confirmed."
-msgstr ""
+msgstr "Підтвердьте скидання у щойно відкритому вікні браузера. Після підтвердження процес продовжиться."
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1495
 #, c++-format
@@ -2499,16 +2522,16 @@ msgid ""
 "Approve the reset as {0} in the browser window that just opened. If the "
 "browser is signed in as a different account, sign out there first, or copy "
 "the link into a private window."
-msgstr ""
+msgstr "Підтвердьте скидання як {0} у щойно відкритому вікні браузера. Якщо в браузері виконано вхід до іншого облікового запису, спершу вийдіть із нього або скопіюйте посилання у приватне вікно."
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1522
 #, c++-format
 msgid "Still waiting? Check that you approved it as {0}, not another account."
-msgstr ""
+msgstr "Досі очікуєте? Переконайтеся, що ви підтвердили дію як {0}, а не з іншого облікового запису."
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1535
 msgid "Link copied"
-msgstr ""
+msgstr "Посилання скопійовано"
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1535
 msgid "Copy link"
@@ -2516,134 +2539,134 @@ msgstr "Копіювати посилання"
 
 #: ui/shared/views/ExportHistoryDialog.cpp:19
 msgid "Include images"
-msgstr ""
+msgstr "Додавати зображення"
 
 #: ui/shared/views/ExportHistoryDialog.cpp:22
 msgid "Package as a .zip file"
-msgstr ""
+msgstr "Запакувати у файл .zip"
 
 #: ui/shared/views/ExportHistoryDialog.cpp:26
 msgid "Export"
-msgstr ""
+msgstr "Експортувати"
 
 #: ui/shared/views/ExportHistoryDialog.cpp:42
 msgid "Resume export"
-msgstr ""
+msgstr "Продовжити експорт"
 
 #: ui/shared/views/ExportHistoryDialog.cpp:54
 msgid "Start new export"
-msgstr ""
+msgstr "Почати новий експорт"
 
 #: ui/shared/views/ExportHistoryDialog.cpp:68
 msgid "Stop & save"
-msgstr ""
+msgstr "Зупинити й зберегти"
 
 #: ui/shared/views/ExportHistoryDialog.cpp:80
 msgid "Go to that export"
-msgstr ""
+msgstr "Перейти до цього експорту"
 
 #: ui/shared/views/ExportHistoryDialog.cpp:98
 msgid "HTML"
-msgstr ""
+msgstr "HTML"
 
 #: ui/shared/views/ExportHistoryDialog.cpp:99
 msgid "Plain text"
-msgstr ""
+msgstr "Звичайний текст"
 
 #: ui/shared/views/ExportHistoryDialog.cpp:111
 msgid "All history"
-msgstr ""
+msgstr "Уся історія"
 
 #: ui/shared/views/ExportHistoryDialog.cpp:112
 msgid "Last 24 hours"
-msgstr ""
+msgstr "Останні 24 години"
 
 #: ui/shared/views/ExportHistoryDialog.cpp:113
 msgid "Last 7 days"
-msgstr ""
+msgstr "Останні 7 днів"
 
 #: ui/shared/views/ExportHistoryDialog.cpp:114
 msgid "Last 30 days"
-msgstr ""
+msgstr "Останні 30 днів"
 
 #: ui/shared/views/ExportHistoryDialog.cpp:115
 msgid "Last 3 months"
-msgstr ""
+msgstr "Останні 3 місяці"
 
 #: ui/shared/views/ExportHistoryDialog.cpp:116
 msgid "Last year"
-msgstr ""
+msgstr "Останній рік"
 
 #: ui/shared/views/ExportHistoryDialog.cpp:374
 #, c++-format
 msgid "Finalizing export… ({0} of {1})"
-msgstr ""
+msgstr "Завершення експорту… ({0} з {1})"
 
 #: ui/shared/views/ExportHistoryDialog.cpp:376
 msgid "Finalizing export…"
-msgstr ""
+msgstr "Завершення експорту…"
 
 #: ui/shared/views/ExportHistoryDialog.cpp:379
 #, c++-format
 msgid "{0} — back to {1}"
-msgstr ""
+msgstr "{0} — повернення до {1}"
 
 #: ui/shared/views/ExportHistoryDialog.cpp:396
 #, c++-format
 msgid "{0} messages — now at {1}"
-msgstr ""
+msgstr "{0} повідомлень — зараз на {1}"
 
 #: ui/shared/views/ExportHistoryDialog.cpp:399
 #, c++-format
 msgid "Reading messages — now at {0}"
-msgstr ""
+msgstr "Читання повідомлень — зараз на {0}"
 
 #: ui/shared/views/ExportHistoryDialog.cpp:405
 #, c++-format
 msgid "{0} messages exported"
-msgstr ""
+msgstr "Експортовано повідомлень: {0}"
 
 #: ui/shared/views/ExportHistoryDialog.cpp:629
 #, c++-format
 msgid "Export History of {0}"
-msgstr ""
+msgstr "Експорт історії кімнати {0}"
 
 #: ui/shared/views/ExportHistoryDialog.cpp:631
 #, c++-format
 msgid ""
 "A previous export of this room was interrupted after {0} messages. Resume "
 "it, or start over?"
-msgstr ""
+msgstr "Попередній експорт цієї кімнати перервався після {0} повідомлень. Продовжити його чи почати спочатку?"
 
 #: ui/shared/views/ExportHistoryDialog.cpp:636
 #, c++-format
 msgid "Exporting {0}"
-msgstr ""
+msgstr "Експорт {0}"
 
 #: ui/shared/views/ExportHistoryDialog.cpp:644
 #, c++-format
 msgid "Exporting back to {0}"
-msgstr ""
+msgstr "Експорт до {0}"
 
 #: ui/shared/views/ExportHistoryDialog.cpp:648
 msgid "Export in progress"
-msgstr ""
+msgstr "Триває експорт"
 
 #: ui/shared/views/ExportHistoryDialog.cpp:649
 #, c++-format
 msgid "Currently exporting {0}."
-msgstr ""
+msgstr "Зараз експортується {0}."
 
 #: ui/shared/views/ExportHistoryDialog.cpp:652
 msgid "Export cancelled"
-msgstr ""
+msgstr "Експорт скасовано"
 
 #: ui/shared/views/ForwardRoomPicker.cpp:52
 #: ui/shared/views/ForwardRoomPicker.cpp:119
 #: ui/shared/views/MruSwitcher.cpp:107 ui/shared/views/QuickSwitcher.cpp:103
 #: ui/shared/views/QuickSwitcher.cpp:204
 msgid "Unnamed room"
-msgstr ""
+msgstr "Кімната без назви"
 
 #: ui/shared/views/ForwardRoomPicker.cpp:152
 #: ui/shared/views/RoomDirectoryView.cpp:243
@@ -2659,7 +2682,7 @@ msgstr "Переслати"
 #: ui/shared/views/ForwardRoomPicker.cpp:174
 #: ui/shared/views/InviteDialog.cpp:277 ui/shared/views/RoomPreviewView.cpp:22
 msgid "Dismiss"
-msgstr ""
+msgstr "Закрити"
 
 #: ui/shared/views/ForwardRoomPicker.cpp:180 ui/shared/views/RoomView.cpp:437
 msgid "Forward message"
@@ -2707,56 +2730,56 @@ msgstr "GIF не знайдено"
 
 #: ui/shared/views/GifController.cpp:134
 msgid "GIF search failed"
-msgstr ""
+msgstr "Не вдалося знайти GIF"
 
 #: ui/shared/views/IdentityChangeBanner.cpp:21
 #: ui/shared/views/InviteDialog.cpp:60 ui/shared/views/QuickSwitcher.cpp:201
 #: ui/shared/views/settings/bcp47_languages.h:382
 #, c++-format
 msgid "{0} ({1})"
-msgstr ""
+msgstr "{0} ({1})"
 
 #: ui/shared/views/IdentityChangeBanner.cpp:60
 #, c++-format
 msgid "{0}'s verified identity was reset."
-msgstr ""
+msgstr "Перевірені дані особи {0} скинуто."
 
 #: ui/shared/views/IdentityChangeBanner.cpp:61
 #, c++-format
 msgid "{0}'s identity was reset."
-msgstr ""
+msgstr "Дані особи {0} скинуто."
 
 #: ui/shared/views/IdentityChangeBanner.cpp:71
 #: ui/shared/views/UserProfilePanel.cpp:203
 msgid "Withdraw verification"
-msgstr ""
+msgstr "Відкликати перевірку"
 
 #: ui/shared/views/ImagePackEditorView.cpp:148
 #: ui/shared/views/ImagePackEditorView.cpp:464
 msgid "Any"
-msgstr ""
+msgstr "Будь-який"
 
 #: ui/shared/views/ImagePackEditorView.cpp:149
 #: ui/shared/views/ImagePackEditorView.cpp:465
 #: ui/shared/views/MessageListView.cpp:1457
 msgid "Sticker"
-msgstr ""
+msgstr "Стікер"
 
 #: ui/shared/views/ImagePackEditorView.cpp:157
 #: ui/shared/views/ImagePackEditorView.cpp:452
 #: ui/shared/views/ImagePackEditorView.cpp:991
 msgid "Unnamed pack"
-msgstr ""
+msgstr "Набір без назви"
 
 #: ui/shared/views/ImagePackEditorView.cpp:160
 #, c++-format
 msgid "Pack: {0}"
-msgstr ""
+msgstr "Набір: {0}"
 
 #: ui/shared/views/ImagePackEditorView.cpp:168
 #, c++-format
 msgid "Rename {0}"
-msgstr ""
+msgstr "Перейменувати {0}"
 
 #: ui/shared/views/ImagePackEditorView.cpp:181
 #, c++-format
@@ -2767,7 +2790,7 @@ msgstr "Вилучити набір {0}"
 #: ui/shared/views/ImagePackTileGridBase.cpp:123
 #: ui/shared/views/settings/UserPackEditor.cpp:144
 msgid "(no shortcode)"
-msgstr ""
+msgstr "(без короткого коду)"
 
 #: ui/shared/views/ImagePackEditorView.cpp:197
 #: ui/shared/views/settings/UserPackEditor.cpp:146
@@ -2784,16 +2807,16 @@ msgstr "Вилучити {0}"
 #: ui/shared/views/ImagePackEditorView.cpp:571
 #: ui/shared/views/ImagePackEditorView.cpp:594
 msgid "Pack name"
-msgstr ""
+msgstr "Назва набору"
 
 #: ui/shared/views/ImagePackEditorView.cpp:572
 #: ui/shared/views/ImagePackEditorView.cpp:1262
 msgid "New pack name"
-msgstr ""
+msgstr "Назва нового набору"
 
 #: ui/shared/views/ImagePackEditorView.cpp:580
 msgid "Shortcode"
-msgstr ""
+msgstr "Короткий код"
 
 #: ui/shared/views/ImagePackEditorView.cpp:1283
 msgid "No image packs yet — create one above."
@@ -2801,16 +2824,16 @@ msgstr "Наборів зображень ще немає — створіть �
 
 #: ui/shared/views/ImagePackTileGridBase.cpp:163
 msgid "Drop image"
-msgstr ""
+msgstr "Перетягніть зображення сюди"
 
 #: ui/shared/views/InviteCard.cpp:35 ui/shared/views/KnockRequestsPanel.cpp:37
 #: ui/shared/views/RoomSettingsView.cpp:109
 msgid "Accept"
-msgstr ""
+msgstr "Прийняти"
 
 #: ui/shared/views/InviteCard.cpp:50
 msgid "Block"
-msgstr ""
+msgstr "Заблокувати"
 
 #: ui/shared/views/InviteCard.cpp:302 ui/shared/views/RoomListView.cpp:1190
 #, c++-format
@@ -2824,25 +2847,25 @@ msgstr "Запрошено користувачем {0}"
 #: ui/shared/views/settings/RoomModerationSection.cpp:44
 #, c++-format
 msgid "Reason: {0}"
-msgstr ""
+msgstr "Причина: {0}"
 
 #: ui/shared/views/InviteCard.cpp:362
 #, c++-format
 msgid "{0} invited you to a direct message"
-msgstr ""
+msgstr "Запрошення до особистої розмови від {0}"
 
 #: ui/shared/views/InviteCard.cpp:365
 #, c++-format
 msgid "{0} invited you to {1}"
-msgstr ""
+msgstr "Запрошення до {1} від {0}"
 
 #: ui/shared/views/InviteDialog.cpp:68 ui/shared/views/InviteDialog.cpp:138
 msgid "Already in room"
-msgstr ""
+msgstr "Вже в кімнаті"
 
 #: ui/shared/views/InviteDialog.cpp:69 ui/shared/views/InviteDialog.cpp:141
 msgid "Looking up…"
-msgstr ""
+msgstr "Пошук…"
 
 #: ui/shared/views/InviteDialog.cpp:70 ui/shared/views/InviteDialog.cpp:144
 msgid "User not found"
@@ -2873,9 +2896,9 @@ msgstr "Відповідних людей не знайдено"
 #, c++-format
 msgid "Inviting {0} person…"
 msgid_plural "Inviting {0} people…"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "Запрошення {0} особи…"
+msgstr[1] "Запрошення {0} осіб…"
+msgstr[2] "Запрошення {0} осіб…"
 
 #: ui/shared/views/InviteDialog.cpp:787
 #, c++-format
@@ -2898,7 +2921,7 @@ msgstr "Запросити ({0})"
 #: ui/shared/views/JoinRoomView.cpp:52 ui/shared/views/RoomInfoPanel.cpp:37
 #: ui/shared/views/SpaceRootView.cpp:30
 msgid "Topic links"
-msgstr ""
+msgstr "Посилання в темі"
 
 #: ui/shared/views/JoinRoomView.cpp:66
 msgid "#room:server.org"
@@ -2906,15 +2929,15 @@ msgstr "#кімната:сервер.org"
 
 #: ui/shared/views/JoinRoomView.cpp:78
 msgid "Look up"
-msgstr ""
+msgstr "Знайти"
 
 #: ui/shared/views/JoinRoomView.cpp:267 ui/shared/views/RoomPreviewView.cpp:42
 msgid "Request to Join"
-msgstr ""
+msgstr "Запит на приєднання"
 
 #: ui/shared/views/JoinRoomView.cpp:280
 msgid "Looking up room…"
-msgstr ""
+msgstr "Пошук кімнати…"
 
 #: ui/shared/views/JoinRoomView.cpp:284
 msgid "Sending request…"
@@ -2938,9 +2961,9 @@ msgstr "Кімнату не знайдено."
 #, c++-format
 msgid "{0} member"
 msgid_plural "{0} members"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "{0} учасник"
+msgstr[1] "{0} учасники"
+msgstr[2] "{0} учасників"
 
 #: ui/shared/views/JoinRoomView.cpp:484
 msgid "Join a Room"
@@ -2953,22 +2976,22 @@ msgstr "Приєднатися до кімнати"
 #: ui/shared/views/RoomMediaView.cpp:165
 #, c++-format
 msgid "{0}, {1}"
-msgstr ""
+msgstr "{0}, {1}"
 
 #: ui/shared/views/KnockRequestsPanel.cpp:42
 msgid "Deny"
-msgstr ""
+msgstr "Відмовити"
 
 #: ui/shared/views/KnockRequestsPanel.cpp:49 ui/shared/views/RoomView.cpp:963
 msgid "Deny & Ban"
-msgstr ""
+msgstr "Відмовити й заблокувати"
 
 #: ui/shared/views/KnockRequestsPanel.cpp:165
 #: ui/shared/views/KnockRequestsPanel.cpp:313
 #: ui/shared/views/RoomListView.cpp:502
 #, c++-format
 msgid "Requests to Join ({0})"
-msgstr ""
+msgstr "Запити на приєднання ({0})"
 
 #: ui/shared/views/KnockRequestsPanel.cpp:170
 #: ui/shared/views/KnockRequestsPanel.cpp:340
@@ -2979,7 +3002,7 @@ msgstr "Немає запитів, що очікують"
 #: ui/shared/views/KnockStatusCard.cpp:224
 #: ui/shared/views/RoomListView.cpp:1289
 msgid "Request pending"
-msgstr ""
+msgstr "Запит очікує розгляду"
 
 #: ui/shared/views/KnockStatusCard.cpp:56
 msgid "Cancel Request"
@@ -2999,7 +3022,7 @@ msgstr "Ваш обліковий запис або сервер — напри�
 
 #: ui/shared/views/LoginView.cpp:80
 msgid "?"
-msgstr ""
+msgstr "?"
 
 #: ui/shared/views/LoginView.cpp:88 ui/shared/views/LoginView.cpp:158
 msgid "Sign in"
@@ -3011,6 +3034,9 @@ msgid ""
 "provider. Not sure? matrix.org is a good default and works with anyone on "
 "Matrix."
 msgstr ""
+"На домашньому сервері зберігається ваш обліковий запис — це схоже на вибір "
+"постачальника електронної пошти. Не знаєте, який вибрати? matrix.org — "
+"гарний варіант за замовчуванням, він дає змогу спілкуватися з усіма в Matrix."
 
 #: ui/shared/views/LoginView.cpp:132
 msgid "Sign in with password"
@@ -3018,7 +3044,7 @@ msgstr "Увійти за допомогою пароля"
 
 #: ui/shared/views/LoginView.cpp:141
 msgid "Matrix ID"
-msgstr ""
+msgstr "Ідентифікатор Matrix"
 
 #: ui/shared/views/LoginView.cpp:149
 msgid "Password"
@@ -3026,11 +3052,11 @@ msgstr "Пароль"
 
 #: ui/shared/views/LoginView.cpp:179
 msgid "New here? Create an account"
-msgstr ""
+msgstr "Вперше тут? Створіть обліковий запис"
 
 #: ui/shared/views/LoginView.cpp:284
 msgid "Checking…"
-msgstr ""
+msgstr "Перевірка…"
 
 #: ui/shared/views/LoginView.cpp:300
 msgid "Could not reach this server"
@@ -3038,11 +3064,11 @@ msgstr "Не вдалося з’єднатися із цим сервером"
 
 #: ui/shared/views/LoginView.cpp:312
 msgid "matrix.org"
-msgstr ""
+msgstr "matrix.org"
 
 #: ui/shared/views/LoginView.cpp:322
 msgid "@user:example.org"
-msgstr ""
+msgstr "@user:example.org"
 
 #: ui/shared/views/LoginView.cpp:496
 msgid "Checking how you can sign in to this server…"
@@ -3058,7 +3084,7 @@ msgstr "Введіть свій Matrix ID та пароль."
 
 #: ui/shared/views/LoginView.cpp:1046
 msgid "Connection Error"
-msgstr ""
+msgstr "Помилка підключення"
 
 #: ui/shared/views/LoginView.cpp:1048 ui/shared/views/LoginView.cpp:1062
 #: ui/shared/views/MessageListView.cpp:2850
@@ -3067,7 +3093,7 @@ msgstr "Повторити"
 
 #: ui/shared/views/LoginView.cpp:1049 ui/shared/views/LoginView.cpp:1063
 msgid "Sign In"
-msgstr ""
+msgstr "Увійти"
 
 #: ui/shared/views/LoginView.cpp:1059
 msgid "No Internet Connection"
@@ -3077,7 +3103,7 @@ msgstr "Немає з’єднання з інтернетом"
 msgid ""
 "Tesseract couldn't detect an internet connection. Check your Wi-Fi or "
 "network settings, then try again."
-msgstr ""
+msgstr "Tesseract не вдалося виявити підключення до Інтернету. Перевірте налаштування Wi-Fi або мережі, а потім спробуйте ще раз."
 
 #: ui/shared/views/MainAppWidget.cpp:57
 msgid "Space home"
@@ -3089,11 +3115,11 @@ msgstr "Немає з’єднання з інтернетом — повтор�
 
 #: ui/shared/views/MainAppWidget.cpp:512
 msgid "Resize sidebar"
-msgstr ""
+msgstr "Змінити розмір бічної панелі"
 
 #: ui/shared/views/MainAppWidget.cpp:514
 msgid "Enter collapses or expands it; Left and Right resize it"
-msgstr ""
+msgstr "Enter згортає або розгортає її; стрілки ліворуч і праворуч змінюють її розмір"
 
 #: ui/shared/views/MediaOverlayBase.cpp:48 ui/shared/views/RoomInfoPanel.cpp:96
 #: ui/shared/views/settings/ImagePacksSection.cpp:27
@@ -3104,219 +3130,219 @@ msgstr "Зберегти"
 #: ui/shared/views/MediaOverlayBase.cpp:98
 #: ui/shared/views/MediaOverlayBase.cpp:268
 msgid "Full screen"
-msgstr ""
+msgstr "На весь екран"
 
 #: ui/shared/views/MediaOverlayBase.cpp:97
 msgid "Exit full screen"
-msgstr ""
+msgstr "Вийти з повноекранного режиму"
 
 #: ui/shared/views/MentionPopup.cpp:66 ui/shared/views/MentionPopup.h:69
 msgid "Notify the whole room"
-msgstr ""
+msgstr "Сповістити всю кімнату"
 
 #: ui/shared/views/MessageListView.cpp:1050
 #: ui/shared/views/ThreadListView.cpp:86
 msgid "Yesterday"
-msgstr ""
+msgstr "Учора"
 
 #: ui/shared/views/MessageListView.cpp:1121
 #, c++-format
 msgid "{0} withdrew {1} request to join"
-msgstr ""
+msgstr "Запит {1} на приєднання відкликано користувачем {0}"
 
 #: ui/shared/views/MessageListView.cpp:1128
 #, c++-format
 msgid "{0} changed their avatar"
-msgstr ""
+msgstr "{0}: аватар змінено"
 
 #: ui/shared/views/MessageListView.cpp:1130
 #, c++-format
 msgid "{0} removed their avatar"
-msgstr ""
+msgstr "{0}: аватар вилучено"
 
 #: ui/shared/views/MessageListView.cpp:1133
 #, c++-format
 msgid "{0} changed their display name to {1}"
-msgstr ""
+msgstr "{0}: ім’я для показу змінено на {1}"
 
 #: ui/shared/views/MessageListView.cpp:1136
 #, c++-format
 msgid "{0} removed their display name"
-msgstr ""
+msgstr "{0}: ім’я для показу вилучено"
 
 #: ui/shared/views/MessageListView.cpp:1138
 #, c++-format
 msgid "{0} changed their display name and avatar"
-msgstr ""
+msgstr "{0}: ім’я для показу й аватар змінено"
 
 #: ui/shared/views/MessageListView.cpp:1151
 #, c++-format
 msgid "{0} removed the room name"
-msgstr ""
+msgstr "{0} вилучив назву кімнати"
 
 #: ui/shared/views/MessageListView.cpp:1153
 #, c++-format
 msgid "{0} set the room name to {1}"
-msgstr ""
+msgstr "{0}: назву кімнати встановлено як «{1}»"
 
 #: ui/shared/views/MessageListView.cpp:1154
 #, c++-format
 msgid "{0} changed the room name to {1}"
-msgstr ""
+msgstr "{0}: назву кімнати змінено на «{1}»"
 
 #: ui/shared/views/MessageListView.cpp:1162
 #, c++-format
 msgid "{0} upgraded this room"
-msgstr ""
+msgstr "{0}: кімнату оновлено"
 
 #: ui/shared/views/MessageListView.cpp:1177
 #, c++-format
 msgid "{0} and {1}"
-msgstr ""
+msgstr "{0} і {1}"
 
 #: ui/shared/views/MessageListView.cpp:1179
 #, c++-format
 msgid "{0}, {1} and {2} other"
 msgid_plural "{0}, {1} and {2} others"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "{0}, {1} та ще {2} користувач"
+msgstr[1] "{0}, {1} та ще {2} користувачі"
+msgstr[2] "{0}, {1} та ще {2} користувачів"
 
 #: ui/shared/views/MessageListView.cpp:1204
 #, c++-format
 msgid "{0} was banned from the room"
 msgid_plural "{0} were banned from the room"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "{0} заблоковано в кімнаті"
+msgstr[1] "{0} заблоковано в кімнаті"
+msgstr[2] "{0} заблоковано в кімнаті"
 
 #: ui/shared/views/MessageListView.cpp:1208
 #, c++-format
 msgid "{0} was unbanned"
 msgid_plural "{0} were unbanned"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "Блокування для {0} знято"
+msgstr[1] "Блокування для {0} знято"
+msgstr[2] "Блокування для {0} знято"
 
 #: ui/shared/views/MessageListView.cpp:1211
 #, c++-format
 msgid "{0} was removed from the room"
 msgid_plural "{0} were removed from the room"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "{0} вилучено з кімнати"
+msgstr[1] "{0} вилучено з кімнати"
+msgstr[2] "{0} вилучено з кімнати"
 
 #: ui/shared/views/MessageListView.cpp:1215
 #, c++-format
 msgid "{0} was invited"
 msgid_plural "{0} were invited"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "{0} запрошено"
+msgstr[1] "{0} запрошено"
+msgstr[2] "{0} запрошено"
 
 #: ui/shared/views/MessageListView.cpp:1218
 #, c++-format
 msgid "{0} was removed and banned"
 msgid_plural "{0} were removed and banned"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "{0} вилучено з кімнати й заблоковано"
+msgstr[1] "{0} вилучено з кімнати й заблоковано"
+msgstr[2] "{0} вилучено з кімнати й заблоковано"
 
 #: ui/shared/views/MessageListView.cpp:1222
 #, c++-format
 msgid "{0} accepted the invitation"
 msgid_plural "{0} accepted their invitations"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "{0}: запрошення прийнято"
+msgstr[1] "{0}: запрошення прийнято"
+msgstr[2] "{0}: запрошення прийнято"
 
 #: ui/shared/views/MessageListView.cpp:1226
 #, c++-format
 msgid "{0} rejected the invitation"
 msgid_plural "{0} rejected their invitations"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "{0}: запрошення відхилено"
+msgstr[1] "{0}: запрошення відхилено"
+msgstr[2] "{0}: запрошення відхилено"
 
 #: ui/shared/views/MessageListView.cpp:1230
 #, c++-format
 msgid "{0} had {1} invitation revoked"
 msgid_plural "{0} had {1} invitations revoked"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "{0} відкликано {1} запрошення"
+msgstr[1] "{0} відкликано {1} запрошення"
+msgstr[2] "{0} відкликано {1} запрошень"
 
 #: ui/shared/views/MessageListView.cpp:1236
 #, c++-format
 msgid "{0}'s request to join was approved"
 msgid_plural "{0}'s requests to join were approved"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "Запит {0} на приєднання схвалено"
+msgstr[1] "Запити {0} на приєднання схвалено"
+msgstr[2] "Запити {0} на приєднання схвалено"
 
 #: ui/shared/views/MessageListView.cpp:1240
 #, c++-format
 msgid "{0} cancelled {1} request to join"
 msgid_plural "{0} cancelled {1} requests to join"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "Запит на приєднання ({1}) скасовано користувачем {0}"
+msgstr[1] "Запити на приєднання ({1}) скасовано користувачем {0}"
+msgstr[2] "Запити на приєднання ({1}) скасовано користувачем {0}"
 
 #: ui/shared/views/MessageListView.cpp:1244
 #, c++-format
 msgid "{0}'s request to join was denied"
 msgid_plural "{0}'s requests to join were denied"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "Запит {0} на приєднання відхилено"
+msgstr[1] "Запити {0} на приєднання відхилено"
+msgstr[2] "Запити {0} на приєднання відхилено"
 
 #: ui/shared/views/MessageListView.cpp:1248
 #, c++-format
 msgid "{0} updated their avatar"
 msgid_plural "{0} updated their avatars"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "{0}: аватар оновлено"
+msgstr[1] "{0}: аватари оновлено"
+msgstr[2] "{0}: аватари оновлено"
 
 #: ui/shared/views/MessageListView.cpp:1252
 #, c++-format
 msgid "{0} cleared their avatar"
 msgid_plural "{0} cleared their avatars"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "{0}: аватар вилучено"
+msgstr[1] "{0}: аватари вилучено"
+msgstr[2] "{0}: аватари вилучено"
 
 #: ui/shared/views/MessageListView.cpp:1256
 #, c++-format
 msgid "{0} updated their display name"
 msgid_plural "{0} updated their display names"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "{0}: ім’я для показу оновлено"
+msgstr[1] "{0}: імена для показу оновлено"
+msgstr[2] "{0}: імена для показу оновлено"
 
 #: ui/shared/views/MessageListView.cpp:1260
 #, c++-format
 msgid "{0} cleared their display name"
 msgid_plural "{0} cleared their display names"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "{0}: ім’я для показу вилучено"
+msgstr[1] "{0}: імена для показу вилучено"
+msgstr[2] "{0}: імена для показу вилучено"
 
 #: ui/shared/views/MessageListView.cpp:1264
 #, c++-format
 msgid "{0} updated their display name and avatar"
 msgid_plural "{0} updated their display names and avatars"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "{0}: ім’я для показу й аватар оновлено"
+msgstr[1] "{0}: імена для показу й аватари оновлено"
+msgstr[2] "{0}: імена для показу й аватари оновлено"
 
 #: ui/shared/views/MessageListView.cpp:1453
 msgid "Unable to decrypt message"
-msgstr ""
+msgstr "Не вдалося розшифрувати повідомлення"
 
 #: ui/shared/views/MessageListView.cpp:1455
 msgid "Image"
-msgstr ""
+msgstr "Зображення"
 
 #: ui/shared/views/MessageListView.cpp:1461
 msgid "Audio message"
@@ -3329,44 +3355,44 @@ msgstr "Відео"
 #: ui/shared/views/MessageListView.cpp:1467
 #: ui/shared/views/settings/PrivacySection.cpp:76
 msgid "Location"
-msgstr ""
+msgstr "Місцезнаходження"
 
 #: ui/shared/views/MessageListView.cpp:1505
 msgid ", "
-msgstr ""
+msgstr ", "
 
 #: ui/shared/views/MessageListView.cpp:1506
 msgid "; "
-msgstr ""
+msgstr "; "
 
 #: ui/shared/views/MessageListView.cpp:1508
 #, c++-format
 msgid "Table, {0} rows, {1} columns: {2}"
-msgstr ""
+msgstr "Таблиця, рядків: {0}, стовпців: {1}: {2}"
 
 #: ui/shared/views/MessageListView.cpp:3392
 #: ui/shared/views/MessageListView.cpp:4131
 #: ui/shared/views/MessageListView.cpp:7021
 msgid "New messages"
-msgstr ""
+msgstr "Нові повідомлення"
 
 #: ui/shared/views/MessageListView.cpp:3396
 #: ui/shared/views/MessageListView.cpp:4166
 msgid "This room continues an older conversation."
-msgstr ""
+msgstr "У цій кімнаті продовжується давніша розмова."
 
 #: ui/shared/views/MessageListView.cpp:3397
 #: ui/shared/views/MessageListView.cpp:4167
 #: ui/shared/views/RoomSearchBar.cpp:173
 msgid "Start of conversation"
-msgstr ""
+msgstr "Початок розмови"
 
 #: ui/shared/views/MessageListView.cpp:3400
 #: ui/shared/views/MessageListView.cpp:3409
 #: ui/shared/views/MessageListView.cpp:3467
 #, c++-format
 msgid "{0} {1}"
-msgstr ""
+msgstr "{0} {1}"
 
 #: ui/shared/views/MessageListView.cpp:3405
 #: ui/shared/views/MessageListView.cpp:4273
@@ -3376,59 +3402,59 @@ msgstr "розпочав(-ла) відеодзвінок"
 #: ui/shared/views/MessageListView.cpp:3406
 #: ui/shared/views/MessageListView.cpp:4275
 msgid "started a voice call"
-msgstr ""
+msgstr "розпочинає голосовий виклик"
 
 #: ui/shared/views/MessageListView.cpp:3407
 #: ui/shared/views/MessageListView.cpp:4276
 msgid "started a call"
-msgstr ""
+msgstr "розпочинає виклик"
 
 #: ui/shared/views/MessageListView.cpp:3431
 #, c++-format
 msgid "{0}; {1}"
-msgstr ""
+msgstr "{0}; {1}"
 
 #: ui/shared/views/MessageListView.cpp:3469
 #, c++-format
 msgid "{0} ({1}): {2}"
-msgstr ""
+msgstr "{0} ({1}): {2}"
 
 #: ui/shared/views/MessageListView.cpp:3473
 msgid "not sent"
-msgstr ""
+msgstr "не надіслано"
 
 #: ui/shared/views/MessageListView.cpp:3475
 msgid "sending"
-msgstr ""
+msgstr "надсилання"
 
 #: ui/shared/views/MessageListView.cpp:3478
 msgid "in reply"
-msgstr ""
+msgstr "у відповіді"
 
 #: ui/shared/views/MessageListView.cpp:3479
 #, c++-format
 msgid "replying to {0}"
-msgstr ""
+msgstr "відповідь на {0}"
 
 #: ui/shared/views/MessageListView.cpp:3482
 msgid "edited"
-msgstr ""
+msgstr "змінено"
 
 #: ui/shared/views/MessageListView.cpp:3486
 #, c++-format
 msgid "{0} reply in thread"
 msgid_plural "{0} replies in thread"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "{0} відповідь у гілці"
+msgstr[1] "{0} відповіді у гілці"
+msgstr[2] "{0} відповідей у гілці"
 
 #: ui/shared/views/MessageListView.cpp:3494
 #, c++-format
 msgid "{0} reaction"
 msgid_plural "{0} reactions"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "{0} реакція"
+msgstr[1] "{0} реакції"
+msgstr[2] "{0} реакцій"
 
 #: ui/shared/views/MessageListView.cpp:3547
 #, c++-format
@@ -3437,25 +3463,25 @@ msgstr "Переглянути профіль {0}"
 
 #: ui/shared/views/MessageListView.cpp:3562
 msgid "Reveal spoiler"
-msgstr ""
+msgstr "Показати спойлер"
 
 #: ui/shared/views/MessageListView.cpp:3571
 msgid "Jump to replied message"
-msgstr ""
+msgstr "Перейти до повідомлення, на яке відповіли"
 
 #: ui/shared/views/MessageListView.cpp:3599
 #: ui/shared/views/MessageListView.cpp:3600
 #, c++-format
 msgid "Link preview: {0}"
-msgstr ""
+msgstr "Попередній перегляд посилання: {0}"
 
 #: ui/shared/views/MessageListView.cpp:3615
 #, c++-format
 msgid "Open thread, {0} reply"
 msgid_plural "Open thread, {0} replies"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "Відкрити гілку, відповідей: {0}"
+msgstr[1] "Відкрити гілку, відповідей: {0}"
+msgstr[2] "Відкрити гілку, відповідей: {0}"
 
 #: ui/shared/views/MessageListView.cpp:3632
 msgid "Show hidden media"
@@ -3476,28 +3502,28 @@ msgstr "Відкрити файл"
 #: ui/shared/views/MessageListView.cpp:3681
 #: ui/shared/views/VideoViewerOverlay.cpp:541
 msgid "Pause"
-msgstr ""
+msgstr "Призупинити"
 
 #: ui/shared/views/MessageListView.cpp:3681
 #: ui/shared/views/VideoViewerOverlay.cpp:541
 msgid "Play"
-msgstr ""
+msgstr "Відтворити"
 
 #: ui/shared/views/MessageListView.cpp:3705
 msgid "Reactions"
-msgstr ""
+msgstr "Реакції"
 
 #: ui/shared/views/MessageListView.cpp:3714
 #, c++-format
 msgid "{0}, {1} reaction"
 msgid_plural "{0}, {1} reactions"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "{0}, реакцій: {1}"
+msgstr[1] "{0}, реакцій: {1}"
+msgstr[2] "{0}, реакцій: {1}"
 
 #: ui/shared/views/MessageListView.cpp:3718
 msgid "reacted by you"
-msgstr ""
+msgstr "ваша реакція"
 
 #: ui/shared/views/MessageListView.cpp:3737
 msgid "Message actions"
@@ -3515,7 +3541,7 @@ msgstr "Відповісти у гілці"
 
 #: ui/shared/views/MessageListView.cpp:3792 ui/shared/views/RoomHeader.cpp:162
 msgid "More options"
-msgstr ""
+msgstr "Інші параметри"
 
 #: ui/shared/views/MessageListView.cpp:3808
 msgid "Retry sending"
@@ -3528,7 +3554,7 @@ msgstr "Скасувати надсилання"
 #: ui/shared/views/MessageListView.cpp:3842
 #, c++-format
 msgid "Read by {0}"
-msgstr ""
+msgstr "Прочитано користувачем {0}"
 
 #: ui/shared/views/MessageListView.cpp:3887
 #: ui/shared/views/ThreadListView.cpp:392
@@ -3536,9 +3562,9 @@ msgstr ""
 #, c++-format
 msgid "{0} reply"
 msgid_plural "{0} replies"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "{0} відповідь"
+msgstr[1] "{0} відповіді"
+msgstr[2] "{0} відповідей"
 
 #: ui/shared/views/MessageListView.cpp:4534
 msgid "Load video"
@@ -3546,68 +3572,68 @@ msgstr "Завантажити відео"
 
 #: ui/shared/views/MessageListView.cpp:4536
 msgid "Load sticker"
-msgstr ""
+msgstr "Завантажити стікер"
 
 #: ui/shared/views/MessageListView.cpp:4537
 msgid "Load image"
-msgstr ""
+msgstr "Завантажити зображення"
 
 #: ui/shared/views/MessageListView.cpp:4632
 #: ui/shared/views/MessageListView.cpp:5565
 #: ui/shared/views/MessageListView.cpp:5785
 #: ui/shared/views/MessageListView.cpp:5849
 msgid "(empty message)"
-msgstr ""
+msgstr "(порожнє повідомлення)"
 
 #: ui/shared/views/MessageListView.cpp:5281
 #: ui/shared/views/MessageListView.cpp:5363
 msgid "Original message unavailable"
-msgstr ""
+msgstr "Початкове повідомлення недоступне"
 
 #: ui/shared/views/MessageListView.cpp:5438
 #: ui/shared/views/MessageListView.cpp:5497
 msgid "[Spoiler]"
-msgstr ""
+msgstr "[Спойлер]"
 
 #: ui/shared/views/MessageListView.cpp:5439
 #: ui/shared/views/MessageListView.cpp:5498
 #, c++-format
 msgid "[Spoiler: {0}]"
-msgstr ""
+msgstr "[Спойлер: {0}]"
 
 #: ui/shared/views/MessageListView.cpp:7284
 msgid "Jump to first unread"
-msgstr ""
+msgstr "Перейти до першого непрочитаного"
 
 #: ui/shared/views/MessageListView.cpp:7422
 msgid "View older messages"
-msgstr ""
+msgstr "Переглянути старіші повідомлення"
 
 #: ui/shared/views/MessageListView.cpp:9120
 msgid "More"
-msgstr ""
+msgstr "Більше"
 
 #: ui/shared/views/MessageListView.cpp:11733
 msgid "Reacted with :"
-msgstr ""
+msgstr "Відреагували емодзі:"
 
 #: ui/shared/views/MessageListView.cpp:11742
 msgid "Reacted by:"
-msgstr ""
+msgstr "Реакції від:"
 
 #: ui/shared/views/MessageListView.cpp:11746
 msgid "Reacted with "
-msgstr ""
+msgstr "Відреагували емодзі "
 
 #: ui/shared/views/MessageListView.cpp:12115
 #, c++-format
 msgid "{0} ({1} of {2})"
-msgstr ""
+msgstr "{0} ({1} з {2})"
 
 #: ui/shared/views/MessageSearchView.cpp:130
 #: ui/shared/views/MessageSearchView.cpp:178
 msgid "Unknown room"
-msgstr ""
+msgstr "Невідома кімната"
 
 #: ui/shared/views/MessageSearchView.cpp:211
 msgid "Search your messages…"
@@ -3617,11 +3643,11 @@ msgstr "Шукати у ваших повідомленнях…"
 msgid ""
 "Message search is disabled. Enable indexing in Settings to search your "
 "messages."
-msgstr ""
+msgstr "Пошук повідомлень вимкнено. Увімкніть індексування в налаштуваннях, щоб шукати повідомлення."
 
 #: ui/shared/views/MessageSearchView.cpp:452
 msgid "Type to search your messages"
-msgstr ""
+msgstr "Введіть текст для пошуку повідомлень"
 
 #: ui/shared/views/MessageSearchView.cpp:453
 #: ui/shared/views/RoomSearchBar.cpp:177
@@ -3635,37 +3661,37 @@ msgstr "Пошук…"
 
 #: ui/shared/views/ParticipantTile.cpp:235
 msgid "Unpin"
-msgstr ""
+msgstr "Відкріпити"
 
 #: ui/shared/views/ParticipantTile.cpp:235
 msgid "Pin"
-msgstr ""
+msgstr "Закріпити"
 
 #: ui/shared/views/PinnedBanner.cpp:75
 msgid "Previous pinned message"
-msgstr ""
+msgstr "Попереднє закріплене повідомлення"
 
 #: ui/shared/views/PinnedBanner.cpp:80
 msgid "Next pinned message"
-msgstr ""
+msgstr "Наступне закріплене повідомлення"
 
 #: ui/shared/views/PinnedBanner.cpp:98
 msgid "Pinned messages"
-msgstr ""
+msgstr "Закріплені повідомлення"
 
 #: ui/shared/views/PinnedBanner.cpp:105 ui/shared/views/RoomSearchBar.cpp:181
 #, c++-format
 msgid "{0} of {1}"
-msgstr ""
+msgstr "{0} з {1}"
 
 #: ui/shared/views/PinnedBanner.cpp:133
 #, c++-format
 msgid "Jump to pinned message: {0}"
-msgstr ""
+msgstr "Перейти до закріпленого повідомлення: {0}"
 
 #: ui/shared/views/QRGrantView.cpp:122
 msgid "Setting up secure channel…"
-msgstr ""
+msgstr "Налаштування захищеного каналу…"
 
 #: ui/shared/views/QRGrantView.cpp:126
 msgid "Scan this QR code with your Matrix app"
@@ -3677,7 +3703,7 @@ msgstr "Введіть числовий код, показаний на ново
 
 #: ui/shared/views/QRGrantView.cpp:145
 msgid "Approve the sign-in in your browser…"
-msgstr ""
+msgstr "Підтвердьте вхід у браузері…"
 
 #: ui/shared/views/QRGrantView.cpp:151
 msgid "Device added successfully."
@@ -3685,7 +3711,7 @@ msgstr "Пристрій успішно додано."
 
 #: ui/shared/views/QuickSwitcher.cpp:230
 msgid "Jump to a room, or @user to start a chat…"
-msgstr ""
+msgstr "Перейдіть до кімнати або введіть @user, щоб почати розмову…"
 
 #: ui/shared/views/QuickSwitcher.cpp:650
 msgid "No matching users — type a full @user:server to chat"
@@ -3693,25 +3719,25 @@ msgstr "Користувачів не знайдено — введіть пов
 
 #: ui/shared/views/QuickSwitcher.cpp:686
 msgid "Recent"
-msgstr ""
+msgstr "Нещодавні"
 
 #: ui/shared/views/ReceiptGridPopup.cpp:43
 #, c++-format
 msgid "Read at {0}"
-msgstr ""
+msgstr "Прочитано о {0}"
 
 #: ui/shared/views/ReceiptGridPopup.cpp:76
 #, c++-format
 msgid "Read by {0} person"
 msgid_plural "Read by {0} people"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "Прочитано: {0} користувач"
+msgstr[1] "Прочитано: {0} користувачі"
+msgstr[2] "Прочитано: {0} користувачів"
 
 #: ui/shared/views/RoomDirectoryView.cpp:72
 #, c++-format
 msgid "{0}, {1}, {2}"
-msgstr ""
+msgstr "{0}, {1}, {2}"
 
 #: ui/shared/views/RoomDirectoryView.cpp:259 ui/shared/views/RoomHeader.cpp:140
 #: ui/shared/views/RoomHeader.cpp:702
@@ -3735,7 +3761,7 @@ msgstr "Завантаження кімнат…"
 
 #: ui/shared/views/RoomHeader.cpp:100 ui/shared/views/RoomHeader.cpp:717
 msgid "Jump to Date"
-msgstr ""
+msgstr "Перейти до дати"
 
 #: ui/shared/views/RoomHeader.cpp:104
 msgid "Room info"
@@ -3744,11 +3770,11 @@ msgstr "Відомості про кімнату"
 #: ui/shared/views/RoomHeader.cpp:131 ui/shared/views/RoomHeader.cpp:645
 #: ui/shared/views/RoomHeader.cpp:696
 msgid "Threads"
-msgstr ""
+msgstr "Гілки"
 
 #: ui/shared/views/RoomHeader.cpp:644
 msgid "Threads (unread messages)"
-msgstr ""
+msgstr "Гілки (непрочитані повідомлення)"
 
 #: ui/shared/views/RoomHeader.cpp:865
 msgid "Encrypted room"
@@ -3756,18 +3782,18 @@ msgstr "Зашифрована кімната"
 
 #: ui/shared/views/RoomInfoPanel.cpp:28
 msgid "View room avatar"
-msgstr ""
+msgstr "Переглянути аватар кімнати"
 
 #: ui/shared/views/RoomInfoPanel.cpp:44
 #: ui/shared/views/RoomSettingsView.cpp:294
 #: ui/shared/views/SettingsView.cpp:316
 #: ui/shared/views/settings/MediaSection.cpp:84
 msgid "Media"
-msgstr ""
+msgstr "Медіа"
 
 #: ui/shared/views/RoomInfoPanel.cpp:51 ui/shared/views/RoomInfoPanel.cpp:1059
 msgid "Requests to join"
-msgstr ""
+msgstr "Запити на приєднання"
 
 #: ui/shared/views/RoomInfoPanel.cpp:94
 msgid "Edit topic"
@@ -3783,7 +3809,7 @@ msgstr "Запросити людей"
 
 #: ui/shared/views/RoomInfoPanel.cpp:108
 msgid "Export History"
-msgstr ""
+msgstr "Експортувати історію"
 
 #: ui/shared/views/RoomInfoPanel.cpp:111
 msgid "Leave Room"
@@ -3791,29 +3817,29 @@ msgstr "Вийти з кімнати"
 
 #: ui/shared/views/RoomInfoPanel.cpp:118
 msgid "Favourite"
-msgstr ""
+msgstr "Вибране"
 
 #: ui/shared/views/RoomInfoPanel.cpp:125
 msgid "Low priority"
-msgstr ""
+msgstr "Низький пріоритет"
 
 #: ui/shared/views/RoomInfoPanel.cpp:136
 #: ui/shared/views/settings/RoomPermissionsSection.cpp:31
 msgid "Default"
-msgstr ""
+msgstr "За замовчуванням"
 
 #: ui/shared/views/RoomInfoPanel.cpp:137
 msgid "All messages"
-msgstr ""
+msgstr "Усі повідомлення"
 
 #: ui/shared/views/RoomInfoPanel.cpp:138 ui/windows/src/Win32Taskbar.cpp:330
 msgid "Mentions"
-msgstr ""
+msgstr "Згадки"
 
 #: ui/shared/views/RoomInfoPanel.cpp:139
 #: ui/shared/views/settings/GeneralSection.cpp:145
 msgid "Off"
-msgstr ""
+msgstr "Вимкнено"
 
 #: ui/shared/views/RoomInfoPanel.cpp:272
 msgid "Encrypted"
@@ -3821,7 +3847,7 @@ msgstr "Зашифровано"
 
 #: ui/shared/views/RoomInfoPanel.cpp:281
 msgid "Bridged"
-msgstr ""
+msgstr "Підключено через міст"
 
 #: ui/shared/views/RoomInfoPanel.cpp:351
 #, c++-format
@@ -3835,17 +3861,17 @@ msgstr "Тему не встановлено."
 #: ui/shared/views/RoomInfoPanel.cpp:688
 #, c++-format
 msgid "Member {0} of {1}"
-msgstr ""
+msgstr "Учасник {0} з {1}"
 
 #: ui/shared/views/RoomInfoPanel.cpp:777
 #: ui/shared/views/settings/RoomGeneralSection.cpp:352
 msgid "Topic"
-msgstr ""
+msgstr "Тема"
 
 #: ui/shared/views/RoomInfoPanel.cpp:878
 #, c++-format
 msgid "Members ({0})"
-msgstr ""
+msgstr "Учасники ({0})"
 
 #: ui/shared/views/RoomInfoPanel.cpp:1015 ui/shared/views/SettingsView.cpp:315
 #: ui/shared/views/settings/NotificationsSection.cpp:137
@@ -3855,7 +3881,7 @@ msgstr "Сповіщення"
 #: ui/shared/views/RoomInfoPanel.cpp:1034
 #, c++-format
 msgid "Media ({0})"
-msgstr ""
+msgstr "Медіа ({0})"
 
 #: ui/shared/views/RoomInfoPanel.cpp:1346
 msgid "Show profile"
@@ -3863,11 +3889,11 @@ msgstr "Показати профіль"
 
 #: ui/shared/views/RoomInfoPanel.cpp:1360
 msgid "Kick user…"
-msgstr ""
+msgstr "Вилучити користувача…"
 
 #: ui/shared/views/RoomInfoPanel.cpp:1372
 msgid "Ban user…"
-msgstr ""
+msgstr "Заблокувати користувача…"
 
 #: ui/shared/views/RoomInfoPanel.cpp:1491
 msgid "Room settings"
@@ -3875,60 +3901,60 @@ msgstr "Налаштування кімнати"
 
 #: ui/shared/views/RoomListView.cpp:92
 msgid "Replaced by a newer room"
-msgstr ""
+msgstr "Замінено новішою кімнатою"
 
 #: ui/shared/views/RoomListView.cpp:100
 #: ui/shared/views/settings/MessageLayoutPreview.cpp:45
 msgid "You"
-msgstr ""
+msgstr "Ви"
 
 #: ui/shared/views/RoomListView.cpp:110
 #, c++-format
 msgid "{0} sent an image"
-msgstr ""
+msgstr "{0}: надіслано зображення"
 
 #: ui/shared/views/RoomListView.cpp:111
 #, c++-format
 msgid "{0} sent a video"
-msgstr ""
+msgstr "{0}: надіслано відео"
 
 #: ui/shared/views/RoomListView.cpp:112
 #, c++-format
 msgid "{0} sent a GIF"
-msgstr ""
+msgstr "{0}: надіслано GIF"
 
 #: ui/shared/views/RoomListView.cpp:113
 #, c++-format
 msgid "{0} sent a file"
-msgstr ""
+msgstr "{0}: надіслано файл"
 
 #: ui/shared/views/RoomListView.cpp:114
 #, c++-format
 msgid "{0} sent a voice message"
-msgstr ""
+msgstr "{0}: надіслано голосове повідомлення"
 
 #: ui/shared/views/RoomListView.cpp:115
 #, c++-format
 msgid "{0} sent a sticker"
-msgstr ""
+msgstr "{0}: надіслано стікер"
 
 #, c++-format
 msgid "{0} started a poll"
-msgstr ""
+msgstr "{0}: створено опитування"
 
 #: ui/shared/views/RoomListView.cpp:358 ui/shared/views/RoomListView.cpp:491
 #, c++-format
 msgid "Invitations ({0})"
-msgstr ""
+msgstr "Запрошення ({0})"
 
 #: ui/shared/views/RoomListView.cpp:363 ui/shared/views/RoomListView.cpp:496
 #, c++-format
 msgid "Inactive ({0})"
-msgstr ""
+msgstr "Неактивні ({0})"
 
 #: ui/shared/views/RoomListView.cpp:373
 msgid "Invitation"
-msgstr ""
+msgstr "Запрошення"
 
 #: ui/shared/views/RoomListView.cpp:384 ui/shared/views/RoomListView.cpp:1394
 #: ui/shared/views/SpaceChildRoomGrid.cpp:166
@@ -3941,12 +3967,12 @@ msgstr "Завантаження…"
 
 #: ui/shared/views/RoomListView.cpp:1398
 msgid "Fetching room details…"
-msgstr ""
+msgstr "Завантаження відомостей про кімнату…"
 
 #: ui/shared/views/RoomListView.cpp:1405 ui/shared/views/media_utils.h:129
 #: ui/shared/views/settings/RoomSecuritySection.cpp:39
 msgid "Knock"
-msgstr ""
+msgstr "Запит на приєднання"
 
 #: ui/shared/views/RoomListView.cpp:1406 ui/shared/views/RoomPreviewView.cpp:85
 msgid "Invite-only"
@@ -3956,7 +3982,7 @@ msgstr "Лише за запрошенням"
 #: ui/shared/views/media_utils.h:133
 #: ui/shared/views/settings/RoomSecuritySection.cpp:125
 msgid "Restricted"
-msgstr ""
+msgstr "Обмежений доступ"
 
 #: ui/shared/views/RoomListView.cpp:2617
 msgid "Open in tab"
@@ -3978,11 +4004,11 @@ msgstr "Вийти з кімнати"
 
 #: ui/shared/views/RoomListView.h:216
 msgid "Invitations"
-msgstr ""
+msgstr "Запрошення"
 
 #: ui/shared/views/RoomListView.h:216
 msgid "Unread"
-msgstr ""
+msgstr "Непрочитані"
 
 #: ui/shared/views/RoomListView.h:216 ui/shared/views/StickerPicker.cpp:326
 msgid "Favorites"
@@ -3990,7 +4016,7 @@ msgstr "Обране"
 
 #: ui/shared/views/RoomListView.h:217
 msgid "Direct Messages"
-msgstr ""
+msgstr "Особисті повідомлення"
 
 #: ui/shared/views/RoomListView.h:217
 msgid "Rooms"
@@ -4006,33 +4032,33 @@ msgstr "Простори"
 
 #: ui/shared/views/RoomListView.h:218
 msgid "Inactive"
-msgstr ""
+msgstr "Неактивні"
 
 #: ui/shared/views/RoomListView.h:218
 msgid "Available to Join"
-msgstr ""
+msgstr "Доступні для приєднання"
 
 #: ui/shared/views/RoomListView.h:219
 msgid "Requests to Join"
-msgstr ""
+msgstr "Запити на приєднання"
 
 #: ui/shared/views/RoomMediaView.cpp:133
 #, c++-format
 msgid "{0}, from {1}"
-msgstr ""
+msgstr "{0}, від {1}"
 
 #: ui/shared/views/RoomMediaView.cpp:161
 #, c++-format
 msgid "{0} item"
 msgid_plural "{0} items"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "{0} елемент"
+msgstr[1] "{0} елементи"
+msgstr[2] "{0} елементів"
 
 #: ui/shared/views/RoomMediaView.cpp:692
 #, c++-format
 msgid "Media — {0}"
-msgstr ""
+msgstr "Медіа — {0}"
 
 #: ui/shared/views/RoomMediaView.cpp:708
 msgid "No media in this room yet"
@@ -4044,24 +4070,24 @@ msgstr "Завантаження медіафайлів…"
 
 #: ui/shared/views/RoomPreviewView.cpp:84
 msgid "Knock to join"
-msgstr ""
+msgstr "Надіслати запит на приєднання"
 
 #: ui/shared/views/RoomPreviewView.cpp:87
 msgid "Knock (restricted)"
-msgstr ""
+msgstr "Запит на приєднання (обмежений доступ)"
 
 #: ui/shared/views/RoomPreviewView.cpp:167
 #, c++-format
 msgid "{0} members · {1}"
-msgstr ""
+msgstr "Учасників: {0} · {1}"
 
 #: ui/shared/views/RoomReplacedBanner.cpp:43
 msgid "This room has been replaced and is no longer active."
-msgstr ""
+msgstr "Цю кімнату замінено, вона більше не активна."
 
 #: ui/shared/views/RoomReplacedBanner.cpp:48
 msgid "Go to the new room"
-msgstr ""
+msgstr "Перейти до нової кімнати"
 
 #: ui/shared/views/RoomReplacedBanner.cpp:48
 msgid "Join the new room"
@@ -4069,23 +4095,23 @@ msgstr "Приєднатися до нової кімнати"
 
 #: ui/shared/views/RoomSearchBar.cpp:29
 msgid "Find in conversation…"
-msgstr ""
+msgstr "Знайти в розмові…"
 
 #: ui/shared/views/RoomSearchBar.cpp:46
 msgid "Previous match"
-msgstr ""
+msgstr "Попередній збіг"
 
 #: ui/shared/views/RoomSearchBar.cpp:55
 msgid "Next match"
-msgstr ""
+msgstr "Наступний збіг"
 
 #: ui/shared/views/RoomSearchBar.cpp:61
 msgid "Paginate"
-msgstr ""
+msgstr "Перейти до іншої сторінки"
 
 #: ui/shared/views/RoomSearchBar.cpp:83 ui/shared/views/RoomSearchBar.h:114
 msgid "Type to search"
-msgstr ""
+msgstr "Введіть текст для пошуку"
 
 #: ui/shared/views/RoomSearchBar.cpp:84 ui/shared/views/RoomSearchBar.cpp:165
 msgid "Search disabled — indexing is off"
@@ -4103,20 +4129,20 @@ msgstr "Безпека й приватність"
 
 #: ui/shared/views/RoomSettingsView.cpp:296
 msgid "Permissions"
-msgstr ""
+msgstr "Дозволи"
 
 #: ui/shared/views/RoomSettingsView.cpp:297
 msgid "Moderation"
-msgstr ""
+msgstr "Модерація"
 
 #: ui/shared/views/RoomSettingsView.cpp:298
 #: ui/shared/views/SettingsView.cpp:319
 msgid "Emojis & Stickers"
-msgstr ""
+msgstr "Емодзі й стікери"
 
 #: ui/shared/views/RoomSettingsView.cpp:299
 msgid "Bridge"
-msgstr ""
+msgstr "Міст"
 
 #: ui/shared/views/RoomSettingsView.cpp:440
 #: ui/shared/views/SpaceRootView.cpp:163
@@ -4145,11 +4171,11 @@ msgstr "Видалити повідомлення"
 
 #: ui/shared/views/RoomView.cpp:459
 msgid "Unpin message"
-msgstr ""
+msgstr "Відкріпити повідомлення"
 
 #: ui/shared/views/RoomView.cpp:460
 msgid "Pin message"
-msgstr ""
+msgstr "Закріпити повідомлення"
 
 #: ui/shared/views/RoomView.cpp:480
 msgid "Copy event source"
@@ -4157,27 +4183,27 @@ msgstr "Копіювати джерело події"
 
 #: ui/shared/views/RoomView.cpp:959
 msgid "Deny and ban this user?"
-msgstr ""
+msgstr "Відмовити цьому користувачу й заблокувати його?"
 
 #: ui/shared/views/RoomView.cpp:961
 msgid ""
 "They will be removed from the room and unable to rejoin or knock again "
 "unless unbanned."
-msgstr ""
+msgstr "Користувача буде вилучено з кімнати; він не зможе приєднатися або знову надіслати запит, доки блокування не буде знято."
 
 #: ui/shared/views/RoomView.cpp:1122
 #, c++-format
 msgid "Ban {0}?"
-msgstr ""
+msgstr "Заблокувати {0}?"
 
 #: ui/shared/views/RoomView.cpp:1123
 msgid ""
 "They will be removed from the room and unable to rejoin unless unbanned."
-msgstr ""
+msgstr "Користувача буде вилучено з кімнати; він не зможе приєднатися знову, доки блокування не буде знято."
 
 #: ui/shared/views/RoomView.cpp:1125
 msgid "Ban"
-msgstr ""
+msgstr "Заблокувати"
 
 #: ui/shared/views/RoomView.cpp:1129
 #, c++-format
@@ -4186,28 +4212,28 @@ msgstr "Вилучити {0} з кімнати?"
 
 #: ui/shared/views/RoomView.cpp:1130
 msgid "They can rejoin if the room allows it."
-msgstr ""
+msgstr "Він зможе приєднатися знову, якщо це дозволено в кімнаті."
 
 #: ui/shared/views/RoomView.cpp:1131
 msgid "Kick"
-msgstr ""
+msgstr "Вилучити"
 
 #: ui/shared/views/ScreenPickerWidget.cpp:60
 #, c++-format
 msgid "Screen {0}"
-msgstr ""
+msgstr "Екран {0}"
 
 #: ui/shared/views/ScreenPickerWidget.cpp:156
 msgid "Select what to share"
-msgstr ""
+msgstr "Виберіть, чим поділитися"
 
 #: ui/shared/views/ScreenPickerWidget.cpp:217
 msgid "Screen"
-msgstr ""
+msgstr "Екран"
 
 #: ui/shared/views/SettingsView.cpp:48
 msgid "← Back"
-msgstr ""
+msgstr "← Назад"
 
 #: ui/shared/views/SettingsView.cpp:311
 msgid "Account"
@@ -4246,11 +4272,11 @@ msgstr "Про програму"
 #: ui/shared/views/settings/AdvancedSection.cpp:17
 #: ui/shared/views/settings/RoomPermissionsSection.cpp:119
 msgid "Advanced"
-msgstr ""
+msgstr "Додатково"
 
 #: ui/shared/views/SettingsView.cpp:363
 msgid "Log out?"
-msgstr ""
+msgstr "Вийти?"
 
 #: ui/shared/views/SettingsView.cpp:364
 msgid "You will need to sign in again to access your messages."
@@ -4259,7 +4285,7 @@ msgstr "Щоб отримати доступ до повідомлень, пот
 #: ui/shared/views/SettingsView.cpp:365
 #: ui/shared/views/settings/AccountSection.cpp:929
 msgid "Log Out"
-msgstr ""
+msgstr "Вийти"
 
 #: ui/shared/views/SettingsView.cpp:375
 msgid "Clear all caches?"
@@ -4272,6 +4298,11 @@ msgid ""
 "from the server afterwards. Your sign-in and encryption keys are kept, so "
 "you stay logged in and verified."
 msgstr ""
+"Видаляє всі завантажені медіафайли й кешовану історію повідомлень цього "
+"облікового запису, а також закриває відкриті вкладки й окремі вікна. Після "
+"цього кімнати й повідомлення знову завантажаться із сервера. Дані для входу "
+"та ключі шифрування буде збережено, тому ви залишитесь у системі й зі "
+"статусом перевірки."
 
 #: ui/shared/views/SettingsView.cpp:381
 msgid "Clear"
@@ -4284,24 +4315,29 @@ msgid ""
 "devices and the people you chat with will need to confirm you again. You'll "
 "get a new recovery key right after."
 msgstr ""
+"Робіть це, лише якщо втратили ключ відновлення й не маєте іншого пристрою, "
+"на якому виконано вхід. Повідомлення, які ви не можете прочитати зараз, так "
+"і залишаться недоступними для читання, а на інших ваших пристроях і в людей, "
+"з якими ви спілкуєтеся, потрібно буде підтвердити вас знову. Одразу після "
+"цього ви отримаєте новий ключ відновлення."
 
 #: ui/shared/views/SettingsView.cpp:399
 msgid "Reset"
-msgstr ""
+msgstr "Скинути"
 
 #: ui/shared/views/SettingsView.cpp:1393
 #, c++-format
 msgid "Could not add keyword \"{0}\""
-msgstr ""
+msgstr "Не вдалося додати ключове слово «{0}»"
 
 #: ui/shared/views/SettingsView.cpp:1408
 #, c++-format
 msgid "Could not remove keyword \"{0}\""
-msgstr ""
+msgstr "Не вдалося вилучити ключове слово «{0}»"
 
 #: ui/shared/views/SkinTonePopover.cpp:19
 msgid "Default skin tone"
-msgstr ""
+msgstr "Відтінок шкіри за замовчуванням"
 
 #: ui/shared/views/SkinTonePopover.cpp:19
 msgid "Light skin tone"
@@ -4309,15 +4345,15 @@ msgstr "Світлий тон шкіри"
 
 #: ui/shared/views/SkinTonePopover.cpp:20
 msgid "Medium-light skin tone"
-msgstr ""
+msgstr "Світло-середній відтінок шкіри"
 
 #: ui/shared/views/SkinTonePopover.cpp:20
 msgid "Medium skin tone"
-msgstr ""
+msgstr "Середній відтінок шкіри"
 
 #: ui/shared/views/SkinTonePopover.cpp:21
 msgid "Medium-dark skin tone"
-msgstr ""
+msgstr "Темно-середній відтінок шкіри"
 
 #: ui/shared/views/SkinTonePopover.cpp:21
 msgid "Dark skin tone"
@@ -4325,13 +4361,13 @@ msgstr "Темний тон шкіри"
 
 #: ui/shared/views/SkinTonePopover.cpp:230
 msgid "Skin tone"
-msgstr ""
+msgstr "Відтінок шкіри"
 
 #: ui/shared/views/SlashCommandPopup.cpp:117
 #: ui/shared/views/SlashCommandPopup.h:107
 #, c++-format
 msgid "via {0}"
-msgstr ""
+msgstr "через {0}"
 
 #: ui/shared/views/SpaceAddRoomList.cpp:147
 #, c++-format
@@ -4348,19 +4384,19 @@ msgstr "Більше немає кімнат для додавання."
 
 #: ui/shared/views/SpaceAddRoomList.cpp:394
 msgid "You don't have permission to add rooms to this space."
-msgstr ""
+msgstr "У вас немає дозволу додавати кімнати до цього простору."
 
 #: ui/shared/views/SpaceChildRoomGrid.cpp:177
 msgid "Press Delete to remove it from the space"
-msgstr ""
+msgstr "Натисніть Delete, щоб вилучити його з простору"
 
 #: ui/shared/views/SpaceChildRoomGrid.cpp:347
 msgid "This space has no rooms yet."
-msgstr ""
+msgstr "У цьому просторі ще немає кімнат."
 
 #: ui/shared/views/SpaceChildRoomGrid.cpp:367
 msgid "You don't have permission to remove rooms from this space."
-msgstr ""
+msgstr "У вас немає дозволу вилучати кімнати з цього простору."
 
 #: ui/shared/views/SpaceRootView.cpp:152
 msgid "Space settings"
@@ -4370,27 +4406,27 @@ msgstr "Налаштування простору"
 #, c++-format
 msgid "{0} room"
 msgid_plural "{0} rooms"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "{0} кімната"
+msgstr[1] "{0} кімнати"
+msgstr[2] "{0} кімнат"
 
 #: ui/shared/views/SpaceRootView.cpp:385
 #, c++-format
 msgid "{0} available to join"
 msgid_plural "{0} available to join"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "{0} доступна для приєднання"
+msgstr[1] "{0} доступні для приєднання"
+msgstr[2] "{0} доступних для приєднання"
 
 #: ui/shared/views/SpaceRootView.cpp:481
 msgid "Explore the rooms in this space from the room list."
-msgstr ""
+msgstr "Перегляньте кімнати цього простору зі списку кімнат."
 
 #: ui/shared/views/SpaceRootView.cpp:570
 msgid ""
 "Drag rooms between the two lists to add or remove them, or select one and "
 "press Enter to add / Delete to remove."
-msgstr ""
+msgstr "Перетягуйте кімнати між двома списками, щоб додавати або вилучати їх, або виберіть кімнату й натисніть Enter, щоб додати, чи Delete, щоб вилучити."
 
 #: ui/shared/views/StickerPicker.cpp:44
 msgid "Search stickers"
@@ -4398,7 +4434,7 @@ msgstr "Шукати стікери"
 
 #: ui/shared/views/ThreadListView.cpp:96
 msgid "%-m/%-d/%y"
-msgstr ""
+msgstr "%-m/%-d/%y"
 
 #: ui/shared/views/ThreadListView.cpp:137
 msgid "Mark all threads as read"
@@ -4410,23 +4446,23 @@ msgstr "Шукати гілки…"
 
 #: ui/shared/views/ThreadListView.cpp:499
 msgid " (unread)"
-msgstr ""
+msgstr " (непрочитано)"
 
 #: ui/shared/views/UserInfo.cpp:55
 msgid "Set status"
-msgstr ""
+msgstr "Установити статус"
 
 #: ui/shared/views/UserInfo.cpp:398
 msgid "Click to set status"
-msgstr ""
+msgstr "Клацніть, щоб установити статус"
 
 #: ui/shared/views/UserProfilePanel.cpp:29
 msgid "View avatar"
-msgstr ""
+msgstr "Переглянути аватар"
 
 #: ui/shared/views/UserProfilePanel.cpp:38
 msgid "×"
-msgstr ""
+msgstr "×"
 
 #: ui/shared/views/UserProfilePanel.cpp:41
 #: ui/shared/views/UserProfilePanel.cpp:136
@@ -4435,7 +4471,7 @@ msgstr "Повідомлення"
 
 #: ui/shared/views/UserProfilePanel.cpp:44
 msgid "Ignore"
-msgstr ""
+msgstr "Ігнорувати"
 
 #: ui/shared/views/UserProfilePanel.cpp:52
 #: ui/shared/views/UserProfilePanel.cpp:197
@@ -4450,11 +4486,11 @@ msgstr "Відкрити особистий чат"
 #: ui/shared/views/settings/DevicesSection.cpp:122
 #: ui/shared/views/settings/DevicesSection.cpp:325
 msgid "Verified"
-msgstr ""
+msgstr "Перевірено"
 
 #: ui/shared/views/UserProfilePanel.cpp:195
 msgid "Not verified"
-msgstr ""
+msgstr "Не перевірено"
 
 #: ui/shared/views/UserProfilePanel.cpp:196
 msgid "Not verified · verify this device first"
@@ -4462,36 +4498,36 @@ msgstr "Не перевірено · спочатку перевірте цей 
 
 #: ui/shared/views/UserProfilePanel.cpp:202
 msgid "Verified identity was reset"
-msgstr ""
+msgstr "Перевірені дані особи скинуто"
 
 #: ui/shared/views/UserProfilePanel.cpp:327
 msgid "In a call"
-msgstr ""
+msgstr "У виклику"
 
 #: ui/shared/views/UserProfilePanel.cpp:336
 #: ui/shared/views/settings/AccountSection.cpp:771
 msgid "Pronouns"
-msgstr ""
+msgstr "Займенники"
 
 #: ui/shared/views/UserProfilePanel.cpp:337
 #: ui/shared/views/settings/AccountSection.cpp:518
 msgid "Timezone"
-msgstr ""
+msgstr "Часовий пояс"
 
 #: ui/shared/views/UserProfilePanel.cpp:338
 #: ui/shared/views/settings/AccountSection.cpp:518
 msgid "Bio"
-msgstr ""
+msgstr "Про себе"
 
 #: ui/shared/views/UserProfilePanel.cpp:339
 #: ui/shared/views/settings/AccountSection.cpp:791
 msgid "Status"
-msgstr ""
+msgstr "Статус"
 
 #: ui/shared/views/UserProfilePanel.cpp:340
 #: ui/shared/views/settings/AdvancedSection.cpp:51
 msgid "Activity"
-msgstr ""
+msgstr "Активність"
 
 #: ui/shared/views/VideoViewerOverlay.cpp:466
 msgid "Unable to play video"
@@ -4499,17 +4535,17 @@ msgstr "Не вдалося відтворити відео"
 
 #: ui/shared/views/VideoViewerOverlay.cpp:482
 msgid "Use ⬇ to download and play in an external player"
-msgstr ""
+msgstr "Натисніть ⬇, щоб завантажити й відтворити у зовнішньому програвачі"
 
 #: ui/shared/views/VideoViewerOverlay.cpp:595
 #, c++-format
 msgid "Playback speed: {0}"
-msgstr ""
+msgstr "Швидкість відтворення: {0}"
 
 #: ui/shared/views/media_utils.h:137
 #: ui/shared/views/settings/RoomSecuritySection.cpp:125
 msgid "Knock+Restricted"
-msgstr ""
+msgstr "Запит на приєднання й обмежений доступ"
 
 #: ui/shared/views/media_utils.h:141
 #: ui/shared/views/settings/RoomSecuritySection.cpp:38
@@ -4519,37 +4555,37 @@ msgstr "Лише за запрошенням"
 #: ui/shared/views/media_utils.h:147
 #: ui/shared/views/settings/DevicesSection.cpp:323
 msgid "Unknown"
-msgstr ""
+msgstr "Невідомо"
 
 #: ui/shared/views/room_chip_strip.cpp:86
 msgid "Unnamed"
-msgstr ""
+msgstr "Без назви"
 
 #: ui/shared/views/settings/AboutSection.cpp:56
 #, c++-format
 msgid "Hits: {0}  ·  Misses: {1}"
-msgstr ""
+msgstr "Влучань: {0}  ·  Промахів: {1}"
 
 #: ui/shared/views/settings/AboutSection.cpp:61
 #, c++-format
 msgid "Hits: {0}  ·  Misses: {1}  ({2}% hit rate)"
-msgstr ""
+msgstr "Влучань: {0}  ·  Промахів: {1}  (частка влучань: {2}%)"
 
 #: ui/shared/views/settings/AboutSection.cpp:311
 msgid "Storage"
-msgstr ""
+msgstr "Сховище"
 
 #: ui/shared/views/settings/AboutSection.cpp:312
 msgid "In-memory cache"
-msgstr ""
+msgstr "Кеш у пам’яті"
 
 #: ui/shared/views/settings/AboutSection.cpp:313
 msgid "Local cache"
-msgstr ""
+msgstr "Локальний кеш"
 
 #: ui/shared/views/settings/AboutSection.cpp:314
 msgid "SDK store"
-msgstr ""
+msgstr "Сховище SDK"
 
 #: ui/shared/views/settings/AboutSection.cpp:316
 msgid "Clear all caches"
@@ -4561,26 +4597,26 @@ msgstr "Відображуване ім’я"
 
 #: ui/shared/views/settings/AccountSection.cpp:540
 msgid "Short biography"
-msgstr ""
+msgstr "Коротка біографія"
 
 #: ui/shared/views/settings/AdvancedSection.cpp:20
 msgid "Use historical MSC2545 compatibility"
-msgstr ""
+msgstr "Використовувати сумісність зі старою версією MSC2545"
 
 #: ui/shared/views/settings/AdvancedSection.cpp:31
 msgid ""
 "When enabled, reads unstable-named MSC2545 fields from account data in "
 "addition to the stable names, and enables your personal image pack. Disable "
 "for strict stable-name-only behavior."
-msgstr ""
+msgstr "Якщо ввімкнено, окрім стабільних назв з даних облікового запису читаються поля MSC2545 з нестабільними назвами, а також стає доступним ваш особистий набір зображень. Вимкніть, щоб використовувати лише стабільні назви."
 
 #: ui/shared/views/settings/AdvancedSection.cpp:41
 msgid "Developer"
-msgstr ""
+msgstr "Для розробників"
 
 #: ui/shared/views/settings/AdvancedSection.cpp:44
 msgid "Enable developer mode"
-msgstr ""
+msgstr "Увімкнути режим розробника"
 
 #: ui/shared/views/settings/AdvancedSection.cpp:53
 msgid "Open Activity Monitor"
@@ -4588,7 +4624,7 @@ msgstr "Відкрити Монітор активності"
 
 #: ui/shared/views/settings/AdvancedSection.cpp:58
 msgid "Diagnostics"
-msgstr ""
+msgstr "Діагностика"
 
 #: ui/shared/views/settings/AdvancedSection.cpp:61
 msgid "Save a local crash report if the app crashes"
@@ -4599,21 +4635,21 @@ msgid ""
 "When enabled, a plain-text stack trace is written to a file on this device "
 "if the app crashes. Nothing is sent anywhere automatically — you can find "
 "and share the file yourself if you want to report a bug."
-msgstr ""
+msgstr "Якщо ввімкнено, у разі аварійного завершення програми на цьому пристрої у файл записується звичайний текстовий трасувальний звіт. Нічого не надсилається автоматично — за бажання повідомити про помилку ви можете самостійно знайти цей файл і поділитися ним."
 
 #: ui/shared/views/settings/AppearanceSection.cpp:32
 msgid "Your own messages appear on the right, in a subtle rounded bubble."
-msgstr ""
+msgstr "Ваші повідомлення відображаються праворуч у стриманій заокругленій бульбашці."
 
 #: ui/shared/views/settings/AppearanceSection.cpp:35
 msgid ""
 "A monospaced, mIRC-style timeline: every line is \"[time] <nick>\" with a "
 "colour per person."
-msgstr ""
+msgstr "Моноширинна часова шкала в стилі mIRC: кожен рядок має формат «[час] <нікнейм>» і колір для кожного користувача."
 
 #: ui/shared/views/settings/AppearanceSection.cpp:40
 msgid "Every message is flush left, with the sender's avatar in the gutter."
-msgstr ""
+msgstr "Усі повідомлення вирівняно ліворуч, а аватар відправника розміщено збоку."
 
 #: ui/shared/views/settings/AppearanceSection.cpp:215
 msgid "Light"
@@ -4629,11 +4665,11 @@ msgstr "Тема"
 
 #: ui/shared/views/settings/AppearanceSection.cpp:421
 msgid "Accent color"
-msgstr ""
+msgstr "Колір акценту"
 
 #: ui/shared/views/settings/AppearanceSection.cpp:440
 msgid "Layout"
-msgstr ""
+msgstr "Макет"
 
 #: ui/shared/views/settings/AppearanceSection.cpp:443
 msgid "Message layout"
@@ -4641,15 +4677,15 @@ msgstr "Макет повідомлень"
 
 #: ui/shared/views/settings/AppearanceSection.cpp:456
 msgid "Classic"
-msgstr ""
+msgstr "Класичний"
 
 #: ui/shared/views/settings/AppearanceSection.cpp:457
 msgid "Bubbles"
-msgstr ""
+msgstr "Бульбашки"
 
 #: ui/shared/views/settings/AppearanceSection.cpp:458
 msgid "IRC"
-msgstr ""
+msgstr "IRC"
 
 #: ui/shared/views/settings/AppearanceSection.cpp:489
 msgid "Room list"
@@ -4657,39 +4693,39 @@ msgstr "Список кімнат"
 
 #: ui/shared/views/settings/AppearanceSection.cpp:492
 msgid "Group unread rooms"
-msgstr ""
+msgstr "Групувати кімнати з непрочитаними повідомленнями"
 
 #: ui/shared/views/settings/AppearanceSection.cpp:500
 msgid "Group inactive rooms"
-msgstr ""
+msgstr "Групувати неактивні кімнати"
 
 #: ui/shared/views/settings/AppearanceSection.cpp:509
 msgid "1 week"
-msgstr ""
+msgstr "1 тиждень"
 
 #: ui/shared/views/settings/AppearanceSection.cpp:510
 msgid "2 weeks"
-msgstr ""
+msgstr "2 тижні"
 
 #: ui/shared/views/settings/AppearanceSection.cpp:511
 msgid "1 month"
-msgstr ""
+msgstr "1 місяць"
 
 #: ui/shared/views/settings/AppearanceSection.cpp:512
 msgid "3 months"
-msgstr ""
+msgstr "3 місяці"
 
 #: ui/shared/views/settings/AppearanceSection.cpp:513
 msgid "6 months"
-msgstr ""
+msgstr "6 місяців"
 
 #: ui/shared/views/settings/AppearanceSection.cpp:527
 msgid "Scroll to rooms with new messages"
-msgstr ""
+msgstr "Прокручувати до кімнат із новими повідомленнями"
 
 #: ui/shared/views/settings/AppearanceSection.cpp:537
 msgid "Timeline"
-msgstr ""
+msgstr "Часова шкала"
 
 #: ui/shared/views/settings/AppearanceSection.cpp:540
 msgid "Show room join/leave events"
@@ -4697,7 +4733,7 @@ msgstr "Показувати події приєднання до кімнати
 
 #: ui/shared/views/settings/AppearanceSection.cpp:548
 msgid "Animate avatars"
-msgstr ""
+msgstr "Анімувати аватари"
 
 #: ui/shared/views/settings/AppearanceSection.cpp:556
 msgid "Show status emoji next to names"
@@ -4705,25 +4741,25 @@ msgstr "Показувати емодзі статусу поруч з імен�
 
 #: ui/shared/views/settings/DevicesSection.cpp:39
 msgid "never"
-msgstr ""
+msgstr "ніколи"
 
 #: ui/shared/views/settings/DevicesSection.cpp:46
 msgid "in the future"
-msgstr ""
+msgstr "у майбутньому"
 
 #: ui/shared/views/settings/DevicesSection.cpp:53
 msgid "just now"
-msgstr ""
+msgstr "щойно"
 
 #: ui/shared/views/settings/DevicesSection.cpp:63
 #, c++-format
 msgid "{0}mo"
-msgstr ""
+msgstr "{0} міс."
 
 #: ui/shared/views/settings/DevicesSection.cpp:116
 #: ui/shared/views/settings/DevicesSection.cpp:309
 msgid "(no name)"
-msgstr ""
+msgstr "(без назви)"
 
 #: ui/shared/views/settings/DevicesSection.cpp:119
 #: ui/shared/views/settings/DevicesSection.cpp:335
@@ -4733,7 +4769,7 @@ msgstr "Цей пристрій"
 #: ui/shared/views/settings/DevicesSection.cpp:125
 #: ui/shared/views/settings/DevicesSection.cpp:328
 msgid "Unverified"
-msgstr ""
+msgstr "Не перевірено"
 
 #: ui/shared/views/settings/DevicesSection.cpp:189
 msgid "Open in browser"
@@ -4741,15 +4777,15 @@ msgstr "Відкрити у браузері"
 
 #: ui/shared/views/settings/DevicesSection.cpp:198
 msgid "I've confirmed"
-msgstr ""
+msgstr "Я підтвердив(-ла)"
 
 #: ui/shared/views/settings/DevicesSection.cpp:342
 msgid "Complete sign-out in the browser, then click \"I've confirmed\"."
-msgstr ""
+msgstr "Завершіть вихід у браузері, а потім натисніть «Я підтвердив(-ла)»."
 
 #: ui/shared/views/settings/DevicesSection.cpp:356
 msgid "Working…"
-msgstr ""
+msgstr "Виконується…"
 
 #: ui/shared/views/settings/DevicesSection.cpp:554
 msgid "Loading sessions…"
@@ -4763,42 +4799,42 @@ msgstr "Немає сеансів."
 msgid ""
 "No system tray icon is available on this system, so closing the window "
 "always quits Tesseract."
-msgstr ""
+msgstr "У цій системі немає піктограми системного лотка, тому закриття вікна завжди завершує роботу Tesseract."
 
 #: ui/shared/views/settings/GeneralSection.cpp:30
 msgid "Closing the window quits Tesseract."
-msgstr ""
+msgstr "Закриття вікна завершує роботу Tesseract."
 
 #: ui/shared/views/settings/GeneralSection.cpp:32
 msgid "Closing the window minimizes Tesseract to the taskbar."
-msgstr ""
+msgstr "Закриття вікна згортає Tesseract до панелі завдань."
 
 #: ui/shared/views/settings/GeneralSection.cpp:37
 msgid ""
 "Closing the window hides it to the system tray. Tesseract keeps running - "
 "use the tray icon's Quit menu item to exit."
-msgstr ""
+msgstr "Закриття вікна приховує його в системному лотку. Tesseract продовжує працювати — щоб завершити роботу, виберіть у меню піктограми пункт «Вийти»."
 
 #: ui/shared/views/settings/GeneralSection.cpp:70
 msgid ""
 "Background prefetching, search indexing and bridge checks are always paused. "
 "Message sync and encryption are never affected."
-msgstr ""
+msgstr "Попереднє завантаження у фоновому режимі, індексування пошуку й перевірка мостів завжди призупинені. Синхронізація повідомлень і шифрування не зачіпаються."
 
 #: ui/shared/views/settings/GeneralSection.cpp:74
 msgid "Background work always runs, even on battery."
-msgstr ""
+msgstr "Фонові завдання виконуються завжди, навіть від акумулятора."
 
 #: ui/shared/views/settings/GeneralSection.cpp:78
 msgid ""
 "Pauses background prefetching, search indexing and bridge checks while on "
 "battery or when the system energy saver is on. Message sync and encryption "
 "are never affected."
-msgstr ""
+msgstr "Призупиняє попереднє завантаження у фоновому режимі, індексування пошуку й перевірку мостів, коли пристрій працює від акумулятора або ввімкнено режим заощадження енергії. Синхронізація повідомлень і шифрування не зачіпаються."
 
 #: ui/shared/views/settings/GeneralSection.cpp:89
 msgid "Startup"
-msgstr ""
+msgstr "Запуск"
 
 #: ui/shared/views/settings/GeneralSection.cpp:92
 msgid "Launch Tesseract when you log in"
@@ -4806,32 +4842,32 @@ msgstr "Запускати Tesseract після входу до системи"
 
 #: ui/shared/views/settings/GeneralSection.cpp:100
 msgid "Start minimized to system tray"
-msgstr ""
+msgstr "Запускати згорнутим у системний лоток"
 
 #: ui/shared/views/settings/GeneralSection.cpp:108
 msgid "When I close the window"
-msgstr ""
+msgstr "Коли я закриваю вікно"
 
 #: ui/shared/views/settings/GeneralSection.cpp:133
 msgid "Power"
-msgstr ""
+msgstr "Живлення"
 
 #: ui/shared/views/settings/GeneralSection.cpp:139
 msgid "Low power mode"
-msgstr ""
+msgstr "Режим енергозбереження"
 
 #: ui/shared/views/settings/GeneralSection.cpp:143
 #: ui/shared/views/settings/LanguageSection.cpp:18
 msgid "Auto"
-msgstr ""
+msgstr "Автоматично"
 
 #: ui/shared/views/settings/GeneralSection.cpp:144
 msgid "On"
-msgstr ""
+msgstr "Увімкнено"
 
 #: ui/shared/views/settings/GeneralSection.cpp:184
 msgid "Minimize to taskbar"
-msgstr ""
+msgstr "Згорнути до панелі завдань"
 
 #: ui/shared/views/settings/GeneralSection.cpp:188
 msgid "Hide to system tray"
@@ -4839,11 +4875,11 @@ msgstr "Згорнути до системного лотка"
 
 #: ui/shared/views/settings/ImagePacksSection.cpp:13
 msgid "Your Sticker Pack"
-msgstr ""
+msgstr "Ваш набір стікерів"
 
 #: ui/shared/views/settings/ImagePacksSection.cpp:37
 msgid "Subscribed Packs"
-msgstr ""
+msgstr "Набори, на які ви підписалися"
 
 #: ui/shared/views/settings/KnownPacksList.cpp:30
 msgid "No image packs found yet."
@@ -4852,56 +4888,56 @@ msgstr "Наборів зображень ще не знайдено."
 #: ui/shared/views/settings/LanguageSection.cpp:19
 #: ui/shared/views/settings/bcp47_languages.h:72
 msgid "English"
-msgstr ""
+msgstr "Англійська"
 
 #: ui/shared/views/settings/LanguageSection.cpp:20
 #: ui/shared/views/settings/bcp47_languages.h:183
 msgid "Spanish"
-msgstr ""
+msgstr "Іспанська"
 
 #: ui/shared/views/settings/LanguageSection.cpp:21
 #: ui/shared/views/settings/bcp47_languages.h:81
 msgid "French"
-msgstr ""
+msgstr "Французька"
 
 #: ui/shared/views/settings/LanguageSection.cpp:22
 #: ui/shared/views/settings/bcp47_languages.h:88
 msgid "German"
-msgstr ""
+msgstr "Німецька"
 
 #: ui/shared/views/settings/LanguageSection.cpp:33
 msgid "Changes take effect after restart."
-msgstr ""
+msgstr "Зміни набудуть чинності після перезапуску."
 
 #: ui/shared/views/settings/LanguageSection.cpp:39
 msgid "Restart now"
-msgstr ""
+msgstr "Перезапустити зараз"
 
 #: ui/shared/views/settings/MediaSection.cpp:46
 #: ui/shared/views/settings/MediaSection.cpp:100
 #: ui/shared/views/settings/MediaSection.cpp:108
 #: ui/shared/views/settings/MediaSection.cpp:116
 msgid "System default"
-msgstr ""
+msgstr "Системні налаштування"
 
 #: ui/shared/views/settings/MediaSection.cpp:58
 #: ui/shared/views/settings/RoomMediaSection.cpp:44
 msgid "Media previews"
-msgstr ""
+msgstr "Попередній перегляд медіа"
 
 #: ui/shared/views/settings/MediaSection.cpp:62
 #: ui/shared/views/settings/RoomMediaSection.cpp:49
 msgid "Always"
-msgstr ""
+msgstr "Завжди"
 
 #: ui/shared/views/settings/MediaSection.cpp:63
 msgid "In private rooms only"
-msgstr ""
+msgstr "Лише у приватних кімнатах"
 
 #: ui/shared/views/settings/MediaSection.cpp:64
 #: ui/shared/views/settings/RoomMediaSection.cpp:50
 msgid "Never"
-msgstr ""
+msgstr "Ніколи"
 
 #: ui/shared/views/settings/MediaSection.cpp:75
 msgid "Show avatars in invites"
@@ -4909,11 +4945,11 @@ msgstr "Показувати аватари у запрошеннях"
 
 #: ui/shared/views/settings/MediaSection.cpp:87
 msgid "Pre-load full images while scrolling"
-msgstr ""
+msgstr "Завантажувати зображення повністю під час прокручування"
 
 #: ui/shared/views/settings/MediaSection.cpp:95
 msgid "Capture devices"
-msgstr ""
+msgstr "Пристрої захоплення"
 
 #: ui/shared/views/settings/MediaSection.cpp:105
 msgid "Microphone"
@@ -4921,7 +4957,7 @@ msgstr "Мікрофон"
 
 #: ui/shared/views/settings/MediaSection.cpp:113
 msgid "Speaker"
-msgstr ""
+msgstr "Динамік"
 
 #: ui/shared/views/settings/MediaSection.cpp:121
 msgid "Camera"
@@ -4929,15 +4965,15 @@ msgstr "Камера"
 
 #: ui/shared/views/settings/MessageLayoutPreview.cpp:36
 msgid "Alex"
-msgstr ""
+msgstr "Олексій"
 
 #: ui/shared/views/settings/MessageLayoutPreview.cpp:37
 msgid "Hello my friend!"
-msgstr ""
+msgstr "Привіт, друже!"
 
 #: ui/shared/views/settings/MessageLayoutPreview.cpp:46
 msgid "Hi! How are you?"
-msgstr ""
+msgstr "Привіт! Як справи?"
 
 #: ui/shared/views/settings/NotificationsSection.cpp:64
 #, c++-format
@@ -4958,23 +4994,23 @@ msgstr "Показувати попередній перегляд зображ�
 
 #: ui/shared/views/settings/NotificationsSection.cpp:167
 msgid "Mentions & Keywords"
-msgstr ""
+msgstr "Згадки й ключові слова"
 
 #: ui/shared/views/settings/NotificationsSection.cpp:175
 msgid "Notify me for @mentions"
-msgstr ""
+msgstr "Сповіщати мене про @згадки"
 
 #: ui/shared/views/settings/NotificationsSection.cpp:183
 msgid "Notify me when @room is used"
-msgstr ""
+msgstr "Сповіщати мене, коли використовують @room"
 
 #: ui/shared/views/settings/NotificationsSection.cpp:191
 msgid "Notify me for all messages"
-msgstr ""
+msgstr "Сповіщати мене про всі повідомлення"
 
 #: ui/shared/views/settings/NotificationsSection.cpp:199
 msgid "Notify on keywords"
-msgstr ""
+msgstr "Сповіщати про ключові слова"
 
 #: ui/shared/views/settings/NotificationsSection.cpp:210
 msgid "Add a keyword…"
@@ -4986,7 +5022,7 @@ msgstr "Додати"
 
 #: ui/shared/views/settings/PrivacySection.cpp:65
 msgid "Presence"
-msgstr ""
+msgstr "Присутність"
 
 #: ui/shared/views/settings/PrivacySection.cpp:68
 msgid "Send and receive presence status"
@@ -5002,21 +5038,21 @@ msgid ""
 "send it as an interactive location instead of plain text. Resolving some "
 "link formats (shortlinks) requires an outbound network request to the maps "
 "provider before sending."
-msgstr ""
+msgstr "Якщо створене повідомлення містить лише посилання Google Maps або OpenStreetMap, надіслати його як інтерактивне місцезнаходження, а не звичайний текст. Для розпізнавання деяких форматів посилань (коротких посилань) перед надсиланням потрібен вихідний мережевий запит до постачальника карт."
 
 #: ui/shared/views/settings/PrivacySection.cpp:104
 msgid "Link previews"
-msgstr ""
+msgstr "Попередній перегляд посилань"
 
 #: ui/shared/views/settings/PrivacySection.cpp:109
 msgid ""
 "Your homeserver doesn't provide link previews, so links you receive won't "
 "show a preview."
-msgstr ""
+msgstr "Ваш домашній сервер не надає попередній перегляд посилань, тому отримані вами посилання не матимуть попереднього перегляду."
 
 #: ui/shared/views/settings/PrivacySection.cpp:117
 msgid "Include link previews in messages I send"
-msgstr ""
+msgstr "Додавати попередній перегляд посилань до моїх повідомлень"
 
 #: ui/shared/views/settings/PrivacySection.cpp:121
 msgid "Fetch link previews directly instead of through my homeserver"
@@ -5028,14 +5064,14 @@ msgid ""
 "preview of each link and attach it to the message, so recipients see it "
 "without fetching it themselves. Sending such messages can take a few seconds "
 "longer."
-msgstr ""
+msgstr "Перед надсиланням повідомлення з посиланнями запитувати домашній сервер про попередній перегляд кожного посилання й додавати його до повідомлення, щоб отримувачі бачили перегляд без самостійного завантаження. Надсилання таких повідомлень може тривати на кілька секунд довше."
 
 #: ui/shared/views/settings/PrivacySection.cpp:160
 msgid ""
 "Fetch the linked pages from this device instead of asking your homeserver, "
 "falling back to the homeserver if that fails. Every site you link will see "
 "your IP address. Addresses on your local network are never fetched."
-msgstr ""
+msgstr "Завантажувати пов’язані сторінки з цього пристрою, а не запитувати домашній сервер; якщо це не вдасться, використовувати домашній сервер. Кожен сайт, на який ви посилаєтеся, бачитиме вашу IP-адресу. Адреси у вашій локальній мережі ніколи не завантажуються."
 
 #: ui/shared/views/settings/PrivacySection.cpp:176
 msgid "Index messages for search (stores decrypted text on this device)"
@@ -5044,7 +5080,7 @@ msgstr "Індексувати повідомлення для пошуку (р�
 #: ui/shared/views/settings/PrivacySection.cpp:186
 #: ui/shared/views/settings/PrivacySection.cpp:322
 msgid "Indexing your messages…"
-msgstr ""
+msgstr "Індексування ваших повідомлень…"
 
 #: ui/shared/views/settings/PrivacySection.cpp:210
 msgid "Updates"
@@ -5061,7 +5097,7 @@ msgstr "Шифрування"
 
 #: ui/shared/views/settings/PrivacySection.cpp:225
 msgid "Exclude insecure devices (takes effect after restart)"
-msgstr ""
+msgstr "Виключити незахищені пристрої (набуде чинності після перезапуску)"
 
 #: ui/shared/views/settings/PrivacySection.cpp:237
 msgid ""
@@ -5069,41 +5105,41 @@ msgid ""
 "messages sent from devices that aren't. This device must be verified to "
 "send, and people whose clients don't verify their devices won't see your "
 "messages."
-msgstr ""
+msgstr "Надсилати зашифровані повідомлення лише на пристрої, які перевірив їхній власник, і приховувати повідомлення з неперевірених пристроїв. Щоб надсилати повідомлення, цей пристрій має бути перевірено; люди, чиї клієнти не перевіряють пристрої, не бачитимуть ваших повідомлень."
 
 #: ui/shared/views/settings/PrivacySection.cpp:249
 msgid "Export room keys…"
-msgstr ""
+msgstr "Експортувати ключі кімнат…"
 
 #: ui/shared/views/settings/PrivacySection.cpp:253
 msgid "Import room keys…"
-msgstr ""
+msgstr "Імпортувати ключі кімнат…"
 
 #: ui/shared/views/settings/PrivacySection.cpp:257
 msgid "Reset encryption…"
-msgstr ""
+msgstr "Скинути шифрування…"
 
 #: ui/shared/views/settings/PrivacySection.cpp:327
 msgid "up to date"
-msgstr ""
+msgstr "актуально"
 
 #: ui/shared/views/settings/PrivacySection.cpp:327
 msgid "indexing…"
-msgstr ""
+msgstr "індексування…"
 
 #: ui/shared/views/settings/PrivacySection.cpp:329
 #, c++-format
 msgid "{0} messages across {1} rooms · {2}"
-msgstr ""
+msgstr "Повідомлень: {0} у кімнатах: {1} · {2}"
 
 #: ui/shared/views/settings/PrivacySection.cpp:343
 #, c++-format
 msgid "Covers messages since {0}"
-msgstr ""
+msgstr "Охоплює повідомлення від {0}"
 
 #: ui/shared/views/settings/PronounsEditor.cpp:60
 msgid "Pronouns (e.g. she/her)"
-msgstr ""
+msgstr "Займенники (наприклад, вона/її)"
 
 #: ui/shared/views/settings/PronounsEditor.cpp:83
 msgid "Remove pronoun language"
@@ -5111,11 +5147,11 @@ msgstr "Вилучити мову займенників"
 
 #: ui/shared/views/settings/PronounsEditor.cpp:91
 msgid "+ Add language"
-msgstr ""
+msgstr "+ Додати мову"
 
 #: ui/shared/views/settings/RoomBridgeSection.cpp:15
 msgid "Bridge Detection"
-msgstr ""
+msgstr "Виявлення мостів"
 
 #: ui/shared/views/settings/RoomBridgeSection.cpp:19
 msgid ""
@@ -5123,11 +5159,11 @@ msgid ""
 "found a bridge indicator (MSC2346) published by a bridge bot in the room. "
 "That indicator isn't always published correctly, so if this room isn't "
 "actually bridged, turn the override on below to stop treating it as one."
-msgstr ""
+msgstr "Tesseract позначив цю кімнату як підключену до іншої мережі чату через виявлений індикатор моста (MSC2346), опублікований ботом-мостом у кімнаті. Цей індикатор не завжди публікується правильно, тому, якщо кімнату насправді не підключено до моста, увімкніть наведене нижче перевизначення, щоб не вважати її підключеною."
 
 #: ui/shared/views/settings/RoomBridgeSection.cpp:30
 msgid "This room isn't actually bridged"
-msgstr ""
+msgstr "Цю кімнату насправді не підключено до моста"
 
 #: ui/shared/views/settings/RoomGeneralSection.cpp:281
 msgid "Copy room ID"
@@ -5139,7 +5175,7 @@ msgstr "ID кімнати"
 
 #: ui/shared/views/settings/RoomGeneralSection.cpp:334
 msgid "Name"
-msgstr ""
+msgstr "Назва"
 
 #: ui/shared/views/settings/RoomGeneralSection.cpp:369
 msgid "Room Address"
@@ -5147,24 +5183,24 @@ msgstr "Адреса кімнати"
 
 #: ui/shared/views/settings/RoomMediaSection.cpp:48
 msgid "Use global default"
-msgstr ""
+msgstr "Використовувати загальне значення за замовчуванням"
 
 #: ui/shared/views/settings/RoomModerationSection.cpp:51
 #, c++-format
 msgid "Banned by {0}"
-msgstr ""
+msgstr "Заблокував(-ла): {0}"
 
 #: ui/shared/views/settings/RoomModerationSection.cpp:57
 msgid "Unban"
-msgstr ""
+msgstr "Зняти блокування"
 
 #: ui/shared/views/settings/RoomModerationSection.cpp:62
 msgid "Unban (you don't have permission to lift this ban)"
-msgstr ""
+msgstr "Зняти блокування (у вас немає дозволу скасувати це блокування)"
 
 #: ui/shared/views/settings/RoomModerationSection.cpp:73
 msgid "Banned users"
-msgstr ""
+msgstr "Заблоковані користувачі"
 
 #: ui/shared/views/settings/RoomModerationSection.cpp:145
 msgid "No banned users"
@@ -5172,33 +5208,33 @@ msgstr "Немає заблокованих користувачів"
 
 #: ui/shared/views/settings/RoomPermissionsSection.cpp:32
 msgid "Moderator"
-msgstr ""
+msgstr "Модератор"
 
 #: ui/shared/views/settings/RoomPermissionsSection.cpp:33
 msgid "Admin"
-msgstr ""
+msgstr "Адміністратор"
 
 #: ui/shared/views/settings/RoomPermissionsSection.cpp:38
 #, c++-format
 msgid "Custom ({0})"
-msgstr ""
+msgstr "Власне ({0})"
 
 #: ui/shared/views/settings/RoomPermissionsSection.cpp:49
 msgid "This change would prevent you from editing permissions again."
-msgstr ""
+msgstr "Унаслідок цієї зміни ви більше не зможете редагувати дозволи."
 
 #: ui/shared/views/settings/RoomPermissionsSection.cpp:61
 msgid ""
 "No one else in this room would be able to edit permissions if you did this."
-msgstr ""
+msgstr "Якщо ви це зробите, ніхто інший у цій кімнаті не зможе редагувати дозволи."
 
 #: ui/shared/views/settings/RoomPermissionsSection.cpp:78
 msgid "Default Role"
-msgstr ""
+msgstr "Роль за замовчуванням"
 
 #: ui/shared/views/settings/RoomPermissionsSection.cpp:82
 msgid "New members"
-msgstr ""
+msgstr "Нові учасники"
 
 #: ui/shared/views/settings/RoomPermissionsSection.cpp:86
 #: ui/shared/views/shortcut_registry.cpp:232
@@ -5215,7 +5251,7 @@ msgstr "Вилучати повідомлення, надіслані іншим
 
 #: ui/shared/views/settings/RoomPermissionsSection.cpp:97
 msgid "Membership"
-msgstr ""
+msgstr "Участь"
 
 #: ui/shared/views/settings/RoomPermissionsSection.cpp:101
 msgid "Invite users"
@@ -5223,11 +5259,11 @@ msgstr "Запрошувати користувачів"
 
 #: ui/shared/views/settings/RoomPermissionsSection.cpp:104
 msgid "Kick users"
-msgstr ""
+msgstr "Вилучати користувачів"
 
 #: ui/shared/views/settings/RoomPermissionsSection.cpp:107
 msgid "Ban users"
-msgstr ""
+msgstr "Блокувати користувачів"
 
 #: ui/shared/views/settings/RoomPermissionsSection.cpp:111
 msgid "Calls"
@@ -5235,19 +5271,19 @@ msgstr "Дзвінки"
 
 #: ui/shared/views/settings/RoomPermissionsSection.cpp:115
 msgid "Start calls"
-msgstr ""
+msgstr "Розпочинати виклики"
 
 #: ui/shared/views/settings/RoomPermissionsSection.cpp:123
 msgid "Change settings"
-msgstr ""
+msgstr "Змінювати налаштування"
 
 #: ui/shared/views/settings/RoomPermissionsSection.cpp:126
 msgid "Change permissions"
-msgstr ""
+msgstr "Змінювати дозволи"
 
 #: ui/shared/views/settings/RoomPermissionsSection.cpp:129
 msgid "Notify everyone (@room)"
-msgstr ""
+msgstr "Сповіщати всіх (@room)"
 
 #: ui/shared/views/settings/RoomSecuritySection.cpp:28
 msgid "Once enabled, encryption cannot be turned off."
@@ -5255,44 +5291,44 @@ msgstr "Після ввімкнення шифрування його не мо�
 
 #: ui/shared/views/settings/RoomSecuritySection.cpp:34
 msgid "Who can join"
-msgstr ""
+msgstr "Хто може приєднатися"
 
 #: ui/shared/views/settings/RoomSecuritySection.cpp:52
 msgid "Guest Access"
-msgstr ""
+msgstr "Доступ для гостей"
 
 #: ui/shared/views/settings/RoomSecuritySection.cpp:53
 msgid "Allow guests to join"
-msgstr ""
+msgstr "Дозволити гостям приєднуватися"
 
 #: ui/shared/views/settings/RoomSecuritySection.cpp:61
 msgid "History Visibility"
-msgstr ""
+msgstr "Видимість історії"
 
 #: ui/shared/views/settings/RoomSecuritySection.cpp:64
 msgid "Anyone"
-msgstr ""
+msgstr "Будь-хто"
 
 #: ui/shared/views/settings/RoomSecuritySection.cpp:65
 msgid "Members"
-msgstr ""
+msgstr "Учасники"
 
 #: ui/shared/views/settings/RoomSecuritySection.cpp:66
 msgid "Members (since invited)"
-msgstr ""
+msgstr "Учасники (від моменту запрошення)"
 
 #: ui/shared/views/settings/RoomSecuritySection.cpp:67
 msgid "Members (since joined)"
-msgstr ""
+msgstr "Учасники (від моменту приєднання)"
 
 #: ui/shared/views/settings/RoomSecuritySection.cpp:127
 #, c++-format
 msgid "{0} (managed elsewhere)"
-msgstr ""
+msgstr "{0} (керується в іншому місці)"
 
 #: ui/shared/views/settings/StatusEditor.cpp:26
 msgid "Choose status emoji"
-msgstr ""
+msgstr "Виберіть емодзі статусу"
 
 #: ui/shared/views/settings/StatusEditor.cpp:40
 msgid "Clear status emoji"
@@ -5300,968 +5336,968 @@ msgstr "Очистити емодзі статусу"
 
 #: ui/shared/views/settings/StatusEditor.cpp:45
 msgid "What's your status?"
-msgstr ""
+msgstr "Який у вас статус?"
 
 #: ui/shared/views/settings/TimezonePicker.cpp:31
 msgid "Timezone (e.g. Europe/London)"
-msgstr ""
+msgstr "Часовий пояс (наприклад, Europe/London)"
 
 #: ui/shared/views/settings/bcp47_languages.h:30
 msgid "Afar"
-msgstr ""
+msgstr "афарська"
 
 #: ui/shared/views/settings/bcp47_languages.h:31
 msgid "Abkhazian"
-msgstr ""
+msgstr "абхазька"
 
 #: ui/shared/views/settings/bcp47_languages.h:32
 msgid "Afrikaans"
-msgstr ""
+msgstr "африкаанс"
 
 #: ui/shared/views/settings/bcp47_languages.h:33
 msgid "Akan"
-msgstr ""
+msgstr "акан"
 
 #: ui/shared/views/settings/bcp47_languages.h:34
 msgid "Albanian"
-msgstr ""
+msgstr "албанська"
 
 #: ui/shared/views/settings/bcp47_languages.h:35
 msgid "Amharic"
-msgstr ""
+msgstr "амхарська"
 
 #: ui/shared/views/settings/bcp47_languages.h:36
 msgid "Arabic"
-msgstr ""
+msgstr "арабська"
 
 #: ui/shared/views/settings/bcp47_languages.h:37
 msgid "Aragonese"
-msgstr ""
+msgstr "арагонська"
 
 #: ui/shared/views/settings/bcp47_languages.h:38
 msgid "Armenian"
-msgstr ""
+msgstr "вірменська"
 
 #: ui/shared/views/settings/bcp47_languages.h:39
 msgid "Assamese"
-msgstr ""
+msgstr "асамська"
 
 #: ui/shared/views/settings/bcp47_languages.h:40
 msgid "Avaric"
-msgstr ""
+msgstr "аварська"
 
 #: ui/shared/views/settings/bcp47_languages.h:41
 msgid "Avestan"
-msgstr ""
+msgstr "авестійська"
 
 #: ui/shared/views/settings/bcp47_languages.h:42
 msgid "Aymara"
-msgstr ""
+msgstr "аймара"
 
 #: ui/shared/views/settings/bcp47_languages.h:43
 msgid "Azerbaijani"
-msgstr ""
+msgstr "азербайджанська"
 
 #: ui/shared/views/settings/bcp47_languages.h:44
 msgid "Bambara"
-msgstr ""
+msgstr "бамбара"
 
 #: ui/shared/views/settings/bcp47_languages.h:45
 msgid "Bashkir"
-msgstr ""
+msgstr "башкирська"
 
 #: ui/shared/views/settings/bcp47_languages.h:46
 msgid "Basque"
-msgstr ""
+msgstr "баскська"
 
 #: ui/shared/views/settings/bcp47_languages.h:47
 msgid "Belarusian"
-msgstr ""
+msgstr "білоруська"
 
 #: ui/shared/views/settings/bcp47_languages.h:48
 msgid "Bengali"
-msgstr ""
+msgstr "бенгальська"
 
 #: ui/shared/views/settings/bcp47_languages.h:49
 msgid "Bislama"
-msgstr ""
+msgstr "біслама"
 
 #: ui/shared/views/settings/bcp47_languages.h:50
 msgid "Bosnian"
-msgstr ""
+msgstr "боснійська"
 
 #: ui/shared/views/settings/bcp47_languages.h:51
 msgid "Breton"
-msgstr ""
+msgstr "бретонська"
 
 #: ui/shared/views/settings/bcp47_languages.h:52
 msgid "Bulgarian"
-msgstr ""
+msgstr "болгарська"
 
 #: ui/shared/views/settings/bcp47_languages.h:53
 msgid "Burmese"
-msgstr ""
+msgstr "бірманська"
 
 #: ui/shared/views/settings/bcp47_languages.h:54
 msgid "Catalan"
-msgstr ""
+msgstr "каталанська"
 
 #: ui/shared/views/settings/bcp47_languages.h:55
 msgid "Chamorro"
-msgstr ""
+msgstr "чаморро"
 
 #: ui/shared/views/settings/bcp47_languages.h:56
 msgid "Chechen"
-msgstr ""
+msgstr "чеченська"
 
 #: ui/shared/views/settings/bcp47_languages.h:57
 msgid "Chichewa"
-msgstr ""
+msgstr "ньянджа"
 
 #: ui/shared/views/settings/bcp47_languages.h:58
 msgid "Chinese"
-msgstr ""
+msgstr "китайська"
 
 #: ui/shared/views/settings/bcp47_languages.h:59
 msgid "Chinese (Simplified)"
-msgstr ""
+msgstr "китайська (спрощена)"
 
 #: ui/shared/views/settings/bcp47_languages.h:60
 msgid "Chinese (Traditional)"
-msgstr ""
+msgstr "китайська (традиційна)"
 
 #: ui/shared/views/settings/bcp47_languages.h:61
 msgid "Church Slavic"
-msgstr ""
+msgstr "церковнослов’янська"
 
 #: ui/shared/views/settings/bcp47_languages.h:62
 msgid "Chuvash"
-msgstr ""
+msgstr "чуваська"
 
 #: ui/shared/views/settings/bcp47_languages.h:63
 msgid "Cornish"
-msgstr ""
+msgstr "корнська"
 
 #: ui/shared/views/settings/bcp47_languages.h:64
 msgid "Corsican"
-msgstr ""
+msgstr "корсиканська"
 
 #: ui/shared/views/settings/bcp47_languages.h:65
 msgid "Cree"
-msgstr ""
+msgstr "крі"
 
 #: ui/shared/views/settings/bcp47_languages.h:66
 msgid "Croatian"
-msgstr ""
+msgstr "хорватська"
 
 #: ui/shared/views/settings/bcp47_languages.h:67
 msgid "Czech"
-msgstr ""
+msgstr "чеська"
 
 #: ui/shared/views/settings/bcp47_languages.h:68
 msgid "Danish"
-msgstr ""
+msgstr "данська"
 
 #: ui/shared/views/settings/bcp47_languages.h:69
 msgid "Divehi"
-msgstr ""
+msgstr "дівехі"
 
 #: ui/shared/views/settings/bcp47_languages.h:70
 msgid "Dutch"
-msgstr ""
+msgstr "нідерландська"
 
 #: ui/shared/views/settings/bcp47_languages.h:71
 msgid "Dzongkha"
-msgstr ""
+msgstr "дзонг-ке"
 
 #: ui/shared/views/settings/bcp47_languages.h:73
 msgid "English (UK)"
-msgstr ""
+msgstr "англійська (Велика Британія)"
 
 #: ui/shared/views/settings/bcp47_languages.h:74
 msgid "English (US)"
-msgstr ""
+msgstr "англійська (США)"
 
 #: ui/shared/views/settings/bcp47_languages.h:75
 msgid "Esperanto"
-msgstr ""
+msgstr "есперанто"
 
 #: ui/shared/views/settings/bcp47_languages.h:76
 msgid "Estonian"
-msgstr ""
+msgstr "естонська"
 
 #: ui/shared/views/settings/bcp47_languages.h:77
 msgid "Ewe"
-msgstr ""
+msgstr "еве"
 
 #: ui/shared/views/settings/bcp47_languages.h:78
 msgid "Faroese"
-msgstr ""
+msgstr "фарерська"
 
 #: ui/shared/views/settings/bcp47_languages.h:79
 msgid "Fijian"
-msgstr ""
+msgstr "фіджійська"
 
 #: ui/shared/views/settings/bcp47_languages.h:80
 msgid "Finnish"
-msgstr ""
+msgstr "фінська"
 
 #: ui/shared/views/settings/bcp47_languages.h:82
 msgid "Western Frisian"
-msgstr ""
+msgstr "західнофризька"
 
 #: ui/shared/views/settings/bcp47_languages.h:83
 msgid "Fulah"
-msgstr ""
+msgstr "фула"
 
 #: ui/shared/views/settings/bcp47_languages.h:84
 msgid "Scottish Gaelic"
-msgstr ""
+msgstr "шотландська гельська"
 
 #: ui/shared/views/settings/bcp47_languages.h:85
 msgid "Galician"
-msgstr ""
+msgstr "галісійська"
 
 #: ui/shared/views/settings/bcp47_languages.h:86
 msgid "Ganda"
-msgstr ""
+msgstr "ганда"
 
 #: ui/shared/views/settings/bcp47_languages.h:87
 msgid "Georgian"
-msgstr ""
+msgstr "грузинська"
 
 #: ui/shared/views/settings/bcp47_languages.h:89
 msgid "Greek"
-msgstr ""
+msgstr "грецька"
 
 #: ui/shared/views/settings/bcp47_languages.h:90
 msgid "Kalaallisut"
-msgstr ""
+msgstr "калааллісут"
 
 #: ui/shared/views/settings/bcp47_languages.h:91
 msgid "Guarani"
-msgstr ""
+msgstr "гуарані"
 
 #: ui/shared/views/settings/bcp47_languages.h:92
 msgid "Gujarati"
-msgstr ""
+msgstr "гуджараті"
 
 #: ui/shared/views/settings/bcp47_languages.h:93
 msgid "Haitian Creole"
-msgstr ""
+msgstr "гаїтянська креольська"
 
 #: ui/shared/views/settings/bcp47_languages.h:94
 msgid "Hausa"
-msgstr ""
+msgstr "хауса"
 
 #: ui/shared/views/settings/bcp47_languages.h:95
 msgid "Hebrew"
-msgstr ""
+msgstr "іврит"
 
 #: ui/shared/views/settings/bcp47_languages.h:96
 msgid "Herero"
-msgstr ""
+msgstr "гереро"
 
 #: ui/shared/views/settings/bcp47_languages.h:97
 msgid "Hindi"
-msgstr ""
+msgstr "гінді"
 
 #: ui/shared/views/settings/bcp47_languages.h:98
 msgid "Hiri Motu"
-msgstr ""
+msgstr "гірі-моту"
 
 #: ui/shared/views/settings/bcp47_languages.h:99
 msgid "Hungarian"
-msgstr ""
+msgstr "угорська"
 
 #: ui/shared/views/settings/bcp47_languages.h:100
 msgid "Icelandic"
-msgstr ""
+msgstr "ісландська"
 
 #: ui/shared/views/settings/bcp47_languages.h:101
 msgid "Ido"
-msgstr ""
+msgstr "ідо"
 
 #: ui/shared/views/settings/bcp47_languages.h:102
 msgid "Igbo"
-msgstr ""
+msgstr "ігбо"
 
 #: ui/shared/views/settings/bcp47_languages.h:103
 msgid "Indonesian"
-msgstr ""
+msgstr "індонезійська"
 
 #: ui/shared/views/settings/bcp47_languages.h:104
 msgid "Interlingua"
-msgstr ""
+msgstr "інтерлінгва"
 
 #: ui/shared/views/settings/bcp47_languages.h:105
 msgid "Interlingue"
-msgstr ""
+msgstr "інтерлінгве"
 
 #: ui/shared/views/settings/bcp47_languages.h:106
 msgid "Inuktitut"
-msgstr ""
+msgstr "інуктітут"
 
 #: ui/shared/views/settings/bcp47_languages.h:107
 msgid "Inupiaq"
-msgstr ""
+msgstr "інупіак"
 
 #: ui/shared/views/settings/bcp47_languages.h:108
 msgid "Irish"
-msgstr ""
+msgstr "ірландська"
 
 #: ui/shared/views/settings/bcp47_languages.h:109
 msgid "Italian"
-msgstr ""
+msgstr "італійська"
 
 #: ui/shared/views/settings/bcp47_languages.h:110
 msgid "Japanese"
-msgstr ""
+msgstr "японська"
 
 #: ui/shared/views/settings/bcp47_languages.h:111
 msgid "Javanese"
-msgstr ""
+msgstr "яванська"
 
 #: ui/shared/views/settings/bcp47_languages.h:112
 msgid "Kannada"
-msgstr ""
+msgstr "каннада"
 
 #: ui/shared/views/settings/bcp47_languages.h:113
 msgid "Kanuri"
-msgstr ""
+msgstr "канурі"
 
 #: ui/shared/views/settings/bcp47_languages.h:114
 msgid "Kashmiri"
-msgstr ""
+msgstr "кашмірська"
 
 #: ui/shared/views/settings/bcp47_languages.h:115
 msgid "Kazakh"
-msgstr ""
+msgstr "казахська"
 
 #: ui/shared/views/settings/bcp47_languages.h:116
 msgid "Khmer"
-msgstr ""
+msgstr "кхмерська"
 
 #: ui/shared/views/settings/bcp47_languages.h:117
 msgid "Kikuyu"
-msgstr ""
+msgstr "кікуйю"
 
 #: ui/shared/views/settings/bcp47_languages.h:118
 msgid "Kinyarwanda"
-msgstr ""
+msgstr "кіньяруанда"
 
 #: ui/shared/views/settings/bcp47_languages.h:119
 msgid "Kyrgyz"
-msgstr ""
+msgstr "киргизька"
 
 #: ui/shared/views/settings/bcp47_languages.h:120
 msgid "Komi"
-msgstr ""
+msgstr "комі"
 
 #: ui/shared/views/settings/bcp47_languages.h:121
 msgid "Kongo"
-msgstr ""
+msgstr "конголезька"
 
 #: ui/shared/views/settings/bcp47_languages.h:122
 msgid "Korean"
-msgstr ""
+msgstr "корейська"
 
 #: ui/shared/views/settings/bcp47_languages.h:123
 msgid "Kuanyama"
-msgstr ""
+msgstr "куаньяма"
 
 #: ui/shared/views/settings/bcp47_languages.h:124
 msgid "Kurdish"
-msgstr ""
+msgstr "курдська"
 
 #: ui/shared/views/settings/bcp47_languages.h:125
 msgid "Lao"
-msgstr ""
+msgstr "лаоська"
 
 #: ui/shared/views/settings/bcp47_languages.h:126
 #: ui/shared/views/settings/bcp47_languages.h:292
 msgid "Latin"
-msgstr ""
+msgstr "латина"
 
 #: ui/shared/views/settings/bcp47_languages.h:127
 msgid "Latvian"
-msgstr ""
+msgstr "латиська"
 
 #: ui/shared/views/settings/bcp47_languages.h:128
 msgid "Limburgish"
-msgstr ""
+msgstr "лімбурзька"
 
 #: ui/shared/views/settings/bcp47_languages.h:129
 msgid "Lingala"
-msgstr ""
+msgstr "лінгала"
 
 #: ui/shared/views/settings/bcp47_languages.h:130
 msgid "Lithuanian"
-msgstr ""
+msgstr "литовська"
 
 #: ui/shared/views/settings/bcp47_languages.h:131
 msgid "Luba-Katanga"
-msgstr ""
+msgstr "луба-катанга"
 
 #: ui/shared/views/settings/bcp47_languages.h:132
 msgid "Luxembourgish"
-msgstr ""
+msgstr "люксембурзька"
 
 #: ui/shared/views/settings/bcp47_languages.h:133
 msgid "Macedonian"
-msgstr ""
+msgstr "македонська"
 
 #: ui/shared/views/settings/bcp47_languages.h:134
 msgid "Malagasy"
-msgstr ""
+msgstr "малагасійська"
 
 #: ui/shared/views/settings/bcp47_languages.h:135
 msgid "Malay"
-msgstr ""
+msgstr "малайська"
 
 #: ui/shared/views/settings/bcp47_languages.h:136
 msgid "Malayalam"
-msgstr ""
+msgstr "малаялам"
 
 #: ui/shared/views/settings/bcp47_languages.h:137
 msgid "Maltese"
-msgstr ""
+msgstr "мальтійська"
 
 #: ui/shared/views/settings/bcp47_languages.h:138
 msgid "Manx"
-msgstr ""
+msgstr "менська"
 
 #: ui/shared/views/settings/bcp47_languages.h:139
 msgid "Maori"
-msgstr ""
+msgstr "маорі"
 
 #: ui/shared/views/settings/bcp47_languages.h:140
 msgid "Marathi"
-msgstr ""
+msgstr "маратхі"
 
 #: ui/shared/views/settings/bcp47_languages.h:141
 msgid "Marshallese"
-msgstr ""
+msgstr "маршальська"
 
 #: ui/shared/views/settings/bcp47_languages.h:142
 msgid "Mongolian"
-msgstr ""
+msgstr "монгольська"
 
 #: ui/shared/views/settings/bcp47_languages.h:143
 msgid "Nauru"
-msgstr ""
+msgstr "науру"
 
 #: ui/shared/views/settings/bcp47_languages.h:144
 msgid "Navajo"
-msgstr ""
+msgstr "навахо"
 
 #: ui/shared/views/settings/bcp47_languages.h:145
 msgid "North Ndebele"
-msgstr ""
+msgstr "північна ндебеле"
 
 #: ui/shared/views/settings/bcp47_languages.h:146
 msgid "South Ndebele"
-msgstr ""
+msgstr "південна ндебеле"
 
 #: ui/shared/views/settings/bcp47_languages.h:147
 msgid "Ndonga"
-msgstr ""
+msgstr "ндонга"
 
 #: ui/shared/views/settings/bcp47_languages.h:148
 msgid "Nepali"
-msgstr ""
+msgstr "непальська"
 
 #: ui/shared/views/settings/bcp47_languages.h:149
 msgid "Norwegian"
-msgstr ""
+msgstr "норвезька"
 
 #: ui/shared/views/settings/bcp47_languages.h:150
 msgid "Norwegian Bokmål"
-msgstr ""
+msgstr "норвезька букмол"
 
 #: ui/shared/views/settings/bcp47_languages.h:151
 msgid "Norwegian Nynorsk"
-msgstr ""
+msgstr "норвезька нюношк"
 
 #: ui/shared/views/settings/bcp47_languages.h:152
 msgid "Nuosu"
-msgstr ""
+msgstr "нуосу"
 
 #: ui/shared/views/settings/bcp47_languages.h:153
 msgid "Occitan"
-msgstr ""
+msgstr "окситанська"
 
 #: ui/shared/views/settings/bcp47_languages.h:154
 msgid "Ojibwe"
-msgstr ""
+msgstr "оджибве"
 
 #: ui/shared/views/settings/bcp47_languages.h:155
 msgid "Odia"
-msgstr ""
+msgstr "одія"
 
 #: ui/shared/views/settings/bcp47_languages.h:156
 msgid "Oromo"
-msgstr ""
+msgstr "оромо"
 
 #: ui/shared/views/settings/bcp47_languages.h:157
 msgid "Ossetian"
-msgstr ""
+msgstr "осетинська"
 
 #: ui/shared/views/settings/bcp47_languages.h:158
 msgid "Pali"
-msgstr ""
+msgstr "палі"
 
 #: ui/shared/views/settings/bcp47_languages.h:159
 msgid "Pashto"
-msgstr ""
+msgstr "пушту"
 
 #: ui/shared/views/settings/bcp47_languages.h:160
 msgid "Persian"
-msgstr ""
+msgstr "перська"
 
 #: ui/shared/views/settings/bcp47_languages.h:161
 msgid "Polish"
-msgstr ""
+msgstr "польська"
 
 #: ui/shared/views/settings/bcp47_languages.h:162
 msgid "Portuguese"
-msgstr ""
+msgstr "португальська"
 
 #: ui/shared/views/settings/bcp47_languages.h:163
 msgid "Portuguese (Brazil)"
-msgstr ""
+msgstr "португальська (Бразилія)"
 
 #: ui/shared/views/settings/bcp47_languages.h:164
 msgid "Punjabi"
-msgstr ""
+msgstr "панджабі"
 
 #: ui/shared/views/settings/bcp47_languages.h:165
 msgid "Quechua"
-msgstr ""
+msgstr "кечуа"
 
 #: ui/shared/views/settings/bcp47_languages.h:166
 msgid "Romanian"
-msgstr ""
+msgstr "румунська"
 
 #: ui/shared/views/settings/bcp47_languages.h:167
 msgid "Romansh"
-msgstr ""
+msgstr "романшська"
 
 #: ui/shared/views/settings/bcp47_languages.h:168
 msgid "Rundi"
-msgstr ""
+msgstr "рунді"
 
 #: ui/shared/views/settings/bcp47_languages.h:169
 msgid "Russian"
-msgstr ""
+msgstr "російська"
 
 #: ui/shared/views/settings/bcp47_languages.h:170
 msgid "Northern Sami"
-msgstr ""
+msgstr "північносаамська"
 
 #: ui/shared/views/settings/bcp47_languages.h:171
 msgid "Samoan"
-msgstr ""
+msgstr "самоанська"
 
 #: ui/shared/views/settings/bcp47_languages.h:172
 msgid "Sango"
-msgstr ""
+msgstr "санго"
 
 #: ui/shared/views/settings/bcp47_languages.h:173
 msgid "Sanskrit"
-msgstr ""
+msgstr "санскрит"
 
 #: ui/shared/views/settings/bcp47_languages.h:174
 msgid "Sardinian"
-msgstr ""
+msgstr "сардинська"
 
 #: ui/shared/views/settings/bcp47_languages.h:175
 msgid "Serbian"
-msgstr ""
+msgstr "сербська"
 
 #: ui/shared/views/settings/bcp47_languages.h:176
 msgid "Shona"
-msgstr ""
+msgstr "шона"
 
 #: ui/shared/views/settings/bcp47_languages.h:177
 msgid "Sindhi"
-msgstr ""
+msgstr "синдхі"
 
 #: ui/shared/views/settings/bcp47_languages.h:178
 msgid "Sinhala"
-msgstr ""
+msgstr "сингальська"
 
 #: ui/shared/views/settings/bcp47_languages.h:179
 msgid "Slovak"
-msgstr ""
+msgstr "словацька"
 
 #: ui/shared/views/settings/bcp47_languages.h:180
 msgid "Slovenian"
-msgstr ""
+msgstr "словенська"
 
 #: ui/shared/views/settings/bcp47_languages.h:181
 msgid "Somali"
-msgstr ""
+msgstr "сомалійська"
 
 #: ui/shared/views/settings/bcp47_languages.h:182
 msgid "Southern Sotho"
-msgstr ""
+msgstr "південна сото"
 
 #: ui/shared/views/settings/bcp47_languages.h:184
 msgid "Spanish (Mexico)"
-msgstr ""
+msgstr "іспанська (Мексика)"
 
 #: ui/shared/views/settings/bcp47_languages.h:185
 msgid "Sundanese"
-msgstr ""
+msgstr "сунданська"
 
 #: ui/shared/views/settings/bcp47_languages.h:186
 msgid "Swahili"
-msgstr ""
+msgstr "суахілі"
 
 #: ui/shared/views/settings/bcp47_languages.h:187
 msgid "Swati"
-msgstr ""
+msgstr "сваті"
 
 #: ui/shared/views/settings/bcp47_languages.h:188
 msgid "Swedish"
-msgstr ""
+msgstr "шведська"
 
 #: ui/shared/views/settings/bcp47_languages.h:189
 msgid "Tagalog"
-msgstr ""
+msgstr "тагальська"
 
 #: ui/shared/views/settings/bcp47_languages.h:190
 msgid "Tahitian"
-msgstr ""
+msgstr "таїтянська"
 
 #: ui/shared/views/settings/bcp47_languages.h:191
 msgid "Tajik"
-msgstr ""
+msgstr "таджицька"
 
 #: ui/shared/views/settings/bcp47_languages.h:192
 msgid "Tamil"
-msgstr ""
+msgstr "тамільська"
 
 #: ui/shared/views/settings/bcp47_languages.h:193
 msgid "Tatar"
-msgstr ""
+msgstr "татарська"
 
 #: ui/shared/views/settings/bcp47_languages.h:194
 msgid "Telugu"
-msgstr ""
+msgstr "телугу"
 
 #: ui/shared/views/settings/bcp47_languages.h:195
 msgid "Thai"
-msgstr ""
+msgstr "тайська"
 
 #: ui/shared/views/settings/bcp47_languages.h:196
 msgid "Tibetan"
-msgstr ""
+msgstr "тибетська"
 
 #: ui/shared/views/settings/bcp47_languages.h:197
 msgid "Tigrinya"
-msgstr ""
+msgstr "тигринья"
 
 #: ui/shared/views/settings/bcp47_languages.h:198
 msgid "Tongan"
-msgstr ""
+msgstr "тонганська"
 
 #: ui/shared/views/settings/bcp47_languages.h:199
 msgid "Tsonga"
-msgstr ""
+msgstr "цонга"
 
 #: ui/shared/views/settings/bcp47_languages.h:200
 msgid "Tswana"
-msgstr ""
+msgstr "тсвана"
 
 #: ui/shared/views/settings/bcp47_languages.h:201
 msgid "Turkish"
-msgstr ""
+msgstr "турецька"
 
 #: ui/shared/views/settings/bcp47_languages.h:202
 msgid "Turkmen"
-msgstr ""
+msgstr "туркменська"
 
 #: ui/shared/views/settings/bcp47_languages.h:203
 msgid "Twi"
-msgstr ""
+msgstr "тві"
 
 #: ui/shared/views/settings/bcp47_languages.h:204
 msgid "Uyghur"
-msgstr ""
+msgstr "уйгурська"
 
 #: ui/shared/views/settings/bcp47_languages.h:205
 msgid "Ukrainian"
-msgstr ""
+msgstr "українська"
 
 #: ui/shared/views/settings/bcp47_languages.h:206
 msgid "Urdu"
-msgstr ""
+msgstr "урду"
 
 #: ui/shared/views/settings/bcp47_languages.h:207
 msgid "Uzbek"
-msgstr ""
+msgstr "узбецька"
 
 #: ui/shared/views/settings/bcp47_languages.h:208
 msgid "Venda"
-msgstr ""
+msgstr "венда"
 
 #: ui/shared/views/settings/bcp47_languages.h:209
 msgid "Vietnamese"
-msgstr ""
+msgstr "в’єтнамська"
 
 #: ui/shared/views/settings/bcp47_languages.h:210
 msgid "Volapük"
-msgstr ""
+msgstr "волапюк"
 
 #: ui/shared/views/settings/bcp47_languages.h:211
 msgid "Walloon"
-msgstr ""
+msgstr "валлонська"
 
 #: ui/shared/views/settings/bcp47_languages.h:212
 msgid "Welsh"
-msgstr ""
+msgstr "валлійська"
 
 #: ui/shared/views/settings/bcp47_languages.h:213
 msgid "Wolof"
-msgstr ""
+msgstr "волоф"
 
 #: ui/shared/views/settings/bcp47_languages.h:214
 msgid "Xhosa"
-msgstr ""
+msgstr "коса"
 
 #: ui/shared/views/settings/bcp47_languages.h:215
 msgid "Yiddish"
-msgstr ""
+msgstr "їдиш"
 
 #: ui/shared/views/settings/bcp47_languages.h:216
 msgid "Yoruba"
-msgstr ""
+msgstr "йоруба"
 
 #: ui/shared/views/settings/bcp47_languages.h:217
 msgid "Zhuang"
-msgstr ""
+msgstr "чжуанська"
 
 #: ui/shared/views/settings/bcp47_languages.h:218
 msgid "Zulu"
-msgstr ""
+msgstr "зулуська"
 
 #: ui/shared/views/settings/bcp47_languages.h:237
 msgid "United States"
-msgstr ""
+msgstr "Сполучені Штати"
 
 #: ui/shared/views/settings/bcp47_languages.h:238
 msgid "United Kingdom"
-msgstr ""
+msgstr "Велика Британія"
 
 #: ui/shared/views/settings/bcp47_languages.h:239
 msgid "Australia"
-msgstr ""
+msgstr "Австралія"
 
 #: ui/shared/views/settings/bcp47_languages.h:240
 msgid "Canada"
-msgstr ""
+msgstr "Канада"
 
 #: ui/shared/views/settings/bcp47_languages.h:241
 msgid "Ireland"
-msgstr ""
+msgstr "Ірландія"
 
 #: ui/shared/views/settings/bcp47_languages.h:242
 msgid "New Zealand"
-msgstr ""
+msgstr "Нова Зеландія"
 
 #: ui/shared/views/settings/bcp47_languages.h:243
 msgid "India"
-msgstr ""
+msgstr "Індія"
 
 #: ui/shared/views/settings/bcp47_languages.h:244
 msgid "South Africa"
-msgstr ""
+msgstr "Південна Африка"
 
 #: ui/shared/views/settings/bcp47_languages.h:245
 msgid "Brazil"
-msgstr ""
+msgstr "Бразилія"
 
 #: ui/shared/views/settings/bcp47_languages.h:246
 msgid "Portugal"
-msgstr ""
+msgstr "Португалія"
 
 #: ui/shared/views/settings/bcp47_languages.h:247
 msgid "Spain"
-msgstr ""
+msgstr "Іспанія"
 
 #: ui/shared/views/settings/bcp47_languages.h:248
 msgid "Mexico"
-msgstr ""
+msgstr "Мексика"
 
 #: ui/shared/views/settings/bcp47_languages.h:249
 msgid "Argentina"
-msgstr ""
+msgstr "Аргентина"
 
 #: ui/shared/views/settings/bcp47_languages.h:250
 msgid "Colombia"
-msgstr ""
+msgstr "Колумбія"
 
 #: ui/shared/views/settings/bcp47_languages.h:251
 msgid "Chile"
-msgstr ""
+msgstr "Чилі"
 
 #: ui/shared/views/settings/bcp47_languages.h:252
 msgid "Peru"
-msgstr ""
+msgstr "Перу"
 
 #: ui/shared/views/settings/bcp47_languages.h:253
 msgid "Venezuela"
-msgstr ""
+msgstr "Венесуела"
 
 #: ui/shared/views/settings/bcp47_languages.h:254
 msgid "Latin America"
-msgstr ""
+msgstr "Латинська Америка"
 
 #: ui/shared/views/settings/bcp47_languages.h:255
 msgid "France"
-msgstr ""
+msgstr "Франція"
 
 #: ui/shared/views/settings/bcp47_languages.h:256
 msgid "Belgium"
-msgstr ""
+msgstr "Бельгія"
 
 #: ui/shared/views/settings/bcp47_languages.h:257
 msgid "Switzerland"
-msgstr ""
+msgstr "Швейцарія"
 
 #: ui/shared/views/settings/bcp47_languages.h:258
 msgid "Luxembourg"
-msgstr ""
+msgstr "Люксембург"
 
 #: ui/shared/views/settings/bcp47_languages.h:259
 msgid "Germany"
-msgstr ""
+msgstr "Німеччина"
 
 #: ui/shared/views/settings/bcp47_languages.h:260
 msgid "Austria"
-msgstr ""
+msgstr "Австрія"
 
 #: ui/shared/views/settings/bcp47_languages.h:261
 msgid "Italy"
-msgstr ""
+msgstr "Італія"
 
 #: ui/shared/views/settings/bcp47_languages.h:262
 msgid "Netherlands"
-msgstr ""
+msgstr "Нідерланди"
 
 #: ui/shared/views/settings/bcp47_languages.h:263
 msgid "China"
-msgstr ""
+msgstr "Китай"
 
 #: ui/shared/views/settings/bcp47_languages.h:264
 msgid "Taiwan"
-msgstr ""
+msgstr "Тайвань"
 
 #: ui/shared/views/settings/bcp47_languages.h:265
 msgid "Hong Kong"
-msgstr ""
+msgstr "Гонконг"
 
 #: ui/shared/views/settings/bcp47_languages.h:266
 msgid "Singapore"
-msgstr ""
+msgstr "Сінгапур"
 
 #: ui/shared/views/settings/bcp47_languages.h:267
 msgid "Japan"
-msgstr ""
+msgstr "Японія"
 
 #: ui/shared/views/settings/bcp47_languages.h:268
 msgid "South Korea"
-msgstr ""
+msgstr "Південна Корея"
 
 #: ui/shared/views/settings/bcp47_languages.h:269
 msgid "Russia"
-msgstr ""
+msgstr "Росія"
 
 #: ui/shared/views/settings/bcp47_languages.h:270
 msgid "Ukraine"
-msgstr ""
+msgstr "Україна"
 
 #: ui/shared/views/settings/bcp47_languages.h:271
 msgid "Poland"
-msgstr ""
+msgstr "Польща"
 
 #: ui/shared/views/settings/bcp47_languages.h:272
 msgid "Sweden"
-msgstr ""
+msgstr "Швеція"
 
 #: ui/shared/views/settings/bcp47_languages.h:273
 msgid "Norway"
-msgstr ""
+msgstr "Норвегія"
 
 #: ui/shared/views/settings/bcp47_languages.h:274
 msgid "Denmark"
-msgstr ""
+msgstr "Данія"
 
 #: ui/shared/views/settings/bcp47_languages.h:275
 msgid "Finland"
-msgstr ""
+msgstr "Фінляндія"
 
 #: ui/shared/views/settings/bcp47_languages.h:276
 msgid "Turkey"
-msgstr ""
+msgstr "Туреччина"
 
 #: ui/shared/views/settings/bcp47_languages.h:277
 msgid "Greece"
-msgstr ""
+msgstr "Греція"
 
 #: ui/shared/views/settings/bcp47_languages.h:278
 msgid "Israel"
-msgstr ""
+msgstr "Ізраїль"
 
 #: ui/shared/views/settings/bcp47_languages.h:279
 msgid "Egypt"
-msgstr ""
+msgstr "Єгипет"
 
 #: ui/shared/views/settings/bcp47_languages.h:280
 msgid "Saudi Arabia"
-msgstr ""
+msgstr "Саудівська Аравія"
 
 #: ui/shared/views/settings/bcp47_languages.h:281
 msgid "United Arab Emirates"
-msgstr ""
+msgstr "Об’єднані Арабські Емірати"
 
 #: ui/shared/views/settings/bcp47_languages.h:282
 msgid "Philippines"
-msgstr ""
+msgstr "Філіппіни"
 
 #: ui/shared/views/settings/bcp47_languages.h:283
 msgid "Indonesia"
-msgstr ""
+msgstr "Індонезія"
 
 #: ui/shared/views/settings/bcp47_languages.h:284
 msgid "Malaysia"
-msgstr ""
+msgstr "Малайзія"
 
 #: ui/shared/views/settings/bcp47_languages.h:285
 msgid "Thailand"
-msgstr ""
+msgstr "Таїланд"
 
 #: ui/shared/views/settings/bcp47_languages.h:286
 msgid "Vietnam"
-msgstr ""
+msgstr "В’єтнам"
 
 #: ui/shared/views/settings/bcp47_languages.h:290
 msgid "Simplified"
-msgstr ""
+msgstr "Спрощена"
 
 #: ui/shared/views/settings/bcp47_languages.h:291
 msgid "Traditional"
-msgstr ""
+msgstr "Традиційна"
 
 #: ui/shared/views/settings/bcp47_languages.h:293
 msgid "Cyrillic"
-msgstr ""
+msgstr "Кирилиця"
 
 #: ui/shared/views/settings/bcp47_languages.h:294
 msgid "Arabic script"
-msgstr ""
+msgstr "Арабське письмо"
 
 #: ui/shared/views/shortcut_registry.cpp:44
 msgid "Show keyboard shortcuts"
@@ -6269,11 +6305,11 @@ msgstr "Показати сполучення клавіш"
 
 #: ui/shared/views/shortcut_registry.cpp:46
 msgid "Jump to a room"
-msgstr ""
+msgstr "Перейти до кімнати"
 
 #: ui/shared/views/shortcut_registry.cpp:48
 msgid "Find in this room"
-msgstr ""
+msgstr "Знайти в цій кімнаті"
 
 #: ui/shared/views/shortcut_registry.cpp:50
 msgid "Search your messages"
@@ -6289,11 +6325,11 @@ msgstr "Відкрити налаштування"
 
 #: ui/shared/views/shortcut_registry.cpp:56
 msgid "Move to the next / previous control"
-msgstr ""
+msgstr "Перейти до наступного / попереднього елемента керування"
 
 #: ui/shared/views/shortcut_registry.cpp:59
 msgid "Activate the focused control"
-msgstr ""
+msgstr "Активувати елемент керування у фокусі"
 
 #: ui/shared/views/shortcut_registry.cpp:62
 msgid "Open the menu for the focused item"
@@ -6305,51 +6341,51 @@ msgstr "Закрити відкритий діалог, панель або ме
 
 #: ui/shared/views/shortcut_registry.cpp:68
 msgid "Go back to the previous room"
-msgstr ""
+msgstr "Повернутися до попередньої кімнати"
 
 #: ui/shared/views/shortcut_registry.cpp:71
 msgid "Go forward to the next room"
-msgstr ""
+msgstr "Перейти до наступної кімнати"
 
 #: ui/shared/views/shortcut_registry.cpp:75
 msgid "Cycle through recent rooms"
-msgstr ""
+msgstr "Перемикатися між нещодавніми кімнатами"
 
 #: ui/shared/views/shortcut_registry.cpp:77
 msgid "Cycle through recent rooms backward"
-msgstr ""
+msgstr "Перемикатися назад між нещодавніми кімнатами"
 
 #: ui/shared/views/shortcut_registry.cpp:80
 msgid "Scroll up / down a page"
-msgstr ""
+msgstr "Прокрутити на сторінку вгору / вниз"
 
 #: ui/shared/views/shortcut_registry.cpp:83
 msgid "Scroll to the top / bottom"
-msgstr ""
+msgstr "Прокрутити на початок / кінець"
 
 #: ui/shared/views/shortcut_registry.cpp:87
 msgid "Select the previous / next message"
-msgstr ""
+msgstr "Вибрати попереднє / наступне повідомлення"
 
 #: ui/shared/views/shortcut_registry.cpp:90
 msgid "Move a page of messages up / down"
-msgstr ""
+msgstr "Переміститися на сторінку повідомлень угору / вниз"
 
 #: ui/shared/views/shortcut_registry.cpp:93
 msgid "Select the oldest loaded message"
-msgstr ""
+msgstr "Вибрати найстаріше завантажене повідомлення"
 
 #: ui/shared/views/shortcut_registry.cpp:95
 msgid "Select the newest message"
-msgstr ""
+msgstr "Вибрати найновіше повідомлення"
 
 #: ui/shared/views/shortcut_registry.cpp:97
 msgid "Jump to the first unread message"
-msgstr ""
+msgstr "Перейти до першого непрочитаного повідомлення"
 
 #: ui/shared/views/shortcut_registry.cpp:99
 msgid "Step through links and attachments in a message"
-msgstr ""
+msgstr "Переміщатися між посиланнями й вкладеннями в повідомленні"
 
 #: ui/shared/views/shortcut_registry.cpp:102
 msgid "Open the selected part or the message's actions"
@@ -6361,7 +6397,7 @@ msgstr "Копіювати вибраний текст або повідомле
 
 #: ui/shared/views/shortcut_registry.cpp:107
 msgid "Go back to the message box"
-msgstr ""
+msgstr "Повернутися до поля повідомлення"
 
 #: ui/shared/views/shortcut_registry.cpp:111
 msgid "Send the message"
@@ -6369,7 +6405,7 @@ msgstr "Надіслати повідомлення"
 
 #: ui/shared/views/shortcut_registry.cpp:113
 msgid "Start a new line"
-msgstr ""
+msgstr "Почати новий рядок"
 
 #: ui/shared/views/shortcut_registry.cpp:115
 msgid "Edit your last message (in an empty message box)"
@@ -6377,15 +6413,15 @@ msgstr "Редагувати останнє повідомлення (у пор�
 
 #: ui/shared/views/shortcut_registry.cpp:120
 msgid "Move through suggestions and results"
-msgstr ""
+msgstr "Переміщатися між пропозиціями й результатами"
 
 #: ui/shared/views/shortcut_registry.cpp:123
 msgid "Choose the highlighted suggestion"
-msgstr ""
+msgstr "Вибрати виділену пропозицію"
 
 #: ui/shared/views/shortcut_registry.cpp:126
 msgid "Choose a skin tone for the selected emoji"
-msgstr ""
+msgstr "Вибрати відтінок шкіри для вибраного емодзі"
 
 #: ui/shared/views/shortcut_registry.cpp:128
 msgid "Remove the selected room from the space"
@@ -6393,63 +6429,63 @@ msgstr "Вилучити вибрану кімнату з простору"
 
 #: ui/shared/views/shortcut_registry.cpp:132
 msgid "Move by day / week"
-msgstr ""
+msgstr "Переміститися на день / тиждень"
 
 #: ui/shared/views/shortcut_registry.cpp:135
 msgid "Go to the start / end of the week"
-msgstr ""
+msgstr "Перейти до початку / кінця тижня"
 
 #: ui/shared/views/shortcut_registry.cpp:142
 msgid "Previous year"
-msgstr ""
+msgstr "Попередній рік"
 
 #: ui/shared/views/shortcut_registry.cpp:144
 msgid "Next year"
-msgstr ""
+msgstr "Наступний рік"
 
 #: ui/shared/views/shortcut_registry.cpp:146
 msgid "Go to today"
-msgstr ""
+msgstr "Перейти до сьогодні"
 
 #: ui/shared/views/shortcut_registry.cpp:148
 msgid "Pick the selected date"
-msgstr ""
+msgstr "Вибрати зазначену дату"
 
 #: ui/shared/views/shortcut_registry.cpp:153
 msgid "Zoom in"
-msgstr ""
+msgstr "Збільшити"
 
 #: ui/shared/views/shortcut_registry.cpp:156
 msgid "Zoom out"
-msgstr ""
+msgstr "Зменшити"
 
 #: ui/shared/views/shortcut_registry.cpp:158
 msgid "Fit the image to the window"
-msgstr ""
+msgstr "Умістити зображення у вікні"
 
 #: ui/shared/views/shortcut_registry.cpp:161
 msgid "Pan a zoomed image"
-msgstr ""
+msgstr "Перемістити збільшене зображення"
 
 #: ui/shared/views/shortcut_registry.cpp:164
 msgid "Play / pause a video"
-msgstr ""
+msgstr "Відтворити / призупинити відео"
 
 #: ui/shared/views/shortcut_registry.cpp:167
 msgid "Skip back 5 seconds"
-msgstr ""
+msgstr "Перейти назад на 5 секунд"
 
 #: ui/shared/views/shortcut_registry.cpp:169
 msgid "Skip forward 5 seconds"
-msgstr ""
+msgstr "Перейти вперед на 5 секунд"
 
 #: ui/shared/views/shortcut_registry.cpp:171
 msgid "Restart the video"
-msgstr ""
+msgstr "Перезапустити відео"
 
 #: ui/shared/views/shortcut_registry.cpp:231
 msgid "Navigation"
-msgstr ""
+msgstr "Навігація"
 
 #: ui/shared/views/shortcut_registry.cpp:233
 msgid "Message box"
@@ -6457,11 +6493,11 @@ msgstr "Поле повідомлення"
 
 #: ui/shared/views/shortcut_registry.cpp:234
 msgid "Pickers and lists"
-msgstr ""
+msgstr "Списки й засоби вибору"
 
 #: ui/shared/views/shortcut_registry.cpp:235
 msgid "Date picker"
-msgstr ""
+msgstr "Вибір дати"
 
 #: ui/shared/views/shortcut_registry.cpp:236
 msgid "Image and video viewer"
@@ -6472,7 +6508,7 @@ msgstr "Переглядач зображень і відео"
 #: ui/windows/src/MainWindow.cpp:6428 ui/windows/src/RoomWindow.cpp:216
 #: ui/windows/src/RoomWindow.cpp:231 ui/windows/src/RoomWindow.cpp:249
 msgid "All files"
-msgstr ""
+msgstr "Усі файли"
 
 #: ui/windows/src/MainWindow.cpp:3154 ui/windows/src/RoomWindow.cpp:231
 msgid "Videos"
@@ -6484,19 +6520,19 @@ msgstr "Файли ключів"
 
 #: ui/windows/src/Win32Taskbar.cpp:331
 msgid "Unread messages"
-msgstr ""
+msgstr "Непрочитані повідомлення"
 
 #: ui/windows/src/Win32Taskbar.cpp:362
 msgid "Next unread room"
-msgstr ""
+msgstr "Наступна кімната з непрочитаними повідомленнями"
 
 #: ui/windows/src/Win32Taskbar.cpp:389
 msgid "Hang up"
-msgstr ""
+msgstr "Завершити виклик"
 
 #: ui/windows/src/Win32Taskbar.cpp:667 ui/windows/src/Win32Taskbar.cpp:771
 msgid "Recent rooms"
-msgstr ""
+msgstr "Нещодавні кімнати"
 
 #: ui/windows/src/main.cpp:452
 msgid "Open quick switcher"
@@ -6508,39 +6544,39 @@ msgstr "Шукати повідомлення"
 
 #: client/src/emoji.cpp:177
 msgid "Smileys & People"
-msgstr ""
+msgstr "Смайлики й люди"
 
 #: client/src/emoji.cpp:179
 msgid "Animals & Nature"
-msgstr ""
+msgstr "Тварини й природа"
 
 #: client/src/emoji.cpp:181
 msgid "Food & Drink"
-msgstr ""
+msgstr "Їжа й напої"
 
 #: client/src/emoji.cpp:183
 msgid "Activities"
-msgstr ""
+msgstr "Дозвілля"
 
 #: client/src/emoji.cpp:185
 msgid "Travel & Places"
-msgstr ""
+msgstr "Подорожі й місця"
 
 #: client/src/emoji.cpp:187
 msgid "Objects"
-msgstr ""
+msgstr "Предмети"
 
 #: client/src/emoji.cpp:189
 msgid "Symbols"
-msgstr ""
+msgstr "Символи"
 
 #: client/src/emoji.cpp:191
 msgid "Flags"
-msgstr ""
+msgstr "Прапори"
 
 #: ui/shared/views/settings/NetworkSection.cpp
 msgid "Network"
-msgstr ""
+msgstr "Мережа"
 
 #: ui/shared/views/settings/NetworkSection.cpp
 msgid "Proxy"
@@ -6560,11 +6596,11 @@ msgstr "URL-адреса проксі:"
 
 #: ui/shared/views/settings/NetworkSection.cpp
 msgid "Manual"
-msgstr ""
+msgstr "Вручну"
 
 #: ui/shared/views/settings/NetworkSection.cpp
 msgid "http://proxy.example.com:8080"
-msgstr ""
+msgstr "http://proxy.example.com:8080"
 
 #: ui/shared/views/settings/NetworkSection.cpp
 msgid ""
@@ -6577,74 +6613,74 @@ msgstr "Введіть дійсну URL-адресу проксі, що почи
 
 #: ui/shared/views/MessageListView.cpp
 msgid "Live location · updated {0}"
-msgstr ""
+msgstr "Геопозиція в реальному часі · оновлено {0}"
 
 #: ui/shared/views/MessageListView.cpp
 msgid "Waiting for location…"
-msgstr ""
+msgstr "Очікування місцезнаходження…"
 
 #: ui/shared/views/MessageListView.cpp
 msgid "Live location ended"
-msgstr ""
+msgstr "Трансляцію місцезнаходження завершено"
 
 #: ui/shared/views/poll_logic.cpp
 msgid "Select one option"
-msgstr ""
+msgstr "Виберіть один варіант"
 
 #: ui/shared/views/poll_logic.cpp
 #, c++-format
 msgid "Select up to {0} option"
 msgid_plural "Select up to {0} options"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "Виберіть не більше ніж {0} варіант"
+msgstr[1] "Виберіть не більше ніж {0} варіанти"
+msgstr[2] "Виберіть не більше ніж {0} варіантів"
 
 #: ui/shared/views/poll_logic.cpp
 msgid "Results will be shown when the poll ends"
-msgstr ""
+msgstr "Результати буде показано після завершення опитування"
 
 #: ui/shared/views/poll_logic.cpp
 msgid "Poll"
-msgstr ""
+msgstr "Опитування"
 
 #: ui/shared/views/poll_logic.cpp
 #, c++-format
 msgid "{0} vote"
 msgid_plural "{0} votes"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "{0} голос"
+msgstr[1] "{0} голоси"
+msgstr[2] "{0} голосів"
 
 #: ui/shared/views/poll_logic.cpp
 #, c++-format
 msgid "Poll ended · {0} vote"
 msgid_plural "Poll ended · {0} votes"
-msgstr[0] ""
-msgstr[1] ""
-msgstr[2] ""
+msgstr[0] "Опитування завершено · {0} голос"
+msgstr[1] "Опитування завершено · {0} голоси"
+msgstr[2] "Опитування завершено · {0} голосів"
 
 #: ui/shared/views/MessageListView.cpp
 #, c++-format
 msgid "{0}, {1}%"
-msgstr ""
+msgstr "{0}, {1}%"
 
 #: ui/shared/views/MessageListView.cpp ui/shared/views/PollCardDisplay.cpp
 #: ui/shared/views/RoomView.cpp
 msgid "End poll"
-msgstr ""
+msgstr "Завершити опитування"
 
 #: ui/shared/views/RoomView.cpp
 msgid "End this poll?"
-msgstr ""
+msgstr "Завершити це опитування?"
 
 #: ui/shared/views/RoomView.cpp
 msgid "Voting will close and the final results will be shown to everyone."
-msgstr ""
+msgstr "Голосування буде закрито, а остаточні результати показано всім."
 
 #: ui/shared/views/PollCardDisplay.cpp
 #, c++-format
 msgid "{0}% ({1})"
-msgstr ""
+msgstr "{0}% ({1})"
 
 #: ui/shared/views/CreatePollDialog.h
 #, c++-format
@@ -6657,12 +6693,12 @@ msgstr "Створити опитування"
 
 #: ui/shared/views/CreatePollDialog.cpp
 msgid "Question"
-msgstr ""
+msgstr "Запитання"
 
 #: ui/shared/views/CreatePollDialog.cpp
 #, c++-format
 msgid "Option {0}"
-msgstr ""
+msgstr "Варіант {0}"
 
 #: ui/shared/views/CreatePollDialog.cpp
 msgid "Add option"
@@ -6674,7 +6710,7 @@ msgstr "Вилучити варіант"
 
 #: ui/shared/views/CreatePollDialog.cpp
 msgid "Allow multiple answers"
-msgstr ""
+msgstr "Дозволити кілька відповідей"
 
 #: ui/shared/views/CreatePollDialog.cpp
 msgid "Hide results until the poll ends"
@@ -6682,7 +6718,7 @@ msgstr "Приховувати результати до завершення о
 
 #: ui/shared/views/CreatePollDialog.cpp
 msgid "Enter a question and at least two different options"
-msgstr ""
+msgstr "Введіть запитання й щонайменше два різні варіанти"
 
 #: ui/shared/app/SlashCommands.cpp
 msgid "Create a poll"
@@ -6690,4 +6726,4 @@ msgstr "Створити опитування"
 
 #: ui/shared/app/ShellBase_rooms.cpp
 msgid "Couldn't send the poll"
-msgstr ""
+msgstr "Не вдалося надіслати опитування"
