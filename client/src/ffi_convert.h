@@ -797,6 +797,11 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e)
         ev->lat = e.location_lat;
         ev->lon = e.location_lon;
         ev->description = std::string(e.location_description);
+        ev->live_share = e.location_live_share;
+        ev->live = e.location_live;
+        ev->awaiting_fix = e.location_awaiting_fix;
+        ev->live_expires_ms = e.location_live_expires_ms;
+        ev->updated_ms = e.location_updated_ms;
         return ev;
     }
 

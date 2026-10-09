@@ -136,6 +136,11 @@ pub(super) fn ffi_event_defaults() -> TimelineEvent {
         location_lat: 0.0,
         location_lon: 0.0,
         location_description: String::new(),
+        location_live_share: false,
+        location_live: false,
+        location_live_expires_ms: 0,
+        location_updated_ms: 0,
+        location_awaiting_fix: false,
         thread_root_id: String::new(),
         is_thread_root: false,
         thread_reply_count: 0,
@@ -463,6 +468,36 @@ pub(crate) fn parse_geo_uri(uri: &str) -> Option<(f64, f64)> {
     let lat: f64 = parts.next()?.parse().ok()?;
     let lon: f64 = parts.next()?.parse().ok()?;
     Some((lat, lon))
+}
+
+/// Plain-data view of a live-location share for the FFI event. Primitive
+/// inputs keep this testable: matrix-sdk-ui's `BeaconInfo` can't be built
+/// outside that crate.
+pub(crate) struct LiveLocationFields {
+    pub lat: f64,
+    pub lon: f64,
+    pub live: bool,
+    pub expires_ms: u64,
+    pub updated_ms: u64,
+    pub awaiting_fix: bool,
+}
+
+pub(crate) fn live_location_fields(
+    latest_geo_uri: Option<&str>,
+    latest_ts_ms: u64,
+    is_live: bool,
+    start_ts_ms: u64,
+    timeout_ms: u64,
+) -> LiveLocationFields {
+    let fix = latest_geo_uri.and_then(parse_geo_uri);
+    LiveLocationFields {
+        lat: fix.map_or(0.0, |p| p.0),
+        lon: fix.map_or(0.0, |p| p.1),
+        live: is_live,
+        expires_ms: start_ts_ms.saturating_add(timeout_ms),
+        updated_ms: if fix.is_some() { latest_ts_ms } else { 0 },
+        awaiting_fix: fix.is_none(),
+    }
 }
 
 /// Compute the human-readable action for a m.room.pinned_events state-event
@@ -1164,6 +1199,58 @@ pub(super) async fn timeline_item_to_ffi(
             thread_latest_sender_name,
             thread_latest_body,
             thread_latest_ts,
+            ..ffi_event_defaults()
+        });
+    }
+
+    // MSC3489 live location share: one item per share; beacon updates and the
+    // stop event arrive as VectorDiff::Set on this same item. Surface it as an
+    // m.location event with the live-share fields set so it renders through
+    // the existing Kind::Location row.
+    if let TimelineItemContent::MsgLike(MsgLikeContent {
+        kind: MsgLikeKind::LiveLocation(state),
+        ..
+    }) = event_item.content()
+    {
+        let latest = state.latest_location();
+        let f = live_location_fields(
+            latest.map(|l| l.geo_uri()),
+            latest.map_or(0, |l| u64::from(l.ts().get())),
+            state.is_live(),
+            u64::from(state.ts().get()),
+            state.timeout().as_millis().min(u128::from(u64::MAX)) as u64,
+        );
+        let SenderProfileFfi {
+            sender_name,
+            sender_avatar_url,
+            sender_status_emoji,
+            sender_status_text,
+        } = sender_profile_ffi(event_item.sender_profile());
+        let reactions = collect_reactions(event_item, room, me).await;
+        let read_receipts = collect_read_receipts(event_item, room, me).await;
+        return Some(TimelineEvent {
+            event_id: event_item
+                .event_id()
+                .map(|id| id.to_string())
+                .unwrap_or_default(),
+            room_id: room_id.to_owned(),
+            sender: event_item.sender().to_string(),
+            sender_name,
+            sender_avatar_url,
+            sender_status_emoji,
+            sender_status_text,
+            timestamp: event_item.timestamp().get().into(),
+            msg_type: "m.location".to_owned(),
+            location_lat: f.lat,
+            location_lon: f.lon,
+            location_description: state.description().unwrap_or_default().to_owned(),
+            location_live_share: true,
+            location_live: f.live,
+            location_live_expires_ms: f.expires_ms,
+            location_updated_ms: f.updated_ms,
+            location_awaiting_fix: f.awaiting_fix,
+            reactions,
+            read_receipts,
             ..ffi_event_defaults()
         });
     }
@@ -2033,5 +2120,46 @@ mod status_ffi_tests {
     #[test]
     fn unset_is_empty() {
         assert_eq!(status_ffi(None), (String::new(), String::new()));
+    }
+}
+
+#[cfg(test)]
+mod live_location_tests {
+    use super::live_location_fields;
+
+    #[test]
+    fn no_beacon_is_awaiting_fix() {
+        let f = live_location_fields(None, 0, true, 1_000, 60_000);
+        assert!(f.awaiting_fix);
+        assert!(f.live);
+        assert_eq!(f.expires_ms, 61_000);
+        assert_eq!(f.updated_ms, 0);
+    }
+
+    #[test]
+    fn valid_fix_is_parsed() {
+        let f = live_location_fields(Some("geo:51.5008,0.1247;u=35"), 5_000, true, 1_000, 60_000);
+        assert!(!f.awaiting_fix);
+        assert_eq!((f.lat, f.lon), (51.5008, 0.1247));
+        assert_eq!(f.updated_ms, 5_000);
+    }
+
+    #[test]
+    fn malformed_geo_uri_is_awaiting_fix_not_origin() {
+        let f = live_location_fields(Some("geo:nope"), 5_000, true, 1_000, 60_000);
+        assert!(f.awaiting_fix);
+    }
+
+    #[test]
+    fn stopped_share_keeps_last_fix() {
+        let f = live_location_fields(Some("geo:1.0,2.0"), 5_000, false, 1_000, 60_000);
+        assert!(!f.live);
+        assert!(!f.awaiting_fix);
+    }
+
+    #[test]
+    fn expiry_saturates() {
+        let f = live_location_fields(None, 0, true, u64::MAX - 1, u64::MAX);
+        assert_eq!(f.expires_ms, u64::MAX);
     }
 }

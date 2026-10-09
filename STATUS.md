@@ -1,6 +1,11 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-10-09**. 2334 C++ + 800 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-10-09**. 2338 C++ + 805 Rust tests.
+
+> **Live location display (2026-10-09).**
+> MSC3489 live shares show the latest position on the map, move with each
+> update, and flip to "ended" on stop or timeout; display only. Qt6 build +
+> ctest 2338/2338.
 
 > **HTTP proxy (2026-10-09, v0.9.2).**
 > Settings › Network › Proxy picks the system proxy (default), no proxy, or a

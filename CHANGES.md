@@ -3,6 +3,12 @@
 Newest first. Unreleased work is listed per day, one bullet per change.
 Tagged releases summarize all changes since the previous tag.
 
+## Unreleased
+
+### 2026-10-09
+
+- feat(timeline): live location shares (MSC3489, display only) show a card with the latest position on the map that moves as updates arrive, "Waiting for location…" until the first fix, and "Live location ended" on stop or timeout (also while the room stays open). Qt6 build + ctest 2338/2338 + cargo 805
+
 ## v0.9.2 — 2026-10-09
 
 ### Summary

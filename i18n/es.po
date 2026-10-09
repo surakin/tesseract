@@ -5860,3 +5860,15 @@ msgstr "Proxies HTTP y HTTPS. El audio y el vídeo de las llamadas no pueden pas
 #: ui/shared/views/settings/NetworkSection.cpp
 msgid "Enter a valid http:// or https:// proxy URL."
 msgstr "Introduce una URL de proxy http:// o https:// válida."
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Live location · updated {0}"
+msgstr "Ubicación en directo · actualizada {0}"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Waiting for location…"
+msgstr "Esperando la ubicación…"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Live location ended"
+msgstr "Ubicación en directo finalizada"

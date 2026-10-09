@@ -26,6 +26,7 @@
 #include <cstdio>
 #include <ctime>
 #include <functional>
+#include <limits>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -376,6 +377,55 @@ static int64_t steady_ms_now()
 
 constexpr std::size_t kMaxStatusEmojiBytes = 32;
 
+LiveLocationPhase live_location_phase(const MessageRowData& m, std::uint64_t now_ms)
+{
+    if (!m.location_live_share)
+        return LiveLocationPhase::NotLive;
+    const bool active = m.location_live && now_ms < m.location_live_expires_ms;
+    if (!active)
+        return LiveLocationPhase::Ended;
+    return m.location_awaiting_fix ? LiveLocationPhase::Waiting : LiveLocationPhase::Live;
+}
+
+bool live_location_has_map(const MessageRowData& m)
+{
+    return !(m.location_live_share && m.location_awaiting_fix);
+}
+
+std::string live_location_status_text(const MessageRowData& m, std::uint64_t now_ms)
+{
+    switch (live_location_phase(m, now_ms))
+    {
+    case LiveLocationPhase::Live:
+        return tk::trf(tk::tr("Live location \xc2\xb7 updated {0}"),
+                       {format_hhmm(m.location_updated_ms)});
+    case LiveLocationPhase::Waiting:
+        return tk::tr("Waiting for location\xe2\x80\xa6");
+    case LiveLocationPhase::Ended:
+        return tk::tr("Live location ended");
+    case LiveLocationPhase::NotLive:
+        break;
+    }
+    return {};
+}
+
+MapViewport next_map_viewport(const MessageRowData& old_row, const MessageRowData& new_row)
+{
+    const bool same_share = old_row.kind == MessageRowData::Kind::Location &&
+                            new_row.kind == MessageRowData::Kind::Location &&
+                            old_row.event_id == new_row.event_id;
+    return same_share && old_row.map_viewport_touched ? old_row.map_viewport
+                                                      : new_row.map_viewport;
+}
+
+static std::uint64_t live_now_ms()
+{
+    return static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch())
+            .count());
+}
+
 MessageRowData make_row_data(const tesseract::Event& ev,
                              const std::string& my_user_id)
 {
@@ -569,6 +619,11 @@ MessageRowData make_row_data(const tesseract::Event& ev,
         row.location_lon = loc.lon;
         row.location_description = loc.description;
         row.map_viewport = {loc.lat, loc.lon, 15};
+        row.location_live_share = loc.live_share;
+        row.location_live = loc.live;
+        row.location_awaiting_fix = loc.awaiting_fix;
+        row.location_live_expires_ms = loc.live_expires_ms;
+        row.location_updated_ms = loc.updated_ms;
         break;
     }
     case tesseract::EventType::Redacted:
@@ -1464,7 +1519,11 @@ std::string message_access_body(const MessageRowData& m)
     case Kind::Video:
         return m.has_filename_caption && !m.body.empty() ? m.body : tk::tr("Video");
     case Kind::Location:
-        return m.location_description.empty() ? tk::tr("Location") : m.location_description;
+        if (!m.location_description.empty())
+            return m.location_description;
+        if (m.location_live_share)
+            return live_location_status_text(m, live_now_ms());
+        return tk::tr("Location");
     default:
         break;
     }
@@ -4770,12 +4829,32 @@ private:
         case MessageRowData::Kind::Location:
         {
             constexpr float kMapRowH = 240.0f;
+            const std::uint64_t now_ms = live_now_ms();
+            const std::string live_status = live_location_status_text(m, now_ms);
+            float status_h = 0.0f;
+            if (!live_status.empty())
+            {
+                tk::TextStyle st{};
+                st.role = tk::FontRole::Small;
+                st.max_width = col_w;
+                if (auto lo = ctx.factory.build_text(live_status, st))
+                    status_h = lo->measure().h;
+            }
+            if (!live_location_has_map(m))
+            {
+                // No fix yet: no map, just the status line.
+                return quote_h + status_h;
+            }
             float desc_h = 0.0f;
             if (!m.location_description.empty())
             {
                 desc_h =
                     measure_text_height(m.location_description, ctx, col_w) +
                     kMsgListPadY;
+            }
+            if (!live_status.empty())
+            {
+                desc_h += status_h + kMsgListPadY;
             }
             return quote_h + kMapRowH + desc_h;
         }
@@ -5169,9 +5248,31 @@ private:
         case MessageRowData::Kind::Location:
         {
             constexpr float kMapRowH = 240.0f;
-            tk::Rect map_rect{x, y, std::min(col_w, kImageMaxW), kMapRowH};
-            paint_location_map(m, ctx, map_rect);
-            return y + kMapRowH;
+            const std::uint64_t now_ms = live_now_ms();
+            const std::string live_status = live_location_status_text(m, now_ms);
+            const bool waiting =
+                !live_location_has_map(m);
+            float bottom = y;
+            if (!waiting)
+            {
+                tk::Rect map_rect{x, y, std::min(col_w, kImageMaxW), kMapRowH};
+                paint_location_map(m, ctx, map_rect);
+                bottom = y + kMapRowH;
+                if (!live_status.empty())
+                    bottom += kMsgListPadY;
+            }
+            if (!live_status.empty())
+            {
+                tk::TextStyle st{};
+                st.role = tk::FontRole::Small;
+                st.max_width = col_w;
+                if (auto lo = ctx.factory.build_text(live_status, st))
+                {
+                    ctx.canvas.draw_text(*lo, {x, bottom}, ctx.theme.palette.text_muted);
+                    bottom += lo->measure().h;
+                }
+            }
+            return waiting ? bottom : (live_status.empty() ? y + kMapRowH : bottom);
         }
         // Virtual items are handled before this function is called.
         case MessageRowData::Kind::DaySeparator:
@@ -7582,6 +7683,8 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
         // Clearing them here would clobber that correct state back to "no
         // pin/redact permission, nothing pinned" until the next unrelated
         // room-list refresh happens to run.
+        for (const auto& r : msgs)
+            arm_live_location_expiry_(r);
         messages_ = std::move(msgs);
         invalidate_data();
         scroll_to_bottom();
@@ -7596,6 +7699,8 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
         preserve_top_through(
             [&]
             {
+                for (const auto& r : msgs)
+                    arm_live_location_expiry_(r);
                 messages_ = std::move(msgs);
                 invalidate_data();
             });
@@ -7687,6 +7792,7 @@ void MessageListView::insert_message(std::size_t index, MessageRowData msg)
     const bool animated = msg.kind == MessageRowData::Kind::Video &&
                           (msg.video_autoplay || msg.video_gif);
 
+    arm_live_location_expiry_(msg);
     unread_scan_dirty_();
     const bool at_bottom = scroll_y() + bounds().h + 1.0f >= content_height();
     bool suppress_flipped = false;
@@ -7845,6 +7951,11 @@ void MessageListView::update_message(std::size_t index, MessageRowData msg)
         }
     }
 
+    msg.map_viewport = next_map_viewport(messages_[index], msg);
+    msg.map_viewport_touched = messages_[index].map_viewport_touched &&
+                               msg.kind == MessageRowData::Kind::Location &&
+                               messages_[index].event_id == msg.event_id;
+    arm_live_location_expiry_(msg);
     messages_[index] = std::move(msg);
     if (touches_read_marker)
     {
@@ -7966,6 +8077,42 @@ bool MessageListView::marker_above_watched_arrival_(std::size_t index) const
                    watched_arrivals_.end();
     }
     return false;
+}
+
+void MessageListView::arm_live_location_expiry_(const MessageRowData& m)
+{
+    if (!post_delayed_ || m.kind != MessageRowData::Kind::Location)
+        return;
+    const std::uint64_t now = live_now_ms();
+    const auto phase = live_location_phase(m, now);
+    if (phase != LiveLocationPhase::Live && phase != LiveLocationPhase::Waiting)
+        return;
+    const std::string key = m.event_id + ":" + std::to_string(m.location_live_expires_ms);
+    if (!live_expiry_armed_.insert(key).second)
+        return;
+    // phase is Live/Waiting so now < expires; clamp for the int delay.
+    const std::uint64_t remaining = m.location_live_expires_ms - now;
+    const int delay = static_cast<int>(
+        std::clamp<std::uint64_t>(remaining, 1, std::numeric_limits<int>::max()));
+    const std::string eid = m.event_id;
+    post_delayed_(delay,
+                  guarded(
+                      [this, eid, key]
+                      {
+                          live_expiry_armed_.erase(key);
+                          for (std::size_t i = 0; i < messages_.size(); ++i)
+                          {
+                              if (messages_[i].event_id == eid)
+                              {
+                                  // A share longer than INT_MAX ms re-arms here.
+                                  const auto& row = messages_[i];
+                                  adapter_->invalidate_layout_cache_at(i);
+                                  invalidate_row(i);
+                                  arm_live_location_expiry_(row);
+                                  break;
+                              }
+                          }
+                      }));
 }
 
 void MessageListView::append_message(MessageRowData msg)
@@ -8667,6 +8814,7 @@ bool MessageListView::on_wheel(tk::Point local, float dx, float dy, bool is_touc
                 // mouse wheel (dy ≈ 90) doesn't jump many levels at once.
                 if (map_panner_.zoom(dy, messages_[ri].map_viewport))
                 {
+                    messages_[ri].map_viewport_touched = true;
                     invalidate_data();
                 }
                 return true;
@@ -8905,6 +9053,7 @@ bool MessageListView::on_pointer_move(tk::Point local)
     {
         map_panner_.drag_pan(local,
                              messages_[map_panner_.active_row()].map_viewport);
+        messages_[map_panner_.active_row()].map_viewport_touched = true;
         if (!hover_link_url_.empty())
         {
             hover_link_url_.clear();
@@ -8957,7 +9106,8 @@ bool MessageListView::on_pointer_move(tk::Point local)
             const auto& m = messages_[hrow];
             // Map hover: report as a non-empty token so the shell shows a
             // grab cursor. Use a sentinel that is never a real URL.
-            if (m.kind == MessageRowData::Kind::Location)
+            if (m.kind == MessageRowData::Kind::Location &&
+                live_location_has_map(m))
             {
                 constexpr float kMapRowH = 240.0f;
                 const tk::Rect& rb = hovered_row_geom_.row_bounds;
@@ -9505,6 +9655,8 @@ void MessageListView::prepend_messages(std::vector<MessageRowData> rows)
     if (rows.empty())
         return;
     const std::size_t n = rows.size();
+    for (const auto& r : rows)
+        arm_live_location_expiry_(r);
     for (std::size_t i = 0; i < n; ++i)
         adapter_->insert_layout_cache_at(0);
     unread_scan_dirty_();
@@ -9549,6 +9701,7 @@ void MessageListView::append_messages(std::vector<MessageRowData> rows)
                               (row.video_autoplay || row.video_gif);
         if (animated)
             start_inline_video(row);
+        arm_live_location_expiry_(row);
         messages_.push_back(std::move(row));
         insert_row(messages_.size() - 1);
     }
@@ -9913,7 +10066,8 @@ bool MessageListView::on_pointer_down(tk::Point local)
         tk::Point world{local.x + bounds().x, local.y + bounds().y};
         std::size_t ri = hovered_row_geom_.row_index;
         if (ri < messages_.size() &&
-            messages_[ri].kind == MessageRowData::Kind::Location)
+            messages_[ri].kind == MessageRowData::Kind::Location &&
+            live_location_has_map(messages_[ri])) // no-fix rows draw no map
         {
             constexpr float kMapRowH = 240.0f;
             const tk::Rect& rb = hovered_row_geom_.row_bounds;

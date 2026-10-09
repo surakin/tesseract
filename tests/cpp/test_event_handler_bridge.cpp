@@ -235,6 +235,31 @@ TEST_CASE("make_event dispatches m.location to LocationEvent",
     CHECK(loc->description == "New York");
 }
 
+TEST_CASE("make_event carries live-location share fields",
+          "[ffi][make_event][location]")
+{
+    auto ffi = make_ffi_event("m.location");
+    ffi.location_live_share      = true;
+    ffi.location_live            = true;
+    ffi.location_awaiting_fix    = true;
+    ffi.location_live_expires_ms = 61000;
+    ffi.location_updated_ms      = 5000;
+    auto ev = tesseract::make_event(ffi);
+    auto* loc = dynamic_cast<tesseract::LocationEvent*>(ev.get());
+    REQUIRE(loc != nullptr);
+    CHECK(loc->live_share);
+    CHECK(loc->live);
+    CHECK(loc->awaiting_fix);
+    CHECK(loc->live_expires_ms == 61000);
+    CHECK(loc->updated_ms == 5000);
+
+    auto plain = tesseract::make_event(make_ffi_event("m.location"));
+    auto* p = dynamic_cast<tesseract::LocationEvent*>(plain.get());
+    REQUIRE(p != nullptr);
+    CHECK_FALSE(p->live_share);
+    CHECK_FALSE(p->awaiting_fix);
+}
+
 TEST_CASE("make_event dispatches m.room.member to MembershipStateEvent",
           "[ffi][make_event]")
 {

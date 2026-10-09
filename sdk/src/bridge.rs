@@ -609,6 +609,12 @@ pub mod ffi {
         location_lat: f64,
         location_lon: f64,
         location_description: String,
+        // Live location share (MSC3489); all default/false for static m.location.
+        location_live_share: bool,
+        location_live: bool,
+        location_live_expires_ms: u64,
+        location_updated_ms: u64,
+        location_awaiting_fix: bool,
         // ----- MSC3440 threads -----
         /// Event ID of the thread root when this event is an in-thread reply
         /// (`content().thread_root()`); empty otherwise.

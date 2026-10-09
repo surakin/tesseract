@@ -414,6 +414,11 @@ struct LocationEvent : public Event
     double lat = 0.0;
     double lon = 0.0;
     std::string description;
+    bool live_share = false;    // came from a live location share (MSC3489)
+    bool live = false;          // SDK says the share is still active
+    bool awaiting_fix = false;  // no usable beacon received yet
+    std::uint64_t live_expires_ms = 0;
+    std::uint64_t updated_ms = 0;
 
     LocationEvent()
     {

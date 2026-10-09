@@ -220,6 +220,13 @@ struct MessageRowData
     double location_lon = 0.0;
     std::string location_description;
     tesseract::views::MapViewport map_viewport; // mutable: updated by pan/zoom
+    // Live location share (MSC3489). All default for static m.location rows.
+    bool location_live_share = false;
+    bool location_live = false; // SDK flag; the UI also checks expiry
+    bool location_awaiting_fix = false;
+    std::uint64_t location_live_expires_ms = 0;
+    std::uint64_t location_updated_ms = 0;
+    bool map_viewport_touched = false; // user panned/zoomed; stop following the pin
 
     // MSC3440 threads. Mirror of tesseract::Event's thread fields. Used by
     // MessageListView to filter in-thread replies out of the main list and
@@ -266,6 +273,25 @@ struct MessageRowData
 // consumes. `my_user_id` is used to set `is_own` on the returned row.
 MessageRowData make_row_data(const tesseract::Event& ev,
                              const std::string& my_user_id);
+
+// Live location share lifecycle (MSC3489). NotLive = static m.location.
+// Waiting = active share with no fix yet (no map). Live = active with a fix and
+// now < expiry. Ended = stopped or expired (with or without a fix).
+enum class LiveLocationPhase
+{
+    NotLive,
+    Waiting,
+    Live,
+    Ended
+};
+LiveLocationPhase live_location_phase(const MessageRowData& m, std::uint64_t now_ms);
+// False for a live share with no fix (any phase): no map/pin is drawn, strip only.
+bool live_location_has_map(const MessageRowData& m);
+// One-line status shown under the map; empty for NotLive.
+std::string live_location_status_text(const MessageRowData& m, std::uint64_t now_ms);
+// Viewport a Location row should have after `old_row` is replaced by `new_row`:
+// the user's panned/zoomed view is kept, otherwise the card follows the pin.
+MapViewport next_map_viewport(const MessageRowData& old_row, const MessageRowData& new_row);
 
 // Membership-group boundary helpers, factored out as pure functions (over
 // `msgs`/an index) so they're unit-testable without a live MessageListView.
@@ -1738,6 +1764,11 @@ private:
     // Delayed-callback scheduler. Wired by `set_post_delayed`; the room-switch
     // gate uses it to arm its 400ms timeout fallback.
     std::function<void(int, std::function<void()>)> post_delayed_;
+
+    // Schedule a one-shot repaint at a live share's expiry so the card flips to
+    // "ended" with no timeline event to trigger it. No-op for non-live rows.
+    void arm_live_location_expiry_(const MessageRowData& m);
+    std::unordered_set<std::string> live_expiry_armed_; // "eid:expires_ms"
 
     enum class VoicePressKind
     {
