@@ -1230,11 +1230,13 @@ void ShellBase::notify_user_activity_()
         // Lazily start tracking on the first activity we see *after* sync is
         // up and running. This avoids publishing Online before the homeserver
         // has acknowledged our access token via the sliding-sync handshake.
-        if (last_room_list_state_ == RoomListState::Running)
+        if (last_room_list_state_ != RoomListState::Running)
         {
-            start_presence_tracking_();
+            return;
         }
-        else
+        start_presence_tracking_();
+        // Stays null when presence sending is disabled.
+        if (!presence_tracker_)
         {
             return;
         }
