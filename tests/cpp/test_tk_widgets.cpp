@@ -9,6 +9,8 @@
 #include "views/ForwardRoomPicker.h"
 #include "views/LoginView.h"
 #include "views/MainAppWidget.h"
+#include "views/MediaViewerOverlay.h"
+#include "media_viewer_test_items.h"
 #include "views/shortcut_registry.h"
 #include "views/MessageSearchView.h"
 #include "tk_test_host.h"
@@ -343,15 +345,15 @@ TEST_CASE("MainAppWidget Escape closes the topmost transient overlay first",
 {
     auto app_owner = tk::create_root_widget<MainAppWidget>(nullptr);
     MainAppWidget& app = *app_owner;
-    app.image_viewer()->open("mxc://image", "image-key", "image", 100, 100);
-    app.show_image_viewer(true);
+    app.media_viewer()->open(tesseract::views::test::image_item("mxc://image", "image-key", "image", 100, 100));
+    app.show_media_viewer(true);
     app.show_quick_switch(true);
 
     CHECK(app.dispatch_key_down({Key::Escape}) == true);
 
     CHECK(app.quick_switcher()->is_open() == false);
-    CHECK(app.image_viewer()->is_open() == true);
-    CHECK(app.image_viewer()->visible() == true);
+    CHECK(app.media_viewer()->is_open() == true);
+    CHECK(app.media_viewer()->visible() == true);
 }
 
 TEST_CASE("MainAppWidget Escape closes and hides media lightboxes",
@@ -359,13 +361,13 @@ TEST_CASE("MainAppWidget Escape closes and hides media lightboxes",
 {
     auto app_owner = tk::create_root_widget<MainAppWidget>(nullptr);
     MainAppWidget& app = *app_owner;
-    app.image_viewer()->open("mxc://image", "image-key", "image", 100, 100);
-    app.show_image_viewer(true);
+    app.media_viewer()->open(tesseract::views::test::image_item("mxc://image", "image-key", "image", 100, 100));
+    app.show_media_viewer(true);
 
     CHECK(app.dispatch_key_down({Key::Escape}) == true);
 
-    CHECK(app.image_viewer()->is_open() == false);
-    CHECK(app.image_viewer()->visible() == false);
+    CHECK(app.media_viewer()->is_open() == false);
+    CHECK(app.media_viewer()->visible() == false);
 }
 
 TEST_CASE("MainAppWidget show_room closes and hides an open video lightbox",
@@ -373,15 +375,15 @@ TEST_CASE("MainAppWidget show_room closes and hides an open video lightbox",
 {
     auto app_owner = tk::create_root_widget<MainAppWidget>(nullptr);
     MainAppWidget& app = *app_owner;
-    app.video_viewer()->open("mxc://example.org/v", "", "video/mp4", 0u, 640,
-                             360);
-    app.show_video_viewer(true);
-    REQUIRE(app.video_viewer()->is_open());
+    app.media_viewer()->open(tesseract::views::test::video_item(
+        "mxc://example.org/v", "", "video/mp4", 0u, 640, 360));
+    app.show_media_viewer(true);
+    REQUIRE(app.media_viewer()->is_open());
 
     app.show_room();
 
-    CHECK(app.video_viewer()->is_open() == false);
-    CHECK(app.video_viewer()->visible() == false);
+    CHECK(app.media_viewer()->is_open() == false);
+    CHECK(app.media_viewer()->visible() == false);
 }
 
 TEST_CASE("MainAppWidget show_room closes and hides an open image lightbox",
@@ -389,14 +391,14 @@ TEST_CASE("MainAppWidget show_room closes and hides an open image lightbox",
 {
     auto app_owner = tk::create_root_widget<MainAppWidget>(nullptr);
     MainAppWidget& app = *app_owner;
-    app.image_viewer()->open("mxc://image", "image-key", "image", 100, 100);
-    app.show_image_viewer(true);
-    REQUIRE(app.image_viewer()->is_open());
+    app.media_viewer()->open(tesseract::views::test::image_item("mxc://image", "image-key", "image", 100, 100));
+    app.show_media_viewer(true);
+    REQUIRE(app.media_viewer()->is_open());
 
     app.show_room();
 
-    CHECK(app.image_viewer()->is_open() == false);
-    CHECK(app.image_viewer()->visible() == false);
+    CHECK(app.media_viewer()->is_open() == false);
+    CHECK(app.media_viewer()->visible() == false);
 }
 
 TEST_CASE("MainAppWidget Escape closes in-room search",
@@ -1159,7 +1161,7 @@ TEST_CASE("MainAppWidget scopes Tab traversal to the open image viewer, "
           "excluding RoomView's header behind it",
           "[tk][widget][focus]")
 {
-    // Regression test: img_viewer_/vid_viewer_ (and every other
+    // Regression test: media_viewer_ (and every other
     // MainAppWidget-level transient overlay — confirm dialog, quick
     // switcher, message search, forward-room picker, encryption setup, QR
     // grant) sit in overlay_stack_, a sibling of root_layout_ (which holds
@@ -1199,13 +1201,13 @@ TEST_CASE("MainAppWidget scopes Tab traversal to the open image viewer, "
     Widget* header_search = app.room_view()->header()->search_btn_for_test();
     REQUIRE(header_search != nullptr);
 
-    app.image_viewer()->open("mxc://image", "image-key", "image", 100, 100);
-    app.show_image_viewer(true);
+    app.media_viewer()->open(tesseract::views::test::image_item("mxc://image", "image-key", "image", 100, 100));
+    app.show_media_viewer(true);
 
     app.measure(lc, {1100.0f, 768.0f});
     app.arrange(lc, {0, 0, 1100, 768});
     app.paint(pc);
-    REQUIRE(app.image_viewer()->is_open());
+    REQUIRE(app.media_viewer()->is_open());
 
     for (int i = 0; i < 10; ++i)
     {

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "MediaOverlayBase.h"
+#include "MediaViewerPage.h"
 
 #include "tk/canvas.h"
 #include "tk/widget.h"
@@ -13,76 +13,45 @@
 namespace tesseract::views
 {
 
-// Full-window lightbox overlay. Paints a dark semi-transparent backdrop over
-// the entire surface with the selected image centred and scaled to fit.
-//
-// Usage:
-//   1. Set the image provider (same lambda as MessageListView).
-//   2. Wire on_close to hide the host surface/window.
-//   3. Call open() when the user clicks an image thumbnail.
-//   4. The shell handles Escape natively by calling close() when is_open().
+// Image page of MediaViewerOverlay: the selected image centred and scaled to
+// fit, with a caption underneath. Non-widget — the overlay owns the scrim,
+// chrome buttons and pointer routing and forwards to this page.
 //
 // Zoom: opens zoomed to fit — an oversized image shrinks so the whole of
 //       it is visible; an image that already fits opens at true 1:1
 //       (zoom 1.0 = one image pixel per screen pixel; fit_zoom_ is never
 //       above 1.0, so small images are not upscaled). Scroll wheel zooms
-//       anchored at the cursor, clamped to [fit, 8×]. Click-drag pans
+//       anchored at the cursor, clamped to [fit, 8x]. Click-drag pans
 //       whenever the image is larger than the viewport.
-class ImageViewerOverlay : public MediaOverlayBase
+class ImageViewerPage : public MediaViewerPage
 {
 public:
-    ImageViewerOverlay();
-    ~ImageViewerOverlay() override;
+    explicit ImageViewerPage(MediaViewerPageHost& host);
+    ~ImageViewerPage() override;
 
-    // Show the overlay for the given image or sticker.
-    // `display_key` is the thumbnail cache key — shown immediately while the
-    // full-res `media_url` is still in flight (may be empty for stickers /
-    // images with no server thumbnail).
-    void open(std::string media_url, std::string display_key, std::string body,
-              int natural_w, int natural_h);
-    // Hide the overlay and reset zoom/pan state.
-    void close();
+    void activate(const MediaViewerItem& item) override;
+    void deactivate() override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint_content(tk::PaintCtx&) override;
+    bool on_content_pointer_down(tk::Point world, tk::Point local) override;
+    bool on_content_pointer_up(tk::Point world, tk::Point local,
+                               bool inside_self) override;
+    void on_pointer_drag(tk::Point local) override;
+    bool on_wheel(tk::Point local, float dx, float dy, bool is_touchpad) override;
+    // + / - zoom around the centre, 0 back to fit, arrows pan while zoomed.
+    bool on_key(const tk::KeyEvent& e) override;
+    void on_fullscreen_changed(bool fullscreen) override;
+    bool wants_copy_button() const override
+    {
+        return true;
+    }
 
     // On-screen image bounds after zoom + pan (valid once arrange/paint has
-    // run while open). Exposed for shells and tests.
+    // run while active).
     tk::Rect image_rect() const
     {
         return image_rect_;
     }
-
-    // Same provider lambda used by MessageListView — returns a cached tk::Image*.
-    // Called during paint; may return nullptr if bytes are still loading.
-    void
-    set_image_provider(std::function<const tk::Image*(const std::string&)> fn);
-
-    // on_close / on_save / set_repaint_requester are inherited from
-    // MediaOverlayBase. For images the
-    // save callback receives (media_url_, body_) — source URL + filename hint.
-
-    // Widget overrides
-    tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void paint(tk::PaintCtx&) override;
-
-    bool on_pointer_down(tk::Point local) override;
-    void on_pointer_up(tk::Point local, bool inside_self) override;
-    void on_pointer_drag(tk::Point local) override;
-    bool on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
-
-protected:
-    bool on_content_pointer_down_(tk::Point world, tk::Point local) override;
-    // + / - zoom around the centre, 0 back to fit, arrows pan while zoomed.
-    bool on_content_key_(const tk::KeyEvent& e) override;
-    bool on_content_pointer_up_(tk::Point world, tk::Point local,
-                                bool inside_self) override;
-    void fire_save_() override;
-    bool wants_copy_button_() const override
-    {
-        return true;
-    }
-    void fire_copy_() override;
-    void dismiss_() override;
-    void on_fullscreen_changed_(bool fullscreen) override;
 
 private:
     // Set base_ to the native image size and fit_zoom_ to the
@@ -111,7 +80,8 @@ private:
     // than merely clamp the now-stale zoom_.
     tk::Size fitted_dims_{};
 
-    std::function<const tk::Image*(const std::string&)> image_provider_;
+    MediaViewerPageHost& host_;
+    bool active_ = false;
 
     // Loading state: set on open(), cleared once image_provider_ returns non-null.
     bool is_loading_ = false;

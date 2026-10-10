@@ -2,9 +2,9 @@
 #include "app/ShellBase.h"
 #include "app/SlashCommands.h"
 #include "views/ForwardRoomPicker.h"
-#include "views/ImageViewerOverlay.h"
+#include "views/MediaViewerOverlay.h"
+#include "views/media_viewer_items.h"
 #include "views/RoomMediaView.h"
-#include "views/VideoViewerOverlay.h"
 #include "views/media_drop.h"
 #include "views/text_util.h"
 #include "tk/i18n.h"
@@ -34,7 +34,7 @@ RoomPane::RoomPane(Deps deps, std::string room_id)
     : deps_(std::move(deps)), shell_(deps_.shell), room_id_(std::move(room_id)),
       owner_(deps_.owner), has_owner_(!deps_.owner.expired())
 {
-    vid_fetch_group_ = shell_ ? shell_->alloc_media_group_() : 0;
+    viewer_fetch_group_ = shell_ ? shell_->alloc_media_group_() : 0;
 
     // Fetch this room's own MSC2545 pack (and every ancestor space's) once,
     // the same way ShellBase does on a main-window room switch — see
@@ -59,8 +59,7 @@ void RoomPane::attach(Widgets w)
 {
     widgets_ = std::move(w);
     room_view_ = widgets_.room_view;
-    img_viewer_ = widgets_.img_viewer;
-    vid_viewer_ = widgets_.vid_viewer;
+    media_viewer_ = widgets_.media_viewer;
     wire_room_view_();
 }
 
@@ -135,7 +134,7 @@ void RoomPane::save_compose_draft_(const std::string& room_id)
             mention_avatar_for_user_(seg.user_id);
     }
     auto pending = bar->take_pending();
-    if (text.empty() && !pending.has_value())
+    if (text.empty() && pending.empty())
     {
         room_compose_drafts_.erase(room_id); // keep the map bounded
         return;
@@ -170,7 +169,7 @@ void RoomPane::stash_unsent_draft_(const std::string& room_id,
     if (room_id.empty() || text.empty() || room_compose_drafts_.count(room_id))
         return;
     room_compose_drafts_[room_id] = RoomComposeDraft{
-        text, static_cast<int>(text.size()), std::nullopt, {}};
+        text, static_cast<int>(text.size()), std::vector<views::ComposeBar::PendingAttachment>{}, {}};
 }
 
 void RoomPane::apply_compose_draft_(const std::string& room_id)
@@ -245,10 +244,10 @@ void RoomPane::apply_compose_draft_(const std::string& room_id)
         }
     }
     bar->set_current_text(it->second.text);
-    if (it->second.pending.has_value())
+    if (!it->second.pending.empty())
     {
-        bar->restore_pending(std::move(*it->second.pending));
-        it->second.pending.reset(); // moved-from; next save_ repopulates it
+        bar->restore_pending(std::move(it->second.pending));
+        it->second.pending.clear(); // moved-from; next save_ repopulates it
     }
 }
 
@@ -304,7 +303,7 @@ void RoomPane::finish_init()
             {
                 if (room_view_)
                 {
-                    room_view_->compose_bar()->set_pending_image(
+                    room_view_->compose_bar()->add_pending_image(
                         std::move(bytes), std::move(mime));
                 }
             });
@@ -1304,147 +1303,195 @@ void RoomPane::wire_room_view_()
                                          caption, reply_event_id,
                                          active_thread_root_for_send_());
     };
-
-    // ── Local image / video overlays ─────────────────────────────────────
-    // img_viewer_ / vid_viewer_ are set via attach() (from Widgets) when the
-    // caller wants local media playback.
-    if (img_viewer_)
+    rv->on_send_gallery =
+        [this, clear_composer](
+            std::vector<tesseract::views::ComposeBar::PendingAttachment> items,
+            std::string caption, std::string reply_event_id)
     {
-        img_viewer_->set_image_provider(
+        if (room_id_.empty() || !pane_client_())
+            return;
+
+        const bool compress =
+            tesseract::Settings::instance().image_quality ==
+            tesseract::Settings::ImageQuality::Compressed;
+
+        std::vector<tesseract::GalleryItemOut> out_items;
+        out_items.reserve(items.size());
+        for (auto& pa : items)
+        {
+            tesseract::GalleryItemOut item;
+            item.width = pa.width;
+            item.height = pa.height;
+            item.is_animated = pa.is_animated;
+            item.thumbnail_bytes = std::move(pa.thumb_bytes_raw);
+            item.thumb_width = pa.thumb_width;
+            item.thumb_height = pa.thumb_height;
+            item.duration_ms = pa.duration_ms;
+
+            using Kind = tesseract::views::ComposeBar::PendingAttachment::Kind;
+            if (pa.kind == Kind::Image && !pa.is_animated)
+            {
+                // Re-encode per Settings::image_quality, same as the
+                // single-image on_send_image path — a gallery of raw camera
+                // photos would otherwise upload uncompressed.
+                auto enc =
+                    deps_.host->encode_for_send(pa.bytes.data(), pa.bytes.size(), compress);
+                if (enc.bytes.empty())
+                    continue; // skip an item that failed to encode
+                item.bytes = std::move(enc.bytes);
+                item.mime_type = std::move(enc.mime);
+                item.width = enc.width;
+                item.height = enc.height;
+                item.filename = std::move(pa.filename);
+            }
+            else
+            {
+                item.bytes = std::move(pa.bytes);
+                item.mime_type = std::move(pa.mime);
+                item.filename = std::move(pa.filename);
+            }
+
+            switch (pa.kind)
+            {
+            case Kind::Image: item.kind = tesseract::GalleryItemOut::Kind::Image; break;
+            case Kind::Video: item.kind = tesseract::GalleryItemOut::Kind::Video; break;
+            case Kind::Audio: item.kind = tesseract::GalleryItemOut::Kind::Audio; break;
+            case Kind::File:  item.kind = tesseract::GalleryItemOut::Kind::File;  break;
+            }
+            out_items.push_back(std::move(item));
+        }
+
+        clear_composer();
+        const auto request_id = shell_->account_manager_.next_upload_request_id();
+        pane_client_()->send_gallery_async(request_id, room_id_, out_items, caption,
+                                           reply_event_id,
+                                           active_thread_root_for_send_());
+    };
+
+    // ── Local media viewer ───────────────────────────────────────────────
+    // media_viewer_ is set via attach() (from Widgets) when the caller wants
+    // local media playback.
+    if (media_viewer_)
+    {
+        media_viewer_->set_image_provider(
             [this](const std::string& url) -> const tk::Image*
             {
                 return shell_image_(url);
             });
-        img_viewer_->set_repaint_requester(
+        media_viewer_->set_repaint_requester(
             [this]
             {
                 deps_.repaint();
             });
-        img_viewer_->on_request_fullscreen = [this](bool on)
+        media_viewer_->on_request_fullscreen = [this](bool on)
         {
             deps_.set_window_fullscreen(on);
         };
         // Do NOT call close() here — close() fires on_close(), causing
         // recursion. The overlay has already done its close work before
         // calling on_close.
-        img_viewer_->on_close = [this]
+        media_viewer_->on_close = [this]
         {
-            if (img_viewer_)
+            if (media_viewer_)
             {
-                img_viewer_->set_visible(false);
+                media_viewer_->set_visible(false);
+            }
+            // Drop any still-in-flight fetch for the item that was just
+            // closed, so its bytes can't arrive later and start playback
+            // (with audio) against a hidden overlay.
+            if (shell_)
+            {
+                shell_->cancel_media_group_(viewer_fetch_group_);
             }
             deps_.relayout();
             if (auto* ta = compose_text_area_())
             {
                 ta->set_focused(true);
+            }
+        };
+        // Viewer playback (video or audio) takes over from any voice / audio
+        // clip the timeline is playing.
+        media_viewer_->on_playback_started = [this]
+        {
+            if (auto* mlv = room_view_ ? room_view_->message_list() : nullptr)
+            {
+                mlv->playback_controller().stop_active_playback();
             }
         };
         // Copy-to-clipboard: fetch the original encoded bytes (shared)
         // and hand them to the surface host via
         // copy_source_to_clipboard_.
-        img_viewer_->on_copy =
-            [this](std::string source_url, std::string /*body*/)
+        media_viewer_->on_copy = [this](const views::MediaViewerItem& item)
         {
-            copy_source_to_clipboard_(std::move(source_url));
+            copy_source_to_clipboard_(item.source);
+        };
+        // The single place a fetch starts: whenever an item becomes current.
+        media_viewer_->on_item_shown =
+            [this](const views::MediaViewerItem& item, std::uint64_t token)
+        {
+            if (shell_)
+            {
+                shell_->cancel_media_group_(viewer_fetch_group_);
+            }
+            start_viewer_fetch_(item, token);
+            // Warm the neighbouring images so stepping through a gallery shows
+            // them straight away (cheap: cached / in-flight sources are skipped).
+            const std::size_t n = media_viewer_->count();
+            if (n > 1)
+            {
+                const std::size_t i = media_viewer_->index();
+                for (std::size_t neighbour : {(i + 1) % n, (i + n - 1) % n})
+                {
+                    const auto* nb = media_viewer_->item_at(neighbour);
+                    if (nb && nb->kind == views::MediaViewerItem::Kind::Image)
+                    {
+                        ensure_viewer_image_(nb->source);
+                    }
+                }
+            }
         };
 
         rv->on_image_clicked =
             [this](const views::MessageListView::ImageHit& hit)
         {
-            if (!img_viewer_)
+            open_media_viewer_({views::item_from_image_hit(hit)}, 0);
+        };
+
+        rv->on_gallery_item_clicked =
+            [this](const views::MessageListView::GalleryHit& hit)
+        {
+            std::vector<views::MediaViewerItem> items = views::items_from_gallery(hit);
+            if (hit.index >= items.size())
             {
                 return;
             }
-            const std::string src_tok   = hit.source    ? hit.source->fetch_token()    : std::string{};
-            const std::string thumb_tok = hit.thumbnail ? hit.thumbnail->fetch_token() : std::string{};
-            img_viewer_->open(src_tok, thumb_tok, hit.body,
-                              hit.natural_w, hit.natural_h);
-            img_viewer_->set_visible(true);
-            deps_.relayout();
-            deps_.grab_surface_focus();
-            ensure_viewer_image_(src_tok);
+            open_media_viewer_(std::move(items), hit.index);
         };
 
         rv->on_avatar_clicked =
             [this](std::string url, std::string name)
         {
-            if (!img_viewer_ || url.empty())
+            if (url.empty())
                 return;
-            // Pass the avatar mxc URL as both source and display_key so the
+            // The avatar mxc URL is both source and display key so the
             // already-cached small avatar shows immediately while a full-res
-            // fetch runs. natural_{w,h}=0 lets the viewer pick a placeholder
+            // fetch runs; unknown dimensions let the viewer pick a placeholder
             // size until bytes arrive.
-            img_viewer_->open(url, url, name, 0, 0);
-            img_viewer_->set_visible(true);
-            deps_.relayout();
-            deps_.grab_surface_focus();
-            ensure_viewer_image_(url);
-        };
-    }
-
-    if (vid_viewer_)
-    {
-        vid_viewer_->set_image_provider(
-            [this](const std::string& url) -> const tk::Image*
-            {
-                return shell_image_(url);
-            });
-        vid_viewer_->set_repaint_requester(
-            [this]
-            {
-                deps_.repaint();
-            });
-        vid_viewer_->on_request_fullscreen = [this](bool on)
-        {
-            deps_.set_window_fullscreen(on);
-        };
-        // Do NOT call close() here — close() fires on_close(), causing
-        // recursion.
-        vid_viewer_->on_close = [this]
-        {
-            if (vid_viewer_)
-            {
-                vid_viewer_->set_visible(false);
-            }
-            // Drop any still-in-flight full-file fetch for the video that
-            // was just closed, so its bytes can't arrive later and start
-            // playback (with audio) against a hidden overlay.
-            if (shell_)
-            {
-                shell_->cancel_media_group_(vid_fetch_group_);
-            }
-            deps_.relayout();
-            if (auto* ta = compose_text_area_())
-            {
-                ta->set_focused(true);
-            }
+            open_media_viewer_({views::item_from_avatar(url, name)}, 0);
         };
 
         rv->on_video_clicked =
             [this](const views::MessageListView::VideoHit& hit)
         {
-            if (!vid_viewer_)
-            {
-                return;
-            }
-            const std::string src_tok   = hit.source    ? hit.source->fetch_token()    : std::string{};
-            const std::string thumb_tok = hit.thumbnail ? hit.thumbnail->fetch_token() : std::string{};
-            vid_viewer_->open(src_tok, thumb_tok,
-                              hit.mime_type, hit.duration_ms, hit.natural_w,
-                              hit.natural_h, hit.loop, hit.no_audio,
-                              hit.hide_controls);
-            vid_viewer_->set_visible(true);
-            deps_.relayout();
-            deps_.grab_surface_focus();
-            fetch_and_play_video_(src_tok);
+            open_media_viewer_({views::item_from_video_hit(hit)}, 0);
         };
-        // The gallery opens the same lightboxes on click — reuse the exact
-        // handlers just installed above rather than duplicating them.
-        if (auto* rmv = room_media_view_())
-        {
-            rmv->on_image_clicked = rv->on_image_clicked;
-            rmv->on_video_clicked = rv->on_video_clicked;
-        }
+    }
+    // The gallery opens the same viewer on click — reuse the exact handlers
+    // just installed above rather than duplicating them.
+    if (auto* rmv = room_media_view_())
+    {
+        rmv->on_image_clicked = rv->on_image_clicked;
+        rmv->on_video_clicked = rv->on_video_clicked;
     }
 
     // ── Jump-to-date (MSC3030) ────────────────────────────────────────────
@@ -3930,6 +3977,29 @@ void RoomPane::save_source_to_file_(std::string source_json,
     pane_client_()->fetch_source_bytes_async(req_id, source_json);
 }
 
+void RoomPane::install_media_viewer_save_(MediaSavePathPicker pick)
+{
+    if (!media_viewer_ || !pick)
+    {
+        return;
+    }
+    media_viewer_->on_save =
+        [this, pick = std::move(pick)](const views::MediaViewerItem& item)
+    {
+        const views::MediaSaveSpec spec = views::media_save_spec(item);
+        // `done` may run after the dialog closes (async dialogs): guarded()
+        // drops it if the pane has been destroyed meanwhile.
+        pick(spec,
+             guarded([this, source = item.source](std::string dest)
+                     {
+                         if (!dest.empty())
+                         {
+                             save_source_to_file_(source, std::move(dest));
+                         }
+                     }));
+    };
+}
+
 void RoomPane::fetch_source_bytes_(
     const std::string& src, std::function<void(std::vector<std::uint8_t>)> on_ready)
 {
@@ -3975,9 +4045,92 @@ struct VideoCacheAccum
 };
 } // namespace
 
-void RoomPane::fetch_and_play_video_(std::string src)
+void RoomPane::open_media_viewer_(std::vector<views::MediaViewerItem> items,
+                                  std::size_t index)
 {
-    if (!shell_ || !vid_viewer_)
+    if (!media_viewer_)
+    {
+        return;
+    }
+    // The audio backend is created on first use (most sessions never open an
+    // audio item), before the page activates so it never shows a "not available"
+    // flash. A host without one leaves the page in its message state.
+    if (!media_viewer_->has_audio_player() && deps_.host &&
+        std::any_of(items.begin(), items.end(),
+                    [](const views::MediaViewerItem& it)
+                    { return it.kind == views::MediaViewerItem::Kind::Audio; }))
+    {
+        if (auto player = deps_.host->make_audio_player())
+        {
+            media_viewer_->set_audio_player(std::move(player));
+        }
+    }
+    media_viewer_->open_sequence(std::move(items), index);
+    if (!media_viewer_->is_open())
+    {
+        return;
+    }
+    media_viewer_->set_visible(true);
+    deps_.relayout();
+    deps_.grab_surface_focus();
+}
+
+void RoomPane::start_viewer_fetch_(const views::MediaViewerItem& item,
+                                   std::uint64_t token)
+{
+    switch (item.kind)
+    {
+        case views::MediaViewerItem::Kind::Image:
+        {
+            ensure_viewer_image_(item.source);
+            break;
+        }
+        case views::MediaViewerItem::Kind::Video:
+        {
+            fetch_and_play_video_(item.source, token);
+            break;
+        }
+        case views::MediaViewerItem::Kind::Audio:
+        {
+            fetch_viewer_audio_(item.source, token);
+            break;
+        }
+        case views::MediaViewerItem::Kind::File:
+        {
+            break; // nothing to preview; Save fetches on demand
+        }
+    }
+}
+
+void RoomPane::fetch_viewer_audio_(const std::string& src, std::uint64_t token)
+{
+    if (!shell_ || !pane_client_() || !media_viewer_)
+    {
+        return;
+    }
+    // Tagged with viewer_fetch_group_ so stepping to another item or closing
+    // the viewer cancels it; the token drops anything that still slips through.
+    auto req_id = shell_->begin_media_req_(viewer_fetch_group_,
+        guarded([this, token](std::vector<std::uint8_t> bytes) mutable
+        {
+            if (media_viewer_)
+            {
+                media_viewer_->load_audio_bytes(token, std::move(bytes));
+            }
+            deps_.relayout();
+        }));
+    pane_client_()->fetch_source_bytes_async(req_id, src, viewer_fetch_group_);
+}
+
+bool RoomPane::viewer_token_current_(std::uint64_t token) const
+{
+    return media_viewer_ && media_viewer_->is_open() &&
+           media_viewer_->load_token() == token;
+}
+
+void RoomPane::fetch_and_play_video_(std::string src, std::uint64_t token)
+{
+    if (!shell_ || !media_viewer_)
     {
         return;
     }
@@ -3986,19 +4139,21 @@ void RoomPane::fetch_and_play_video_(std::string src)
     // closure into the background lambda just copies a weak_ptr + function,
     // it never touches `this` off the UI thread.
     auto on_looked_up = guarded(
-        [this, src](std::vector<std::uint8_t> cached) mutable
+        [this, src, token](std::vector<std::uint8_t> cached) mutable
         {
-            if (!vid_viewer_)
+            // The lookup is not in viewer_fetch_group_, so it can outlive the
+            // item it was started for (user stepped on / closed the viewer).
+            if (!viewer_token_current_(token))
             {
                 return;
             }
             if (!cached.empty())
             {
-                vid_viewer_->load_bytes(cached.data(), cached.size());
+                media_viewer_->load_bytes(token, cached.data(), cached.size());
                 deps_.relayout();
                 return;
             }
-            fetch_and_play_video_uncached_(std::move(src));
+            fetch_and_play_video_uncached_(std::move(src), token);
         });
     auto* shell = shell_;
     const tk::CacheKey cache_key = video_cache_key_(src);
@@ -4014,31 +4169,28 @@ void RoomPane::fetch_and_play_video_(std::string src)
         });
 }
 
-void RoomPane::fetch_and_play_video_uncached_(std::string src)
+void RoomPane::fetch_and_play_video_uncached_(std::string src, std::uint64_t token)
 {
-    if (!shell_ || !pane_client_() || !vid_viewer_)
+    if (!shell_ || !pane_client_() || !viewer_token_current_(token))
     {
         return;
     }
-    // Cancel any fetch still in flight from a previously opened video —
-    // otherwise its bytes could arrive after this one and hijack playback
-    // of the video that's actually open now. Covers both stages below
-    // (classification and the stream/buffer fetch itself), since both are
-    // tagged with the same group id.
-    shell_->cancel_media_group_(vid_fetch_group_);
+    // No group cancel here: on_item_shown already cancelled viewer_fetch_group_
+    // when this item became current, and cancelling again from a late cache
+    // miss would kill the fetch of whichever item is current by now.
     const tk::CacheKey cache_key = video_cache_key_(src);
 
-    auto play_buffered = [this, cache_key](std::string src)
+    auto play_buffered = [this, cache_key, token](std::string src)
     {
-        if (!pane_client_())
+        if (!pane_client_() || !viewer_token_current_(token))
         {
             return;
         }
-        auto req_id = shell_->begin_media_req_(vid_fetch_group_,
-            guarded([this, cache_key](std::vector<std::uint8_t> bytes) mutable
+        auto req_id = shell_->begin_media_req_(viewer_fetch_group_,
+            guarded([this, cache_key, token](std::vector<std::uint8_t> bytes) mutable
             {
-                if (vid_viewer_)
-                    vid_viewer_->load_bytes(bytes.data(), bytes.size());
+                if (media_viewer_)
+                    media_viewer_->load_bytes(token, bytes.data(), bytes.size());
                 deps_.relayout();
                 if (!bytes.empty() && bytes.size() <= kVideoCacheMaxBytes)
                 {
@@ -4051,17 +4203,17 @@ void RoomPane::fetch_and_play_video_uncached_(std::string src)
                         });
                 }
             }));
-        pane_client_()->fetch_source_bytes_async(req_id, src, vid_fetch_group_);
+        pane_client_()->fetch_source_bytes_async(req_id, src, viewer_fetch_group_);
     };
 
     // Classify a small prefix first: streaming only works for a "fast-start"
     // MP4/MOV whose moov index box precedes mdat — a non-fast-start file (or
     // anything not MP4-family) would just stall waiting for data that
     // arrives last, so those keep using the classic full-buffer fetch.
-    auto prefix_req_id = shell_->begin_media_req_(vid_fetch_group_,
-        guarded([this, src, play_buffered, cache_key](std::vector<std::uint8_t> prefix) mutable
+    auto prefix_req_id = shell_->begin_media_req_(viewer_fetch_group_,
+        guarded([this, src, play_buffered, cache_key, token](std::vector<std::uint8_t> prefix) mutable
         {
-            if (!vid_viewer_ || !pane_client_())
+            if (!viewer_token_current_(token) || !pane_client_())
             {
                 return;
             }
@@ -4073,23 +4225,23 @@ void RoomPane::fetch_and_play_video_uncached_(std::string src)
                 play_buffered(std::move(src));
                 return;
             }
-            vid_viewer_->begin_stream_or_buffer();
+            media_viewer_->begin_stream_or_buffer(token);
             auto cache_accum = std::make_shared<VideoCacheAccum>();
             auto req_id = shell_->begin_media_stream_req_(
-                vid_fetch_group_,
-                guarded([this, cache_accum](std::vector<std::uint8_t> chunk,
+                viewer_fetch_group_,
+                guarded([this, cache_accum, token](std::vector<std::uint8_t> chunk,
                                             std::uint64_t total_size) mutable
                 {
-                    if (vid_viewer_)
+                    if (media_viewer_)
                     {
                         // The real HTTP Content-Length, once known, lets the
                         // player report a true final length to its decoder
                         // instead of a growing partial size — see
-                        // VideoViewerOverlay::set_stream_length's doc
+                        // MediaViewerOverlay::set_stream_length's doc
                         // comment. Cheap/idempotent to call every chunk.
                         if (total_size > 0)
-                            vid_viewer_->set_stream_length(total_size);
-                        vid_viewer_->feed_stream_chunk(chunk.data(), chunk.size());
+                            media_viewer_->set_stream_length(token, total_size);
+                        media_viewer_->feed_stream_chunk(token, chunk.data(), chunk.size());
                     }
                     if (cache_accum->valid)
                     {
@@ -4110,10 +4262,10 @@ void RoomPane::fetch_and_play_video_uncached_(std::string src)
                     }
                     deps_.relayout();
                 }),
-                guarded([this, cache_key, cache_accum]() mutable
+                guarded([this, cache_key, cache_accum, token]() mutable
                 {
-                    if (vid_viewer_)
-                        vid_viewer_->end_stream();
+                    if (media_viewer_)
+                        media_viewer_->end_stream(token);
                     if (cache_accum->valid && !cache_accum->bytes.empty())
                     {
                         auto* shell = shell_;
@@ -4126,13 +4278,13 @@ void RoomPane::fetch_and_play_video_uncached_(std::string src)
                     }
                     deps_.relayout();
                 }),
-                guarded([this](std::uint8_t /*status*/) mutable
+                guarded([this, token](std::uint8_t /*status*/) mutable
                 {
-                    if (vid_viewer_)
-                        vid_viewer_->fail_stream();
+                    if (media_viewer_)
+                        media_viewer_->fail_stream(token);
                     deps_.relayout();
                 }));
-            pane_client_()->fetch_source_stream_async(req_id, src, vid_fetch_group_);
+            pane_client_()->fetch_source_stream_async(req_id, src, viewer_fetch_group_);
         }));
     pane_client_()->fetch_source_prefix_async(
         prefix_req_id, src, tesseract::visual::kVideoThumbnailPrefixBytes);

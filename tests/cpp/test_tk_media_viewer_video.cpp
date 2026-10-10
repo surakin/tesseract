@@ -3,7 +3,8 @@
 
 #include "tk/canvas.h"
 #include "tk/theme.h"
-#include "views/VideoViewerOverlay.h"
+#include "views/MediaViewerOverlay.h"
+#include "views/media_viewer_items.h"
 #include "views/MessageListView.h"
 #include "tk_test_surface.h"
 
@@ -16,7 +17,8 @@
 using namespace tk;
 using tesseract::views::MessageListView;
 using tesseract::views::MessageRowData;
-using tesseract::views::VideoViewerOverlay;
+using tesseract::views::MediaViewerItem;
+using tesseract::views::MediaViewerOverlay;
 
 namespace
 {
@@ -53,46 +55,62 @@ float bottom_anchor_pad(const MessageListView& view, Rect bounds)
     return std::max(0.0f, bounds.h - view.content_height());
 }
 
+// Open `overlay` on a single video item (the shape the old per-kind overlay's
+// open(source, thumb, mime, duration_ms, w, h) had).
+void open_video(MediaViewerOverlay& overlay, std::string source, std::string thumb,
+                std::string mime, std::uint64_t duration_ms, int w, int h)
+{
+    MediaViewerItem item;
+    item.kind = MediaViewerItem::Kind::Video;
+    item.source = std::move(source);
+    item.thumbnail = std::move(thumb);
+    item.mime_type = std::move(mime);
+    item.duration_ms = duration_ms;
+    item.width = w;
+    item.height = h;
+    overlay.open(std::move(item));
+}
+
 } // namespace
 
 // ── State tests ───────────────────────────────────────────────────────────
 
-TEST_CASE("VideoViewerOverlay is_open starts false", "[tk][videoviewer]")
+TEST_CASE("MediaViewerOverlay video: is_open starts false", "[tk][videoviewer]")
 {
-    VideoViewerOverlay overlay;
+    MediaViewerOverlay overlay;
     REQUIRE_FALSE(overlay.is_open());
     REQUIRE_FALSE(overlay.is_loading());
 }
 
-TEST_CASE("VideoViewerOverlay open sets is_open and is_loading true",
+TEST_CASE("MediaViewerOverlay video: open sets is_open and is_loading true",
           "[tk][videoviewer]")
 {
-    VideoViewerOverlay overlay;
-    overlay.open("mxc://example.org/v", "", "video/mp4", 30000u, 1280, 720);
+    MediaViewerOverlay overlay;
+    open_video(overlay, "mxc://example.org/v", "", "video/mp4", 30000u, 1280, 720);
     REQUIRE(overlay.is_open());
     REQUIRE(overlay.is_loading());
 }
 
-TEST_CASE("VideoViewerOverlay on_wheel returns true when open",
+TEST_CASE("MediaViewerOverlay video: on_wheel returns true when open",
           "[tk][videoviewer]")
 {
-    VideoViewerOverlay overlay;
-    overlay.open("mxc://example.org/v", "", "video/mp4", 0u, 640, 360);
+    MediaViewerOverlay overlay;
+    open_video(overlay, "mxc://example.org/v", "", "video/mp4", 0u, 640, 360);
     CHECK(overlay.on_wheel({300.0f, 200.0f}, 0.0f, -3.0f));
 }
 
-TEST_CASE("VideoViewerOverlay on_wheel returns false when closed",
+TEST_CASE("MediaViewerOverlay video: on_wheel returns false when closed",
           "[tk][videoviewer]")
 {
-    VideoViewerOverlay overlay;
+    MediaViewerOverlay overlay;
     CHECK_FALSE(overlay.on_wheel({300.0f, 200.0f}, 0.0f, -3.0f));
 }
 
-TEST_CASE("VideoViewerOverlay close fires on_close and resets is_open",
+TEST_CASE("MediaViewerOverlay video: close fires on_close and resets is_open",
           "[tk][videoviewer]")
 {
-    VideoViewerOverlay overlay;
-    overlay.open("mxc://example.org/v", "", "video/mp4", 0u, 640, 360);
+    MediaViewerOverlay overlay;
+    open_video(overlay, "mxc://example.org/v", "", "video/mp4", 0u, 640, 360);
     REQUIRE(overlay.is_open());
 
     bool closed = false;
@@ -106,40 +124,40 @@ TEST_CASE("VideoViewerOverlay close fires on_close and resets is_open",
     CHECK(closed);
 }
 
-TEST_CASE("VideoViewerOverlay load_bytes transitions out of loading state",
+TEST_CASE("MediaViewerOverlay video: load_bytes transitions out of loading state",
           "[tk][videoviewer]")
 {
-    VideoViewerOverlay overlay;
-    overlay.open("mxc://example.org/v", "", "video/mp4", 5000u, 640, 360);
+    MediaViewerOverlay overlay;
+    open_video(overlay, "mxc://example.org/v", "", "video/mp4", 5000u, 640, 360);
     REQUIRE(overlay.is_loading());
 
     // With no video player set, load_bytes still clears the loading flag
     // (player is nullptr so play() is not called).
     const std::uint8_t dummy = 0;
-    overlay.load_bytes(&dummy, 1u);
+    overlay.load_bytes(overlay.load_token(), &dummy, 1u);
 
     CHECK_FALSE(overlay.is_loading());
     CHECK(overlay.is_open()); // overlay stays open
 }
 
-TEST_CASE("VideoViewerOverlay paint does not crash when is_loading",
+TEST_CASE("MediaViewerOverlay video: paint does not crash when is_loading",
           "[tk][videoviewer]")
 {
     TkVideoViewerStage st;
-    VideoViewerOverlay overlay;
-    overlay.open("mxc://example.org/v", "", "video/mp4", 10000u, 1280, 720);
+    MediaViewerOverlay overlay;
+    open_video(overlay, "mxc://example.org/v", "", "video/mp4", 10000u, 1280, 720);
     REQUIRE_NOTHROW(st.run(overlay, {0, 0, 600, 400}));
 }
 
 // ── Pointer interactions ──────────────────────────────────────────────────
 
 TEST_CASE(
-    "VideoViewerOverlay pointer-down outside fires on_close via pointer-up",
+    "MediaViewerOverlay video: pointer-down outside fires on_close via pointer-up",
     "[tk][videoviewer]")
 {
     TkVideoViewerStage st;
-    VideoViewerOverlay overlay;
-    overlay.open("mxc://example.org/v", "", "video/mp4", 0u, 640, 360);
+    MediaViewerOverlay overlay;
+    open_video(overlay, "mxc://example.org/v", "", "video/mp4", 0u, 640, 360);
     st.run(overlay, {0, 0, 600, 400});
 
     bool closed = false;
@@ -155,12 +173,12 @@ TEST_CASE(
 }
 
 TEST_CASE(
-    "VideoViewerOverlay pointer-down on play button does not fire on_close",
+    "MediaViewerOverlay video: pointer-down on play button does not fire on_close",
     "[tk][videoviewer]")
 {
     TkVideoViewerStage st;
-    VideoViewerOverlay overlay;
-    overlay.open("mxc://example.org/v", "", "video/mp4", 0u, 640, 360);
+    MediaViewerOverlay overlay;
+    open_video(overlay, "mxc://example.org/v", "", "video/mp4", 0u, 640, 360);
     st.run(overlay, {0, 0, 600, 400});
 
     bool closed = false;
@@ -179,12 +197,12 @@ TEST_CASE(
     CHECK_FALSE(closed);
 }
 
-TEST_CASE("VideoViewerOverlay pointer-down on close button fires on_close",
+TEST_CASE("MediaViewerOverlay video: pointer-down on close button fires on_close",
           "[tk][videoviewer]")
 {
     TkVideoViewerStage st;
-    VideoViewerOverlay overlay;
-    overlay.open("mxc://example.org/v", "", "video/mp4", 0u, 640, 360);
+    MediaViewerOverlay overlay;
+    open_video(overlay, "mxc://example.org/v", "", "video/mp4", 0u, 640, 360);
     st.run(overlay, {0, 0, 600, 400});
 
     bool closed = false;
@@ -201,14 +219,46 @@ TEST_CASE("VideoViewerOverlay pointer-down on close button fires on_close",
     CHECK(closed);
 }
 
-// ── Full-screen ───────────────────────────────────────────────────────────
-
-TEST_CASE("VideoViewerOverlay full-screen button toggles on_request_fullscreen",
+TEST_CASE("MediaViewerOverlay video: a hidden controls bar does not swallow presses",
           "[tk][videoviewer]")
 {
     TkVideoViewerStage st;
-    VideoViewerOverlay overlay;
-    overlay.open("mxc://example.org/v", "", "video/mp4", 0u, 640, 360);
+    MediaViewerOverlay overlay;
+    MediaViewerItem item;
+    item.kind = MediaViewerItem::Kind::Video;
+    item.source = "mxc://example.org/v";
+    item.mime_type = "video/mp4";
+    item.width = 640;
+    item.height = 360;
+    item.hide_controls = true;
+    overlay.open(std::move(item));
+    st.run(overlay, {0, 0, 600, 400});
+
+    bool closed = false;
+    overlay.on_close = [&] { closed = true; };
+    // Bottom strip below the 600x338 video, where the (hidden) bar would sit.
+    tk::Point p{300.0f, 392.0f};
+    tk::Widget* claimed = overlay.dispatch_pointer_down(p);
+    if (claimed)
+    {
+        claimed->on_pointer_up(claimed->world_to_local(p), true);
+    }
+    else
+    {
+        overlay.on_pointer_down(p);
+        overlay.on_pointer_up(p, true);
+    }
+    CHECK(closed);
+}
+
+// ── Full-screen ───────────────────────────────────────────────────────────
+
+TEST_CASE("MediaViewerOverlay video: full-screen button toggles on_request_fullscreen",
+          "[tk][videoviewer]")
+{
+    TkVideoViewerStage st;
+    MediaViewerOverlay overlay;
+    open_video(overlay, "mxc://example.org/v", "", "video/mp4", 0u, 640, 360);
     st.run(overlay, {0, 0, 600, 400});
 
     std::vector<bool> states;
@@ -231,12 +281,12 @@ TEST_CASE("VideoViewerOverlay full-screen button toggles on_request_fullscreen",
     CHECK(states[1] == false);
 }
 
-TEST_CASE("VideoViewerOverlay close while full-screen restores the window",
+TEST_CASE("MediaViewerOverlay video: close while full-screen restores the window",
           "[tk][videoviewer]")
 {
     TkVideoViewerStage st;
-    VideoViewerOverlay overlay;
-    overlay.open("mxc://example.org/v", "", "video/mp4", 0u, 640, 360);
+    MediaViewerOverlay overlay;
+    open_video(overlay, "mxc://example.org/v", "", "video/mp4", 0u, 640, 360);
     st.run(overlay, {0, 0, 600, 400});
 
     bool last_state = false;
@@ -258,12 +308,12 @@ TEST_CASE("VideoViewerOverlay close while full-screen restores the window",
     CHECK(last_state == false);
 }
 
-TEST_CASE("VideoViewerOverlay full-screen fills the frame and floats controls",
+TEST_CASE("MediaViewerOverlay video: full-screen fills the frame and floats controls",
           "[tk][videoviewer]")
 {
     TkVideoViewerStage st;
-    VideoViewerOverlay overlay;
-    overlay.open("mxc://example.org/v", "", "video/mp4", 0u, 600, 400);
+    MediaViewerOverlay overlay;
+    open_video(overlay, "mxc://example.org/v", "", "video/mp4", 0u, 600, 400);
     st.run(overlay, {0, 0, 600, 400});
     const tk::Rect windowed = overlay.video_rect();
 

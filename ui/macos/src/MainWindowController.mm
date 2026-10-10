@@ -42,6 +42,8 @@
 #include "views/BrandView.h"
 #include "views/MainAppWidget.h"
 #include "views/media_drop.h"
+#include "views/MediaViewerOverlay.h"
+#include "views/media_viewer_items.h"
 #include "views/SettingsView.h"
 #include "views/ShortcodeEngine.h"
 #include "views/ShortcodePopup.h"
@@ -912,6 +914,9 @@ using TkImagePtr = std::unique_ptr<tk::Image>;
                  filename:(std::string)filename
                   caption:(std::string)caption
              replyEventId:(std::string)reply_event_id;
+- (void)_sendComposedGallery:(std::vector<tesseract::views::ComposeBar::PendingAttachment>)items
+                      caption:(std::string)caption
+                 replyEventId:(std::string)reply_event_id;
 
 // Notifications.
 - (void)handleNotification:(std::string)roomId
@@ -2756,8 +2761,7 @@ private:
     // Borrowed sub-view aliases (set after building _mainAppSurface).
     tesseract::views::RoomListView* _roomListView;      // via _mainApp
     tesseract::views::RoomView* _roomView;              // via _mainApp
-    tesseract::views::ImageViewerOverlay* _imgViewer;   // via _mainApp
-    tesseract::views::VideoViewerOverlay* _vidViewer;   // via _mainApp
+    tesseract::views::MediaViewerOverlay* _mediaViewer; // via _mainApp
     tesseract::views::RoomMediaView* _roomMediaView;    // via _mainApp
 
     // Shortcode suggestion popup — a standalone native popup surface.
@@ -3166,8 +3170,7 @@ private:
         // Wire borrowed sub-view aliases.
         _roomListView = _mainApp->room_list_view();
         _roomView = _mainApp->room_view();
-        _imgViewer = _mainApp->image_viewer();
-        _vidViewer = _mainApp->video_viewer();
+        _mediaViewer = _mainApp->media_viewer();
         _roomMediaView = _mainApp->room_media_view();
         _shell->room_view_ = _roomView;
         _shell->main_app_ = _mainApp;
@@ -3291,8 +3294,7 @@ private:
         // ShellBase::main_room_pane_'s doc comment) ----
         _shell->construct_main_room_pane(&_mainAppSurface->host(), {
             .room_view = _mainApp->room_view(),
-            .img_viewer = _mainApp->image_viewer(),
-            .vid_viewer = _mainApp->video_viewer(),
+            .media_viewer = _mainApp->media_viewer(),
             .forward_picker = _mainApp->forward_picker(),
             .room_media_view = _mainApp->room_media_view(),
         },
@@ -3482,64 +3484,27 @@ private:
         // only the video player is shell-specific (needs this window's
         // Host), same as every pop-out wires it directly in its own
         // constructor.
-        _mainApp->video_viewer()->set_video_player(
+        _mainApp->media_viewer()->set_video_player(
             _mainAppSurface->host().make_video_player());
 
-        _mainApp->image_viewer()->on_save =
-            [weakSelf](std::string source_url, std::string filename_hint)
+        // One save handler for every viewer kind: RoomPane builds the spec and
+        // writes the file; this window only shows the panel (no type filter,
+        // as before).
+        if (_shell->main_room_pane_)
         {
-            MainWindowController* s = weakSelf;
-            if (!s)
-                return;
-            NSSavePanel* panel = [NSSavePanel savePanel];
-            NSString* suggested = filename_hint.empty()
-                ? @"image"
-                : [NSString stringWithUTF8String:filename_hint.c_str()];
-            panel.nameFieldStringValue = suggested;
-            NSModalResponse resp = [panel runModal];
-            if (resp != NSModalResponseOK || !panel.URL)
-                return;
-            std::string dest = panel.URL.path.UTF8String;
-            if (!s->_shell->client_) return;
-            auto req_id = s->_shell->begin_media_req_(0,
-                [dest](std::vector<uint8_t> bytes) mutable
+            _shell->main_room_pane_->install_media_viewer_save_(
+                [](const tesseract::views::MediaSaveSpec& spec,
+                   std::function<void(std::string)> done)
                 {
-                    if (bytes.empty()) return;
-                    std::ofstream f(dest, std::ios::binary);
-                    f.write(reinterpret_cast<const char*>(bytes.data()),
-                            static_cast<std::streamsize>(bytes.size()));
+                    NSSavePanel* panel = [NSSavePanel savePanel];
+                    panel.nameFieldStringValue =
+                        [NSString stringWithUTF8String:spec.suggested_name.c_str()];
+                    NSModalResponse resp = [panel runModal];
+                    if (resp != NSModalResponseOK || !panel.URL)
+                        return;
+                    done(std::string(panel.URL.path.UTF8String));
                 });
-            s->_shell->client_->fetch_source_bytes_async(req_id, source_url);
-        };
-
-        _mainApp->video_viewer()->on_save =
-            [weakSelf](std::string source_json, std::string mime_type)
-        {
-            MainWindowController* s = weakSelf;
-            if (!s)
-                return;
-            std::string ext = ".mp4";
-            auto slash = mime_type.find('/');
-            if (slash != std::string::npos)
-                ext = "." + mime_type.substr(slash + 1);
-            NSSavePanel* panel = [NSSavePanel savePanel];
-            panel.nameFieldStringValue =
-                [NSString stringWithUTF8String:("video" + ext).c_str()];
-            NSModalResponse resp = [panel runModal];
-            if (resp != NSModalResponseOK || !panel.URL)
-                return;
-            std::string dest = panel.URL.path.UTF8String;
-            if (!s->_shell->client_) return;
-            auto req_id = s->_shell->begin_media_req_(0,
-                [dest](std::vector<uint8_t> bytes) mutable
-                {
-                    if (bytes.empty()) return;
-                    std::ofstream f(dest, std::ios::binary);
-                    f.write(reinterpret_cast<const char*>(bytes.data()),
-                            static_cast<std::streamsize>(bytes.size()));
-                });
-            s->_shell->client_->fetch_source_bytes_async(req_id, source_json);
-        };
+        }
 
         // RoomView shortcode lookup (avatar/image/preview wired via
         // wire_main_app_widget_).
@@ -3630,7 +3595,7 @@ private:
         // compiler in this environment to verify nothing else calls them;
         // flagged for Phase 6 cleanup, same as _sendComposedImage:/etc. below.
         // on_send_image / on_send_video / on_send_audio / on_send_file /
-        // on_delete_requested / on_copy_event_source_requested /
+        // on_send_gallery / on_delete_requested / on_copy_event_source_requested /
         // on_reaction_toggled already provided by main_room_pane_->attach()
         // above (RoomPane::wire_room_view_) — equivalent bodies (see
         // MacShell::redact_event/send_reaction, which this block used to call
@@ -4245,7 +4210,7 @@ private:
                                         jpeg.bytes);
                                 c->_shell->main_app_->room_view()
                                     ->compose_bar()
-                                    ->set_pending_image(
+                                    ->add_pending_image(
                                         std::vector<std::uint8_t>(
                                             d, d + jpeg.length),
                                         "image/jpeg", "selfie.jpg");
@@ -5174,8 +5139,7 @@ private:
                 // the viewer is a canvas widget so it paints above the C++
                 // widget tree, but native NSView overlays always sit above the
                 // canvas in AppKit's view hierarchy.
-                bool viewerOpen = (s->_imgViewer && s->_imgViewer->is_open()) ||
-                                  (s->_vidViewer && s->_vidViewer->is_open()) ||
+                bool viewerOpen = (s->_mediaViewer && s->_mediaViewer->is_open()) ||
                                   app->camera_overlay_open();
                 if (viewerOpen)
                 {
@@ -6522,6 +6486,72 @@ private:
             _roomView->set_current_text({});
         }
     }
+}
+
+- (void)_sendComposedGallery:(std::vector<tesseract::views::ComposeBar::PendingAttachment>)items
+                      caption:(std::string)caption
+                 replyEventId:(std::string)reply_event_id
+{
+    if (_shell->current_room_id_.empty() || !_mainAppSurface)
+    {
+        return;
+    }
+    const bool compress = tesseract::Settings::instance().image_quality ==
+                          tesseract::Settings::ImageQuality::Compressed;
+
+    std::vector<tesseract::GalleryItemOut> out_items;
+    out_items.reserve(items.size());
+    for (auto& pa : items)
+    {
+        tesseract::GalleryItemOut item;
+        item.width = pa.width;
+        item.height = pa.height;
+        item.is_animated = pa.is_animated;
+        item.thumbnail_bytes = std::move(pa.thumb_bytes_raw);
+        item.thumb_width = pa.thumb_width;
+        item.thumb_height = pa.thumb_height;
+        item.duration_ms = pa.duration_ms;
+
+        using Kind = tesseract::views::ComposeBar::PendingAttachment::Kind;
+        if (pa.kind == Kind::Image && !pa.is_animated)
+        {
+            auto enc = _mainAppSurface->host().encode_for_send(
+                pa.bytes.data(), pa.bytes.size(), compress);
+            if (enc.bytes.empty())
+                continue; // skip an item that failed to encode
+            item.bytes = std::move(enc.bytes);
+            item.mime_type = std::move(enc.mime);
+            item.width = enc.width;
+            item.height = enc.height;
+            item.filename = std::move(pa.filename);
+        }
+        else
+        {
+            item.bytes = std::move(pa.bytes);
+            item.mime_type = std::move(pa.mime);
+            item.filename = std::move(pa.filename);
+        }
+
+        switch (pa.kind)
+        {
+        case Kind::Image: item.kind = tesseract::GalleryItemOut::Kind::Image; break;
+        case Kind::Video: item.kind = tesseract::GalleryItemOut::Kind::Video; break;
+        case Kind::Audio: item.kind = tesseract::GalleryItemOut::Kind::Audio; break;
+        case Kind::File:  item.kind = tesseract::GalleryItemOut::Kind::File;  break;
+        }
+        out_items.push_back(std::move(item));
+    }
+
+    if (_roomTextArea)
+    {
+        _roomTextArea->set_text("");
+    }
+    if (_roomView)
+    {
+        _roomView->set_current_text({});
+    }
+    _shell->client_->send_gallery_async(0, _shell->current_room_id_, out_items,
+                                        caption, reply_event_id);
 }
 
 // ─────────────────────────────────────────────────────────────────────────

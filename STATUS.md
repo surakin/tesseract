@@ -1,6 +1,14 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-10-09**. 2371 C++ + 818 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-10-10**. 3181 C++ + 987 Rust tests.
+
+> **Galleries and the unified media viewer (2026-10-10).**
+> MSC4274 gallery messages send (composer takes up to 20 attachments) and
+> display as a grid; the room list previews "sent a gallery". Clicking an item
+> opens the one media viewer (image, video, audio, file pages) which steps through
+> the gallery with prev/next buttons, a counter, PageUp/PageDown and context-aware
+> Left/Right; galleries up to 200 items. Viewer playback stops inline timeline
+> audio. Qt6 + GTK4 build, ctest 3180/3181, cargo 987.
 
 > **Polls (2026-10-09).**
 > MSC3381 polls (unstable event types) show in the timeline with live results;

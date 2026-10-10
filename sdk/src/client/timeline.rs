@@ -320,6 +320,12 @@ fn filter_membership(
 // Used by paginate_media_view_back_async to report an authoritative media
 // count synchronously with pagination completion, decoupled from that
 // separate, much slower streaming task.
+// NOTE: deliberately does not match `MessageType::Gallery` (MSC4274). This
+// counts one timeline item as one media item for the "Media (N)"
+// RoomMediaView browsing overlay; a gallery event contains N items, so
+// counting it as a single hit would undercount and the overlay has no code
+// to unpack `gallery_items` into separate grid cells yet. Extending
+// RoomMediaView for galleries is a separate, not-yet-scoped follow-up.
 #[cfg(not(test))]
 fn timeline_item_is_media(item: &Arc<TimelineItem>) -> bool {
     use matrix_sdk::ruma::events::room::message::MessageType;

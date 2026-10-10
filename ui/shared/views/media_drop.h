@@ -23,6 +23,7 @@ enum class FileDropOutcome
     Accepted, // queued as a pending attachment
     Empty,    // zero-byte payload; nothing queued
     TooLarge, // exceeds the server upload limit; nothing queued
+    TooMany,  // ComposeBar::kMaxAttachments already queued; nothing queued
 };
 
 // Per-shell async media-info extractor. Invoked for gif/webp/video/audio with
@@ -38,6 +39,8 @@ using MediaInfoExtractor = std::function<void(std::uint32_t pending_gen,
 //
 //   - empty payload                  → FileDropOutcome::Empty (nothing queued)
 //   - size > upload_limit (when > 0) → FileDropOutcome::TooLarge (nothing queued)
+//   - ComposeBar::kMaxAttachments already queued → FileDropOutcome::TooMany
+//                                       (nothing queued)
 //   - image/gif, image/webp          → queue as a still image, then `extract`
 //                                       to detect animation
 //   - other image/*                  → queue directly (no extract)

@@ -9,13 +9,9 @@ PopoutRoomWidget::PopoutRoomWidget()
     auto rv = tk::create_widget<RoomView>(this);
     room_view_ = add_child(std::move(rv));
 
-    auto img = std::make_unique<ImageViewerOverlay>();
-    img_viewer_ = add_child(std::move(img));
-    img_viewer_->set_visible(false);
-
-    auto vid = std::make_unique<VideoViewerOverlay>();
-    vid_viewer_ = add_child(std::move(vid));
-    vid_viewer_->set_visible(false);
+    auto viewer = std::make_unique<MediaViewerOverlay>();
+    media_viewer_ = add_child(std::move(viewer));
+    media_viewer_->set_visible(false);
 
     auto fp = tk::create_widget<ForwardRoomPicker>(this);
     forward_picker_ = add_child(std::move(fp));
@@ -35,27 +31,18 @@ PopoutRoomWidget::PopoutRoomWidget()
     };
 }
 
-void PopoutRoomWidget::show_image_viewer(bool show)
+void PopoutRoomWidget::show_media_viewer(bool show)
 {
-    if (img_viewer_)
+    if (media_viewer_)
     {
-        img_viewer_->set_visible(show);
-    }
-}
-
-void PopoutRoomWidget::show_video_viewer(bool show)
-{
-    if (vid_viewer_)
-    {
-        vid_viewer_->set_visible(show);
+        media_viewer_->set_visible(show);
     }
 }
 
 bool PopoutRoomWidget::any_modal_open_() const
 {
     return (room_view_       && room_view_->is_overlay_open()) ||
-           (img_viewer_      && img_viewer_->is_open()) ||
-           (vid_viewer_      && vid_viewer_->is_open()) ||
+           (media_viewer_    && media_viewer_->is_open()) ||
            (forward_picker_  && forward_picker_->is_open()) ||
            (confirm_dialog_  && confirm_dialog_->is_open());
 }

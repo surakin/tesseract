@@ -70,6 +70,11 @@ public:
         progress_ = std::move(cb);
     }
 
+    void set_error(std::function<void()> cb)
+    {
+        error_ = std::move(cb);
+    }
+
     // IUnknown
     ULONG STDMETHODCALLTYPE AddRef() override
     {
@@ -111,12 +116,19 @@ public:
         // runs on the UI thread.
         auto alive = alive_;
         auto cb = progress_;
+        auto err_cb = (event == MF_MEDIA_ENGINE_EVENT_ERROR) ? error_
+                                                             : std::function<void()>{};
         post_(
-            [alive = std::move(alive), cb = std::move(cb)]()
+            [alive = std::move(alive), cb = std::move(cb),
+             err_cb = std::move(err_cb)]()
             {
                 if (*alive && cb)
                 {
                     cb();
+                }
+                if (*alive && err_cb)
+                {
+                    err_cb();
                 }
             });
         return S_OK;
@@ -126,6 +138,7 @@ private:
     std::shared_ptr<std::atomic<bool>> alive_;
     PostFn post_;
     std::function<void()> progress_;
+    std::function<void()> error_;
     std::atomic<ULONG> ref_{1};
 };
 
@@ -156,6 +169,7 @@ public:
         if (notify_)
         {
             notify_->set_progress(nullptr);
+            notify_->set_error(nullptr);
             notify_->Release();
             notify_ = nullptr;
         }
@@ -178,6 +192,7 @@ public:
             reinterpret_cast<const BYTE*>(data), static_cast<UINT>(size));
         if (!raw_stream)
         {
+            fail_playback_();
             return;
         }
         Microsoft::WRL::ComPtr<IStream> stream;
@@ -187,6 +202,7 @@ public:
         if (FAILED(MFCreateMFByteStreamOnStream(stream.Get(),
                                                 mf_stream.GetAddressOf())))
         {
+            fail_playback_();
             return;
         }
 
@@ -197,6 +213,7 @@ public:
         BSTR burl = SysAllocString(url.c_str());
         if (!burl)
         {
+            fail_playback_();
             return;
         }
 
@@ -326,6 +343,20 @@ public:
     }
 
 private:
+    // play() could not hand the clip to the engine: same final tick + error
+    // the engine's own ERROR event produces.
+    void fail_playback_()
+    {
+        if (on_progress)
+        {
+            on_progress();
+        }
+        if (on_error)
+        {
+            on_error();
+        }
+    }
+
     void init_engine()
     {
         notify_ = new MediaEngineNotify(alive_, post_);
@@ -335,6 +366,14 @@ private:
                 if (on_progress)
                 {
                     on_progress();
+                }
+            });
+        notify_->set_error(
+            [this]()
+            {
+                if (on_error)
+                {
+                    on_error();
                 }
             });
 

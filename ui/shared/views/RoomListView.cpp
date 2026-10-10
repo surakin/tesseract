@@ -113,6 +113,7 @@ std::string preview_text_for(const tesseract::RoomInfo& room)
     if (kind == "file")    return tk::trf(tk::tr("{0} sent a file"), {sender});
     if (kind == "audio")   return tk::trf(tk::tr("{0} sent a voice message"), {sender});
     if (kind == "sticker") return tk::trf(tk::tr("{0} sent a sticker"), {sender});
+    if (kind == "gallery") return tk::trf(tk::tr("{0} sent a gallery"), {sender});
     if (kind == "poll")    return tk::trf(tk::tr("{0} started a poll"), {sender});
     return {};
 }

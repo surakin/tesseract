@@ -3626,6 +3626,11 @@ msgstr "[{0} séñt à vöïçé méssàgéxxxx]"
 msgid "{0} sent a sticker"
 msgstr "[{0} séñt à stïçkérxxx]"
 
+#: ui/shared/views/RoomListView.cpp:110
+#, c++-format
+msgid "{0} sent a gallery"
+msgstr "[{0} séñt à gàlléryxxx]"
+
 #, c++-format
 msgid "{0} started a poll"
 msgstr "[{0} stärtéd à pöllxxx]"
@@ -5873,8 +5878,8 @@ msgid "Pan a zoomed image"
 msgstr "[Pàñ à zööméd ïmàgéxxx]"
 
 #: ui/shared/views/shortcut_registry.cpp:161
-msgid "Play / pause a video"
-msgstr "[Plày / pàùsé à vïdéöxxxx]"
+msgid "Play / pause media"
+msgstr "[Plày / pàùsé médïàxxx]"
 
 #: ui/shared/views/shortcut_registry.cpp:164
 msgid "Skip back 5 seconds"
@@ -5905,8 +5910,8 @@ msgid "Date picker"
 msgstr "[Dàté pïçkérxx]"
 
 #: ui/shared/views/shortcut_registry.cpp:217
-msgid "Image and video viewer"
-msgstr "[Ïmàgé àñd vïdéö vïéwérxxxx]"
+msgid "Media viewer"
+msgstr "[Médïà vïéwérxx]"
 
 #: ui/windows/src/MainWindow.cpp:3141 ui/windows/src/MainWindow.cpp:3177
 #: ui/windows/src/MainWindow.cpp:3210 ui/windows/src/MainWindow.cpp:6542
@@ -6526,3 +6531,56 @@ msgstr "[Çréàté à pöllxx]"
 #: ui/shared/app/ShellBase_rooms.cpp
 msgid "Couldn't send the poll"
 msgstr "[Çöùldñ't séñd thé pöllxxxx]"
+
+msgid "Audio"
+msgstr "[Àùdïöx]"
+
+msgid "Load gallery"
+msgstr "[Löàd gàllérýxx]"
+
+msgid "{0} attachments"
+msgstr "[{0} àttàçhméñtsxx]"
+
+msgid "+{0}"
+msgstr "+{0}"
+
+#: ui/shared/views/MediaViewerOverlay.cpp:42
+msgid "Previous"
+msgstr "[Prévïöùsx]"
+
+#: ui/shared/views/MediaViewerOverlay.cpp:51
+msgid "Next"
+msgstr "[Ñéxtx]"
+
+#: ui/shared/views/MediaViewerOverlay.cpp:355
+#, c++-format
+msgid "{0} / {1}"
+msgstr "[{0} / {1}x]"
+
+#: ui/shared/views/MessageListView.cpp:3783
+msgid "Open gallery"
+msgstr "[Öpéñ gàlléryxx]"
+
+#: ui/shared/views/shortcut_registry.cpp:175
+msgid "Previous item in a gallery"
+msgstr "[Prévïöùs ïtém ïñ à gàlléryxxxxx]"
+
+#: ui/shared/views/shortcut_registry.cpp:178
+msgid "Next item in a gallery"
+msgstr "[Ñéxt ïtém ïñ à gàlléryxxxx]"
+
+#: ui/shared/views/media_viewer_items.cpp
+msgid "Save audio"
+msgstr "[Sàvé àùdïöxx]"
+
+#: ui/shared/views/AudioViewerPage.cpp
+msgid "Audio playback is not available"
+msgstr "[Àùdïö plàybàçk ïs ñöt àvàïlàbléxxxxxx]"
+
+#: ui/shared/views/AudioViewerPage.cpp
+msgid "Unable to play audio"
+msgstr "[Ùñàblé tö plày àùdïöxxxx]"
+
+#: ui/shared/views/FileViewerPage.cpp
+msgid "No preview available"
+msgstr "[Ñö prévïéw àvàïlàbléxxxx]"

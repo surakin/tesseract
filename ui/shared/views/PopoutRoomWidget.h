@@ -1,16 +1,14 @@
 #pragma once
 
 // Minimal container widget for secondary (pop-out) room windows.
-// Stacks RoomView at full bounds with ImageViewerOverlay and
-// VideoViewerOverlay on top, mirroring MainAppWidget's overlay pattern
+// Stacks RoomView at full bounds with MediaViewerOverlay on top, mirroring MainAppWidget's overlay pattern
 // without the sidebar/room-list/login scaffolding.
 
 #include "ConfirmDialog.h"
 #include "ForwardRoomPicker.h"
-#include "ImageViewerOverlay.h"
+#include "MediaViewerOverlay.h"
 #include "RoomMediaView.h"
 #include "RoomView.h"
-#include "VideoViewerOverlay.h"
 
 #include "tk/layout.h"
 
@@ -37,13 +35,9 @@ public:
     {
         return room_view_;
     }
-    ImageViewerOverlay* image_viewer() const
+    MediaViewerOverlay* media_viewer() const
     {
-        return img_viewer_;
-    }
-    VideoViewerOverlay* video_viewer() const
-    {
-        return vid_viewer_;
+        return media_viewer_;
     }
     ForwardRoomPicker* forward_picker() const
     {
@@ -68,8 +62,7 @@ public:
     // always paint over canvas-drawn overlays otherwise).
     std::function<void()> on_layout_changed;
 
-    void show_image_viewer(bool show);
-    void show_video_viewer(bool show);
+    void show_media_viewer(bool show);
 
     // Mirrors MainAppWidget::compose_text_area_rect(): empty while
     // any_modal_open_() or room_view_ isn't visible_in_tree(), so arrange()
@@ -80,14 +73,13 @@ public:
     void paint_before_children(tk::PaintCtx&) override;
 
 private:
-    // True when any overlay stacked above RoomView (image/video viewer,
+    // True when any overlay stacked above RoomView (media viewer,
     // forward picker, confirm dialog, room media gallery) is open — mirrors
     // MainAppWidget::any_modal_open_().
     bool any_modal_open_() const;
 
     RoomView*           room_view_       = nullptr; // owned via add_child
-    ImageViewerOverlay* img_viewer_      = nullptr;
-    VideoViewerOverlay* vid_viewer_      = nullptr;
+    MediaViewerOverlay* media_viewer_    = nullptr;
     ForwardRoomPicker*  forward_picker_  = nullptr;
     ConfirmDialog*      confirm_dialog_  = nullptr;
 

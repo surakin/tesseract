@@ -47,7 +47,7 @@ MediaOverlayBase::MediaOverlayBase()
                                               tk::Button::Variant::Icon);
     save->set_accessible_name(tk::tr("Save"));
     save_btn_ = add_child(std::move(save));
-    save_btn_->set_on_click([this] { if (on_save) fire_save_(); });
+    save_btn_->set_on_click([this] { fire_save_(); });
     save_btn_->set_fill_override(tk::Button::FillOverride{
         kDarkPillFillRest, kDarkPillFillHover, kDarkPillFillPressed});
 
@@ -55,7 +55,7 @@ MediaOverlayBase::MediaOverlayBase()
                                               tk::Button::Variant::Icon);
     copy->set_accessible_name(tk::tr("Copy"));
     copy_btn_ = add_child(std::move(copy));
-    copy_btn_->set_on_click([this] { if (on_copy && wants_copy_button_()) fire_copy_(); });
+    copy_btn_->set_on_click([this] { if (wants_copy_button_()) fire_copy_(); });
     copy_btn_->set_fill_override(tk::Button::FillOverride{
         kDarkPillFillRest, kDarkPillFillHover, kDarkPillFillPressed});
 
@@ -105,12 +105,33 @@ void MediaOverlayBase::toggle_fullscreen_()
     request_repaint_();
 }
 
+void MediaOverlayBase::leave_fullscreen_()
+{
+    if (!fullscreen_)
+    {
+        return;
+    }
+    fullscreen_ = false;
+    fullscreen_icon_.reset();
+    if (fullscreen_btn_)
+    {
+        fullscreen_btn_->set_accessible_name(tk::tr("Full screen"));
+    }
+    chrome_visible_ = true;
+    if (on_request_fullscreen)
+    {
+        on_request_fullscreen(false);
+    }
+    on_fullscreen_changed_(false);
+}
+
 bool MediaOverlayBase::any_chrome_hovered_() const
 {
     return (close_btn_ && close_btn_->hovered()) ||
            (save_btn_ && save_btn_->hovered()) ||
            (copy_btn_ && copy_btn_->hovered()) ||
-           (fullscreen_btn_ && fullscreen_btn_->hovered());
+           (fullscreen_btn_ && fullscreen_btn_->hovered()) ||
+           extra_chrome_hovered_();
 }
 
 bool MediaOverlayBase::on_pointer_move(tk::Point /*local*/)

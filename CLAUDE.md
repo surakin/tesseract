@@ -33,7 +33,10 @@ ui/
                   RoomListView, RoomView, MessageListView, ComposeBar;
                   ThreadView, ThreadListView (right-side panel inside RoomView);
                   EmojiPicker, StickerPicker, AccountPicker;
-                  ImageViewerOverlay, VideoViewerOverlay, ShortcodePopup;
+                  MediaViewerOverlay (the one lightbox; ImageViewerPage /
+                  VideoViewerPage / AudioViewerPage / FileViewerPage are its
+                  per-kind page strategies, video+audio share MediaTransportBar,
+                  items built by media_viewer_items), ShortcodePopup;
                   SettingsView, JoinRoomView, UserInfo;
                   shortcut_registry (every keyboard shortcut, one table) +
                   KeyboardShortcutsOverlay (Ctrl+/ / F1 list built from it);

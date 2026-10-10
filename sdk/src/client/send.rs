@@ -149,6 +149,21 @@ pub(crate) fn build_animated_image_content(
     content
 }
 
+/// Synthesize a fallback `body` for an outgoing `m.gallery` (MSC4274) event.
+/// `GalleryMessageEventContent.body` is a required field, and per the MSC it
+/// doubles as the description non-supporting clients fall back to — so an
+/// empty user caption still needs *some* text, not an empty string.
+pub(crate) fn gallery_fallback_body(caption: &str, item_count: usize) -> String {
+    if !caption.is_empty() {
+        return caption.to_owned();
+    }
+    if item_count == 1 {
+        "Sent 1 item".to_owned()
+    } else {
+        format!("Sent {item_count} items")
+    }
+}
+
 /// Compute the optional `Reply` to attach to a media send. Returns `Ok(None)`
 /// when neither `reply_event_id` nor `thread_root` is set (no reply needed),
 /// `Ok(Some(reply))` with the appropriate `EnforceThread` variant, or
@@ -1925,6 +1940,179 @@ impl ClientFfi {
     ) {
     }
 
+    /// Non-blocking gallery send (MSC4274 `m.gallery`). Uploads every item
+    /// in `items` via `RoomSendQueue::send_gallery` and posts one event
+    /// carrying all of them under a single shared `caption`. Unlike the four
+    /// scalar `send_*_async` methods (which `await room.send_attachment`
+    /// directly and only resolve once the upload+send genuinely finished),
+    /// `send_gallery` enqueues and returns immediately, with the real upload
+    /// work happening in a background task — so `on_upload_complete` fires
+    /// on successful *enqueue*, not delivery. Mirrors the same enqueue-is-done
+    /// semantics `send_edit`/`send_caption_edit` already use above; the
+    /// timeline's existing local-echo pending/retry machinery (already wired
+    /// for edits via the same send-queue path) covers eventual delivery
+    /// failures.
+    ///
+    /// Known upstream bug (matrix-sdk 0.18.0–0.19.1, see ROADMAP.md): if a
+    /// homeserver's content dedup returns an `mxc://` URI that's already in
+    /// the local media cache (i.e. this exact file content was already
+    /// uploaded once before, e.g. resending the same test image), the
+    /// send-queue's post-upload cache-key rename hits a SQLite UNIQUE
+    /// constraint and that dependent request is retried forever — every
+    /// queue tick, persisted across restarts — with no user-visible error.
+    /// Not something we can fix from this call site; documented here so a
+    /// future "gallery send silently does nothing" report finds this fast.
+    #[cfg(not(test))]
+    pub fn send_gallery_async(
+        &self,
+        request_id: u64,
+        room_id: &str,
+        items: Vec<crate::ffi::GalleryItemOutFfi>,
+        caption: &str,
+        reply_event_id: &str,
+        thread_root: &str,
+    ) {
+        use matrix_sdk::attachment::{
+            AttachmentInfo, BaseAudioInfo, BaseFileInfo, BaseImageInfo, BaseVideoInfo,
+            GalleryConfig, GalleryItemInfo, Thumbnail,
+        };
+        use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
+        use matrix_sdk::ruma::UInt;
+        use std::time::Duration;
+
+        let Some(client) = self.client.clone() else {
+            return;
+        };
+        let handler = self.handler.clone();
+
+        let deliver = move |ok: bool, msg: &str| {
+            if let Some(h) = &handler {
+                let g = h.lock();
+                g.on_upload_complete(request_id, ok, msg);
+            }
+        };
+
+        let room_id_str = room_id.to_owned();
+        let caption = caption.to_owned();
+        let reply_event_id = reply_event_id.to_owned();
+        let thread_root = thread_root.to_owned();
+        let item_count = items.len();
+
+        self.rt.spawn(async move {
+            let (_, room) = match require_room(&client, &room_id_str) {
+                Ok(v) => v,
+                Err(e) => {
+                    deliver(false, &e.message);
+                    return;
+                }
+            };
+
+            let mut gallery_items = Vec::with_capacity(items.len());
+            for item in items {
+                let mime: mime::Mime = match item.mime_type.parse() {
+                    Ok(m) => m,
+                    Err(e) => {
+                        deliver(false, &format!("invalid mime: {e}"));
+                        return;
+                    }
+                };
+                let size = UInt::new(item.bytes.len() as u64);
+                let (attachment_info, thumbnail) = match item.kind.as_str() {
+                    "image" => (
+                        AttachmentInfo::Image(BaseImageInfo {
+                            width: UInt::new(item.width as u64),
+                            height: UInt::new(item.height as u64),
+                            size,
+                            blurhash: None,
+                            is_animated: Some(item.is_animated),
+                        }),
+                        None,
+                    ),
+                    "video" => {
+                        let thumb = (!item.thumbnail_bytes.is_empty()).then(|| {
+                            let thumb_size = item.thumbnail_bytes.len() as u64;
+                            Thumbnail {
+                                data: item.thumbnail_bytes,
+                                content_type: mime::IMAGE_JPEG,
+                                height: UInt::new(item.thumb_height as u64).unwrap_or_default(),
+                                width: UInt::new(item.thumb_width as u64).unwrap_or_default(),
+                                size: UInt::new(thumb_size).unwrap_or_default(),
+                            }
+                        });
+                        (
+                            AttachmentInfo::Video(BaseVideoInfo {
+                                duration: (item.duration_ms > 0)
+                                    .then(|| Duration::from_millis(item.duration_ms)),
+                                height: UInt::new(item.height as u64),
+                                width: UInt::new(item.width as u64),
+                                size,
+                                blurhash: None,
+                            }),
+                            thumb,
+                        )
+                    }
+                    "audio" => (
+                        AttachmentInfo::Audio(BaseAudioInfo {
+                            duration: (item.duration_ms > 0)
+                                .then(|| Duration::from_millis(item.duration_ms)),
+                            size,
+                            waveform: None,
+                        }),
+                        None,
+                    ),
+                    // "file" and any unrecognized kind fall back to a plain
+                    // file item.
+                    _ => (AttachmentInfo::File(BaseFileInfo { size }), None),
+                };
+                gallery_items.push(GalleryItemInfo {
+                    filename: item.filename,
+                    content_type: mime,
+                    data: item.bytes,
+                    attachment_info,
+                    // v1 supports one gallery-level caption only, not
+                    // per-item captions.
+                    caption: None,
+                    thumbnail,
+                });
+            }
+
+            let mut config = GalleryConfig::new();
+            for gi in gallery_items {
+                config = config.add_item(gi);
+            }
+            // GalleryConfig::caption feeds GalleryMessageEventContent.body
+            // directly (required field) — must always be Some, or the
+            // matrix-sdk send path defaults it to an empty string.
+            let body = gallery_fallback_body(&caption, item_count);
+            config = config.caption(Some(TextMessageEventContent::plain(body)));
+            match build_media_reply(&reply_event_id, &thread_root) {
+                Ok(Some(reply)) => config = config.reply(Some(reply)),
+                Ok(None) => {}
+                Err(e) => {
+                    deliver(false, &e);
+                    return;
+                }
+            }
+
+            match room.send_queue().send_gallery(config).await {
+                Ok(_) => deliver(true, ""),
+                Err(e) => deliver(false, &e.to_string()),
+            }
+        });
+    }
+
+    #[cfg(test)]
+    pub fn send_gallery_async(
+        &self,
+        _request_id: u64,
+        _room_id: &str,
+        _items: Vec<crate::ffi::GalleryItemOutFfi>,
+        _caption: &str,
+        _reply_event_id: &str,
+        _thread_root: &str,
+    ) {
+    }
+
     /// Encode `pcm` (raw signed 16-bit mono 48 kHz samples as a byte slice,
     /// little-endian) into an Ogg/Opus stream and send it as an MSC3245
     /// `m.voice` event in `room_id`. `waveform` carries the MSC1767 waveform
@@ -3644,5 +3832,25 @@ mod helper_tests {
         let (t, ts) = pick_thread_receipt_target(root, None, None);
         assert_eq!(t, root);
         assert_eq!(ts, 0);
+    }
+}
+
+#[cfg(test)]
+mod gallery_fallback_body_tests {
+    use super::gallery_fallback_body;
+
+    #[test]
+    fn uses_caption_when_present() {
+        assert_eq!(gallery_fallback_body("vacation pics", 5), "vacation pics");
+    }
+
+    #[test]
+    fn synthesizes_singular_when_no_caption() {
+        assert_eq!(gallery_fallback_body("", 1), "Sent 1 item");
+    }
+
+    #[test]
+    fn synthesizes_plural_when_no_caption() {
+        assert_eq!(gallery_fallback_body("", 5), "Sent 5 items");
     }
 }

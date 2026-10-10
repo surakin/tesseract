@@ -969,6 +969,10 @@ pub(super) fn preview_from_timeline_content(content: &TimelineItemContent) -> La
                 kind: "audio".to_owned(),
                 ..Default::default()
             },
+            MessageType::Gallery(_) => LatestPreview {
+                kind: "gallery".to_owned(),
+                ..Default::default()
+            },
             _ => LatestPreview::default(),
         },
         TimelineItemContent::MsgLike(MsgLikeContent {

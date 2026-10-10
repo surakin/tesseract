@@ -22,7 +22,6 @@
 #include "views/JoinRoomView.h"
 #include "views/ConfirmDialog.h"
 #include "views/MainAppWidget.h"
-#include "views/VideoViewerOverlay.h"
 #include "views/RoomListView.h"
 #include "views/InviteDialog.h"
 #include "views/text_util.h"
@@ -874,16 +873,16 @@ std::uint64_t ShellBase::video_memory_bytes_() const
     std::uint64_t total = 0;
     if (room_view_)
         total += room_view_->video_memory_bytes();
-    if (main_app_ && main_app_->video_viewer())
-        total += main_app_->video_viewer()->memory_bytes();
+    if (main_app_ && main_app_->media_viewer())
+        total += main_app_->media_viewer()->memory_bytes();
     for (const auto& w : owned_secondary_windows_)
     {
         if (!w)
             continue;
         if (w->room_view())
             total += w->room_view()->video_memory_bytes();
-        if (w->video_viewer())
-            total += w->video_viewer()->memory_bytes();
+        if (w->media_viewer())
+            total += w->media_viewer()->memory_bytes();
     }
     return total;
 }

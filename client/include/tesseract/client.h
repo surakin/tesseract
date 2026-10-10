@@ -758,6 +758,21 @@ public:
                           const std::string& reply_event_id = "",
                           const std::string& thread_root = std::string{});
 
+    /// Non-blocking gallery send (MSC4274 `m.gallery`). Uploads every item
+    /// in `items` and posts a single event carrying all of them under one
+    /// shared `caption`. Result delivered via
+    /// IEventHandler::on_upload_complete, fired once the gallery has been
+    /// enqueued (not once every item has finished uploading — see the Rust
+    /// doc comment on ClientFfi::send_gallery_async for why). Requires 2+
+    /// items; send a lone attachment via send_image_async/send_video_async/
+    /// send_audio_async/send_file_async instead.
+    void send_gallery_async(std::uint64_t request_id,
+                            const std::string& room_id,
+                            const std::vector<GalleryItemOut>& items,
+                            const std::string& caption,
+                            const std::string& reply_event_id = "",
+                            const std::string& thread_root = std::string{});
+
     /// Send an audio file to `room_id` as a plain `m.audio` event (not an
     /// MSC3245 voice message). `duration_ms` populates `info.duration` (pass
     /// 0 when unknown). `caption`/`reply_event_id` follow the same MSC2530 /

@@ -1,4 +1,4 @@
-#include "ImageViewerOverlay.h"
+#include "ImageViewerPage.h"
 #include "shortcut_registry.h"
 #include "icons.h"
 #include "media_utils.h"
@@ -26,35 +26,34 @@ constexpr float kZoomMax = 8.0f;
 
 // ── full-screen ──────────────────────────────────────────────────────────
 
-void ImageViewerOverlay::on_fullscreen_changed_(bool /*fullscreen*/)
+void ImageViewerPage::on_fullscreen_changed(bool /*fullscreen*/)
 {
     // Re-fit the image to the new viewport (the letterbox area changes a lot
     // when the margins collapse / restore).
     open_at_fit_ = true;
-    request_repaint_();
+    host_.host_request_repaint();
 }
 
 // ── public API ───────────────────────────────────────────────────────────
 
-ImageViewerOverlay::ImageViewerOverlay() = default;
+ImageViewerPage::ImageViewerPage(MediaViewerPageHost& host) : host_(host) {}
 
-ImageViewerOverlay::~ImageViewerOverlay() = default;
+ImageViewerPage::~ImageViewerPage() = default;
 
-void ImageViewerOverlay::open(std::string media_url, std::string display_key,
-                              std::string body, int natural_w, int natural_h)
+void ImageViewerPage::activate(const MediaViewerItem& item)
 {
-    media_url_ = std::move(media_url);
-    display_key_ = std::move(display_key);
-    body_ = std::move(body);
-    natural_w_ = natural_w;
-    natural_h_ = natural_h;
-    dims_known_ = natural_w > 0 && natural_h > 0;
+    media_url_ = item.source;
+    display_key_ = item.thumbnail;
+    body_ = item.caption;
+    natural_w_ = item.width;
+    natural_h_ = item.height;
+    dims_known_ = item.width > 0 && item.height > 0;
     fitted_dims_ = {};
     zoom_ = 1.0f; // provisional until geometry (fit_zoom_) is known
     pan_x_ = 0.0f;
     pan_y_ = 0.0f;
-    is_open_ = true;
-    fullscreen_ = false;
+    press_drag_ = false;
+    active_ = true;
     // Open zoomed to fit: oversized images shrink to the viewport, images
     // that already fit stay at 1:1 (fit_zoom_ is capped at 1.0). Resolved
     // on the first recompute_base_ once bounds — and thus fit_zoom_ — exist.
@@ -64,52 +63,35 @@ void ImageViewerOverlay::open(std::string media_url, std::string display_key,
     // Geometry is recomputed in paint() using current bounds.
 }
 
-void ImageViewerOverlay::close()
+void ImageViewerPage::deactivate()
 {
-    dismiss_();
-}
-
-void ImageViewerOverlay::dismiss_()
-{
+    active_ = false;
+    press_drag_ = false;
     zoom_ = 1.0f;
     pan_x_ = 0.0f;
     pan_y_ = 0.0f;
-    MediaOverlayBase::dismiss_();
-}
-
-void ImageViewerOverlay::set_image_provider(
-    std::function<const tk::Image*(const std::string&)> fn)
-{
-    image_provider_ = std::move(fn);
 }
 
 // ── layout ───────────────────────────────────────────────────────────────
 
-tk::Size ImageViewerOverlay::measure(tk::LayoutCtx&, tk::Size constraints)
+void ImageViewerPage::arrange(tk::LayoutCtx& /*lc*/, tk::Rect b)
 {
-    return constraints; // fills the entire surface
-}
-
-void ImageViewerOverlay::arrange(tk::LayoutCtx& lc, tk::Rect b)
-{
-    tk::Widget::arrange(lc, b);
     recompute_base_(b);
     recompute_image_rect();
-    layout_chrome_(lc, b);
 }
 
 // ── private helpers ───────────────────────────────────────────────────────
 
-void ImageViewerOverlay::recompute_base_(tk::Rect b)
+void ImageViewerPage::recompute_base_(tk::Rect b)
 {
-    const float margin_x = fullscreen_ ? 0.0f : kImageViewerMarginX;
-    const float margin_y = fullscreen_ ? 0.0f : kImageViewerMarginY;
+    const float margin_x = host_.host_fullscreen() ? 0.0f : kImageViewerMarginX;
+    const float margin_y = host_.host_fullscreen() ? 0.0f : kImageViewerMarginY;
     const float avail_w = std::max(1.0f, b.w - margin_x);
     const float avail_h = std::max(1.0f, b.h - margin_y);
 
     // `nw`/`nh` are the dimensions of whatever is currently driving the
     // fit: the real metadata when known, or otherwise whatever
-    // image_provider_ currently resolves (thumbnail first, full-res once it
+    // host image lookup currently resolves (thumbnail first, full-res once it
     // lands).
     float nw = 0.0f;
     float nh = 0.0f;
@@ -123,13 +105,10 @@ void ImageViewerOverlay::recompute_base_(tk::Rect b)
         // Real dimensions were unknown at open() (e.g. avatar clicks —
         // Matrix m.room.member events carry no width/height info).
         const tk::Image* probe = nullptr;
-        if (image_provider_)
-        {
-            if (!media_url_.empty())
-                probe = image_provider_(media_url_);
-            if (!probe && !display_key_.empty())
-                probe = image_provider_(display_key_);
-        }
+        if (!media_url_.empty())
+            probe = host_.host_image(media_url_);
+        if (!probe && !display_key_.empty())
+            probe = host_.host_image(display_key_);
         if (probe && probe->width() > 0 && probe->height() > 0)
         {
             nw = static_cast<float>(probe->width());
@@ -192,9 +171,9 @@ void ImageViewerOverlay::recompute_base_(tk::Rect b)
     }
 }
 
-void ImageViewerOverlay::recompute_image_rect()
+void ImageViewerPage::recompute_image_rect()
 {
-    const tk::Rect b = bounds();
+    const tk::Rect b = host_.host_bounds();
     float iw = base_.w * zoom_;
     float ih = base_.h * zoom_;
     float cx = b.x + b.w * 0.5f + pan_x_;
@@ -202,9 +181,9 @@ void ImageViewerOverlay::recompute_image_rect()
     image_rect_ = {cx - iw * 0.5f, cy - ih * 0.5f, iw, ih};
 }
 
-void ImageViewerOverlay::clamp_pan()
+void ImageViewerPage::clamp_pan()
 {
-    const tk::Rect b = bounds();
+    const tk::Rect b = host_.host_bounds();
     float ex = std::max(0.0f, (base_.w * zoom_ - b.w) * 0.5f + 32.0f);
     float ey = std::max(0.0f, (base_.h * zoom_ - b.h) * 0.5f + 32.0f);
     pan_x_ = std::clamp(pan_x_, -ex, ex);
@@ -213,49 +192,42 @@ void ImageViewerOverlay::clamp_pan()
 
 // ── paint ─────────────────────────────────────────────────────────────────
 
-void ImageViewerOverlay::paint(tk::PaintCtx& ctx)
+void ImageViewerPage::paint_content(tk::PaintCtx& ctx)
 {
-    if (!is_open_)
+    if (!active_)
     {
         return;
     }
 
-    const tk::Rect b = bounds();
-
-    // Recompute geometry here too — zoom/pan may have changed since arrange.
-    recompute_base_(b);
-    recompute_image_rect();
-    tk::LayoutCtx lc{ctx.factory, ctx.theme};
-    layout_chrome_(lc, b);
+    // Geometry was recomputed by arrange() just before this paint pass
+    // (zoom/pan may have changed since the last layout).
+    const tk::Rect b = host_.host_bounds();
 
     auto& cv = ctx.canvas;
-
-    // Dark backdrop
-    paint_scrim_(ctx);
 
     // Image or placeholder.  Try full-res first; fall back to the thumbnail
     // cache key while the full-res fetch is still in flight.
     const tk::Image* img = nullptr;
     std::string drawn_key;
-    if (image_provider_ && !media_url_.empty())
+    if (!media_url_.empty())
     {
-        img = image_provider_(media_url_);
+        img = host_.host_image(media_url_);
         if (img)
         {
             drawn_key = media_url_;
         }
     }
-    if (!img && image_provider_ && !display_key_.empty())
+    if (!img && !display_key_.empty())
     {
-        img = image_provider_(display_key_);
+        img = host_.host_image(display_key_);
         if (img)
         {
             drawn_key = display_key_;
         }
     }
     // is_loading_ is cleared here (in paint) rather than via a separate
-    // callback because ImageViewerOverlay has no direct "image ready" hook —
-    // it polls image_provider_ on each frame. Once it returns non-null the
+    // callback because ImageViewerPage has no direct "image ready" hook —
+    // it polls the host image lookup on each frame. Once it returns non-null the
     // loading state is complete.
     if (img)
     {
@@ -285,14 +257,14 @@ void ImageViewerOverlay::paint(tk::PaintCtx& ctx)
         tk::draw_spinner_dots(cv, {cx, cy}, phase, /*radius=*/14.0f,
                               /*dot_r=*/3.0f, tk::Color{220, 220, 220, 255});
         // Self-drive animation: schedules a layout+redraw every frame while
-        // loading. Note request_repaint_() triggers relayout() (not just a
+        // loading. Note a repaint request triggers relayout() (not just a
         // redraw), so spinner animation runs one full measure/arrange pass
         // per frame. This matches the existing video-player on_frame pattern.
-        request_repaint_();
+        host_.host_request_repaint();
     }
 
     // Caption below image (hidden in full-screen — the image fills the window)
-    if (!body_.empty() && !fullscreen_)
+    if (!body_.empty() && !host_.host_fullscreen())
     {
         tk::TextStyle st{};
         st.role = tk::FontRole::Body;
@@ -307,30 +279,17 @@ void ImageViewerOverlay::paint(tk::PaintCtx& ctx)
             cv.draw_text(*lo, {tx, ty}, tk::Color::rgba(255, 255, 255, 210));
         }
     }
-
-    // Close / download chrome buttons (shared scaffolding).
-    paint_chrome_buttons_(ctx);
 }
 
 // ── pointer events ────────────────────────────────────────────────────────
 
-bool ImageViewerOverlay::on_pointer_down(tk::Point local)
-{
-    return handle_pointer_down_(local);
-}
-
-void ImageViewerOverlay::on_pointer_up(tk::Point local, bool inside_self)
-{
-    handle_pointer_up_(local, inside_self);
-}
-
-bool ImageViewerOverlay::on_content_pointer_down_(tk::Point w, tk::Point local)
+bool ImageViewerPage::on_content_pointer_down(tk::Point w, tk::Point local)
 {
     if (rect_contains(image_rect_, w))
     {
         // Pan whenever the image is larger than the viewport (true at
         // 1:1 for any image bigger than the window, not only when zoomed).
-        const tk::Rect b = bounds();
+        const tk::Rect b = host_.host_bounds();
         if (base_.w * zoom_ > b.w || base_.h * zoom_ > b.h)
         {
             press_drag_ = true;
@@ -342,7 +301,7 @@ bool ImageViewerOverlay::on_content_pointer_down_(tk::Point w, tk::Point local)
     return false;
 }
 
-bool ImageViewerOverlay::on_content_pointer_up_(tk::Point /*w*/,
+bool ImageViewerPage::on_content_pointer_up(tk::Point /*w*/,
                                                 tk::Point /*local*/,
                                                 bool /*inside_self*/)
 {
@@ -354,17 +313,7 @@ bool ImageViewerOverlay::on_content_pointer_up_(tk::Point /*w*/,
     return false;
 }
 
-void ImageViewerOverlay::fire_save_()
-{
-    on_save(media_url_, body_);
-}
-
-void ImageViewerOverlay::fire_copy_()
-{
-    on_copy(media_url_, body_);
-}
-
-void ImageViewerOverlay::on_pointer_drag(tk::Point local)
+void ImageViewerPage::on_pointer_drag(tk::Point local)
 {
     if (!press_drag_)
     {
@@ -376,12 +325,8 @@ void ImageViewerOverlay::on_pointer_drag(tk::Point local)
     clamp_pan();
 }
 
-bool ImageViewerOverlay::on_wheel(tk::Point local, float /*dx*/, float dy, bool /*is_touchpad*/)
+bool ImageViewerPage::on_wheel(tk::Point local, float /*dx*/, float dy, bool /*is_touchpad*/)
 {
-    if (!is_open_)
-    {
-        return false;
-    }
     if (!dims_known_ && fitted_dims_.w <= 0)
     {
         // Real dimensions are unknown and nothing has resolved even once
@@ -408,7 +353,7 @@ bool ImageViewerOverlay::on_wheel(tk::Point local, float /*dx*/, float dy, bool 
     }
 
     // Anchor zoom at cursor position
-    const tk::Rect b = bounds();
+    const tk::Rect b = host_.host_bounds();
     tk::Point w{local.x + b.x, local.y + b.y};
     float old_iw = base_.w * zoom_;
     float old_ih = base_.h * zoom_;
@@ -436,9 +381,9 @@ bool ImageViewerOverlay::on_wheel(tk::Point local, float /*dx*/, float dy, bool 
     return true;
 }
 
-bool ImageViewerOverlay::on_content_key_(const tk::KeyEvent& e)
+bool ImageViewerPage::on_key(const tk::KeyEvent& e)
 {
-    const tk::Rect b = bounds();
+    const tk::Rect b = host_.host_bounds();
     const tk::Point centre_local{b.w * 0.5f, b.h * 0.5f};
     if (matches(ShortcutId::ImageZoomIn, e))
         return on_wheel(centre_local, 0.0f, -1.0f, false);

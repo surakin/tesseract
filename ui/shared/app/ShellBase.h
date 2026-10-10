@@ -4325,7 +4325,7 @@ protected:
 
     // Shared image-viewer provider: full-res first, then the existing
     // anim → image → thumbnail fallthrough. Used by every RoomPane's
-    // img_viewer_/vid_viewer_ image_provider (main window and pop-outs
+    // media_viewer_ image_provider (main window and pop-outs
     // alike), via RoomPane::shell_image_.
     const tk::Image* viewer_image_lookup_(const std::string& mxc);
 

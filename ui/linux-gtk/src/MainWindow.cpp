@@ -608,8 +608,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
         main_app_ = main_app_owner.get();
         room_list_view_ = main_app_->room_list_view();
         room_view_ = main_app_->room_view();
-        img_viewer_ = main_app_->image_viewer();
-        vid_viewer_ = main_app_->video_viewer();
+        media_viewer_ = main_app_->media_viewer();
         room_media_view_ = main_app_->room_media_view();
         main_app_->on_quick_switch_shortcut = [this] { open_quick_switch_(); };
         main_app_->on_message_search_shortcut =
@@ -677,8 +676,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
             current_room_id_);
         main_room_pane_->attach({
             .room_view = main_app_->room_view(),
-            .img_viewer = main_app_->image_viewer(),
-            .vid_viewer = main_app_->video_viewer(),
+            .media_viewer = main_app_->media_viewer(),
             .forward_picker = main_app_->forward_picker(),
             .room_media_view = main_app_->room_media_view(),
             .focus_forward_picker_field = [this] { focus_forward_picker_field_(); },
@@ -1010,7 +1008,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                             {
                                 if (room_view_->compose_bar())
                                 {
-                                    room_view_->compose_bar()->set_pending_image(
+                                    room_view_->compose_bar()->add_pending_image(
                                         std::vector<std::uint8_t>(
                                             reinterpret_cast<const std::uint8_t*>(data),
                                             reinterpret_cast<const std::uint8_t*>(data) + sz),
@@ -1445,8 +1443,9 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
         };
 
         // on_send / on_send_reply / on_send_edit / on_send_image /
-        // on_send_video / on_send_audio / on_send_file already provided by
-        // main_room_pane_->attach() above (RoomPane::wire_room_view_), a
+        // on_send_video / on_send_audio / on_send_file / on_send_gallery
+        // already provided by main_room_pane_->attach() above
+        // (RoomPane::wire_room_view_), a
         // verbatim port of this window's old on_send body including the
         // composer mention-draft-to-markdown conversion. on_send_reply/
         // on_send_edit now clear the composer immediately and report
@@ -1694,7 +1693,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
         // RoomPane::wire_room_view_ via main_room_pane_->attach() above; only
         // the video player is shell-specific (needs this window's Host),
         // same as every pop-out wires it directly in its own constructor.
-        main_app_->video_viewer()->set_video_player(
+        main_app_->media_viewer()->set_video_player(
             main_app_surface_->host().make_video_player());
 
         // on_image_clicked / on_avatar_clicked already provided by
@@ -1703,123 +1702,45 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
         // (gtk_widget_grab_focus) in place of the direct call this window
         // used to make.
 
-        img_viewer_->on_save =
-            [this](std::string source_url, std::string filename_hint)
-        {
-            std::string suggested = filename_hint.empty() ? "image" : filename_hint;
-            GtkFileDialog* dlg = gtk_file_dialog_new();
-            gtk_file_dialog_set_title(dlg, tk::tr("Save image").c_str());
-            gtk_file_dialog_set_initial_name(dlg, suggested.c_str());
-            struct ImgSaveCtx
+        // One save handler for every viewer kind: RoomPane builds the spec and
+        // writes the file; this window only shows the (async) dialog.
+        main_room_pane_->install_media_viewer_save_(
+            [this](const tesseract::views::MediaSaveSpec& spec,
+                   std::function<void(std::string)> done)
             {
-                MainWindow* self;
-                std::string source_url;
-            };
-            auto* ctx = new ImgSaveCtx{this, std::move(source_url)};
-            gtk_file_dialog_save(dlg,
-                GTK_WINDOW(gtk_widget_get_root(main_app_surface_->widget())),
-                nullptr,
-                +[](GObject* dialog_obj, GAsyncResult* res, gpointer p)
-                {
-                    auto* c = static_cast<ImgSaveCtx*>(p);
-                    GError* err = nullptr;
-                    GFile* gf = gtk_file_dialog_save_finish(
-                        GTK_FILE_DIALOG(dialog_obj), res, &err);
-                    if (gf)
+                GtkFileDialog* dlg = gtk_file_dialog_new();
+                gtk_file_dialog_set_title(dlg, spec.title.c_str());
+                gtk_file_dialog_set_initial_name(dlg, spec.suggested_name.c_str());
+                auto* ctx = new std::function<void(std::string)>(std::move(done));
+                gtk_file_dialog_save(dlg,
+                    GTK_WINDOW(gtk_widget_get_root(main_app_surface_->widget())),
+                    nullptr,
+                    +[](GObject* dialog_obj, GAsyncResult* res, gpointer p)
                     {
-                        char* cpath = g_file_get_path(gf);
-                        std::string dest(cpath);
-                        g_free(cpath);
-                        g_object_unref(gf);
-                        std::string url = std::move(c->source_url);
-                        if (c->self->client_)
+                        auto* done_fn = static_cast<std::function<void(std::string)>*>(p);
+                        GError* err = nullptr;
+                        GFile* gf = gtk_file_dialog_save_finish(
+                            GTK_FILE_DIALOG(dialog_obj), res, &err);
+                        if (gf)
                         {
-                            auto req_id = c->self->begin_media_req_(0,
-                                [dest](std::vector<uint8_t> bytes) mutable
-                                {
-                                    if (!bytes.empty())
-                                    {
-                                        std::ofstream f(dest, std::ios::binary);
-                                        f.write(
-                                            reinterpret_cast<const char*>(
-                                                bytes.data()),
-                                            static_cast<std::streamsize>(
-                                                bytes.size()));
-                                    }
-                                });
-                            c->self->client_->fetch_source_bytes_async(req_id, url);
+                            char* cpath = g_file_get_path(gf);
+                            std::string dest(cpath ? cpath : "");
+                            g_free(cpath);
+                            g_object_unref(gf);
+                            (*done_fn)(std::move(dest));
                         }
-                    }
-                    if (err) g_error_free(err);
-                    delete c;
-                },
-                ctx);
-            g_object_unref(dlg);
-        };
+                        if (err) g_error_free(err);
+                        delete done_fn;
+                    },
+                    ctx);
+                g_object_unref(dlg);
+            });
 
         // on_video_clicked (both room_view_'s and room_media_view_'s
         // gallery-reuse alias) already provided by main_room_pane_->attach()
         // above (RoomPane::wire_room_view_, which aliases
         // room_media_view()->on_image_clicked/on_video_clicked to the same
         // handlers it installs on room_view()).
-
-        vid_viewer_->on_save =
-            [this](std::string source_json, std::string mime_type)
-        {
-            std::string ext = ".mp4";
-            auto slash = mime_type.find('/');
-            if (slash != std::string::npos)
-                ext = "." + mime_type.substr(slash + 1);
-            GtkFileDialog* dlg = gtk_file_dialog_new();
-            gtk_file_dialog_set_title(dlg, tk::tr("Save video").c_str());
-            gtk_file_dialog_set_initial_name(dlg, ("video" + ext).c_str());
-            struct VidSaveCtx
-            {
-                MainWindow* self;
-                std::string source_json;
-            };
-            auto* ctx = new VidSaveCtx{this, std::move(source_json)};
-            gtk_file_dialog_save(dlg,
-                GTK_WINDOW(gtk_widget_get_root(main_app_surface_->widget())),
-                nullptr,
-                +[](GObject* dialog_obj, GAsyncResult* res, gpointer p)
-                {
-                    auto* c = static_cast<VidSaveCtx*>(p);
-                    GError* err = nullptr;
-                    GFile* gf = gtk_file_dialog_save_finish(
-                        GTK_FILE_DIALOG(dialog_obj), res, &err);
-                    if (gf)
-                    {
-                        char* cpath = g_file_get_path(gf);
-                        std::string dest(cpath);
-                        g_free(cpath);
-                        g_object_unref(gf);
-                        std::string json_src = std::move(c->source_json);
-                        if (c->self->client_)
-                        {
-                            auto req_id = c->self->begin_media_req_(0,
-                                [dest](std::vector<uint8_t> bytes) mutable
-                                {
-                                    if (!bytes.empty())
-                                    {
-                                        std::ofstream f(dest, std::ios::binary);
-                                        f.write(
-                                            reinterpret_cast<const char*>(
-                                                bytes.data()),
-                                            static_cast<std::streamsize>(
-                                                bytes.size()));
-                                    }
-                                });
-                            c->self->client_->fetch_source_bytes_async(
-                                req_id, json_src);
-                        }
-                    }
-                    if (err) g_error_free(err);
-                    delete c;
-                },
-                ctx);
-            g_object_unref(dlg);
-        };
 
         room_view_->on_file_clicked =
             [this](const tesseract::views::MessageListView::FileHit& hit)

@@ -101,7 +101,7 @@ TEST_CASE("ComposeBar with a Host self-owns a text_area positioned at "
     CHECK(field_bounds.w == rect.w);
 }
 
-TEST_CASE("ComposeBar's text_area routes image paste into set_pending_image",
+TEST_CASE("ComposeBar's text_area routes image paste into add_pending_image",
           "[tk][view][compose]")
 {
     StubHost host;
@@ -246,7 +246,7 @@ TEST_CASE("ComposeBar pending image floats above bar and enables send "
         0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
         0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
     };
-    bar.set_pending_image(
+    bar.add_pending_image(
         std::vector<std::uint8_t>(std::begin(kPng1x1), std::end(kPng1x1)),
         "image/png");
     CHECK(bar.has_pending());
@@ -300,7 +300,7 @@ TEST_CASE("ComposeBar send with pending image fires on_send_image and clears "
         0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
         0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
     };
-    bar.set_pending_image(
+    bar.add_pending_image(
         std::vector<std::uint8_t>(std::begin(kPng1x1), std::end(kPng1x1)),
         "image/png");
     bar.set_current_text("look at this");
@@ -320,7 +320,7 @@ TEST_CASE("ComposeBar send with pending image fires on_send_image and clears "
     CHECK_FALSE(bar.has_pending());
 }
 
-TEST_CASE("ComposeBar set_pending_image preserves an explicit filename",
+TEST_CASE("ComposeBar add_pending_image preserves an explicit filename",
           "[tk][view][compose]")
 {
     TkComposeBarStage st;
@@ -339,7 +339,7 @@ TEST_CASE("ComposeBar set_pending_image preserves an explicit filename",
 
     // Drop path: caller passes the original filename. The widget must
     // forward it verbatim instead of synthesising a "clipboard-…" name.
-    bar.set_pending_image(std::vector<std::uint8_t>{0x89, 0x50, 0x4E, 0x47},
+    bar.add_pending_image(std::vector<std::uint8_t>{0x89, 0x50, 0x4E, 0x47},
                           "image/png", "my-cat.png");
 
     st.run(bar, {0, 0, 640, bar.natural_height()});
@@ -355,7 +355,7 @@ TEST_CASE("ComposeBar second pending image replaces the first",
 {
     auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
     ComposeBar& bar = *bar_owner;
-    bar.set_pending_image(std::vector<std::uint8_t>{0x89, 0x50, 0x4E, 0x47},
+    bar.add_pending_image(std::vector<std::uint8_t>{0x89, 0x50, 0x4E, 0x47},
                           "image/png");
     REQUIRE(bar.has_pending());
     int changes = 0;
@@ -363,7 +363,7 @@ TEST_CASE("ComposeBar second pending image replaces the first",
     {
         ++changes;
     };
-    bar.set_pending_image(std::vector<std::uint8_t>{0xFF, 0xD8, 0xFF, 0xE0},
+    bar.add_pending_image(std::vector<std::uint8_t>{0xFF, 0xD8, 0xFF, 0xE0},
                           "image/jpeg");
     CHECK(bar.has_pending());
     // Replacement still fires on_size_changed even though height bucket
@@ -371,7 +371,7 @@ TEST_CASE("ComposeBar second pending image replaces the first",
     CHECK(changes == 1);
 }
 
-TEST_CASE("ComposeBar set_pending_file shows the file chip and enables send "
+TEST_CASE("ComposeBar add_pending_file shows the file chip and enables send "
           "without text",
           "[tk][view][compose][file]")
 {
@@ -388,7 +388,7 @@ TEST_CASE("ComposeBar set_pending_file shows the file chip and enables send "
     };
 
     std::vector<std::uint8_t> payload(128, 0xAB);
-    bar.set_pending_file(std::move(payload), "application/pdf", "report.pdf");
+    bar.add_pending_file(std::move(payload), "application/pdf", "report.pdf");
     CHECK(bar.has_pending());
     // File band is shorter than the image band, but still grows past baseline.
     CHECK(bar.natural_height() > baseline);
@@ -438,7 +438,7 @@ TEST_CASE("ComposeBar send with pending file fires on_send_file with caption",
     };
 
     std::vector<std::uint8_t> payload(2048, 0x42);
-    bar.set_pending_file(std::move(payload), "application/octet-stream",
+    bar.add_pending_file(std::move(payload), "application/octet-stream",
                          "blob.bin");
     bar.set_current_text("here you go");
     st.run(bar, {0, 0, 640, bar.natural_height()});
@@ -459,23 +459,30 @@ TEST_CASE("ComposeBar send with pending file fires on_send_file with caption",
 }
 
 TEST_CASE(
-    "ComposeBar pending image followed by pending file replaces the attachment",
+    "ComposeBar pending image followed by pending file appends a second attachment",
     "[tk][view][compose][file]")
 {
     auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
     ComposeBar& bar = *bar_owner;
-    bar.set_pending_image(std::vector<std::uint8_t>{0x89, 0x50, 0x4E, 0x47},
+    bar.add_pending_image(std::vector<std::uint8_t>{0x89, 0x50, 0x4E, 0x47},
                           "image/png");
-    REQUIRE(bar.has_pending());
-    // image band heights to compare deltas against
+    REQUIRE(bar.pending_count() == 1);
+    // Single-attachment image preview floats above the bar (no height change).
     const float h_with_image = bar.natural_height();
 
-    bar.set_pending_file(std::vector<std::uint8_t>(64, 0x11), "application/zip",
+    bar.add_pending_file(std::vector<std::uint8_t>(64, 0x11), "application/zip",
                          "archive.zip");
-    REQUIRE(bar.has_pending());
-    // Image previews float above (no height change); file chips live inside
-    // the bar, so replacing an image with a file grows natural_height.
-    CHECK(bar.natural_height() > h_with_image);
+    // Appends, doesn't replace — both attachments are queued.
+    REQUIRE(bar.pending_count() == 2);
+    const auto* p0 = bar.pending_for_test(0);
+    const auto* p1 = bar.pending_for_test(1);
+    REQUIRE(p0 != nullptr);
+    REQUIRE(p1 != nullptr);
+    CHECK(p0->kind == ComposeBar::PendingAttachment::Kind::Image);
+    CHECK(p1->kind == ComposeBar::PendingAttachment::Kind::File);
+    // Multi-attachment mode also floats above the bar like the single-image
+    // case (no bar-height growth) — see recompute_height().
+    CHECK(bar.natural_height() == h_with_image);
 }
 
 TEST_CASE("ComposeBar clear_pending discards a pending file too",
@@ -484,7 +491,7 @@ TEST_CASE("ComposeBar clear_pending discards a pending file too",
     auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
     ComposeBar& bar = *bar_owner;
     const float baseline = bar.natural_height();
-    bar.set_pending_file(std::vector<std::uint8_t>(16, 0x00),
+    bar.add_pending_file(std::vector<std::uint8_t>(16, 0x00),
                          "application/json", "data.json");
     REQUIRE(bar.has_pending());
     bar.clear_pending();

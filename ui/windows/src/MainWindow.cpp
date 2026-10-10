@@ -5,6 +5,7 @@
 #include "CallWindow.h"
 #include "views/BrandView.h"
 #include "views/media_drop.h"
+#include "views/media_viewer_items.h"
 #include "views/shortcut_registry.h"
 #include "Win32Notifier.h"
 #include "Win32Autostart.h"
@@ -1851,8 +1852,7 @@ void MainWindow::on_create(HWND hwnd)
         // Wire borrowed sub-view pointers.
         room_list_view_ = main_app_->room_list_view();
         room_view_ = main_app_->room_view();
-        img_viewer_ = main_app_->image_viewer();
-        vid_viewer_ = main_app_->video_viewer();
+        media_viewer_ = main_app_->media_viewer();
         room_media_view_ = main_app_->room_media_view();
 
         // Space nav callback.
@@ -1924,8 +1924,7 @@ void MainWindow::on_create(HWND hwnd)
             current_room_id_);
         main_room_pane_->attach({
             .room_view = main_app_->room_view(),
-            .img_viewer = main_app_->image_viewer(),
-            .vid_viewer = main_app_->video_viewer(),
+            .media_viewer = main_app_->media_viewer(),
             .forward_picker = main_app_->forward_picker(),
             .room_media_view = main_app_->room_media_view(),
             .focus_forward_picker_field = [this] { focus_forward_picker_field_(); },
@@ -2061,8 +2060,9 @@ void MainWindow::on_create(HWND hwnd)
             });
 
         // on_send / on_send_reply / on_send_edit / on_send_image /
-        // on_send_video / on_send_audio / on_send_file already provided by
-        // main_room_pane_->attach() above (RoomPane::wire_room_view_), a
+        // on_send_video / on_send_audio / on_send_file / on_send_gallery
+        // already provided by main_room_pane_->attach() above
+        // (RoomPane::wire_room_view_), a
         // verbatim port of this window's old on_send body including the
         // composer mention-draft-to-markdown conversion. on_send_reply/
         // on_send_edit now report failures via an async status message
@@ -3038,7 +3038,7 @@ void MainWindow::on_create(HWND hwnd)
                                 main_app_->room_view()->compose_bar())
                             {
                                 main_app_->room_view()->compose_bar()
-                                    ->set_pending_image(std::move(jpeg),
+                                    ->add_pending_image(std::move(jpeg),
                                                         "image/jpeg",
                                                         "selfie.jpg");
                             }
@@ -3111,71 +3111,27 @@ void MainWindow::on_create(HWND hwnd)
         // via main_room_pane_->attach() above; only the video player is
         // shell-specific (needs this window's Host), same as every pop-out
         // wires it directly in its own constructor.
-        vid_viewer_->set_video_player(main_app_surface_->host().make_video_player());
+        main_app_->media_viewer()->set_video_player(main_app_surface_->host().make_video_player());
 
-        img_viewer_->on_save =
-            [this](std::string source_url, std::string filename_hint)
-        {
-            std::wstring suggested(filename_hint.begin(), filename_hint.end());
-            if (suggested.empty())
-                suggested = L"image";
-            std::wstring path = show_save_dialog_(
-                suggested,
-                file_filter({{tk::tr("Images"), L"*.jpg;*.jpeg;*.png;*.gif;*.webp"}, {tk::tr("All files"), L"*.*"}}).c_str());
-            if (path.empty())
-                return;
-            if (client_)
+        // One save handler for every viewer kind: RoomPane builds the spec and
+        // writes the file; this window only shows the dialog.
+        main_room_pane_->install_media_viewer_save_(
+            [this](const tesseract::views::MediaSaveSpec& spec,
+                   std::function<void(std::string)> done)
             {
-                auto req_id = begin_media_req_(0,
-                    [path](std::vector<std::uint8_t> bytes) mutable
-                    {
-                        if (!bytes.empty())
-                        {
-                            std::ofstream f(wstr_to_utf8(path.c_str()),
-                                            std::ios::binary);
-                            f.write(reinterpret_cast<const char*>(bytes.data()),
-                                    static_cast<std::streamsize>(bytes.size()));
-                        }
-                    });
-                client_->fetch_source_bytes_async(req_id, source_url);
-            }
-        };
+                const std::wstring filter = save_filter_for(spec);
+                std::wstring path = show_save_dialog_(utf8_to_wstr(spec.suggested_name),
+                                                      filter.c_str());
+                if (!path.empty())
+                {
+                    done(wstr_to_utf8(path.c_str()));
+                }
+            });
 
         // on_image_clicked / on_avatar_clicked already provided by
         // main_room_pane_->attach() above (RoomPane::wire_room_view_), which
         // uses this window's own Deps.grab_surface_focus (SetFocus(hwnd_))
         // in place of the direct call this window used to make.
-
-        vid_viewer_->on_save =
-            [this](std::string source_json, std::string mime_type)
-        {
-            std::string ext = ".mp4";
-            auto slash = mime_type.find('/');
-            if (slash != std::string::npos)
-                ext = "." + mime_type.substr(slash + 1);
-            const std::string suggested_u8 = "video" + ext;
-            std::wstring suggested(suggested_u8.begin(), suggested_u8.end());
-            std::wstring path = show_save_dialog_(
-                suggested,
-                file_filter({{tk::tr("Videos"), L"*.mp4;*.webm;*.mkv"}, {tk::tr("All files"), L"*.*"}}).c_str());
-            if (path.empty())
-                return;
-            if (client_)
-            {
-                auto req_id = begin_media_req_(0,
-                    [path](std::vector<std::uint8_t> bytes) mutable
-                    {
-                        if (!bytes.empty())
-                        {
-                            std::ofstream f(wstr_to_utf8(path.c_str()),
-                                            std::ios::binary);
-                            f.write(reinterpret_cast<const char*>(bytes.data()),
-                                    static_cast<std::streamsize>(bytes.size()));
-                        }
-                    });
-                client_->fetch_source_bytes_async(req_id, source_json);
-            }
-        };
 
         // on_video_clicked (both room_view_'s and room_media_view_'s
         // gallery-reuse alias) already provided by main_room_pane_->attach()
@@ -3243,8 +3199,7 @@ void MainWindow::on_create(HWND hwnd)
 
                 // Native overlays must be hidden while an image/video viewer is open —
                 // Win32 child HWNDs always paint over canvas-drawn overlays.
-                const bool hide = (img_viewer_ && img_viewer_->is_open()) ||
-                                  (vid_viewer_ && vid_viewer_->is_open()) ||
+                const bool hide = (media_viewer_ && media_viewer_->is_open()) ||
                                   (main_app_ && main_app_->camera_overlay_open())
                                   || (main_app_ && main_app_->screen_picker_open())
                     ;
@@ -6506,6 +6461,21 @@ std::wstring MainWindow::file_filter(
     }
     f.push_back(L'\0');
     return f;
+}
+
+std::wstring MainWindow::save_filter_for(const tesseract::views::MediaSaveSpec& spec)
+{
+    if (spec.filter_name.empty() || spec.patterns.empty())
+        return file_filter({{tk::tr("All files"), L"*.*"}});
+    std::wstring patterns;
+    for (const auto& pat : spec.patterns)
+    {
+        if (!patterns.empty())
+            patterns += L';';
+        patterns += utf8_to_wstr(pat);
+    }
+    return file_filter({{spec.filter_name, patterns.c_str()},
+                        {tk::tr("All files"), L"*.*"}});
 }
 
 std::wstring MainWindow::show_save_dialog_(const std::wstring& suggested,

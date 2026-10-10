@@ -22,9 +22,9 @@
 #include "views/AccountPicker.h"
 #include "views/BrandView.h"
 #include "views/ComposePopups.h"
-#include "views/ImageViewerOverlay.h"
 #include "views/MainAppWidget.h"
-#include "views/VideoViewerOverlay.h"
+#include "views/MediaViewerOverlay.h"
+#include "views/media_viewer_items.h"
 #include "views/ShortcodeController.h"
 #include "views/ShortcodePopup.h"
 #include "views/GifController.h"
@@ -501,9 +501,7 @@ private:
         return mention_popup_ && mention_popup_->visible();
     }
 
-    tesseract::views::ImageViewerOverlay* img_viewer_ = nullptr;
-
-    tesseract::views::VideoViewerOverlay* vid_viewer_ = nullptr;
+    tesseract::views::MediaViewerOverlay* media_viewer_ = nullptr;
 
     tesseract::views::RoomMediaView* room_media_view_ = nullptr;
 

@@ -12,7 +12,7 @@ foreach(_entry
         "copy|kCopySvg"
         "play|kPlaySvg" "join|kJoinSvg" "jump-to-date|kJumpToDateSvg"
         "threadlist|kThreadListSvg" "search|kSearchSvg" "chevron-up|kChevronUpSvg"
-        "chevron-down|kChevronDownSvg" "chevron-right|kChevronRightSvg" "forward|kForwardSvg"
+        "chevron-down|kChevronDownSvg" "chevron-right|kChevronRightSvg" "chevron-left|kChevronLeftSvg" "forward|kForwardSvg"
         "arrow-left|kArrowLeftSvg" "arrow-down|kArrowDownSvg" "arrow-up|kArrowUpSvg"
         "phone|kPhoneSvg" "phone-off|kPhoneOffSvg" "mic-off|kMicOffSvg"
         "video|kVideoSvg" "video-off|kVideoOffSvg"
@@ -26,7 +26,7 @@ foreach(_entry
         "lock-keyhole|kLockKeyholeSvg" "lock-keyhole-open|kLockKeyholeOpenSvg"
         "eye|kEyeSvg" "cable|kCableSvg" "user-round-plus|kUserRoundPlusSvg"
         "user-round|kUserRoundSvg" "user-round-minus|kUserRoundMinusSvg" "ban|kBanSvg"
-        "languages|kLanguagesSvg")
+        "languages|kLanguagesSvg" "music|kMusicSvg" "file|kFileSvg")
     string(REPLACE "|" ";" _pair "${_entry}")
     list(GET _pair 0 _name)
     list(GET _pair 1 _var)

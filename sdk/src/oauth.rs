@@ -252,10 +252,15 @@ pub(crate) async fn build_configured_client(
         // cache_size (500KB vs. 2MiB) and WAL journal_size_limit (2MiB vs.
         // 10MiB) — a tested upstream preset that was previously left unused,
         // taking every default instead.
-        .sqlite_store_with_config_and_cache_path(
-            SqliteStoreConfig::with_low_memory_config(sqlite_path)
-                .key(store_key.map(|k| k.as_slice())),
-            None::<&std::path::Path>,
+        // Hand-assembled (rather than `sqlite_store_with_config…`) only to
+        // wrap the media store; see `upsert_media_store`.
+        .store_config(
+            crate::upsert_media_store::build_store_config(
+                SqliteStoreConfig::with_low_memory_config(sqlite_path)
+                    .key(store_key.map(|k| k.as_slice())),
+                CrossProcessLockConfig::SingleProcess,
+            )
+            .await?,
         )
         .handle_refresh_tokens()
         .user_agent(build_user_agent())

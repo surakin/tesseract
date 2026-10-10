@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "fake_media_players.h"
 #include "views/TimelineVideoPlaylist.h"
 
 #include <chrono>
@@ -16,42 +17,7 @@ using tesseract::views::VideoSourceInfo;
 namespace
 {
 
-class FakeVideoPlayer : public tk::VideoPlayer
-{
-public:
-    void play(const std::uint8_t*, std::size_t, std::string_view) override
-    {
-        playing_ = true;
-        ++play_count;
-    }
-    void pause() override
-    {
-        playing_ = false;
-        ++pause_count;
-    }
-    void resume() override
-    {
-        playing_ = true;
-        ++resume_count;
-    }
-    void stop() override
-    {
-        playing_ = false;
-    }
-    void seek(std::uint64_t) override {}
-    void set_playback_rate(float) override {}
-    float playback_rate() const override { return 1.0f; }
-    std::uint64_t position_ms() const override { return 0; }
-    std::uint64_t duration_ms() const override { return 0; }
-    bool is_playing() const override { return playing_; }
-    const tk::Image* current_frame() const override { return nullptr; }
-    std::size_t memory_bytes() const override { return 1000; }
-
-    bool playing_ = false;
-    int play_count = 0;
-    int pause_count = 0;
-    int resume_count = 0;
-};
+using tesseract::test::FakeVideoPlayer;
 
 // Wires TimelineVideoPlaylist to FakeVideoPlayer instances (borrowed pointers
 // kept in `players`, in creation order) with a fetch provider that resolves

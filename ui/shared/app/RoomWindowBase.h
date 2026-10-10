@@ -13,8 +13,7 @@
 
 namespace tesseract::views
 {
-class ImageViewerOverlay;
-class VideoViewerOverlay;
+class MediaViewerOverlay;
 } // namespace tesseract::views
 
 namespace tesseract
@@ -31,7 +30,7 @@ class ShellBase;
 // currently-displayed-room pane.
 //
 // Platform subclasses create a native window + surface, set room_view_ (and
-// optionally img_viewer_/vid_viewer_), call init_pane_() once their Host
+// optionally media_viewer_), call init_pane_() once their Host
 // exists, then pane_->attach(...) + finish_init_() to register with
 // ShellBase and start the event feed. The destructor unregisters and
 // releases the subscription automatically.
@@ -67,9 +66,9 @@ public:
     {
         return room_view_;
     }
-    views::VideoViewerOverlay* video_viewer() const
+    views::MediaViewerOverlay* media_viewer() const
     {
-        return vid_viewer_;
+        return media_viewer_;
     }
 
     // Called by ShellBase on the UI thread when SDK events arrive for this
@@ -189,6 +188,9 @@ public:
     virtual void bring_to_front() = 0;
     virtual void close_window() = 0;
     virtual void request_relayout() = 0;
+    // Escape helper for the platform key handlers: if the media viewer is
+    // open, close it, hide it and relayout, returning true (key consumed).
+    bool close_media_viewer_if_open_();
     virtual void update_window_title_(const std::string& /*name*/)
     {
     }
@@ -266,11 +268,9 @@ protected:
         nullptr; // borrowed; owned by surface widget tree. Also handed to
                  // pane_ via attach() — kept here too since platform ctors
                  // read this member directly throughout their own wiring.
-    // Media overlays — set by the subclass ctor before init_pane_()/attach().
-    // When non-null, image/video click callbacks are wired (by pane_) to
-    // open them.
-    views::ImageViewerOverlay* img_viewer_ = nullptr; // borrowed
-    views::VideoViewerOverlay* vid_viewer_ = nullptr; // borrowed
+    // Media viewer — set by the subclass ctor before init_pane_()/attach().
+    // When non-null, media click callbacks are wired (by pane_) to open it.
+    views::MediaViewerOverlay* media_viewer_ = nullptr; // borrowed
 
     // Owns this window's per-room display state and wiring. Constructed by
     // init_pane_() once the subclass's Host exists (RoomWindowBase's own

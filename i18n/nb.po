@@ -2501,6 +2501,9 @@ msgstr "{0} sendte en talemelding"
 msgid "{0} sent a sticker"
 msgstr "{0} sendte et klistremerke"
 
+msgid "{0} sent a gallery"
+msgstr "{0} sendte et galleri"
+
 msgid "{0} started a poll"
 msgstr "{0} startet en avstemning"
 
@@ -4292,8 +4295,8 @@ msgstr "Tilpass bildet til vinduet"
 msgid "Pan a zoomed image"
 msgstr "Panorer et zoomet bilde"
 
-msgid "Play / pause a video"
-msgstr "Spill av / pause video"
+msgid "Play / pause media"
+msgstr "Spill av / pause medier"
 
 msgid "Skip back 5 seconds"
 msgstr "Hopp 5 sekunder tilbake"
@@ -4316,8 +4319,8 @@ msgstr "Velgere og lister"
 msgid "Date picker"
 msgstr "Datovelger"
 
-msgid "Image and video viewer"
-msgstr "Bilde- og videovisning"
+msgid "Media viewer"
+msgstr "Mediavisning"
 
 msgid "All files"
 msgstr "Alle filer"
@@ -4477,3 +4480,46 @@ msgstr "Opprett en avstemning"
 
 msgid "Couldn't send the poll"
 msgstr "Kunne ikke sende avstemningen"
+
+msgid "Audio"
+msgstr "Lyd"
+
+msgid "Load gallery"
+msgstr "Last inn galleri"
+
+msgid "{0} attachments"
+msgstr "{0} vedlegg"
+
+msgid "+{0}"
+msgstr "+{0}"
+
+msgid "Previous"
+msgstr "Forrige"
+
+msgid "Next"
+msgstr "Neste"
+
+#, c++-format
+msgid "{0} / {1}"
+msgstr "{0} / {1}"
+
+msgid "Open gallery"
+msgstr "Åpne galleri"
+
+msgid "Previous item in a gallery"
+msgstr "Forrige element i et galleri"
+
+msgid "Next item in a gallery"
+msgstr "Neste element i et galleri"
+
+msgid "Save audio"
+msgstr "Lagre lyd"
+
+msgid "Audio playback is not available"
+msgstr "Lydavspilling er ikke tilgjengelig"
+
+msgid "Unable to play audio"
+msgstr "Kunne ikke spille av lyden"
+
+msgid "No preview available"
+msgstr "Ingen forhåndsvisning tilgjengelig"

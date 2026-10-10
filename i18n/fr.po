@@ -3781,6 +3781,10 @@ msgstr "{0} a envoyé un message vocal"
 msgid "{0} sent a sticker"
 msgstr "{0} a envoyé un autocollant"
 
+#: ui/shared/views/RoomListView.cpp:110
+msgid "{0} sent a gallery"
+msgstr "{0} a envoyé une galerie"
+
 #: ui/shared/views/RoomListView.cpp:116
 msgid "{0} started a poll"
 msgstr "{0} a lancé un sondage"
@@ -5159,8 +5163,8 @@ msgstr "Aide"
 msgid "Home"
 msgstr "Début"
 
-msgid "Image and video viewer"
-msgstr "Visionneuse d'images et de vidéos"
+msgid "Media viewer"
+msgstr "Visionneuse multimédia"
 
 msgid "Jump to a room"
 msgstr "Aller à un salon"
@@ -5216,8 +5220,8 @@ msgstr "Choisir la date sélectionnée"
 msgid "Pickers and lists"
 msgstr "Sélecteurs et listes"
 
-msgid "Play / pause a video"
-msgstr "Lire / mettre en pause une vidéo"
+msgid "Play / pause media"
+msgstr "Lire / mettre en pause un média"
 
 msgid "Previous year"
 msgstr "Année précédente"
@@ -5841,3 +5845,50 @@ msgstr "Créer un sondage"
 #: ui/shared/app/ShellBase_rooms.cpp
 msgid "Couldn't send the poll"
 msgstr "Impossible d'envoyer le sondage"
+
+msgid "Audio"
+msgstr "Audio"
+
+msgid "Load gallery"
+msgstr "Charger la galerie"
+
+msgid "{0} attachments"
+msgstr "{0} pièces jointes"
+
+msgid "+{0}"
+msgstr "+{0}"
+
+msgid "Previous"
+msgstr "Précédent"
+
+msgid "Next"
+msgstr "Suivant"
+
+#, c++-format
+msgid "{0} / {1}"
+msgstr "{0} / {1}"
+
+msgid "Open gallery"
+msgstr "Ouvrir la galerie"
+
+msgid "Previous item in a gallery"
+msgstr "Élément précédent de la galerie"
+
+msgid "Next item in a gallery"
+msgstr "Élément suivant de la galerie"
+
+#: ui/shared/views/media_viewer_items.cpp
+msgid "Save audio"
+msgstr "Enregistrer l'audio"
+
+#: ui/shared/views/AudioViewerPage.cpp
+msgid "Audio playback is not available"
+msgstr "La lecture audio n'est pas disponible"
+
+#: ui/shared/views/AudioViewerPage.cpp
+msgid "Unable to play audio"
+msgstr "Impossible de lire l'audio"
+
+#: ui/shared/views/FileViewerPage.cpp
+msgid "No preview available"
+msgstr "Aucun aperçu disponible"

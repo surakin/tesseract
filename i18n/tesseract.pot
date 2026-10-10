@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: tesseract\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-08 22:23+0200\n"
+"POT-Creation-Date: 2026-10-10 16:44+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -19,8 +19,8 @@ msgstr ""
 "Plural-Forms: nplurals=INTEGER; plural=EXPRESSION;\n"
 
 #: ui/linux-gtk/src/CallWindow.cpp:24 ui/linux-qt/src/CallWindow.cpp:19
-#: ui/macos/src/CallWindowController.mm:70 ui/shared/views/RoomHeader.cpp:149
-#: ui/shared/views/RoomHeader.cpp:708 ui/windows/src/CallWindow.cpp:53
+#: ui/macos/src/CallWindowController.mm:70 ui/shared/views/RoomHeader.cpp:151
+#: ui/shared/views/RoomHeader.cpp:710 ui/windows/src/CallWindow.cpp:53
 msgid "Call"
 msgstr ""
 
@@ -28,15 +28,15 @@ msgstr ""
 #: ui/linux-gtk/src/GtkSniTrayIcon.cpp:482
 #: ui/linux-qt/src/LinuxQtTrayIcon.cpp:35
 #: ui/linux-qt/src/LinuxQtTrayIcon.cpp:108 ui/macos/src/MacOSTrayIcon.mm:113
-#: ui/macos/src/MacOSTrayIcon.mm:244 ui/shared/app/ShellBase.cpp:8560
+#: ui/macos/src/MacOSTrayIcon.mm:244 ui/shared/app/ShellBase_profile.cpp:1061
 #: ui/windows/src/Win32TrayIcon.cpp:432
 msgid "Quit"
 msgstr ""
 
 #: ui/linux-gtk/src/LinuxNotifier.cpp:221 ui/linux-qt/src/LinuxNotifier.cpp:162
-#: ui/macos/src/MainWindowController.mm:6986
-#: ui/shared/views/MessageListView.cpp:3749
-#: ui/shared/views/MessageListView.cpp:9117
+#: ui/macos/src/MainWindowController.mm:7030
+#: ui/shared/views/MessageListView.cpp:3944
+#: ui/shared/views/MessageListView.cpp:9688
 #: ui/windows/src/Win32Notifier.cpp:293
 msgid "Reply"
 msgstr ""
@@ -46,14 +46,14 @@ msgid "Open"
 msgstr ""
 
 #: ui/linux-gtk/src/LinuxNotifier.cpp:297 ui/linux-qt/src/LinuxNotifier.cpp:229
-#: ui/macos/src/MainWindowController.mm:6990
+#: ui/macos/src/MainWindowController.mm:7034
 #: ui/windows/src/Win32Notifier.cpp:292
 msgid "Reply…"
 msgstr ""
 
 #: ui/linux-gtk/src/LinuxNotifier.cpp:298 ui/linux-qt/src/LinuxNotifier.cpp:231
-#: ui/macos/src/MainWindowController.mm:6988 ui/shared/views/ComposeBar.cpp:203
-#: ui/shared/views/ComposeBar.cpp:212 ui/shared/views/ComposeBar.cpp:504
+#: ui/macos/src/MainWindowController.mm:7032 ui/shared/views/ComposeBar.cpp:204
+#: ui/shared/views/ComposeBar.cpp:213 ui/shared/views/ComposeBar.cpp:529
 msgid "Send"
 msgstr ""
 
@@ -61,164 +61,157 @@ msgstr ""
 msgid "Open this URL in your browser:"
 msgstr ""
 
-#: ui/linux-gtk/src/MainWindow.cpp:212 ui/linux-qt/src/MainWindow.cpp:4303
-#: ui/macos/src/MainWindowController.mm:8024 ui/windows/src/MainWindow.cpp:918
+#: ui/linux-gtk/src/MainWindow.cpp:212 ui/linux-qt/src/MainWindow.cpp:4266
+#: ui/macos/src/MainWindowController.mm:8068 ui/windows/src/MainWindow.cpp:919
 #, c++-format
 msgid "{0} request in flight"
 msgid_plural "{0} requests in flight"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/linux-gtk/src/MainWindow.cpp:216 ui/linux-qt/src/MainWindow.cpp:4307
-#: ui/macos/src/MainWindowController.mm:8028 ui/windows/src/MainWindow.cpp:922
+#: ui/linux-gtk/src/MainWindow.cpp:216 ui/linux-qt/src/MainWindow.cpp:4270
+#: ui/macos/src/MainWindowController.mm:8072 ui/windows/src/MainWindow.cpp:923
 #, c++-format
 msgid "media: {0} loading · fetch: {1} queued · send: {2} queued"
 msgstr ""
 
-#: ui/linux-gtk/src/MainWindow.cpp:1423
-#: ui/macos/src/MainWindowController.mm:4981 ui/shared/app/RoomPane.cpp:1551
+#: ui/linux-gtk/src/MainWindow.cpp:1427
+#: ui/macos/src/MainWindowController.mm:4960 ui/shared/app/RoomPane.cpp:1617
 #: ui/windows/src/MainWindow.cpp:2412
 msgid "File exceeds the upload limit"
 msgstr ""
 
-#: ui/linux-gtk/src/MainWindow.cpp:1705 ui/linux-gtk/src/RoomWindow.cpp:147
-#: ui/linux-qt/src/MainWindow.cpp:699 ui/linux-qt/src/RoomWindow.cpp:115
-msgid "Save image"
-msgstr ""
-
-#: ui/linux-gtk/src/MainWindow.cpp:1768 ui/linux-gtk/src/RoomWindow.cpp:180
-#: ui/linux-qt/src/MainWindow.cpp:863 ui/linux-qt/src/RoomWindow.cpp:129
-msgid "Save video"
-msgstr ""
-
-#: ui/linux-gtk/src/MainWindow.cpp:1824 ui/linux-gtk/src/RoomWindow.cpp:223
-#: ui/linux-qt/src/MainWindow.cpp:729 ui/linux-qt/src/RoomWindow.cpp:158
+#: ui/linux-gtk/src/MainWindow.cpp:1757 ui/linux-gtk/src/RoomWindow.cpp:188
+#: ui/linux-qt/src/MainWindow.cpp:719 ui/linux-qt/src/RoomWindow.cpp:141
+#: ui/shared/views/media_viewer_items.cpp:162
+#: ui/shared/views/media_viewer_items.cpp:168
 msgid "Save file"
 msgstr ""
 
-#: ui/linux-gtk/src/MainWindow.cpp:2117 ui/linux-gtk/src/MainWindow.cpp:3026
-#: ui/linux-qt/src/MainWindow.cpp:1545 ui/linux-qt/src/MainWindow.cpp:2271
-#: ui/macos/src/MainWindowController.mm:7798 ui/windows/src/MainWindow.cpp:3337
-#: ui/windows/src/MainWindow.cpp:3648
+#: ui/linux-gtk/src/MainWindow.cpp:2050 ui/linux-gtk/src/MainWindow.cpp:2959
+#: ui/linux-qt/src/MainWindow.cpp:1508 ui/linux-qt/src/MainWindow.cpp:2234
+#: ui/macos/src/MainWindowController.mm:7842 ui/windows/src/MainWindow.cpp:3298
+#: ui/windows/src/MainWindow.cpp:3609
 msgid "Not logged in"
 msgstr ""
 
-#: ui/linux-gtk/src/MainWindow.cpp:2176 ui/linux-qt/src/MainWindow.cpp:1555
-#: ui/macos/src/MainWindowController.mm:7826 ui/windows/src/MainWindow.cpp:934
+#: ui/linux-gtk/src/MainWindow.cpp:2109 ui/linux-qt/src/MainWindow.cpp:1518
+#: ui/macos/src/MainWindowController.mm:7870 ui/windows/src/MainWindow.cpp:935
 msgid "Low power mode — background sync paused"
 msgstr ""
 
-#: ui/linux-gtk/src/MainWindow.cpp:2402 ui/linux-gtk/src/MainWindow.cpp:2970
-#: ui/linux-gtk/src/MainWindow.cpp:3147 ui/linux-gtk/src/MainWindow.cpp:5354
-#: ui/linux-qt/src/MainWindow.cpp:1688 ui/linux-qt/src/MainWindow.cpp:2382
-#: ui/linux-qt/src/MainWindow.cpp:2496 ui/linux-qt/src/MainWindow.cpp:3982
-#: ui/macos/src/MainWindowController.mm:3022
-#: ui/macos/src/MainWindowController.mm:8000 ui/windows/src/MainWindow.cpp:3719
-#: ui/windows/src/MainWindow.cpp:5759 ui/windows/src/MainWindow.cpp:5875
+#: ui/linux-gtk/src/MainWindow.cpp:2335 ui/linux-gtk/src/MainWindow.cpp:2903
+#: ui/linux-gtk/src/MainWindow.cpp:3080 ui/linux-gtk/src/MainWindow.cpp:5287
+#: ui/linux-qt/src/MainWindow.cpp:1651 ui/linux-qt/src/MainWindow.cpp:2345
+#: ui/linux-qt/src/MainWindow.cpp:2459 ui/linux-qt/src/MainWindow.cpp:3945
+#: ui/macos/src/MainWindowController.mm:3026
+#: ui/macos/src/MainWindowController.mm:8044 ui/windows/src/MainWindow.cpp:3680
+#: ui/windows/src/MainWindow.cpp:5720 ui/windows/src/MainWindow.cpp:5836
 msgid "Connected"
 msgstr ""
 
-#: ui/linux-gtk/src/MainWindow.cpp:2988 ui/shared/app/ShellBase.cpp:8735
-#: ui/windows/src/MainWindow.cpp:3607
+#: ui/linux-gtk/src/MainWindow.cpp:2921
+#: ui/shared/app/ShellBase_accounts.cpp:290 ui/windows/src/MainWindow.cpp:3568
 msgid "Restoring session…"
 msgstr ""
 
-#: ui/linux-gtk/src/MainWindow.cpp:3119 ui/windows/src/MainWindow.cpp:3899
+#: ui/linux-gtk/src/MainWindow.cpp:3052 ui/windows/src/MainWindow.cpp:3860
 #, c++-format
 msgid "Already signed in as {0}"
 msgstr ""
 
-#: ui/linux-gtk/src/MainWindow.cpp:3139 ui/shared/views/LoginView.cpp:687
+#: ui/linux-gtk/src/MainWindow.cpp:3072 ui/shared/views/LoginView.cpp:687
 #: ui/shared/views/LoginView.cpp:727 ui/shared/views/LoginView.cpp:901
-#: ui/windows/src/MainWindow.cpp:3928
+#: ui/windows/src/MainWindow.cpp:3889
 #, c++-format
 msgid "Sign-in failed: {0}"
 msgstr ""
 
-#: ui/linux-gtk/src/MainWindow.cpp:3197 ui/linux-qt/src/MainWindow.cpp:3100
-#: ui/windows/src/MainWindow.cpp:6470
+#: ui/linux-gtk/src/MainWindow.cpp:3130 ui/linux-qt/src/MainWindow.cpp:3063
+#: ui/windows/src/MainWindow.cpp:6431
 msgid "Choose a folder for the exported history"
 msgstr ""
 
-#: ui/linux-gtk/src/MainWindow.cpp:3230
+#: ui/linux-gtk/src/MainWindow.cpp:3163
 msgid "_Cancel"
 msgstr ""
 
-#: ui/linux-gtk/src/MainWindow.cpp:3230
+#: ui/linux-gtk/src/MainWindow.cpp:3163
 msgid "_OK"
 msgstr ""
 
-#: ui/linux-gtk/src/MainWindow.cpp:3236 ui/linux-qt/src/SettingsWidget.cpp:162
-#: ui/macos/src/MainWindowController.mm:6664
+#: ui/linux-gtk/src/MainWindow.cpp:3169 ui/linux-qt/src/SettingsWidget.cpp:162
+#: ui/macos/src/MainWindowController.mm:6708
 #: ui/shared/views/EncryptionSetupOverlay.cpp:213
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1219
 msgid "Passphrase"
 msgstr ""
 
-#: ui/linux-gtk/src/MainWindow.cpp:3271
+#: ui/linux-gtk/src/MainWindow.cpp:3204
 msgid "Save room keys"
 msgstr ""
 
-#: ui/linux-gtk/src/MainWindow.cpp:3300
+#: ui/linux-gtk/src/MainWindow.cpp:3233
 msgid "Open room keys"
 msgstr ""
 
-#: ui/linux-gtk/src/MainWindow.cpp:3331 ui/linux-qt/src/SettingsWidget.cpp:186
-#: ui/macos/src/MainWindowController.mm:6715 ui/windows/src/MainWindow.cpp:6439
+#: ui/linux-gtk/src/MainWindow.cpp:3264 ui/linux-qt/src/SettingsWidget.cpp:186
+#: ui/macos/src/MainWindowController.mm:6759 ui/windows/src/MainWindow.cpp:6400
 msgid "Room keys exported successfully."
 msgstr ""
 
-#: ui/linux-gtk/src/MainWindow.cpp:3347 ui/linux-qt/src/SettingsWidget.cpp:195
-#: ui/macos/src/MainWindowController.mm:6729 ui/windows/src/MainWindow.cpp:6450
+#: ui/linux-gtk/src/MainWindow.cpp:3280 ui/linux-qt/src/SettingsWidget.cpp:195
+#: ui/macos/src/MainWindowController.mm:6773 ui/windows/src/MainWindow.cpp:6411
 msgid "Room keys imported successfully."
 msgstr ""
 
-#: ui/linux-gtk/src/MainWindow.cpp:4543 ui/linux-qt/src/MainWindow.cpp:3119
+#: ui/linux-gtk/src/MainWindow.cpp:4476 ui/linux-qt/src/MainWindow.cpp:3082
 msgid "Select image"
 msgstr ""
 
-#: ui/linux-gtk/src/MainWindow.cpp:4545 ui/windows/src/MainWindow.cpp:3118
-#: ui/windows/src/MainWindow.cpp:5112 ui/windows/src/RoomWindow.cpp:216
+#: ui/linux-gtk/src/MainWindow.cpp:4478
+#: ui/shared/views/media_viewer_items.cpp:135
+#: ui/windows/src/MainWindow.cpp:5073
 msgid "Images"
 msgstr ""
 
-#: ui/linux-gtk/src/MainWindow.cpp:5294 ui/linux-gtk/src/MainWindow.cpp:5323
-#: ui/linux-qt/src/MainWindow.cpp:3932 ui/linux-qt/src/MainWindow.cpp:3942
-#: ui/macos/src/MainWindowController.mm:7989 ui/windows/src/MainWindow.cpp:1550
-#: ui/windows/src/MainWindow.cpp:5728
+#: ui/linux-gtk/src/MainWindow.cpp:5227 ui/linux-gtk/src/MainWindow.cpp:5256
+#: ui/linux-qt/src/MainWindow.cpp:3895 ui/linux-qt/src/MainWindow.cpp:3905
+#: ui/macos/src/MainWindowController.mm:8033 ui/windows/src/MainWindow.cpp:1551
+#: ui/windows/src/MainWindow.cpp:5689
 msgid "Syncing rooms…"
 msgstr ""
 
-#: ui/linux-gtk/src/MainWindow.cpp:5338 ui/linux-qt/src/MainWindow.cpp:3955
-#: ui/macos/src/MainWindowController.mm:7991 ui/windows/src/MainWindow.cpp:5742
+#: ui/linux-gtk/src/MainWindow.cpp:5271 ui/linux-qt/src/MainWindow.cpp:3918
+#: ui/macos/src/MainWindowController.mm:8035 ui/windows/src/MainWindow.cpp:5703
 msgid "Reconnecting…"
 msgstr ""
 
-#: ui/linux-gtk/src/MainWindow.cpp:5344 ui/linux-qt/src/MainWindow.cpp:3962
-#: ui/macos/src/MainWindowController.mm:7994 ui/windows/src/MainWindow.cpp:5749
+#: ui/linux-gtk/src/MainWindow.cpp:5277 ui/linux-qt/src/MainWindow.cpp:3925
+#: ui/macos/src/MainWindowController.mm:8038 ui/windows/src/MainWindow.cpp:5710
 #, c++-format
 msgid "Downloading encryption keys ({0})…"
 msgstr ""
 
-#: ui/linux-gtk/src/MainWindow.cpp:5647 ui/linux-qt/src/MainWindow.cpp:1526
-#: ui/macos/src/MainWindowController.mm:8353 ui/windows/src/MainWindow.cpp:2373
+#: ui/linux-gtk/src/MainWindow.cpp:5580 ui/linux-qt/src/MainWindow.cpp:1489
+#: ui/macos/src/MainWindowController.mm:8397 ui/windows/src/MainWindow.cpp:2373
 msgid "Add to Saved Stickers"
 msgstr ""
 
-#: ui/linux-gtk/src/MainWindow.cpp:5671 ui/linux-gtk/src/RoomWindow.cpp:296
-#: ui/linux-qt/src/MainWindow.cpp:573 ui/linux-qt/src/RoomWindow.cpp:202
-#: ui/macos/src/AppDelegate.mm:290 ui/macos/src/MainWindowController.mm:3672
-#: ui/macos/src/RoomWindowController.mm:343
+#: ui/linux-gtk/src/MainWindow.cpp:5604 ui/linux-gtk/src/RoomWindow.cpp:261
+#: ui/linux-qt/src/MainWindow.cpp:572 ui/linux-qt/src/RoomWindow.cpp:185
+#: ui/macos/src/AppDelegate.mm:290 ui/macos/src/MainWindowController.mm:3640
+#: ui/macos/src/RoomWindowController.mm:316
 #: ui/shared/views/EncryptionSetupOverlay.cpp:128
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1371
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1372
 #: ui/shared/views/MediaOverlayBase.cpp:56 ui/windows/src/MainWindow.cpp:2134
-#: ui/windows/src/RoomWindow.cpp:304
+#: ui/windows/src/RoomWindow.cpp:287
 msgid "Copy"
 msgstr ""
 
-#: ui/linux-gtk/src/MainWindow.cpp:6075 ui/linux-qt/src/MainWindow.cpp:4537
-#: ui/windows/src/MainWindow.cpp:6038
+#: ui/linux-gtk/src/MainWindow.cpp:6008 ui/linux-qt/src/MainWindow.cpp:4500
+#: ui/windows/src/MainWindow.cpp:5999
 msgid "Signed out"
 msgstr ""
 
@@ -234,45 +227,44 @@ msgstr ""
 msgid "Show App"
 msgstr ""
 
-#: ui/linux-qt/src/MainWindow.cpp:701 ui/linux-qt/src/RoomWindow.cpp:116
-msgid "Images (*.jpg *.jpeg *.png *.gif *.webp);;All files (*.*)"
-msgstr ""
-
-#: ui/linux-qt/src/MainWindow.cpp:731 ui/linux-qt/src/RoomWindow.cpp:159
+#: ui/linux-qt/src/MainWindow.cpp:721 ui/linux-qt/src/RoomWindow.cpp:142
 msgid "All files (*.*)"
 msgstr ""
 
-#: ui/linux-qt/src/MainWindow.cpp:865 ui/linux-qt/src/RoomWindow.cpp:130
-msgid "Videos (*.mp4 *.webm *.mkv);;All files (*.*)"
-msgstr ""
-
-#: ui/linux-qt/src/MainWindow.cpp:1525
-#: ui/macos/src/MainWindowController.mm:8352 ui/windows/src/MainWindow.cpp:2372
+#: ui/linux-qt/src/MainWindow.cpp:1488
+#: ui/macos/src/MainWindowController.mm:8396 ui/windows/src/MainWindow.cpp:2372
 msgid "Already in Saved Stickers"
 msgstr ""
 
-#: ui/linux-qt/src/MainWindow.cpp:2236
+#: ui/linux-qt/src/MainWindow.cpp:2199
 msgid "Restoring sessions…"
 msgstr ""
 
-#: ui/linux-qt/src/MainWindow.cpp:2468
+#: ui/linux-qt/src/MainWindow.cpp:2431
 msgid "Already signed in as %1"
 msgstr ""
 
-#: ui/linux-qt/src/MainWindow.cpp:2487
+#: ui/linux-qt/src/MainWindow.cpp:2450
 msgid "Sign-in failed: %1"
 msgstr ""
 
-#: ui/linux-qt/src/MainWindow.cpp:3120
+#: ui/linux-qt/src/MainWindow.cpp:3083
 msgid "Images (*.png *.jpg *.jpeg *.gif *.webp)"
 msgstr ""
 
-#: ui/linux-qt/src/MainWindow.cpp:4513
+#: ui/linux-qt/src/MainWindow.cpp:4476
 msgid "Add Account"
 msgstr ""
 
-#: ui/linux-qt/src/MainWindow.cpp:4543
+#: ui/linux-qt/src/MainWindow.cpp:4506
 msgid "Signed out of %1"
+msgstr ""
+
+#: ui/linux-qt/src/MainWindow.h:65 ui/windows/src/MainWindow.cpp:3149
+#: ui/windows/src/MainWindow.cpp:6374 ui/windows/src/MainWindow.cpp:6389
+#: ui/windows/src/MainWindow.cpp:6469 ui/windows/src/MainWindow.cpp:6478
+#: ui/windows/src/RoomWindow.cpp:232
+msgid "All files"
 msgstr ""
 
 #: ui/linux-qt/src/SettingsWidget.cpp:171
@@ -286,26 +278,26 @@ msgid "Import room keys"
 msgstr ""
 
 #: ui/linux-qt/src/SettingsWidget.cpp:185
-#: ui/macos/src/MainWindowController.mm:6713
+#: ui/macos/src/MainWindowController.mm:6757
 #: ui/shared/views/ExportHistoryDialog.cpp:653
-#: ui/windows/src/MainWindow.cpp:6440
+#: ui/windows/src/MainWindow.cpp:6401
 msgid "Export complete"
 msgstr ""
 
 #: ui/linux-qt/src/SettingsWidget.cpp:188
-#: ui/macos/src/MainWindowController.mm:6713
+#: ui/macos/src/MainWindowController.mm:6757
 #: ui/shared/views/ExportHistoryDialog.cpp:653
-#: ui/windows/src/MainWindow.cpp:6443
+#: ui/windows/src/MainWindow.cpp:6404
 msgid "Export failed"
 msgstr ""
 
 #: ui/linux-qt/src/SettingsWidget.cpp:194
-#: ui/macos/src/MainWindowController.mm:6727 ui/windows/src/MainWindow.cpp:6451
+#: ui/macos/src/MainWindowController.mm:6771 ui/windows/src/MainWindow.cpp:6412
 msgid "Import complete"
 msgstr ""
 
 #: ui/linux-qt/src/SettingsWidget.cpp:197
-#: ui/macos/src/MainWindowController.mm:6727 ui/windows/src/MainWindow.cpp:6454
+#: ui/macos/src/MainWindowController.mm:6771 ui/windows/src/MainWindow.cpp:6415
 msgid "Import failed"
 msgstr ""
 
@@ -313,7 +305,7 @@ msgstr ""
 msgid "About Tesseract"
 msgstr ""
 
-#: ui/macos/src/AppDelegate.mm:254 ui/shared/app/ShellBase.cpp:8546
+#: ui/macos/src/AppDelegate.mm:254 ui/shared/app/ShellBase_profile.cpp:1047
 msgid "Settings…"
 msgstr ""
 
@@ -326,7 +318,9 @@ msgstr ""
 msgid "Quit Tesseract"
 msgstr ""
 
-#: ui/macos/src/AppDelegate.mm:270 ui/shared/views/MessageListView.cpp:1459
+#: ui/macos/src/AppDelegate.mm:270 ui/shared/views/ComposeBar.cpp:909
+#: ui/shared/views/MessageListView.cpp:1577
+#: ui/shared/views/MessageListView.cpp:6958
 msgid "File"
 msgstr ""
 
@@ -334,8 +328,8 @@ msgstr ""
 msgid "Add Room…"
 msgstr ""
 
-#: ui/macos/src/AppDelegate.mm:279 ui/shared/views/MessageListView.cpp:3775
-#: ui/shared/views/MessageListView.cpp:9119
+#: ui/macos/src/AppDelegate.mm:279 ui/shared/views/MessageListView.cpp:3970
+#: ui/shared/views/MessageListView.cpp:9690
 msgid "Edit"
 msgstr ""
 
@@ -425,15 +419,16 @@ msgstr ""
 msgid "Keyboard Shortcuts"
 msgstr ""
 
-#: ui/macos/src/MainWindowController.mm:6666
+#: ui/macos/src/MainWindowController.mm:6710
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1187
 #: ui/shared/views/IdentityChangeBanner.cpp:72
-#: ui/windows/src/MainWindow.cpp:188
+#: ui/windows/src/MainWindow.cpp:189
 msgid "OK"
 msgstr ""
 
-#: ui/macos/src/MainWindowController.mm:6667 ui/shared/app/ShellBase.cpp:4810
-#: ui/shared/views/CallLobbyView.cpp:75 ui/shared/views/ConfirmDialog.h:30
+#: ui/macos/src/MainWindowController.mm:6711
+#: ui/shared/app/ShellBase_rooms.cpp:660 ui/shared/views/CallLobbyView.cpp:75
+#: ui/shared/views/ConfirmDialog.h:30 ui/shared/views/CreatePollDialog.cpp:125
 #: ui/shared/views/CreateRoomView.cpp:170
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1023
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1544
@@ -445,17 +440,17 @@ msgstr ""
 #: ui/shared/views/QRGrantView.cpp:146
 #: ui/shared/views/RoomDirectoryView.cpp:299
 #: ui/shared/views/RoomInfoPanel.cpp:99
-#: ui/shared/views/RoomSettingsView.cpp:112 ui/shared/views/RoomView.cpp:964
-#: ui/shared/views/RoomView.cpp:1084 ui/shared/views/RoomView.cpp:1133
-#: ui/shared/views/ScreenPickerWidget.cpp:34
-#: ui/shared/views/SettingsView.cpp:366 ui/shared/views/SettingsView.cpp:382
-#: ui/shared/views/SettingsView.cpp:400
+#: ui/shared/views/RoomSettingsView.cpp:112 ui/shared/views/RoomView.cpp:522
+#: ui/shared/views/RoomView.cpp:1010 ui/shared/views/RoomView.cpp:1130
+#: ui/shared/views/RoomView.cpp:1179 ui/shared/views/ScreenPickerWidget.cpp:34
+#: ui/shared/views/SettingsView.cpp:384 ui/shared/views/SettingsView.cpp:400
+#: ui/shared/views/SettingsView.cpp:418
 #: ui/shared/views/settings/DevicesSection.cpp:208
-#: ui/windows/src/MainWindow.cpp:189
+#: ui/windows/src/MainWindow.cpp:190
 msgid "Cancel"
 msgstr ""
 
-#: ui/macos/src/MainWindowController.mm:8378
+#: ui/macos/src/MainWindowController.mm:8422
 msgid "Could Not Save Sticker"
 msgstr ""
 
@@ -480,25 +475,25 @@ msgid "Unable to decrypt this message"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:100
-#: ui/shared/views/MessageListView.cpp:1451
-#: ui/shared/views/MessageListView.cpp:4916
+#: ui/shared/views/MessageListView.cpp:1569
+#: ui/shared/views/MessageListView.cpp:5164
 msgid "Message deleted"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:101
-#: ui/shared/views/MessageListView.cpp:2997
-#: ui/shared/views/MessageListView.cpp:3021
-#: ui/shared/views/MessageListView.cpp:4619
-#: ui/shared/views/MessageListView.cpp:4676
-#: ui/shared/views/MessageListView.cpp:4707
-#: ui/shared/views/MessageListView.cpp:4738
-#: ui/shared/views/MessageListView.cpp:4760
-#: ui/shared/views/MessageListView.cpp:4816
-#: ui/shared/views/MessageListView.cpp:4844
-#: ui/shared/views/MessageListView.cpp:4897
-#: ui/shared/views/MessageListView.cpp:5008
-#: ui/shared/views/MessageListView.cpp:5086
-#: ui/shared/views/MessageListView.cpp:5158
+#: ui/shared/views/MessageListView.cpp:3121
+#: ui/shared/views/MessageListView.cpp:3145
+#: ui/shared/views/MessageListView.cpp:4818
+#: ui/shared/views/MessageListView.cpp:4875
+#: ui/shared/views/MessageListView.cpp:4906
+#: ui/shared/views/MessageListView.cpp:4937
+#: ui/shared/views/MessageListView.cpp:4959
+#: ui/shared/views/MessageListView.cpp:5064
+#: ui/shared/views/MessageListView.cpp:5092
+#: ui/shared/views/MessageListView.cpp:5145
+#: ui/shared/views/MessageListView.cpp:5256
+#: ui/shared/views/MessageListView.cpp:5334
+#: ui/shared/views/MessageListView.cpp:5406
 msgid "(edited)"
 msgstr ""
 
@@ -528,118 +523,118 @@ msgid "Reactions: {0}"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:107
-#: ui/shared/views/MessageListView.cpp:1086
-#: ui/shared/views/MessageListView.cpp:1200
+#: ui/shared/views/MessageListView.cpp:1204
+#: ui/shared/views/MessageListView.cpp:1318
 #, c++-format
 msgid "{0} joined the room"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:108
-#: ui/shared/views/MessageListView.cpp:1088
-#: ui/shared/views/MessageListView.cpp:1202
+#: ui/shared/views/MessageListView.cpp:1206
+#: ui/shared/views/MessageListView.cpp:1320
 #, c++-format
 msgid "{0} left the room"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:109
-#: ui/shared/views/MessageListView.cpp:1090
+#: ui/shared/views/MessageListView.cpp:1208
 #, c++-format
 msgid "{0} was banned by {1}"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:110
-#: ui/shared/views/MessageListView.cpp:1091
+#: ui/shared/views/MessageListView.cpp:1209
 #, c++-format
 msgid "{0} was banned"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:111
-#: ui/shared/views/MessageListView.cpp:1093
+#: ui/shared/views/MessageListView.cpp:1211
 #, c++-format
 msgid "{0} was unbanned by {1}"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:112
-#: ui/shared/views/MessageListView.cpp:1094
+#: ui/shared/views/MessageListView.cpp:1212
 #, c++-format
 msgid "{0} is no longer banned"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:113
-#: ui/shared/views/MessageListView.cpp:1096
+#: ui/shared/views/MessageListView.cpp:1214
 #, c++-format
 msgid "{0} was removed by {1}"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:114
-#: ui/shared/views/MessageListView.cpp:1097
+#: ui/shared/views/MessageListView.cpp:1215
 #, c++-format
 msgid "{0} was removed"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:115
-#: ui/shared/views/MessageListView.cpp:1099
+#: ui/shared/views/MessageListView.cpp:1217
 #, c++-format
 msgid "{0} was invited by {1}"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:116
-#: ui/shared/views/MessageListView.cpp:1100
+#: ui/shared/views/MessageListView.cpp:1218
 #, c++-format
 msgid "{0} received an invitation"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:117
-#: ui/shared/views/MessageListView.cpp:1103
+#: ui/shared/views/MessageListView.cpp:1221
 #, c++-format
 msgid "{0} was removed and banned by {1}"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:118
-#: ui/shared/views/MessageListView.cpp:1104
+#: ui/shared/views/MessageListView.cpp:1222
 #, c++-format
 msgid "{0} was kicked and banned"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:119
-#: ui/shared/views/MessageListView.cpp:1106
+#: ui/shared/views/MessageListView.cpp:1224
 #, c++-format
 msgid "{0} has accepted the invitation"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:120
-#: ui/shared/views/MessageListView.cpp:1108
+#: ui/shared/views/MessageListView.cpp:1226
 #, c++-format
 msgid "{0} has rejected the invitation"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:121
-#: ui/shared/views/MessageListView.cpp:1111
+#: ui/shared/views/MessageListView.cpp:1229
 #, c++-format
 msgid "{0}'s invitation was revoked by {1}"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:122
-#: ui/shared/views/MessageListView.cpp:1112
+#: ui/shared/views/MessageListView.cpp:1230
 #, c++-format
 msgid "{0}'s invitation was revoked"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:123
-#: ui/shared/views/MessageListView.cpp:1114
-#: ui/shared/views/MessageListView.cpp:1234
+#: ui/shared/views/MessageListView.cpp:1232
+#: ui/shared/views/MessageListView.cpp:1352
 #, c++-format
 msgid "{0} requested to join"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:124
-#: ui/shared/views/MessageListView.cpp:1117
+#: ui/shared/views/MessageListView.cpp:1235
 #, c++-format
 msgid "{0}'s request to join was approved by {1}"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:125
-#: ui/shared/views/MessageListView.cpp:1119
+#: ui/shared/views/MessageListView.cpp:1237
 #, c++-format
 msgid "{0}'s join request was approved"
 msgstr ""
@@ -650,120 +645,120 @@ msgid "{0}'s request to join was withdrawn"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:127
-#: ui/shared/views/MessageListView.cpp:1124
+#: ui/shared/views/MessageListView.cpp:1242
 #, c++-format
 msgid "{0}'s request to join was denied by {1}"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:128
-#: ui/shared/views/MessageListView.cpp:1126
+#: ui/shared/views/MessageListView.cpp:1244
 #, c++-format
 msgid "{0}'s join request was denied"
 msgstr ""
 
 #: ui/shared/app/HistoryExportController.cpp:129
-#: ui/shared/views/MessageListView.cpp:11837
+#: ui/shared/views/MessageListView.cpp:12485
 #, c++-format
 msgid "{0}. Reason: {1}"
 msgstr ""
 
-#: ui/shared/app/Launch.cpp:26
+#: ui/shared/app/Launch.cpp:28
 msgid "Show this help and exit"
 msgstr ""
 
-#: ui/shared/app/Launch.cpp:30
+#: ui/shared/app/Launch.cpp:32
 msgid "Show the version and exit"
 msgstr ""
 
-#: ui/shared/app/Launch.cpp:34
+#: ui/shared/app/Launch.cpp:36
 msgid "Use a separate profile with its own accounts and settings"
 msgstr ""
 
-#: ui/shared/app/Launch.cpp:38
+#: ui/shared/app/Launch.cpp:40
 msgid "Start in the tray without showing the window"
 msgstr ""
 
-#: ui/shared/app/Launch.cpp:42
+#: ui/shared/app/Launch.cpp:44
 msgid "Set the log level (error, warn, info, debug, trace)"
 msgstr ""
 
-#: ui/shared/app/Launch.cpp:46
+#: ui/shared/app/Launch.cpp:48
 msgid "Log more detail (same as --log-level=debug)"
 msgstr ""
 
-#: ui/shared/app/Launch.cpp:50
+#: ui/shared/app/Launch.cpp:52
 msgid "Open the room with this ID"
 msgstr ""
 
-#: ui/shared/app/Launch.cpp:54
+#: ui/shared/app/Launch.cpp:56
 msgid "Open the quick switcher"
 msgstr ""
 
-#: ui/shared/app/Launch.cpp:58
+#: ui/shared/app/Launch.cpp:60
 msgid "Open message search"
 msgstr ""
 
-#: ui/shared/app/Launch.cpp:62
+#: ui/shared/app/Launch.cpp:64
 msgid "Open Settings"
 msgstr ""
 
-#: ui/shared/app/Launch.cpp:66
+#: ui/shared/app/Launch.cpp:68
 msgid "Sign out of every account and exit"
 msgstr ""
 
-#: ui/shared/app/Launch.cpp:90
+#: ui/shared/app/Launch.cpp:92
 msgid "Tesseract is running. Quit it first, then try again."
 msgstr ""
 
-#: ui/shared/app/Launch.cpp:97
+#: ui/shared/app/Launch.cpp:99
 msgid "The account list could not be read. Nothing was changed."
 msgstr ""
 
-#: ui/shared/app/Launch.cpp:102
+#: ui/shared/app/Launch.cpp:104
 msgid "No accounts to sign out."
 msgstr ""
 
-#: ui/shared/app/Launch.cpp:111
+#: ui/shared/app/Launch.cpp:113
 #, c++-format
 msgid "Signed out {0}"
 msgstr ""
 
-#: ui/shared/app/Launch.cpp:117
+#: ui/shared/app/Launch.cpp:119
 #, c++-format
 msgid "Removed {0} from this device, but the server sign-out failed: {1}"
 msgstr ""
 
-#: ui/shared/app/Launch.cpp:132
+#: ui/shared/app/Launch.cpp:134
 msgid "[OPTIONS] [MATRIX-URI]"
 msgstr ""
 
-#: ui/shared/app/Launch.cpp:133
+#: ui/shared/app/Launch.cpp:135
 msgid "Usage:"
 msgstr ""
 
-#: ui/shared/app/Launch.cpp:133
+#: ui/shared/app/Launch.cpp:135
 msgid "Options:"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:350
+#: ui/shared/app/RoomPane.cpp:356
 msgid "Switch to this account to open this room."
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:370
+#: ui/shared/app/RoomPane.cpp:376
 msgid "Switch to this account to verify users."
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:388 ui/shared/app/RoomPane.cpp:2751
+#: ui/shared/app/RoomPane.cpp:394 ui/shared/app/RoomPane.cpp:2874
 #, c++-format
 msgid "Couldn't update the identity: {0}"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:572
+#: ui/shared/app/RoomPane.cpp:578
 #, c++-format
 msgid "Failed to set topic: {0}"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:841 ui/shared/app/SettingsController.cpp:97
+#: ui/shared/app/RoomPane.cpp:847 ui/shared/app/SettingsController.cpp:97
 #: ui/shared/app/SettingsController.cpp:195
 #: ui/shared/app/SettingsController.cpp:515
 #: ui/shared/app/SettingsController.cpp:623
@@ -771,414 +766,401 @@ msgstr ""
 #: ui/shared/app/SettingsController.cpp:723
 #: ui/shared/app/SettingsController.cpp:763
 #: ui/shared/app/SettingsController.cpp:816
-#: ui/shared/app/SettingsController.cpp:855 ui/shared/app/ShellBase.cpp:14534
+#: ui/shared/app/SettingsController.cpp:855
+#: ui/shared/app/ShellBase_settings.cpp:1305
 msgid "not logged in"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:1221
+#: ui/shared/app/RoomPane.cpp:1235
 msgid "Image decode failed"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:1793
+#: ui/shared/app/RoomPane.cpp:1859
 #, c++-format
 msgid "Jump to date failed: {0}"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:2522
+#: ui/shared/app/RoomPane.cpp:2615
 #, c++-format
 msgid "Send reply failed: {0}"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:2578
+#: ui/shared/app/RoomPane.cpp:2671
 #, c++-format
 msgid "Edit failed: {0}"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:2618 ui/shared/app/RoomPane.cpp:4058
+#: ui/shared/app/RoomPane.cpp:2711 ui/shared/app/RoomPane.cpp:4230
 #: ui/shared/views/RoomSettingsView.cpp:184
 msgid "Copied to clipboard"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:2686
+#: ui/shared/app/RoomPane.cpp:2809
 #, c++-format
 msgid "Failed to retry sending: {0}"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:2766
+#: ui/shared/app/RoomPane.cpp:2889
 #, c++-format
 msgid "Failed to cancel message: {0}"
 msgstr ""
 
-#: ui/shared/app/RoomPane.cpp:3533
+#: ui/shared/app/RoomPane.cpp:3656
 #, c++-format
 msgid "Command failed: {0}"
 msgstr ""
 
-#: ui/shared/app/ShellBase.cpp:2382 ui/shared/views/ComposeBar.cpp:226
-#: ui/shared/views/ComposeBar.cpp:558 ui/shared/views/ComposeBar.cpp:1655
-#: ui/shared/views/MessageListView.cpp:1463
-msgid "Voice message"
+#: ui/shared/app/ShellBase.h:3543
+msgid "New message"
 msgstr ""
 
-#: ui/shared/app/ShellBase.cpp:4803 ui/shared/views/RoomView.cpp:1078
-msgid "this room"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:4806 ui/shared/views/RoomView.cpp:1080
-#, c++-format
-msgid "Leave {0}?"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:4807 ui/shared/views/RoomView.cpp:1081
-msgid "You will stop receiving messages and need to be re-invited to rejoin."
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:4809 ui/shared/views/RoomView.cpp:1083
-msgid "Leave"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:5155 ui/shared/views/MessageListView.cpp:7775
-#, c++-format
-msgid "Message not sent: {0}"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:6284
-msgid "End your call before restarting."
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:6290
-msgid "Couldn't restart Tesseract. Please restart it yourself."
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:7179
-#, c++-format
-msgid "Couldn't invite {0}"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:7200
-#, c++-format
-msgid "Couldn't kick {0}"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:7203
-#, c++-format
-msgid "Couldn't ban {0}"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:7206
-#, c++-format
-msgid "Couldn't unban {0}"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:7233
-msgid "complete room action"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:7237
-msgid "accept invite"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:7240
-msgid "join room"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:7243
-msgid "leave room"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:7246
-msgid "leave space"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:7249
-msgid "create room"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:7252
-msgid "send join request"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:7255
-msgid "accept join request"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:7258
-msgid "add room to space"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:7261
-msgid "remove room from space"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:7264
-#, c++-format
-msgid "Couldn't {0}"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:7373
-msgid "Request sent"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:7459
-msgid "Upload failed"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:7460
-#, c++-format
-msgid "Upload failed: {0}"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:7923
-msgid "Fetching older messages…"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:7947 ui/shared/views/ThreadListView.cpp:95
-#, c-format
-msgid "%b %-d"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:7948
-msgid "%b %-d, %Y"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:7949
-#, c++-format
-msgid "(oldest: {0})"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:8189
-msgid "Activity Monitor"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:8193
-msgid "The Activity Monitor is not available on this platform yet."
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:8489
-#, c++-format
-msgid "Tesseract {0} available"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:8549
-msgid "Keyboard Shortcuts…"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:8552
-msgid "Verify this session…"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:8553
-msgid "Add Account…"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:8555
-msgid "Add device via QR…"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:8558
-#, c++-format
-msgid "Log Out {0}"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:8773
+#: ui/shared/app/ShellBase_accounts.cpp:328
 msgid "empty session"
 msgstr ""
 
-#: ui/shared/app/ShellBase.cpp:8814
+#: ui/shared/app/ShellBase_accounts.cpp:369
 #, c++-format
 msgid "couldn't persist matrix store: {0}"
 msgstr ""
 
-#: ui/shared/app/ShellBase.cpp:8826
+#: ui/shared/app/ShellBase_accounts.cpp:381
 msgid "couldn't persist session"
 msgstr ""
 
-#: ui/shared/app/ShellBase.cpp:8949
+#: ui/shared/app/ShellBase_accounts.cpp:521
 msgid "no user id"
 msgstr ""
 
-#: ui/shared/app/ShellBase.cpp:9557
+#: ui/shared/app/ShellBase_accounts.cpp:1209
 #, c++-format
 msgid "Sign out failed: {0}"
 msgstr ""
 
-#: ui/shared/app/ShellBase.cpp:10361
-#, c++-format
-msgid "{0} is typing…"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:10365
-#, c++-format
-msgid "{0} and {1} are typing…"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:10369
-#, c++-format
-msgid "{0}, {1} and {2} other are typing…"
-msgid_plural "{0}, {1} and {2} others are typing…"
-msgstr[0] ""
-msgstr[1] ""
-
-#: ui/shared/app/ShellBase.cpp:13059
-msgid "End your call before clearing the cache."
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:13065
-msgid "Finish verifying your device before clearing the cache."
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:13151
+#: ui/shared/app/ShellBase_accounts.cpp:1488
 msgid "Couldn't clear the cache: this account's session is missing."
 msgstr ""
 
-#: ui/shared/app/ShellBase.cpp:13248
+#: ui/shared/app/ShellBase_accounts.cpp:1585
 msgid "Clearing cache…"
 msgstr ""
 
-#: ui/shared/app/ShellBase.cpp:13299
+#: ui/shared/app/ShellBase_accounts.cpp:1636
 msgid "Cache cleared."
 msgstr ""
 
-#: ui/shared/app/ShellBase.cpp:13304
+#: ui/shared/app/ShellBase_accounts.cpp:1641
 #, c++-format
 msgid "Cache cleared, but reloading failed: {0}"
 msgstr ""
 
-#: ui/shared/app/ShellBase.cpp:13694
-#, c++-format
-msgid "Subscribe failed: {0}"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:14321
-msgid "Exporting history…"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:14328
-#, c++-format
-msgid "Exporting history… {0} messages"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:14384
-#, c++-format
-msgid "Failed to upload avatar: {0}"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:14389
-#, c++-format
-msgid "Failed to set room avatar: {0}"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:14393 ui/shared/app/SlashCommands.cpp:213
-msgid "Avatar updated for this room"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:14713
-msgid "The file couldn't be written."
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:14840
-msgid "This verification is no longer active."
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:14852
-msgid "The other device didn't finish confirming in time."
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:14900
-msgid "Save recovery key"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:15282
-msgid "Couldn't read your recovery key from this computer's secure storage."
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:15594
-msgid "Finish the current verification first."
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:16007
+#: ui/shared/app/ShellBase_accounts.cpp:1751
 msgid "Sync error: reconnecting…"
 msgstr ""
 
-#: ui/shared/app/ShellBase.cpp:16024
+#: ui/shared/app/ShellBase_accounts.cpp:1768
 msgid "Reconnecting session…"
 msgstr ""
 
-#: ui/shared/app/ShellBase.cpp:16043
+#: ui/shared/app/ShellBase_accounts.cpp:1787
 msgid "Reconnected"
 msgstr ""
 
-#: ui/shared/app/ShellBase.cpp:16058
+#: ui/shared/app/ShellBase_accounts.cpp:1802
 msgid "Session expired; please log in again."
 msgstr ""
 
-#: ui/shared/app/ShellBase.cpp:16371
-msgid "Location services aren't available on this device."
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:16379
-msgid "Fetching your location…"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:16392
-msgid "Location permission denied."
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:16395
-msgid "Location is currently unavailable."
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:16398
-msgid "Timed out waiting for your location."
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:16401
-msgid "Couldn't get your location."
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:16414
-msgid "Location sent."
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:16436
-msgid "You're signed out of this account"
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:16452
-msgid "Couldn't send your reply. Try again from the app."
-msgstr ""
-
-#: ui/shared/app/ShellBase.cpp:16467 ui/shared/views/MessageListView.cpp:7774
+#: ui/shared/app/ShellBase_calls.cpp:338
+#: ui/shared/views/MessageListView.cpp:8232
 msgid "Message not sent"
 msgstr ""
 
-#: ui/shared/app/ShellBase.cpp:16564
+#: ui/shared/app/ShellBase_calls.cpp:443
 #, c++-format
 msgid "Call failed: {0}"
 msgstr ""
 
-#: ui/shared/app/ShellBase.cpp:16846
+#: ui/shared/app/ShellBase_calls.cpp:732
 msgid "Call disconnected due to a network error."
 msgstr ""
 
-#: ui/shared/app/ShellBase.cpp:16848
+#: ui/shared/app/ShellBase_calls.cpp:734
 msgid "Call ended due to a media error."
 msgstr ""
 
-#: ui/shared/app/ShellBase.cpp:16850
+#: ui/shared/app/ShellBase_calls.cpp:736
 msgid "This call is not supported on your device."
 msgstr ""
 
-#: ui/shared/app/ShellBase.cpp:16852
+#: ui/shared/app/ShellBase_calls.cpp:738
 msgid "Call ended due to an encryption error."
 msgstr ""
 
-#: ui/shared/app/ShellBase.cpp:16854
+#: ui/shared/app/ShellBase_calls.cpp:740
 msgid "The call ended unexpectedly."
 msgstr ""
 
-#: ui/shared/app/ShellBase.h:4080
-msgid "New message"
+#: ui/shared/app/ShellBase_encryption.cpp:238
+msgid "This verification is no longer active."
+msgstr ""
+
+#: ui/shared/app/ShellBase_encryption.cpp:250
+msgid "The other device didn't finish confirming in time."
+msgstr ""
+
+#: ui/shared/app/ShellBase_encryption.cpp:298
+msgid "Save recovery key"
+msgstr ""
+
+#: ui/shared/app/ShellBase_encryption.cpp:687
+msgid "Couldn't read your recovery key from this computer's secure storage."
+msgstr ""
+
+#: ui/shared/app/ShellBase_encryption.cpp:999
+msgid "Finish the current verification first."
+msgstr ""
+
+#: ui/shared/app/ShellBase_media_fetch.cpp:1056
+msgid "End your call before clearing the cache."
+msgstr ""
+
+#: ui/shared/app/ShellBase_media_fetch.cpp:1062
+msgid "Finish verifying your device before clearing the cache."
+msgstr ""
+
+#: ui/shared/app/ShellBase_navigation.cpp:765
+#, c++-format
+msgid "Subscribe failed: {0}"
+msgstr ""
+
+#: ui/shared/app/ShellBase_profile.cpp:249
+msgid "End your call before restarting."
+msgstr ""
+
+#: ui/shared/app/ShellBase_profile.cpp:255
+msgid "Couldn't restart Tesseract. Please restart it yourself."
+msgstr ""
+
+#: ui/shared/app/ShellBase_profile.cpp:1050
+msgid "Keyboard Shortcuts…"
+msgstr ""
+
+#: ui/shared/app/ShellBase_profile.cpp:1053
+msgid "Verify this session…"
+msgstr ""
+
+#: ui/shared/app/ShellBase_profile.cpp:1054
+msgid "Add Account…"
+msgstr ""
+
+#: ui/shared/app/ShellBase_profile.cpp:1056
+msgid "Add device via QR…"
+msgstr ""
+
+#: ui/shared/app/ShellBase_profile.cpp:1059
+#, c++-format
+msgid "Log Out {0}"
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp:653 ui/shared/views/RoomView.cpp:1124
+msgid "this room"
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp:656 ui/shared/views/RoomView.cpp:1126
+#, c++-format
+msgid "Leave {0}?"
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp:657 ui/shared/views/RoomView.cpp:1127
+msgid "You will stop receiving messages and need to be re-invited to rejoin."
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp:659 ui/shared/views/RoomView.cpp:1129
+msgid "Leave"
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp:874
+msgid "Couldn't send the poll"
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp:1054
+#: ui/shared/views/MessageListView.cpp:8233
+#, c++-format
+msgid "Message not sent: {0}"
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp:1221
+#, c++-format
+msgid "Couldn't invite {0}"
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp:1242
+#, c++-format
+msgid "Couldn't kick {0}"
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp:1245
+#, c++-format
+msgid "Couldn't ban {0}"
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp:1248
+#, c++-format
+msgid "Couldn't unban {0}"
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp:1275
+msgid "complete room action"
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp:1279
+msgid "accept invite"
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp:1282
+msgid "join room"
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp:1285
+msgid "leave room"
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp:1288
+msgid "leave space"
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp:1291
+msgid "create room"
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp:1294
+msgid "send join request"
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp:1297
+msgid "accept join request"
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp:1300
+msgid "add room to space"
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp:1303
+msgid "remove room from space"
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp:1306
+#, c++-format
+msgid "Couldn't {0}"
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp:1415
+msgid "Request sent"
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp:1508
+msgid "Upload failed"
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp:1509
+#, c++-format
+msgid "Upload failed: {0}"
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp:1584
+msgid "Location services aren't available on this device."
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp:1592
+msgid "Fetching your location…"
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp:1605
+msgid "Location permission denied."
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp:1608
+msgid "Location is currently unavailable."
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp:1611
+msgid "Timed out waiting for your location."
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp:1614
+msgid "Couldn't get your location."
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp:1627
+msgid "Location sent."
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp:1649
+msgid "You're signed out of this account"
+msgstr ""
+
+#: ui/shared/app/ShellBase_rooms.cpp:1665
+msgid "Couldn't send your reply. Try again from the app."
+msgstr ""
+
+#: ui/shared/app/ShellBase_search.cpp:560
+msgid "Fetching older messages…"
+msgstr ""
+
+#: ui/shared/app/ShellBase_search.cpp:584 ui/shared/views/ThreadListView.cpp:95
+#, c-format
+msgid "%b %-d"
+msgstr ""
+
+#: ui/shared/app/ShellBase_search.cpp:585
+msgid "%b %-d, %Y"
+msgstr ""
+
+#: ui/shared/app/ShellBase_search.cpp:586
+#, c++-format
+msgid "(oldest: {0})"
+msgstr ""
+
+#: ui/shared/app/ShellBase_settings.cpp:260
+msgid "Activity Monitor"
+msgstr ""
+
+#: ui/shared/app/ShellBase_settings.cpp:264
+msgid "The Activity Monitor is not available on this platform yet."
+msgstr ""
+
+#: ui/shared/app/ShellBase_settings.cpp:353
+#, c++-format
+msgid "Tesseract {0} available"
+msgstr ""
+
+#: ui/shared/app/ShellBase_settings.cpp:1071
+msgid "Exporting history…"
+msgstr ""
+
+#: ui/shared/app/ShellBase_settings.cpp:1078
+#, c++-format
+msgid "Exporting history… {0} messages"
+msgstr ""
+
+#: ui/shared/app/ShellBase_settings.cpp:1134
+#, c++-format
+msgid "Failed to upload avatar: {0}"
+msgstr ""
+
+#: ui/shared/app/ShellBase_settings.cpp:1139
+#, c++-format
+msgid "Failed to set room avatar: {0}"
+msgstr ""
+
+#: ui/shared/app/ShellBase_settings.cpp:1143
+#: ui/shared/app/SlashCommands.cpp:214
+msgid "Avatar updated for this room"
+msgstr ""
+
+#: ui/shared/app/ShellBase_wiring.cpp:491 ui/shared/views/ComposeBar.cpp:227
+#: ui/shared/views/ComposeBar.cpp:583 ui/shared/views/ComposeBar.cpp:1971
+#: ui/shared/views/MessageListView.cpp:1581
+msgid "Voice message"
 msgstr ""
 
 #: ui/shared/app/SlashCommands.cpp:173
@@ -1238,90 +1220,115 @@ msgstr ""
 msgid "Share your current location"
 msgstr ""
 
-#: ui/shared/app/SlashCommands.cpp:213
+#: ui/shared/app/SlashCommands.cpp:201
+msgid "Create a poll"
+msgstr ""
+
+#: ui/shared/app/SlashCommands.cpp:214
 msgid "Avatar reset for this room"
 msgstr ""
 
-#: ui/shared/app/SlashCommands.cpp:291
+#: ui/shared/app/SlashCommands.cpp:292
 #, c++-format
 msgid "slaps {0} around a bit with a large trout"
 msgstr ""
 
-#: ui/shared/app/SlashCommands.cpp:329
+#: ui/shared/app/SlashCommands.cpp:330
 msgid "no image URL provided; use /myroomavatar alone to open the image picker"
 msgstr ""
 
-#: ui/shared/app/SlashCommands.cpp:347
+#: ui/shared/app/SlashCommands.cpp:348
 msgid "expected an mxc:// or http(s) image URL, or \"reset\""
 msgstr ""
 
-#: ui/shared/app/SlashCommands.cpp:561 ui/shared/app/SlashCommands.cpp:568
-#: ui/shared/app/SlashCommands.cpp:585 ui/shared/app/SlashCommands.cpp:588
-#: ui/shared/app/SlashCommands.cpp:590 ui/shared/app/SlashCommands.cpp:592
+#: ui/shared/app/SlashCommands.cpp:562 ui/shared/app/SlashCommands.cpp:569
+#: ui/shared/app/SlashCommands.cpp:586 ui/shared/app/SlashCommands.cpp:589
+#: ui/shared/app/SlashCommands.cpp:591 ui/shared/app/SlashCommands.cpp:593
 msgid "text"
 msgstr ""
 
-#: ui/shared/app/SlashCommands.cpp:562
+#: ui/shared/app/SlashCommands.cpp:563
 msgid "number"
 msgstr ""
 
-#: ui/shared/app/SlashCommands.cpp:563
+#: ui/shared/app/SlashCommands.cpp:564
 msgid "yes/no"
 msgstr ""
 
-#: ui/shared/app/SlashCommands.cpp:564
+#: ui/shared/app/SlashCommands.cpp:565
 msgid "user"
 msgstr ""
 
-#: ui/shared/app/SlashCommands.cpp:565
+#: ui/shared/app/SlashCommands.cpp:566
 msgid "server"
 msgstr ""
 
-#: ui/shared/app/SlashCommands.cpp:566 ui/shared/app/SlashCommands.cpp:570
+#: ui/shared/app/SlashCommands.cpp:567 ui/shared/app/SlashCommands.cpp:571
 msgid "room"
 msgstr ""
 
-#: ui/shared/app/SlashCommands.cpp:571
+#: ui/shared/app/SlashCommands.cpp:572
 msgid "event"
 msgstr ""
 
-#: ui/shared/app/SlashCommands.cpp:574
+#: ui/shared/app/SlashCommands.cpp:575
 #, c++-format
 msgid "{0} (comma-separated)"
 msgstr ""
 
-#: ui/shared/app/SlashCommands.cpp:576
+#: ui/shared/app/SlashCommands.cpp:577
 msgid "list"
 msgstr ""
 
-#: ui/shared/app/SlashCommands.cpp:600
+#: ui/shared/app/SlashCommands.cpp:601
 msgid "Press Enter to send"
 msgstr ""
 
-#: ui/shared/app/SlashCommands.cpp:603 ui/shared/views/CallBanner.cpp:169
-#: ui/shared/views/ComposeBar.cpp:1543 ui/shared/views/KnockStatusCard.cpp:37
-#: ui/shared/views/MessageListView.cpp:1164
-#: ui/shared/views/MessageListView.cpp:3456 ui/shared/views/PinnedBanner.cpp:93
+#: ui/shared/app/SlashCommands.cpp:604 ui/shared/views/CallBanner.cpp:169
+#: ui/shared/views/ComposeBar.cpp:1804 ui/shared/views/KnockStatusCard.cpp:37
+#: ui/shared/views/MessageListView.cpp:1282
+#: ui/shared/views/MessageListView.cpp:3583 ui/shared/views/PinnedBanner.cpp:93
 #, c++-format
 msgid "{0}: {1}"
 msgstr ""
 
-#: ui/shared/app/SlashCommands.cpp:606
+#: ui/shared/app/SlashCommands.cpp:607
 msgid "optional"
 msgstr ""
 
-#: ui/shared/app/SlashCommands.cpp:622
+#: ui/shared/app/SlashCommands.cpp:623
 #, c++-format
 msgid "Missing required argument: {0}"
 msgstr ""
 
-#: ui/shared/app/SlashCommands.cpp:625
+#: ui/shared/app/SlashCommands.cpp:626
 msgid "Too many arguments"
 msgstr ""
 
-#: ui/shared/app/SlashCommands.cpp:639
+#: ui/shared/app/SlashCommands.cpp:640
 #, c++-format
 msgid "{0} must be a valid {1}"
+msgstr ""
+
+#: ui/shared/app/shell_helpers.cpp:132
+#, c++-format
+msgid "{0} is typing…"
+msgstr ""
+
+#: ui/shared/app/shell_helpers.cpp:136
+#, c++-format
+msgid "{0} and {1} are typing…"
+msgstr ""
+
+#: ui/shared/app/shell_helpers.cpp:140
+#, c++-format
+msgid "{0}, {1} and {2} other are typing…"
+msgid_plural "{0}, {1} and {2} others are typing…"
+msgstr[0] ""
+msgstr[1] ""
+
+#: ui/shared/app/shell_helpers.cpp:204
+msgid "The file couldn't be written."
 msgstr ""
 
 #: ui/shared/tk/i18n.cpp:629
@@ -1723,7 +1730,7 @@ msgstr[1] ""
 msgid "Join"
 msgstr ""
 
-#: ui/shared/views/AddRoomView.cpp:48
+#: ui/shared/views/AddRoomView.cpp:48 ui/shared/views/CreatePollDialog.cpp:127
 #: ui/shared/views/ImagePackEditorView.cpp:635
 msgid "Create"
 msgstr ""
@@ -1834,70 +1841,118 @@ msgstr ""
 msgid "Click anywhere to cancel"
 msgstr ""
 
-#: ui/shared/views/ComposeBar.cpp:150
+#: ui/shared/views/ComposeBar.cpp:151
 msgid "Message…"
 msgstr ""
 
-#: ui/shared/views/ComposeBar.cpp:181 ui/shared/views/ComposeBar.cpp:1652
+#: ui/shared/views/ComposeBar.cpp:182 ui/shared/views/ComposeBar.cpp:1968
 #: ui/shared/views/ImagePackEditorView.cpp:148
 #: ui/shared/views/ImagePackEditorView.cpp:464
 msgid "Emoji"
 msgstr ""
 
-#: ui/shared/views/ComposeBar.cpp:200 ui/shared/views/ComposeBar.cpp:1653
+#: ui/shared/views/ComposeBar.cpp:201 ui/shared/views/ComposeBar.cpp:1969
 msgid "Stickers"
 msgstr ""
 
-#: ui/shared/views/ComposeBar.cpp:241
+#: ui/shared/views/ComposeBar.cpp:242
 msgid "Remove attachment"
 msgstr ""
 
-#: ui/shared/views/ComposeBar.cpp:253
+#: ui/shared/views/ComposeBar.cpp:254
 msgid "Cancel editing"
 msgstr ""
 
-#: ui/shared/views/ComposeBar.cpp:260
+#: ui/shared/views/ComposeBar.cpp:261
 msgid "Cancel reply"
 msgstr ""
 
-#: ui/shared/views/ComposeBar.cpp:261
+#: ui/shared/views/ComposeBar.cpp:262
 msgid "Cancel recording"
 msgstr ""
 
-#: ui/shared/views/ComposeBar.cpp:504 ui/shared/views/UserProfilePanel.cpp:144
+#: ui/shared/views/ComposeBar.cpp:529 ui/shared/views/UserProfilePanel.cpp:144
 msgid "Sending…"
 msgstr ""
 
-#: ui/shared/views/ComposeBar.cpp:557 ui/shared/views/ComposeBar.cpp:1654
+#: ui/shared/views/ComposeBar.cpp:582 ui/shared/views/ComposeBar.cpp:1970
 msgid "Stop recording"
 msgstr ""
 
-#: ui/shared/views/ComposeBar.cpp:1244 ui/shared/views/ComposeBar.cpp:1539
+#: ui/shared/views/ComposeBar.cpp:908 ui/shared/views/MessageListView.cpp:6957
+msgid "Audio"
+msgstr ""
+
+#: ui/shared/views/ComposeBar.cpp:1480 ui/shared/views/ComposeBar.cpp:1800
 msgid "Editing message"
 msgstr ""
 
-#: ui/shared/views/ComposeBar.cpp:1285 ui/shared/views/ComposeBar.cpp:1542
-#: ui/shared/views/ComposeBar.cpp:1544
+#: ui/shared/views/ComposeBar.cpp:1521 ui/shared/views/ComposeBar.cpp:1803
+#: ui/shared/views/ComposeBar.cpp:1805
 #, c++-format
 msgid "Replying to {0}"
 msgstr ""
 
-#: ui/shared/views/ComposeBar.cpp:1532
+#: ui/shared/views/ComposeBar.cpp:1793
 #, c++-format
 msgid "Message {0}"
 msgstr ""
 
-#: ui/shared/views/ComposeBar.cpp:1550
+#: ui/shared/views/ComposeBar.cpp:1812
 msgid "Attachment"
 msgstr ""
 
-#: ui/shared/views/ComposeBar.cpp:1551
+#: ui/shared/views/ComposeBar.cpp:1813
 #, c++-format
 msgid "Attachment: {0}, {1}"
 msgstr ""
 
+#: ui/shared/views/ComposeBar.cpp:1820
+#, c++-format
+msgid "{0} attachments"
+msgstr ""
+
 #: ui/shared/views/ConfirmDialog.h:29 ui/shared/views/QRGrantView.cpp:53
 msgid "Confirm"
+msgstr ""
+
+#: ui/shared/views/CreatePollDialog.cpp:83
+#: ui/shared/views/CreatePollDialog.cpp:84
+msgid "Question"
+msgstr ""
+
+#: ui/shared/views/CreatePollDialog.cpp:112
+msgid "Add option"
+msgstr ""
+
+#: ui/shared/views/CreatePollDialog.cpp:117
+msgid "Allow multiple answers"
+msgstr ""
+
+#: ui/shared/views/CreatePollDialog.cpp:119
+msgid "Hide results until the poll ends"
+msgstr ""
+
+#: ui/shared/views/CreatePollDialog.cpp:121
+msgid "Enter a question and at least two different options"
+msgstr ""
+
+#: ui/shared/views/CreatePollDialog.cpp:172
+#, c++-format
+msgid "Option {0}"
+msgstr ""
+
+#: ui/shared/views/CreatePollDialog.cpp:198
+msgid "Remove option"
+msgstr ""
+
+#: ui/shared/views/CreatePollDialog.h:120
+msgid "Create poll"
+msgstr ""
+
+#: ui/shared/views/CreatePollDialog.h:121
+#, c++-format
+msgid "Create poll in {0}"
 msgstr ""
 
 #: ui/shared/views/CreateRoomView.cpp:95 ui/shared/views/CreateRoomView.cpp:220
@@ -1918,7 +1973,7 @@ msgid "Invite people (optional) — Matrix IDs, one per line or comma-separated"
 msgstr ""
 
 #: ui/shared/views/CreateRoomView.cpp:125 ui/shared/views/JoinRoomView.cpp:72
-#: ui/shared/views/QuickSwitcher.cpp:237 ui/shared/views/RoomView.cpp:1136
+#: ui/shared/views/QuickSwitcher.cpp:237 ui/shared/views/RoomView.cpp:1182
 msgid "Reason (optional)"
 msgstr ""
 
@@ -2008,32 +2063,32 @@ msgid "Creating room…"
 msgstr ""
 
 #. TRANSLATORS: month header pattern, see tk::format_date.
-#: ui/shared/views/DatePickerView.cpp:565 ui/shared/views/RoomMediaView.cpp:47
+#: ui/shared/views/DatePickerView.cpp:575 ui/shared/views/RoomMediaView.cpp:47
 #: ui/shared/views/settings/PrivacySection.cpp:56
 msgid "%B %Y"
 msgstr ""
 
-#: ui/shared/views/DatePickerView.cpp:586
+#: ui/shared/views/DatePickerView.cpp:596
 #: ui/shared/views/shortcut_registry.cpp:138
 msgid "Previous month"
 msgstr ""
 
-#: ui/shared/views/DatePickerView.cpp:588
+#: ui/shared/views/DatePickerView.cpp:598
 #: ui/shared/views/shortcut_registry.cpp:140
 msgid "Next month"
 msgstr ""
 
-#: ui/shared/views/DatePickerView.cpp:590
-#: ui/shared/views/DatePickerView.cpp:603
-#: ui/shared/views/DatePickerView.cpp:1023
-#: ui/shared/views/MessageListView.cpp:1038
+#: ui/shared/views/DatePickerView.cpp:600
+#: ui/shared/views/DatePickerView.cpp:613
+#: ui/shared/views/DatePickerView.cpp:1033
+#: ui/shared/views/MessageListView.cpp:1156
 #: ui/shared/views/ThreadListView.cpp:74
 msgid "Today"
 msgstr ""
 
 #. TRANSLATORS: date separator pattern, see tk::format_date.
-#: ui/shared/views/DatePickerView.cpp:596
-#: ui/shared/views/MessageListView.cpp:1057
+#: ui/shared/views/DatePickerView.cpp:606
+#: ui/shared/views/MessageListView.cpp:1175
 msgid "%B %-d, %Y"
 msgstr ""
 
@@ -2097,7 +2152,7 @@ msgstr ""
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1270
 #: ui/shared/views/EncryptionSetupOverlay.cpp:1432
 #: ui/shared/views/LoginView.cpp:165 ui/shared/views/MainAppWidget.cpp:47
-#: ui/shared/views/RoomHeader.cpp:79
+#: ui/shared/views/RoomHeader.cpp:81
 msgid "Back"
 msgstr ""
 
@@ -2231,7 +2286,7 @@ msgid "Or the passphrase you chose instead"
 msgstr ""
 
 #: ui/shared/views/EncryptionSetupOverlay.cpp:982
-#: ui/shared/views/SettingsView.cpp:393
+#: ui/shared/views/SettingsView.cpp:411
 msgid "Reset encryption?"
 msgstr ""
 
@@ -2645,7 +2700,7 @@ msgstr ""
 
 #: ui/shared/views/ForwardRoomPicker.cpp:152
 #: ui/shared/views/RoomDirectoryView.cpp:243
-#: ui/shared/views/RoomListView.cpp:1513
+#: ui/shared/views/RoomListView.cpp:1515
 msgid "Search rooms…"
 msgstr ""
 
@@ -2734,7 +2789,7 @@ msgstr ""
 
 #: ui/shared/views/ImagePackEditorView.cpp:149
 #: ui/shared/views/ImagePackEditorView.cpp:465
-#: ui/shared/views/MessageListView.cpp:1457
+#: ui/shared/views/MessageListView.cpp:1575
 msgid "Sticker"
 msgstr ""
 
@@ -2808,7 +2863,7 @@ msgstr ""
 msgid "Block"
 msgstr ""
 
-#: ui/shared/views/InviteCard.cpp:302 ui/shared/views/RoomListView.cpp:1190
+#: ui/shared/views/InviteCard.cpp:302 ui/shared/views/RoomListView.cpp:1192
 #, c++-format
 msgid "Invited by {0}"
 msgstr ""
@@ -2927,7 +2982,7 @@ msgstr ""
 #: ui/shared/views/JoinRoomView.cpp:758
 #: ui/shared/views/RoomDirectoryView.cpp:68
 #: ui/shared/views/RoomDirectoryView.cpp:180
-#: ui/shared/views/RoomListView.cpp:1402
+#: ui/shared/views/RoomListView.cpp:1404
 #: ui/shared/views/RoomPreviewView.cpp:278
 #, c++-format
 msgid "{0} member"
@@ -2940,8 +2995,8 @@ msgid "Join a Room"
 msgstr ""
 
 #: ui/shared/views/KeyboardShortcutsOverlay.cpp:92
-#: ui/shared/views/MessageListView.cpp:3499
-#: ui/shared/views/MessageListView.cpp:3718
+#: ui/shared/views/MessageListView.cpp:3626
+#: ui/shared/views/MessageListView.cpp:3852
 #: ui/shared/views/RoomDirectoryView.cpp:71
 #: ui/shared/views/RoomMediaView.cpp:165
 #, c++-format
@@ -2952,13 +3007,13 @@ msgstr ""
 msgid "Deny"
 msgstr ""
 
-#: ui/shared/views/KnockRequestsPanel.cpp:49 ui/shared/views/RoomView.cpp:963
+#: ui/shared/views/KnockRequestsPanel.cpp:49 ui/shared/views/RoomView.cpp:1009
 msgid "Deny & Ban"
 msgstr ""
 
 #: ui/shared/views/KnockRequestsPanel.cpp:165
 #: ui/shared/views/KnockRequestsPanel.cpp:313
-#: ui/shared/views/RoomListView.cpp:502
+#: ui/shared/views/RoomListView.cpp:504
 #, c++-format
 msgid "Requests to Join ({0})"
 msgstr ""
@@ -2970,7 +3025,7 @@ msgstr ""
 
 #: ui/shared/views/KnockStatusCard.cpp:37
 #: ui/shared/views/KnockStatusCard.cpp:224
-#: ui/shared/views/RoomListView.cpp:1289
+#: ui/shared/views/RoomListView.cpp:1291
 msgid "Request pending"
 msgstr ""
 
@@ -3054,7 +3109,7 @@ msgid "Connection Error"
 msgstr ""
 
 #: ui/shared/views/LoginView.cpp:1048 ui/shared/views/LoginView.cpp:1062
-#: ui/shared/views/MessageListView.cpp:2850
+#: ui/shared/views/MessageListView.cpp:2974
 msgid "Retry"
 msgstr ""
 
@@ -3095,7 +3150,7 @@ msgstr ""
 
 #: ui/shared/views/MediaOverlayBase.cpp:64
 #: ui/shared/views/MediaOverlayBase.cpp:98
-#: ui/shared/views/MediaOverlayBase.cpp:268
+#: ui/shared/views/MediaOverlayBase.cpp:269
 msgid "Full screen"
 msgstr ""
 
@@ -3103,406 +3158,452 @@ msgstr ""
 msgid "Exit full screen"
 msgstr ""
 
+#: ui/shared/views/MediaViewerOverlay.cpp:42
+msgid "Previous"
+msgstr ""
+
+#: ui/shared/views/MediaViewerOverlay.cpp:51
+msgid "Next"
+msgstr ""
+
+#: ui/shared/views/MediaViewerOverlay.cpp:355
+#, c++-format
+msgid "{0} / {1}"
+msgstr ""
+
 #: ui/shared/views/MentionPopup.cpp:66 ui/shared/views/MentionPopup.h:69
 msgid "Notify the whole room"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1050
+#: ui/shared/views/MessageListView.cpp:401
+#, c++-format
+msgid "Live location · updated {0}"
+msgstr ""
+
+#: ui/shared/views/MessageListView.cpp:404
+msgid "Waiting for location…"
+msgstr ""
+
+#: ui/shared/views/MessageListView.cpp:406
+msgid "Live location ended"
+msgstr ""
+
+#: ui/shared/views/MessageListView.cpp:1168
 #: ui/shared/views/ThreadListView.cpp:86
 msgid "Yesterday"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1121
+#: ui/shared/views/MessageListView.cpp:1239
 #, c++-format
 msgid "{0} withdrew {1} request to join"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1128
+#: ui/shared/views/MessageListView.cpp:1246
 #, c++-format
 msgid "{0} changed their avatar"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1130
+#: ui/shared/views/MessageListView.cpp:1248
 #, c++-format
 msgid "{0} removed their avatar"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1133
+#: ui/shared/views/MessageListView.cpp:1251
 #, c++-format
 msgid "{0} changed their display name to {1}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1136
+#: ui/shared/views/MessageListView.cpp:1254
 #, c++-format
 msgid "{0} removed their display name"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1138
+#: ui/shared/views/MessageListView.cpp:1256
 #, c++-format
 msgid "{0} changed their display name and avatar"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1151
+#: ui/shared/views/MessageListView.cpp:1269
 #, c++-format
 msgid "{0} removed the room name"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1153
+#: ui/shared/views/MessageListView.cpp:1271
 #, c++-format
 msgid "{0} set the room name to {1}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1154
+#: ui/shared/views/MessageListView.cpp:1272
 #, c++-format
 msgid "{0} changed the room name to {1}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1162
+#: ui/shared/views/MessageListView.cpp:1280
 #, c++-format
 msgid "{0} upgraded this room"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1177
+#: ui/shared/views/MessageListView.cpp:1295
 #, c++-format
 msgid "{0} and {1}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1179
+#: ui/shared/views/MessageListView.cpp:1297
 #, c++-format
 msgid "{0}, {1} and {2} other"
 msgid_plural "{0}, {1} and {2} others"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:1204
+#: ui/shared/views/MessageListView.cpp:1322
 #, c++-format
 msgid "{0} was banned from the room"
 msgid_plural "{0} were banned from the room"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:1208
+#: ui/shared/views/MessageListView.cpp:1326
 #, c++-format
 msgid "{0} was unbanned"
 msgid_plural "{0} were unbanned"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:1211
+#: ui/shared/views/MessageListView.cpp:1329
 #, c++-format
 msgid "{0} was removed from the room"
 msgid_plural "{0} were removed from the room"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:1215
+#: ui/shared/views/MessageListView.cpp:1333
 #, c++-format
 msgid "{0} was invited"
 msgid_plural "{0} were invited"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:1218
+#: ui/shared/views/MessageListView.cpp:1336
 #, c++-format
 msgid "{0} was removed and banned"
 msgid_plural "{0} were removed and banned"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:1222
+#: ui/shared/views/MessageListView.cpp:1340
 #, c++-format
 msgid "{0} accepted the invitation"
 msgid_plural "{0} accepted their invitations"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:1226
+#: ui/shared/views/MessageListView.cpp:1344
 #, c++-format
 msgid "{0} rejected the invitation"
 msgid_plural "{0} rejected their invitations"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:1230
+#: ui/shared/views/MessageListView.cpp:1348
 #, c++-format
 msgid "{0} had {1} invitation revoked"
 msgid_plural "{0} had {1} invitations revoked"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:1236
+#: ui/shared/views/MessageListView.cpp:1354
 #, c++-format
 msgid "{0}'s request to join was approved"
 msgid_plural "{0}'s requests to join were approved"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:1240
+#: ui/shared/views/MessageListView.cpp:1358
 #, c++-format
 msgid "{0} cancelled {1} request to join"
 msgid_plural "{0} cancelled {1} requests to join"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:1244
+#: ui/shared/views/MessageListView.cpp:1362
 #, c++-format
 msgid "{0}'s request to join was denied"
 msgid_plural "{0}'s requests to join were denied"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:1248
+#: ui/shared/views/MessageListView.cpp:1366
 #, c++-format
 msgid "{0} updated their avatar"
 msgid_plural "{0} updated their avatars"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:1252
+#: ui/shared/views/MessageListView.cpp:1370
 #, c++-format
 msgid "{0} cleared their avatar"
 msgid_plural "{0} cleared their avatars"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:1256
+#: ui/shared/views/MessageListView.cpp:1374
 #, c++-format
 msgid "{0} updated their display name"
 msgid_plural "{0} updated their display names"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:1260
+#: ui/shared/views/MessageListView.cpp:1378
 #, c++-format
 msgid "{0} cleared their display name"
 msgid_plural "{0} cleared their display names"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:1264
+#: ui/shared/views/MessageListView.cpp:1382
 #, c++-format
 msgid "{0} updated their display name and avatar"
 msgid_plural "{0} updated their display names and avatars"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:1453
+#: ui/shared/views/MessageListView.cpp:1571
 msgid "Unable to decrypt message"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1455
+#: ui/shared/views/MessageListView.cpp:1573
 msgid "Image"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1461
+#: ui/shared/views/MessageListView.cpp:1579
 msgid "Audio message"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1465
+#: ui/shared/views/MessageListView.cpp:1583
 msgid "Video"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1467
+#: ui/shared/views/MessageListView.cpp:1589
 #: ui/shared/views/settings/PrivacySection.cpp:76
 msgid "Location"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1505
+#: ui/shared/views/MessageListView.cpp:1591
+#: ui/shared/views/MessageListView.cpp:3877
+#: ui/shared/views/PollCardDisplay.cpp:59
+msgid "Poll"
+msgstr ""
+
+#: ui/shared/views/MessageListView.cpp:1629
 msgid ", "
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1506
+#: ui/shared/views/MessageListView.cpp:1630
 msgid "; "
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:1508
+#: ui/shared/views/MessageListView.cpp:1632
 #, c++-format
 msgid "Table, {0} rows, {1} columns: {2}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3392
-#: ui/shared/views/MessageListView.cpp:4131
-#: ui/shared/views/MessageListView.cpp:7021
+#: ui/shared/views/MessageListView.cpp:3519
+#: ui/shared/views/MessageListView.cpp:4328
+#: ui/shared/views/MessageListView.cpp:7461
 msgid "New messages"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3396
-#: ui/shared/views/MessageListView.cpp:4166
+#: ui/shared/views/MessageListView.cpp:3523
+#: ui/shared/views/MessageListView.cpp:4363
 msgid "This room continues an older conversation."
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3397
-#: ui/shared/views/MessageListView.cpp:4167
+#: ui/shared/views/MessageListView.cpp:3524
+#: ui/shared/views/MessageListView.cpp:4364
 #: ui/shared/views/RoomSearchBar.cpp:173
 msgid "Start of conversation"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3400
-#: ui/shared/views/MessageListView.cpp:3409
-#: ui/shared/views/MessageListView.cpp:3467
+#: ui/shared/views/MessageListView.cpp:3527
+#: ui/shared/views/MessageListView.cpp:3536
+#: ui/shared/views/MessageListView.cpp:3594
 #, c++-format
 msgid "{0} {1}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3405
-#: ui/shared/views/MessageListView.cpp:4273
+#: ui/shared/views/MessageListView.cpp:3532
+#: ui/shared/views/MessageListView.cpp:4470
 msgid "started a video call"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3406
-#: ui/shared/views/MessageListView.cpp:4275
+#: ui/shared/views/MessageListView.cpp:3533
+#: ui/shared/views/MessageListView.cpp:4472
 msgid "started a voice call"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3407
-#: ui/shared/views/MessageListView.cpp:4276
+#: ui/shared/views/MessageListView.cpp:3534
+#: ui/shared/views/MessageListView.cpp:4473
 msgid "started a call"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3431
+#: ui/shared/views/MessageListView.cpp:3558
 #, c++-format
 msgid "{0}; {1}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3469
+#: ui/shared/views/MessageListView.cpp:3596
 #, c++-format
 msgid "{0} ({1}): {2}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3473
+#: ui/shared/views/MessageListView.cpp:3600
 msgid "not sent"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3475
+#: ui/shared/views/MessageListView.cpp:3602
 msgid "sending"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3478
+#: ui/shared/views/MessageListView.cpp:3605
 msgid "in reply"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3479
+#: ui/shared/views/MessageListView.cpp:3606
 #, c++-format
 msgid "replying to {0}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3482
+#: ui/shared/views/MessageListView.cpp:3609
 msgid "edited"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3486
+#: ui/shared/views/MessageListView.cpp:3613
 #, c++-format
 msgid "{0} reply in thread"
 msgid_plural "{0} replies in thread"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:3494
+#: ui/shared/views/MessageListView.cpp:3621
 #, c++-format
 msgid "{0} reaction"
 msgid_plural "{0} reactions"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:3547
+#: ui/shared/views/MessageListView.cpp:3674
 #, c++-format
 msgid "View profile of {0}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3562
+#: ui/shared/views/MessageListView.cpp:3689
 msgid "Reveal spoiler"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3571
+#: ui/shared/views/MessageListView.cpp:3698
 msgid "Jump to replied message"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3599
-#: ui/shared/views/MessageListView.cpp:3600
+#: ui/shared/views/MessageListView.cpp:3726
+#: ui/shared/views/MessageListView.cpp:3727
 #, c++-format
 msgid "Link preview: {0}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3615
+#: ui/shared/views/MessageListView.cpp:3742
 #, c++-format
 msgid "Open thread, {0} reply"
 msgid_plural "Open thread, {0} replies"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:3632
+#: ui/shared/views/MessageListView.cpp:3760
 msgid "Show hidden media"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3643
+#: ui/shared/views/MessageListView.cpp:3771
 msgid "Open image"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3655
+#: ui/shared/views/MessageListView.cpp:3783
+msgid "Open gallery"
+msgstr ""
+
+#: ui/shared/views/MessageListView.cpp:3789
 msgid "Play video"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3667
+#: ui/shared/views/MessageListView.cpp:3801
 msgid "Open file"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3681
-#: ui/shared/views/VideoViewerOverlay.cpp:541
+#: ui/shared/views/MessageListView.cpp:3815
+#: ui/shared/views/VideoViewerPage.cpp:508
 msgid "Pause"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3681
-#: ui/shared/views/VideoViewerOverlay.cpp:541
+#: ui/shared/views/MessageListView.cpp:3815
+#: ui/shared/views/VideoViewerPage.cpp:508
 msgid "Play"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3705
+#: ui/shared/views/MessageListView.cpp:3839
 msgid "Reactions"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3714
+#: ui/shared/views/MessageListView.cpp:3848
 #, c++-format
 msgid "{0}, {1} reaction"
 msgid_plural "{0}, {1} reactions"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:3718
+#: ui/shared/views/MessageListView.cpp:3852
 msgid "reacted by you"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3737
+#: ui/shared/views/MessageListView.cpp:3894
+#, c++-format
+msgid "{0}, {1}%"
+msgstr ""
+
+#: ui/shared/views/MessageListView.cpp:3915
+#: ui/shared/views/PollCardDisplay.cpp:123 ui/shared/views/RoomView.cpp:521
+msgid "End poll"
+msgstr ""
+
+#: ui/shared/views/MessageListView.cpp:3932
 msgid "Message actions"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3740
-#: ui/shared/views/MessageListView.cpp:9116
+#: ui/shared/views/MessageListView.cpp:3935
+#: ui/shared/views/MessageListView.cpp:9687
 msgid "Add reaction"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3765
-#: ui/shared/views/MessageListView.cpp:9118
+#: ui/shared/views/MessageListView.cpp:3960
+#: ui/shared/views/MessageListView.cpp:9689
 msgid "Reply in thread"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3792 ui/shared/views/RoomHeader.cpp:162
+#: ui/shared/views/MessageListView.cpp:3989 ui/shared/views/RoomHeader.cpp:164
 msgid "More options"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3808
+#: ui/shared/views/MessageListView.cpp:4005
 msgid "Retry sending"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3817
+#: ui/shared/views/MessageListView.cpp:4014
 msgid "Cancel sending"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3842
+#: ui/shared/views/MessageListView.cpp:4039
 #, c++-format
 msgid "Read by {0}"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:3887
+#: ui/shared/views/MessageListView.cpp:4084
 #: ui/shared/views/ThreadListView.cpp:392
 #: ui/shared/views/ThreadListView.cpp:494
 #, c++-format
@@ -3511,66 +3612,75 @@ msgid_plural "{0} replies"
 msgstr[0] ""
 msgstr[1] ""
 
-#: ui/shared/views/MessageListView.cpp:4534
+#: ui/shared/views/MessageListView.cpp:4731
 msgid "Load video"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4536
+#: ui/shared/views/MessageListView.cpp:4733
 msgid "Load sticker"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4537
+#: ui/shared/views/MessageListView.cpp:4735
+msgid "Load gallery"
+msgstr ""
+
+#: ui/shared/views/MessageListView.cpp:4736
 msgid "Load image"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:4632
-#: ui/shared/views/MessageListView.cpp:5565
-#: ui/shared/views/MessageListView.cpp:5785
-#: ui/shared/views/MessageListView.cpp:5849
+#: ui/shared/views/MessageListView.cpp:4831
+#: ui/shared/views/MessageListView.cpp:5901
+#: ui/shared/views/MessageListView.cpp:6121
+#: ui/shared/views/MessageListView.cpp:6185
 msgid "(empty message)"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:5281
-#: ui/shared/views/MessageListView.cpp:5363
+#: ui/shared/views/MessageListView.cpp:5617
+#: ui/shared/views/MessageListView.cpp:5699
 msgid "Original message unavailable"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:5438
-#: ui/shared/views/MessageListView.cpp:5497
+#: ui/shared/views/MessageListView.cpp:5774
+#: ui/shared/views/MessageListView.cpp:5833
 msgid "[Spoiler]"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:5439
-#: ui/shared/views/MessageListView.cpp:5498
+#: ui/shared/views/MessageListView.cpp:5775
+#: ui/shared/views/MessageListView.cpp:5834
 #, c++-format
 msgid "[Spoiler: {0}]"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:7284
+#: ui/shared/views/MessageListView.cpp:6978
+#, c++-format
+msgid "+{0}"
+msgstr ""
+
+#: ui/shared/views/MessageListView.cpp:7724
 msgid "Jump to first unread"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:7422
+#: ui/shared/views/MessageListView.cpp:7862
 msgid "View older messages"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:9120
+#: ui/shared/views/MessageListView.cpp:9691
 msgid "More"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:11733
+#: ui/shared/views/MessageListView.cpp:12381
 msgid "Reacted with :"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:11742
+#: ui/shared/views/MessageListView.cpp:12390
 msgid "Reacted by:"
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:11746
+#: ui/shared/views/MessageListView.cpp:12394
 msgid "Reacted with "
 msgstr ""
 
-#: ui/shared/views/MessageListView.cpp:12115
+#: ui/shared/views/MessageListView.cpp:12763
 #, c++-format
 msgid "{0} ({1} of {2})"
 msgstr ""
@@ -3634,6 +3744,11 @@ msgstr ""
 msgid "Jump to pinned message: {0}"
 msgstr ""
 
+#: ui/shared/views/PollCardDisplay.cpp:81
+#, c++-format
+msgid "{0}% ({1})"
+msgstr ""
+
 #: ui/shared/views/QRGrantView.cpp:122
 msgid "Setting up secure channel…"
 msgstr ""
@@ -3683,8 +3798,8 @@ msgstr[1] ""
 msgid "{0}, {1}, {2}"
 msgstr ""
 
-#: ui/shared/views/RoomDirectoryView.cpp:259 ui/shared/views/RoomHeader.cpp:140
-#: ui/shared/views/RoomHeader.cpp:702
+#: ui/shared/views/RoomDirectoryView.cpp:259 ui/shared/views/RoomHeader.cpp:142
+#: ui/shared/views/RoomHeader.cpp:704
 #: ui/shared/views/settings/PrivacySection.cpp:172
 msgid "Search"
 msgstr ""
@@ -3703,24 +3818,24 @@ msgstr ""
 msgid "Loading rooms…"
 msgstr ""
 
-#: ui/shared/views/RoomHeader.cpp:100 ui/shared/views/RoomHeader.cpp:717
+#: ui/shared/views/RoomHeader.cpp:102 ui/shared/views/RoomHeader.cpp:719
 msgid "Jump to Date"
 msgstr ""
 
-#: ui/shared/views/RoomHeader.cpp:104
+#: ui/shared/views/RoomHeader.cpp:106
 msgid "Room info"
 msgstr ""
 
-#: ui/shared/views/RoomHeader.cpp:131 ui/shared/views/RoomHeader.cpp:645
-#: ui/shared/views/RoomHeader.cpp:696
+#: ui/shared/views/RoomHeader.cpp:133 ui/shared/views/RoomHeader.cpp:647
+#: ui/shared/views/RoomHeader.cpp:698
 msgid "Threads"
 msgstr ""
 
-#: ui/shared/views/RoomHeader.cpp:644
+#: ui/shared/views/RoomHeader.cpp:646
 msgid "Threads (unread messages)"
 msgstr ""
 
-#: ui/shared/views/RoomHeader.cpp:865
+#: ui/shared/views/RoomHeader.cpp:867
 msgid "Encrypted room"
 msgstr ""
 
@@ -3730,7 +3845,7 @@ msgstr ""
 
 #: ui/shared/views/RoomInfoPanel.cpp:44
 #: ui/shared/views/RoomSettingsView.cpp:294
-#: ui/shared/views/SettingsView.cpp:316
+#: ui/shared/views/SettingsView.cpp:333
 #: ui/shared/views/settings/MediaSection.cpp:84
 msgid "Media"
 msgstr ""
@@ -3817,7 +3932,7 @@ msgstr ""
 msgid "Members ({0})"
 msgstr ""
 
-#: ui/shared/views/RoomInfoPanel.cpp:1015 ui/shared/views/SettingsView.cpp:315
+#: ui/shared/views/RoomInfoPanel.cpp:1015 ui/shared/views/SettingsView.cpp:332
 #: ui/shared/views/settings/NotificationsSection.cpp:137
 msgid "Notifications"
 msgstr ""
@@ -3882,25 +3997,31 @@ msgstr ""
 msgid "{0} sent a sticker"
 msgstr ""
 
+#: ui/shared/views/RoomListView.cpp:116
+#, c++-format
+msgid "{0} sent a gallery"
+msgstr ""
+
+#: ui/shared/views/RoomListView.cpp:117
 #, c++-format
 msgid "{0} started a poll"
 msgstr ""
 
-#: ui/shared/views/RoomListView.cpp:358 ui/shared/views/RoomListView.cpp:491
+#: ui/shared/views/RoomListView.cpp:360 ui/shared/views/RoomListView.cpp:493
 #, c++-format
 msgid "Invitations ({0})"
 msgstr ""
 
-#: ui/shared/views/RoomListView.cpp:363 ui/shared/views/RoomListView.cpp:496
+#: ui/shared/views/RoomListView.cpp:365 ui/shared/views/RoomListView.cpp:498
 #, c++-format
 msgid "Inactive ({0})"
 msgstr ""
 
-#: ui/shared/views/RoomListView.cpp:373
+#: ui/shared/views/RoomListView.cpp:375
 msgid "Invitation"
 msgstr ""
 
-#: ui/shared/views/RoomListView.cpp:384 ui/shared/views/RoomListView.cpp:1394
+#: ui/shared/views/RoomListView.cpp:386 ui/shared/views/RoomListView.cpp:1396
 #: ui/shared/views/SpaceChildRoomGrid.cpp:166
 #: ui/shared/views/SpaceChildRoomGrid.cpp:241
 #: ui/shared/views/SpaceChildRoomGrid.cpp:451
@@ -3909,38 +4030,38 @@ msgstr ""
 msgid "Loading…"
 msgstr ""
 
-#: ui/shared/views/RoomListView.cpp:1398
+#: ui/shared/views/RoomListView.cpp:1400
 msgid "Fetching room details…"
 msgstr ""
 
-#: ui/shared/views/RoomListView.cpp:1405 ui/shared/views/media_utils.h:129
+#: ui/shared/views/RoomListView.cpp:1407 ui/shared/views/media_utils.h:129
 #: ui/shared/views/settings/RoomSecuritySection.cpp:39
 msgid "Knock"
 msgstr ""
 
-#: ui/shared/views/RoomListView.cpp:1406 ui/shared/views/RoomPreviewView.cpp:85
+#: ui/shared/views/RoomListView.cpp:1408 ui/shared/views/RoomPreviewView.cpp:85
 msgid "Invite-only"
 msgstr ""
 
-#: ui/shared/views/RoomListView.cpp:1407 ui/shared/views/RoomPreviewView.cpp:86
+#: ui/shared/views/RoomListView.cpp:1409 ui/shared/views/RoomPreviewView.cpp:86
 #: ui/shared/views/media_utils.h:133
 #: ui/shared/views/settings/RoomSecuritySection.cpp:125
 msgid "Restricted"
 msgstr ""
 
-#: ui/shared/views/RoomListView.cpp:2617
+#: ui/shared/views/RoomListView.cpp:2619
 msgid "Open in tab"
 msgstr ""
 
-#: ui/shared/views/RoomListView.cpp:2628
+#: ui/shared/views/RoomListView.cpp:2630
 msgid "Open in window"
 msgstr ""
 
-#: ui/shared/views/RoomListView.cpp:2643
+#: ui/shared/views/RoomListView.cpp:2645
 msgid "Mark as read"
 msgstr ""
 
-#: ui/shared/views/RoomListView.cpp:2658
+#: ui/shared/views/RoomListView.cpp:2660
 #: ui/shared/views/RoomSettingsView.cpp:115
 #: ui/shared/views/RoomSettingsView.cpp:440
 msgid "Leave room"
@@ -3954,7 +4075,7 @@ msgstr ""
 msgid "Unread"
 msgstr ""
 
-#: ui/shared/views/RoomListView.h:216 ui/shared/views/StickerPicker.cpp:326
+#: ui/shared/views/RoomListView.h:216 ui/shared/views/StickerPicker.cpp:295
 msgid "Favorites"
 msgstr ""
 
@@ -4061,8 +4182,8 @@ msgid "Search disabled — indexing is off"
 msgstr ""
 
 #: ui/shared/views/RoomSettingsView.cpp:293
-#: ui/shared/views/SettingsView.cpp:313
-#: ui/shared/views/shortcut_registry.cpp:230
+#: ui/shared/views/SettingsView.cpp:330
+#: ui/shared/views/shortcut_registry.cpp:238
 msgid "General"
 msgstr ""
 
@@ -4079,7 +4200,7 @@ msgid "Moderation"
 msgstr ""
 
 #: ui/shared/views/RoomSettingsView.cpp:298
-#: ui/shared/views/SettingsView.cpp:319
+#: ui/shared/views/SettingsView.cpp:337
 msgid "Emojis & Stickers"
 msgstr ""
 
@@ -4124,40 +4245,48 @@ msgstr ""
 msgid "Copy event source"
 msgstr ""
 
-#: ui/shared/views/RoomView.cpp:959
+#: ui/shared/views/RoomView.cpp:518
+msgid "End this poll?"
+msgstr ""
+
+#: ui/shared/views/RoomView.cpp:519
+msgid "Voting will close and the final results will be shown to everyone."
+msgstr ""
+
+#: ui/shared/views/RoomView.cpp:1005
 msgid "Deny and ban this user?"
 msgstr ""
 
-#: ui/shared/views/RoomView.cpp:961
+#: ui/shared/views/RoomView.cpp:1007
 msgid ""
 "They will be removed from the room and unable to rejoin or knock again "
 "unless unbanned."
 msgstr ""
 
-#: ui/shared/views/RoomView.cpp:1122
+#: ui/shared/views/RoomView.cpp:1168
 #, c++-format
 msgid "Ban {0}?"
 msgstr ""
 
-#: ui/shared/views/RoomView.cpp:1123
+#: ui/shared/views/RoomView.cpp:1169
 msgid ""
 "They will be removed from the room and unable to rejoin unless unbanned."
 msgstr ""
 
-#: ui/shared/views/RoomView.cpp:1125
+#: ui/shared/views/RoomView.cpp:1171
 msgid "Ban"
 msgstr ""
 
-#: ui/shared/views/RoomView.cpp:1129
+#: ui/shared/views/RoomView.cpp:1175
 #, c++-format
 msgid "Remove {0} from the room?"
 msgstr ""
 
-#: ui/shared/views/RoomView.cpp:1130
+#: ui/shared/views/RoomView.cpp:1176
 msgid "They can rejoin if the room allows it."
 msgstr ""
 
-#: ui/shared/views/RoomView.cpp:1131
+#: ui/shared/views/RoomView.cpp:1177
 msgid "Kick"
 msgstr ""
 
@@ -4174,67 +4303,71 @@ msgstr ""
 msgid "Screen"
 msgstr ""
 
-#: ui/shared/views/SettingsView.cpp:48
+#: ui/shared/views/SettingsView.cpp:49
 msgid "← Back"
 msgstr ""
 
-#: ui/shared/views/SettingsView.cpp:311
+#: ui/shared/views/SettingsView.cpp:328
 msgid "Account"
 msgstr ""
 
-#: ui/shared/views/SettingsView.cpp:312
+#: ui/shared/views/SettingsView.cpp:329
 #: ui/shared/views/settings/DevicesSection.cpp:475
 msgid "Sessions"
 msgstr ""
 
-#: ui/shared/views/SettingsView.cpp:314
+#: ui/shared/views/SettingsView.cpp:331
 msgid "Appearance"
 msgstr ""
 
-#: ui/shared/views/SettingsView.cpp:317
+#: ui/shared/views/SettingsView.cpp:334
 msgid "Privacy"
 msgstr ""
 
-#: ui/shared/views/SettingsView.cpp:318
+#: ui/shared/views/SettingsView.cpp:335
+msgid "Network"
+msgstr ""
+
+#: ui/shared/views/SettingsView.cpp:336
 #: ui/shared/views/settings/ServerSection.cpp:106
 msgid "Server"
 msgstr ""
 
-#: ui/shared/views/SettingsView.cpp:320
+#: ui/shared/views/SettingsView.cpp:338
 #: ui/shared/views/settings/LanguagePicker.cpp:14
 #: ui/shared/views/settings/LanguageSection.cpp:14
 msgid "Language"
 msgstr ""
 
-#: ui/shared/views/SettingsView.cpp:321
+#: ui/shared/views/SettingsView.cpp:339
 msgid "About"
 msgstr ""
 
-#: ui/shared/views/SettingsView.cpp:322
+#: ui/shared/views/SettingsView.cpp:340
 #: ui/shared/views/settings/AboutSection.cpp:331
 #: ui/shared/views/settings/AdvancedSection.cpp:17
 #: ui/shared/views/settings/RoomPermissionsSection.cpp:119
 msgid "Advanced"
 msgstr ""
 
-#: ui/shared/views/SettingsView.cpp:363
+#: ui/shared/views/SettingsView.cpp:381
 msgid "Log out?"
 msgstr ""
 
-#: ui/shared/views/SettingsView.cpp:364
+#: ui/shared/views/SettingsView.cpp:382
 msgid "You will need to sign in again to access your messages."
 msgstr ""
 
-#: ui/shared/views/SettingsView.cpp:365
+#: ui/shared/views/SettingsView.cpp:383
 #: ui/shared/views/settings/AccountSection.cpp:929
 msgid "Log Out"
 msgstr ""
 
-#: ui/shared/views/SettingsView.cpp:375
+#: ui/shared/views/SettingsView.cpp:393
 msgid "Clear all caches?"
 msgstr ""
 
-#: ui/shared/views/SettingsView.cpp:376
+#: ui/shared/views/SettingsView.cpp:394
 msgid ""
 "Deletes all downloaded media and cached message history for this account, "
 "and closes open tabs and pop-out windows. Your rooms and messages reload "
@@ -4242,11 +4375,11 @@ msgid ""
 "you stay logged in and verified."
 msgstr ""
 
-#: ui/shared/views/SettingsView.cpp:381
+#: ui/shared/views/SettingsView.cpp:399
 msgid "Clear"
 msgstr ""
 
-#: ui/shared/views/SettingsView.cpp:394
+#: ui/shared/views/SettingsView.cpp:412
 msgid ""
 "Only do this if you've lost your recovery key and have no other signed-in "
 "device. Messages you can't read now will stay unreadable, and your other "
@@ -4254,16 +4387,16 @@ msgid ""
 "get a new recovery key right after."
 msgstr ""
 
-#: ui/shared/views/SettingsView.cpp:399
+#: ui/shared/views/SettingsView.cpp:417
 msgid "Reset"
 msgstr ""
 
-#: ui/shared/views/SettingsView.cpp:1393
+#: ui/shared/views/SettingsView.cpp:1428
 #, c++-format
 msgid "Could not add keyword \"{0}\""
 msgstr ""
 
-#: ui/shared/views/SettingsView.cpp:1408
+#: ui/shared/views/SettingsView.cpp:1443
 #, c++-format
 msgid "Could not remove keyword \"{0}\""
 msgstr ""
@@ -4460,15 +4593,15 @@ msgstr ""
 msgid "Activity"
 msgstr ""
 
-#: ui/shared/views/VideoViewerOverlay.cpp:466
+#: ui/shared/views/VideoViewerPage.cpp:437
 msgid "Unable to play video"
 msgstr ""
 
-#: ui/shared/views/VideoViewerOverlay.cpp:482
+#: ui/shared/views/VideoViewerPage.cpp:453
 msgid "Use ⬇ to download and play in an external player"
 msgstr ""
 
-#: ui/shared/views/VideoViewerOverlay.cpp:595
+#: ui/shared/views/VideoViewerPage.cpp:562
 #, c++-format
 msgid "Playback speed: {0}"
 msgstr ""
@@ -4487,6 +4620,47 @@ msgstr ""
 #: ui/shared/views/settings/DevicesSection.cpp:323
 msgid "Unknown"
 msgstr ""
+
+#: ui/shared/views/media_viewer_items.cpp:133
+msgid "Save image"
+msgstr ""
+
+#: ui/shared/views/media_viewer_items.cpp:141
+msgid "Save video"
+msgstr ""
+
+#: ui/shared/views/media_viewer_items.cpp:156
+msgid "Videos"
+msgstr ""
+
+#: ui/shared/views/poll_logic.cpp:78
+#, c++-format
+msgid "Poll ended · {0} vote"
+msgid_plural "Poll ended · {0} votes"
+msgstr[0] ""
+msgstr[1] ""
+
+#: ui/shared/views/poll_logic.cpp:81
+#, c++-format
+msgid "{0} vote"
+msgid_plural "{0} votes"
+msgstr[0] ""
+msgstr[1] ""
+
+#: ui/shared/views/poll_logic.cpp:82
+msgid "Results will be shown when the poll ends"
+msgstr ""
+
+#: ui/shared/views/poll_logic.cpp:92
+msgid "Select one option"
+msgstr ""
+
+#: ui/shared/views/poll_logic.cpp:93
+#, c++-format
+msgid "Select up to {0} option"
+msgid_plural "Select up to {0} options"
+msgstr[0] ""
+msgstr[1] ""
 
 #: ui/shared/views/room_chip_strip.cpp:86
 msgid "Unnamed"
@@ -4836,11 +5010,18 @@ msgstr ""
 msgid "German"
 msgstr ""
 
-#: ui/shared/views/settings/LanguageSection.cpp:33
+#: ui/shared/views/settings/LanguageSection.cpp:23
+#: ui/shared/views/settings/bcp47_languages.h:150
+msgid "Norwegian Bokmål"
+msgstr ""
+
+#: ui/shared/views/settings/LanguageSection.cpp:34
+#: ui/shared/views/settings/NetworkSection.cpp:59
 msgid "Changes take effect after restart."
 msgstr ""
 
-#: ui/shared/views/settings/LanguageSection.cpp:39
+#: ui/shared/views/settings/LanguageSection.cpp:40
+#: ui/shared/views/settings/NetworkSection.cpp:65
 msgid "Restart now"
 msgstr ""
 
@@ -4904,6 +5085,39 @@ msgstr ""
 
 #: ui/shared/views/settings/MessageLayoutPreview.cpp:46
 msgid "Hi! How are you?"
+msgstr ""
+
+#: ui/shared/views/settings/NetworkSection.cpp:23
+msgid "Proxy"
+msgstr ""
+
+#: ui/shared/views/settings/NetworkSection.cpp:27
+msgid "Use system proxy"
+msgstr ""
+
+#: ui/shared/views/settings/NetworkSection.cpp:28
+msgid "No proxy"
+msgstr ""
+
+#: ui/shared/views/settings/NetworkSection.cpp:29
+msgid "Manual"
+msgstr ""
+
+#: ui/shared/views/settings/NetworkSection.cpp:37
+msgid "Proxy URL:"
+msgstr ""
+
+#: ui/shared/views/settings/NetworkSection.cpp:40
+msgid "http://proxy.example.com:8080"
+msgstr ""
+
+#: ui/shared/views/settings/NetworkSection.cpp:49
+msgid ""
+"HTTP and HTTPS proxies. Calls' audio/video can't go through an HTTP proxy."
+msgstr ""
+
+#: ui/shared/views/settings/NetworkSection.cpp:54
+msgid "Enter a valid http:// or https:// proxy URL."
 msgstr ""
 
 #: ui/shared/views/settings/NotificationsSection.cpp:64
@@ -5168,7 +5382,7 @@ msgid "New members"
 msgstr ""
 
 #: ui/shared/views/settings/RoomPermissionsSection.cpp:86
-#: ui/shared/views/shortcut_registry.cpp:232
+#: ui/shared/views/shortcut_registry.cpp:240
 msgid "Messages"
 msgstr ""
 
@@ -5740,10 +5954,6 @@ msgstr ""
 
 #: ui/shared/views/settings/bcp47_languages.h:149
 msgid "Norwegian"
-msgstr ""
-
-#: ui/shared/views/settings/bcp47_languages.h:150
-msgid "Norwegian Bokmål"
 msgstr ""
 
 #: ui/shared/views/settings/bcp47_languages.h:151
@@ -6399,7 +6609,7 @@ msgid "Pan a zoomed image"
 msgstr ""
 
 #: ui/shared/views/shortcut_registry.cpp:164
-msgid "Play / pause a video"
+msgid "Play / pause media"
 msgstr ""
 
 #: ui/shared/views/shortcut_registry.cpp:167
@@ -6414,38 +6624,35 @@ msgstr ""
 msgid "Restart the video"
 msgstr ""
 
-#: ui/shared/views/shortcut_registry.cpp:231
+#: ui/shared/views/shortcut_registry.cpp:175
+msgid "Previous item in a gallery"
+msgstr ""
+
+#: ui/shared/views/shortcut_registry.cpp:178
+msgid "Next item in a gallery"
+msgstr ""
+
+#: ui/shared/views/shortcut_registry.cpp:239
 msgid "Navigation"
 msgstr ""
 
-#: ui/shared/views/shortcut_registry.cpp:233
+#: ui/shared/views/shortcut_registry.cpp:241
 msgid "Message box"
 msgstr ""
 
-#: ui/shared/views/shortcut_registry.cpp:234
+#: ui/shared/views/shortcut_registry.cpp:242
 msgid "Pickers and lists"
 msgstr ""
 
-#: ui/shared/views/shortcut_registry.cpp:235
+#: ui/shared/views/shortcut_registry.cpp:243
 msgid "Date picker"
 msgstr ""
 
-#: ui/shared/views/shortcut_registry.cpp:236
-msgid "Image and video viewer"
+#: ui/shared/views/shortcut_registry.cpp:244
+msgid "Media viewer"
 msgstr ""
 
-#: ui/windows/src/MainWindow.cpp:3118 ui/windows/src/MainWindow.cpp:3154
-#: ui/windows/src/MainWindow.cpp:3187 ui/windows/src/MainWindow.cpp:6413
-#: ui/windows/src/MainWindow.cpp:6428 ui/windows/src/RoomWindow.cpp:216
-#: ui/windows/src/RoomWindow.cpp:231 ui/windows/src/RoomWindow.cpp:249
-msgid "All files"
-msgstr ""
-
-#: ui/windows/src/MainWindow.cpp:3154 ui/windows/src/RoomWindow.cpp:231
-msgid "Videos"
-msgstr ""
-
-#: ui/windows/src/MainWindow.cpp:6413 ui/windows/src/MainWindow.cpp:6428
+#: ui/windows/src/MainWindow.cpp:6374 ui/windows/src/MainWindow.cpp:6389
 msgid "Key files"
 msgstr ""
 
@@ -6505,151 +6712,18 @@ msgstr ""
 msgid "Flags"
 msgstr ""
 
-#: ui/shared/views/settings/NetworkSection.cpp
-msgid "Network"
+#: ui/shared/views/media_viewer_items.cpp
+msgid "Save audio"
 msgstr ""
 
-#: ui/shared/views/settings/NetworkSection.cpp
-msgid "Proxy"
+#: ui/shared/views/AudioViewerPage.cpp
+msgid "Audio playback is not available"
 msgstr ""
 
-#: ui/shared/views/settings/NetworkSection.cpp
-msgid "Use system proxy"
+#: ui/shared/views/AudioViewerPage.cpp
+msgid "Unable to play audio"
 msgstr ""
 
-#: ui/shared/views/settings/NetworkSection.cpp
-msgid "No proxy"
-msgstr ""
-
-#: ui/shared/views/settings/NetworkSection.cpp
-msgid "Proxy URL:"
-msgstr ""
-
-#: ui/shared/views/settings/NetworkSection.cpp
-msgid "Manual"
-msgstr ""
-
-#: ui/shared/views/settings/NetworkSection.cpp
-msgid "http://proxy.example.com:8080"
-msgstr ""
-
-#: ui/shared/views/settings/NetworkSection.cpp
-msgid "HTTP and HTTPS proxies. Calls' audio/video can't go through an HTTP proxy."
-msgstr ""
-
-#: ui/shared/views/settings/NetworkSection.cpp
-msgid "Enter a valid http:// or https:// proxy URL."
-msgstr ""
-
-#: ui/shared/views/MessageListView.cpp
-msgid "Live location · updated {0}"
-msgstr ""
-
-#: ui/shared/views/MessageListView.cpp
-msgid "Waiting for location…"
-msgstr ""
-
-#: ui/shared/views/MessageListView.cpp
-msgid "Live location ended"
-msgstr ""
-
-#: ui/shared/views/poll_logic.cpp
-msgid "Select one option"
-msgstr ""
-
-#: ui/shared/views/poll_logic.cpp
-#, c++-format
-msgid "Select up to {0} option"
-msgid_plural "Select up to {0} options"
-msgstr[0] ""
-msgstr[1] ""
-
-#: ui/shared/views/poll_logic.cpp
-msgid "Results will be shown when the poll ends"
-msgstr ""
-
-#: ui/shared/views/poll_logic.cpp
-msgid "Poll"
-msgstr ""
-
-#: ui/shared/views/poll_logic.cpp
-#, c++-format
-msgid "{0} vote"
-msgid_plural "{0} votes"
-msgstr[0] ""
-msgstr[1] ""
-
-#: ui/shared/views/poll_logic.cpp
-#, c++-format
-msgid "Poll ended · {0} vote"
-msgid_plural "Poll ended · {0} votes"
-msgstr[0] ""
-msgstr[1] ""
-
-#: ui/shared/views/MessageListView.cpp
-#, c++-format
-msgid "{0}, {1}%"
-msgstr ""
-
-#: ui/shared/views/MessageListView.cpp ui/shared/views/PollCardDisplay.cpp ui/shared/views/RoomView.cpp
-msgid "End poll"
-msgstr ""
-
-#: ui/shared/views/RoomView.cpp
-msgid "End this poll?"
-msgstr ""
-
-#: ui/shared/views/RoomView.cpp
-msgid "Voting will close and the final results will be shown to everyone."
-msgstr ""
-
-#: ui/shared/views/PollCardDisplay.cpp
-#, c++-format
-msgid "{0}% ({1})"
-msgstr ""
-
-#: ui/shared/views/CreatePollDialog.h
-#, c++-format
-msgid "Create poll in {0}"
-msgstr ""
-
-#: ui/shared/views/CreatePollDialog.cpp
-msgid "Create poll"
-msgstr ""
-
-#: ui/shared/views/CreatePollDialog.cpp
-msgid "Question"
-msgstr ""
-
-#: ui/shared/views/CreatePollDialog.cpp
-#, c++-format
-msgid "Option {0}"
-msgstr ""
-
-#: ui/shared/views/CreatePollDialog.cpp
-msgid "Add option"
-msgstr ""
-
-#: ui/shared/views/CreatePollDialog.cpp
-msgid "Remove option"
-msgstr ""
-
-#: ui/shared/views/CreatePollDialog.cpp
-msgid "Allow multiple answers"
-msgstr ""
-
-#: ui/shared/views/CreatePollDialog.cpp
-msgid "Hide results until the poll ends"
-msgstr ""
-
-#: ui/shared/views/CreatePollDialog.cpp
-msgid "Enter a question and at least two different options"
-msgstr ""
-
-#: ui/shared/app/SlashCommands.cpp
-msgid "Create a poll"
-msgstr ""
-
-#: ui/shared/app/ShellBase_rooms.cpp
-msgid "Couldn't send the poll"
+#: ui/shared/views/FileViewerPage.cpp
+msgid "No preview available"
 msgstr ""

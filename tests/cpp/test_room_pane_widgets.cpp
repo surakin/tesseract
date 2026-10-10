@@ -6,14 +6,14 @@
 
 #include "app/RoomPane.h"
 #include "app/ShellBase.h"
+#include "fake_media_players.h"
 #include "settings_guard.h"
 #include "shell_test_double.h"
 #include "views/ForwardRoomPicker.h"
-#include "views/ImageViewerOverlay.h"
+#include "views/MediaViewerOverlay.h"
 #include "views/MessageListView.h"
 #include "views/RoomMediaView.h"
 #include "views/RoomView.h"
-#include "views/VideoViewerOverlay.h"
 
 #include <tesseract/account_session.h>
 #include <tesseract/client.h>
@@ -107,10 +107,8 @@ struct RwFx
     RwShell s;
     std::unique_ptr<tesseract::views::RoomView> view =
         tk::create_root_widget<tesseract::views::RoomView>(nullptr);
-    std::unique_ptr<tesseract::views::ImageViewerOverlay> img =
-        tk::create_root_widget<tesseract::views::ImageViewerOverlay>(nullptr);
-    std::unique_ptr<tesseract::views::VideoViewerOverlay> vid =
-        tk::create_root_widget<tesseract::views::VideoViewerOverlay>(nullptr);
+    std::unique_ptr<tesseract::views::MediaViewerOverlay> viewer =
+        tk::create_root_widget<tesseract::views::MediaViewerOverlay>(nullptr);
     std::unique_ptr<tesseract::views::ForwardRoomPicker> fwd =
         tk::create_root_widget<tesseract::views::ForwardRoomPicker>(nullptr);
     std::unique_ptr<tesseract::views::RoomMediaView> gallery =
@@ -136,8 +134,7 @@ struct RwFx
         s.client_ = s.active_account_->client.get();
         RoomPane::Widgets w;
         w.room_view = view.get();
-        w.img_viewer = img.get();
-        w.vid_viewer = vid.get();
+        w.media_viewer = viewer.get();
         w.forward_picker = fwd.get();
         w.room_media_view = gallery.get();
         w.focus_forward_picker_field = [this] { ++field_focus; };
@@ -166,15 +163,131 @@ TEST_CASE("clicking an image opens the lightbox and Escape-style close hides it"
     hit.natural_w = 400;
     hit.natural_h = 300;
     f.view->on_image_clicked(hit);
-    CHECK(f.img->is_open());
+    CHECK(f.viewer->is_open());
     CHECK(f.relayouts >= 1);
 
-    f.img->on_close();
-    CHECK_FALSE(f.img->visible());
+    f.viewer->on_close();
+    CHECK_FALSE(f.viewer->visible());
 
     f.view->on_avatar_clicked("mxc://hs/avatar", "Alice");
-    CHECK(f.img->is_open());
+    CHECK(f.viewer->is_open());
     f.view->on_avatar_clicked("", "nobody"); // empty url: ignored
+}
+
+namespace
+{
+tesseract::views::MessageRowData::GalleryItemRow
+rp_gallery_item(tesseract::views::MessageRowData::GalleryItemRow::Kind kind,
+                const char* mxc)
+{
+    tesseract::views::MessageRowData::GalleryItemRow r;
+    r.kind = kind;
+    r.source = tesseract::MediaSource::plain(mxc);
+    r.media_w = 640;
+    r.media_h = 360;
+    r.mime_type = kind == tesseract::views::MessageRowData::GalleryItemRow::Kind::Video
+                      ? "video/mp4"
+                      : "image/png";
+    return r;
+}
+} // namespace
+
+TEST_CASE("clicking a gallery cell opens the viewer at that cell, audio and files included",
+          "[roompane][widgets][gallery]")
+{
+    using Row = tesseract::views::MessageRowData::GalleryItemRow;
+    RwFx f;
+    tesseract::views::MessageListView::GalleryHit hit;
+    hit.event_id = "$g";
+    hit.caption = "trip";
+    hit.items = {rp_gallery_item(Row::Kind::File, "mxc://hs/gf"),
+                 rp_gallery_item(Row::Kind::Image, "mxc://hs/g1"),
+                 rp_gallery_item(Row::Kind::Audio, "mxc://hs/ga"),
+                 rp_gallery_item(Row::Kind::Video, "mxc://hs/g2"),
+                 rp_gallery_item(Row::Kind::Image, "mxc://hs/g3")};
+
+    // A file cell opens the viewer on the file page (nothing to fetch).
+    hit.index = 0;
+    f.view->on_gallery_item_clicked(hit);
+    REQUIRE(f.viewer->is_open());
+    CHECK(f.viewer->count() == 5);
+    CHECK(f.viewer->index() == 0);
+    CHECK(f.viewer->current_item().kind ==
+          tesseract::views::MediaViewerItem::Kind::File);
+    f.viewer->on_close();
+
+    hit.index = 3; // the video
+    f.view->on_gallery_item_clicked(hit);
+    REQUIRE(f.viewer->is_open());
+    CHECK(f.viewer->count() == 5);
+    CHECK(f.viewer->index() == 3);
+    CHECK(f.viewer->current_item().kind ==
+          tesseract::views::MediaViewerItem::Kind::Video);
+    CHECK(f.viewer->current_item().caption == "trip");
+    CHECK(f.relayouts >= 1);
+
+    // Stepping on shows the next image and drops the old video's fetch.
+    f.s.pump();
+    std::vector<std::uint64_t> before;
+    for (const auto& [id, req] : f.s.pending_media_)
+    {
+        before.push_back(id);
+    }
+    REQUIRE_FALSE(before.empty()); // at least the video's prefix request
+    f.viewer->on_key_down(tk::KeyEvent{tk::Key::PageDown});
+    CHECK(f.viewer->index() == 4);
+    CHECK(f.viewer->current_item().kind ==
+          tesseract::views::MediaViewerItem::Kind::Image);
+    std::size_t still_pending = 0;
+    for (std::uint64_t id : before)
+    {
+        still_pending += f.s.pending_media_.count(id);
+    }
+    CHECK(still_pending < before.size()); // the video's fetch group was cancelled
+
+    f.viewer->on_close();
+}
+
+TEST_CASE("viewer playback stops the timeline's active audio clip",
+          "[roompane][widgets][audio]")
+{
+    using tesseract::views::MediaViewerItem;
+    using tesseract::views::MessageRowData;
+    RwFx f;
+    auto* mlv = f.view->message_list();
+    REQUIRE(mlv != nullptr);
+
+    auto timeline_player = std::make_unique<tesseract::test::FakeAudioPlayer>();
+    auto* timeline_fake = timeline_player.get();
+    auto& ctrl = mlv->playback_controller();
+    ctrl.set_player(std::move(timeline_player));
+    ctrl.set_bytes_provider([](const std::string&) { return std::vector<std::uint8_t>{1, 2, 3}; });
+
+    MessageRowData voice;
+    voice.kind = MessageRowData::Kind::Voice;
+    voice.event_id = "$voice";
+    voice.audio_source = tesseract::MediaSource::plain("mxc://hs/voice");
+    voice.audio_mime = "audio/ogg";
+    ctrl.handle_voice_play_click(voice);
+    REQUIRE(timeline_fake->is_playing());
+
+    auto viewer_player = std::make_unique<tesseract::test::FakeAudioPlayer>();
+    auto* viewer_fake = viewer_player.get();
+    f.viewer->set_audio_player(std::move(viewer_player));
+
+    // Opening an audio item alone does not interrupt the timeline clip...
+    MediaViewerItem item;
+    item.kind = MediaViewerItem::Kind::Audio;
+    item.source = tesseract::MediaSource::plain("mxc://hs/aud")->fetch_token();
+    item.mime_type = "audio/mpeg";
+    f.viewer->open(item);
+    CHECK(timeline_fake->is_playing());
+
+    // ...starting viewer playback does.
+    f.viewer->load_audio_bytes(f.viewer->load_token(), {1, 2, 3});
+    CHECK(viewer_fake->is_playing());
+    CHECK_FALSE(timeline_fake->is_playing());
+    f.viewer->on_close();
 }
 
 TEST_CASE("clicking a video opens the player and fetches through the cache, "
@@ -191,7 +304,7 @@ TEST_CASE("clicking a video opens the player and fetches through the cache, "
     hit.natural_w = 640;
     hit.natural_h = 360;
     f.view->on_video_clicked(hit);
-    CHECK(f.vid->is_open());
+    CHECK(f.viewer->is_open());
 
     f.s.pump(); // disk miss -> prefix request registered
     REQUIRE(f.s.pending_media_.size() == 1);
@@ -201,8 +314,78 @@ TEST_CASE("clicking a video opens the player and fetches through the cache, "
     f.s.handle_media_ready_ui_(f.s.pending_media_.begin()->first, {});
     f.s.pump();
 
-    f.vid->on_close(); // cancels any fetch still pending for this video
-    CHECK_FALSE(f.vid->visible());
+    f.viewer->on_close(); // cancels any fetch still pending for this video
+    CHECK_FALSE(f.viewer->visible());
+}
+
+TEST_CASE("a late video cache miss for a closed or stepped-past item starts no download",
+          "[roompane][widgets][video]")
+{
+    using Row = tesseract::views::MessageRowData::GalleryItemRow;
+    {
+        // Closed before the (off-thread) cache lookup returned.
+        RwFx f;
+        tesseract::views::MessageListView::GalleryHit hit;
+        hit.event_id = "$g";
+        hit.items = {rp_gallery_item(Row::Kind::Video, "mxc://hs/late-a"),
+                     rp_gallery_item(Row::Kind::File, "mxc://hs/late-b")};
+        hit.index = 0;
+        f.view->on_gallery_item_clicked(hit);
+        REQUIRE(f.viewer->is_open());
+        f.viewer->close();
+        f.s.pump();
+        CHECK(f.s.pending_media_.empty());
+    }
+    {
+        // Stepped to another video before the first lookup returned: only the
+        // current item's fetch is in flight afterwards.
+        RwFx f;
+        tesseract::views::MessageListView::GalleryHit hit;
+        hit.event_id = "$g2";
+        hit.items = {rp_gallery_item(Row::Kind::Video, "mxc://hs/late-c"),
+                     rp_gallery_item(Row::Kind::Video, "mxc://hs/late-d")};
+        hit.index = 0;
+        f.view->on_gallery_item_clicked(hit);
+        REQUIRE(f.viewer->is_open());
+        f.viewer->on_key_down(tk::KeyEvent{tk::Key::PageDown});
+        REQUIRE(f.viewer->index() == 1);
+        f.s.pump();
+        CHECK(f.s.pending_media_.size() == 1);
+        f.viewer->on_close();
+    }
+}
+
+TEST_CASE("install_media_viewer_save_ asks the shell for a path and saves the item",
+          "[roompane][widgets][save]")
+{
+    using tesseract::views::MediaViewerItem;
+    RwFx f;
+    std::string asked_name;
+    std::function<void(std::string)> deferred;
+    f.pane().install_media_viewer_save_(
+        [&](const tesseract::views::MediaSaveSpec& spec,
+            std::function<void(std::string)> done)
+        {
+            asked_name = spec.suggested_name;
+            deferred = std::move(done);
+        });
+    MediaViewerItem item;
+    item.kind = MediaViewerItem::Kind::File;
+    item.source = tesseract::MediaSource::plain("mxc://hs/save-me")->fetch_token();
+    item.filename = "report.pdf";
+    f.viewer->open(item);
+    REQUIRE(f.viewer->on_save);
+
+    f.viewer->on_save(item);
+    CHECK(asked_name == "report.pdf");
+    REQUIRE(deferred);
+    // Cancelled dialog (empty path) or no completion: nothing is fetched.
+    deferred("");
+    CHECK(f.s.pending_media_.empty());
+    // Chosen path (possibly delivered later, as async dialogs do): fetch starts.
+    deferred("/tmp/tesseract-test-save-never-written.pdf");
+    CHECK(f.s.pending_media_.size() == 1);
+    f.viewer->on_close();
 }
 
 TEST_CASE("the forward picker confirms, tracks each request and reports failures",

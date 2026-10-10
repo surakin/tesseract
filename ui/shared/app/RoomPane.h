@@ -2,7 +2,9 @@
 #include "app/ThreadPanelController.h"
 #include "views/GifController.h"
 #include "views/MentionController.h"
+#include "views/MediaViewerItem.h"
 #include "views/MessageListView.h"
+#include "views/media_viewer_items.h"
 #include "views/RoomView.h"
 #include "views/ShortcodeController.h"
 #include "views/SlashCommandController.h"
@@ -26,8 +28,8 @@
 
 namespace tesseract::views
 {
-class ImageViewerOverlay;
-class VideoViewerOverlay;
+class MediaViewerOverlay;
+struct MediaViewerItem;
 class ForwardRoomPicker;
 class RoomMediaView;
 } // namespace tesseract::views
@@ -67,6 +69,9 @@ class RoomPane : public tk::EnableWeakSelf<RoomPane>
     // that suite pokes directly to exercise ensure_reply_details_/
     // retry_stale_reply_previews_ against a real MessageListView.
     friend struct RoomPaneReplyRetryTestAccess;
+    // tests/cpp/test_shell_send_gallery.cpp: sets has_owner_/room_view_ and
+    // calls wire_room_view_() so the suite can fire on_send_gallery.
+    friend struct RoomPaneGalleryTestAccess;
 
 public:
     // Platform-bound behavior, injected once at construction. Every
@@ -133,13 +138,12 @@ public:
 
     // Borrowed widget-tree pointers, set once via attach() right after the
     // caller builds its widget tree. Mirrors RoomWindowBase's previous
-    // pattern of the subclass assigning room_view_/img_viewer_/vid_viewer_
+    // pattern of the subclass assigning room_view_/media_viewer_
     // directly before calling wire_room_view_()/finish_init_().
     struct Widgets
     {
         views::RoomView* room_view = nullptr; // required
-        views::ImageViewerOverlay* img_viewer = nullptr;
-        views::VideoViewerOverlay* vid_viewer = nullptr;
+        views::MediaViewerOverlay* media_viewer = nullptr;
         views::ForwardRoomPicker* forward_picker = nullptr;
         views::RoomMediaView* room_media_view = nullptr;
         std::function<void()> focus_forward_picker_field = [] {};
@@ -614,6 +618,17 @@ public:
     // Fetch source_json bytes on a background thread and write them to
     // dest_path on the UI thread. No-op if bytes are empty (fetch failed).
     void save_source_to_file_(std::string source_json, std::string dest_path);
+    // Asks the user where to save a viewer item: the shell shows its native
+    // save dialog for `spec` and calls `done` with the chosen UTF-8 path (never
+    // called when cancelled). May be synchronous (modal dialog) or deferred
+    // (async dialog); `done` stays valid until the pane is destroyed.
+    using MediaSavePathPicker = std::function<void(
+        const views::MediaSaveSpec& spec, std::function<void(std::string)> done)>;
+    // Wires the media viewer's Save action for every item kind: builds the
+    // dialog spec with media_save_spec(), lets `pick` choose the destination and
+    // writes the item's original bytes there via save_source_to_file_().
+    // Call after attach(). The only per-shell part is `pick`.
+    void install_media_viewer_save_(MediaSavePathPicker pick);
     // Fetch source_json bytes and hand them to on_ready.
     void fetch_source_bytes_(
         const std::string& src,
@@ -621,16 +636,34 @@ public:
     // Checks the disk cache for a previously fully-downloaded copy of `src`
     // first (async, off the UI thread) — a hit plays instantly via
     // load_bytes() with no network call at all. On a miss, delegates to
-    // fetch_and_play_video_uncached_(). Called by on_video_clicked once
-    // vid_viewer_->open() has already shown the thumbnail/spinner.
-    void fetch_and_play_video_(std::string src);
-    // Cancels any fetch still in flight under vid_fetch_group_, then fetches
-    // and plays `src` in vid_viewer_ — streaming if a small classification
+    // fetch_and_play_video_uncached_(). Called from start_viewer_fetch_ once
+    // the viewer has already shown the thumbnail/spinner. `token` is the
+    // viewer's load token for the item being fetched; every delivery into the
+    // viewer carries it so a stale fetch is dropped.
+    void fetch_and_play_video_(std::string src, std::uint64_t token);
+    // True while `token` is still the viewer's current load (viewer open and
+    // not stepped past the item the async work was started for).
+    bool viewer_token_current_(std::uint64_t token) const;
+    // Fetches (no-op unless `token` is still current; on_item_shown has already
+    // cancelled viewer_fetch_group_) and plays `src` in media_viewer_ — streaming if a small classification
     // prefix says the container is fast-start and the video player backend
     // supports it, otherwise the classic full-buffer fetch + load_bytes().
     // Either path caches the complete result on success (see
     // kVideoCacheMaxBytes) so a later re-open hits the cache above.
-    void fetch_and_play_video_uncached_(std::string src);
+    void fetch_and_play_video_uncached_(std::string src, std::uint64_t token);
+    // Show `items` in the shared media viewer starting at `index`: opens it,
+    // makes it visible, relayouts and takes focus. The fetch itself starts from
+    // the viewer's on_item_shown (see start_viewer_fetch_).
+    void open_media_viewer_(std::vector<views::MediaViewerItem> items,
+                            std::size_t index);
+    // Fetches an audio item's bytes into viewer_fetch_group_ and hands them to the
+    // viewer's audio page (token-checked there).
+    void fetch_viewer_audio_(const std::string& src, std::uint64_t token);
+    // Begin the byte fetch for the item the viewer just made current: images
+    // go through ensure_viewer_image_, videos through fetch_and_play_video_,
+    // audio through fetch_viewer_audio_; files have nothing to fetch.
+    void start_viewer_fetch_(const views::MediaViewerItem& item,
+                             std::uint64_t token);
     // Fetch source_json bytes and place the decoded image on the clipboard.
     void copy_source_to_clipboard_(std::string source_json);
     // Look up event_id's raw JSON and place it on the clipboard.
@@ -675,12 +708,11 @@ private:
     // Aliases cached from deps_/widgets_ once at construction/attach() time
     // (never reassigned outside those two points) purely to keep the ported
     // method bodies below textually identical to their RoomWindowBase
-    // originals — every `shell_->`/`room_view_->`/`img_viewer_->` call site
+    // originals — every `shell_->`/`room_view_->`/`media_viewer_->` call site
     // in this class reads the same as it did before the port.
     ShellBase* shell_ = nullptr;
     views::RoomView* room_view_ = nullptr;
-    views::ImageViewerOverlay* img_viewer_ = nullptr;
-    views::VideoViewerOverlay* vid_viewer_ = nullptr;
+    views::MediaViewerOverlay* media_viewer_ = nullptr;
 
     std::string room_id_;
     std::weak_ptr<AccountSession> owner_; // see Deps::owner
@@ -690,7 +722,7 @@ private:
     {
         std::string text;
         int cursor_byte_pos = 0;
-        std::optional<views::ComposeBar::PendingAttachment> pending;
+        std::vector<views::ComposeBar::PendingAttachment> pending;
         // Structured segments (from TextArea::composer_draft()), captured
         // alongside `text` so restoring a draft with a mention/emoticon pill
         // can replay it through insert_mention()/insert_emoticon() rather
@@ -730,12 +762,12 @@ private:
     // — the composer-facing counterpart of room_self_avatar_(), which the
     // timeline's RoomAvatarProvider uses directly without this bookkeeping.
     const tk::Image* room_self_avatar_for_compose_();
-    // Non-zero group id for this pane's video-viewer full-file fetch, so it
+    // Non-zero group id for this pane's media-viewer fetches, so they
     // can be cancelled independently of room-switch cancellation (which uses
     // ShellBase::active_media_group_) and without colliding with any other
     // pane's — see ShellBase::alloc_media_group_(). Allocated once in the
     // constructor.
-    std::uint64_t vid_fetch_group_ = 0;
+    std::uint64_t viewer_fetch_group_ = 0;
     // Room-switch member-list cache backing the received-mention-pill avatar
     // provider — holds names + avatar_urls only.
     std::vector<tesseract::RoomMember> cached_room_members_;

@@ -23,6 +23,7 @@ mod media_preview;
 mod net_guard;
 mod net_proxy;
 mod oauth;
+mod upsert_media_store;
 #[cfg(feature = "legacy_login")]
 mod password_login;
 mod recent_emoji;
@@ -199,6 +200,40 @@ pub mod ffi {
         pub avatar_url: String,
     }
 
+    #[derive(Debug, PartialEq, Default, Clone)]
+    pub struct GalleryItemFfi {
+        pub itemtype: String,
+        pub body: String,
+        pub source_url: String,
+        pub source_encrypted_json: String,
+        pub thumbnail_url: String,
+        pub thumbnail_encrypted_json: String,
+        pub width: u64,
+        pub height: u64,
+        pub mime: String,
+        pub filename: String,
+        pub file_size: u64,
+        pub duration_ms: u64,
+        pub waveform: Vec<u16>,
+        pub blurhash: String,
+        pub animated: bool,
+    }
+
+    #[derive(Debug, PartialEq, Default, Clone)]
+    pub struct GalleryItemOutFfi {
+        pub kind: String,
+        pub bytes: Vec<u8>,
+        pub mime_type: String,
+        pub filename: String,
+        pub width: u32,
+        pub height: u32,
+        pub is_animated: bool,
+        pub thumbnail_bytes: Vec<u8>,
+        pub thumb_width: u32,
+        pub thumb_height: u32,
+        pub duration_ms: u64,
+    }
+
     #[derive(Debug, PartialEq, Default)]
     pub struct RoomMember {
         pub user_id: String,
@@ -309,6 +344,7 @@ pub mod ffi {
         pub room_name_new: String,
         pub room_name_old: String,
         pub replacement_room_id: String,
+        pub gallery_items: Vec<GalleryItemFfi>,
     }
 
     #[derive(Debug, PartialEq, Default)]

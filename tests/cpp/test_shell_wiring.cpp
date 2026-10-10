@@ -378,7 +378,7 @@ TEST_CASE("wiring: avatar click opens the image viewer", "[shell][wiring]")
     // Empty url is ignored.
     f.app->room_view()->on_avatar_clicked("", "Name");
     f.app->room_view()->on_avatar_clicked("mxc://x/avatar", "Name");
-    CHECK(f.app->image_viewer() != nullptr);
+    CHECK(f.app->media_viewer() != nullptr);
 }
 
 TEST_CASE("wiring: forward request opens the picker once and forwards to the "

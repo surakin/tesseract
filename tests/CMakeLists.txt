@@ -73,8 +73,11 @@ add_executable(tesseract_tests
     cpp/test_tk_shortcode_popup.cpp
     cpp/test_tk_slash_command_popup.cpp
     cpp/test_mention_engine.cpp
-    cpp/test_tk_image_viewer.cpp
-    cpp/test_tk_video_viewer.cpp
+    cpp/test_tk_media_viewer_image.cpp
+    cpp/test_tk_media_viewer_video.cpp
+    cpp/test_media_viewer_overlay.cpp
+    cpp/test_media_viewer_sequence.cpp
+    cpp/test_media_viewer_audio_file.cpp
     cpp/test_timeline_video_playlist.cpp
     cpp/test_tk_room_media_view.cpp
     cpp/test_tk_reply.cpp
@@ -151,6 +154,7 @@ add_executable(tesseract_tests
     cpp/test_shell_notification_reply.cpp
     cpp/test_linux_notification_reply.cpp
     cpp/test_shell_send_sticker.cpp
+    cpp/test_shell_send_gallery.cpp
     cpp/test_shell_media_priority.cpp
     cpp/test_shell_media_view_pagination.cpp
     cpp/test_shell_popout_media_delivery.cpp
@@ -165,6 +169,8 @@ add_executable(tesseract_tests
     cpp/test_message_list_membership.cpp
     cpp/test_message_list_date_badge.cpp
     cpp/test_room_upgrade.cpp
+    cpp/test_message_list_gallery.cpp
+    cpp/test_message_list_gallery_click.cpp
     cpp/test_tk_message_list_search_highlight.cpp
     cpp/test_tk_pinned_banner.cpp
     cpp/test_tk_message_list_threads.cpp

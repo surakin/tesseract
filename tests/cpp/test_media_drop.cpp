@@ -161,3 +161,52 @@ TEST_CASE("route_file_drop_to_compose_bar tolerates a null probe", "[view][media
     REQUIRE(bar.pending_for_test() != nullptr);
     CHECK(bar.pending_for_test()->kind == Kind::Image);
 }
+
+TEST_CASE("route_file_drop_to_compose_bar dropping multiple files appends, "
+          "not replaces",
+          "[view][media_drop][gallery]")
+{
+    // Regression test for the pre-gallery bug: every platform's native drop
+    // handler already loops over all dropped files and calls this router
+    // once per file (see host_win32.cpp/host_macos.mm/host_gtk.cpp/
+    // host_qt.cpp) — with the old set_pending_* (replace) semantics, only
+    // the last dropped file survived. add_pending_* (append) fixes this for
+    // all four shells with no shell-specific code.
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
+    ProbeSpy spy;
+
+    CHECK(route_file_drop_to_compose_bar(bar, {0x01}, "image/png", "one.png", 0,
+                                         spy.fn()) == FileDropOutcome::Accepted);
+    CHECK(route_file_drop_to_compose_bar(bar, {0x02}, "image/png", "two.png", 0,
+                                         spy.fn()) == FileDropOutcome::Accepted);
+    CHECK(route_file_drop_to_compose_bar(bar, {0x03}, "application/pdf",
+                                         "three.pdf", 0,
+                                         spy.fn()) == FileDropOutcome::Accepted);
+
+    REQUIRE(bar.pending_count() == 3);
+    CHECK(bar.pending_for_test(0)->filename == "one.png");
+    CHECK(bar.pending_for_test(1)->filename == "two.png");
+    CHECK(bar.pending_for_test(2)->filename == "three.pdf");
+}
+
+TEST_CASE("route_file_drop_to_compose_bar rejects a drop once kMaxAttachments "
+          "is queued",
+          "[view][media_drop][gallery]")
+{
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
+    ProbeSpy spy;
+    for (std::size_t i = 0; i < ComposeBar::kMaxAttachments; ++i)
+    {
+        REQUIRE(route_file_drop_to_compose_bar(bar, {0x00}, "application/pdf",
+                                               "f.pdf", 0,
+                                               spy.fn()) == FileDropOutcome::Accepted);
+    }
+    REQUIRE(bar.pending_count() == ComposeBar::kMaxAttachments);
+
+    auto out = route_file_drop_to_compose_bar(bar, {0x00}, "application/pdf",
+                                              "overflow.pdf", 0, spy.fn());
+    CHECK(out == FileDropOutcome::TooMany);
+    CHECK(bar.pending_count() == ComposeBar::kMaxAttachments);
+}

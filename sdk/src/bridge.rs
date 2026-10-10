@@ -445,6 +445,66 @@ pub mod ffi {
         biography: String,
     }
 
+    /// One item inside an `m.gallery` (MSC4274) event's `itemtypes` array.
+    /// Shape is a flattened union of the per-type fields already carried on
+    /// `TimelineEvent` for m.image/m.video/m.audio/m.file, since a gallery
+    /// item can be any of those four. `itemtype` discriminates which fields
+    /// are meaningful, using the same "m.image"/"m.video"/"m.audio"/"m.file"
+    /// strings as `TimelineEvent::msg_type`.
+    struct GalleryItemFfi {
+        itemtype: String,
+        /// Per-item caption/filename fallback (MSC2530-style `body`).
+        body: String,
+        source_url: String,
+        source_encrypted_json: String,
+        /// Video only. Empty for image/audio/file.
+        thumbnail_url: String,
+        thumbnail_encrypted_json: String,
+        /// Image/video only.
+        width: u64,
+        height: u64,
+        mime: String,
+        /// Explicit MSC2530 filename, distinct from `body`. May be empty.
+        filename: String,
+        file_size: u64,
+        /// Video/audio only.
+        duration_ms: u64,
+        /// Audio only (MSC1767), each sample clamped to 0..=1024.
+        waveform: Vec<u16>,
+        /// Image/video only (MSC2448).
+        blurhash: String,
+        /// Image only (MSC4230).
+        animated: bool,
+    }
+
+    /// One item to upload as part of an outgoing `send_gallery_async` call.
+    /// Mirrors the fields the four existing scalar sends (`send_image_async`
+    /// etc.) each take individually, flattened into one struct since a
+    /// gallery item can be any of the four kinds. `kind` discriminates which
+    /// fields are meaningful, using the same lowercase strings as
+    /// `PendingAttachment::Kind` on the C++ side ("image"/"video"/"audio"/"file").
+    struct GalleryItemOutFfi {
+        kind: String,
+        bytes: Vec<u8>,
+        mime_type: String,
+        filename: String,
+        /// Image/video only.
+        width: u32,
+        height: u32,
+        /// Image only (MSC4230). Note: v1 does not preserve MSC4230 fields
+        /// for animated images sent inside a gallery — the raw-send bypass
+        /// used for standalone animated images posts a whole event, which
+        /// doesn't compose with "one item in a gallery". Animated images
+        /// upload as plain image items here.
+        is_animated: bool,
+        /// Video only: raw JPEG first-frame thumbnail bytes.
+        thumbnail_bytes: Vec<u8>,
+        thumb_width: u32,
+        thumb_height: u32,
+        /// Video/audio only.
+        duration_ms: u64,
+    }
+
     /// A single timeline event (message).
     /// Discriminated union: inspect `msg_type` to determine which fields are valid.
     /// For `m.image`   → source_url / source_encrypted_json, width, height are populated.
@@ -682,6 +742,9 @@ pub mod ffi {
         /// "m.room.tombstone" only: id of the replacement room (`body` carries
         /// the optional reason). Empty otherwise.
         replacement_room_id: String,
+        /// "m.gallery" only (MSC4274): ordered gallery items. Empty for all
+        /// other msg_types.
+        gallery_items: Vec<GalleryItemFfi>,
     }
 
     /// Outcome of an asynchronous SDK operation.
@@ -2863,6 +2926,24 @@ pub mod ffi {
             thumb_width: u32,
             thumb_height: u32,
             duration_ms: u64,
+            reply_event_id: &str,
+            thread_root: &str,
+        );
+
+        /// Non-blocking gallery send (MSC4274 `m.gallery`). Uploads every
+        /// item in `items` and posts a single event carrying all of them,
+        /// with one shared `caption`. Delivers the result via
+        /// `on_upload_complete` once the whole gallery has been enqueued —
+        /// mirrors the enqueue-is-done semantics `send_edit` already uses,
+        /// not per-item upload progress. Requires 2+ items; the composer
+        /// sends a lone attachment via the scalar `send_*_async` calls
+        /// instead.
+        fn send_gallery_async(
+            self: &ClientFfi,
+            request_id: u64,
+            room_id: &str,
+            items: Vec<GalleryItemOutFfi>,
+            caption: &str,
             reply_event_id: &str,
             thread_root: &str,
         );

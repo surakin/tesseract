@@ -1,6 +1,6 @@
 #pragma once
 
-// Per-platform video playback abstraction. Used by VideoViewerOverlay to
+// Per-platform video playback abstraction. Used by VideoViewerPage to
 // play m.video events without depending directly on platform media APIs.
 //
 // Lifetime: caller owns the player. Each play() call replaces any current clip.

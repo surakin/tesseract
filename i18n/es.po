@@ -997,6 +997,14 @@ msgstr "Emojis"
 msgid "Stickers"
 msgstr "Stickers"
 
+#: ui/shared/views/ComposeBar.cpp ui/shared/views/MessageListView.cpp
+msgid "Audio"
+msgstr "Audio"
+
+#: ui/shared/views/ComposeBar.cpp ui/shared/views/MessageListView.cpp ui/macos/src/AppDelegate.mm
+msgid "File"
+msgstr "Archivo"
+
 #: ui/shared/views/ComposeBar.cpp
 msgid "Stop recording"
 msgstr "Detener grabación"
@@ -1270,6 +1278,10 @@ msgstr "Cargar sticker"
 #: ui/shared/views/MessageListView.cpp
 msgid "Load video"
 msgstr "Cargar vídeo"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Load gallery"
+msgstr "Cargar galería"
 
 #: ui/shared/views/RoomListView.h:163
 msgid "Unread"
@@ -2370,10 +2382,6 @@ msgstr "Búsqueda deshabilitada: la indexación está desactivada"
 #: ui/shared/views/MessageSearchView.cpp
 msgid "Message search is disabled. Enable indexing in Settings to search your messages."
 msgstr "La búsqueda de mensajes está deshabilitada. Activa la indexación en Configuración para buscar en tus mensajes."
-
-#: ui/macos/src/AppDelegate.mm
-msgid "File"
-msgstr "Archivo"
 
 #: ui/macos/src/AppDelegate.mm
 msgid "Add Room…"
@@ -3917,6 +3925,10 @@ msgstr "{0} envió un mensaje de voz"
 msgid "{0} sent a sticker"
 msgstr "{0} envió un sticker"
 
+#: ui/shared/views/RoomListView.cpp:110
+msgid "{0} sent a gallery"
+msgstr "{0} envió una galería"
+
 #: ui/shared/views/RoomListView.cpp:116
 msgid "{0} started a poll"
 msgstr "{0} inició una encuesta"
@@ -5295,8 +5307,8 @@ msgstr "Ayuda"
 msgid "Home"
 msgstr "Inicio"
 
-msgid "Image and video viewer"
-msgstr "Visor de imágenes y vídeos"
+msgid "Media viewer"
+msgstr "Visor multimedia"
 
 msgid "Jump to a room"
 msgstr "Saltar a una sala"
@@ -5352,8 +5364,8 @@ msgstr "Elegir la fecha seleccionada"
 msgid "Pickers and lists"
 msgstr "Selectores y listas"
 
-msgid "Play / pause a video"
-msgstr "Reproducir / pausar un vídeo"
+msgid "Play / pause media"
+msgstr "Reproducir / pausar medios"
 
 msgid "Previous year"
 msgstr "Año anterior"
@@ -5977,3 +5989,44 @@ msgstr "Crear una encuesta"
 #: ui/shared/app/ShellBase_rooms.cpp
 msgid "Couldn't send the poll"
 msgstr "No se pudo enviar la encuesta"
+
+msgid "{0} attachments"
+msgstr "{0} archivos adjuntos"
+
+msgid "+{0}"
+msgstr "+{0}"
+
+msgid "Previous"
+msgstr "Anterior"
+
+msgid "Next"
+msgstr "Siguiente"
+
+#, c++-format
+msgid "{0} / {1}"
+msgstr "{0} / {1}"
+
+msgid "Open gallery"
+msgstr "Abrir galería"
+
+msgid "Previous item in a gallery"
+msgstr "Elemento anterior de la galería"
+
+msgid "Next item in a gallery"
+msgstr "Elemento siguiente de la galería"
+
+#: ui/shared/views/media_viewer_items.cpp
+msgid "Save audio"
+msgstr "Guardar audio"
+
+#: ui/shared/views/AudioViewerPage.cpp
+msgid "Audio playback is not available"
+msgstr "La reproducción de audio no está disponible"
+
+#: ui/shared/views/AudioViewerPage.cpp
+msgid "Unable to play audio"
+msgstr "No se puede reproducir el audio"
+
+#: ui/shared/views/FileViewerPage.cpp
+msgid "No preview available"
+msgstr "Vista previa no disponible"

@@ -132,8 +132,7 @@ TEST_CASE("PopoutRoomWidget owns the room view and overlays",
     auto w = tk::create_root_widget<PopoutRoomWidget>(&s.host);
     s.mount(*w, {0, 0, 800, 600});
     CHECK(w->room_view() != nullptr);
-    CHECK(w->image_viewer() != nullptr);
-    CHECK(w->video_viewer() != nullptr);
+    CHECK(w->media_viewer() != nullptr);
     CHECK(w->forward_picker() != nullptr);
     CHECK(w->confirm_dialog() != nullptr);
     CHECK(w->room_media_view() == w->room_view()->room_media_view());
@@ -145,14 +144,10 @@ TEST_CASE("PopoutRoomWidget show/hide viewers toggle visibility",
     vt::Stage s;
     auto w = tk::create_root_widget<PopoutRoomWidget>(&s.host);
     s.mount(*w, {0, 0, 800, 600});
-    w->show_image_viewer(true);
-    CHECK(w->image_viewer()->visible());
-    w->show_image_viewer(false);
-    CHECK_FALSE(w->image_viewer()->visible());
-    w->show_video_viewer(true);
-    CHECK(w->video_viewer()->visible());
-    w->show_video_viewer(false);
-    CHECK_FALSE(w->video_viewer()->visible());
+    w->show_media_viewer(true);
+    CHECK(w->media_viewer()->visible());
+    w->show_media_viewer(false);
+    CHECK_FALSE(w->media_viewer()->visible());
 }
 
 TEST_CASE("PopoutRoomWidget hides the compose rect while a modal is open and "

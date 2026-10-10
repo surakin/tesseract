@@ -74,6 +74,13 @@ public:
     // `tk::Host::post_to_ui` before invoking. Safe to read position_ms() /
     // is_playing() inside.
     std::function<void()> on_progress;
+
+    // Fired on the UI thread when the backend fails to decode or play the
+    // current clip (unsupported codec, corrupt data, device failure), in
+    // addition to the final on_progress. is_playing() is false inside.
+    // Optional: backends that cannot detect failures never fire it, and
+    // callers that don't care leave it unset.
+    std::function<void()> on_error;
 };
 
 } // namespace tk

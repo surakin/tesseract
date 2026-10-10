@@ -48,13 +48,13 @@ static constexpr std::uint8_t kMinAnimGif[] = {
     0x3B
 };
 
-TEST_CASE("ComposeBar set_pending_video sets Video kind and loading flag",
+TEST_CASE("ComposeBar add_pending_video sets Video kind and loading flag",
           "[tk][view][compose][media]")
 {
     ComposeBarMediaStage st;
     auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
     ComposeBar& bar = *bar_owner;
-    bar.set_pending_video({0x00, 0x01}, "video/mp4", "clip.mp4");
+    bar.add_pending_video({0x00, 0x01}, "video/mp4", "clip.mp4");
 
     const auto* p = bar.pending_for_test();
     REQUIRE(p != nullptr);
@@ -72,7 +72,7 @@ TEST_CASE("ComposeBar update_pending_attachment fills video metadata",
     ComposeBarMediaStage st;
     auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
     ComposeBar& bar = *bar_owner;
-    bar.set_pending_video({0x00}, "video/mp4", "clip.mp4");
+    bar.add_pending_video({0x00}, "video/mp4", "clip.mp4");
 
     MediaInfo info;
     info.pending_gen = bar.pending_gen(); // capture gen immediately after set
@@ -95,13 +95,13 @@ TEST_CASE("ComposeBar update_pending_attachment fills video metadata",
     CHECK(!p->thumb_bytes_raw.empty());
 }
 
-TEST_CASE("ComposeBar set_pending_audio sets Audio kind and loading flag",
+TEST_CASE("ComposeBar add_pending_audio sets Audio kind and loading flag",
           "[tk][view][compose][media]")
 {
     ComposeBarMediaStage st;
     auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
     ComposeBar& bar = *bar_owner;
-    bar.set_pending_audio({0x49, 0x44, 0x33}, "audio/mpeg", "track.mp3");
+    bar.add_pending_audio({0x49, 0x44, 0x33}, "audio/mpeg", "track.mp3");
 
     const auto* p = bar.pending_for_test();
     REQUIRE(p != nullptr);
@@ -117,7 +117,7 @@ TEST_CASE("ComposeBar update_pending_attachment fills audio duration",
     ComposeBarMediaStage st;
     auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
     ComposeBar& bar = *bar_owner;
-    bar.set_pending_audio({0x49}, "audio/mpeg", "track.mp3");
+    bar.add_pending_audio({0x49}, "audio/mpeg", "track.mp3");
 
     MediaInfo info;
     info.pending_gen = bar.pending_gen();
@@ -130,13 +130,13 @@ TEST_CASE("ComposeBar update_pending_attachment fills audio duration",
     CHECK(p->duration_ms == 42000);
 }
 
-TEST_CASE("ComposeBar set_pending_image with is_animated=true stores flag",
+TEST_CASE("ComposeBar add_pending_image with is_animated=true stores flag",
           "[tk][view][compose][media]")
 {
     ComposeBarMediaStage st;
     auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
     ComposeBar& bar = *bar_owner;
-    bar.set_pending_image({0x47, 0x49, 0x46}, "image/gif", "anim.gif", true);
+    bar.add_pending_image({0x47, 0x49, 0x46}, "image/gif", "anim.gif", true);
 
     const auto* p = bar.pending_for_test();
     REQUIRE(p != nullptr);
@@ -167,7 +167,7 @@ TEST_CASE("ComposeBar on_send_video fires with correct metadata",
         sent_dur = dur;
     };
 
-    bar.set_pending_video({0x00}, "video/mp4", "clip.mp4");
+    bar.add_pending_video({0x00}, "video/mp4", "clip.mp4");
 
     MediaInfo info;
     info.pending_gen = bar.pending_gen();
@@ -188,29 +188,139 @@ TEST_CASE("ComposeBar on_send_video fires with correct metadata",
     CHECK(sent_dur == 8000);
 }
 
-TEST_CASE("ComposeBar update_pending_attachment discards stale gen",
+TEST_CASE("ComposeBar update_pending_attachment discards result for a removed item",
           "[tk][view][compose][media]")
 {
     ComposeBarMediaStage st;
     auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
     ComposeBar& bar = *bar_owner;
 
-    bar.set_pending_video({0x00}, "video/mp4", "clip.mp4");
-    // Simulate user replacing the attachment before extraction finishes.
-    bar.set_pending_audio({0x49}, "audio/ogg", "voice.ogg");
+    bar.add_pending_video({0x00}, "video/mp4", "clip.mp4");
+    std::uint32_t video_gen = bar.pending_gen(); // this item's stable identity
+    // Simulate the user removing the attachment before extraction finishes
+    // (the append+remove analog of the old single-slot "replace" scenario).
+    bar.remove_pending(0);
+    bar.add_pending_audio({0x49}, "audio/ogg", "voice.ogg");
 
-    // Result from the old video extraction (gen is one behind).
+    // Late result from the removed video's extraction.
     MediaInfo stale;
-    stale.pending_gen = bar.pending_gen() - 1;
+    stale.pending_gen = video_gen;
     stale.video_w = 1920;
     stale.video_h = 1080;
     stale.duration_ms = 9999;
-    bar.update_pending_attachment(stale);
+    bar.update_pending_attachment(stale); // no-op: no item has gen == video_gen
 
-    const auto* p = bar.pending_for_test();
+    const auto* p = bar.pending_for_test(0);
     REQUIRE(p != nullptr);
     CHECK(p->kind == ComposeBar::PendingAttachment::Kind::Audio);
     CHECK(p->duration_ms == 0); // stale video result must not have been applied
+}
+
+TEST_CASE("ComposeBar multi-attachment: add/remove/cap/gallery dispatch",
+          "[tk][view][compose][media][gallery]")
+{
+    ComposeBarMediaStage st;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
+
+    bar.add_pending_image({0x89, 0x50, 0x4E, 0x47}, "image/png");
+    bar.add_pending_file({0x01, 0x02}, "application/zip", "a.zip");
+    REQUIRE(bar.pending_count() == 2);
+
+    // remove_pending shifts later items down.
+    bar.add_pending_file({0x03}, "application/zip", "b.zip");
+    REQUIRE(bar.pending_count() == 3);
+    bar.remove_pending(0); // drop the image
+    REQUIRE(bar.pending_count() == 2);
+    CHECK(bar.pending_for_test(0)->filename == "a.zip");
+    CHECK(bar.pending_for_test(1)->filename == "b.zip");
+
+    // Out-of-range remove is a no-op.
+    bar.remove_pending(99);
+    CHECK(bar.pending_count() == 2);
+
+    // trigger_send() with 2+ items fires on_send_gallery, not the scalar callbacks.
+    std::vector<ComposeBar::PendingAttachment> gallery_items;
+    std::string gallery_caption;
+    int gallery_fires = 0, file_fires = 0;
+    bar.on_send_gallery = [&](std::vector<ComposeBar::PendingAttachment> items,
+                              std::string caption, std::string)
+    {
+        gallery_items = std::move(items);
+        gallery_caption = std::move(caption);
+        ++gallery_fires;
+    };
+    bar.on_send_file = [&](std::vector<std::uint8_t>, std::string, std::string,
+                           std::string, std::string) { ++file_fires; };
+    bar.set_current_text("vacation");
+    bar.trigger_send();
+
+    CHECK(gallery_fires == 1);
+    CHECK(file_fires == 0);
+    CHECK(gallery_caption == "vacation");
+    REQUIRE(gallery_items.size() == 2);
+    CHECK(gallery_items[0].filename == "a.zip");
+    CHECK(gallery_items[1].filename == "b.zip");
+    CHECK_FALSE(bar.has_pending());
+}
+
+TEST_CASE("ComposeBar caps attachments at kMaxAttachments",
+          "[tk][view][compose][media][gallery]")
+{
+    ComposeBarMediaStage st;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
+
+    for (std::size_t i = 0; i < ComposeBar::kMaxAttachments + 5; ++i)
+    {
+        bar.add_pending_file({0x00}, "application/octet-stream", "f.bin");
+    }
+    CHECK(bar.pending_count() == ComposeBar::kMaxAttachments);
+}
+
+TEST_CASE("ComposeBar multi-attachment chip remove works even though the "
+          "floating chip grid sits outside the widget's own bounds "
+          "(Host::dispatch_pointer_up's inside_self is unreliable there)",
+          "[tk][view][compose][media][gallery]")
+{
+    // Regression test: the multi-chip preview grid floats ABOVE
+    // ComposeBar's normal bounds_ (like the single-image preview always
+    // has), so a click there produces a *negative* local y. Host::
+    // dispatch_pointer_up (host.cpp) computes inside_self from a raw
+    // `ws.y >= 0 && ws.y < bounds().h` check against bounds() — which is
+    // false for any point in the floating region, regardless of
+    // ComposeBar's own contains_world() override. Chip removal must not
+    // depend on that framework-supplied inside_self flag; it has its own
+    // exact geometric check against chip_remove_rects_ and must rely on
+    // that alone.
+    ComposeBarMediaStage st;
+    auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
+    ComposeBar& bar = *bar_owner;
+
+    bar.add_pending_image({0x89, 0x50, 0x4E, 0x47}, "image/png", "a.png");
+    bar.add_pending_file({0x01}, "application/zip", "b.zip");
+    REQUIRE(bar.pending_count() == 2);
+
+    const tk::Rect bounds{0.0f, 400.0f, 640.0f, 56.0f};
+    st.run(bar, bounds);
+
+    const tk::Rect xr = bar.chip_remove_rect_for_test(0);
+    REQUIRE(xr.w > 0.0f); // arrange() populated it
+    REQUIRE(xr.y < bounds.y); // confirms the chip floats above bounds_
+
+    const tk::Point world_click{xr.x + xr.w * 0.5f, xr.y + xr.h * 0.5f};
+    const tk::Point local{world_click.x - bounds.x, world_click.y - bounds.y};
+    REQUIRE(local.y < 0.0f); // negative local y — the crux of the bug
+
+    REQUIRE(bar.on_pointer_down(local)); // claims the press
+
+    // Host::dispatch_pointer_up would compute inside_self=false here (see
+    // the comment above) — pass it explicitly to prove removal doesn't
+    // depend on it.
+    bar.on_pointer_up(local, /*inside_self=*/false);
+
+    REQUIRE(bar.pending_count() == 1);
+    CHECK(bar.pending_for_test(0)->filename == "b.zip"); // the image was removed
 }
 
 TEST_CASE("ComposeBar on_send_audio fires with duration",
@@ -230,7 +340,7 @@ TEST_CASE("ComposeBar on_send_audio fires with duration",
         sent_dur = dur;
     };
 
-    bar.set_pending_audio({0x49}, "audio/ogg", "voice.ogg");
+    bar.add_pending_audio({0x49}, "audio/ogg", "voice.ogg");
     MediaInfo info;
     info.pending_gen = bar.pending_gen();
     info.duration_ms = 30500;
@@ -311,7 +421,7 @@ TEST_CASE("ComposeBar animated pending image sets anim_preview and fires repaint
 
     std::vector<std::uint8_t> gif_bytes(std::begin(kMinAnimGif),
                                         std::end(kMinAnimGif));
-    bar.set_pending_image(gif_bytes, "image/gif", "anim.gif",
+    bar.add_pending_image(gif_bytes, "image/gif", "anim.gif",
                          /*is_animated=*/true);
 
     auto lc = st.layout_ctx();

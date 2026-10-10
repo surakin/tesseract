@@ -326,10 +326,7 @@ public:
         bool variable_framing = false;
         if (!audio_file_probe(data, size, &variable_framing))
         {
-            if (on_progress)
-            {
-                on_progress();
-            }
+            fail_playback_();
             return;
         }
 
@@ -339,10 +336,7 @@ public:
             bytes = transcode_to_wav(data, size);
             if (!bytes)
             {
-                if (on_progress)
-                {
-                    on_progress();
-                }
+                fail_playback_();
                 return;
             }
         }
@@ -357,10 +351,7 @@ public:
         {
             // opus on macOS < 14 lands here; emit a single progress tick so
             // the view can render its "playback unavailable" state.
-            if (on_progress)
-            {
-                on_progress();
-            }
+            fail_playback_();
             return;
         }
 
@@ -374,10 +365,7 @@ public:
         {
             [player_ stop];
             player_ = nil;
-            if (on_progress)
-            {
-                on_progress();
-            }
+            fail_playback_();
             return;
         }
         if (rate_ != 1.0f)
@@ -514,6 +502,19 @@ public:
     }
 
 private:
+    // Decode / playback could not start: one final progress tick, then the
+    // error callback (the view shows its "unable to play" state).
+    void fail_playback_()
+    {
+        if (on_progress)
+        {
+            on_progress();
+        }
+        if (on_error)
+        {
+            on_error();
+        }
+    }
     void start_timer()
     {
         if (timer_)
