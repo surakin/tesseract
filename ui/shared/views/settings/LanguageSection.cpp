@@ -20,6 +20,7 @@ LanguageSection::LanguageSection()
         {tk::tr("Spanish"), "es"},
         {tk::tr("French"),  "fr"},
         {tk::tr("German"),  "de"},
+        {tk::tr("Ukrainian"), "uk"},
         {tk::tr("Norwegian Bokmål"), "nb"},
     });
     combo->set_selected_value(tesseract::Settings::instance().language);
