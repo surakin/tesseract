@@ -3,6 +3,7 @@
 // Layer 4 (C++ client).  Suppress dead-code warnings until then.
 #![allow(dead_code, unused_imports)]
 
+pub mod audio_mix;
 pub mod e2ee;
 pub mod members;
 pub mod livekit_room;
@@ -59,6 +60,10 @@ pub trait RtcEventSink: Send + Sync + 'static {
         sample_rate: u32,
         num_channels: u32,
     );
+    /// Whether media from this participant should be played (see `FilteredSink`).
+    fn accepts_participant(&self, _participant_id: &str) -> bool {
+        true
+    }
 }
 
 static GLOBAL_SINK: OnceLock<Arc<dyn RtcEventSink>> = OnceLock::new();

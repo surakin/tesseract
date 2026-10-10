@@ -7,6 +7,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ### 2026-10-10
 
+- fix(calls): remote audio tracks (mic plus screen-share audio, or several speakers) are mixed into one stream instead of interleaving into distorted audio. Cargo 990, Windows build
 - feat(gallery): multi-attachment gallery messages (MSC4274) send and display; the room list shows "sent a gallery". Clicking a gallery item opens the media viewer, which steps through the whole gallery (prev/next buttons, "3 / 7" counter, PageUp/PageDown, Left/Right) across images, videos, audio and files. Qt6 build, user-verified Qt6
 - refactor(viewer): the image and video lightboxes are one media viewer with image, video, audio and file pages; audio plays in the viewer, files show a Save card, and starting viewer playback stops inline timeline audio. Save dialogs share one handler in every shell (fixes non-ASCII file names on Windows). Qt6 + GTK4 build, ctest 3174/3174, user-verified Qt6
 - fix(sdk): duplicate-content media uploads no longer wedge the send queue (workaround wrapping the SQLite media store's `replace_media_key`; upstream bug remains). Cargo 987, Qt6 build

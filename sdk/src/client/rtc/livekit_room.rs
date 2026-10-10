@@ -17,7 +17,7 @@ use tokio::task::AbortHandle;
 use tracing::{info, warn};
 
 use super::RtcParticipantInfo;
-use crate::client::rtc::RtcEventSink;
+use crate::client::rtc::{audio_mix::RemoteAudioMixer, RtcEventSink};
 
 use livekit::{
     e2ee::{
@@ -265,6 +265,9 @@ impl RtcEventSink for FilteredSink {
             self.inner
                 .on_audio_frame(session_id, participant_id, samples, sample_rate, num_channels);
         }
+    }
+    fn accepts_participant(&self, participant_id: &str) -> bool {
+        self.ok(participant_id)
     }
 }
 
@@ -803,6 +806,8 @@ fn spawn_event_task(
     is_primary: bool,
 ) -> AbortHandle {
     tokio::spawn(async move {
+        // Created on the first remote audio track; stops with this task.
+        let mut audio_mixer: Option<RemoteAudioMixer> = None;
         while let Some(event) = events.recv().await {
             match event {
                 RoomEvent::Connected {
@@ -928,24 +933,28 @@ fn spawn_event_task(
                             });
                         }
                         RemoteTrack::Audio(audio_track) => {
-                            let sink2 = sink.clone();
-                            let sid = session_id;
-                            let rtc = audio_track.rtc_track();
-                            tokio::spawn(async move {
-                                // Request 48kHz mono to match our capture format.
-                                let mut stream = NativeAudioStream::new(rtc, 48_000, 1);
-                                while let Some(frame) = stream.next().await {
-                                    if let Some(ref s) = sink2 {
-                                        s.on_audio_frame(
-                                            sid,
-                                            &pid,
-                                            &frame.data,
-                                            frame.sample_rate,
-                                            frame.num_channels,
-                                        );
+                            // Every audio track (mic, screen-share audio, other
+                            // participants) goes through one mixer: the UI plays a
+                            // single stream, and pushing tracks to it directly
+                            // interleaves them into distorted audio.
+                            if let Some(ref s) = sink {
+                                let mixer = audio_mixer.get_or_insert_with(|| {
+                                    RemoteAudioMixer::spawn(
+                                        Arc::clone(s),
+                                        session_id,
+                                        room.local_participant().identity().as_str().to_owned(),
+                                    )
+                                });
+                                let handle = mixer.add_track(pid);
+                                let rtc = audio_track.rtc_track();
+                                tokio::spawn(async move {
+                                    // Request 48kHz mono to match our capture format.
+                                    let mut stream = NativeAudioStream::new(rtc, 48_000, 1);
+                                    while let Some(frame) = stream.next().await {
+                                        handle.push(&frame.data);
                                     }
-                                }
-                            });
+                                });
+                            }
                         }
                     }
                 }
