@@ -15,6 +15,16 @@ using tesseract::views::RoomMediaView;
 namespace
 {
 
+// timegm() is POSIX only; MSVC spells it _mkgmtime().
+std::time_t rmv_timegm(std::tm* tm)
+{
+#ifdef _WIN32
+    return _mkgmtime(tm);
+#else
+    return timegm(tm);
+#endif
+}
+
 // 2026-<month>-15 12:00 UTC.
 std::uint64_t rmv_ts(int month)
 {
@@ -23,7 +33,7 @@ std::uint64_t rmv_ts(int month)
     tm.tm_mon = month - 1;
     tm.tm_mday = 15;
     tm.tm_hour = 12;
-    return static_cast<std::uint64_t>(timegm(&tm)) * 1000ull;
+    return static_cast<std::uint64_t>(rmv_timegm(&tm)) * 1000ull;
 }
 
 MessageRowData rmv_row(const std::string& id, MessageRowData::Kind kind, int month,
