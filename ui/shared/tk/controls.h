@@ -604,7 +604,7 @@ private:
 // resolved, so there's no fraction to show). Self-animates while
 // indeterminate by calling host()->request_repaint() at the end of every
 // paint — the same "schedule the next frame from inside paint()" idiom
-// ImageViewerOverlay's loading spinner uses, just via the built-in
+// the media viewer's loading spinner uses, just via the built-in
 // Widget::host() accessor since this is an ordinary child widget rather
 // than a detached overlay.
 class ProgressBar : public Widget

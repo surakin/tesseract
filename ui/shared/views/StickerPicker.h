@@ -18,6 +18,7 @@
 #include "tk/media_kind.h"
 
 #include <tesseract/image_pack.h>
+#include <tesseract/visual.h>
 
 #include <cstdint>
 #include <functional>
@@ -96,28 +97,11 @@ public:
         return active_tab_;
     }
 
-    // For ShellBase::run_media_prefetch_'s pre-paint disk-cache warm pass —
-    // see tk/media_kind.h's doc comment. Mirrors paint_cell's key
-    // derivation, but scoped to grid_->visible_range() plus a small
-    // lookahead margin (like RoomListView/MessageListView's own
-    // collect_prefetchable_media_keys()) — not the whole active tab, so a
-    // large pack doesn't warm (and keep resident) every sticker in it at
-    // once regardless of scroll position. run_media_prefetch_impl_'s
-    // max_items cap still bounds total work per pass on top of this.
-    // Tagged MediaKind::MediaImage: despite the "is_sticker" bool
-    // ShellBase::ensure_picker_image_ takes, its actual cache routing/decode
-    // size (plain url key, image_cache_, kMaxInlineImageWidth/Height) is
-    // identical to MediaKind::MediaImage, not MediaKind::Sticker (that tag
-    // is timeline-only, decode-clamped to kStickerSize instead). Pack-avatar
-    // tab icons are not included (a smaller, separate concern — see
-    // paint_tab_content's own image_provider() call).
-    std::vector<tk::MediaPrefetchKey> collect_prefetchable_media_keys() const;
-
 protected:
     // Layout config.
     float cell_size() const override
     {
-        return 96.0f;
+        return static_cast<float>(tesseract::visual::kStickerPickerCell);
     }
     float cell_gap() const override
     {

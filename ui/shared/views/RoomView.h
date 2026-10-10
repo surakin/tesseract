@@ -195,7 +195,7 @@ public:
     // ── Direct accessors for shell integration ───────────────────────────
 
     // Needed by the shell for: emoji/sticker picker anchor (popupAt),
-    // pending attachment (set_pending_image / set_pending_file),
+    // pending attachment (add_pending_image / add_pending_file),
     // and cursor insert after emoji selection.
     RoomHeader* header() const
     {
@@ -511,6 +511,14 @@ public:
                        std::string reply_event_id)>
         on_send_file;
 
+    // Gallery send (MSC4274): fires when the composer had 2+ attachments
+    // queued. Passthrough of ComposeBar::on_send_gallery — see its doc
+    // comment for why this is a separate callback from the four scalar
+    // sends above rather than a size-1-vs-N branch inside them.
+    std::function<void(std::vector<ComposeBar::PendingAttachment> items,
+                       std::string caption, std::string reply_event_id)>
+        on_send_gallery;
+
     std::function<void()> on_mic_clicked;
     std::function<void()> on_cancel_voice;
 
@@ -551,6 +559,7 @@ public:
     std::function<void(const std::vector<std::string>&)> on_visible_avatars_changed;
     std::function<void(MessageListView::ImageHit)> on_image_clicked;
     std::function<void(MessageListView::VideoHit)> on_video_clicked;
+    std::function<void(MessageListView::GalleryHit)> on_gallery_item_clicked;
     std::function<void(MessageListView::FileHit)> on_file_clicked;
     std::function<void()> on_near_top;
     std::function<void()> on_near_bottom;

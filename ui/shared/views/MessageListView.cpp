@@ -689,6 +689,49 @@ MessageRowData make_row_data(const tesseract::Event& ev,
         row.room_name_old = rn.old_name;
         break;
     }
+    case tesseract::EventType::Gallery:
+    {
+        row.kind = Kind::Gallery;
+        const auto& gal = static_cast<const tesseract::GalleryEvent&>(ev);
+        row.gallery_total = gal.items.size();
+        const std::size_t keep =
+            std::min(gal.items.size(), MessageRowData::kMaxGalleryViewerItems);
+        row.gallery_items.reserve(keep);
+        for (std::size_t gi_idx = 0; gi_idx < keep; ++gi_idx)
+        {
+            const auto& gi = gal.items[gi_idx];
+            MessageRowData::GalleryItemRow item_row;
+            switch (gi.kind)
+            {
+            case tesseract::GalleryItem::Kind::Image:
+                item_row.kind = MessageRowData::GalleryItemRow::Kind::Image;
+                break;
+            case tesseract::GalleryItem::Kind::Video:
+                item_row.kind = MessageRowData::GalleryItemRow::Kind::Video;
+                break;
+            case tesseract::GalleryItem::Kind::Audio:
+                item_row.kind = MessageRowData::GalleryItemRow::Kind::Audio;
+                break;
+            case tesseract::GalleryItem::Kind::File:
+                item_row.kind = MessageRowData::GalleryItemRow::Kind::File;
+                break;
+            }
+            item_row.body = gi.body;
+            item_row.source = gi.source;
+            item_row.thumbnail = gi.thumbnail;
+            item_row.media_w = static_cast<int>(gi.width);
+            item_row.media_h = static_cast<int>(gi.height);
+            item_row.mime_type = gi.mime_type;
+            item_row.filename = gi.filename;
+            item_row.file_size = gi.file_size;
+            item_row.duration_ms = gi.duration_ms;
+            item_row.waveform = gi.waveform;
+            item_row.blurhash = gi.blurhash;
+            item_row.animated = gi.animated;
+            row.gallery_items.push_back(std::move(item_row));
+        }
+        break;
+    }
     }
 
     // Extract the first URL from text messages for preview card display.
@@ -833,9 +876,16 @@ constexpr float kStickerSize = tesseract::visual::kStickerSize;        // 256
 constexpr float kFileCardH = 56.0f;
 constexpr float kFileCardW = 280.0f;
 
-// Gap between the message body and the URL-preview card stack. The card
-// height and inter-card spacing live in UrlPreviewCardDisplay; the Adapter
-// gets the stack's total height from previews_.stack_height().
+// MSC4274 gallery grid. Smaller than RoomMediaView's kCellSize (120) since
+// this tiles inline inside a narrow message column, not a full-width
+// browsing overlay.
+constexpr float kGalleryCellSize = 90.0f;
+constexpr float kGalleryCellSpacing = 3.0f;
+
+// URL preview card height accounting. The card's internal layout dimensions
+// (width / thumb / padding) live with the paint in UrlPreviewCardDisplay;
+// these two drive the Adapter's row-height math only.
+constexpr float kMsgListPreviewCardH = 72.0f;
 constexpr float kPreviewCardGapTop = 6.0f;
 constexpr float kFileIconSize = 36.0f;
 constexpr float kFileIconPadL = 10.0f;
@@ -3704,7 +3754,8 @@ public:
         }
 
         const bool hidden_media = owner_.media_is_hidden_by_eid_(ev);
-        if (hidden_media && (m.kind == Kind::Image || m.kind == Kind::Video))
+        if (hidden_media && (m.kind == Kind::Image || m.kind == Kind::Video ||
+                             m.kind == Kind::Gallery))
         {
             out.push_back(action_node_(tk::tr("Show hidden media"),
                                        [v, ev]
@@ -3726,6 +3777,12 @@ public:
                                            v->on_image_clicked(it->second);
                                            return true;
                                        }));
+        }
+        else if (m.kind == Kind::Gallery)
+        {
+            out.push_back(action_node_(tk::tr("Open gallery"),
+                                       [v, ev]
+                                       { return v->fire_gallery_clicked_(ev, 0); }));
         }
         else if (m.kind == Kind::Video)
         {
@@ -4667,14 +4724,16 @@ private:
     // ── Message row paint helpers ─────────────────────────────────────────────
 
     // MSC4278: label shown on the suppressed-media "Load …" pill, keyed by
-    // the row's media kind (Image/Sticker/Video).
+    // the row's media kind (Image/Sticker/Video/Gallery).
     static std::string hidden_media_label(MessageRowData::Kind kind)
     {
-        return (kind == MessageRowData::Kind::Video)
-                   ? tk::tr("Load video")
-                   : (kind == MessageRowData::Kind::Sticker)
-                         ? tk::tr("Load sticker")
-                         : tk::tr("Load image");
+        if (kind == MessageRowData::Kind::Video)
+            return tk::tr("Load video");
+        if (kind == MessageRowData::Kind::Sticker)
+            return tk::tr("Load sticker");
+        if (kind == MessageRowData::Kind::Gallery)
+            return tk::tr("Load gallery");
+        return tk::tr("Load image");
     }
 
     // Minimum tile size needed to draw the "Load …" pill (label + padding,
@@ -4942,6 +5001,32 @@ private:
         case MessageRowData::Kind::Poll:
             return quote_h + owner_.polls_.height(m, ctx.factory, col_w,
                                                   owner_.poll_end_shown_(m));
+        case MessageRowData::Kind::Gallery:
+        {
+            float max_w = std::min(col_w, kImageMaxW);
+            int n = static_cast<int>(m.gallery_painted_count());
+            int cols = std::max(
+                1, static_cast<int>((max_w + kGalleryCellSpacing) /
+                                    (kGalleryCellSize + kGalleryCellSpacing)));
+            cols = std::min(cols, std::max(n, 1));
+            int rows = (n + cols - 1) / cols;
+            if (rows < 1)
+                rows = 1;
+            float grid_h = static_cast<float>(rows) * kGalleryCellSize +
+                          static_cast<float>(std::max(0, rows - 1)) *
+                              kGalleryCellSpacing;
+            if (owner_.media_is_hidden_(m))
+            {
+                tk::Size pill_min = hidden_media_pill_size(ctx.factory, m.kind);
+                grid_h = std::max(grid_h, std::min(pill_min.h, kImageMaxH));
+            }
+            float h = grid_h;
+            if (!m.body.empty())
+            {
+                h += 4.0f + measure_body_text(m, ctx, col_w);
+            }
+            return quote_h + h;
+        }
         // Virtual items are handled before this function is called.
         case MessageRowData::Kind::DaySeparator:
         case MessageRowData::Kind::ReadMarker:
@@ -5362,6 +5447,68 @@ private:
             return owner_.polls_.paint(m, ctx, x, y, col_w,
                                        owner_.poll_interactive_(m),
                                        owner_.poll_end_shown_(m));
+        case MessageRowData::Kind::Gallery:
+        {
+            float max_w = std::min(col_w, kImageMaxW);
+            int n = static_cast<int>(m.gallery_painted_count());
+            int cols = std::max(
+                1, static_cast<int>((max_w + kGalleryCellSpacing) /
+                                    (kGalleryCellSize + kGalleryCellSpacing)));
+            cols = std::min(cols, std::max(n, 1));
+            int rows = (n + cols - 1) / cols;
+            if (rows < 1)
+                rows = 1;
+            float grid_w = static_cast<float>(cols) * kGalleryCellSize +
+                          static_cast<float>(std::max(0, cols - 1)) *
+                              kGalleryCellSpacing;
+            float grid_h = static_cast<float>(rows) * kGalleryCellSize +
+                          static_cast<float>(std::max(0, rows - 1)) *
+                              kGalleryCellSpacing;
+
+            float cursor;
+            if (owner_.media_is_hidden_(m))
+            {
+                tk::Size pill_min = hidden_media_pill_size(ctx.factory, m.kind);
+                grid_h = std::max(grid_h, std::min(pill_min.h, kImageMaxH));
+                tk::Rect r{x, y, std::max(grid_w, std::min(pill_min.w, max_w)),
+                          grid_h};
+                paint_hidden_media_placeholder(m, ctx, r);
+                if (!m.event_id.empty())
+                {
+                    // Recorded as item 0 so a click on the placeholder reveals.
+                    owner_.gallery_item_geom_[m.event_id + "#0"] =
+                        MessageListView::GalleryItemHit{
+                            m.event_id, 0,
+                            n > 0 ? m.gallery_items[0].kind
+                                  : MessageRowData::GalleryItemRow::Kind::Image,
+                            nullptr, nullptr, 0, r};
+                }
+                cursor = y + r.h;
+            }
+            else
+            {
+                for (int i = 0; i < n; ++i)
+                {
+                    int row_i = i / cols;
+                    int col_i = i % cols;
+                    float cx = x + static_cast<float>(col_i) *
+                                       (kGalleryCellSize + kGalleryCellSpacing);
+                    float cy = y + static_cast<float>(row_i) *
+                                       (kGalleryCellSize + kGalleryCellSpacing);
+                    tk::Rect cell{cx, cy, kGalleryCellSize, kGalleryCellSize};
+                    paint_gallery_cell(m, ctx, cell, static_cast<std::size_t>(i));
+                }
+                cursor = y + grid_h;
+            }
+            if (!m.body.empty())
+            {
+                cursor += 4.0f;
+                float ch = paint_body_text(m, ctx, x, cursor, col_w,
+                                           ctx.theme.palette.text_primary);
+                cursor += ch;
+            }
+            return cursor;
+        }
         // Virtual items are handled before this function is called.
         case MessageRowData::Kind::DaySeparator:
         case MessageRowData::Kind::ReadMarker:
@@ -6747,6 +6894,110 @@ private:
         }
     }
 
+    // Paint one cell of a Kind::Gallery grid. Adapted from
+    // RoomMediaView::paint_cell_ (same thumbnail-resolution + video-badge
+    // pattern) but keyed off GalleryItemRow rather than a flat MessageRowData
+    // per-item row, since a gallery item isn't a standalone timeline row.
+    void paint_gallery_cell(const MessageRowData& m, tk::PaintCtx& ctx,
+                            tk::Rect cell, std::size_t index) const
+    {
+        const auto& item = m.gallery_items[index];
+        auto& cv = ctx.canvas;
+        const auto& pal = ctx.theme.palette;
+        using ItemKind = MessageRowData::GalleryItemRow::Kind;
+
+        cv.push_clip_rounded_rect(cell, 6.0f);
+        cv.fill_rounded_rect(cell, 6.0f, pal.chrome_bg);
+
+        const auto* look = item.thumbnail ? item.thumbnail.get() : item.source.get();
+        const std::string key = look ? look->fetch_token() : std::string{};
+        const tk::Image* img = (owner_.image_provider_ && !key.empty())
+                                    ? owner_.image_provider_(key, m.event_id == owner_.hovered_media_event_id_)
+                                    : nullptr;
+        if (img && img->width() > 0 && img->height() > 0)
+        {
+            tk::Size fitted =
+                fit_media(static_cast<float>(img->width()),
+                         static_cast<float>(img->height()), cell.w, cell.h);
+            tk::Rect dst{cell.x + (cell.w - fitted.w) * 0.5f,
+                        cell.y + (cell.h - fitted.h) * 0.5f, fitted.w,
+                        fitted.h};
+            cv.draw_image(*img, dst);
+        }
+        else
+        {
+            cv.stroke_rounded_rect(cell, 6.0f, pal.border, 1.0f);
+        }
+
+        if (item.kind == ItemKind::Video)
+        {
+            tk::TextStyle st{};
+            st.role = tk::FontRole::Title;
+            auto glyph = ctx.factory.build_text("\xE2\x96\xB6", st); // ▶
+            if (glyph)
+            {
+                tk::Size sz = glyph->measure();
+                tk::Rect badge{cell.x + (cell.w - sz.w) * 0.5f - 8.0f,
+                              cell.y + (cell.h - sz.h) * 0.5f - 4.0f,
+                              sz.w + 16.0f, sz.h + 8.0f};
+                cv.fill_rounded_rect(badge, 6.0f, tk::Color{0, 0, 0, 140});
+                cv.draw_text(*glyph,
+                            {cell.x + (cell.w - sz.w) * 0.5f,
+                             cell.y + (cell.h - sz.h) * 0.5f},
+                            tk::Color{255, 255, 255, 255});
+            }
+        }
+        else if (!img)
+        {
+            // File/audio items (or an image/video whose thumbnail hasn't
+            // arrived yet) have no thumbnail to paint — a short glyph label
+            // beats an empty tile.
+            tk::TextStyle st{};
+            st.role = tk::FontRole::Small;
+            std::string label = (item.kind == ItemKind::Audio) ? tk::tr("Audio")
+                                                                : tk::tr("File");
+            auto lo = ctx.factory.build_text(label, st);
+            if (lo)
+            {
+                tk::Size sz = lo->measure();
+                cv.draw_text(*lo,
+                            {cell.x + (cell.w - sz.w) * 0.5f,
+                             cell.y + (cell.h - sz.h) * 0.5f},
+                            pal.text_muted);
+            }
+        }
+        if (index + 1 == m.gallery_painted_count() &&
+            m.gallery_total > m.gallery_painted_count())
+        {
+            // Items beyond the render cap: dim the last cell and say how many
+            // more there are.
+            cv.fill_rounded_rect(cell, 6.0f, tk::Color{0, 0, 0, 150});
+            tk::TextStyle st{};
+            st.role = tk::FontRole::Title;
+            auto lo = ctx.factory.build_text(
+                tk::trf(tk::tr("+{0}"),
+                        {std::to_string(m.gallery_total - m.gallery_painted_count())}),
+                st);
+            if (lo)
+            {
+                tk::Size sz = lo->measure();
+                cv.draw_text(*lo,
+                            {cell.x + (cell.w - sz.w) * 0.5f,
+                             cell.y + (cell.h - sz.h) * 0.5f},
+                            tk::Color{255, 255, 255, 255});
+            }
+        }
+        cv.pop_clip();
+
+        if (!m.event_id.empty())
+        {
+            owner_.gallery_item_geom_[m.event_id + "#" + std::to_string(index)] =
+                MessageListView::GalleryItemHit{m.event_id, index, item.kind,
+                                                item.source, item.thumbnail,
+                                                item.file_size, cell};
+        }
+    }
+
     // Paint a slippy-map tile composite for a Kind::Location row.
     // `map_rect` is the bounding box for the map canvas area (pre-clipped).
     // The pan/zoom/tooltip + tile-fetch logic lives in LocationMapPanner;
@@ -7680,6 +7931,19 @@ MessageListView::video_hit_at(tk::Point world) const
     return std::nullopt;
 }
 
+std::optional<MessageListView::GalleryItemHit>
+MessageListView::gallery_item_hit_at(tk::Point world) const
+{
+    for (const auto& [key, hit] : gallery_item_geom_)
+    {
+        if (rect_contains(hit.world_rect, world))
+        {
+            return hit;
+        }
+    }
+    return std::nullopt;
+}
+
 std::optional<MessageListView::FileHit>
 MessageListView::file_hit_at(tk::Point world) const
 {
@@ -8460,10 +8724,33 @@ bool MessageListView::media_is_hidden_(const MessageRowData& m) const
     case MessageRowData::Kind::Image:
     case MessageRowData::Kind::Sticker:
     case MessageRowData::Kind::Video:
+    case MessageRowData::Kind::Gallery:
         return media_hidden_(m.event_id, m.is_own);
     default:
         return false;
     }
+}
+
+bool MessageListView::fire_gallery_clicked_(const std::string& event_id,
+                                            std::size_t index) const
+{
+    if (!on_gallery_item_clicked)
+    {
+        return false;
+    }
+    const MessageRowData* row = row_for_event_id(event_id);
+    if (!row || row->kind != MessageRowData::Kind::Gallery ||
+        row->gallery_items.empty())
+    {
+        return false;
+    }
+    GalleryHit hit;
+    hit.event_id = event_id;
+    hit.caption = row->body;
+    hit.items = row->gallery_items;
+    hit.index = std::min(index, hit.items.size() - 1);
+    on_gallery_item_clicked(hit);
+    return true;
 }
 
 bool MessageListView::media_is_hidden_by_eid_(const std::string& event_id) const
@@ -8494,6 +8781,14 @@ std::string MessageListView::row_image_key_(const MessageRowData& m) const
         const auto* look = m.thumbnail ? m.thumbnail.get() : m.source.get();
         return look ? look->fetch_token() : std::string{};
     }
+    // Deliberately falls to the empty-key default below: a gallery has N
+    // sources, and this function's contract is "one key per row". Callers
+    // (cache-eviction pinning, the old/new-key change check) treat Gallery
+    // rows the same as text/audio/file rows for now — no per-row image
+    // pinning, so gallery thumbnails may evict more eagerly under memory
+    // pressure than a singular Image row would. A parallel
+    // row_gallery_image_keys_() returning all N keys is the natural fix,
+    // not yet built (v1 scope).
     default:
         break;
     }
@@ -9861,6 +10156,7 @@ void MessageListView::clear_hit_geometry_()
     image_geom_.clear();
     video_geom_.clear();
     file_geom_.clear();
+    gallery_item_geom_.clear();
     media_.clear_geometry();
     map_panner_.clear_geometry();
     quote_block_geom_.clear();
@@ -10464,6 +10760,21 @@ bool MessageListView::on_pointer_down(tk::Point local)
                 {
                     return true;
                 }
+            }
+        }
+    }
+
+    // Gallery cell click-to-view hit-test (before video/image: a gallery row
+    // never records those, but the cells are the more specific target).
+    {
+        tk::Point world{local.x + bounds().x, local.y + bounds().y};
+        for (const auto& [key, hit] : gallery_item_geom_)
+        {
+            if (rect_contains(hit.world_rect, world))
+            {
+                press_gallery_ = true;
+                press_gallery_key_ = key;
+                return true;
             }
         }
     }
@@ -11144,6 +11455,38 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
                         on_link_clicked(url);
                     }
                     break;
+                }
+            }
+        }
+        return;
+    }
+
+    if (press_gallery_)
+    {
+        const bool fire = inside_self && !press_gallery_key_.empty();
+        std::string key = std::move(press_gallery_key_);
+        press_gallery_ = false;
+        press_gallery_key_.clear();
+        if (fire)
+        {
+            tk::Point world{local.x + bounds().x, local.y + bounds().y};
+            auto it = gallery_item_geom_.find(key);
+            if (it != gallery_item_geom_.end() &&
+                rect_contains(it->second.world_rect, world))
+            {
+                const std::string eid = it->second.event_id;
+                const std::size_t index = it->second.item_index;
+                if (media_is_hidden_by_eid_(eid))
+                {
+                    // MSC4278: reveal a suppressed gallery instead of opening it.
+                    if (on_reveal_media)
+                    {
+                        on_reveal_media(eid);
+                    }
+                }
+                else
+                {
+                    fire_gallery_clicked_(eid, index);
                 }
             }
         }

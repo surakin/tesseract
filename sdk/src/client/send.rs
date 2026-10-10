@@ -149,6 +149,21 @@ pub(crate) fn build_animated_image_content(
     content
 }
 
+/// Synthesize a fallback `body` for an outgoing `m.gallery` (MSC4274) event.
+/// `GalleryMessageEventContent.body` is a required field, and per the MSC it
+/// doubles as the description non-supporting clients fall back to — so an
+/// empty user caption still needs *some* text, not an empty string.
+pub(crate) fn gallery_fallback_body(caption: &str, item_count: usize) -> String {
+    if !caption.is_empty() {
+        return caption.to_owned();
+    }
+    if item_count == 1 {
+        "Sent 1 item".to_owned()
+    } else {
+        format!("Sent {item_count} items")
+    }
+}
+
 /// Compute the optional `Reply` to attach to a media send. Returns `Ok(None)`
 /// when neither `reply_event_id` nor `thread_root` is set (no reply needed),
 /// `Ok(Some(reply))` with the appropriate `EnforceThread` variant, or
@@ -160,7 +175,7 @@ pub(crate) fn build_animated_image_content(
 /// - `thread_root` non-empty → always attach a reply:
 ///   `event_id = reply_event_id` (when non-empty) or `thread_root`,
 ///   `enforce_thread = EnforceThread::Threaded(ReplyWithinThread::Yes/No)`.
-#[cfg(not(test))]
+#[cfg_attr(test, allow(dead_code))]
 pub(super) fn build_media_reply(
     reply_event_id: &str,
     thread_root: &str,
@@ -354,6 +369,13 @@ pub(crate) fn derive_mentions(
             continue;
         };
         let inner = &inner_and_rest[..close_rel];
+        if find_anchor_open(inner).is_some() {
+            // Another anchor opens before this one closes: the `</a>` found
+            // belongs to that inner anchor, so this one is unclosed.
+            out.push_str(open_tag);
+            rest = inner_and_rest;
+            continue;
+        }
         let after_close = &inner_and_rest[close_rel + "</a>".len()..];
 
         match extract_href(open_tag).as_deref().and_then(matrix_to_target) {
@@ -1918,6 +1940,179 @@ impl ClientFfi {
     ) {
     }
 
+    /// Non-blocking gallery send (MSC4274 `m.gallery`). Uploads every item
+    /// in `items` via `RoomSendQueue::send_gallery` and posts one event
+    /// carrying all of them under a single shared `caption`. Unlike the four
+    /// scalar `send_*_async` methods (which `await room.send_attachment`
+    /// directly and only resolve once the upload+send genuinely finished),
+    /// `send_gallery` enqueues and returns immediately, with the real upload
+    /// work happening in a background task — so `on_upload_complete` fires
+    /// on successful *enqueue*, not delivery. Mirrors the same enqueue-is-done
+    /// semantics `send_edit`/`send_caption_edit` already use above; the
+    /// timeline's existing local-echo pending/retry machinery (already wired
+    /// for edits via the same send-queue path) covers eventual delivery
+    /// failures.
+    ///
+    /// Known upstream bug (matrix-sdk 0.18.0–0.19.1, see ROADMAP.md): if a
+    /// homeserver's content dedup returns an `mxc://` URI that's already in
+    /// the local media cache (i.e. this exact file content was already
+    /// uploaded once before, e.g. resending the same test image), the
+    /// send-queue's post-upload cache-key rename hits a SQLite UNIQUE
+    /// constraint and that dependent request is retried forever — every
+    /// queue tick, persisted across restarts — with no user-visible error.
+    /// Not something we can fix from this call site; documented here so a
+    /// future "gallery send silently does nothing" report finds this fast.
+    #[cfg(not(test))]
+    pub fn send_gallery_async(
+        &self,
+        request_id: u64,
+        room_id: &str,
+        items: Vec<crate::ffi::GalleryItemOutFfi>,
+        caption: &str,
+        reply_event_id: &str,
+        thread_root: &str,
+    ) {
+        use matrix_sdk::attachment::{
+            AttachmentInfo, BaseAudioInfo, BaseFileInfo, BaseImageInfo, BaseVideoInfo,
+            GalleryConfig, GalleryItemInfo, Thumbnail,
+        };
+        use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
+        use matrix_sdk::ruma::UInt;
+        use std::time::Duration;
+
+        let Some(client) = self.client.clone() else {
+            return;
+        };
+        let handler = self.handler.clone();
+
+        let deliver = move |ok: bool, msg: &str| {
+            if let Some(h) = &handler {
+                let g = h.lock();
+                g.on_upload_complete(request_id, ok, msg);
+            }
+        };
+
+        let room_id_str = room_id.to_owned();
+        let caption = caption.to_owned();
+        let reply_event_id = reply_event_id.to_owned();
+        let thread_root = thread_root.to_owned();
+        let item_count = items.len();
+
+        self.rt.spawn(async move {
+            let (_, room) = match require_room(&client, &room_id_str) {
+                Ok(v) => v,
+                Err(e) => {
+                    deliver(false, &e.message);
+                    return;
+                }
+            };
+
+            let mut gallery_items = Vec::with_capacity(items.len());
+            for item in items {
+                let mime: mime::Mime = match item.mime_type.parse() {
+                    Ok(m) => m,
+                    Err(e) => {
+                        deliver(false, &format!("invalid mime: {e}"));
+                        return;
+                    }
+                };
+                let size = UInt::new(item.bytes.len() as u64);
+                let (attachment_info, thumbnail) = match item.kind.as_str() {
+                    "image" => (
+                        AttachmentInfo::Image(BaseImageInfo {
+                            width: UInt::new(item.width as u64),
+                            height: UInt::new(item.height as u64),
+                            size,
+                            blurhash: None,
+                            is_animated: Some(item.is_animated),
+                        }),
+                        None,
+                    ),
+                    "video" => {
+                        let thumb = (!item.thumbnail_bytes.is_empty()).then(|| {
+                            let thumb_size = item.thumbnail_bytes.len() as u64;
+                            Thumbnail {
+                                data: item.thumbnail_bytes,
+                                content_type: mime::IMAGE_JPEG,
+                                height: UInt::new(item.thumb_height as u64).unwrap_or_default(),
+                                width: UInt::new(item.thumb_width as u64).unwrap_or_default(),
+                                size: UInt::new(thumb_size).unwrap_or_default(),
+                            }
+                        });
+                        (
+                            AttachmentInfo::Video(BaseVideoInfo {
+                                duration: (item.duration_ms > 0)
+                                    .then(|| Duration::from_millis(item.duration_ms)),
+                                height: UInt::new(item.height as u64),
+                                width: UInt::new(item.width as u64),
+                                size,
+                                blurhash: None,
+                            }),
+                            thumb,
+                        )
+                    }
+                    "audio" => (
+                        AttachmentInfo::Audio(BaseAudioInfo {
+                            duration: (item.duration_ms > 0)
+                                .then(|| Duration::from_millis(item.duration_ms)),
+                            size,
+                            waveform: None,
+                        }),
+                        None,
+                    ),
+                    // "file" and any unrecognized kind fall back to a plain
+                    // file item.
+                    _ => (AttachmentInfo::File(BaseFileInfo { size }), None),
+                };
+                gallery_items.push(GalleryItemInfo {
+                    filename: item.filename,
+                    content_type: mime,
+                    data: item.bytes,
+                    attachment_info,
+                    // v1 supports one gallery-level caption only, not
+                    // per-item captions.
+                    caption: None,
+                    thumbnail,
+                });
+            }
+
+            let mut config = GalleryConfig::new();
+            for gi in gallery_items {
+                config = config.add_item(gi);
+            }
+            // GalleryConfig::caption feeds GalleryMessageEventContent.body
+            // directly (required field) — must always be Some, or the
+            // matrix-sdk send path defaults it to an empty string.
+            let body = gallery_fallback_body(&caption, item_count);
+            config = config.caption(Some(TextMessageEventContent::plain(body)));
+            match build_media_reply(&reply_event_id, &thread_root) {
+                Ok(Some(reply)) => config = config.reply(Some(reply)),
+                Ok(None) => {}
+                Err(e) => {
+                    deliver(false, &e);
+                    return;
+                }
+            }
+
+            match room.send_queue().send_gallery(config).await {
+                Ok(_) => deliver(true, ""),
+                Err(e) => deliver(false, &e.to_string()),
+            }
+        });
+    }
+
+    #[cfg(test)]
+    pub fn send_gallery_async(
+        &self,
+        _request_id: u64,
+        _room_id: &str,
+        _items: Vec<crate::ffi::GalleryItemOutFfi>,
+        _caption: &str,
+        _reply_event_id: &str,
+        _thread_root: &str,
+    ) {
+    }
+
     /// Encode `pcm` (raw signed 16-bit mono 48 kHz samples as a byte slice,
     /// little-endian) into an Ogg/Opus stream and send it as an MSC3245
     /// `m.voice` event in `room_id`. `waveform` carries the MSC1767 waveform
@@ -2860,7 +3055,7 @@ impl ClientFfi {
         err("not logged in")
     }
 
-    #[cfg(not(test))]
+    #[cfg_attr(test, allow(dead_code))]
     fn parse_image_info(info_json: &str) -> matrix_sdk::ruma::events::room::ImageInfo {
         use matrix_sdk::ruma::events::room::ImageInfo;
         if info_json.is_empty() || info_json == "{}" {
@@ -3356,5 +3551,306 @@ mod content_event_tests {
                 "answers": [{"id": "a", "org.matrix.msc1767.text": "a"}]},
                 "org.matrix.msc1767.text": "q"}
         }))));
+    }
+}
+
+#[cfg(test)]
+mod helper_tests {
+    use super::*;
+    use matrix_sdk::room::reply::EnforceThread;
+    use matrix_sdk::ruma::events::room::message::{
+        MessageType, Relation, ReplyWithinThread,
+    };
+    use matrix_sdk::ruma::{event_id, EventId};
+
+    // -- matrix_to_target ----------------------------------------------------
+
+    #[test]
+    fn matrix_to_target_strips_prefix_and_query() {
+        assert_eq!(
+            matrix_to_target("https://matrix.to/#/@a:x.org"),
+            Some("@a:x.org")
+        );
+        assert_eq!(
+            matrix_to_target("http://matrix.to/#/!room:x.org?via=x.org&via=y.org"),
+            Some("!room:x.org")
+        );
+        assert_eq!(matrix_to_target("https://matrix.to/#/"), Some(""));
+    }
+
+    #[test]
+    fn matrix_to_target_rejects_other_links() {
+        assert_eq!(matrix_to_target("https://example.org/#/@a:x.org"), None);
+        assert_eq!(matrix_to_target("https://matrix.to/@a:x.org"), None);
+        assert_eq!(matrix_to_target("matrix.to/#/@a:x.org"), None);
+        assert_eq!(matrix_to_target(""), None);
+    }
+
+    // -- find_anchor_open ----------------------------------------------------
+
+    #[test]
+    fn find_anchor_open_requires_exact_tag_name() {
+        assert_eq!(find_anchor_open("x <a href=\"u\">y"), Some(2));
+        assert_eq!(find_anchor_open("<a>"), Some(0));
+        assert_eq!(find_anchor_open("<A\thref=u>"), Some(0));
+        assert_eq!(find_anchor_open("<a\nhref=u>"), Some(0));
+        assert_eq!(find_anchor_open("<abbr>text</abbr>"), None);
+        assert_eq!(find_anchor_open("<a"), None);
+        assert_eq!(find_anchor_open("<"), None);
+        assert_eq!(find_anchor_open(""), None);
+    }
+
+    #[test]
+    fn find_anchor_open_skips_lookalikes_to_the_real_anchor() {
+        assert_eq!(find_anchor_open("<abbr>x</abbr><a href=u>"), Some(14));
+        assert_eq!(find_anchor_open("a < a <a>"), Some(6));
+    }
+
+    // -- extract_href --------------------------------------------------------
+
+    #[test]
+    fn extract_href_handles_each_quoting_style() {
+        assert_eq!(extract_href(r#"<a href="https://x/y">"#).as_deref(), Some("https://x/y"));
+        assert_eq!(extract_href("<a href='https://x/y'>").as_deref(), Some("https://x/y"));
+        assert_eq!(extract_href("<a href=https://x/y>").as_deref(), Some("https://x/y"));
+        assert_eq!(extract_href("<a href=https://x/y rel=nofollow>").as_deref(), Some("https://x/y"));
+        assert_eq!(extract_href(r#"<a class="c" href="u">"#).as_deref(), Some("u"));
+    }
+
+    #[test]
+    fn extract_href_returns_none_without_a_usable_href() {
+        assert_eq!(extract_href("<a>"), None);
+        assert_eq!(extract_href("<a name=\"x\">"), None);
+        assert_eq!(extract_href("<a href="), None);
+        // Unterminated quoted value.
+        assert_eq!(extract_href("<a href=\"oops>"), None);
+    }
+
+    #[test]
+    fn extract_href_empty_quoted_value_is_empty_string() {
+        assert_eq!(extract_href("<a href=\"\">").as_deref(), Some(""));
+    }
+
+    // -- derive_mentions edge cases beyond mod.rs ---------------------------
+
+    #[test]
+    fn derive_mentions_dedups_repeated_user() {
+        let html = r#"<a href="https://matrix.to/#/@a:x.org">A</a> and <a href="https://matrix.to/#/@a:x.org">A</a>"#;
+        let (m, out) = derive_mentions(html);
+        let m = m.unwrap();
+        assert_eq!(m.user_ids.len(), 1);
+        assert!(!m.room);
+        assert_eq!(out, html);
+    }
+
+    #[test]
+    fn derive_mentions_ignores_room_and_event_permalinks() {
+        let html = r#"<a href="https://matrix.to/#/!room:x.org">r</a><a href="https://matrix.to/#/#alias:x.org">a</a>"#;
+        let (m, out) = derive_mentions(html);
+        assert!(m.is_none());
+        assert_eq!(out, html);
+    }
+
+    #[test]
+    fn derive_mentions_accepts_single_quoted_and_unquoted_hrefs() {
+        let (m, _) = derive_mentions("<a href='https://matrix.to/#/@a:x.org'>A</a>");
+        assert_eq!(m.unwrap().user_ids.len(), 1);
+        let (m, _) = derive_mentions("<a href=https://matrix.to/#/@b:x.org>B</a>");
+        assert_eq!(m.unwrap().user_ids.len(), 1);
+    }
+
+    #[test]
+    fn derive_mentions_room_sentinel_keeps_surrounding_text() {
+        let (m, out) = derive_mentions(r#"hey <a href="https://matrix.to/#/@room">@room</a>, look"#);
+        assert!(m.unwrap().room);
+        assert_eq!(out, "hey @room, look");
+    }
+
+    #[test]
+    fn derive_mentions_invalid_user_id_adds_no_mention_but_keeps_anchor() {
+        let html = r#"<a href="https://matrix.to/#/@not a user">x</a>"#;
+        let (m, out) = derive_mentions(html);
+        assert!(m.is_none());
+        assert_eq!(out, html);
+    }
+
+    #[test]
+    fn derive_mentions_unterminated_open_tag_is_preserved() {
+        let (m, out) = derive_mentions("text <a href=\"x\"");
+        assert!(m.is_none());
+        assert_eq!(out, "text <a href=\"x\"");
+    }
+
+    #[test]
+    fn derive_mentions_unclosed_anchor_still_scans_the_rest() {
+        let html = r#"<a href="u">no close <a href="https://matrix.to/#/@room">@room</a>"#;
+        let (m, out) = derive_mentions(html);
+        // The first anchor is never closed; its would-be </a> belongs to the
+        // sentinel, which must still be recognised and rewritten.
+        assert!(m.unwrap().room);
+        assert_eq!(out, r#"<a href="u">no close @room"#);
+    }
+
+    #[test]
+    fn derive_mentions_empty_input() {
+        let (m, out) = derive_mentions("");
+        assert!(m.is_none());
+        assert_eq!(out, "");
+    }
+
+    // -- build_thread_message_content ---------------------------------------
+
+    fn root() -> matrix_sdk::ruma::OwnedEventId {
+        event_id!("$root:x.org").to_owned()
+    }
+
+    #[test]
+    fn thread_content_plain_body_has_fallback_relation() {
+        let msg = build_thread_message_content("hi", "", root(), None);
+        assert!(matches!(msg.msgtype, MessageType::Text(ref t) if t.body == "hi" && t.formatted.is_none()));
+        let Some(Relation::Thread(t)) = &msg.relates_to else {
+            panic!("expected thread relation");
+        };
+        assert_eq!(t.event_id, root());
+        let in_reply = t.in_reply_to.as_ref().expect("fallback in_reply_to");
+        assert_eq!(in_reply.event_id, root());
+        assert!(t.is_falling_back);
+        assert!(msg.mentions.is_none());
+    }
+
+    #[test]
+    fn thread_content_reply_is_not_a_fallback() {
+        let reply = event_id!("$reply:x.org").to_owned();
+        let msg = build_thread_message_content("hi", "", root(), Some(reply.clone()));
+        let Some(Relation::Thread(t)) = &msg.relates_to else {
+            panic!("expected thread relation");
+        };
+        assert_eq!(t.event_id, root());
+        assert_eq!(t.in_reply_to.as_ref().unwrap().event_id, reply);
+        assert!(!t.is_falling_back);
+    }
+
+    #[test]
+    fn thread_content_derives_mentions_and_uses_rewritten_html() {
+        let html = r#"<a href="https://matrix.to/#/@a:x.org">A</a> <a href="https://matrix.to/#/@room">@room</a>"#;
+        let msg = build_thread_message_content("A @room", html, root(), None);
+        let m = msg.mentions.expect("mentions derived");
+        assert!(m.room);
+        assert_eq!(m.user_ids.len(), 1);
+        let MessageType::Text(t) = msg.msgtype else {
+            panic!("expected text");
+        };
+        let formatted = t.formatted.expect("html body").body;
+        assert!(formatted.contains("@room") && !formatted.contains("matrix.to/#/@room"));
+        assert!(formatted.contains("matrix.to/#/@a:x.org"));
+    }
+
+    // -- build_media_reply ---------------------------------------------------
+
+    #[test]
+    fn media_reply_none_when_neither_reply_nor_thread() {
+        assert!(build_media_reply("", "").unwrap().is_none());
+    }
+
+    #[test]
+    fn media_reply_plain_reply_is_unthreaded() {
+        let r = build_media_reply("$e:x.org", "").unwrap().unwrap();
+        assert_eq!(r.event_id.as_str(), "$e:x.org");
+        assert!(matches!(r.enforce_thread, EnforceThread::Unthreaded));
+    }
+
+    #[test]
+    fn media_reply_thread_without_reply_targets_the_root_not_within_thread() {
+        let r = build_media_reply("", "$root:x.org").unwrap().unwrap();
+        assert_eq!(r.event_id.as_str(), "$root:x.org");
+        assert!(matches!(
+            r.enforce_thread,
+            EnforceThread::Threaded(ReplyWithinThread::No)
+        ));
+    }
+
+    #[test]
+    fn media_reply_thread_with_reply_targets_the_reply_within_thread() {
+        let r = build_media_reply("$reply:x.org", "$root:x.org").unwrap().unwrap();
+        assert_eq!(r.event_id.as_str(), "$reply:x.org");
+        assert!(matches!(
+            r.enforce_thread,
+            EnforceThread::Threaded(ReplyWithinThread::Yes)
+        ));
+    }
+
+    #[test]
+    fn media_reply_rejects_malformed_event_ids() {
+        for (reply, thread) in [("not an event id", ""), ("", "not an event id"), ("bad id", "$r:x")] {
+            let e = build_media_reply(reply, thread).err().expect("must fail");
+            assert!(e.starts_with("invalid reply event id"), "{e}");
+        }
+    }
+
+    // -- parse_image_info ----------------------------------------------------
+
+    #[test]
+    fn parse_image_info_empty_and_braces_give_defaults() {
+        for input in ["", "{}"] {
+            let i = ClientFfi::parse_image_info(input);
+            assert!(i.width.is_none() && i.height.is_none() && i.mimetype.is_none());
+        }
+    }
+
+    #[test]
+    fn parse_image_info_reads_standard_fields() {
+        let i = ClientFfi::parse_image_info(r#"{"w":640,"h":480,"mimetype":"image/png","size":123}"#);
+        assert_eq!(i.width.map(u64::from), Some(640));
+        assert_eq!(i.height.map(u64::from), Some(480));
+        assert_eq!(i.mimetype.as_deref(), Some("image/png"));
+        assert_eq!(i.size.map(u64::from), Some(123));
+    }
+
+    #[test]
+    fn parse_image_info_invalid_json_falls_back_to_defaults() {
+        for input in ["not json", "[1,2]", r#"{"w":"wide"}"#] {
+            let i = ClientFfi::parse_image_info(input);
+            assert!(i.width.is_none() && i.mimetype.is_none(), "{input}");
+        }
+    }
+
+    // -- pick_thread_receipt_target extras -----------------------------------
+
+    #[test]
+    fn receipt_target_acked_unrelated_to_list_latest_has_zero_ts() {
+        let root: &EventId = event_id!("$root:x.org");
+        let acked: &EventId = event_id!("$acked:x.org");
+        let latest: &EventId = event_id!("$latest:x.org");
+        let (t, ts) = pick_thread_receipt_target(root, Some(acked), Some((latest, 99)));
+        assert_eq!(t, acked);
+        assert_eq!(ts, 0);
+    }
+
+    #[test]
+    fn receipt_target_with_nothing_known_is_the_root_at_ts_zero() {
+        let root: &EventId = event_id!("$root:x.org");
+        let (t, ts) = pick_thread_receipt_target(root, None, None);
+        assert_eq!(t, root);
+        assert_eq!(ts, 0);
+    }
+}
+
+#[cfg(test)]
+mod gallery_fallback_body_tests {
+    use super::gallery_fallback_body;
+
+    #[test]
+    fn uses_caption_when_present() {
+        assert_eq!(gallery_fallback_body("vacation pics", 5), "vacation pics");
+    }
+
+    #[test]
+    fn synthesizes_singular_when_no_caption() {
+        assert_eq!(gallery_fallback_body("", 1), "Sent 1 item");
+    }
+
+    #[test]
+    fn synthesizes_plural_when_no_caption() {
+        assert_eq!(gallery_fallback_body("", 5), "Sent 5 items");
     }
 }

@@ -5022,6 +5022,7 @@ name = "tesseract-sdk-ffi"
 version = "0.9.3"
 dependencies = [
  "anyhow",
+ "async-trait",
  "audiopus",
  "audiopus_sys",
  "base64ct",

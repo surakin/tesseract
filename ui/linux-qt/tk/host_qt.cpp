@@ -3335,10 +3335,13 @@ void Surface::wheelEvent(QWheelEvent* e)
     QPointF pos = e->position();
     float dx, dy;
     QPoint pd = e->pixelDelta();
-    // Non-null pixelDelta means a smooth-scroll device (trackpad) — Qt only
-    // populates it for those, never for a physical wheel's fixed 120-unit
-    // notches — so it doubles as the touchpad/momentum-scrolling flag.
-    const bool is_touchpad = !pd.isNull();
+    // A non-null pixelDelta marks a smooth-scroll device (trackpad), except
+    // that Qt >= 6.12 on Wayland also fills it in for physical wheels (15 px
+    // per notch). A wheel reports no scroll phase; trackpads on compositors
+    // that send phases do, so only phase-less events are treated as wheels.
+    const bool is_touchpad =
+        !pd.isNull() &&
+        !(e->phase() == Qt::NoScrollPhase && !e->angleDelta().isNull());
     if (is_touchpad)
     {
         // Smooth-scroll device (trackpad): pixel delta is already in px.

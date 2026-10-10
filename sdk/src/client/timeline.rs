@@ -320,6 +320,12 @@ fn filter_membership(
 // Used by paginate_media_view_back_async to report an authoritative media
 // count synchronously with pagination completion, decoupled from that
 // separate, much slower streaming task.
+// NOTE: deliberately does not match `MessageType::Gallery` (MSC4274). This
+// counts one timeline item as one media item for the "Media (N)"
+// RoomMediaView browsing overlay; a gallery event contains N items, so
+// counting it as a single hit would undercount and the overlay has no code
+// to unpack `gallery_items` into separate grid cells yet. Extending
+// RoomMediaView for galleries is a separate, not-yet-scoped follow-up.
 #[cfg(not(test))]
 fn timeline_item_is_media(item: &Arc<TimelineItem>) -> bool {
     use matrix_sdk::ruma::events::room::message::MessageType;
@@ -1839,5 +1845,47 @@ impl ClientFfi {
     #[cfg(test)]
     pub fn subscribe_room_at(&self, _room_id: &str, _focus_event_id: &str) -> OpResult {
         err("not logged in")
+    }
+}
+
+#[cfg(test)]
+mod visibility_mirror_tests {
+    use super::{visible_index_of, visible_len};
+
+    #[test]
+    fn visible_len_counts_only_visible_slots() {
+        assert_eq!(visible_len(&[]), 0);
+        assert_eq!(visible_len(&[false, false]), 0);
+        assert_eq!(visible_len(&[true, false, true, true]), 3);
+    }
+
+    #[test]
+    fn visible_index_of_out_of_range_clamps_to_total_visible() {
+        let mirror = [true, false, true];
+        assert_eq!(visible_index_of(&mirror, 3), 2);
+        assert_eq!(visible_index_of(&mirror, 4), 2);
+        assert_eq!(visible_index_of(&mirror, usize::MAX), 2);
+        assert_eq!(visible_index_of(&mirror, usize::MAX), visible_len(&mirror));
+    }
+
+    #[test]
+    fn visible_index_of_is_zero_when_nothing_before_is_visible() {
+        let mirror = [false, false, true];
+        assert_eq!(visible_index_of(&mirror, 0), 0);
+        assert_eq!(visible_index_of(&mirror, 2), 0);
+        assert_eq!(visible_index_of(&mirror, 3), 1);
+    }
+
+    #[test]
+    fn visible_index_of_tracks_an_insert_into_the_mirror() {
+        // Mirrors what collect_timeline_ops does: compute the visible index,
+        // then insert the new slot. The next lookup must see the shifted slot.
+        let mut mirror = vec![true, false, true];
+        let idx = visible_index_of(&mirror, 2);
+        assert_eq!(idx, 1);
+        mirror.insert(2, true);
+        assert_eq!(visible_index_of(&mirror, 2), 1);
+        assert_eq!(visible_index_of(&mirror, 3), 2);
+        assert_eq!(visible_len(&mirror), 3);
     }
 }

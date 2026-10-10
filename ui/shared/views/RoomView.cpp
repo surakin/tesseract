@@ -575,6 +575,10 @@ void RoomView::wire_message_list_callbacks_(MessageListView* ml)
     {
         if (on_video_clicked) on_video_clicked(hit);
     };
+    ml->on_gallery_item_clicked = [this](const MessageListView::GalleryHit& hit)
+    {
+        if (on_gallery_item_clicked) on_gallery_item_clicked(hit);
+    };
     ml->on_file_clicked = [this](const MessageListView::FileHit& hit)
     {
         if (on_file_clicked) on_file_clicked(hit);
@@ -736,6 +740,16 @@ void RoomView::wire_internal_callbacks()
             on_send_audio(std::move(bytes), std::move(mime),
                           std::move(filename), std::move(caption),
                           duration_ms, std::move(reply_id));
+        }
+    };
+    compose_bar_->on_send_gallery =
+        [this](std::vector<ComposeBar::PendingAttachment> items,
+               std::string caption, std::string reply_id)
+    {
+        if (on_send_gallery)
+        {
+            on_send_gallery(std::move(items), std::move(caption),
+                            std::move(reply_id));
         }
     };
     compose_bar_->on_mic_clicked = [this]

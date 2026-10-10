@@ -160,6 +160,7 @@ pub(super) fn ffi_event_defaults() -> TimelineEvent {
         room_name_new: String::new(),
         room_name_old: String::new(),
         replacement_room_id: String::new(),
+        gallery_items: Vec::new(),
     }
 }
 
@@ -299,7 +300,6 @@ pub(super) async fn collect_read_receipts(
 /// - `url`:           the plain mxc:// URI (both plain and encrypted carry this)
 /// - `encrypted_json`: non-empty only when the source is encrypted; full JSON blob
 ///                     understood by `fetch_source_bytes` for decryption
-#[cfg(not(test))]
 pub(super) fn split_source(
     source: &matrix_sdk::ruma::events::room::MediaSource,
 ) -> (String, String) {
@@ -315,7 +315,6 @@ pub(super) fn split_source(
 
 /// Same as `split_source` but for an `Option<&MediaSource>`; returns ("","")
 /// when absent.
-#[cfg(not(test))]
 pub(super) fn split_source_opt(
     source: Option<&matrix_sdk::ruma::events::room::MediaSource>,
 ) -> (String, String) {
@@ -654,6 +653,163 @@ pub(crate) fn is_profile_action(action: &str) -> bool {
     )
 }
 
+/// Extract the FFI shape for one `m.gallery` (MSC4274) item. Pure function —
+/// no live SDK connection state — so it's unit-testable directly against a
+/// synthetic `GalleryItemType`, unlike the full per-event dispatcher below
+/// which needs a live `EventTimelineItem`. Mirrors the field-extraction
+/// logic in the singular `MessageType::Image/File/Audio/Video` arms of
+/// `timeline_item_to_ffi`, since `GalleryItemType` wraps the exact same
+/// inner content types (`ImageMessageEventContent` etc).
+pub(crate) fn gallery_item_ffi_from_type(
+    item: &matrix_sdk::ruma::events::room::message::GalleryItemType,
+) -> crate::ffi::GalleryItemFfi {
+    use matrix_sdk::ruma::events::room::message::GalleryItemType;
+
+    let defaults = crate::ffi::GalleryItemFfi {
+        itemtype: String::new(),
+        body: String::new(),
+        source_url: String::new(),
+        source_encrypted_json: String::new(),
+        thumbnail_url: String::new(),
+        thumbnail_encrypted_json: String::new(),
+        width: 0,
+        height: 0,
+        mime: String::new(),
+        filename: String::new(),
+        file_size: 0,
+        duration_ms: 0,
+        waveform: Vec::new(),
+        blurhash: String::new(),
+        animated: false,
+    };
+
+    match item {
+        GalleryItemType::Image(i) => {
+            let (src_url, src_enc) = split_source(&i.source);
+            let (w, h, blurhash, animated) = i
+                .info
+                .as_ref()
+                .map(|info| {
+                    (
+                        info.width.map(u64::from).unwrap_or(0u64),
+                        info.height.map(u64::from).unwrap_or(0u64),
+                        info.blurhash.clone().unwrap_or_default(),
+                        info.is_animated.unwrap_or(false),
+                    )
+                })
+                .unwrap_or_default();
+            crate::ffi::GalleryItemFfi {
+                itemtype: "m.image".to_owned(),
+                body: i.body.clone(),
+                source_url: src_url,
+                source_encrypted_json: src_enc,
+                width: w,
+                height: h,
+                filename: i.filename.clone().unwrap_or_default(),
+                blurhash,
+                animated,
+                ..defaults
+            }
+        }
+        GalleryItemType::File(f) => {
+            let (file_url, file_enc) = split_source(&f.source);
+            let size = f
+                .info
+                .as_ref()
+                .and_then(|info| info.size)
+                .map(u64::from)
+                .unwrap_or(0u64);
+            crate::ffi::GalleryItemFfi {
+                itemtype: "m.file".to_owned(),
+                body: f.body.clone(),
+                source_url: file_url,
+                source_encrypted_json: file_enc,
+                filename: f.filename.clone().unwrap_or_default(),
+                file_size: size,
+                ..defaults
+            }
+        }
+        GalleryItemType::Audio(a) => {
+            let (aud_url, aud_enc) = split_source(&a.source);
+            let info_mime = a
+                .info
+                .as_deref()
+                .and_then(|i| i.mimetype.clone())
+                .unwrap_or_default();
+            let info_duration_ms = a
+                .info
+                .as_deref()
+                .and_then(|i| i.duration)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0u64);
+            let (duration_ms, waveform) = match &a.audio {
+                Some(block) => {
+                    let dur = block.duration.as_millis() as u64;
+                    let wf: Vec<u16> = block
+                        .waveform
+                        .iter()
+                        .map(|amp| u16::try_from(u64::from(amp.get())).unwrap_or(0))
+                        .collect();
+                    (if dur != 0 { dur } else { info_duration_ms }, wf)
+                }
+                None => (info_duration_ms, Vec::new()),
+            };
+            crate::ffi::GalleryItemFfi {
+                itemtype: "m.audio".to_owned(),
+                body: a.body.clone(),
+                source_url: aud_url,
+                source_encrypted_json: aud_enc,
+                filename: a.filename.clone().unwrap_or_default(),
+                mime: info_mime,
+                duration_ms,
+                waveform,
+                ..defaults
+            }
+        }
+        GalleryItemType::Video(v) => {
+            let (src_url, src_enc) = split_source(&v.source);
+            let (w, h, dur_ms, mime, thumb_url, thumb_enc, blurhash) = v
+                .info
+                .as_ref()
+                .map(|info| {
+                    let w = info.width.map(u64::from).unwrap_or(0u64);
+                    let h = info.height.map(u64::from).unwrap_or(0u64);
+                    let dur = info.duration.map(|d| d.as_millis() as u64).unwrap_or(0u64);
+                    let mime = info.mimetype.clone().unwrap_or_default();
+                    let (tu, te) = split_source_opt(info.thumbnail_source.as_ref());
+                    let bh = info.blurhash.clone().unwrap_or_default();
+                    (w, h, dur, mime, tu, te, bh)
+                })
+                .unwrap_or_default();
+            crate::ffi::GalleryItemFfi {
+                itemtype: "m.video".to_owned(),
+                body: v.body.clone(),
+                source_url: src_url,
+                source_encrypted_json: src_enc,
+                width: w,
+                height: h,
+                filename: v.filename.clone().unwrap_or_default(),
+                mime,
+                duration_ms: dur_ms,
+                thumbnail_url: thumb_url,
+                thumbnail_encrypted_json: thumb_enc,
+                blurhash,
+                ..defaults
+            }
+        }
+        // Unknown/future itemtype (including MSC4274's `_Custom`): fall back
+        // to the public itemtype()/body() accessors, which work for every
+        // variant including hidden ones. GalleryItemType is #[non_exhaustive]
+        // so this arm also covers itemtypes ruma adds after this match was
+        // written.
+        _ => crate::ffi::GalleryItemFfi {
+            itemtype: item.itemtype().to_owned(),
+            body: item.body().to_owned(),
+            ..defaults
+        },
+    }
+}
+
 /// Shared so the in-reply-to quote block and the thread latest-event preview
 /// emit identical snippet text.
 #[cfg(not(test))]
@@ -675,6 +831,7 @@ pub(crate) fn msglike_snippet(content: &TimelineItemContent) -> String {
                 }
             }
             MessageType::Video(_) => "(video)".to_owned(),
+            MessageType::Gallery(_) => "(gallery)".to_owned(),
             _ => "(message)".to_owned(),
         },
         TimelineItemContent::MsgLike(MsgLikeContent {
@@ -1705,6 +1862,26 @@ pub(super) async fn timeline_item_to_ffi(
                 ..ffi_event_defaults()
             }
         }
+        MessageType::Gallery(g) => {
+            let formatted_body = g
+                .formatted
+                .as_ref()
+                .filter(|f| {
+                    matches!(
+                        f.format,
+                        matrix_sdk::ruma::events::room::message::MessageFormat::Html
+                    )
+                })
+                .map(|f| f.body.clone())
+                .unwrap_or_default();
+            TimelineEvent {
+                body: g.body.clone(),
+                formatted_body,
+                msg_type: "m.gallery".to_owned(),
+                gallery_items: g.itemtypes.iter().map(gallery_item_ffi_from_type).collect(),
+                ..ffi_event_defaults()
+            }
+        }
         _ => return None,
     };
 
@@ -2382,5 +2559,133 @@ mod poll_fields_tests {
         let f = poll_fields(&[], true, false, "@me:x");
         assert!(f.answers.is_empty());
         assert_eq!(f.total_votes, 0);
+    }
+}
+
+#[cfg(test)]
+mod gallery_item_ffi_tests {
+    use super::gallery_item_ffi_from_type;
+    use matrix_sdk::ruma::{
+        events::room::{
+            message::{
+                AudioInfo, AudioMessageEventContent, FileInfo, FileMessageEventContent,
+                GalleryItemType, ImageMessageEventContent, VideoInfo, VideoMessageEventContent,
+            },
+            ImageInfo, MediaSource, ThumbnailInfo,
+        },
+        OwnedMxcUri, UInt,
+    };
+    use std::time::Duration;
+
+    fn url(s: &str) -> OwnedMxcUri {
+        OwnedMxcUri::from(s)
+    }
+
+    #[test]
+    fn image_item_extracts_source_dims_filename_blurhash() {
+        let mut content =
+            ImageMessageEventContent::plain("photo.jpg".to_owned(), url("mxc://example.org/img1"));
+        content.filename = Some("photo.jpg".to_owned());
+        let mut info = ImageInfo::default();
+        info.width = UInt::new(800);
+        info.height = UInt::new(600);
+        info.blurhash = Some("LEHV6nWB2yk8".to_owned());
+        info.is_animated = Some(true);
+        content.info = Some(Box::new(info));
+        let item = GalleryItemType::Image(content);
+
+        let ffi = gallery_item_ffi_from_type(&item);
+
+        assert_eq!(ffi.itemtype, "m.image");
+        assert_eq!(ffi.body, "photo.jpg");
+        assert_eq!(ffi.source_url, "mxc://example.org/img1");
+        assert_eq!(ffi.source_encrypted_json, "");
+        assert_eq!(ffi.width, 800);
+        assert_eq!(ffi.height, 600);
+        assert_eq!(ffi.filename, "photo.jpg");
+        assert_eq!(ffi.blurhash, "LEHV6nWB2yk8");
+        assert!(ffi.animated);
+    }
+
+    #[test]
+    fn file_item_extracts_source_filename_size() {
+        let mut content = FileMessageEventContent::plain(
+            "report.pdf".to_owned(),
+            url("mxc://example.org/file1"),
+        );
+        content.filename = Some("report.pdf".to_owned());
+        let mut info = FileInfo::new();
+        info.size = UInt::new(4096);
+        content.info = Some(Box::new(info));
+        let item = GalleryItemType::File(content);
+
+        let ffi = gallery_item_ffi_from_type(&item);
+
+        assert_eq!(ffi.itemtype, "m.file");
+        assert_eq!(ffi.body, "report.pdf");
+        assert_eq!(ffi.source_url, "mxc://example.org/file1");
+        assert_eq!(ffi.filename, "report.pdf");
+        assert_eq!(ffi.file_size, 4096);
+    }
+
+    #[test]
+    fn audio_item_extracts_source_mime_duration() {
+        let mut content =
+            AudioMessageEventContent::plain("clip.ogg".to_owned(), url("mxc://example.org/aud1"));
+        let mut info = AudioInfo::new();
+        info.mimetype = Some("audio/ogg".to_owned());
+        info.duration = Some(Duration::from_millis(2500));
+        content.info = Some(Box::new(info));
+        let item = GalleryItemType::Audio(content);
+
+        let ffi = gallery_item_ffi_from_type(&item);
+
+        assert_eq!(ffi.itemtype, "m.audio");
+        assert_eq!(ffi.body, "clip.ogg");
+        assert_eq!(ffi.source_url, "mxc://example.org/aud1");
+        assert_eq!(ffi.mime, "audio/ogg");
+        assert_eq!(ffi.duration_ms, 2500);
+    }
+
+    #[test]
+    fn video_item_extracts_source_dims_thumbnail_mime_duration() {
+        let mut content =
+            VideoMessageEventContent::plain("clip.mp4".to_owned(), url("mxc://example.org/vid1"));
+        let mut info = VideoInfo::new();
+        info.width = UInt::new(1920);
+        info.height = UInt::new(1080);
+        info.mimetype = Some("video/mp4".to_owned());
+        info.duration = Some(Duration::from_millis(30_000));
+        info.thumbnail_source = Some(MediaSource::Plain(url("mxc://example.org/vid1-thumb")));
+        info.thumbnail_info = Some(Box::new(ThumbnailInfo::new()));
+        info.blurhash = Some("LKO2?U%2Tw=w".to_owned());
+        content.info = Some(Box::new(info));
+        let item = GalleryItemType::Video(content);
+
+        let ffi = gallery_item_ffi_from_type(&item);
+
+        assert_eq!(ffi.itemtype, "m.video");
+        assert_eq!(ffi.source_url, "mxc://example.org/vid1");
+        assert_eq!(ffi.width, 1920);
+        assert_eq!(ffi.height, 1080);
+        assert_eq!(ffi.mime, "video/mp4");
+        assert_eq!(ffi.duration_ms, 30_000);
+        assert_eq!(ffi.thumbnail_url, "mxc://example.org/vid1-thumb");
+        assert_eq!(ffi.blurhash, "LKO2?U%2Tw=w");
+    }
+
+    #[test]
+    fn unknown_item_falls_back_to_itemtype_and_body_methods() {
+        let item = GalleryItemType::new(
+            "org.example.custom",
+            "custom body".to_owned(),
+            serde_json::Map::new(),
+        )
+        .expect("custom item construction should succeed");
+
+        let ffi = gallery_item_ffi_from_type(&item);
+
+        assert_eq!(ffi.itemtype, "org.example.custom");
+        assert_eq!(ffi.body, "custom body");
     }
 }

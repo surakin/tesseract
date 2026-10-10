@@ -2344,6 +2344,7 @@ fn latest_event_preview(value: &matrix_sdk::latest_events::LatestEventValue) -> 
                         }
                         MessageType::File(_) => media_kind("file"),
                         MessageType::Audio(_) => media_kind("audio"),
+                        MessageType::Gallery(_) => media_kind("gallery"),
                         _ => LatestPreview::default(),
                     }
                 }
@@ -2498,6 +2499,7 @@ fn extract_local_preview(content: &matrix_sdk::store::SerializableEventContent) 
         }
         MessageType::File(_) => media_kind("file"),
         MessageType::Audio(_) => media_kind("audio"),
+        MessageType::Gallery(_) => media_kind("gallery"),
         _ => LatestPreview::default(),
     }
 }
@@ -2599,6 +2601,7 @@ fn message_type_preview(msgtype: &matrix_sdk::ruma::events::room::message::Messa
             }
         }
         MessageType::Video(_) => "(video)".to_owned(),
+        MessageType::Gallery(_) => "(gallery)".to_owned(),
         _ => "(message)".to_owned(),
     }
 }

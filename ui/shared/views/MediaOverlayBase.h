@@ -13,8 +13,8 @@
 namespace tesseract::views
 {
 
-// Shared modal scaffolding for the fullscreen media lightbox overlays
-// (ImageViewerOverlay, VideoViewerOverlay). Owns the dark scrim, the
+// Shared modal scaffolding for the fullscreen media lightbox overlay
+// (MediaViewerOverlay). Owns the dark scrim, the
 // top-right close (×) / save (⬇) real tk::Button children (icon cache +
 // paint), and the outside-tap-to-dismiss behaviour. Subclasses supply only
 // their media content (image pan/zoom or video surface + transport
@@ -48,17 +48,6 @@ public:
 
     // Fires when the overlay should be dismissed (× button, outside click).
     std::function<void()> on_close;
-
-    // Fires when the user clicks the ⬇ save button. The string payload is
-    // overlay-specific (image: media_url + filename hint; video: source JSON
-    // + mime type) so the subclass invokes it from fire_save_().
-    std::function<void(std::string, std::string)> on_save;
-
-    // Fires when the user clicks the copy button (only shown when
-    // wants_copy_button_() is true — currently the image overlay). Same
-    // overlay-specific payload as on_save; the subclass invokes it from
-    // fire_copy_().
-    std::function<void(std::string, std::string)> on_copy;
 
     // Fires when the user toggles the full-screen chrome button, with the new
     // state. The shell wires this to put its native window into / out of OS
@@ -113,6 +102,13 @@ protected:
     // resets the chrome auto-hide timer, and calls on_fullscreen_changed_() so
     // the subclass can recompute its geometry.
     void toggle_fullscreen_();
+
+    // Leave full-screen if currently in it, telling the shell (so the native
+    // window restores) and the subclass. No-op in windowed mode. Used when an
+    // already-open overlay is re-opened: open*() resets full-screen, and the
+    // shell must hear about it or its window stays full-screen with the
+    // overlay thinking it is windowed.
+    void leave_fullscreen_();
 
     // Schedule a repaint of the hosting surface via the shell-provided
     // requester (no-op until set_repaint_requester()).
@@ -190,18 +186,19 @@ protected:
         return false;
     }
 
-    // Invoke on_save with the subclass's overlay-specific payload.
+    // The ⬇ button was clicked. The subclass decides what to do (and whether
+    // anything is wired); the base always forwards the click.
     virtual void fire_save_() = 0;
 
-    // Opt-in flag for the copy-to-clipboard chrome button. Defaults to off so
-    // the video overlay is unaffected; the image overlay overrides to true.
+    // Opt-in flag for the copy-to-clipboard chrome button. Defaults to off;
+    // the media viewer turns it on while an image is showing.
     virtual bool wants_copy_button_() const
     {
         return false;
     }
 
-    // Invoke on_copy with the subclass's overlay-specific payload. Only called
-    // when wants_copy_button_() is true and on_copy is set; default no-op.
+    // The copy button was clicked. Only called while wants_copy_button_() is
+    // true; default no-op.
     virtual void fire_copy_() {}
 
     // Called by paint_chrome_buttons_ when the canvas DPI scale changes, so
@@ -234,6 +231,14 @@ protected:
     // True while any chrome button is under the pointer — keeps the cluster
     // shown in full-screen even when the pointer is momentarily still.
     bool any_chrome_hovered_() const;
+
+    // Subclass hook: additional controls (navigation buttons, page transport
+    // buttons) that also pin the auto-hidden chrome while hovered. OR-ed into
+    // any_chrome_hovered_().
+    virtual bool extra_chrome_hovered_() const
+    {
+        return false;
+    }
 
 private:
     std::unique_ptr<tk::Image> close_icon_;

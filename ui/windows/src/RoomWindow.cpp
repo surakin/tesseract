@@ -6,6 +6,7 @@
 #include "app/ComposerPopups.h"
 
 #include "views/PopoutRoomWidget.h"
+#include "views/media_viewer_items.h"
 
 #include "tk/i18n.h"
 
@@ -142,8 +143,7 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
     auto room_widget = tk::create_root_widget<tesseract::views::PopoutRoomWidget>(
         &surface_->host());
     room_view_            = room_widget->room_view();
-    img_viewer_           = room_widget->image_viewer();
-    vid_viewer_           = room_widget->video_viewer();
+    media_viewer_         = room_widget->media_viewer();
     forward_picker_widget_ = room_widget->forward_picker();
     room_media_view_widget_ = room_widget->room_media_view();
     confirm_dialog_widget_ = room_widget->confirm_dialog();
@@ -160,8 +160,7 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
     init_pane_(&surface_->host());
     pane_->attach({
         .room_view = room_view_,
-        .img_viewer = img_viewer_,
-        .vid_viewer = vid_viewer_,
+        .media_viewer = media_viewer_,
         .forward_picker = forward_picker_widget_,
         .room_media_view = room_media_view_widget_,
         .focus_forward_picker_field = [this]
@@ -186,10 +185,10 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
         },
     });
 
-    // ── Video player for this window's VideoViewerOverlay ─────────────────
+    // ── Video player for this window's MediaViewerOverlay ─────────────────
     if (auto player = surface_->host().make_video_player())
     {
-        vid_viewer_->set_video_player(std::move(player));
+        media_viewer_->set_video_player(std::move(player));
     }
 
     // Inline autoplay video/GIF in the timeline (separate from the lightbox
@@ -204,40 +203,25 @@ RoomWindow::RoomWindow(MainWindow* parent, const std::string& room_id)
             pane_->fetch_source_bytes_(src, std::move(on_ready));
         });
 
-    // ── Image / video save dialogs ────────────────────────────────────────
-    img_viewer_->on_save =
-        [this](std::string source_url, std::string filename_hint)
-    {
-        std::wstring suggested(filename_hint.begin(), filename_hint.end());
-        if (suggested.empty())
-            suggested = L"image";
-        std::wstring path = parent_->show_save_dialog_(
-            suggested,
-            MainWindow::file_filter({{tk::tr("Images"), L"*.jpg;*.jpeg;*.png;*.gif;*.webp"}, {tk::tr("All files"), L"*.*"}}).c_str());
-        if (!path.empty())
-            pane_->save_source_to_file_(std::move(source_url),
-                                        wstr_to_utf8(path));
-    };
-    vid_viewer_->on_save =
-        [this](std::string source_json, std::string mime_type)
-    {
-        std::wstring suggested = L"video";
-        if (mime_type == "video/mp4")
-            suggested = L"video.mp4";
-        else if (mime_type == "video/webm")
-            suggested = L"video.webm";
-        std::wstring path = parent_->show_save_dialog_(
-            suggested,
-            MainWindow::file_filter({{tk::tr("Videos"), L"*.mp4;*.webm;*.mkv"}, {tk::tr("All files"), L"*.*"}}).c_str());
-        if (!path.empty())
-            pane_->save_source_to_file_(std::move(source_json),
-                                        wstr_to_utf8(path));
-    };
+    // ── Media save dialog ─────────────────────────────────────────────────
+    // One handler for every viewer kind: RoomPane builds the spec and writes
+    // the file; this window only shows the dialog.
+    pane_->install_media_viewer_save_(
+        [this](const tesseract::views::MediaSaveSpec& spec,
+               std::function<void(std::string)> done)
+        {
+            const std::wstring filter = MainWindow::save_filter_for(spec);
+            std::wstring path = parent_->show_save_dialog_(
+                utf8_to_wstr(spec.suggested_name), filter.c_str());
+            if (!path.empty())
+            {
+                done(wstr_to_utf8(path));
+            }
+        });
 
     // Full-screen toggle acts on this pop-out window.
     const auto set_fs = [this](bool on) { set_window_fullscreen_impl_(on); };
-    img_viewer_->on_request_fullscreen = set_fs;
-    vid_viewer_->on_request_fullscreen = set_fs;
+    media_viewer_->on_request_fullscreen = set_fs;
 
     room_view_->on_file_clicked =
         [this](tesseract::views::MessageListView::FileHit hit)
@@ -884,20 +868,8 @@ LRESULT RoomWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam,
                 room_view_->close_room_search();
                 return 0;
             }
-            if (vid_viewer_ && vid_viewer_->is_open())
+            if (close_media_viewer_if_open_())
             {
-                vid_viewer_->close();
-                vid_viewer_->set_visible(false);
-                if (surface_)
-                    surface_->relayout();
-                return 0;
-            }
-            if (img_viewer_ && img_viewer_->is_open())
-            {
-                img_viewer_->close();
-                img_viewer_->set_visible(false);
-                if (surface_)
-                    surface_->relayout();
                 return 0;
             }
         }

@@ -1133,13 +1133,9 @@ MainAppWidget::MainAppWidget()
     auto overlays = std::make_unique<OverlayStackWidget>();
     overlay_stack_ = add_child(std::move(overlays));
 
-    auto img = std::make_unique<ImageViewerOverlay>();
-    img_viewer_ = overlay_stack_->add_child(std::move(img));
-    img_viewer_->set_visible(false);
-
-    auto vid = std::make_unique<VideoViewerOverlay>();
-    vid_viewer_ = overlay_stack_->add_child(std::move(vid));
-    vid_viewer_->set_visible(false);
+    auto viewer = std::make_unique<MediaViewerOverlay>();
+    media_viewer_ = overlay_stack_->add_child(std::move(viewer));
+    media_viewer_->set_visible(false);
 
     auto enc = tk::create_root_widget<EncryptionSetupOverlay>(
         host, EncryptionSetupOverlay::Mode::Fresh);
@@ -1507,16 +1503,10 @@ bool MainAppWidget::dismiss_top_transient_()
         confirm_dialog_->close();
         return true;
     }
-    if (vid_viewer_ && vid_viewer_->is_open())
+    if (media_viewer_ && media_viewer_->is_open())
     {
-        vid_viewer_->close();
-        vid_viewer_->set_visible(false);
-        return true;
-    }
-    if (img_viewer_ && img_viewer_->is_open())
-    {
-        img_viewer_->close();
-        img_viewer_->set_visible(false);
+        media_viewer_->close();
+        media_viewer_->set_visible(false);
         return true;
     }
     if (auto* inv = room_view_ ? room_view_->invite_dialog() : nullptr;
@@ -1568,10 +1558,8 @@ tk::Widget* MainAppWidget::active_transient_overlay_() const
         return create_poll_dialog_;
     if (confirm_dialog_ && confirm_dialog_->is_open())
         return confirm_dialog_;
-    if (vid_viewer_ && vid_viewer_->is_open())
-        return vid_viewer_;
-    if (img_viewer_ && img_viewer_->is_open())
-        return img_viewer_;
+    if (media_viewer_ && media_viewer_->is_open())
+        return media_viewer_;
     if (qr_grant_view_ && qr_grant_view_->visible())
         return qr_grant_view_;
     if (encryption_setup_ && encryption_setup_->visible())
@@ -1618,15 +1606,10 @@ void MainAppWidget::show_room()
     // just left — only Escape/close-button/outside-tap tore these down
     // before, so a plain room switch left video_player_ decoding and
     // repainting on top of the newly-shown room indefinitely.
-    if (vid_viewer_ && vid_viewer_->is_open())
+    if (media_viewer_ && media_viewer_->is_open())
     {
-        vid_viewer_->close();
-        vid_viewer_->set_visible(false);
-    }
-    if (img_viewer_ && img_viewer_->is_open())
-    {
-        img_viewer_->close();
-        img_viewer_->set_visible(false);
+        media_viewer_->close();
+        media_viewer_->set_visible(false);
     }
     clear_alternate_content_();
     set_room_visible_(true);
@@ -1694,19 +1677,11 @@ void MainAppWidget::clear_content()
     set_room_visible_(true);
 }
 
-void MainAppWidget::show_image_viewer(bool show)
+void MainAppWidget::show_media_viewer(bool show)
 {
-    if (img_viewer_)
+    if (media_viewer_)
     {
-        img_viewer_->set_visible(show);
-    }
-}
-
-void MainAppWidget::show_video_viewer(bool show)
-{
-    if (vid_viewer_)
-    {
-        vid_viewer_->set_visible(show);
+        media_viewer_->set_visible(show);
     }
 }
 
@@ -1955,8 +1930,7 @@ bool MainAppWidget::any_modal_open_() const
            (create_poll_dialog_ && create_poll_dialog_->is_open()) ||
            (shortcuts_overlay_ && shortcuts_overlay_->is_open()) ||
            (room_view_         && room_view_->is_overlay_open()) ||
-           (img_viewer_        && img_viewer_->is_open()) ||
-           (vid_viewer_        && vid_viewer_->is_open()) ||
+           (media_viewer_      && media_viewer_->is_open()) ||
            (encryption_setup_  && encryption_setup_->visible()) ||
            (qr_grant_view_     && qr_grant_view_->visible()) ||
            (quick_switcher_    && quick_switcher_->is_open()) ||

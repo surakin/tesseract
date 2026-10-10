@@ -22,7 +22,6 @@
 #include "views/JoinRoomView.h"
 #include "views/ConfirmDialog.h"
 #include "views/MainAppWidget.h"
-#include "views/VideoViewerOverlay.h"
 #include "views/RoomListView.h"
 #include "views/InviteDialog.h"
 #include "views/text_util.h"

@@ -134,7 +134,7 @@ pub(super) async fn read_media_preview_config_json(client: &Client) -> String {
 
 /// The FFI-visible shape for "no per-room override" — room not found, not
 /// logged in, or no override event present.
-#[cfg(not(test))]
+#[cfg_attr(test, allow(dead_code))]
 fn none_room_override_json() -> String {
     r#"{"has_media_previews":false,"media_previews":2,"join_rule":""}"#.to_owned()
 }
@@ -1469,7 +1469,7 @@ impl ClientFfi {
     /// Returns JSON: `{"base_url":"https://...","error":"","supports_password":bool}`
     /// on success or `{"base_url":"","error":"...","supports_password":false}` on
     /// failure. Uses raw HTTP — no SDK Client construction required.
-    #[cfg(not(test))]
+    #[cfg_attr(test, allow(dead_code))]
     fn discovery_json_str(base_url: &str, error: &str, supports_password: bool) -> String {
         serde_json::json!({
             "base_url": base_url,
@@ -1686,5 +1686,85 @@ mod password_support_tests {
     fn absent_when_body_is_not_an_object() {
         let body = serde_json::Value::Null;
         assert!(!login_flows_support_password(&body));
+    }
+}
+
+#[cfg(test)]
+mod json_helper_tests {
+    use super::*;
+
+    #[test]
+    fn no_room_override_json_is_valid_and_reports_no_override() {
+        let v: serde_json::Value = serde_json::from_str(&none_room_override_json()).unwrap();
+        assert_eq!(v["has_media_previews"], false);
+        assert_eq!(v["join_rule"], "");
+        // Must agree with the FFI encoding of the default ("on") preview mode.
+        assert_eq!(
+            v["media_previews"],
+            crate::media_preview::MediaPreviews::On.to_u8()
+        );
+    }
+
+    #[test]
+    fn discovery_json_carries_all_three_fields() {
+        let v: serde_json::Value =
+            serde_json::from_str(&ClientFfi::discovery_json_str("https://hs.example.org", "", true))
+                .unwrap();
+        assert_eq!(v["base_url"], "https://hs.example.org");
+        assert_eq!(v["error"], "");
+        assert_eq!(v["supports_password"], true);
+    }
+
+    #[test]
+    fn discovery_json_error_has_empty_base_url_shape() {
+        let v: serde_json::Value =
+            serde_json::from_str(&ClientFfi::discovery_json_str("", "nope", false)).unwrap();
+        assert_eq!(v["base_url"], "");
+        assert_eq!(v["error"], "nope");
+        assert_eq!(v["supports_password"], false);
+    }
+
+    #[test]
+    fn discovery_json_escapes_quotes_and_newlines_in_errors() {
+        let msg = "bad \"host\"\nline2 \\ end";
+        let v: serde_json::Value =
+            serde_json::from_str(&ClientFfi::discovery_json_str("", msg, false)).unwrap();
+        assert_eq!(v["error"], msg);
+    }
+
+    #[test]
+    fn dm_request_invite_is_preserved_in_order() {
+        let a = matrix_sdk::ruma::UserId::parse("@a:x.org").unwrap();
+        let b = matrix_sdk::ruma::UserId::parse("@b:x.org").unwrap();
+        let r = ClientFfi::build_dm_create_room_request(vec![a.clone(), b.clone()]);
+        assert_eq!(r.invite, vec![a, b]);
+    }
+
+    #[test]
+    fn dm_initial_state_is_an_encryption_event_with_megolm() {
+        let r = ClientFfi::build_dm_create_room_request(Vec::new());
+        let json: serde_json::Value =
+            serde_json::from_str(r.initial_state[0].json().get()).unwrap();
+        assert_eq!(json["type"], "m.room.encryption");
+        assert_eq!(json["state_key"], "");
+        assert_eq!(json["content"]["algorithm"], "m.megolm.v1.aes-sha2");
+    }
+
+    #[test]
+    fn msc4491_dm_body_reason_is_not_trimmed_or_dropped_when_empty() {
+        let uid = matrix_sdk::ruma::UserId::parse("@bob:example.org").unwrap();
+        let body = ClientFfi::build_msc4491_dm_create_room_body(&uid, "");
+        assert_eq!(body["uk.timedout.msc4491.invite_reason"], "");
+        let body = ClientFfi::build_msc4491_dm_create_room_body(&uid, "  spaced \"q\" ");
+        assert_eq!(body["uk.timedout.msc4491.invite_reason"], "  spaced \"q\" ");
+    }
+
+    #[test]
+    fn identity_accessors_are_empty_when_not_logged_in() {
+        let c = ClientFfi::new();
+        assert_eq!(c.user_id(), "");
+        assert_eq!(c.device_id(), "");
+        assert_eq!(c.current_user_display_name(), "");
+        assert_eq!(c.current_user_avatar_url(), "");
     }
 }

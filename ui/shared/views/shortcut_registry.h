@@ -79,11 +79,13 @@ enum class ShortcutId
     VideoSeekBack,
     VideoSeekForward,
     VideoRestart,
+    MediaPrev,
+    MediaNext,
 };
 
-// Number of ShortcutId values (VideoRestart is the last).
+// Number of ShortcutId values (MediaNext is the last).
 inline constexpr std::size_t kShortcutIdCount =
-    static_cast<std::size_t>(ShortcutId::VideoRestart) + 1;
+    static_cast<std::size_t>(ShortcutId::MediaNext) + 1;
 
 enum class ShortcutGroup
 {

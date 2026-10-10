@@ -15,40 +15,48 @@ FileDropOutcome route_file_drop_to_compose_bar(ComposeBar& cb,
         return FileDropOutcome::TooLarge;
     if (bytes.empty())
         return FileDropOutcome::Empty;
+    if (cb.pending_count() >= ComposeBar::kMaxAttachments)
+        return FileDropOutcome::TooMany;
 
-    // For gif/webp/video/audio: queue the attachment first (so set_pending_*
+    // For gif/webp/video/audio: queue the attachment first (so add_pending_*
     // bumps pending_gen()), then hand the bytes to the per-shell probe keyed by
-    // the fresh generation token.
+    // the fresh generation token — pending_gen() right after add_pending_*
+    // equals the just-added item's own PendingAttachment::gen, so this still
+    // targets the right item even when other attachments are already queued.
     const auto probe = [&](std::vector<std::uint8_t> b, std::string m)
     {
         if (extract)
             extract(cb.pending_gen(), std::move(b), std::move(m));
     };
 
+    // Appends rather than replaces: dropping N files calls this once per
+    // file (see host_win32.cpp/host_macos.mm/host_gtk.cpp/host_qt.cpp's
+    // drop loops), so this is the single chokepoint that turns "drop
+    // multiple files" into a queued multi-attachment send.
     if (mime == "image/gif" || mime == "image/webp")
     {
         // Show the first frame immediately; detect animation in the background.
-        cb.set_pending_image(bytes, mime, filename, /*is_animated=*/false);
+        cb.add_pending_image(bytes, mime, filename, /*is_animated=*/false);
         probe(std::move(bytes), std::move(mime));
     }
     else if (mime.rfind("image/", 0) == 0)
     {
-        cb.set_pending_image(std::move(bytes), std::move(mime),
+        cb.add_pending_image(std::move(bytes), std::move(mime),
                              std::move(filename), /*is_animated=*/false);
     }
     else if (mime.rfind("video/", 0) == 0)
     {
-        cb.set_pending_video(bytes, mime, filename);
+        cb.add_pending_video(bytes, mime, filename);
         probe(std::move(bytes), std::move(mime));
     }
     else if (mime.rfind("audio/", 0) == 0)
     {
-        cb.set_pending_audio(bytes, mime, filename);
+        cb.add_pending_audio(bytes, mime, filename);
         probe(std::move(bytes), std::move(mime));
     }
     else
     {
-        cb.set_pending_file(std::move(bytes), std::move(mime),
+        cb.add_pending_file(std::move(bytes), std::move(mime),
                             std::move(filename));
     }
     return FileDropOutcome::Accepted;

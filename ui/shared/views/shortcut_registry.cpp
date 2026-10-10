@@ -161,7 +161,7 @@ std::vector<ShortcutDef> build(tk::Platform platform)
          tk::N_("Pan a zoomed image"),
          {key(Key::Left), key(Key::Right), key(Key::Up), key(Key::Down)}},
         {ShortcutId::VideoPlayPause, G::MediaViewers, S::Contextual,
-         tk::N_("Play / pause a video"),
+         tk::N_("Play / pause media"),
          {key(Key::Space, tk::ModNone, Sh), chr("k", tk::ModNone, Sh)}},
         {ShortcutId::VideoSeekBack, G::MediaViewers, S::Contextual,
          tk::N_("Skip back 5 seconds"), {key(Key::Left, tk::ModNone, Sh)}},
@@ -169,6 +169,14 @@ std::vector<ShortcutDef> build(tk::Platform platform)
          tk::N_("Skip forward 5 seconds"), {key(Key::Right, tk::ModNone, Sh)}},
         {ShortcutId::VideoRestart, G::MediaViewers, S::Contextual,
          tk::N_("Restart the video"), {key(Key::Home, tk::ModNone, Sh)}},
+        // A page gets the key first (video seeks on Left/Right, a zoomed image
+        // pans), so the arrows only navigate when the page declines them.
+        {ShortcutId::MediaPrev, G::MediaViewers, S::Contextual,
+         tk::N_("Previous item in a gallery"),
+         {key(Key::PageUp, tk::ModNone, Sh), key(Key::Left)}},
+        {ShortcutId::MediaNext, G::MediaViewers, S::Contextual,
+         tk::N_("Next item in a gallery"),
+         {key(Key::PageDown, tk::ModNone, Sh), key(Key::Right)}},
     };
     return v;
 }
@@ -233,7 +241,7 @@ std::string group_title(ShortcutGroup group)
     case G::Composer: return tk::tr("Message box");
     case G::Pickers: return tk::tr("Pickers and lists");
     case G::DatePicker: return tk::tr("Date picker");
-    case G::MediaViewers: return tk::tr("Image and video viewer");
+    case G::MediaViewers: return tk::tr("Media viewer");
     }
     return {};
 }

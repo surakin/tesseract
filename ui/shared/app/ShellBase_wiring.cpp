@@ -22,7 +22,6 @@
 #include "views/JoinRoomView.h"
 #include "views/ConfirmDialog.h"
 #include "views/MainAppWidget.h"
-#include "views/VideoViewerOverlay.h"
 #include "views/RoomListView.h"
 #include "views/InviteDialog.h"
 #include "views/text_util.h"
@@ -34,6 +33,7 @@
 #include "views/html_spans.h"
 #include "views/image_pack_order.h"
 #include "views/map_tiles.h"
+#include "views/media_viewer_items.h"
 #include "views/pronoun_utils.h"
 #include "views/thread_unread.h"
 #include <tesseract/paths.h>
@@ -67,7 +67,7 @@ namespace tesseract
 // Wire MainAppWidget-level + RoomListView/RoomView/UserInfo providers
 // that read from tk_avatars_, tk_images_, anim_cache_, and
 // url_preview_data_. Each shell calls this once during construction after
-// creating its MainAppWidget. Does NOT touch image_viewer/video_viewer
+// creating its MainAppWidget. Does NOT touch media_viewer
 // (RoomPane::wire_room_view_ owns those, via main_room_pane_) nor
 // non-provider callbacks (on_room_selected, on_scroll, on_search_clear,
 // etc.) — those touch shell-specific state and stay in the per-shell ctor.
@@ -324,16 +324,17 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
     // Restore section collapsed state from the previous session.
     {
         auto& s = tesseract::Settings::instance();
-        const bool init[views::RoomListView::kNumSections] = {
-            s.room_section_invites_collapsed,
-            s.room_section_unread_collapsed,
-            s.room_section_favorites_collapsed,
-            s.room_section_dms_collapsed,
-            s.room_section_rooms_collapsed,
-            s.room_section_spaces_collapsed,
-            s.room_section_inactive_collapsed,
-            s.room_section_space_unjoined_collapsed,
-        };
+        // Indexed by section id, not positional: sections have been inserted
+        // mid-enum before (kSecCallRooms), which silently shifted the mapping.
+        bool init[views::RoomListView::kNumSections] = {};
+        init[views::RoomListView::kSecInvites]       = s.room_section_invites_collapsed;
+        init[views::RoomListView::kSecUnread]        = s.room_section_unread_collapsed;
+        init[views::RoomListView::kSecFavorites]     = s.room_section_favorites_collapsed;
+        init[views::RoomListView::kSecDMs]           = s.room_section_dms_collapsed;
+        init[views::RoomListView::kSecRooms]         = s.room_section_rooms_collapsed;
+        init[views::RoomListView::kSecSpaces]        = s.room_section_spaces_collapsed;
+        init[views::RoomListView::kSecInactive]      = s.room_section_inactive_collapsed;
+        init[views::RoomListView::kSecSpaceUnjoined] = s.room_section_space_unjoined_collapsed;
         for (int sec = 0; sec < views::RoomListView::kNumSections; ++sec)
             app->room_list_view()->set_section_collapsed(sec, init[sec]);
     }
@@ -595,11 +596,11 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
     app->room_view()->on_avatar_clicked =
         [this, app](std::string url, std::string name)
     {
-        if (url.empty() || !app->image_viewer())
+        if (url.empty() || !app->media_viewer())
             return;
         ensure_viewer_fullres_(url);
-        app->image_viewer()->open(url, url, name, 0, 0);
-        app->show_image_viewer(true);
+        app->media_viewer()->open(views::item_from_avatar(url, name));
+        app->show_media_viewer(true);
         // Trigger the shell-wired relayout so the surface repaints with the
         // viewer visible (mirrors the per-shell on_image_clicked path).
         if (app->room_view()->on_layout_changed)

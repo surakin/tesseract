@@ -1379,6 +1379,16 @@ public:
             emoji_font.setPointSize(emoji_pt);
             const QFontMetricsF base_fm(base);
             const QFontMetricsF emoji_fm(emoji_font);
+            // `code` spans render in the platform fixed-pitch face (<code>
+            // below), which is wider than the body face: measure them with it
+            // or the cut lands too late and the text overruns max_width.
+            QFont code_font = base;
+            apply_monospace(code_font);
+            const QFontMetricsF code_fm(code_font);
+            const auto metrics_for = [&](const TextSpan& sp)
+                -> const QFontMetricsF& {
+                return sp.code ? code_fm : (sp.is_emoji_run ? emoji_fm : base_fm);
+            };
             const qreal ell_w =
                 base_fm.horizontalAdvance(QChar(0x2026)); // "…"
             const qreal img_w =
@@ -1392,8 +1402,7 @@ public:
                 if (sp.is_image)
                     return sp.pill_kind != PillKind::Generic ? pill_width(sp)
                                                              : img_w;
-                return (sp.is_emoji_run ? emoji_fm : base_fm)
-                    .horizontalAdvance(q);
+                return metrics_for(sp).horizontalAdvance(q);
             };
             for (const auto& sp : spans)
             {
@@ -1421,8 +1430,7 @@ public:
                     }
                     if (!sp.is_image)
                     {
-                        const QFontMetricsF& m =
-                            sp.is_emoji_run ? emoji_fm : base_fm;
+                        const QFontMetricsF& m = metrics_for(sp);
                         QString kept;
                         for (int c = 0; c < q.size();)
                         {

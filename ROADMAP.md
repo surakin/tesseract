@@ -96,6 +96,35 @@ and in-progress work, as a single backlog ordered by priority/urgency.
   different bytes.
 - **`TestSurface` doesn't cover CoreGraphics** — QPainter, Cairo, and D2D
   are tested; macOS CGBitmapContext surface is still TODO.
+- **Media viewer follow-ups.** Viewer audio isn't reported to `MediaPlaybackHub` (MPRIS / media keys); gallery audio/file tiles are text-only (no glyph or waveform); the timeline grid paints only 20 gallery cells (`kMaxGalleryItems`) and the viewer browses at most 200 (`kMaxGalleryViewerItems`); with prev/next active the image page keeps its own 64 px margin on top of the nav gutter.
+- **Upstream matrix-sdk bug: duplicate-content gallery/media uploads
+  permanently wedge the send queue.** *Mitigated locally:* `sdk/src/upsert_media_store.rs`
+  wraps the SQLite media store so `replace_media_key` has upsert semantics (new
+  sessions no longer hit it; already-wedged queues are not cleaned up). Drop the
+  wrapper once upstream fixes it. `RoomSendQueue`'s
+  `update_media_cache_keys_after_upload` (matrix-sdk 0.18.0; still present in
+  0.19.1 and upstream `main` as of 2026-10-10, `send_queue/upload.rs`) renames a local media cache placeholder key to
+  the real post-upload `mxc://` URI via `MediaStore::replace_media_key`,
+  which isn't safe against the destination key already existing. When a
+  homeserver's content-addressed dedup returns the *same* `mxc://` URI for
+  two separately-queued uploads (trivially reproducible: send two galleries
+  containing byte-identical file content, e.g. resending the same test
+  images), the second rename hits SQLite's `UNIQUE constraint failed:
+  media.uri, media.format`. Worse, `apply_dependent_requests`
+  (`send_queue/mod.rs`) never removes a dependent request that errored —
+  only on success — so the failed request retries forever, every queue
+  tick, persisted across app restarts, spamming
+  `matrix_sdk::send_queue: error when applying single dependent request`
+  indefinitely. Confirmed via `RUST_LOG=matrix_sdk::send_queue=trace`
+  session logs 2026-07-27. Not fixable from this repo (matrix-sdk is a
+  pinned Cargo dependency, no local patch applied) — needs an upstream fix
+  to `replace_media_key`'s conflict handling (upsert semantics) and/or
+  `apply_dependent_requests`' permanent-failure handling (giving up and
+  surfacing a real send failure instead of retrying forever). Low
+  real-world likelihood (requires resending byte-identical content) but a
+  genuine, permanently-stuck failure mode when it hits — worth reporting
+  upstream and/or revisiting when matrix-sdk is next bumped past 0.19.1 (re-check `replace_media_key`
+  in `matrix-sdk-sqlite` for upsert semantics).
 - **Code health — god-object decomposition.** Remaining cuts:
   `MessageListView`'s `TextSelectionModel`, `ReactionChipUI`, `ActionPillUI`
   (woven through `paint_row` + the pointer-dispatch switch; smoke-test

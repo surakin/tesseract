@@ -1143,4 +1143,80 @@ mod key_event_tests {
         let c = content("!r:x.org", "m.call", "CLAIMED");
         assert!(check_key_event_fields("!r:x.org", &c, Some(Some("ACTUAL"))).is_err());
     }
+
+    #[test]
+    fn error_messages_name_the_cause() {
+        let c = content("!other:x.org", "m.call", "DEV");
+        assert_eq!(
+            check_key_event_fields("!r:x.org", &c, None).unwrap_err(),
+            "sent unencrypted"
+        );
+        assert!(check_key_event_fields("!r:x.org", &c, Some(Some("DEV")))
+            .unwrap_err()
+            .contains("!other:x.org"));
+        let c = content("!r:x.org", "m.whiteboard", "DEV");
+        assert!(check_key_event_fields("!r:x.org", &c, Some(Some("DEV")))
+            .unwrap_err()
+            .contains("m.whiteboard"));
+        let c = content("!r:x.org", "m.call", "CLAIMED");
+        let e = check_key_event_fields("!r:x.org", &c, Some(Some("ACTUAL"))).unwrap_err();
+        assert!(e.contains("CLAIMED") && e.contains("ACTUAL"), "{e}");
+    }
+
+    #[test]
+    fn unencrypted_is_rejected_before_other_checks() {
+        // Wrong room and wrong application, but the unencrypted verdict wins.
+        let c = content("!other:x.org", "m.whiteboard", "DEV");
+        assert_eq!(
+            check_key_event_fields("!r:x.org", &c, None).unwrap_err(),
+            "sent unencrypted"
+        );
+    }
+}
+
+#[cfg(test)]
+mod id_tests {
+    use super::*;
+
+    #[test]
+    fn member_id_is_a_v4_uuid() {
+        for _ in 0..50 {
+            let id = new_member_id();
+            let parts: Vec<&str> = id.split('-').collect();
+            assert_eq!(
+                parts.iter().map(|p| p.len()).collect::<Vec<_>>(),
+                vec![8, 4, 4, 4, 12],
+                "{id}"
+            );
+            assert!(id.chars().all(|c| c == '-' || c.is_ascii_hexdigit()), "{id}");
+            assert!(id.chars().all(|c| !c.is_ascii_uppercase()), "{id}");
+            assert!(parts[2].starts_with('4'), "version nibble: {id}");
+            assert!(
+                matches!(parts[3].chars().next(), Some('8' | '9' | 'a' | 'b')),
+                "variant nibble: {id}"
+            );
+        }
+    }
+
+    #[test]
+    fn member_ids_are_unique() {
+        let ids: std::collections::HashSet<String> = (0..200).map(|_| new_member_id()).collect();
+        assert_eq!(ids.len(), 200);
+    }
+
+    #[test]
+    fn session_ids_strictly_increase() {
+        let a = next_session_id();
+        let b = next_session_id();
+        let c = next_session_id();
+        assert!(a < b && b < c);
+    }
+
+    #[test]
+    fn heartbeat_beats_the_delayed_leave_and_refresh_beats_expiry() {
+        // The dead-man's switch must be re-armed before it fires...
+        assert!(DELAYED_LEAVE_HEARTBEAT < DELAYED_LEAVE_DELAY);
+        // ...and the membership must be resent well inside its 4 h validity.
+        assert!(MEMBERSHIP_REFRESH < Duration::from_secs(4 * 3600));
+    }
 }

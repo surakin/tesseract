@@ -55,6 +55,18 @@ public:
                              }
                              fire_progress();
                          });
+        // Decode / playback failure (unsupported codec, corrupt data, no
+        // output device): stop ticking and tell the owner.
+        QObject::connect(&player_, &QMediaPlayer::errorOccurred, &player_,
+                         [this](QMediaPlayer::Error, const QString&)
+                         {
+                             ticker_.stop();
+                             fire_progress();
+                             if (on_error)
+                             {
+                                 on_error();
+                             }
+                         });
         // QMediaPlayer does not reset position() to 0 on natural completion
         // (it stays at/near duration()), so playbackStateChanged/
         // positionChanged alone can't tell "reached the end" apart from
@@ -78,6 +90,7 @@ public:
         // positionChanged synchronously, which would invoke fire_progress() →
         // on_progress() → repaint into an already-destroyed widget tree.
         on_progress = nullptr;
+        on_error = nullptr;
         player_.stop();
         // Detach from buffer_ before buffer_/bytes_ are freed.
         // player_ is declared last so ~QMediaPlayer() runs before ~QBuffer().

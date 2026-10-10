@@ -35,6 +35,8 @@ using std::min;
 #include "views/format.h"
 #include "views/BrandView.h"
 #include "views/MainAppWidget.h"
+#include "views/MediaViewerOverlay.h"
+#include "views/media_viewer_items.h"
 #include "views/ComposePopups.h"
 #include "views/ShortcodeController.h"
 #include "views/ShortcodePopup.h"
@@ -192,6 +194,8 @@ public:
     // so the labels can be translated.
     static std::wstring file_filter(
         std::initializer_list<std::pair<std::string, const wchar_t*>> entries);
+    // OPENFILENAMEW filter for a MediaSaveSpec (its type group + "All files").
+    static std::wstring save_filter_for(const tesseract::views::MediaSaveSpec& spec);
     void wire_key_dialog_callbacks_();
     // Wires HistoryExportController::show_save_folder_dialog to a native
     // folder picker. Called once per ensure_history_export_controller_()
@@ -369,8 +373,7 @@ private:
 
     // Borrowed sub-view pointers (extracted from main_app_ for convenience).
     tesseract::views::RoomListView* room_list_view_ = nullptr;
-    tesseract::views::ImageViewerOverlay* img_viewer_ = nullptr;
-    tesseract::views::VideoViewerOverlay* vid_viewer_ = nullptr;
+    tesseract::views::MediaViewerOverlay* media_viewer_ = nullptr;
     tesseract::views::RoomMediaView* room_media_view_ = nullptr;
 
     // Borrowed from main_app_->room_view()->compose_bar()->text_area() —

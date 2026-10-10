@@ -632,7 +632,7 @@ void ProgressBar::paint(PaintCtx& ctx)
             ctx.canvas.fill_rounded_rect(chunk, kProgressRadius, pal.accent);
 
         // Self-drive the animation: schedule the next frame while
-        // indeterminate, matching ImageViewerOverlay's loading-spinner
+        // indeterminate, matching the media viewer's loading-spinner
         // idiom (see loading_spinner.h's doc comment) — just via the
         // built-in host() accessor since this is an ordinary child widget.
         if (host())

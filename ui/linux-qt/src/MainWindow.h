@@ -22,6 +22,7 @@ class QMoveEvent;
 #include "tk/canvas.h"
 #include "tk/host.h"
 #include "tk/host_qt.h"
+#include "tk/i18n.h"
 #include "LinuxQtTrayIcon.h"
 #include "QtKRunnerPlugin.h"
 #include "QtMprisPlayer.h"
@@ -29,6 +30,7 @@ class QMoveEvent;
 #include "views/BrandView.h"
 #include "views/MainAppWidget.h"
 #include "views/MentionController.h"
+#include "views/media_viewer_items.h"
 #include "views/MentionPopup.h"
 #include "views/ShortcodeController.h"
 #include "views/ShortcodePopup.h"
@@ -55,6 +57,24 @@ namespace qt6
 
 class LoginView;
 class SettingsWidget;
+
+/// Qt file-dialog filter string for a media save: "<Group> (*.a *.b);;All files (*.*)",
+/// or just the all-files entry when the spec has no specific group.
+inline QString save_filter_for(const tesseract::views::MediaSaveSpec& spec)
+{
+    const QString all = QString::fromStdString(tk::tr("All files")) + " (*.*)";
+    if (spec.filter_name.empty())
+    {
+        return all;
+    }
+    QStringList patterns;
+    for (const auto& p : spec.patterns)
+    {
+        patterns << QString::fromStdString(p);
+    }
+    return QString::fromStdString(spec.filter_name) + " (" + patterns.join(' ') +
+           ");;" + all;
+}
 
 /// Thin QObject wrapper around EventHandlerBase so Qt can own it as a
 /// child and the SDK can pass it as an IEventHandler*. All marshalling

@@ -356,4 +356,224 @@ mod tests {
             .and_then(|t| t.livekit_service_url);
         assert_eq!(found.as_deref(), Some("https://lk.example.com"));
     }
+
+    fn jwt_with_payload(payload: &str) -> String {
+        use base64ct::{Base64UrlUnpadded, Encoding};
+        format!(
+            "e30.{}.sig",
+            Base64UrlUnpadded::encode_string(payload.as_bytes())
+        )
+    }
+
+    #[test]
+    fn decode_jwt_sub_reads_sub_claim() {
+        let jwt = jwt_with_payload(r#"{"sub":"@alice:example.org:DEVICE","exp":1}"#);
+        assert_eq!(
+            decode_jwt_sub(&jwt).as_deref(),
+            Some("@alice:example.org:DEVICE")
+        );
+    }
+
+    #[test]
+    fn decode_jwt_sub_rejects_malformed_tokens() {
+        assert_eq!(decode_jwt_sub(""), None);
+        assert_eq!(decode_jwt_sub("only-one-part"), None);
+        // Payload is not base64url.
+        assert_eq!(decode_jwt_sub("a.!!!.c"), None);
+        // Valid base64 but not JSON.
+        assert_eq!(decode_jwt_sub(&jwt_with_payload("not json")), None);
+    }
+
+    #[test]
+    fn decode_jwt_sub_rejects_missing_or_non_string_sub() {
+        assert_eq!(decode_jwt_sub(&jwt_with_payload(r#"{"iss":"x"}"#)), None);
+        assert_eq!(decode_jwt_sub(&jwt_with_payload(r#"{"sub":42}"#)), None);
+        assert_eq!(decode_jwt_sub(&jwt_with_payload(r#"{"sub":null}"#)), None);
+    }
+
+    #[test]
+    fn transports_response_defaults_to_empty_list() {
+        let parsed: TransportsResponse = serde_json::from_str("{}").unwrap();
+        assert!(parsed.rtc_transports.is_empty());
+    }
+
+    #[test]
+    fn transports_response_ignores_non_livekit_and_missing_url() {
+        let body = r#"{"rtc_transports": [
+            {"type": "other", "livekit_service_url": "https://nope"},
+            {"type": "livekit"}
+        ]}"#;
+        let parsed: TransportsResponse = serde_json::from_str(body).unwrap();
+        assert_eq!(parsed.rtc_transports.len(), 2);
+        let found = parsed
+            .rtc_transports
+            .into_iter()
+            .find(|t| t.kind == "livekit" || t.kind.ends_with(".livekit"))
+            .and_then(|t| t.livekit_service_url);
+        assert_eq!(found, None);
+    }
+
+    #[test]
+    fn sfu_get_request_body_shape() {
+        let body = SfuGetRequest {
+            openid_token: OpenIdTokenObject {
+                access_token: "tok",
+                expires_in: 3600,
+                matrix_server_name: "example.org",
+                token_type: "Bearer",
+            },
+            device_id: "DEV",
+            room: "!r:example.org",
+        };
+        assert_eq!(
+            serde_json::to_value(&body).unwrap(),
+            serde_json::json!({
+                "openid_token": {
+                    "access_token": "tok",
+                    "expires_in": 3600,
+                    "matrix_server_name": "example.org",
+                    "token_type": "Bearer",
+                },
+                "device_id": "DEV",
+                "room": "!r:example.org",
+            })
+        );
+    }
+
+    #[test]
+    fn get_token_request_body_shape() {
+        let body = GetTokenRequest {
+            room_id: "!r:example.org",
+            slot_id: "m.call#ROOM",
+            openid_token: OpenIdTokenObject {
+                access_token: "tok",
+                expires_in: 1,
+                matrix_server_name: "example.org",
+                token_type: "Bearer",
+            },
+            member: MemberObject {
+                id: "mid",
+                claimed_device_id: "DEV",
+                claimed_user_id: "@a:example.org",
+            },
+        };
+        let v = serde_json::to_value(&body).unwrap();
+        assert_eq!(v["room_id"], "!r:example.org");
+        assert_eq!(v["slot_id"], "m.call#ROOM");
+        assert_eq!(v["member"]["id"], "mid");
+        assert_eq!(v["member"]["claimed_device_id"], "DEV");
+        assert_eq!(v["member"]["claimed_user_id"], "@a:example.org");
+        assert_eq!(v["openid_token"]["token_type"], "Bearer");
+    }
+
+    /// Serve canned `(status, body)` responses, one per connection, on a
+    /// loopback port; returns the base URL and a handle yielding the
+    /// request-lines seen.
+    async fn serve(
+        responses: Vec<(u16, &'static str)>,
+    ) -> (String, tokio::task::JoinHandle<Vec<String>>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let handle = tokio::spawn(async move {
+            let mut seen = Vec::new();
+            for (status, body) in responses {
+                let (mut sock, _) = listener.accept().await.unwrap();
+                let mut buf = vec![0u8; 8192];
+                let mut got = 0;
+                // Read until the headers (and a short JSON body) have arrived.
+                loop {
+                    let n = sock.read(&mut buf[got..]).await.unwrap();
+                    if n == 0 {
+                        break;
+                    }
+                    got += n;
+                    let text = String::from_utf8_lossy(&buf[..got]);
+                    if let Some(h) = text.find("\r\n\r\n") {
+                        let len = text[..h]
+                            .lines()
+                            .find_map(|l| {
+                                l.to_ascii_lowercase()
+                                    .strip_prefix("content-length:")
+                                    .and_then(|v| v.trim().parse::<usize>().ok())
+                            })
+                            .unwrap_or(0);
+                        if got >= h + 4 + len {
+                            break;
+                        }
+                    }
+                }
+                let text = String::from_utf8_lossy(&buf[..got]).to_string();
+                seen.push(text.lines().next().unwrap_or("").to_owned());
+                let resp = format!(
+                    "HTTP/1.1 {status} X\r\ncontent-type: application/json\r\n\
+                     content-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                sock.write_all(resp.as_bytes()).await.unwrap();
+                let _ = sock.shutdown().await;
+            }
+            seen
+        });
+        (base, handle)
+    }
+
+    async fn call_jwt(base: &str) -> anyhow::Result<LiveKitTransport> {
+        let http = reqwest::Client::new();
+        fetch_livekit_jwt(
+            &http, base, "!r:example.org", "slot", "tok", 60, "example.org", "mid", "DEV",
+            "@a:example.org",
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn fetch_jwt_uses_sfu_get_when_available() {
+        let (base, seen) =
+            serve(vec![(200, r#"{"jwt":"J","url":"wss://sfu.example.org"}"#)]).await;
+        // Trailing slash on the service URL must not produce `//sfu/get`.
+        let t = call_jwt(&format!("{base}/")).await.unwrap();
+        assert_eq!(t.jwt, "J");
+        assert_eq!(t.server_url, "wss://sfu.example.org");
+        assert_eq!(t.service_url, format!("{base}/"));
+        let seen = seen.await.unwrap();
+        assert_eq!(seen.len(), 1);
+        assert!(seen[0].starts_with("POST /sfu/get "), "{}", seen[0]);
+    }
+
+    #[tokio::test]
+    async fn fetch_jwt_falls_back_to_get_token_on_404() {
+        let (base, seen) = serve(vec![
+            (404, "{}"),
+            (200, r#"{"jwt":"LEGACY","url":"wss://old.example.org"}"#),
+        ])
+        .await;
+        let t = call_jwt(&base).await.unwrap();
+        assert_eq!(t.jwt, "LEGACY");
+        assert_eq!(t.server_url, "wss://old.example.org");
+        let seen = seen.await.unwrap();
+        assert!(seen[0].starts_with("POST /sfu/get "));
+        assert!(seen[1].starts_with("POST /get_token "));
+    }
+
+    #[tokio::test]
+    async fn fetch_jwt_reports_non_404_failure_without_fallback() {
+        let (base, seen) = serve(vec![(500, "boom")]).await;
+        let e = call_jwt(&base).await.unwrap_err().to_string();
+        assert!(e.contains("500") && e.contains("boom"), "{e}");
+        assert_eq!(seen.await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn fetch_jwt_reports_legacy_failure() {
+        let (base, _seen) = serve(vec![(404, ""), (403, "denied")]).await;
+        let e = call_jwt(&base).await.unwrap_err().to_string();
+        assert!(e.contains("/get_token") && e.contains("403") && e.contains("denied"), "{e}");
+    }
+
+    #[tokio::test]
+    async fn fetch_jwt_rejects_malformed_success_body() {
+        let (base, _seen) = serve(vec![(200, r#"{"jwt":"only"}"#)]).await;
+        assert!(call_jwt(&base).await.is_err());
+    }
 }

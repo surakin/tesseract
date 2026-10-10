@@ -1722,6 +1722,7 @@ async fn handle_message_notification(
         MessageType::File(f) => (f.body.trim().to_owned(), "m.file"),
         MessageType::Audio(a) => (a.body.trim().to_owned(), "m.audio"),
         MessageType::Video(v) => (v.body.trim().to_owned(), "m.video"),
+        MessageType::Gallery(g) => (g.body.trim().to_owned(), "m.gallery"),
         _ => return,
     };
     if body.is_empty() {

@@ -22,7 +22,6 @@
 #include "views/JoinRoomView.h"
 #include "views/ConfirmDialog.h"
 #include "views/MainAppWidget.h"
-#include "views/VideoViewerOverlay.h"
 #include "views/RoomListView.h"
 #include "views/InviteDialog.h"
 #include "views/text_util.h"
@@ -223,6 +222,16 @@ void ShellBase::evict_media_bytes_(const tk::CacheKey& key) const
 }
 
 // ── Pre-paint disk-cache media prefetch ─────────────────────────────────────
+
+std::pair<int, int> ShellBase::media_decode_clamp_(MediaKind kind,
+                                                   const tk::CacheKey& cache_key)
+{
+    if (cache_key.usage == tk::CacheUsage::PickerSticker)
+    {
+        return {cache_key.w, cache_key.h};
+    }
+    return media_prefetch_decode_clamp_(kind);
+}
 
 std::pair<int, int> ShellBase::media_prefetch_decode_clamp_(MediaKind kind)
 {
@@ -490,8 +499,9 @@ void ShellBase::run_media_prefetch_impl_(
                 // store stays the one and only UI callback this task posts —
                 // media_prefetch_in_flight_ and the batch caches are all
                 // UI-thread-only, hence the hop.
+                const std::string key_id = key.id;
                 post_to_ui_(
-                    [this, batch, became_ready,
+                    [this, batch, became_ready, kind, group_id, key_id,
                      disk_key = std::move(disk_key)]
                     {
                         media_prefetch_in_flight_.erase(disk_key);
@@ -506,6 +516,19 @@ void ShellBase::run_media_prefetch_impl_(
                             // for the rest of the guard's window even
                             // though nothing is actually in flight.
                             media_decode_pending_until_ms_.erase(disk_key);
+                            // Hand off to the lazy fetch directly: the paint
+                            // that ran right after this prefetch dispatch hit
+                            // the guard above and returned without fetching,
+                            // and the next paint's prefetch would just
+                            // re-dispatch and re-set it, so a view with no
+                            // fetch trigger outside paint (the sticker
+                            // picker) would never load this key.
+                            if (kind != MediaKind::RoomAvatar &&
+                                kind != MediaKind::UserAvatar)
+                            {
+                                ensure_media_image_(key_id, 0, 0, group_id,
+                                                    kind);
+                            }
                             return;
                         }
                         if (!batch->deadline_passed.load(std::memory_order_acquire))
@@ -653,13 +676,6 @@ void ShellBase::run_media_prefetch_()
         // Neither picker is ever add_child'd into the widget tree (see
         // RoomView::emoji_picker()'s doc comment) — visibility lives on
         // RoomView itself, not the picker's own visible_in_tree().
-        if (auto* sp = rv->sticker_picker(); sp && rv->sticker_picker_visible())
-        {
-            for (auto& k : sp->collect_prefetchable_media_keys())
-            {
-                keys.push_back(std::move(k));
-            }
-        }
         if (auto* ep = rv->emoji_picker(); ep && rv->emoji_picker_visible())
         {
             for (auto& k : ep->collect_prefetchable_media_keys())
@@ -700,8 +716,12 @@ void ShellBase::fetch_media_pipeline_(
     std::string cache_key, tk::CacheKey disk_key, std::string inflight_key,
     std::uint64_t group_id, tesseract::Client::MediaReqKind kind,
     std::string source, std::uint32_t w, std::uint32_t h, bool animated,
-    MediaKind out_kind)
+    MediaKind out_kind, std::optional<tk::CacheKey> out_key)
 {
+    // The key the decoded result is stored under; the plain media key unless
+    // the caller (picker stickers) wants its own entry.
+    const tk::CacheKey deliver_key =
+        out_key ? std::move(*out_key) : tk::CacheKey::media(cache_key);
     MediaFetchSpec spec;
     spec.group_id = group_id;
     // cache_key is the row's media fetch_token (what the view's image_provider
@@ -733,7 +753,7 @@ void ShellBase::fetch_media_pipeline_(
             : tesseract::Client::MediaPriority::Normal;
         client_->fetch_media_async(id, group_id, kind, source, w, h, animated, prio);
     };
-    spec.on_empty_ = [this, cache_key, out_kind]
+    spec.on_empty_ = [this, cache_key, out_kind, deliver_key]
     {
         note_media_fetch_failed_(cache_key);
         // Release the decode-dedup guard set at dispatch time so a retry
@@ -741,10 +761,10 @@ void ShellBase::fetch_media_pipeline_(
         // for up to kDecodePendingWindowMs. No-op for kinds that never set
         // it (avatars/tiles).
         media_decode_pending_until_ms_.erase(cache_key);
-        on_media_bytes_ready_(tk::CacheKey::media(cache_key), out_kind, {});
+        on_media_bytes_ready_(deliver_key, out_kind, {});
     };
     spec.deliver_ =
-        [this, cache_key, out_kind, animated,
+        [this, cache_key, out_kind, animated, deliver_key,
          gen = avatar_mode_gen_](std::vector<std::uint8_t>&& bytes)
     {
         note_media_fetch_ok_(cache_key);
@@ -767,7 +787,7 @@ void ShellBase::fetch_media_pipeline_(
             deliver_animated_avatar_(cache_key, out_kind, std::move(bytes));
             return;
         }
-        on_media_bytes_ready_(tk::CacheKey::media(cache_key), out_kind, std::move(bytes));
+        on_media_bytes_ready_(deliver_key, out_kind, std::move(bytes));
     };
     run_media_fetch_(std::move(spec));
 }
@@ -853,16 +873,16 @@ std::uint64_t ShellBase::video_memory_bytes_() const
     std::uint64_t total = 0;
     if (room_view_)
         total += room_view_->video_memory_bytes();
-    if (main_app_ && main_app_->video_viewer())
-        total += main_app_->video_viewer()->memory_bytes();
+    if (main_app_ && main_app_->media_viewer())
+        total += main_app_->media_viewer()->memory_bytes();
     for (const auto& w : owned_secondary_windows_)
     {
         if (!w)
             continue;
         if (w->room_view())
             total += w->room_view()->video_memory_bytes();
-        if (w->video_viewer())
-            total += w->video_viewer()->memory_bytes();
+        if (w->media_viewer())
+            total += w->media_viewer()->memory_bytes();
     }
     return total;
 }

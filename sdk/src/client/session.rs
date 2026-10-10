@@ -91,7 +91,12 @@ impl<'de> Deserialize<'de> for SessionEnvelope {
         }
 
         let value = serde_json::Value::deserialize(deserializer)?;
-        let auth_tag = value.get("auth").and_then(|v| v.as_str()).unwrap_or("oauth");
+        let auth_tag = match value.get("auth") {
+            None => "oauth",
+            Some(v) => v.as_str().ok_or_else(|| {
+                serde::de::Error::custom("session envelope `auth` must be a string")
+            })?,
+        };
         match auth_tag {
             "oauth" => {
                 let f: OAuthFields =
@@ -1145,6 +1150,187 @@ mod envelope_tests {
             }
             SessionEnvelope::Native { .. } => panic!("expected OAuth variant"),
         }
+    }
+
+    #[test]
+    fn oauth_envelope_serializes_flat_with_tokens() {
+        let v = serde_json::to_value(sample_oauth_envelope()).unwrap();
+        assert_eq!(v["auth"], "oauth");
+        assert_eq!(v["client_id"], "test-client-id");
+        assert_eq!(v["user_id"], "@alice:example.org");
+        assert_eq!(v["device_id"], "DEVICEID");
+        assert_eq!(v["access_token"], "oauth-access-token");
+        assert_eq!(v["refresh_token"], "oauth-refresh-token");
+    }
+
+    #[test]
+    fn oauth_envelope_preserves_refresh_token_through_roundtrip() {
+        let json = serde_json::to_string(&sample_oauth_envelope()).unwrap();
+        let SessionEnvelope::OAuth { user, .. } = serde_json::from_str(&json).unwrap() else {
+            panic!("expected OAuth variant");
+        };
+        assert_eq!(user.tokens.refresh_token.as_deref(), Some("oauth-refresh-token"));
+        assert_eq!(user.meta.device_id.as_str(), "DEVICEID");
+    }
+
+    #[test]
+    fn oauth_tag_without_client_id_is_rejected() {
+        let json = r#"{"auth":"oauth","user_id":"@a:x.org","device_id":"D","access_token":"t"}"#;
+        assert!(serde_json::from_str::<SessionEnvelope>(json).is_err());
+    }
+
+    #[test]
+    fn native_tag_without_homeserver_url_is_rejected() {
+        let json = r#"{"auth":"native","user_id":"@a:x.org","device_id":"D","access_token":"t"}"#;
+        assert!(serde_json::from_str::<SessionEnvelope>(json).is_err());
+    }
+
+    #[test]
+    fn native_envelope_serializes_homeserver_url_alongside_session() {
+        let v = serde_json::to_value(sample_native_envelope()).unwrap();
+        assert_eq!(v["auth"], "native");
+        assert_eq!(v["homeserver_url"], "https://matrix.example.org");
+        assert_eq!(v["user_id"], "@bob:example.org");
+        assert!(v.get("refresh_token").is_none() || v["refresh_token"].is_null());
+    }
+
+    #[test]
+    fn unknown_tag_error_names_the_tag() {
+        let e = match serde_json::from_str::<SessionEnvelope>(r#"{"auth":"carrier_pigeon"}"#) {
+            Ok(_) => panic!("unknown tag must be rejected"),
+            Err(e) => e.to_string(),
+        };
+        assert!(e.contains("carrier_pigeon"), "{e}");
+    }
+
+    #[test]
+    fn non_string_auth_tag_is_rejected_not_treated_as_legacy() {
+        for json in [r#"{"auth":5}"#, r#"{"auth":null}"#, r#"{"auth":{"a":1}}"#] {
+            let e = match serde_json::from_str::<SessionEnvelope>(json) {
+                Ok(_) => panic!("{json} must be rejected"),
+                Err(e) => e.to_string(),
+            };
+            assert!(e.contains("`auth` must be a string"), "{json}: {e}");
+        }
+    }
+
+    #[test]
+    fn missing_auth_tag_is_still_the_legacy_oauth_shape() {
+        // Fails as an OAuth envelope (missing fields), not on the tag.
+        let e = match serde_json::from_str::<SessionEnvelope>("{}") {
+            Ok(_) => panic!("empty object is not a session"),
+            Err(e) => e.to_string(),
+        };
+        assert!(!e.contains("`auth`"), "{e}");
+        assert!(e.contains("client_id"), "{e}");
+    }
+
+    #[test]
+    fn non_object_json_is_rejected() {
+        for json in ["null", "[]", "\"oauth\"", "42"] {
+            assert!(serde_json::from_str::<SessionEnvelope>(json).is_err(), "{json}");
+        }
+    }
+
+    #[test]
+    fn native_envelope_with_refresh_token_roundtrips() {
+        let SessionEnvelope::Native { homeserver_url, mut session } = sample_native_envelope()
+        else {
+            unreachable!()
+        };
+        session.tokens.refresh_token = Some("rt".to_owned());
+        let env = SessionEnvelope::Native { homeserver_url, session };
+        let json = serde_json::to_string(&env).unwrap();
+        let SessionEnvelope::Native { session, .. } = serde_json::from_str(&json).unwrap() else {
+            panic!("expected Native variant");
+        };
+        assert_eq!(session.tokens.refresh_token.as_deref(), Some("rt"));
+    }
+}
+
+#[cfg(test)]
+mod ffi_state_tests {
+    use super::*;
+
+    fn temp_dir(tag: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "tess-session-{tag}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ))
+    }
+
+    #[test]
+    fn oauth_await_callback_requires_a_flow() {
+        let c = ClientFfi::new();
+        let r = c.oauth_await_callback();
+        assert!(!r.ok);
+        assert!(r.message.contains("oauth_begin"), "{}", r.message);
+    }
+
+    #[test]
+    fn oauth_commit_requires_a_flow() {
+        let mut c = ClientFfi::new();
+        let r = c.oauth_commit();
+        assert!(!r.ok);
+        assert!(r.message.contains("oauth_begin"), "{}", r.message);
+        assert!(c.client.is_none());
+    }
+
+    #[test]
+    fn restore_session_rejects_unknown_auth_tag_with_parse_error() {
+        let mut c = ClientFfi::new();
+        let r = c.restore_session(r#"{"auth":"carrier_pigeon"}"#);
+        assert!(!r.ok);
+        assert!(r.message.starts_with("parse session JSON:"), "{}", r.message);
+        assert!(r.message.contains("carrier_pigeon"), "{}", r.message);
+        assert!(c.client.is_none());
+    }
+
+    #[test]
+    fn restore_session_rejects_empty_input() {
+        let mut c = ClientFfi::new();
+        let r = c.restore_session("");
+        assert!(!r.ok);
+        assert!(r.message.starts_with("parse session JSON:"), "{}", r.message);
+    }
+
+    #[test]
+    fn get_server_info_is_empty_when_not_logged_in() {
+        assert_eq!(ClientFfi::new().get_server_info(), "");
+    }
+
+    #[test]
+    fn clear_caches_requires_a_logged_in_client() {
+        let mut c = ClientFfi::new();
+        let r = c.clear_caches();
+        assert!(!r.ok);
+        assert_eq!(r.message, "not logged in");
+    }
+
+    #[test]
+    fn logout_without_client_removes_the_data_dir() {
+        let dir = temp_dir("logout");
+        let mut c = ClientFfi::new();
+        c.set_data_dir(dir.to_str().unwrap());
+        assert!(dir.exists());
+        std::fs::write(dir.join("matrix-sdk-state.sqlite3"), b"x").unwrap();
+
+        let r = c.logout();
+        assert!(r.ok, "{}", r.message);
+        assert!(!dir.exists(), "logout must wipe the per-account directory");
+    }
+
+    #[test]
+    fn logout_without_client_tolerates_a_missing_data_dir() {
+        let dir = temp_dir("logout-missing");
+        let mut c = ClientFfi::new();
+        c.set_data_dir(dir.to_str().unwrap());
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(c.logout().ok);
     }
 }
 

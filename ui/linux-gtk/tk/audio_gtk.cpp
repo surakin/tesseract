@@ -90,6 +90,12 @@ public:
             {
                 gst_object_unref(sink);
             }
+            // A missing plugin is a playback failure the owner should show.
+            playing_ = false;
+            if (on_error)
+            {
+                on_error();
+            }
             return;
         }
 
@@ -309,6 +315,10 @@ private:
             self->playing_ = false;
             self->stop_timer();
             self->fire_progress();
+            if (self->on_error)
+            {
+                self->on_error();
+            }
             break;
         case GST_MESSAGE_DURATION_CHANGED:
             self->fire_progress();

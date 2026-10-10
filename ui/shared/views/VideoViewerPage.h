@@ -1,6 +1,7 @@
 #pragma once
 
-#include "MediaOverlayBase.h"
+#include "MediaTransportBar.h"
+#include "MediaViewerPage.h"
 
 #include "tk/canvas.h"
 #include "tk/video.h"
@@ -16,47 +17,49 @@
 namespace tesseract::views
 {
 
-// Full-window video lightbox overlay. Parallel to ImageViewerOverlay.
+// Video page of MediaViewerOverlay: video surface (or thumbnail / placeholder /
+// error), loading spinner and the transport controls (play, scrub, speed).
+// Non-widget — the overlay owns the scrim, chrome buttons and pointer routing,
+// and forwards to this page; the play and speed buttons are real tk::Button
+// children of the overlay, hidden while the page is inactive.
 //
-// Usage:
-//   1. Call set_video_player() with a platform-created tk::VideoPlayer.
-//   2. Set the image provider (same lambda as MessageListView).
-//   3. Wire on_close to hide the host surface/window.
-//   4. Call open() when the user clicks a video thumbnail.
-//   5. Call load_bytes() once the async byte fetch completes.
-//   6. The shell handles Escape natively by calling close() when is_open().
-class VideoViewerOverlay : public MediaOverlayBase
+// Delivery (load_bytes / the stream calls) is driven by MediaViewerOverlay,
+// which drops calls carrying a stale load token before they reach here.
+class VideoViewerPage : public MediaViewerPage
 {
 public:
-    VideoViewerOverlay();
+    explicit VideoViewerPage(MediaViewerPageHost& host);
 
-    // Show the overlay for the given video. Transitions to the loading state
-    // while waiting for load_bytes(). The thumbnail is shown immediately.
-    // The fi.mau.* params default to false so existing callers need no changes.
-    void open(std::string source_json, std::string thumb_url,
-              std::string mime_type, std::uint64_t duration_ms, int natural_w,
-              int natural_h, bool loop = false, bool no_audio = false,
-              bool hide_controls = false);
+    void activate(const MediaViewerItem& item) override;
+    // Stops playback and drops any buffered stream data.
+    void deactivate() override;
+    void arrange(tk::LayoutCtx& lc, tk::Rect bounds) override;
+    void paint_content(tk::PaintCtx&) override;
+    void paint_controls(tk::PaintCtx&) override;
+    bool on_content_pointer_down(tk::Point world, tk::Point local) override;
+    bool on_content_pointer_up(tk::Point world, tk::Point local,
+                               bool inside_self) override;
+    // Continues a scrub-bar drag: the host forwards every pointer-move here
+    // after on_content_pointer_down claimed the press (see press_scrub_),
+    // until the matching pointer-up.
+    void on_pointer_drag(tk::Point local) override;
+    // Space / K play-pause, Left/Right seek +-5 s, Home restarts.
+    bool on_key(const tk::KeyEvent& e) override;
+    bool controls_hovered() const override;
 
-    // Hide the overlay. Stops playback and fires on_close.
-    void close();
     bool is_loading() const
     {
         return is_loading_;
     }
 
-    // On-screen video bounds (valid once arrange/paint has run while open).
-    // Exposed for shells and tests; mirrors ImageViewerOverlay::image_rect().
+    // On-screen video bounds (valid once arrange/paint has run while active).
     tk::Rect video_rect() const
     {
         return video_rect_;
     }
 
-    // Test-only accessors — e.g. to verify their dynamic accessible names
-    // (updated every paint() from is_playing()/rate_) without duplicating
-    // the layout math needed to click-test them via pointer events.
-    tk::Button* play_btn_for_test() const { return play_btn_; }
-    tk::Button* speed_btn_for_test() const { return speed_btn_; }
+    tk::Button* play_btn() const { return bar_.play_btn(); }
+    tk::Button* speed_btn() const { return bar_.speed_btn(); }
 
     // Called on the UI thread once the async byte fetch completes.
     // Starts playback immediately.
@@ -94,53 +97,21 @@ public:
                stream_buffer_.capacity();
     }
 
-    // Same provider lambda used by MessageListView.
-    void
-    set_image_provider(std::function<const tk::Image*(const std::string&)> fn);
-
-    // on_close / on_save / set_repaint_requester are inherited from
-    // MediaOverlayBase. For video the save callback receives
-    // (source_json_, mime_type_).
-
-    // Widget overrides
-    tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void paint(tk::PaintCtx&) override;
-
-    bool on_pointer_down(tk::Point local) override;
-    void on_pointer_up(tk::Point local, bool inside_self) override;
-    // Continues a scrub-bar drag: the host forwards every pointer-move here
-    // after on_pointer_down claimed the press (see press_scrub_), until the
-    // matching pointer-up. Lets the user drag the playhead instead of only
-    // click-to-seek.
-    void on_pointer_drag(tk::Point local) override;
-    // Swallow wheel input whenever the lightbox is open so it never falls
-    // through the overlay stack to the room timeline underneath and drives
-    // an invisible backward-pagination scroll (see ImageViewerOverlay's
-    // identical override and RoomView::MessageBlocker for the same hazard).
-    bool on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
-
-protected:
-    bool on_content_pointer_down_(tk::Point world, tk::Point local) override;
-    // Space / K play-pause, Left/Right seek ±5 s, Home restarts.
-    bool on_content_key_(const tk::KeyEvent& e) override;
-    // Relative seek, clamped to [0, duration] and (while streaming) to what's
-    // downloaded so far — the same limit seek_from_scrub_x_ applies.
-    void seek_by_ms_(std::int64_t delta_ms);
-    bool on_content_pointer_up_(tk::Point world, tk::Point local,
-                                bool inside_self) override;
-    void fire_save_() override;
-    void dismiss_() override;
-    void on_fullscreen_changed_(bool fullscreen) override;
-
 private:
     void do_play_or_pause();
     void cycle_speed();
     void recompute_layout(tk::LayoutCtx& lc);
-    // Shared by the initial scrub-bar press and every drag move after it:
-    // maps world-space x to a fraction of scrub_bar_'s width and seeks
-    // there. No-op if the duration isn't known yet or scrub_bar_ is empty.
-    void seek_from_scrub_x_(float world_x);
+    // Relative seek, clamped to [0, duration] and (while streaming) to what's
+    // downloaded so far — the same limit seek_from_scrub_x_ applies.
+    void seek_by_ms_(std::int64_t delta_ms);
+    // Scrub target from the transport bar (already clamped to what's
+    // downloaded): seeks to that fraction of the duration. No-op if the
+    // duration isn't known yet.
+    void seek_to_fraction_(float frac);
+    MediaTransportBar::State transport_state_() const;
+
+    // True once a seek would do something (player loaded, no error, duration known).
+    bool seekable_() const;
 
     bool is_loading_ = false;
     std::chrono::steady_clock::time_point loading_start_{};
@@ -151,28 +122,24 @@ private:
     int natural_w_ = 0;
     int natural_h_ = 0;
     float rate_ = 1.0f;
-    // fi.mau.* playback hints — reset on each open().
+    // fi.mau.* playback hints — reset on each activate().
     bool loop_ = false;
     bool no_audio_ = false;
     bool hide_controls_ = false;
 
+    MediaViewerPageHost& host_;
+    bool active_ = false;
+
     std::unique_ptr<tk::VideoPlayer> video_player_;
-    std::function<const tk::Image*(const std::string&)> image_provider_;
 
     tk::Rect video_rect_{};
     tk::Rect controls_bar_{};
-    tk::Rect scrub_bar_{};
 
-    // Real tk::Button children (Icon variant — hover/press/keyboard-activation,
-    // fill/hover-cross-fade, and the play glyph itself all come from Button).
-    // Positioned by recompute_layout(); paint() still draws the rate text /
-    // pause bars over speed_btn_ / play_btn_ since those aren't plain icons.
-    tk::Button* play_btn_ = nullptr;
-    tk::Button* speed_btn_ = nullptr;
+    // Play / scrub / speed strip (its buttons are real tk::Button children of
+    // the overlay, owned through the bar).
+    MediaTransportBar bar_;
 
     bool has_error_ = false;
-
-    bool press_scrub_ = false;
 
     // Set by begin_stream_or_buffer() from tk::VideoPlayer::begin_stream()'s
     // return value: true if the player is consuming feed_stream_chunk()
@@ -205,7 +172,7 @@ private:
     std::uint64_t stream_bytes_fed_ = 0;
 
     // Shared body of load_bytes() / the buffering-mode path of end_stream():
-    // apply loop/mute and call video_player_->play(). Guards on is_open_.
+    // apply loop/mute and call video_player_->play(). Guards on active_.
     void finish_load_(const std::uint8_t* data, std::size_t size);
 };
 

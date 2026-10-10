@@ -70,6 +70,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <cmath>
 #include <optional>
 #include <set>
 #include <string>
@@ -1634,6 +1635,12 @@ protected:
     // sizes from the same shared tesseract::visual constants) and the
     // avatar-decode branch's fixed kAvatarCacheSize clamp.
     static std::pair<int, int> media_prefetch_decode_clamp_(MediaKind kind);
+
+    // Decode clamp for bytes delivered to on_media_bytes_ready_ under
+    // `cache_key`: a picker-sticker key carries its own size, every other key
+    // falls back to media_prefetch_decode_clamp_(kind). The shells use this.
+    static std::pair<int, int> media_decode_clamp_(MediaKind kind,
+                                                   const tk::CacheKey& cache_key);
 
     // Only these kinds decode via the thread-safe decode_image_() virtual
     // with a uniform size clamp — see the scope note above
@@ -4287,6 +4294,23 @@ protected:
                              std::uint64_t group_id = 0,
                              MediaKind kind = MediaKind::MediaImage);
 
+    // Sticker picker cell decode edge in device pixels (cell size × display
+    // scale).
+    int picker_sticker_px_() const
+    {
+        return std::max(1, static_cast<int>(std::lround(
+                               visual::kStickerPickerCell * current_scale_)));
+    }
+    tk::CacheKey picker_sticker_key_(const std::string& url) const
+    {
+        const int px = picker_sticker_px_();
+        return tk::CacheKey::picker_sticker(url, px, px);
+    }
+    // Like ensure_media_image_ for a sticker, but decodes at the picker cell
+    // size into its own cache entry (the downloaded bytes are shared with the
+    // timeline's), so the picker never holds timeline-sized frames.
+    void ensure_picker_sticker_(const std::string& url);
+
     // Fetch + decode the full-resolution image for the lightbox viewer into
     // viewer_fullres_ (keyed by the plain source token / avatar mxc), then
     // relayout the main surface and every pop-out.
@@ -4301,7 +4325,7 @@ protected:
 
     // Shared image-viewer provider: full-res first, then the existing
     // anim → image → thumbnail fallthrough. Used by every RoomPane's
-    // img_viewer_/vid_viewer_ image_provider (main window and pop-outs
+    // media_viewer_ image_provider (main window and pop-outs
     // alike), via RoomPane::shell_image_.
     const tk::Image* viewer_image_lookup_(const std::string& mxc);
 
@@ -4311,7 +4335,8 @@ protected:
                                tesseract::Client::MediaReqKind kind,
                                std::string source, std::uint32_t w,
                                std::uint32_t h, bool animated,
-                               MediaKind out_kind);
+                               MediaKind out_kind,
+                               std::optional<tk::CacheKey> out_key = std::nullopt);
 
     // Compressed-bytes cache (L1) in front of media_disk_cache_ (L2), keyed by
     // the same disk-cache key.
@@ -4480,7 +4505,8 @@ protected:
                                   const std::string&,
                                   bool hovered) -> const tk::Image*
         {
-            const tk::CacheKey key = tk::CacheKey::media(cache_key);
+            const tk::CacheKey key = is_sticker ? picker_sticker_key_(cache_key)
+                                                : tk::CacheKey::media(cache_key);
             gate_anim_playback_(key, hovered);
             if (const auto* f = account_manager_.anim_cache().current_frame(key))
             {
@@ -4491,7 +4517,17 @@ protected:
             {
                 return img;
             }
-            ensure_picker_image_(cache_key, is_sticker);
+            if (is_sticker)
+            {
+                // Lazy path like the timeline sticker (animated stickers
+                // decode windowed, a few frames resident), but decoded at the
+                // picker cell size under its own key.
+                ensure_picker_sticker_(cache_key);
+            }
+            else
+            {
+                ensure_picker_image_(cache_key, false);
+            }
             return nullptr;
         };
     }

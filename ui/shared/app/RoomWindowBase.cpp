@@ -1,5 +1,6 @@
 #include "app/RoomWindowBase.h"
 #include "app/ShellBase.h"
+#include "views/MediaViewerOverlay.h"
 
 #include <algorithm>
 #include <cmath>
@@ -21,6 +22,18 @@ RoomWindowBase::RoomWindowBase(ShellBase* shell, std::string room_id)
             owner_ = owner;
         }
     }
+}
+
+bool RoomWindowBase::close_media_viewer_if_open_()
+{
+    if (!media_viewer_ || !media_viewer_->is_open())
+    {
+        return false;
+    }
+    media_viewer_->close();
+    media_viewer_->set_visible(false);
+    request_relayout();
+    return true;
 }
 
 RoomWindowBase::~RoomWindowBase()

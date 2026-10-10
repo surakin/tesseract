@@ -999,6 +999,66 @@ void Client::send_video_async(std::uint64_t request_id,
                                   reply_event_id, thread_root);
 }
 
+namespace
+{
+rust::String gallery_item_kind_str(GalleryItemOut::Kind kind)
+{
+    switch (kind)
+    {
+        case GalleryItemOut::Kind::Image: return "image";
+        case GalleryItemOut::Kind::Video: return "video";
+        case GalleryItemOut::Kind::Audio: return "audio";
+        case GalleryItemOut::Kind::File:  return "file";
+    }
+    return "file";
+}
+
+rust::Vec<std::uint8_t> to_rust_vec(const std::vector<std::uint8_t>& bytes)
+{
+    rust::Vec<std::uint8_t> out;
+    out.reserve(bytes.size());
+    for (auto b : bytes)
+    {
+        out.push_back(b);
+    }
+    return out;
+}
+} // namespace
+
+void Client::send_gallery_async(std::uint64_t request_id,
+                                const std::string& room_id,
+                                const std::vector<GalleryItemOut>& items,
+                                const std::string& caption,
+                                const std::string& reply_event_id,
+                                const std::string& thread_root)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    rust::Vec<tesseract_ffi::GalleryItemOutFfi> ffi_items;
+    ffi_items.reserve(items.size());
+    for (const auto& item : items)
+    {
+        ffi_items.push_back(tesseract_ffi::GalleryItemOutFfi{
+            .kind             = gallery_item_kind_str(item.kind),
+            .bytes            = to_rust_vec(item.bytes),
+            .mime_type        = item.mime_type,
+            .filename         = item.filename,
+            .width            = item.width,
+            .height           = item.height,
+            .is_animated      = item.is_animated,
+            .thumbnail_bytes  = to_rust_vec(item.thumbnail_bytes),
+            .thumb_width      = item.thumb_width,
+            .thumb_height     = item.thumb_height,
+            .duration_ms      = item.duration_ms,
+        });
+    }
+    impl_->ffi->send_gallery_async(request_id, room_id, std::move(ffi_items),
+                                   caption, reply_event_id, thread_root);
+}
+
 void Client::send_audio_async(std::uint64_t request_id,
                                const std::string& room_id,
                                const std::vector<uint8_t>& bytes,

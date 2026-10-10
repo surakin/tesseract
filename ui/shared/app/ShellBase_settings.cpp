@@ -22,7 +22,6 @@
 #include "views/JoinRoomView.h"
 #include "views/ConfirmDialog.h"
 #include "views/MainAppWidget.h"
-#include "views/VideoViewerOverlay.h"
 #include "views/RoomListView.h"
 #include "views/InviteDialog.h"
 #include "views/text_util.h"
@@ -160,8 +159,7 @@ void ShellBase::handle_user_pack_pending_image_added_(
 void ShellBase::apply_bridge_overrides_(std::vector<RoomInfo>&          rooms,
                                         const std::vector<std::string>& overrides) const
 {
-    if (overrides.empty())
-        return;
+    // An empty list must still clear flags left from a removed override.
     for (auto& r : rooms)
     {
         r.bridge_overridden =

@@ -301,8 +301,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
             current_room_id_);
         main_room_pane_->attach({
             .room_view = mainApp_->room_view(),
-            .img_viewer = mainApp_->image_viewer(),
-            .vid_viewer = mainApp_->video_viewer(),
+            .media_viewer = mainApp_->media_viewer(),
             .forward_picker = mainApp_->forward_picker(),
             .room_media_view = mainApp_->room_media_view(),
             .focus_forward_picker_field = [this] { focus_forward_picker_field_(); },
@@ -449,12 +448,12 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                 QPoint(static_cast<int>(world.x), static_cast<int>(world.y))));
         };
 
-        // ---- Image + video viewers ----
+        // ---- Media viewer ----
         // Providers / repaint / on_close come from RoomPane::wire_room_view_
         // via main_room_pane_->attach() above; only the video player is
         // shell-specific (needs this window's Host), same as every pop-out
         // wires it directly in its own constructor.
-        mainApp_->video_viewer()->set_video_player(mainAppSurface_->host().make_video_player());
+        mainApp_->media_viewer()->set_video_player(mainAppSurface_->host().make_video_player());
 
         // ---- Room view ----
         mainApp_->room_view()->set_shortcode_provider(
@@ -649,8 +648,9 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
         // includes the same MSC4027 shortcode lookup this block used to do
         // inline).
         // on_send / on_send_reply / on_send_edit / on_send_image /
-        // on_send_video / on_send_audio / on_send_file already provided by
-        // main_room_pane_->attach() above (RoomPane::wire_room_view_), which
+        // on_send_video / on_send_audio / on_send_file / on_send_gallery
+        // already provided by main_room_pane_->attach() above
+        // (RoomPane::wire_room_view_), which
         // is a verbatim port of this window's old on_send body — including
         // the composer mention-draft-to-markdown conversion — so nothing is
         // lost by dropping the local copy. on_send_reply/on_send_edit now
@@ -691,30 +691,21 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
         // main_room_pane_->attach() above (RoomPane::wire_room_view_), which
         // uses this window's own Deps.grab_surface_focus (mainAppSurface_->
         // setFocus()) in place of the direct call this window used to make.
-        mainApp_->image_viewer()->on_save =
-            [this](std::string source_url, std::string filename_hint)
-        {
-            std::string suggested = filename_hint.empty() ? "image" : filename_hint;
-            QString path = QFileDialog::getSaveFileName(
-                this, QString::fromStdString(tk::tr("Save image")),
-                QString::fromStdString(suggested),
-                QString::fromStdString(tk::tr("Images (*.jpg *.jpeg *.png *.gif *.webp);;All files (*.*)")));
-            if (path.isEmpty())
-                return;
-            std::string dest = path.toStdString();
-            if (client_)
+        // One save handler for every viewer kind: RoomPane builds the spec
+        // (title / suggested name / filter) and writes the file; this window
+        // only shows the dialog.
+        main_room_pane_->install_media_viewer_save_(
+            [this](const tesseract::views::MediaSaveSpec& spec,
+                   std::function<void(std::string)> done)
             {
-                auto req_id = begin_media_req_(0,
-                    [dest](std::vector<std::uint8_t> bytes) mutable
-                    {
-                        if (bytes.empty()) return;
-                        std::ofstream f(dest, std::ios::binary);
-                        f.write(reinterpret_cast<const char*>(bytes.data()),
-                                static_cast<std::streamsize>(bytes.size()));
-                    });
-                client_->fetch_source_bytes_async(req_id, source_url);
-            }
-        };
+                QString path = QFileDialog::getSaveFileName(
+                    this, QString::fromStdString(spec.title),
+                    QString::fromStdString(spec.suggested_name), save_filter_for(spec));
+                if (!path.isEmpty())
+                {
+                    done(path.toStdString());
+                }
+            });
         // on_video_clicked (both room_view()'s and room_media_view()'s
         // gallery-reuse alias) already provided by main_room_pane_->attach()
         // above (RoomPane::wire_room_view_, which aliases
@@ -852,33 +843,6 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
         setup_dm_callbacks();
         // on_ignore_user already provided by main_room_pane_->attach() above
         // (RoomPane::wire_room_view_).
-        mainApp_->video_viewer()->on_save =
-            [this](std::string source_json, std::string mime_type)
-        {
-            std::string ext = ".mp4";
-            auto slash = mime_type.find('/');
-            if (slash != std::string::npos)
-                ext = "." + mime_type.substr(slash + 1);
-            QString path = QFileDialog::getSaveFileName(
-                this, QString::fromStdString(tk::tr("Save video")),
-                QString::fromStdString("video" + ext),
-                QString::fromStdString(tk::tr("Videos (*.mp4 *.webm *.mkv);;All files (*.*)")));
-            if (path.isEmpty())
-                return;
-            std::string dest = path.toStdString();
-            if (client_)
-            {
-                auto req_id = begin_media_req_(0,
-                    [dest](std::vector<std::uint8_t> bytes) mutable
-                    {
-                        if (bytes.empty()) return;
-                        std::ofstream f(dest, std::ios::binary);
-                        f.write(reinterpret_cast<const char*>(bytes.data()),
-                                static_cast<std::streamsize>(bytes.size()));
-                    });
-                client_->fetch_source_bytes_async(req_id, source_json);
-            }
-        };
 
         mainAppSurface_->set_root(std::move(main_app_owner));
     }
@@ -967,7 +931,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                     if (!ba.isEmpty() && mainApp_ &&
                         mainApp_->room_view()->compose_bar())
                     {
-                        mainApp_->room_view()->compose_bar()->set_pending_image(
+                        mainApp_->room_view()->compose_bar()->add_pending_image(
                             std::vector<std::uint8_t>(ba.begin(), ba.end()),
                             "image/jpeg", "selfie.jpg");
                     }
@@ -2987,7 +2951,7 @@ void MainWindow::on_media_bytes_ready_(const tk::CacheKey& cache_key,
     {
         return;
     }
-    const auto [max_w, max_h] = media_prefetch_decode_clamp_(kind);
+    const auto [max_w, max_h] = media_decode_clamp_(kind, cache_key);
     // finish_first_frame runs once per asset (frame 0, or a decoded still
     // image) — repaint/relayout/notify hooks that shouldn't re-run per frame.
     auto finish_first_frame = [this, cache_key, kind]()

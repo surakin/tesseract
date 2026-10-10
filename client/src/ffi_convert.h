@@ -642,6 +642,18 @@ inline MembershipAction parse_membership_action(const std::string& s)
     return MembershipAction::Joined;
 }
 
+/// Map the `itemtype` string carried on an FFI `GalleryItemFfi` (see
+/// `sdk/src/client/timeline_convert.rs::gallery_item_ffi_from_type`) to
+/// `GalleryItem::Kind`. Falls back to `File` for anything unrecognized
+/// (matches the Rust-side fallback for unknown/custom MSC4274 itemtypes).
+inline GalleryItem::Kind parse_gallery_item_kind(const std::string& s)
+{
+    if (s == "m.image") return GalleryItem::Kind::Image;
+    if (s == "m.video") return GalleryItem::Kind::Video;
+    if (s == "m.audio") return GalleryItem::Kind::Audio;
+    return GalleryItem::Kind::File;
+}
+
 inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e)
 {
     std::string msg_type(e.msg_type);
@@ -865,6 +877,36 @@ inline std::unique_ptr<Event> make_event(const tesseract_ffi::TimelineEvent& e)
         ev->target_display_name = std::string(e.membership_target_name);
         ev->target_avatar_url = std::string(e.membership_target_avatar_url);
         ev->reason = std::string(e.membership_reason);
+        return ev;
+    }
+
+    if (msg_type == "m.gallery")
+    {
+        auto ev = std::make_unique<GalleryEvent>();
+        assign_base(*ev, e);
+        ev->items.reserve(e.gallery_items.size());
+        for (const auto& gi : e.gallery_items)
+        {
+            GalleryItem item;
+            item.kind = parse_gallery_item_kind(std::string(gi.itemtype));
+            item.body = std::string(gi.body);
+            item.source = make_source(gi.source_url, gi.source_encrypted_json);
+            item.thumbnail = make_source(gi.thumbnail_url, gi.thumbnail_encrypted_json);
+            item.width = gi.width;
+            item.height = gi.height;
+            item.mime_type = std::string(gi.mime);
+            item.filename = std::string(gi.filename);
+            item.file_size = gi.file_size;
+            item.duration_ms = gi.duration_ms;
+            item.waveform.reserve(gi.waveform.size());
+            for (uint16_t amp : gi.waveform)
+            {
+                item.waveform.push_back(amp);
+            }
+            item.blurhash = std::string(gi.blurhash);
+            item.animated = gi.animated;
+            ev->items.push_back(std::move(item));
+        }
         return ev;
     }
 

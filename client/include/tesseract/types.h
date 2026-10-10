@@ -34,6 +34,7 @@ enum class EventType
     RoomName, // m.room.name state-event timeline row
     RoomTombstone, // m.room.tombstone: this room was upgraded to another
     Poll, // MSC3381 poll start (appended: enum ints are pinned by tests)
+    Gallery, // m.gallery, MSC4274 inline media gallery
 };
 
 /// One `m.room.member` membership transition, computed server-side by
@@ -561,6 +562,71 @@ struct MembershipStateEvent : public Event
 /// Ordered list of timeline events (oldest-first), as passed to
 /// IEventHandler::on_timeline_reset and the handle_*_ui_ virtuals.
 using EventList = std::vector<std::unique_ptr<Event>>;
+
+/// One item to upload as part of a Client::send_gallery_async call (MSC4274
+/// `m.gallery`). Input-side only — engine-agnostic, distinct from the
+/// inbound GalleryItem (below) received on already-sent gallery events.
+/// Shaped like ComposeBar::PendingAttachment but without any UI/paint state.
+struct GalleryItemOut
+{
+    enum class Kind
+    {
+        Image,
+        Video,
+        Audio,
+        File
+    };
+    Kind kind = Kind::Image;
+    std::vector<std::uint8_t> bytes;
+    std::string mime_type;
+    std::string filename;
+    std::uint32_t width = 0, height = 0; ///< Image/video only.
+    bool is_animated = false;            ///< Image only (MSC4230).
+    std::vector<std::uint8_t> thumbnail_bytes; ///< Video only: JPEG first frame.
+    std::uint32_t thumb_width = 0, thumb_height = 0;
+    std::uint64_t duration_ms = 0; ///< Video/audio only.
+};
+
+/// One item inside an inbound m.gallery (MSC4274) event. Field vocabulary
+/// deliberately mirrors ImageEvent/FileEvent/AudioEvent/VideoEvent above
+/// rather than inventing new names, since a gallery item is one of those
+/// four kinds — keeps ffi_convert.h and MessageListView's per-item handling
+/// a mechanical translation of the equivalent singular-event code.
+struct GalleryItem
+{
+    enum class Kind
+    {
+        Image,
+        Video,
+        Audio,
+        File
+    };
+    Kind kind = Kind::Image;
+    std::string body; // per-item caption/filename fallback (MSC2530-style)
+    MediaSourceRef source;
+    MediaSourceRef thumbnail; // nullptr when absent (video only)
+    uint64_t width = 0;
+    uint64_t height = 0;
+    std::string mime_type;
+    std::string filename; // explicit MSC2530 filename, may differ from body
+    uint64_t file_size = 0;
+    uint64_t duration_ms = 0; // video/audio only
+    std::vector<uint16_t> waveform; // MSC1767, audio only
+    std::string blurhash; // MSC2448, image/video only
+    bool animated = false; // MSC4230, image only
+};
+
+/// `m.gallery` message (MSC4274): a single timeline event grouping multiple
+/// media items with one shared caption (`body`, inherited from Event).
+struct GalleryEvent : public Event
+{
+    std::vector<GalleryItem> items;
+
+    GalleryEvent()
+    {
+        type = EventType::Gallery;
+    }
+};
 
 /// One thread in a room. `latest_*` fields are empty/0 when no reply summary
 /// is available. Mirror of the FFI ThreadInfo.

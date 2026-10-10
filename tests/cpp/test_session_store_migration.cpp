@@ -39,27 +39,11 @@ struct TmpConfig
     }
 };
 
-TEST_CASE("SecretStore stub: save does not crash", "[session][secret][stub][keychain]")
-{
-    const std::string uid = "@stub_test:example.org";
-    // Result depends on whether a secret service daemon is running.
-    // Just confirm the call compiles and doesn't crash.
-    bool ok = tesseract::SecretStore::save(uid, R"({"test":1})");
-    if (ok)
-        tesseract::SecretStore::remove(uid); // cleanup if it actually saved
-    (void)ok;
-}
-
-TEST_CASE("SecretStore stub: load returns nullopt for unknown user",
-          "[session][secret][stub][keychain]")
+TEST_CASE("SecretStore: load returns nullopt for unknown user",
+          "[session][secret][keychain]")
 {
     auto result = tesseract::SecretStore::load("@nonexistent_xyz:example.org");
     CHECK(!result.has_value());
-}
-
-TEST_CASE("SecretStore stub: remove is a no-op", "[session][secret][stub][keychain]")
-{
-    tesseract::SecretStore::remove("@nobody:example.org");
 }
 
 TEST_CASE("SecretStore round-trip: save and load", "[session][secret][roundtrip][keychain]")

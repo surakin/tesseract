@@ -243,10 +243,22 @@ set(_tk_sources
     views/MediaOverlayBase.cpp
     views/CameraWidget.h
     views/CameraWidget.cpp
-    views/ImageViewerOverlay.h
-    views/ImageViewerOverlay.cpp
-    views/VideoViewerOverlay.h
-    views/VideoViewerOverlay.cpp
+    views/MediaViewerItem.h
+    views/MediaViewerPage.h
+    views/media_viewer_items.h
+    views/media_viewer_items.cpp
+    views/ImageViewerPage.h
+    views/ImageViewerPage.cpp
+    views/VideoViewerPage.h
+    views/VideoViewerPage.cpp
+    views/MediaTransportBar.h
+    views/MediaTransportBar.cpp
+    views/AudioViewerPage.h
+    views/AudioViewerPage.cpp
+    views/FileViewerPage.h
+    views/FileViewerPage.cpp
+    views/MediaViewerOverlay.h
+    views/MediaViewerOverlay.cpp
     views/QuickSwitcher.h
     views/QuickSwitcher.cpp
     views/MruSwitcher.h
@@ -573,6 +585,9 @@ set(_icon_svgs
     "${_lucide_dir}/lucide-ban.svg"
     "${_lucide_dir}/lucide-languages.svg"
     "${_lucide_dir}/lucide-chevron-right.svg"
+    "${_lucide_dir}/lucide-chevron-left.svg"
+    "${_lucide_dir}/lucide-music.svg"
+    "${_lucide_dir}/lucide-file.svg"
     "${_lucide_dir}/lucide-arrow-down.svg"
     "${_lucide_dir}/lucide-arrow-up.svg"
 )

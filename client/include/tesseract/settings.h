@@ -188,7 +188,7 @@ public:
 
     // ── Media loading ────────────────────────────────────────────────
     // When true, full-resolution images and stickers are pre-fetched as rows
-    // scroll into view so ImageViewerOverlay opens instantly. When false (the
+    // scroll into view so the media viewer opens instantly. When false (the
     // default), full media is fetched on demand when the viewer is opened.
     bool prefetch_full_media = false;
 

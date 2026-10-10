@@ -23,7 +23,6 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -177,50 +176,67 @@ public:
     /// `is_animated` marks the payload as an animated GIF/WebP: it is
     /// forwarded verbatim through `on_send_image` so the host sends it via
     /// the MSC4230 raw path (skipping the re-encode that would flatten the
-    /// animation).
-    void set_pending_image(std::vector<std::uint8_t> bytes, std::string mime,
+    /// animation) — only meaningful when this ends up the sole attachment;
+    /// see trigger_send()'s doc comment for the multi-attachment caveat.
+    ///
+    /// Appends to the queue (does not replace); no-ops once kMaxAttachments
+    /// is reached. When trigger_send() runs with exactly one item queued,
+    /// behavior is unchanged from the old single-attachment API — the
+    /// existing on_send_image/file/video/audio callbacks fire exactly as
+    /// before. With two or more, on_send_gallery fires instead (MSC4274).
+    void add_pending_image(std::vector<std::uint8_t> bytes, std::string mime,
                            std::string filename = {},
                            bool is_animated = false);
 
     /// Attach a non-image file as a pending payload. Renders as a single-
-    /// line chip (paperclip + filename + size) above the input. Replaces
-    /// any pending attachment (image or file) already attached.
+    /// line chip (paperclip + filename + size). Appends to the queue; see
+    /// add_pending_image()'s doc comment for cap/gallery-dispatch behavior.
     /// `filename` is required (no synthesis) — drag-and-drop / file-picker
     /// always supplies it.
-    void set_pending_file(std::vector<std::uint8_t> bytes, std::string mime,
+    void add_pending_file(std::vector<std::uint8_t> bytes, std::string mime,
                           std::string filename);
 
     /// Attach a video as a pending payload with `loading = true`. Renders as a
     /// film-icon chip until `update_pending_attachment()` fills in the thumbnail
-    /// and metadata, at which point it switches to the thumbnail-band view.
-    void set_pending_video(std::vector<std::uint8_t> bytes, std::string mime,
+    /// and metadata. Appends to the queue; see add_pending_image()'s doc
+    /// comment for cap/gallery-dispatch behavior.
+    void add_pending_video(std::vector<std::uint8_t> bytes, std::string mime,
                            std::string filename);
 
     /// Attach an audio file as a pending payload with `loading = true`. Renders
     /// as an audio-icon chip; duration text is filled in by
     /// `update_pending_attachment()` once background extraction completes.
-    void set_pending_audio(std::vector<std::uint8_t> bytes, std::string mime,
+    /// Appends to the queue; see add_pending_image()'s doc comment for
+    /// cap/gallery-dispatch behavior.
+    void add_pending_audio(std::vector<std::uint8_t> bytes, std::string mime,
                            std::string filename);
 
     /// Called on the UI thread after background media extraction completes.
-    /// Fills in thumbnail/dimensions/duration/is_animated from `info` and
-    /// clears the `loading` flag so the preview updates immediately.
+    /// Looks up the item whose `gen` matches `info.pending_gen` (there may
+    /// be several in-flight probes at once when multiple files were just
+    /// dropped) and fills in its thumbnail/dimensions/duration/is_animated,
+    /// clearing `loading`. No-op if the item was removed before extraction
+    /// finished — never assumes "the" pending item.
     void update_pending_attachment(const MediaInfo& info);
 
-    /// Drop any attached payload (image or file). No-op when none.
+    /// Drop every attached payload. No-op when none are queued.
     void clear_pending();
 
-    /// True while any attachment (image, video, audio, or file) is queued.
+    /// Remove the attachment at `index`. No-op when out of range.
+    void remove_pending(std::size_t index);
+
+    /// True while at least one attachment (image, video, audio, or file) is queued.
     bool has_pending() const
     {
-        return pending_.has_value();
+        return !pending_.empty();
     }
 
-    /// Current pending-attachment generation counter. Increment on every
-    /// set_pending_* / clear_pending call. Shells capture this immediately
-    /// after set_pending_* and embed it in the MediaInfo they pass to
-    /// the background extractor so update_pending_attachment() can discard
-    /// results that arrive after the user replaced or removed the attachment.
+    /// Current pending-attachment generation counter — also the source of
+    /// each new item's stable `PendingAttachment::gen`. Increments on every
+    /// add_pending_* call. Shells capture this immediately after
+    /// add_pending_* (it equals the just-added item's `gen`) and embed it
+    /// in the MediaInfo they pass to the background extractor so
+    /// update_pending_attachment() can find that specific item later.
     std::uint32_t pending_gen() const { return pending_gen_; }
 
     // Attachment kinds — public so pending_for_test() callers can inspect them.
@@ -257,31 +273,62 @@ public:
 
         // Video + Audio kinds: duration in milliseconds (0 = unknown).
         std::uint64_t duration_ms = 0;
+
+        // Stable per-item identity, assigned at add_pending_*() time from
+        // the same monotonic counter pending_gen() exposes. Lets
+        // update_pending_attachment() find *this* item in the vector even
+        // after earlier items were removed (indices shift; this doesn't).
+        // Distinct from list *position* — never reused, never renumbered.
+        std::uint32_t gen = 0;
     };
 
-    /// Test accessor: returns a pointer to the current PendingAttachment, or
-    /// nullptr when none is queued. For unit tests only.
-    const PendingAttachment* pending_for_test() const
+    /// Maximum number of attachments queueable at once (send_gallery_async
+    /// beyond a single item). Not an MSC4274 wire limit (galleries reference
+    /// already-uploaded mxc:// URLs, so even 60 items' itemtypes JSON is
+    /// tiny) — it's a UI/resource bound: each queued item holds a decoded
+    /// preview in memory, and a single on_upload_complete fires for the
+    /// whole batch (Client::send_gallery_async), so a much higher cap risks
+    /// a large batch feeling hung with no per-item feedback.
+    static constexpr std::size_t kMaxAttachments = 20;
+
+    /// Test accessor: returns a pointer to the PendingAttachment at `index`,
+    /// or nullptr when out of range. For unit tests only.
+    const PendingAttachment* pending_for_test(std::size_t index = 0) const
     {
-        return pending_.has_value() ? &*pending_ : nullptr;
+        return index < pending_.size() ? &pending_[index] : nullptr;
     }
 
-    /// Move the pending attachment out without sending it (e.g. to stash it
-    /// as part of a per-room compose draft when leaving a room). Leaves the
-    /// widget in the same state as clear_pending(). Returns nullopt when
-    /// none was queued.
-    std::optional<PendingAttachment> take_pending();
+    /// Number of attachments currently queued.
+    std::size_t pending_count() const { return pending_.size(); }
 
-    /// Re-install a previously take_pending()'d attachment (e.g. restoring
-    /// a per-room draft). Replaces any attachment currently queued.
-    void restore_pending(PendingAttachment attachment);
+    /// Test accessor: world-space rect of the multi-attachment mode's
+    /// per-chip × remove badge at `index` (populated by arrange() when
+    /// pending_count() >= 2), or an empty rect when out of range. For unit
+    /// tests only.
+    tk::Rect chip_remove_rect_for_test(std::size_t index) const
+    {
+        return index < chip_remove_rects_.size() ? chip_remove_rects_[index]
+                                                  : tk::Rect{};
+    }
 
-    /// Execute the same dispatch as the send button: pending attachment →
-    /// `on_send_image`/`on_send_file`; edit mode → `on_send_edit`; reply
-    /// mode → `on_send_reply`; otherwise → `on_send`. Hosts wire both the
-    /// send-button click and the NativeTextArea submit to this method so
-    /// that attachments and reply/edit state are handled correctly on
-    /// Enter key as well as button click.
+    /// Move every pending attachment out without sending it (e.g. to stash
+    /// them as part of a per-room compose draft when leaving a room). Leaves
+    /// the widget in the same state as clear_pending(). Returns an empty
+    /// vector when none were queued.
+    std::vector<PendingAttachment> take_pending();
+
+    /// Re-install previously take_pending()'d attachments (e.g. restoring a
+    /// per-room draft). Replaces any attachments currently queued. No-op on
+    /// an empty vector.
+    void restore_pending(std::vector<PendingAttachment> attachments);
+
+    /// Execute the same dispatch as the send button: one pending attachment
+    /// → the matching scalar `on_send_image`/`on_send_file`/`on_send_video`/
+    /// `on_send_audio`; two or more → `on_send_gallery`; edit mode →
+    /// `on_send_edit`; reply mode → `on_send_reply`; otherwise → `on_send`.
+    /// Hosts wire both the send-button click and the NativeTextArea submit
+    /// to this method so that attachments and reply/edit state are handled
+    /// correctly on Enter key as well as button click.
     void trigger_send();
 
     /// Fires when `trigger_send()` runs in plain text mode (no attachment,
@@ -342,6 +389,16 @@ public:
                        std::string filename, std::string caption,
                        std::uint64_t duration_ms, std::string reply_event_id)>
         on_send_audio;
+
+    /// Fires when send runs with 2+ pending attachments queued (MSC4274
+    /// `m.gallery`). Does NOT fire for exactly one attachment — that still
+    /// goes through the scalar on_send_image/file/video/audio callbacks
+    /// above, unchanged. `caption` is the one gallery-level caption from the
+    /// compose text box; v1 has no per-item captions. Attachment order in
+    /// the vector matches queue/display order.
+    std::function<void(std::vector<PendingAttachment> items, std::string caption,
+                       std::string reply_event_id)>
+        on_send_gallery;
 
     /// Fires when the emoji button is clicked. The rect is the button's
     /// bounding box in surface-local (world) coordinates, for precise
@@ -467,7 +524,11 @@ private:
     void rebuild_chip_layouts_(tk::LayoutCtx& ctx, const std::string& key,
                                const std::string& secondary_text);
     void paint_two_line_chip_(tk::PaintCtx& ctx) const;
-    bool point_in_remove_btn(tk::Point world) const;
+    // Multi-attachment mode (pending_.size() >= 2): paints the small
+    // thumbnail grid at chip_rects_, each with a corner × at
+    // chip_remove_rects_[i] — see press_chip_remove_/on_pointer_down/up for
+    // the manual (non-Button) click handling, matching reply/edit cancel.
+    void paint_gallery_chips_(tk::PaintCtx& ctx) const;
     static std::string make_filename(const std::string& mime);
     // Cached layout used to paint the filename (and a second line for size or
     // duration) inside file/video/audio chips. Rebuilt lazily in arrange().
@@ -482,6 +543,11 @@ private:
     tk::Button* sticker_btn_ = nullptr; // borrowed
     tk::Button* mic_btn_ = nullptr;     // borrowed; hidden when no mic device
     tk::BusyButton* send_btn_ = nullptr; // borrowed
+    // Single-attachment mode only (pending_.size() == 1): borrowed remove
+    // button, hidden when nothing is queued. Multi-attachment mode (2+)
+    // uses manually hit-tested per-chip × glyphs instead — see
+    // chip_rects_/chip_remove_rects_ below, same pattern as
+    // reply_cancel_rect_/edit_cancel_rect_.
     tk::Button* remove_btn_ = nullptr;  // borrowed; hidden when no image
     // The "×" on the edit / reply banners and the recording strip — real
     // buttons positioned in arrange() and painted in paint().
@@ -508,6 +574,15 @@ private:
     tk::Rect preview_image_rect_{};
     tk::Rect remove_btn_rect_{};
 
+    // Multi-attachment mode (pending_.size() >= 2) grid geometry, rebuilt in
+    // arrange(). Index-aligned with pending_. Empty in single-attachment
+    // mode, which keeps using preview_band_rect_/preview_image_rect_/
+    // remove_btn_rect_ above unchanged.
+    std::vector<tk::Rect> chip_rects_;
+    std::vector<tk::Rect> chip_remove_rects_;
+    bool press_chip_remove_ = false;
+    std::size_t press_chip_remove_index_ = 0;
+
     // Pre-clamp natural height reported by the NativeTextArea. Starts at
     // 0 so the initial clamp() in recompute_height() floors to kMinHeight
     // (instead of pushing kMinHeight+padding through the clamp).
@@ -516,10 +591,12 @@ private:
     std::string current_text_;
     bool mic_available_ = true;
 
-    std::optional<PendingAttachment> pending_;
-    // Monotonically increasing counter, incremented by every set_pending_*()
-    // and clear_pending(). Stored in MediaInfo.pending_gen at drop time and
-    // checked in update_pending_attachment() to discard stale results.
+    std::vector<PendingAttachment> pending_;
+    // Monotonically increasing counter, incremented by every add_pending_*()
+    // call — also the source of each new item's PendingAttachment::gen.
+    // Stored in MediaInfo.pending_gen at drop time and looked up (by gen,
+    // not position) in update_pending_attachment() to find the right item
+    // and discard results for since-removed ones.
     std::uint32_t pending_gen_ = 0;
 
     // Reply state. reply_event_id_ is empty when not in reply mode.

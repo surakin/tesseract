@@ -22,7 +22,6 @@
 #include "views/JoinRoomView.h"
 #include "views/ConfirmDialog.h"
 #include "views/MainAppWidget.h"
-#include "views/VideoViewerOverlay.h"
 #include "views/RoomListView.h"
 #include "views/InviteDialog.h"
 #include "views/text_util.h"
@@ -457,6 +456,13 @@ void ShellBase::release_owned_window_(RoomWindowBase* w)
 void ShellBase::notify_secondary_media_ready_(const std::string& cache_key,
                                               MediaKind kind)
 {
+    // The sticker picker loads through the timeline's lazy sticker path, which
+    // has no picker-specific completion step: repaint it here so a sticker
+    // that lands after its cell was painted shows up.
+    if (kind == MediaKind::Sticker)
+    {
+        repaint_pickers_();
+    }
     for (const auto& [rid, w] : secondary_windows_)
     {
         views::RoomView* rv = w->room_view();

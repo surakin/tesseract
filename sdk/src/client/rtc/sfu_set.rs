@@ -266,4 +266,24 @@ mod tests {
         assert_eq!(backoff(3), Duration::from_secs(60));
         assert_eq!(backoff(50), Duration::from_secs(60));
     }
+
+    #[test]
+    fn diff_from_empty_connects_everything() {
+        let (c, d) = diff_sfus(&set(&[]), &set(&["b", "a"]));
+        assert_eq!(c, vec!["a".to_owned(), "b".to_owned()]);
+        assert!(d.is_empty());
+    }
+
+    #[test]
+    fn diff_to_empty_drops_everything() {
+        let (c, d) = diff_sfus(&set(&["x", "y"]), &set(&[]));
+        assert!(c.is_empty());
+        assert_eq!(d, vec!["x".to_owned(), "y".to_owned()]);
+    }
+
+    #[test]
+    fn backoff_zero_failures_uses_first_step() {
+        assert_eq!(backoff(0), Duration::from_secs(5));
+        assert_eq!(backoff(u32::MAX), Duration::from_secs(60));
+    }
 }

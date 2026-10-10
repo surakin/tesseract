@@ -5,9 +5,23 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+### 2026-10-10
+
+- feat(gallery): multi-attachment gallery messages (MSC4274) send and display; the room list shows "sent a gallery". Clicking a gallery item opens the media viewer, which steps through the whole gallery (prev/next buttons, "3 / 7" counter, PageUp/PageDown, Left/Right) across images, videos, audio and files. Qt6 build, user-verified Qt6
+- refactor(viewer): the image and video lightboxes are one media viewer with image, video, audio and file pages; audio plays in the viewer, files show a Save card, and starting viewer playback stops inline timeline audio. Save dialogs share one handler in every shell (fixes non-ASCII file names on Windows). Qt6 + GTK4 build, ctest 3174/3174, user-verified Qt6
+- fix(sdk): duplicate-content media uploads no longer wedge the send queue (workaround wrapping the SQLite media store's `replace_media_key`; upstream bug remains). Cargo 987, Qt6 build
+- fix(viewer): galleries over 20 items can be browsed in the viewer (up to 200; the timeline grid still shows 20 plus "+N"), a loading or failed video no longer swallows the arrow keys, an undecodable audio clip shows "Unable to play audio", re-opening the viewer while full-screen leaves full-screen, a late video fetch can't cancel the current item's download, and suggested save names carry a proper extension. The save-dialog hook is shared by all shells. Qt6 + GTK4 build, ctest 3180/3181 (one known intermittent)
+- fix(gallery): clicking a hidden (MSC4278) gallery's placeholder reveals it, and stale gallery click geometry is cleared on room switch. Qt6 build + ctest
+
+- feat(i18n): Norwegian Bokmål translation (`nb.po`, Element Web terminology) and a Language picker entry. `msgfmt -c` clean, Qt6/GTK4 build + `i18n_catalogs_complete`
+
 ### 2026-10-09
 
 - feat(i18n): add a complete Ukrainian translation and expose Ukrainian in the language selector. Gettext format checks and catalog completeness checks pass; initial live UI review pass.
+- fix(stickers): the sticker picker decodes stickers at its cell size (96 px × display scale) into its own cache entry instead of the timeline's 256 px one, and no longer goes through the pre-paint prefetch; shells share the downloaded bytes. Qt6 build + ctest 2372/2372, user-verified Qt6
+- fix(stickers): opening the sticker picker with many animated stickers no longer decodes every frame of every visible one; the picker now loads stickers through the timeline's windowed decode and repaints as they land, and uncached stickers no longer get stuck blank behind the pre-paint prefetch guard. Qt6 build + ctest 2371/2371, user-verified Qt6
+- fix(qt): mouse-wheel scrolling is full speed again on Wayland with Qt 6.12, which now reports a pixel delta for wheel notches that was being read as a touchpad. Qt6 build, user-verified Qt6 (mouse)
+- fix(timeline): a reply quote of a message with a code block or inline code no longer draws past the quote card on Qt6; the single-line truncation now measures code in the monospace face. Qt6 build, user-verified Qt6
 - fix(compose): mentions inserted in a reply are now sent as real mentions (link + `m.mentions`), so bridges such as WhatsApp detect them. Qt6 build, user-verified Qt6
 - feat(timeline): polls (MSC3381) show in the timeline with live results; you can vote, end a poll you created (or any poll if you can redact) after a confirmation, and create one with `/poll`. Undisclosed polls hide counts until ended, the room list shows "started a poll", and polls are keyboard and screen-reader operable; sends the unstable event types, and thread-panel polls are read-only. Qt6 build + ctest 2369/2369 + cargo 818
 - fix(maps): OpenStreetMap links sent with locations no longer break for senders whose locale uses a decimal comma (`mlat=51,5008`), and clicking such an old location card opens a corrected link. Qt6 build + ctest 2371/2371

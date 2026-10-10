@@ -22,7 +22,6 @@
 #include "views/JoinRoomView.h"
 #include "views/ConfirmDialog.h"
 #include "views/MainAppWidget.h"
-#include "views/VideoViewerOverlay.h"
 #include "views/RoomListView.h"
 #include "views/InviteDialog.h"
 #include "views/text_util.h"
@@ -444,6 +443,30 @@ void ShellBase::ensure_media_image_(const std::string& url, int /*max_w*/,
                           tesseract::Client::MediaReqKind::SourceFull, url,
                           /*w=*/0, /*h=*/0, /*animated=*/false,
                           kind);
+}
+
+void ShellBase::ensure_picker_sticker_(const std::string& url)
+{
+    const tk::CacheKey key = picker_sticker_key_(url);
+    if (url.empty() || account_manager_.image_cache().contains(key) ||
+        account_manager_.anim_cache().has(key) || media_decode_failed_.count(url))
+    {
+        return;
+    }
+    // In-flight/backoff identity is the picker key's own string so a timeline
+    // fetch of the same mxc (plain key) neither blocks nor satisfies this one.
+    // Disk bytes are the plain media entry, shared with the timeline.
+    const std::string flight_key = key.to_string();
+    if (media_fetch_backed_off_(flight_key) ||
+        !media_fetches_in_flight_.insert(flight_key).second)
+    {
+        return;
+    }
+    fetch_media_pipeline_(flight_key, tk::CacheKey::media(url), flight_key,
+                          /*group_id=*/0,
+                          tesseract::Client::MediaReqKind::SourceFull, url,
+                          /*w=*/0, /*h=*/0, /*animated=*/false,
+                          MediaKind::Sticker, key);
 }
 
 const tk::Image* ShellBase::viewer_image_lookup_(const std::string& mxc)

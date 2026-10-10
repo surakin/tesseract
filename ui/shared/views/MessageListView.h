@@ -30,6 +30,7 @@
 #include "views/TimelineVideoPlaylist.h"
 #include "views/map_tiles.h"
 
+#include <algorithm>
 #include <tesseract/types.h>
 
 #include <chrono>
@@ -106,6 +107,35 @@ struct MessageRowData
         RoomName,           // m.room.name state-event row
         RoomTombstone,      // m.room.tombstone state-event row ("X upgraded this room")
         Poll,               // m.poll.start (MSC3381)
+        Gallery,            // m.gallery, MSC4274 inline media gallery
+    };
+
+    /// One item inside a Kind::Gallery row. Field vocabulary deliberately
+    /// mirrors the scalar fields already on MessageRowData (media_w/media_h,
+    /// source/thumbnail, etc.) rather than inventing new names, since a
+    /// gallery item is the same shape as an Image/Video/Audio/File row.
+    struct GalleryItemRow
+    {
+        enum class Kind
+        {
+            Image,
+            Video,
+            Audio,
+            File
+        };
+        Kind kind = Kind::Image;
+        std::string body; // per-item caption/filename fallback
+        tesseract::MediaSourceRef source;
+        tesseract::MediaSourceRef thumbnail; // nullptr when absent (video only)
+        int media_w = 0;
+        int media_h = 0;
+        std::string mime_type;
+        std::string filename;
+        std::uint64_t file_size = 0;
+        std::uint64_t duration_ms = 0; // video/audio only
+        std::vector<std::uint16_t> waveform; // audio only
+        std::string blurhash; // image/video only
+        bool animated = false; // image only
     };
 
     Kind kind = Kind::Text;
@@ -284,6 +314,24 @@ struct MessageRowData
     // "their" is also a legitimate resolved answer, not just the default).
     std::string target_pronoun = "their";
     bool pronoun_resolved = false;
+
+    // Gallery (Kind::Gallery only, MSC4274). `body` above carries the
+    // gallery's shared caption.
+    // A remote sender controls the item count, so two caps apply on receive:
+    // `gallery_items` keeps at most kMaxGalleryViewerItems (what the media
+    // viewer can step through) while the timeline grid paints only the first
+    // kMaxGalleryItems cells, the last of them carrying the "+N" tile.
+    // `gallery_total` is the uncapped count.
+    static constexpr std::size_t kMaxGalleryItems = 20;
+    static constexpr std::size_t kMaxGalleryViewerItems = 200;
+    std::vector<GalleryItemRow> gallery_items;
+    std::size_t gallery_total = 0;
+
+    // Number of grid cells painted in the timeline (<= kMaxGalleryItems).
+    std::size_t gallery_painted_count() const
+    {
+        return std::min(gallery_items.size(), kMaxGalleryItems);
+    }
 };
 
 // Convert a raw SDK Event into the flat MessageRowData the shared view
@@ -821,7 +869,7 @@ public:
         int natural_w = 0;
         int natural_h = 0;
         std::uint64_t duration_ms = 0;
-        // fi.mau.* hints forwarded to VideoViewerOverlay::open().
+        // fi.mau.* hints forwarded to the media viewer via item_from_video_hit().
         bool autoplay = false;
         bool loop = false;
         bool no_audio = false;
@@ -833,6 +881,40 @@ public:
 
     /// Fires when the user left-clicks a video thumbnail card.
     std::function<void(const MessageListView::VideoHit&)> on_video_clicked;
+
+    // Gallery item geometry, recorded per-cell during paint (see
+    // gallery_item_geom_ below). A press on a cell opens the media viewer at
+    // that item via on_gallery_item_clicked; a press on a hidden gallery's
+    // placeholder (MSC4278) reveals it via on_reveal_media instead.
+    struct GalleryItemHit
+    {
+        std::string event_id;
+        std::size_t item_index = 0;
+        MessageRowData::GalleryItemRow::Kind kind =
+            MessageRowData::GalleryItemRow::Kind::Image;
+        tesseract::MediaSourceRef source;
+        tesseract::MediaSourceRef thumbnail;
+        std::uint64_t file_size = 0;
+        tk::Rect world_rect;
+    };
+
+    // Left-click on a gallery cell: the whole gallery plus the clicked index.
+    // `caption` is the gallery's shared row caption (the row's body).
+    struct GalleryHit
+    {
+        std::string event_id;
+        std::string caption;
+        std::vector<MessageRowData::GalleryItemRow> items;
+        std::size_t index = 0;
+    };
+
+    // The gallery cell (or hidden-gallery placeholder) under `world`, per the
+    // geometry recorded by the last paint.
+    std::optional<GalleryItemHit> gallery_item_hit_at(tk::Point world) const;
+
+    /// Fires when the user left-clicks a gallery cell (or picks the "Open
+    /// gallery" accessibility action, with index 0).
+    std::function<void(const MessageListView::GalleryHit&)> on_gallery_item_clicked;
 
     // File card left-click hit — fires `on_file_clicked`.
     struct FileHit
@@ -1473,6 +1555,9 @@ private:
     // Same check from a click handler that only has the event id: resolves the
     // row's `is_own` from the message list before consulting the predicate.
     bool media_is_hidden_by_eid_(const std::string& event_id) const;
+    // Builds a GalleryHit for the gallery row `event_id` and fires
+    // on_gallery_item_clicked; false when unwired or the row isn't a gallery.
+    bool fire_gallery_clicked_(const std::string& event_id, std::size_t index) const;
     // Scroll to (or ask the shell to load) the message `reply_event_id`
     // replies to — the reply-quote click. False when there's nothing to do.
     bool jump_to_reply_original_(const std::string& reply_event_id);
@@ -1617,6 +1702,12 @@ private:
     mutable std::unordered_map<std::string, VideoHit> video_geom_;
     bool press_video_ = false;
     std::string press_video_eid_;
+
+    // Gallery item geometry, keyed by "<event_id>#<item_index>". Recorded
+    // during paint; a hidden gallery records its placeholder as item 0.
+    mutable std::unordered_map<std::string, GalleryItemHit> gallery_item_geom_;
+    bool press_gallery_ = false;
+    std::string press_gallery_key_;
 
     // File card click-to-download press state.
     mutable std::unordered_map<std::string, FileHit> file_geom_;

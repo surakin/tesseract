@@ -13,8 +13,7 @@
 //   Chat panel (flex)
 //     EncryptionReminderBanner (48px, hidden by default)
 //     RoomView (flex)
-//   ImageViewerOverlay (full widget bounds, hidden by default)
-//   VideoViewerOverlay (full widget bounds, hidden by default)
+//   MediaViewerOverlay (full widget bounds, hidden by default)
 //
 // Below kNarrowBreakpoint total width, RootLayoutWidget collapses to a
 // single full-width pane (list or room) instead of the split above — see
@@ -33,7 +32,6 @@
 #include "ExportHistoryDialog.h"
 #include "CameraWidget.h"
 #include "EncryptionSetupOverlay.h"
-#include "ImageViewerOverlay.h"
 #include "QRGrantView.h"
 #include "InviteCard.h"
 #include "KnockStatusCard.h"
@@ -49,7 +47,7 @@
 #include "RoomView.h"
 #include "UserInfo.h"
 #include "EncryptionReminderBanner.h"
-#include "VideoViewerOverlay.h"
+#include "MediaViewerOverlay.h"
 #include "CallOverlayWidget.h"
 #include "ScreenPickerWidget.h"
 
@@ -136,8 +134,7 @@ public:
 
     // ── Lightbox overlays ─────────────────────────────────────────────────
 
-    void show_image_viewer(bool show);
-    void show_video_viewer(bool show);
+    void show_media_viewer(bool show);
 
     // Open the selfie camera overlay. The shell should set on_selfie_captured
     // before calling this. Calling while one is already open is a no-op.
@@ -150,7 +147,7 @@ public:
     bool camera_overlay_open() const { return camera_widget_ != nullptr; }
 
     // Set by the shell before calling open_camera_overlay(). Receives the raw
-    // BGRA8888 frame; the shell encodes it to JPEG and calls set_pending_image.
+    // BGRA8888 frame; the shell encodes it to JPEG and calls add_pending_image.
     std::function<void(std::vector<std::uint8_t> bgra,
                        std::uint32_t w, std::uint32_t h)>
         on_selfie_captured;
@@ -293,13 +290,9 @@ public:
     {
         return reminder_banner_;
     }
-    ImageViewerOverlay* image_viewer() const
+    MediaViewerOverlay* media_viewer() const
     {
-        return img_viewer_;
-    }
-    VideoViewerOverlay* video_viewer() const
-    {
-        return vid_viewer_;
+        return media_viewer_;
     }
     ConfirmDialog* confirm_dialog() const
     {
@@ -451,8 +444,7 @@ private:
 
     // Full-surface lightbox overlays (painted last — highest z-order)
     OverlayStackWidget* overlay_stack_ = nullptr;
-    ImageViewerOverlay* img_viewer_ = nullptr;
-    VideoViewerOverlay* vid_viewer_ = nullptr;
+    MediaViewerOverlay* media_viewer_ = nullptr;
     // Selfie overlay — lazily created by open_camera_overlay(), freed on dismiss.
     CameraWidget* camera_widget_ = nullptr;
     EncryptionSetupOverlay* encryption_setup_ = nullptr;

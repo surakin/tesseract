@@ -114,16 +114,18 @@ impl SharedKeys {
 
 /// Whether a key sent by `(user_id, device_id)` belongs to the LiveKit
 /// participant `identity` (`{user_id}:{device}`, or a bare `{user_id}` from
-/// older clients). Matched against the sender's own user id rather than
-/// parsed with `split_identity`, which cuts at the second `:` and so breaks
-/// for a server name with a port (`@bob:example.org:8448:PHONE`). Without a
-/// device the key can't be told apart, so it goes to every device of the user.
+/// older clients). Without a device the key can't be told apart, so it goes
+/// to every device of the user; the user part is parsed with the port-aware
+/// `parse_lk_identity`, so `@b:x.org` never matches `@b:x.org:8448:PHONE`.
 fn key_owner_matches(identity: &str, user_id: &str, device_id: &str) -> bool {
     if identity == user_id {
         return true;
     }
+    if device_id.is_empty() {
+        return matches!(parse_lk_identity(identity), Some((user, Some(_))) if user == user_id);
+    }
     match identity.strip_prefix(user_id).and_then(|rest| rest.strip_prefix(':')) {
-        Some(id_device) => device_id.is_empty() || id_device == device_id,
+        Some(id_device) => id_device == device_id,
         None => false,
     }
 }
@@ -1021,8 +1023,9 @@ fn participant_info(p: &RemoteParticipant) -> RtcParticipantInfo {
         .any(|pub_| pub_.source() == TrackSource::Screenshare && !pub_.is_muted());
     let identity = p.identity().as_str().to_owned();
     // Identity format from the JWT service: "{user_id}:{device_id}" where
-    // user_id is a Matrix ID (@localpart:server).  Split at the second ':'
-    // to recover the user_id â€” the first ':' is inside the Matrix ID itself.
+    // user_id is a Matrix ID (@localpart:server_name, where server_name may
+    // carry a port).  `split_identity` finds the device boundary, which is not
+    // simply the second ':'.
     let (user_id, device_id) = split_identity(&identity);
     RtcParticipantInfo {
         participant_id: identity,
@@ -1057,40 +1060,63 @@ fn local_participant_info(p: &LocalParticipant) -> RtcParticipantInfo {
     }
 }
 
-/// Extract the Matrix user ID prefix from a LiveKit participant identity.
+/// Parse a LiveKit identity `{user_id}:{device_id}` (user_id =
+/// `@localpart:server_name`) into `(user_id, Some(device_id))`.
 ///
-/// LiveKit identities have the form `@localpart:server:device_id`.
-/// Returns `Some("@localpart:server")` on success, `None` if the format is
-/// unexpected (e.g. the identity is not a Matrix user ID).
-fn matrix_user_id_from_lk_identity(identity: &str) -> Option<&str> {
+/// The server name may be `host`, `host:port`, `[ipv6]` or `[ipv6]:port`, so
+/// the user id can't be cut at a fixed colon. A `:<digits>:` directly after
+/// the server name is a port; a bare `:<digits>` at the end is a device.
+/// Returns `None` when the identity isn't `@...` (e.g. a hashed identity);
+/// the device is `None` when the identity carries no device part.
+fn parse_lk_identity(identity: &str) -> Option<(&str, Option<&str>)> {
     if !identity.starts_with('@') {
         return None;
     }
-    let first_colon = identity.find(':')?;
-    let after_first = &identity[first_colon + 1..];
-    let second_colon = after_first.find(':')?;
-    Some(&identity[..first_colon + 1 + second_colon])
+    let Some(first_colon) = identity.find(':') else {
+        return Some((identity, None));
+    };
+    let server_start = first_colon + 1;
+    let server = &identity[server_start..];
+    let server_len = if server.starts_with('[') {
+        match server.find(']') {
+            Some(close) => close + 1,
+            None => return Some((identity, None)),
+        }
+    } else {
+        server.find(':').unwrap_or(server.len())
+    };
+    let server_end = server_start + server_len;
+    let Some(after) = identity[server_end..].strip_prefix(':') else {
+        return Some((identity, None));
+    };
+    let digits = after.bytes().take_while(u8::is_ascii_digit).count();
+    if digits > 0 && after.as_bytes().get(digits) == Some(&b':') {
+        let user_end = server_end + 1 + digits;
+        return Some((&identity[..user_end], Some(&identity[user_end + 1..])));
+    }
+    Some((&identity[..server_end], Some(after)))
 }
 
-/// Split a LiveKit identity string of the form `@localpart:server:device_id`
+/// Extract the Matrix user ID prefix from a LiveKit participant identity.
+///
+/// LiveKit identities have the form `@localpart:server_name:device_id`.
+/// Returns `Some("@localpart:server_name")` on success, `None` if the format
+/// is unexpected (not a Matrix user ID, or no device part).
+fn matrix_user_id_from_lk_identity(identity: &str) -> Option<&str> {
+    match parse_lk_identity(identity)? {
+        (user, Some(_)) => Some(user),
+        _ => None,
+    }
+}
+
+/// Split a LiveKit identity string of the form `@localpart:server_name:device_id`
 /// into `(user_id, device_id)`.  Returns the full string and an empty device_id
 /// if the expected structure is not present.
 fn split_identity(identity: &str) -> (String, String) {
-    // Matrix IDs start with '@' and contain exactly one ':' for the server part.
-    // The JWT service appends a second ':' + device_id suffix.
-    if identity.starts_with('@') {
-        if let Some(server_colon) = identity.find(':') {
-            let after_server = &identity[server_colon + 1..];
-            if let Some(device_colon) = after_server.find(':') {
-                let uid_end = server_colon + 1 + device_colon;
-                return (
-                    identity[..uid_end].to_owned(),
-                    identity[uid_end + 1..].to_owned(),
-                );
-            }
-        }
+    match parse_lk_identity(identity) {
+        Some((user, Some(device))) => (user.to_owned(), device.to_owned()),
+        _ => (identity.to_owned(), String::new()),
     }
-    (identity.to_owned(), String::new())
 }
 
 /// Software I420 â†’ RGBA conversion from raw planes (BT.601 full-range).
@@ -1220,5 +1246,278 @@ mod participant_filter_tests {
         assert!(key_owner_matches("@b:x.org:8448:PHONE", "@b:x.org:8448", ""));
         // A different user, whose id is this one's without the port.
         assert!(!key_owner_matches("@b:x.org:8448:PHONE", "@b:x.org", "PHONE"));
+    }
+
+    #[test]
+    fn an_empty_device_key_does_not_leak_to_a_ported_server_user() {
+        assert!(!key_owner_matches("@b:x.org:8448:PHONE", "@b:x.org", ""));
+        assert!(key_owner_matches("@b:x.org:8448:PHONE", "@b:x.org:8448", ""));
+        assert!(key_owner_matches("@b:x.org:8448", "@b:x.org:8448", ""));
+        assert!(key_owner_matches("@b:[::1]:8448:PHONE", "@b:[::1]:8448", ""));
+        assert!(!key_owner_matches("@b:[::1]:8448:PHONE", "@b:[::1]", ""));
+    }
+}
+
+#[cfg(test)]
+mod helper_tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    #[test]
+    fn split_identity_separates_user_and_device() {
+        assert_eq!(
+            split_identity("@a:x.org:DEV"),
+            ("@a:x.org".to_owned(), "DEV".to_owned())
+        );
+        // Anything after the second colon belongs to the device part.
+        assert_eq!(
+            split_identity("@a:x.org:DE:V"),
+            ("@a:x.org".to_owned(), "DE:V".to_owned())
+        );
+    }
+
+    #[test]
+    fn split_identity_handles_ports_and_ipv6_server_names() {
+        let cases = [
+            ("@b:x.org:8448:PHONE", "@b:x.org:8448", "PHONE"),
+            ("@b:x.org:8448:DE:V", "@b:x.org:8448", "DE:V"),
+            ("@b:[::1]:PHONE", "@b:[::1]", "PHONE"),
+            ("@b:[::1]:8448:PHONE", "@b:[::1]:8448", "PHONE"),
+            // No further ':' after the digits: the digits are the device.
+            ("@b:x.org:8448", "@b:x.org", "8448"),
+        ];
+        for (id, user, device) in cases {
+            assert_eq!(split_identity(id), (user.to_owned(), device.to_owned()), "{id}");
+        }
+        assert_eq!(matrix_user_id_from_lk_identity("@b:x.org:8448:PHONE"), Some("@b:x.org:8448"));
+        assert_eq!(matrix_user_id_from_lk_identity("@b:[::1]:8448:P"), Some("@b:[::1]:8448"));
+        assert_eq!(matrix_user_id_from_lk_identity("@b:[::1]:P"), Some("@b:[::1]"));
+        assert_eq!(matrix_user_id_from_lk_identity("@b:x.org:8448"), Some("@b:x.org"));
+    }
+
+    #[test]
+    fn split_identity_without_device_returns_whole_string() {
+        for id in ["@a:x.org", "@a", "", "hashedidentity", "no:at:prefix"] {
+            assert_eq!(split_identity(id), (id.to_owned(), String::new()), "{id}");
+        }
+    }
+
+    #[test]
+    fn matrix_user_id_from_identity_cuts_at_the_second_colon() {
+        assert_eq!(matrix_user_id_from_lk_identity("@a:x.org:DEV"), Some("@a:x.org"));
+        assert_eq!(matrix_user_id_from_lk_identity("@a:x.org:DE:V"), Some("@a:x.org"));
+    }
+
+    #[test]
+    fn matrix_user_id_from_identity_rejects_non_matrix_identities() {
+        assert_eq!(matrix_user_id_from_lk_identity("a:x.org:DEV"), None);
+        assert_eq!(matrix_user_id_from_lk_identity("@a:x.org"), None);
+        assert_eq!(matrix_user_id_from_lk_identity("@a"), None);
+        assert_eq!(matrix_user_id_from_lk_identity(""), None);
+    }
+
+    #[test]
+    fn key_owner_bare_user_identity_matches_regardless_of_device() {
+        assert!(key_owner_matches("@a:x.org", "@a:x.org", ""));
+        assert!(key_owner_matches("@a:x.org", "@a:x.org", "ANY"));
+        assert!(!key_owner_matches("", "@a:x.org", "ANY"));
+        // Prefix without the ':' separator is a different user.
+        assert!(!key_owner_matches("@a:x.orgDEV", "@a:x.org", ""));
+    }
+
+    #[test]
+    fn copy_plane_tightly_packed_copies_everything() {
+        let src = [1u8, 2, 3, 4, 5, 6];
+        let mut dst = [0u8; 6];
+        copy_plane(&src, &mut dst, 3, 2, 3);
+        assert_eq!(dst, src);
+    }
+
+    #[test]
+    fn copy_plane_strips_row_padding() {
+        // width 2, stride 4: each row has two padding bytes (9) to drop.
+        let src = [1u8, 2, 9, 9, 3, 4, 9, 9];
+        let mut dst = [0u8; 4];
+        copy_plane(&src, &mut dst, 2, 2, 4);
+        assert_eq!(dst, [1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn copy_plane_zero_rows_is_a_noop() {
+        let mut dst = [7u8; 2];
+        copy_plane(&[], &mut dst, 2, 0, 4);
+        assert_eq!(dst, [7, 7]);
+    }
+
+    #[test]
+    fn yuv_extremes_map_to_white_black_and_grey() {
+        assert_eq!(yuv_to_rgba_pixel(255, 128, 128), [255, 255, 255, 255]);
+        assert_eq!(yuv_to_rgba_pixel(0, 128, 128), [0, 0, 0, 255]);
+        assert_eq!(yuv_to_rgba_pixel(128, 128, 128), [128, 128, 128, 255]);
+    }
+
+    #[test]
+    fn yuv_chroma_pushes_channels_the_right_way() {
+        // High V (Cr) raises red and lowers green; high U (Cb) raises blue.
+        let red = yuv_to_rgba_pixel(76, 85, 255);
+        assert!(red[0] > 240 && red[1] < 10 && red[2] < 10, "{red:?}");
+        let blue = yuv_to_rgba_pixel(29, 255, 107);
+        assert!(blue[2] > 240 && blue[0] < 10, "{blue:?}");
+        // Out-of-gamut input is clamped rather than wrapping.
+        let hot = yuv_to_rgba_pixel(255, 255, 255);
+        assert_eq!(hot[0], 255);
+        assert_eq!(hot[3], 255);
+    }
+
+    #[test]
+    fn i420_planes_to_rgba_has_expected_size_and_opaque_alpha() {
+        let y = vec![255u8; 4 * 2];
+        let u = vec![128u8; 2];
+        let v = vec![128u8; 2];
+        let out = i420_planes_to_rgba(&y, &u, &v, 4, 2, 4, 2);
+        assert_eq!(out.len(), 4 * 2 * 4);
+        assert!(out.chunks(4).all(|p| p == [255, 255, 255, 255]));
+    }
+
+    #[test]
+    fn i420_planes_to_rgba_honours_strides_and_chroma_subsampling() {
+        // 2x2 image, y stride 4 (2 padding bytes of 0xEE), uv stride 3.
+        let y = [10u8, 200, 0xEE, 0xEE, 30, 100, 0xEE, 0xEE];
+        let u = [128u8, 0xEE, 0xEE];
+        let v = [128u8, 0xEE, 0xEE];
+        let out = i420_planes_to_rgba(&y, &u, &v, 2, 2, 4, 3);
+        let grey = |p: usize| out[p * 4];
+        assert_eq!([grey(0), grey(1), grey(2), grey(3)], [10, 200, 30, 100]);
+        for p in 0..4 {
+            assert_eq!(&out[p * 4..p * 4 + 4], [grey(p), grey(p), grey(p), 255]);
+        }
+    }
+
+    #[test]
+    fn shared_keys_store_keeps_one_entry_per_device_and_index() {
+        let keys = SharedKeys::new();
+        keys.store("@a:x", "PHONE", 0, vec![1]);
+        keys.store("@a:x", "PHONE", 1, vec![2]);
+        keys.store("@a:x", "LAPTOP", 0, vec![3]);
+        keys.store("@a:x", "PHONE", 0, vec![4]); // overwrite
+        let p = keys.pending.lock().unwrap();
+        assert_eq!(p.len(), 2);
+        let phone = &p[&("@a:x".to_owned(), "PHONE".to_owned())];
+        assert_eq!(phone.len(), 2);
+        assert_eq!(phone[&0], vec![4]);
+        assert_eq!(phone[&1], vec![2]);
+        assert_eq!(p[&("@a:x".to_owned(), "LAPTOP".to_owned())][&0], vec![3]);
+    }
+
+    #[test]
+    fn member_transports_replace_swaps_the_whole_map() {
+        let m = MemberTransports::default();
+        m.replace(HashMap::from([(("@a:x".to_owned(), "D".to_owned()), "sfu1".to_owned())]));
+        assert!(m.allows("sfu1", "@a:x:D"));
+        assert!(!m.allows("sfu2", "@a:x:D"));
+        m.replace(HashMap::new());
+        // Unknown now, so allowed anywhere.
+        assert!(m.allows("sfu2", "@a:x:D"));
+    }
+
+    /// Records which participant ids reached the inner sink, per event kind.
+    #[derive(Default)]
+    struct Recorder(Mutex<Vec<String>>);
+
+    impl RtcEventSink for Recorder {
+        fn on_invitation(&self, room_id: &str, _: &str, _: &str, _: &str, _: u64, _: &str) {
+            self.0.lock().unwrap().push(format!("invite:{room_id}"));
+        }
+        fn on_participant_joined(&self, _: u64, info: RtcParticipantInfo) {
+            self.0.lock().unwrap().push(format!("joined:{}", info.participant_id));
+        }
+        fn on_participant_left(&self, _: u64, id: &str) {
+            self.0.lock().unwrap().push(format!("left:{id}"));
+        }
+        fn on_participant_updated(&self, _: u64, info: RtcParticipantInfo) {
+            self.0.lock().unwrap().push(format!("updated:{}", info.participant_id));
+        }
+        fn on_session_ended(&self, _: u64, reason: &str) {
+            self.0.lock().unwrap().push(format!("ended:{reason}"));
+        }
+        fn on_video_frame(&self, _: u64, id: &str, _: u32, _: u32, _: Vec<u8>) {
+            self.0.lock().unwrap().push(format!("video:{id}"));
+        }
+        fn on_screen_frame(&self, _: u64, id: &str, _: u32, _: u32, _: Vec<u8>) {
+            self.0.lock().unwrap().push(format!("screen:{id}"));
+        }
+        fn on_audio_frame(&self, _: u64, id: &str, _: &[i16], _: u32, _: u32) {
+            self.0.lock().unwrap().push(format!("audio:{id}"));
+        }
+    }
+
+    fn info(id: &str) -> RtcParticipantInfo {
+        RtcParticipantInfo {
+            participant_id: id.to_owned(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn filtered_sink_wrap_of_none_is_none() {
+        let m = MemberTransports::default();
+        assert!(FilteredSink::wrap(None, "sfu", &m, "@me:x:D".into()).is_none());
+    }
+
+    #[test]
+    fn filtered_sink_forwards_real_publishers_and_drops_phantoms() {
+        let rec = Arc::new(Recorder::default());
+        let members = MemberTransports::default();
+        members.replace(HashMap::from([
+            (("@b:x".to_owned(), "D".to_owned()), "sfu-here".to_owned()),
+            (("@c:x".to_owned(), "D".to_owned()), "sfu-elsewhere".to_owned()),
+        ]));
+        let sink = FilteredSink::wrap(
+            Some(rec.clone() as Arc<dyn RtcEventSink>),
+            "sfu-here",
+            &members,
+            "@me:x:D".into(),
+        )
+        .unwrap();
+
+        sink.on_participant_joined(1, info("@b:x:D")); // publishes here
+        sink.on_participant_joined(1, info("@c:x:D")); // publishes elsewhere
+        sink.on_participant_joined(1, info("hashedidentity")); // not a matrix identity
+        sink.on_participant_updated(1, info("@c:x:D"));
+        sink.on_participant_left(1, "@c:x:D");
+        sink.on_video_frame(1, "@c:x:D", 1, 1, vec![]);
+        sink.on_screen_frame(1, "@b:x:D", 1, 1, vec![]);
+        sink.on_audio_frame(1, "hashedidentity", &[0], 48000, 1);
+        sink.on_audio_frame(1, "@b:x:D", &[0], 48000, 1);
+
+        assert_eq!(
+            *rec.0.lock().unwrap(),
+            vec!["joined:@b:x:D", "screen:@b:x:D", "audio:@b:x:D"]
+        );
+    }
+
+    #[test]
+    fn filtered_sink_always_passes_local_identity_and_session_level_events() {
+        let rec = Arc::new(Recorder::default());
+        let members = MemberTransports::default();
+        // Our own identity is "known" to publish on a different SFU, yet passes.
+        members.replace(HashMap::from([(
+            ("@me:x".to_owned(), "D".to_owned()),
+            "other-sfu".to_owned(),
+        )]));
+        let sink = FilteredSink::wrap(
+            Some(rec.clone() as Arc<dyn RtcEventSink>),
+            "this-sfu",
+            &members,
+            "@me:x:D".into(),
+        )
+        .unwrap();
+        sink.on_participant_joined(2, info("@me:x:D"));
+        sink.on_session_ended(2, "bye");
+        sink.on_invitation("!r:x", "slot", "@b:x", "audio", 0, "");
+        assert_eq!(
+            *rec.0.lock().unwrap(),
+            vec!["joined:@me:x:D", "ended:bye", "invite:!r:x"]
+        );
     }
 }

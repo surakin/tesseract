@@ -3,6 +3,7 @@
 #include "app/ComposerPopups.h"
 #include "tk/i18n.h"
 #include "views/EmojiPicker.h"
+#include "views/media_viewer_items.h"
 #include "views/PopoutRoomWidget.h"
 #include "views/StickerPicker.h"
 
@@ -80,8 +81,7 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     auto room_widget = tk::create_root_widget<tesseract::views::PopoutRoomWidget>(
         &surface_->host());
     room_view_             = room_widget->room_view();
-    img_viewer_            = room_widget->image_viewer();
-    vid_viewer_            = room_widget->video_viewer();
+    media_viewer_          = room_widget->media_viewer();
     forward_picker_widget_ = room_widget->forward_picker();
     room_media_view_widget_ = room_widget->room_media_view();
     confirm_dialog_widget_ = room_widget->confirm_dialog();
@@ -98,8 +98,7 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     init_pane_(&surface_->host());
     pane_->attach({
         .room_view = room_view_,
-        .img_viewer = img_viewer_,
-        .vid_viewer = vid_viewer_,
+        .media_viewer = media_viewer_,
         .forward_picker = forward_picker_widget_,
         .room_media_view = room_media_view_widget_,
         .focus_forward_picker_field = [this]
@@ -120,10 +119,10 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         },
     });
 
-    // ── Video player for this window's VideoViewerOverlay ─────────────────
+    // ── Video player for this window's media viewer ─────────────────
     if (auto player = surface_->host().make_video_player())
     {
-        vid_viewer_->set_video_player(std::move(player));
+        media_viewer_->set_video_player(std::move(player));
     }
 
     // Inline autoplay video/GIF in the timeline (separate from the lightbox
@@ -138,69 +137,35 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
             pane_->fetch_source_bytes_(src, std::move(on_ready));
         });
 
-    // ── Image / video save dialogs ────────────────────────────────────────
-    img_viewer_->on_save =
-        [this](std::string source_url, std::string filename_hint)
-    {
-        std::string suggested = filename_hint.empty() ? "image" : filename_hint;
-        GtkFileDialog* dlg = gtk_file_dialog_new();
-        gtk_file_dialog_set_title(dlg, tk::tr("Save image").c_str());
-        gtk_file_dialog_set_initial_name(dlg, suggested.c_str());
-        struct Ctx { RoomWindow* self; std::string src; };
-        auto* ctx = new Ctx{this, std::move(source_url)};
-        gtk_file_dialog_save(dlg, GTK_WINDOW(window_), nullptr,
-            +[](GObject* dialog_obj, GAsyncResult* res, gpointer p)
-            {
-                auto* c = static_cast<Ctx*>(p);
-                GError* err = nullptr;
-                GFile* gf = gtk_file_dialog_save_finish(
-                    GTK_FILE_DIALOG(dialog_obj), res, &err);
-                if (gf)
+    // ── Media save dialog ─────────────────────────────────────────────────
+    pane_->install_media_viewer_save_(
+        [this](const tesseract::views::MediaSaveSpec& spec,
+               std::function<void(std::string)> done)
+        {
+            GtkFileDialog* dlg = gtk_file_dialog_new();
+            gtk_file_dialog_set_title(dlg, spec.title.c_str());
+            gtk_file_dialog_set_initial_name(dlg, spec.suggested_name.c_str());
+            auto* ctx = new std::function<void(std::string)>(std::move(done));
+            gtk_file_dialog_save(dlg, GTK_WINDOW(window_), nullptr,
+                +[](GObject* dialog_obj, GAsyncResult* res, gpointer p)
                 {
-                    char* cpath = g_file_get_path(gf);
-                    std::string dest(cpath);
-                    g_free(cpath);
-                    g_object_unref(gf);
-                    c->self->pane_->save_source_to_file_(std::move(c->src), dest);
-                }
-                if (err) g_error_free(err);
-                delete c;
-            }, ctx);
-        g_object_unref(dlg);
-    };
-    vid_viewer_->on_save =
-        [this](std::string source_json, std::string mime_type)
-    {
-        std::string suggested = "video";
-        if (mime_type == "video/mp4")
-            suggested = "video.mp4";
-        else if (mime_type == "video/webm")
-            suggested = "video.webm";
-        GtkFileDialog* dlg = gtk_file_dialog_new();
-        gtk_file_dialog_set_title(dlg, tk::tr("Save video").c_str());
-        gtk_file_dialog_set_initial_name(dlg, suggested.c_str());
-        struct Ctx { RoomWindow* self; std::string src; };
-        auto* ctx = new Ctx{this, std::move(source_json)};
-        gtk_file_dialog_save(dlg, GTK_WINDOW(window_), nullptr,
-            +[](GObject* dialog_obj, GAsyncResult* res, gpointer p)
-            {
-                auto* c = static_cast<Ctx*>(p);
-                GError* err = nullptr;
-                GFile* gf = gtk_file_dialog_save_finish(
-                    GTK_FILE_DIALOG(dialog_obj), res, &err);
-                if (gf)
-                {
-                    char* cpath = g_file_get_path(gf);
-                    std::string dest(cpath);
-                    g_free(cpath);
-                    g_object_unref(gf);
-                    c->self->pane_->save_source_to_file_(std::move(c->src), dest);
-                }
-                if (err) g_error_free(err);
-                delete c;
-            }, ctx);
-        g_object_unref(dlg);
-    };
+                    auto* done_fn = static_cast<std::function<void(std::string)>*>(p);
+                    GError* err = nullptr;
+                    GFile* gf = gtk_file_dialog_save_finish(
+                        GTK_FILE_DIALOG(dialog_obj), res, &err);
+                    if (gf)
+                    {
+                        char* cpath = g_file_get_path(gf);
+                        std::string dest(cpath ? cpath : "");
+                        g_free(cpath);
+                        g_object_unref(gf);
+                        (*done_fn)(std::move(dest));
+                    }
+                    if (err) g_error_free(err);
+                    delete done_fn;
+                }, ctx);
+            g_object_unref(dlg);
+        });
 
     // Full-screen toggle acts on this pop-out window.
     const auto set_fs = [this](bool on)
@@ -212,8 +177,7 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         else
             gtk_window_unfullscreen(window_);
     };
-    img_viewer_->on_request_fullscreen = set_fs;
-    vid_viewer_->on_request_fullscreen = set_fs;
+    media_viewer_->on_request_fullscreen = set_fs;
 
     room_view_->on_file_clicked =
         [this](const tesseract::views::MessageListView::FileHit& hit)
@@ -514,18 +478,8 @@ gboolean RoomWindow::on_key_pressed_(GtkEventControllerKey*, guint keyval,
             w->room_view_->close_room_search();
             return TRUE;
         }
-        if (w->vid_viewer_ && w->vid_viewer_->is_open())
+        if (w->close_media_viewer_if_open_())
         {
-            w->vid_viewer_->close();
-            w->vid_viewer_->set_visible(false);
-            w->request_relayout();
-            return TRUE;
-        }
-        if (w->img_viewer_ && w->img_viewer_->is_open())
-        {
-            w->img_viewer_->close();
-            w->img_viewer_->set_visible(false);
-            w->request_relayout();
             return TRUE;
         }
     }
