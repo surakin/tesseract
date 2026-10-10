@@ -324,16 +324,17 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
     // Restore section collapsed state from the previous session.
     {
         auto& s = tesseract::Settings::instance();
-        const bool init[views::RoomListView::kNumSections] = {
-            s.room_section_invites_collapsed,
-            s.room_section_unread_collapsed,
-            s.room_section_favorites_collapsed,
-            s.room_section_dms_collapsed,
-            s.room_section_rooms_collapsed,
-            s.room_section_spaces_collapsed,
-            s.room_section_inactive_collapsed,
-            s.room_section_space_unjoined_collapsed,
-        };
+        // Indexed by section id, not positional: sections have been inserted
+        // mid-enum before (kSecCallRooms), which silently shifted the mapping.
+        bool init[views::RoomListView::kNumSections] = {};
+        init[views::RoomListView::kSecInvites]       = s.room_section_invites_collapsed;
+        init[views::RoomListView::kSecUnread]        = s.room_section_unread_collapsed;
+        init[views::RoomListView::kSecFavorites]     = s.room_section_favorites_collapsed;
+        init[views::RoomListView::kSecDMs]           = s.room_section_dms_collapsed;
+        init[views::RoomListView::kSecRooms]         = s.room_section_rooms_collapsed;
+        init[views::RoomListView::kSecSpaces]        = s.room_section_spaces_collapsed;
+        init[views::RoomListView::kSecInactive]      = s.room_section_inactive_collapsed;
+        init[views::RoomListView::kSecSpaceUnjoined] = s.room_section_space_unjoined_collapsed;
         for (int sec = 0; sec < views::RoomListView::kNumSections; ++sec)
             app->room_list_view()->set_section_collapsed(sec, init[sec]);
     }
