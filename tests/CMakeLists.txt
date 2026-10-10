@@ -177,6 +177,40 @@ add_executable(tesseract_tests
     cpp/test_tk_thread_list_view.cpp
     cpp/test_tk_thread_view.cpp
     cpp/test_event_handler_bridge.cpp
+    cpp/test_event_handler_bridge_dispatch.cpp
+    cpp/test_event_handler_bridge_forwarding.cpp
+    cpp/test_event_handler_base.cpp
+    cpp/test_shell_wiring.cpp
+    cpp/test_composer_controllers.cpp
+    cpp/test_composer_popups.cpp
+    cpp/test_maintenance.cpp
+    cpp/test_shell_helpers.cpp
+    cpp/test_call_session.cpp
+    cpp/test_client_sessionless.cpp
+    cpp/test_shell_settings_handlers.cpp
+    cpp/test_shell_calls.cpp
+    cpp/test_shell_profile.cpp
+    cpp/test_shell_spaces.cpp
+    cpp/test_shell_accounts.cpp
+    cpp/test_settings_controller_ops.cpp
+    cpp/test_update_checkers.cpp
+    cpp/test_shell_search.cpp
+    cpp/test_shell_timeline.cpp
+    cpp/test_shell_media_images.cpp
+    cpp/test_shell_tabs.cpp
+    cpp/test_shell_room_actions.cpp
+    cpp/test_shell_account_switch.cpp
+    cpp/test_shell_roster_links.cpp
+    cpp/test_shell_cache_maintenance.cpp
+    cpp/test_shell_popouts.cpp
+    cpp/test_room_pane_actions.cpp
+    cpp/test_room_pane_widgets.cpp
+    cpp/test_shell_call_overlay.cpp
+    cpp/test_shell_verification_flow.cpp
+    cpp/test_shell_settings_misc.cpp
+    cpp/test_shell_thread_timeline.cpp
+    cpp/test_shell_export_avatar.cpp
+    cpp/test_client_sessionless_more.cpp
     cpp/test_tk_room_header.cpp
     cpp/test_tk_room_search_bar.cpp
     cpp/test_code_highlight.cpp
@@ -204,6 +238,31 @@ add_executable(tesseract_tests
     cpp/test_tk_key_chord.cpp
     cpp/test_shortcut_registry.cpp
     cpp/test_tk_tooltip.cpp
+    cpp/test_tk_combo_controls.cpp
+    cpp/test_tk_tab_bar.cpp
+    cpp/test_tk_row_cursor.cpp
+    cpp/test_tk_blurhash.cpp
+    cpp/test_tk_tooltip_paint.cpp
+    cpp/test_tk_searchable_picker.cpp
+    cpp/test_tk_create_room_view.cpp
+    cpp/test_tk_knock_requests_panel.cpp
+    cpp/test_tk_space_add_room_list.cpp
+    cpp/test_tk_space_child_grid.cpp
+    cpp/test_tk_space_root_view.cpp
+    cpp/test_tk_invite_card.cpp
+    cpp/test_tk_qr_grant_view.cpp
+    cpp/test_tk_sticker_picker_sessionless.cpp
+    cpp/test_tk_join_room_view_hosted.cpp
+    cpp/test_tk_export_history_dialog_flow.cpp
+    cpp/test_tk_room_chip_strip.cpp
+    cpp/test_tk_screen_picker_popout.cpp
+    cpp/test_tk_appearance_section.cpp
+    cpp/test_tk_user_pack_pronouns_editors.cpp
+    cpp/test_tk_message_search_view.cpp
+    cpp/test_tk_call_overlay_widget.cpp
+    cpp/test_timeline_media_controller_cards.cpp
+    cpp/test_tk_room_media_view_grid.cpp
+    cpp/test_tk_participant_tile.cpp
     cpp/test_tk_toast.cpp
     cpp/test_timeline_media_controller.cpp
     cpp/test_media_playback_hub.cpp

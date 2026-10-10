@@ -194,9 +194,23 @@ struct StubTextField : public tk::NativeTextField
     {
         on_changed = std::move(f);
     }
-    void set_on_submit(std::function<void()>) override {}
+    void set_on_submit(std::function<void()> f) override
+    {
+        on_submit = std::move(f);
+    }
+    void set_on_focus_changed(std::function<void(bool)> f) override
+    {
+        on_focus_changed = std::move(f);
+    }
+    void set_on_popup_nav(std::function<bool(tk::NavKey)> f) override
+    {
+        on_popup_nav = std::move(f);
+    }
 
     std::string text_;
+    std::function<void()> on_submit;
+    std::function<void(bool)> on_focus_changed;
+    std::function<bool(tk::NavKey)> on_popup_nav;
     // Native controls are created shown/mapped on every real backend.
     bool visible_ = true;
     bool focused_ = false;
