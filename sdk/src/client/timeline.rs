@@ -1841,3 +1841,45 @@ impl ClientFfi {
         err("not logged in")
     }
 }
+
+#[cfg(test)]
+mod visibility_mirror_tests {
+    use super::{visible_index_of, visible_len};
+
+    #[test]
+    fn visible_len_counts_only_visible_slots() {
+        assert_eq!(visible_len(&[]), 0);
+        assert_eq!(visible_len(&[false, false]), 0);
+        assert_eq!(visible_len(&[true, false, true, true]), 3);
+    }
+
+    #[test]
+    fn visible_index_of_out_of_range_clamps_to_total_visible() {
+        let mirror = [true, false, true];
+        assert_eq!(visible_index_of(&mirror, 3), 2);
+        assert_eq!(visible_index_of(&mirror, 4), 2);
+        assert_eq!(visible_index_of(&mirror, usize::MAX), 2);
+        assert_eq!(visible_index_of(&mirror, usize::MAX), visible_len(&mirror));
+    }
+
+    #[test]
+    fn visible_index_of_is_zero_when_nothing_before_is_visible() {
+        let mirror = [false, false, true];
+        assert_eq!(visible_index_of(&mirror, 0), 0);
+        assert_eq!(visible_index_of(&mirror, 2), 0);
+        assert_eq!(visible_index_of(&mirror, 3), 1);
+    }
+
+    #[test]
+    fn visible_index_of_tracks_an_insert_into_the_mirror() {
+        // Mirrors what collect_timeline_ops does: compute the visible index,
+        // then insert the new slot. The next lookup must see the shifted slot.
+        let mut mirror = vec![true, false, true];
+        let idx = visible_index_of(&mirror, 2);
+        assert_eq!(idx, 1);
+        mirror.insert(2, true);
+        assert_eq!(visible_index_of(&mirror, 2), 1);
+        assert_eq!(visible_index_of(&mirror, 3), 2);
+        assert_eq!(visible_len(&mirror), 3);
+    }
+}

@@ -25,7 +25,7 @@ use matrix_sdk::{
 /// Builds a minimal raw Matrix event JSON envelope suitable for passing to
 /// `Ruleset::get_actions`. Uses `serde_json::to_string` for string fields so
 /// control characters (\n, \r, \t, …) are escaped correctly.
-#[cfg(not(test))]
+#[cfg_attr(test, allow(dead_code))]
 pub(super) fn build_push_rule_json(
     room_id: &str,
     event_id: &str,
@@ -573,5 +573,74 @@ mod tests {
             };
             assert_eq!(mapped, s);
         }
+    }
+
+    // -- build_push_rule_json ------------------------------------------------
+
+    use super::build_push_rule_json;
+
+    fn parse(json: &str) -> serde_json::Value {
+        serde_json::from_str(json).expect("envelope must be valid JSON")
+    }
+
+    #[test]
+    fn push_rule_json_has_message_envelope_shape() {
+        let v = parse(&build_push_rule_json(
+            "!r:x.org",
+            "$ev",
+            "@a:x.org",
+            "hello",
+            "m.emote",
+            1234,
+        ));
+        assert_eq!(v["type"], "m.room.message");
+        assert_eq!(v["event_id"], "$ev");
+        assert_eq!(v["sender"], "@a:x.org");
+        assert_eq!(v["room_id"], "!r:x.org");
+        assert_eq!(v["origin_server_ts"], 1234);
+        assert_eq!(v["content"]["msgtype"], "m.emote");
+        assert_eq!(v["content"]["body"], "hello");
+    }
+
+    #[test]
+    fn push_rule_json_defaults_empty_msgtype_and_event_id() {
+        let v = parse(&build_push_rule_json("!r:x", "", "@a:x", "b", "", 0));
+        assert_eq!(v["content"]["msgtype"], "m.text");
+        assert_eq!(v["event_id"], "$unknown");
+    }
+
+    #[test]
+    fn push_rule_json_escapes_control_characters_in_body() {
+        let body = "line1\nline2\r\n\ttab \"quoted\" back\\slash \u{1}";
+        let v = parse(&build_push_rule_json("!r:x", "$e", "@a:x", body, "m.text", 1));
+        assert_eq!(v["content"]["body"], body);
+    }
+
+    #[test]
+    fn push_rule_json_cannot_be_injected_via_event_id_or_msgtype() {
+        let v = parse(&build_push_rule_json(
+            "!r:x",
+            r#"$e","sender":"@evil:x"#,
+            "@a:x",
+            "b",
+            r#"m.text","body":"pwn"#,
+            1,
+        ));
+        assert_eq!(v["sender"], "@a:x");
+        assert_eq!(v["event_id"], r#"$e","sender":"@evil:x"#);
+        assert_eq!(v["content"]["body"], "b");
+        assert_eq!(v["content"]["msgtype"], r#"m.text","body":"pwn"#);
+    }
+
+    #[test]
+    fn push_rule_json_deserializes_as_a_ruma_sync_event() {
+        use matrix_sdk::ruma::{events::AnySyncTimelineEvent, serde::Raw};
+        let json = build_push_rule_json("!r:x.org", "$ev:x.org", "@a:x.org", "hi", "m.text", 5);
+        let raw: Raw<AnySyncTimelineEvent> = Raw::from_json(
+            serde_json::from_str::<Box<serde_json::value::RawValue>>(&json).unwrap(),
+        );
+        let ev = raw.deserialize().expect("valid sync timeline event");
+        assert_eq!(ev.event_id().as_str(), "$ev:x.org");
+        assert_eq!(ev.sender().as_str(), "@a:x.org");
     }
 }

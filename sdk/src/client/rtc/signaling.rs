@@ -742,3 +742,208 @@ pub async fn send_ring_ack(
         .map_err(|e| anyhow::anyhow!("send ring_ack: {e}"))?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn state_key_strips_user_prefix_from_membership_id() {
+        let k = msc3401_state_key("@a:x.org", "@a:x.org:SESSION").unwrap();
+        assert_eq!(k.as_ref(), "_@a:x.org_SESSION_m.call");
+    }
+
+    #[test]
+    fn state_key_keeps_membership_id_without_matching_prefix() {
+        let k = msc3401_state_key("@a:x.org", "@b:x.org:SESSION").unwrap();
+        assert_eq!(k.as_ref(), "_@a:x.org_@b:x.org:SESSION_m.call");
+        let k = msc3401_state_key("@a:x.org", "plain").unwrap();
+        assert_eq!(k.as_ref(), "_@a:x.org_plain_m.call");
+    }
+
+    #[test]
+    fn state_key_rejects_invalid_user_id() {
+        assert!(msc3401_state_key("not a user id", "x").is_err());
+        assert!(msc3401_state_key("", "x").is_err());
+    }
+
+    #[test]
+    fn rtc_application_call_serializes_all_fields() {
+        let v = serde_json::to_value(RtcApplication::call("video")).unwrap();
+        assert_eq!(
+            v,
+            json!({"type": "m.call", "call_id": "", "m.call.intent": "video", "scope": "m.room"})
+        );
+    }
+
+    #[test]
+    fn rtc_application_omits_empty_intent_and_scope() {
+        let app = RtcApplication {
+            kind: "m.call".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            serde_json::to_value(&app).unwrap(),
+            json!({"type": "m.call", "call_id": ""})
+        );
+    }
+
+    #[test]
+    fn rtc_application_deserializes_with_missing_optionals() {
+        let app: RtcApplication = serde_json::from_value(json!({"type": "m.call"})).unwrap();
+        assert_eq!(app.kind, "m.call");
+        assert!(app.call_id.is_empty() && app.call_intent.is_empty() && app.scope.is_empty());
+        let app: RtcApplication =
+            serde_json::from_value(json!({"type": "m.call", "m.call.intent": "voice"})).unwrap();
+        assert_eq!(app.call_intent, "voice");
+    }
+
+    #[test]
+    fn rtc_focus_serializes_only_populated_fields() {
+        let f = RtcFocus {
+            kind: "livekit".into(),
+            livekit_service_url: "https://lk".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            serde_json::to_value(&f).unwrap(),
+            json!({"type": "livekit", "livekit_service_url": "https://lk"})
+        );
+    }
+
+    #[test]
+    fn rtc_focus_parses_both_wild_shapes() {
+        let active: RtcFocus = serde_json::from_value(
+            json!({"type": "livekit", "focus_selection": "oldest_membership"}),
+        )
+        .unwrap();
+        assert_eq!(active.focus_selection, "oldest_membership");
+        assert!(active.livekit_service_url.is_empty());
+        let preferred: RtcFocus = serde_json::from_value(
+            json!({"type": "livekit", "livekit_service_url": "u", "livekit_alias": "a", "extra": 1}),
+        )
+        .unwrap();
+        assert_eq!((preferred.livekit_service_url.as_str(), preferred.livekit_alias.as_str()), ("u", "a"));
+        // Entirely empty object is tolerated.
+        let empty: RtcFocus = serde_json::from_value(json!({})).unwrap();
+        assert!(empty.kind.is_empty());
+    }
+
+    #[test]
+    fn rtc_transport_roundtrip_uses_type_tag() {
+        let t = RtcTransport::LiveKit {
+            livekit_service_url: "u".into(),
+            livekit_alias: "a".into(),
+        };
+        let v = serde_json::to_value(&t).unwrap();
+        assert_eq!(v, json!({"type": "livekit", "livekit_service_url": "u", "livekit_alias": "a"}));
+        let RtcTransport::LiveKit { livekit_service_url, livekit_alias } =
+            serde_json::from_value(v).unwrap();
+        assert_eq!((livekit_service_url.as_str(), livekit_alias.as_str()), ("u", "a"));
+        assert!(serde_json::from_value::<RtcTransport>(json!({"type": "other"})).is_err());
+    }
+
+    #[test]
+    fn member_event_leave_content_deserializes_to_defaults() {
+        let c: RtcMemberEventContent = serde_json::from_value(
+            json!({"disconnect_reason": {"class": "user", "reason": "bye"}}),
+        )
+        .unwrap();
+        assert!(c.slot_id.is_empty() && c.sticky_key.is_empty() && c.device_id.is_empty());
+        assert!(c.rtc_transports.is_empty() && c.foci_preferred.is_empty());
+        assert!(c.focus_active.is_none());
+    }
+
+    #[test]
+    fn member_event_serialization_skips_empty_compat_fields() {
+        let c = RtcMemberEventContent {
+            slot_id: "s".into(),
+            application: RtcApplication::call("voice"),
+            member: RtcMemberDetails {
+                id: "m".into(),
+                claimed_device_id: "D".into(),
+                claimed_user_id: "@a:x".into(),
+            },
+            rtc_transports: vec![],
+            sticky_key: "m".into(),
+            versions: vec!["v0".into()],
+            focus_active: None,
+            foci_preferred: vec![],
+            device_id: String::new(),
+        };
+        let v = serde_json::to_value(&c).unwrap();
+        assert!(v.get("focus_active").is_none());
+        assert!(v.get("foci_preferred").is_none());
+        assert!(v.get("device_id").is_none());
+        assert_eq!(v["member"]["claimed_user_id"], "@a:x");
+        assert_eq!(v["versions"], json!(["v0"]));
+        let back: RtcMemberEventContent = serde_json::from_value(v).unwrap();
+        assert_eq!(back.sticky_key, "m");
+        assert_eq!(back.application.call_intent, "voice");
+    }
+
+    #[test]
+    fn encryption_key_event_parses_element_call_payload() {
+        let c: RtcEncryptionKeyEventContent = serde_json::from_value(json!({
+            "keys": {"key": "AAAA", "index": 7},
+            "room_id": "!r:x",
+            "member": {"claimed_device_id": "DEV", "id": "@a:x:DEV"},
+            "session": {"call_id": "", "application": "m.call", "scope": "m.room"},
+            "sent_ts": 123
+        }))
+        .unwrap();
+        assert_eq!(c.keys.index, 7);
+        assert_eq!(c.member.claimed_device_id, "DEV");
+        assert_eq!(c.session.application, "m.call");
+        assert_eq!(c.sent_ts, 123);
+    }
+
+    #[test]
+    fn encryption_key_event_defaults_sent_ts_and_rejects_bad_index() {
+        let base = |index: serde_json::Value| {
+            json!({
+                "keys": {"key": "AAAA", "index": index},
+                "room_id": "!r:x",
+                "member": {"claimed_device_id": "D", "id": "i"},
+                "session": {"call_id": "", "application": "m.call", "scope": "m.room"},
+            })
+        };
+        let c: RtcEncryptionKeyEventContent = serde_json::from_value(base(json!(0))).unwrap();
+        assert_eq!(c.sent_ts, 0);
+        // index is a u8: 256 and negatives do not fit.
+        assert!(serde_json::from_value::<RtcEncryptionKeyEventContent>(base(json!(256))).is_err());
+        assert!(serde_json::from_value::<RtcEncryptionKeyEventContent>(base(json!(-1))).is_err());
+    }
+
+    #[test]
+    fn msc4075_notification_intent_is_optional() {
+        let c: Msc4075RtcNotificationEventContent = serde_json::from_value(json!({
+            "notification_type": "ring", "sender_ts": 5, "lifetime": 30000
+        }))
+        .unwrap();
+        assert!(c.call_intent.is_none());
+        assert!(serde_json::to_value(&c).unwrap().get("m.call.intent").is_none());
+        let c: Msc4075RtcNotificationEventContent = serde_json::from_value(json!({
+            "notification_type": "ring", "sender_ts": 5, "lifetime": 1, "m.call.intent": "audio"
+        }))
+        .unwrap();
+        assert_eq!(c.call_intent.as_deref(), Some("audio"));
+    }
+
+    #[test]
+    fn member_body_intent_follows_audio_only() {
+        let video = msc3401_member_body("", "D", "m", "u", "a", false, None).unwrap();
+        let audio = msc3401_member_body("", "D", "m", "u", "a", true, None).unwrap();
+        assert_eq!(video["m.call.intent"], "video");
+        assert_eq!(audio["m.call.intent"], "audio");
+    }
+
+    #[test]
+    fn member_body_carries_call_id_and_room_scope() {
+        let b = msc3401_member_body("call-1", "D", "m", "u", "a", false, None).unwrap();
+        assert_eq!(b["application"], "m.call");
+        assert_eq!(b["call_id"], "call-1");
+        assert_eq!(b["scope"], "m.room");
+    }
+}

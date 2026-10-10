@@ -372,3 +372,257 @@ fn auth_err(msg: &str) -> QrGrantAuth {
         verification_uri: String::new(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use matrix_sdk_base::crypto::{
+        types::qr_login::Msc4108IntentData, vodozemac::Curve25519PublicKey,
+    };
+
+    fn sample_qr_data() -> QrCodeData {
+        QrCodeData::new_msc4108(
+            Curve25519PublicKey::from_bytes([7u8; 32]),
+            url::Url::parse("https://rendezvous.example.org/abc").unwrap(),
+            Msc4108IntentData::Reciprocate {
+                server_name: "example.org".to_owned(),
+            },
+        )
+    }
+
+    fn pixel(pixels: &[u8], side: u32, x: u32, y: u32) -> [u8; 4] {
+        let i = ((y * side + x) * 4) as usize;
+        [pixels[i], pixels[i + 1], pixels[i + 2], pixels[i + 3]]
+    }
+
+    #[test]
+    fn render_qr_dimensions_follow_module_count_scale_and_quiet_zone() {
+        let data = sample_qr_data();
+        let (pixels, side) = render_qr(&data).expect("renders");
+        let modules = qrcode::QrCode::new(data.to_bytes()).unwrap().width() as u32;
+        assert_eq!(side, (modules + 2 * 4) * 4);
+        assert_eq!(pixels.len(), (side * side * 4) as usize);
+    }
+
+    #[test]
+    fn render_qr_is_fully_opaque_black_on_white() {
+        let (pixels, _) = render_qr(&sample_qr_data()).unwrap();
+        assert!(pixels.chunks(4).all(|p| p[3] == 255));
+        assert!(pixels
+            .chunks(4)
+            .all(|p| p[..3] == [0, 0, 0] || p[..3] == [255, 255, 255]));
+        assert!(pixels.chunks(4).any(|p| p[..3] == [0, 0, 0]));
+        assert!(pixels.chunks(4).any(|p| p[..3] == [255, 255, 255]));
+    }
+
+    #[test]
+    fn render_qr_quiet_zone_is_white() {
+        let (pixels, side) = render_qr(&sample_qr_data()).unwrap();
+        let border = 4 * 4; // quiet modules * scale
+        for i in 0..side {
+            for edge in 0..border {
+                assert_eq!(pixel(&pixels, side, i, edge), [255; 4]);
+                assert_eq!(pixel(&pixels, side, i, side - 1 - edge), [255; 4]);
+                assert_eq!(pixel(&pixels, side, edge, i), [255; 4]);
+                assert_eq!(pixel(&pixels, side, side - 1 - edge, i), [255; 4]);
+            }
+        }
+    }
+
+    #[test]
+    fn render_qr_pixels_match_the_qr_modules() {
+        let data = sample_qr_data();
+        let (pixels, side) = render_qr(&data).unwrap();
+        let code = qrcode::QrCode::new(data.to_bytes()).unwrap();
+        let modules = code.width() as u32;
+        let colors = code.to_colors();
+        for row in 0..modules {
+            for col in 0..modules {
+                let dark = matches!(colors[(row * modules + col) as usize], qrcode::Color::Dark);
+                let want = if dark { [0, 0, 0, 255] } else { [255; 4] };
+                // Every pixel of the 4x4 block must carry the module colour.
+                for dy in 0..4 {
+                    for dx in 0..4 {
+                        let x = (col + 4) * 4 + dx;
+                        let y = (row + 4) * 4 + dy;
+                        assert_eq!(pixel(&pixels, side, x, y), want, "module ({row},{col})");
+                    }
+                }
+            }
+        }
+        // The top-left finder pattern always starts with a dark module.
+        assert_eq!(pixel(&pixels, side, 16, 16), [0, 0, 0, 255]);
+    }
+
+    #[test]
+    fn render_qr_differs_for_different_payloads() {
+        let other = QrCodeData::new_msc4108(
+            Curve25519PublicKey::from_bytes([9u8; 32]),
+            url::Url::parse("https://rendezvous.example.org/abc").unwrap(),
+            Msc4108IntentData::Login,
+        );
+        let a = render_qr(&sample_qr_data()).unwrap();
+        let b = render_qr(&other).unwrap();
+        assert_ne!(a.0, b.0);
+    }
+
+    #[test]
+    fn error_constructors_carry_message_and_empty_payload() {
+        let b = bitmap_err("nope");
+        assert!(!b.ok);
+        assert_eq!(b.message, "nope");
+        assert!(b.pixels.is_empty());
+        assert_eq!(b.side, 0);
+        let a = auth_err("nope");
+        assert!(!a.ok);
+        assert_eq!(a.message, "nope");
+        assert!(a.verification_uri.is_empty());
+    }
+
+    #[test]
+    fn methods_report_no_flow_before_start() {
+        let c = ClientFfi::new();
+        for r in [
+            c.qr_grant_await_scanned(),
+            c.qr_grant_submit_check_code(1),
+            c.qr_grant_await_complete(),
+        ] {
+            assert!(!r.ok);
+            assert!(r.message.contains("qr_grant_start"), "{}", r.message);
+        }
+        let a = c.qr_grant_await_auth();
+        assert!(!a.ok && a.verification_uri.is_empty());
+        assert!(a.message.contains("qr_grant_start"), "{}", a.message);
+        c.qr_grant_cancel(); // no-op, must not panic
+    }
+
+    #[test]
+    fn start_requires_a_logged_in_client() {
+        let mut c = ClientFfi::new();
+        let b = c.qr_grant_start();
+        assert!(!b.ok);
+        assert_eq!(b.message, "not logged in");
+        assert!(b.pixels.is_empty());
+        assert!(c.qr_grant.is_none());
+    }
+
+    struct Ends {
+        scanned_tx: oneshot::Sender<()>,
+        check_rx: oneshot::Receiver<u8>,
+        auth_tx: oneshot::Sender<String>,
+        done_tx: oneshot::Sender<Result<(), String>>,
+        cancel_rx: watch::Receiver<bool>,
+    }
+
+    fn install_handle(c: &mut ClientFfi) -> Ends {
+        let (scanned_tx, scanned_rx) = oneshot::channel();
+        let (check_tx, check_rx) = oneshot::channel();
+        let (auth_tx, auth_rx) = oneshot::channel();
+        let (done_tx, done_rx) = oneshot::channel();
+        let (cancel_tx, cancel_rx) = watch::channel(false);
+        c.qr_grant = Some(QrGrantHandle {
+            scanned_rx: std::sync::Mutex::new(Some(scanned_rx)),
+            check_code_tx: std::sync::Mutex::new(Some(check_tx)),
+            auth_rx: std::sync::Mutex::new(Some(auth_rx)),
+            done_rx: std::sync::Mutex::new(Some(done_rx)),
+            cancel_tx,
+        });
+        Ends { scanned_tx, check_rx, auth_tx, done_tx, cancel_rx }
+    }
+
+    #[test]
+    fn await_scanned_resolves_once_and_rejects_reuse() {
+        let mut c = ClientFfi::new();
+        let ends = install_handle(&mut c);
+        ends.scanned_tx.send(()).unwrap();
+        assert!(c.qr_grant_await_scanned().ok);
+        let again = c.qr_grant_await_scanned();
+        assert!(!again.ok);
+        assert!(again.message.contains("already called"), "{}", again.message);
+    }
+
+    #[test]
+    fn await_scanned_reports_flow_ending_early() {
+        let mut c = ClientFfi::new();
+        let ends = install_handle(&mut c);
+        drop(ends.scanned_tx);
+        let r = c.qr_grant_await_scanned();
+        assert!(!r.ok);
+        assert!(r.message.contains("before the QR code was scanned"), "{}", r.message);
+    }
+
+    #[test]
+    fn submit_check_code_delivers_value_once() {
+        let mut c = ClientFfi::new();
+        let mut ends = install_handle(&mut c);
+        assert!(c.qr_grant_submit_check_code(42).ok);
+        assert_eq!(ends.check_rx.try_recv().unwrap(), 42);
+        let again = c.qr_grant_submit_check_code(43);
+        assert!(!again.ok);
+        assert!(again.message.contains("already submitted"), "{}", again.message);
+    }
+
+    #[test]
+    fn submit_check_code_reports_ended_flow() {
+        let mut c = ClientFfi::new();
+        let ends = install_handle(&mut c);
+        drop(ends.check_rx);
+        let r = c.qr_grant_submit_check_code(1);
+        assert!(!r.ok);
+        assert!(r.message.contains("already ended"), "{}", r.message);
+    }
+
+    #[test]
+    fn await_auth_returns_the_verification_uri() {
+        let mut c = ClientFfi::new();
+        let ends = install_handle(&mut c);
+        ends.auth_tx.send("https://auth.example.org/device".to_owned()).unwrap();
+        let a = c.qr_grant_await_auth();
+        assert!(a.ok);
+        assert!(a.message.is_empty());
+        assert_eq!(a.verification_uri, "https://auth.example.org/device");
+        let again = c.qr_grant_await_auth();
+        assert!(!again.ok && again.message.contains("already called"));
+    }
+
+    #[test]
+    fn await_auth_reports_flow_ending_before_auth() {
+        let mut c = ClientFfi::new();
+        let ends = install_handle(&mut c);
+        drop(ends.auth_tx);
+        let a = c.qr_grant_await_auth();
+        assert!(!a.ok);
+        assert!(a.verification_uri.is_empty());
+        assert!(a.message.contains("WaitingForAuth"), "{}", a.message);
+    }
+
+    #[test]
+    fn await_complete_maps_success_failure_and_dropped_task() {
+        let mut c = ClientFfi::new();
+        let ends = install_handle(&mut c);
+        ends.done_tx.send(Ok(())).unwrap();
+        assert!(c.qr_grant_await_complete().ok);
+        assert!(c.qr_grant_await_complete().message.contains("already called"));
+
+        let ends = install_handle(&mut c);
+        ends.done_tx.send(Err("homeserver said no".to_owned())).unwrap();
+        let r = c.qr_grant_await_complete();
+        assert!(!r.ok);
+        assert_eq!(r.message, "homeserver said no");
+
+        let ends = install_handle(&mut c);
+        drop(ends.done_tx);
+        let r = c.qr_grant_await_complete();
+        assert!(!r.ok);
+        assert!(r.message.contains("panicked or was cancelled"), "{}", r.message);
+    }
+
+    #[test]
+    fn cancel_signals_the_background_task() {
+        let mut c = ClientFfi::new();
+        let ends = install_handle(&mut c);
+        assert!(!*ends.cancel_rx.borrow());
+        c.qr_grant_cancel();
+        assert!(*ends.cancel_rx.borrow());
+    }
+}

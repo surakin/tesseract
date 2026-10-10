@@ -81,10 +81,6 @@ impl E2eeManager {
         Ok(frame_key)
     }
 
-    pub fn latest_peer_frame_key(&self, member_id: &str) -> Option<FrameKey> {
-        self.peer_keys.get(member_id)?.values().last().copied()
-    }
-
     /// HKDF-SHA256: ikm=key_material, salt=b"livekit_frame", info=member_id||[index].
     fn derive_frame_key(material: &KeyMaterial, member_id: &str, index: u8) -> FrameKey {
         let hk = Hkdf::<Sha256>::new(Some(b"livekit_frame"), material);
@@ -283,5 +279,67 @@ mod tests {
         let fk = mgr.receive_peer_key("peer-1", 0, &b64).unwrap();
         let expected = E2eeManager::derive_frame_key(&raw, "peer-1", 0);
         assert_eq!(fk, expected);
+    }
+
+    #[test]
+    fn derive_frame_key_matches_independent_hkdf() {
+        let material = [9u8; 32];
+        let hk = Hkdf::<Sha256>::new(Some(b"livekit_frame"), &material);
+        let mut expected = [0u8; 16];
+        hk.expand(b"@a:x:DEV\x03", &mut expected).unwrap();
+        assert_eq!(E2eeManager::derive_frame_key(&material, "@a:x:DEV", 3), expected);
+    }
+
+    #[test]
+    fn own_key_b64_decodes_to_raw_key() {
+        let mgr = E2eeManager::new();
+        let decoded = Base64::decode_vec(&mgr.own_key_b64()).unwrap();
+        assert_eq!(decoded.as_slice(), mgr.own_raw_key().as_slice());
+    }
+
+    #[test]
+    fn own_frame_key_follows_own_key_and_index() {
+        let mut mgr = E2eeManager::new();
+        let before = mgr.own_frame_key("me");
+        assert_eq!(before, E2eeManager::derive_frame_key(mgr.own_raw_key(), "me", 0));
+        let (idx, b64) = mgr.rotate();
+        assert_eq!(b64, mgr.own_key_b64());
+        assert_eq!(mgr.own_frame_key("me"), E2eeManager::derive_frame_key(mgr.own_raw_key(), "me", idx));
+        assert_ne!(mgr.own_frame_key("me"), before);
+    }
+
+    #[test]
+    fn rotate_replaces_key_material() {
+        let mut mgr = E2eeManager::new();
+        let old = *mgr.own_raw_key();
+        mgr.rotate();
+        assert_ne!(&old, mgr.own_raw_key());
+    }
+
+    #[test]
+    fn receive_peer_key_rejects_bad_base64() {
+        let mut mgr = E2eeManager::new();
+        assert!(mgr.receive_peer_key("p", 0, "not base64 !!!").is_err());
+        assert!(!mgr.peer_keys.contains_key("p"));
+    }
+
+    #[test]
+    fn receive_peer_key_rejects_wrong_length() {
+        let mut mgr = E2eeManager::new();
+        for len in [0usize, 16, 31, 33] {
+            let b64 = Base64::encode_string(&vec![1u8; len]);
+            let err = mgr.receive_peer_key("p", 0, &b64).unwrap_err();
+            assert!(err.to_string().contains("32 bytes"), "len {len}: {err}");
+        }
+        assert!(!mgr.peer_keys.contains_key("p"));
+    }
+
+    #[test]
+    fn receive_peer_key_same_index_overwrites() {
+        let mut mgr = E2eeManager::new();
+        mgr.receive_peer_key("p", 0, &Base64::encode_string(&[1u8; 32])).unwrap();
+        let second = mgr.receive_peer_key("p", 0, &Base64::encode_string(&[2u8; 32])).unwrap();
+        assert_eq!(mgr.peer_keys["p"][&0], second);
+        assert_eq!(mgr.peer_keys["p"].len(), 1);
     }
 }

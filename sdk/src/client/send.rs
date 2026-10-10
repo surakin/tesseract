@@ -160,7 +160,7 @@ pub(crate) fn build_animated_image_content(
 /// - `thread_root` non-empty → always attach a reply:
 ///   `event_id = reply_event_id` (when non-empty) or `thread_root`,
 ///   `enforce_thread = EnforceThread::Threaded(ReplyWithinThread::Yes/No)`.
-#[cfg(not(test))]
+#[cfg_attr(test, allow(dead_code))]
 pub(super) fn build_media_reply(
     reply_event_id: &str,
     thread_root: &str,
@@ -354,6 +354,13 @@ pub(crate) fn derive_mentions(
             continue;
         };
         let inner = &inner_and_rest[..close_rel];
+        if find_anchor_open(inner).is_some() {
+            // Another anchor opens before this one closes: the `</a>` found
+            // belongs to that inner anchor, so this one is unclosed.
+            out.push_str(open_tag);
+            rest = inner_and_rest;
+            continue;
+        }
         let after_close = &inner_and_rest[close_rel + "</a>".len()..];
 
         match extract_href(open_tag).as_deref().and_then(matrix_to_target) {
@@ -2860,7 +2867,7 @@ impl ClientFfi {
         err("not logged in")
     }
 
-    #[cfg(not(test))]
+    #[cfg_attr(test, allow(dead_code))]
     fn parse_image_info(info_json: &str) -> matrix_sdk::ruma::events::room::ImageInfo {
         use matrix_sdk::ruma::events::room::ImageInfo;
         if info_json.is_empty() || info_json == "{}" {
@@ -3356,5 +3363,286 @@ mod content_event_tests {
                 "answers": [{"id": "a", "org.matrix.msc1767.text": "a"}]},
                 "org.matrix.msc1767.text": "q"}
         }))));
+    }
+}
+
+#[cfg(test)]
+mod helper_tests {
+    use super::*;
+    use matrix_sdk::room::reply::EnforceThread;
+    use matrix_sdk::ruma::events::room::message::{
+        MessageType, Relation, ReplyWithinThread,
+    };
+    use matrix_sdk::ruma::{event_id, EventId};
+
+    // -- matrix_to_target ----------------------------------------------------
+
+    #[test]
+    fn matrix_to_target_strips_prefix_and_query() {
+        assert_eq!(
+            matrix_to_target("https://matrix.to/#/@a:x.org"),
+            Some("@a:x.org")
+        );
+        assert_eq!(
+            matrix_to_target("http://matrix.to/#/!room:x.org?via=x.org&via=y.org"),
+            Some("!room:x.org")
+        );
+        assert_eq!(matrix_to_target("https://matrix.to/#/"), Some(""));
+    }
+
+    #[test]
+    fn matrix_to_target_rejects_other_links() {
+        assert_eq!(matrix_to_target("https://example.org/#/@a:x.org"), None);
+        assert_eq!(matrix_to_target("https://matrix.to/@a:x.org"), None);
+        assert_eq!(matrix_to_target("matrix.to/#/@a:x.org"), None);
+        assert_eq!(matrix_to_target(""), None);
+    }
+
+    // -- find_anchor_open ----------------------------------------------------
+
+    #[test]
+    fn find_anchor_open_requires_exact_tag_name() {
+        assert_eq!(find_anchor_open("x <a href=\"u\">y"), Some(2));
+        assert_eq!(find_anchor_open("<a>"), Some(0));
+        assert_eq!(find_anchor_open("<A\thref=u>"), Some(0));
+        assert_eq!(find_anchor_open("<a\nhref=u>"), Some(0));
+        assert_eq!(find_anchor_open("<abbr>text</abbr>"), None);
+        assert_eq!(find_anchor_open("<a"), None);
+        assert_eq!(find_anchor_open("<"), None);
+        assert_eq!(find_anchor_open(""), None);
+    }
+
+    #[test]
+    fn find_anchor_open_skips_lookalikes_to_the_real_anchor() {
+        assert_eq!(find_anchor_open("<abbr>x</abbr><a href=u>"), Some(14));
+        assert_eq!(find_anchor_open("a < a <a>"), Some(6));
+    }
+
+    // -- extract_href --------------------------------------------------------
+
+    #[test]
+    fn extract_href_handles_each_quoting_style() {
+        assert_eq!(extract_href(r#"<a href="https://x/y">"#).as_deref(), Some("https://x/y"));
+        assert_eq!(extract_href("<a href='https://x/y'>").as_deref(), Some("https://x/y"));
+        assert_eq!(extract_href("<a href=https://x/y>").as_deref(), Some("https://x/y"));
+        assert_eq!(extract_href("<a href=https://x/y rel=nofollow>").as_deref(), Some("https://x/y"));
+        assert_eq!(extract_href(r#"<a class="c" href="u">"#).as_deref(), Some("u"));
+    }
+
+    #[test]
+    fn extract_href_returns_none_without_a_usable_href() {
+        assert_eq!(extract_href("<a>"), None);
+        assert_eq!(extract_href("<a name=\"x\">"), None);
+        assert_eq!(extract_href("<a href="), None);
+        // Unterminated quoted value.
+        assert_eq!(extract_href("<a href=\"oops>"), None);
+    }
+
+    #[test]
+    fn extract_href_empty_quoted_value_is_empty_string() {
+        assert_eq!(extract_href("<a href=\"\">").as_deref(), Some(""));
+    }
+
+    // -- derive_mentions edge cases beyond mod.rs ---------------------------
+
+    #[test]
+    fn derive_mentions_dedups_repeated_user() {
+        let html = r#"<a href="https://matrix.to/#/@a:x.org">A</a> and <a href="https://matrix.to/#/@a:x.org">A</a>"#;
+        let (m, out) = derive_mentions(html);
+        let m = m.unwrap();
+        assert_eq!(m.user_ids.len(), 1);
+        assert!(!m.room);
+        assert_eq!(out, html);
+    }
+
+    #[test]
+    fn derive_mentions_ignores_room_and_event_permalinks() {
+        let html = r#"<a href="https://matrix.to/#/!room:x.org">r</a><a href="https://matrix.to/#/#alias:x.org">a</a>"#;
+        let (m, out) = derive_mentions(html);
+        assert!(m.is_none());
+        assert_eq!(out, html);
+    }
+
+    #[test]
+    fn derive_mentions_accepts_single_quoted_and_unquoted_hrefs() {
+        let (m, _) = derive_mentions("<a href='https://matrix.to/#/@a:x.org'>A</a>");
+        assert_eq!(m.unwrap().user_ids.len(), 1);
+        let (m, _) = derive_mentions("<a href=https://matrix.to/#/@b:x.org>B</a>");
+        assert_eq!(m.unwrap().user_ids.len(), 1);
+    }
+
+    #[test]
+    fn derive_mentions_room_sentinel_keeps_surrounding_text() {
+        let (m, out) = derive_mentions(r#"hey <a href="https://matrix.to/#/@room">@room</a>, look"#);
+        assert!(m.unwrap().room);
+        assert_eq!(out, "hey @room, look");
+    }
+
+    #[test]
+    fn derive_mentions_invalid_user_id_adds_no_mention_but_keeps_anchor() {
+        let html = r#"<a href="https://matrix.to/#/@not a user">x</a>"#;
+        let (m, out) = derive_mentions(html);
+        assert!(m.is_none());
+        assert_eq!(out, html);
+    }
+
+    #[test]
+    fn derive_mentions_unterminated_open_tag_is_preserved() {
+        let (m, out) = derive_mentions("text <a href=\"x\"");
+        assert!(m.is_none());
+        assert_eq!(out, "text <a href=\"x\"");
+    }
+
+    #[test]
+    fn derive_mentions_unclosed_anchor_still_scans_the_rest() {
+        let html = r#"<a href="u">no close <a href="https://matrix.to/#/@room">@room</a>"#;
+        let (m, out) = derive_mentions(html);
+        // The first anchor is never closed; its would-be </a> belongs to the
+        // sentinel, which must still be recognised and rewritten.
+        assert!(m.unwrap().room);
+        assert_eq!(out, r#"<a href="u">no close @room"#);
+    }
+
+    #[test]
+    fn derive_mentions_empty_input() {
+        let (m, out) = derive_mentions("");
+        assert!(m.is_none());
+        assert_eq!(out, "");
+    }
+
+    // -- build_thread_message_content ---------------------------------------
+
+    fn root() -> matrix_sdk::ruma::OwnedEventId {
+        event_id!("$root:x.org").to_owned()
+    }
+
+    #[test]
+    fn thread_content_plain_body_has_fallback_relation() {
+        let msg = build_thread_message_content("hi", "", root(), None);
+        assert!(matches!(msg.msgtype, MessageType::Text(ref t) if t.body == "hi" && t.formatted.is_none()));
+        let Some(Relation::Thread(t)) = &msg.relates_to else {
+            panic!("expected thread relation");
+        };
+        assert_eq!(t.event_id, root());
+        let in_reply = t.in_reply_to.as_ref().expect("fallback in_reply_to");
+        assert_eq!(in_reply.event_id, root());
+        assert!(t.is_falling_back);
+        assert!(msg.mentions.is_none());
+    }
+
+    #[test]
+    fn thread_content_reply_is_not_a_fallback() {
+        let reply = event_id!("$reply:x.org").to_owned();
+        let msg = build_thread_message_content("hi", "", root(), Some(reply.clone()));
+        let Some(Relation::Thread(t)) = &msg.relates_to else {
+            panic!("expected thread relation");
+        };
+        assert_eq!(t.event_id, root());
+        assert_eq!(t.in_reply_to.as_ref().unwrap().event_id, reply);
+        assert!(!t.is_falling_back);
+    }
+
+    #[test]
+    fn thread_content_derives_mentions_and_uses_rewritten_html() {
+        let html = r#"<a href="https://matrix.to/#/@a:x.org">A</a> <a href="https://matrix.to/#/@room">@room</a>"#;
+        let msg = build_thread_message_content("A @room", html, root(), None);
+        let m = msg.mentions.expect("mentions derived");
+        assert!(m.room);
+        assert_eq!(m.user_ids.len(), 1);
+        let MessageType::Text(t) = msg.msgtype else {
+            panic!("expected text");
+        };
+        let formatted = t.formatted.expect("html body").body;
+        assert!(formatted.contains("@room") && !formatted.contains("matrix.to/#/@room"));
+        assert!(formatted.contains("matrix.to/#/@a:x.org"));
+    }
+
+    // -- build_media_reply ---------------------------------------------------
+
+    #[test]
+    fn media_reply_none_when_neither_reply_nor_thread() {
+        assert!(build_media_reply("", "").unwrap().is_none());
+    }
+
+    #[test]
+    fn media_reply_plain_reply_is_unthreaded() {
+        let r = build_media_reply("$e:x.org", "").unwrap().unwrap();
+        assert_eq!(r.event_id.as_str(), "$e:x.org");
+        assert!(matches!(r.enforce_thread, EnforceThread::Unthreaded));
+    }
+
+    #[test]
+    fn media_reply_thread_without_reply_targets_the_root_not_within_thread() {
+        let r = build_media_reply("", "$root:x.org").unwrap().unwrap();
+        assert_eq!(r.event_id.as_str(), "$root:x.org");
+        assert!(matches!(
+            r.enforce_thread,
+            EnforceThread::Threaded(ReplyWithinThread::No)
+        ));
+    }
+
+    #[test]
+    fn media_reply_thread_with_reply_targets_the_reply_within_thread() {
+        let r = build_media_reply("$reply:x.org", "$root:x.org").unwrap().unwrap();
+        assert_eq!(r.event_id.as_str(), "$reply:x.org");
+        assert!(matches!(
+            r.enforce_thread,
+            EnforceThread::Threaded(ReplyWithinThread::Yes)
+        ));
+    }
+
+    #[test]
+    fn media_reply_rejects_malformed_event_ids() {
+        for (reply, thread) in [("not an event id", ""), ("", "not an event id"), ("bad id", "$r:x")] {
+            let e = build_media_reply(reply, thread).err().expect("must fail");
+            assert!(e.starts_with("invalid reply event id"), "{e}");
+        }
+    }
+
+    // -- parse_image_info ----------------------------------------------------
+
+    #[test]
+    fn parse_image_info_empty_and_braces_give_defaults() {
+        for input in ["", "{}"] {
+            let i = ClientFfi::parse_image_info(input);
+            assert!(i.width.is_none() && i.height.is_none() && i.mimetype.is_none());
+        }
+    }
+
+    #[test]
+    fn parse_image_info_reads_standard_fields() {
+        let i = ClientFfi::parse_image_info(r#"{"w":640,"h":480,"mimetype":"image/png","size":123}"#);
+        assert_eq!(i.width.map(u64::from), Some(640));
+        assert_eq!(i.height.map(u64::from), Some(480));
+        assert_eq!(i.mimetype.as_deref(), Some("image/png"));
+        assert_eq!(i.size.map(u64::from), Some(123));
+    }
+
+    #[test]
+    fn parse_image_info_invalid_json_falls_back_to_defaults() {
+        for input in ["not json", "[1,2]", r#"{"w":"wide"}"#] {
+            let i = ClientFfi::parse_image_info(input);
+            assert!(i.width.is_none() && i.mimetype.is_none(), "{input}");
+        }
+    }
+
+    // -- pick_thread_receipt_target extras -----------------------------------
+
+    #[test]
+    fn receipt_target_acked_unrelated_to_list_latest_has_zero_ts() {
+        let root: &EventId = event_id!("$root:x.org");
+        let acked: &EventId = event_id!("$acked:x.org");
+        let latest: &EventId = event_id!("$latest:x.org");
+        let (t, ts) = pick_thread_receipt_target(root, Some(acked), Some((latest, 99)));
+        assert_eq!(t, acked);
+        assert_eq!(ts, 0);
+    }
+
+    #[test]
+    fn receipt_target_with_nothing_known_is_the_root_at_ts_zero() {
+        let root: &EventId = event_id!("$root:x.org");
+        let (t, ts) = pick_thread_receipt_target(root, None, None);
+        assert_eq!(t, root);
+        assert_eq!(ts, 0);
     }
 }

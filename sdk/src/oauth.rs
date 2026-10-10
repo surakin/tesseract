@@ -688,3 +688,200 @@ mod store_key_tests {
         assert_ne!(generate_store_key(), generate_store_key());
     }
 }
+
+#[cfg(test)]
+mod describe_and_ua_tests {
+    use super::*;
+
+    #[test]
+    fn linux_without_version_is_the_bare_distro_name() {
+        let info = os_info::Info::with_type(os_info::Type::Arch);
+        assert_eq!(describe_linux(os_info::Type::Arch, &info), "Arch Linux");
+    }
+
+    #[test]
+    fn macos_without_version_is_branded_macos() {
+        let info = os_info::Info::with_type(os_info::Type::Macos);
+        assert_eq!(describe_macos(&info), "macOS");
+    }
+
+    #[test]
+    fn windows_without_version_or_edition_defaults_to_windows_10() {
+        let info = os_info::Info::with_type(os_info::Type::Windows);
+        assert_eq!(describe_windows(&info), "Windows 10");
+    }
+
+    #[test]
+    fn fallback_platform_name_matches_the_host_os() {
+        let name = fallback_platform_name();
+        assert!(!name.is_empty());
+        match std::env::consts::OS {
+            "linux" => assert_eq!(name, "Linux"),
+            "macos" => assert_eq!(name, "macOS"),
+            "windows" => assert_eq!(name, "Windows"),
+            other => assert_eq!(name, other),
+        }
+    }
+
+    #[test]
+    fn describe_os_is_never_empty() {
+        assert!(!describe_os().is_empty());
+    }
+
+    #[test]
+    fn sanitize_handles_empty_and_mixed_input() {
+        assert_eq!(sanitize_ua_token(""), "");
+        assert_eq!(sanitize_ua_token("a;b;c"), "a,b,c");
+        assert_eq!(sanitize_ua_token("tab\there"), "tab_here");
+        // One underscore per char, not per byte.
+        assert_eq!(sanitize_ua_token("é"), "_");
+        assert_eq!(sanitize_ua_token("\u{1F600}"), "_");
+        assert_eq!(sanitize_ua_token("~!@ (ok)"), "~!@ (ok)");
+    }
+
+    #[test]
+    fn user_agent_has_product_version_and_os_parenthetical() {
+        let ua = build_user_agent();
+        let prefix = format!("Tesseract/{} (", env!("CARGO_PKG_VERSION"));
+        assert!(ua.starts_with(&prefix), "{ua}");
+        assert!(ua.ends_with(&format!("; {})", std::env::consts::OS)), "{ua}");
+        // MAS splits the parenthetical on ';': exactly two tokens must remain.
+        let inner = &ua[prefix.len()..ua.len() - 1];
+        assert_eq!(inner.matches(';').count(), 1, "{ua}");
+        assert!(inner.starts_with("Tesseract on "), "{ua}");
+    }
+
+    #[test]
+    fn user_agent_is_a_valid_header_value() {
+        let ua = build_user_agent();
+        assert!(matrix_sdk::reqwest::header::HeaderValue::from_str(&ua).is_ok(), "{ua}");
+    }
+
+    #[test]
+    fn sdk_http_client_builds() {
+        let _ = build_sdk_http_client();
+    }
+
+    #[test]
+    fn registration_uris_share_a_host() {
+        // MAS rejects registration when logo_uri's host differs from client_uri's.
+        let client = Url::parse(CLIENT_URI).unwrap();
+        let logo = Url::parse(LOGO_URI).unwrap();
+        assert_eq!(client.scheme(), "https");
+        assert_eq!(client.host_str(), logo.host_str());
+        assert!(logo.path().ends_with(".png"));
+    }
+
+    #[test]
+    fn success_page_is_utf8_html_that_tells_the_user_what_to_do() {
+        assert!(HTML_SUCCESS.starts_with("<!doctype html>"));
+        assert!(HTML_SUCCESS.contains("charset='utf-8'"));
+        assert!(HTML_SUCCESS.contains("close this window"));
+        assert!(HTML_SUCCESS.ends_with("</html>"));
+    }
+
+    #[test]
+    fn generated_store_key_is_not_all_zero() {
+        assert_ne!(generate_store_key(), [0u8; 32]);
+    }
+}
+
+#[cfg(test)]
+mod pending_flow_tests {
+    use super::*;
+    use matrix_sdk::utils::local_server::{LocalServerBuilder, LocalServerIpAddress};
+
+    /// A flow backed by a real loopback listener and an offline Client (built
+    /// from a homeserver URL, so no discovery request is made).
+    async fn offline_flow() -> (PendingFlow, Url) {
+        let (base_url, redirect_handle) = LocalServerBuilder::new()
+            .ip_address(LocalServerIpAddress::Localhostv4)
+            .response(LocalServerResponse::Html(HTML_SUCCESS.to_owned()))
+            .spawn()
+            .await
+            .unwrap();
+        let client = Client::builder()
+            .homeserver_url("http://127.0.0.1:9")
+            .build()
+            .await
+            .unwrap();
+        let shutdown_handle = redirect_handle.shutdown_handle();
+        let flow = PendingFlow {
+            pending: std::sync::Mutex::new(Some(PendingFlowState {
+                client,
+                redirect_handle,
+            })),
+            finished: std::sync::Mutex::new(None),
+            shutdown_handle,
+        };
+        (flow, base_url)
+    }
+
+    #[tokio::test]
+    async fn take_finished_is_none_before_completion() {
+        let (flow, _) = offline_flow().await;
+        assert!(take_finished(&flow).is_none());
+    }
+
+    #[tokio::test]
+    async fn cancel_makes_await_callback_fail_and_consumes_the_flow() {
+        let (flow, _) = offline_flow().await;
+        cancel(&flow);
+        let e = await_callback(&flow).await.unwrap_err().to_string();
+        assert!(e.contains("cancelled"), "{e}");
+        // The pending state was consumed by the first await.
+        let again = await_callback(&flow).await.unwrap_err().to_string();
+        assert!(again.contains("already awaited"), "{again}");
+        assert!(take_finished(&flow).is_none());
+    }
+
+    #[tokio::test]
+    async fn cancel_twice_is_harmless() {
+        let (flow, _) = offline_flow().await;
+        cancel(&flow);
+        cancel(&flow);
+    }
+
+    #[tokio::test]
+    async fn redirect_without_a_matching_login_fails_finish_login() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let (flow, base) = offline_flow().await;
+        let addr = format!("{}:{}", base.host_str().unwrap(), base.port().unwrap());
+
+        let hit = tokio::spawn(async move {
+            let mut sock = tokio::net::TcpStream::connect(addr).await.unwrap();
+            sock.write_all(
+                b"GET /callback?code=abc&state=nope HTTP/1.1\r\nHost: localhost\r\n\
+                  Connection: close\r\n\r\n",
+            )
+            .await
+            .unwrap();
+            let mut body = String::new();
+            let _ = sock.read_to_string(&mut body).await;
+            body
+        });
+
+        let e = format!("{:#}", await_callback(&flow).await.unwrap_err());
+        assert!(e.contains("oauth finish_login"), "{e}");
+        // The browser still gets the "you're signed in" page.
+        let page = hit.await.unwrap();
+        assert!(page.contains("signed in"), "{page}");
+        assert!(take_finished(&flow).is_none());
+    }
+
+    #[tokio::test]
+    async fn begin_fails_cleanly_for_an_unparseable_homeserver() {
+        let dir = std::env::temp_dir().join(format!(
+            "tess-oauth-begin-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::create_dir_all(&dir);
+        let res = begin("not a valid homeserver \0", &dir, false, &[3u8; 32]).await;
+        assert!(res.is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
