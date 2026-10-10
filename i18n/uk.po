@@ -6727,3 +6727,76 @@ msgstr "Створити опитування"
 #: ui/shared/app/ShellBase_rooms.cpp
 msgid "Couldn't send the poll"
 msgstr "Не вдалося надіслати опитування"
+
+#: ui/shared/views/AudioViewerPage.cpp:173 ui/shared/views/ComposeBar.cpp:908
+#: ui/shared/views/MessageListView.cpp:6957
+msgid "Audio"
+msgstr "Аудіо"
+
+#: ui/shared/views/AudioViewerPage.cpp:331
+msgid "Audio playback is not available"
+msgstr "Відтворення аудіо недоступне"
+
+#: ui/shared/views/AudioViewerPage.cpp:335
+msgid "Unable to play audio"
+msgstr "Не вдалося відтворити аудіо"
+
+#: ui/shared/views/ComposeBar.cpp:1820
+#, c++-format
+msgid "{0} attachments"
+msgstr "Вкладення: {0}"
+
+#: ui/shared/views/FileViewerPage.cpp:131
+msgid "No preview available"
+msgstr "Попередній перегляд недоступний"
+
+#: ui/shared/views/media_viewer_items.cpp:227
+msgid "Save audio"
+msgstr "Зберегти аудіо"
+
+#: ui/shared/views/MediaViewerOverlay.cpp:46
+msgid "Previous"
+msgstr "Попередній"
+
+#: ui/shared/views/MediaViewerOverlay.cpp:55
+msgid "Next"
+msgstr "Наступний"
+
+#: ui/shared/views/MediaViewerOverlay.cpp:430
+#, c++-format
+msgid "{0} / {1}"
+msgstr "{0} / {1}"
+
+#: ui/shared/views/MessageListView.cpp:3783
+msgid "Open gallery"
+msgstr "Відкрити галерею"
+
+#: ui/shared/views/MessageListView.cpp:4735
+msgid "Load gallery"
+msgstr "Завантажити галерею"
+
+#: ui/shared/views/MessageListView.cpp:6978
+#, c++-format
+msgid "+{0}"
+msgstr "+{0}"
+
+#: ui/shared/views/RoomListView.cpp:116
+#, c++-format
+msgid "{0} sent a gallery"
+msgstr "{0}: надіслано галерею"
+
+#: ui/shared/views/shortcut_registry.cpp:164
+msgid "Play / pause media"
+msgstr "Відтворити / призупинити медіа"
+
+#: ui/shared/views/shortcut_registry.cpp:175
+msgid "Previous item in a gallery"
+msgstr "Попередній елемент галереї"
+
+#: ui/shared/views/shortcut_registry.cpp:178
+msgid "Next item in a gallery"
+msgstr "Наступний елемент галереї"
+
+#: ui/shared/views/shortcut_registry.cpp:244
+msgid "Media viewer"
+msgstr "Переглядач медіа"
