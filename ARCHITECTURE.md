@@ -64,7 +64,7 @@ and toolkit backends. Shared views use the toolkit abstractions, while
 The platform shells inherit from `ShellBase`; macOS embeds a derived `MacShell`
 inside its Objective-C++ window controller. `ShellBase` is implemented across
 `ShellBase_<subsystem>.cpp` files (accounts, calls, encryption, media, navigation,
-rooms, search, settings, spaces, timeline, windows and view wiring); its worker
+profile, rooms, search, settings, spaces, timeline, windows and view wiring); its worker
 pool, account-lifecycle types, media types and pure helpers are separate headers.
 
 Commands cross the C++ client API and the generated `cxx` bridge into Rust.
