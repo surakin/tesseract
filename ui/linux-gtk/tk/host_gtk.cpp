@@ -16,6 +16,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <exception>
+#include <memory>
 #include <cstring>
 #include <functional>
 #include <optional>
@@ -2842,12 +2844,24 @@ public:
         g_idle_add(
             [](gpointer p) -> gboolean
             {
-                auto* b = static_cast<Bundle*>(p);
-                if (b->fn)
+                // Owns the bundle so it is freed even if the callback throws;
+                // an exception must not unwind through GLib's C frames.
+                std::unique_ptr<Bundle> b(static_cast<Bundle*>(p));
+                try
                 {
-                    b->fn();
+                    if (b->fn)
+                    {
+                        b->fn();
+                    }
                 }
-                delete b;
+                catch (const std::exception& e)
+                {
+                    std::fprintf(stderr, "[tk] UI task threw: %s\n", e.what());
+                }
+                catch (...)
+                {
+                    std::fprintf(stderr, "[tk] UI task threw an unknown exception\n");
+                }
                 return G_SOURCE_REMOVE;
             },
             bundle);
@@ -2867,12 +2881,24 @@ public:
             ms < 0 ? 0 : static_cast<guint>(ms),
             [](gpointer p) -> gboolean
             {
-                auto* b = static_cast<Bundle*>(p);
-                if (b->fn)
+                // Owns the bundle so it is freed even if the callback throws;
+                // an exception must not unwind through GLib's C frames.
+                std::unique_ptr<Bundle> b(static_cast<Bundle*>(p));
+                try
                 {
-                    b->fn();
+                    if (b->fn)
+                    {
+                        b->fn();
+                    }
                 }
-                delete b;
+                catch (const std::exception& e)
+                {
+                    std::fprintf(stderr, "[tk] UI task threw: %s\n", e.what());
+                }
+                catch (...)
+                {
+                    std::fprintf(stderr, "[tk] UI task threw an unknown exception\n");
+                }
                 return G_SOURCE_REMOVE;
             },
             bundle);
