@@ -434,6 +434,7 @@ The user-pack path already does the right thing (`upsert_image_into_user_pack` m
 **L185 — `ForwardRoomPicker` has no way out if a completion callback never arrives** (`ForwardRoomPicker.cpp:210–221, 655–668`): while `forwarding_` is true, Escape and the backdrop are deliberately ignored and the only exits are `mark_complete()` / the error Dismiss step. If `on_forward_done/failed` is lost (e.g. account switch, client reset), the modal stays up until restart. Add a timeout or let Escape cancel after N seconds.
 
 **L186 — `CreateRoomView`**: Enter in the name field does not submit and there is no Escape handling (same family as M76); invitee splitting only honours `,` and `\n` although the placeholder promises "one per line or comma-separated" (a pasted `@a:x @b:y` becomes one malformed id and the *whole* create fails); server error text is shown verbatim.
+- Status: Partly: invitee splitting now also honours spaces, tabs and semicolons, so a pasted `@a:x @b:y` becomes two ids. **Not done:** Enter-to-submit, Escape handling, and the verbatim server error text
 
 **L187 — `SpaceRootView::paint()` arranges child widgets** (`SpaceRootView.cpp:548, 605–613`): `topic_scroll_` is re-arranged on every paint and the two lists only when their rect changes, so pointer events before the first paint after `set_space()`/`can_manage_children_` flips hit stale rectangles, and layout work happens inside paint (the class comment acknowledges the pattern).
 

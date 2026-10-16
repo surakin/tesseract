@@ -47,8 +47,9 @@ constexpr float kCRBorderW = 1.0f;
 constexpr float kCRGroupPadX = 10.0f;
 constexpr float kCRGroupPadY = 10.0f;
 
-// Splits `text` on commas/newlines, trims whitespace, and drops empties —
-// used to turn the free-text invite field into a Matrix ID list. Malformed
+// Splits `text` on whitespace, commas and semicolons, and drops empties —
+// used to turn the free-text invite field into a Matrix ID list (a Matrix ID
+// never contains whitespace, so a pasted "@a:x @b:y" yields two ids). Malformed
 // IDs aren't validated here; they surface via the existing
 // Result::message / on_create_room_outcome_ui_ error path.
 std::vector<std::string> split_invitees(const std::string& text)
@@ -57,15 +58,13 @@ std::vector<std::string> split_invitees(const std::string& text)
     std::string cur;
     auto flush = [&]
     {
-        size_t begin = cur.find_first_not_of(" \t\r\n");
-        size_t end = cur.find_last_not_of(" \t\r\n");
-        if (begin != std::string::npos)
-            out.push_back(cur.substr(begin, end - begin + 1));
+        if (!cur.empty())
+            out.push_back(std::move(cur));
         cur.clear();
     };
     for (char c : text)
     {
-        if (c == ',' || c == '\n')
+        if (c == ',' || c == ';' || c == ' ' || c == '\t' || c == '\r' || c == '\n')
             flush();
         else
             cur.push_back(c);

@@ -58,7 +58,7 @@ TEST_CASE("CreateRoomView create button builds options from the form",
     s.alias().set_text("my-room");
     s.reason().set_text("join us");
     s.topic().set_text("topic text");
-    s.invite().set_text(" @a:x , @b:y\n\n@c:z ");
+    s.invite().set_text(" @a:x , @b:y\n\n@c:z @d:x;@e:y\t@f:z ");
 
     tesseract::RoomCreateOptions got;
     int calls = 0;
@@ -74,7 +74,7 @@ TEST_CASE("CreateRoomView create button builds options from the form",
     CHECK(got.room_alias_local_part == "my-room");
     CHECK(got.invite_reason == "join us");
     CHECK(got.topic == "topic text");
-    CHECK(got.invite == std::vector<std::string>{"@a:x", "@b:y", "@c:z"});
+    CHECK(got.invite == std::vector<std::string>{"@a:x", "@b:y", "@c:z", "@d:x", "@e:y", "@f:z"});
     CHECK(got.visibility == "private");
     CHECK_FALSE(got.encrypted);
     CHECK_FALSE(got.is_space);
