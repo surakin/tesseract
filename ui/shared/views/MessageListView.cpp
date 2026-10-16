@@ -2011,7 +2011,14 @@ public:
             tk::Color::rgb(0x4DD0E1), tk::Color::rgb(0x82B1FF),
             tk::Color::rgb(0xCE93D8), tk::Color::rgb(0xF48FB1),
         };
-        const std::size_t h = std::hash<std::string>{}(name);
+        // FNV-1a: std::hash<std::string> differs between standard libraries,
+        // which would give one sender a different colour on each platform.
+        std::uint32_t h = 2166136261u;
+        for (const unsigned char c : name)
+        {
+            h ^= c;
+            h *= 16777619u;
+        }
         if (mode == tk::ThemeMode::Dark)
             return kDark[h % std::size(kDark)];
         return kLight[h % std::size(kLight)];
