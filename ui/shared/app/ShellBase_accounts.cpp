@@ -377,6 +377,8 @@ ShellBase::FinalizeLoginIO ShellBase::finalize_login_blocking_(
     if (!res)
     {
         out.error = tk::trf(tk::tr("Could not restore the session: {0}"), {res.message});
+        // The login itself succeeded, so its device is live on the server.
+        sign_out_abandoned_login(session_json, store_key);
         tesseract::SessionStore::clear_account(user_id);
         return io;
     }

@@ -49,12 +49,6 @@ Also: the recovery path runs `restore_session` (network + SQLite open) on the **
 
 #### Medium — Fixable on the Linux host
 
-**M29. Abandoned logins leave live server sessions**
-
-`ShellBase_accounts.cpp:474-485` (duplicate account) and `:256-350` (finalize failures): OAuth has already completed, so the homeserver has created a device/session. On "already signed in", on `couldn't persist matrix store`, `couldn't persist session` or `restore:` failures the pending client is simply dropped (and the directory removed) without calling `logout()`, so the token/device stays valid and shows up in the user's session list forever. Call `pending_client->logout()` (best effort) on every error path after `oauth_await` succeeded.
-- Status: Partial: a rejected duplicate login signs its device out. **Not done:** the persist and restore failure paths, which release the client before the error
-- Status: Partly: a finished login that fails to persist its store or session now restores from the exported session and signs the device out, best effort. The duplicate-account path already did. Tests: shell and accounts pass; the path itself needs a homeserver
-
 **M42. UI-thread FFI calls**
 
 `ShellBase_wiring.cpp:674` calls `client_->get_user_id()` on the UI thread (the add-room handler); like other getters it takes the FFI shared lock and blocks while a `MUT_FFI` writer (login/logout/cache clear/recovery) is active. Cache `user_id` in the session at login. A wider audit of un-`run_async_`'d `client_->` calls is still outstanding.
@@ -1036,6 +1030,7 @@ One row per finding, by ID. "Priority" is the review's severity. "What was done"
 | M26 | Medium | `watch_session_changes` ends permanently on a lagged broadcast | Fixed: a lagged broadcast persists the session; only Closed ends the watcher |
 | M27 | Medium | Session callbacks block the two tokio workers | Resolved by M9: the save callback no longer flushes |
 | M28 | Medium | Terminal `sync_error` has no recovery; the C++ state machine handles a context the SDK never emits | Fixed: `sync_error` stops sync on the mutating pool and restarts it after 5 s, doubling per error and capped at 5 min; the dead `sync_reconnect` branch is removed; `sync_init` and `event_cache_init` (sync never started) show their reason persistently and retry on the same backoff. There is no retry button: the retry is automatic. Tests added |
+| M29 | Medium | Abandoned logins leave live server sessions | Fixed: a rejected duplicate login, a failed store move, a failed session save and now a failed restore of the finished login all sign the new device out (best effort, from a scratch store). Built; the paths need a homeserver, so none is covered by a test |
 | M32 | Medium | A matrix.to / `matrix:` link does nothing in an account that has no rooms | Fixed: a link is held only until the room list has arrived, not while it is empty. The replay used to requeue the link forever for a new account. Test added |
 | M33 | Medium | `/myroomnick` and the other slash handlers send raw/unvalidated arguments | Fixed: a blank /myroomnick is refused, integers are limited to 2^53-1, user, room and alias arguments must have the Matrix shape, and /me and /shrug keep the typed text's formatting and mention pills (the command prefix is stripped from the rendered HTML, so mentions notify). Tests added; the send itself needs a homeserver |
 | M34 | Medium | Settings file carries proxy credentials in plaintext with default permissions | Fixed: the file is 0600 via atomic write, and a `user:pass@` in the proxy URL is saved in the OS secret store with the file keeping the URL and a `proxy_credentials` marker; it is merged back on load. Without a secret store the file keeps the credential as before; an unreadable keyring never deletes the secret. The URL helpers are tested; the keyring path was not run. **Not done:** the settings text field still shows the credential |
