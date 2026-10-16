@@ -417,12 +417,6 @@ The user-pack path already does the right thing (`upsert_image_into_user_pack` m
 
 **L175 — Key dispatch is a root-wide broadcast** and relies on each widget gating on `has_focus()`; a widget that forgets receives every keystroke (the M76-class bugs are one symptom).
 
-**L176 — `message_access_body` static `table_text_cache`** is keyed by arbitrarily large formatted bodies and has no eviction bound.
-
-**Observation:** `unsafe` in `sdk/src` is confined to `webp_anim.rs` (libwebp FFI), `bridge.rs`'s extern block and one `unsafe impl Send` in `client/mod.rs`; no `sprintf/strcpy/strcat/gets/system` calls in `ui/` or `client/` outside third-party code.
-
----
-
 **L177 — Poll/pin calls use uncancellable `rt.block_on`** (`pins.rs` 44/64/145, `polls.rs:159`) on the calling thread while holding `InFlightGuard`; a stalled homeserver blocks that thread (and, for pin/unpin issued through the mut pool, every other mutating call). `can_pin_in_room` does `block_on(room.power_levels())` from what is presumably the UI thread (verify call site).
 
 **L178 — `end_poll` sends a hard-coded English fallback text** ("The poll has ended.") — fine as wire text but it is shown verbatim by clients without poll support; consider the plain-text fallback already used for start.
@@ -1166,6 +1160,7 @@ One row per finding, by ID. "Priority" is the review's severity. "What was done"
 | L164 | Low |  | Fixed: the badge reads `History: ` followed by the labels the security page already translates (Anyone, Members, Members (since invited), Members (since joined)). An unknown value is shown as it arrived. One new msgid (`History: {0}`) is in every catalog; `[room_info_panel]` (new case) and `check_i18n` pass |
 | L166 | Low |  | Fixed: a failed topic save restores the topic the panel replaced, unless the topic has changed since. Built; the failure path is not exercised |
 | L168 | Low |  | Fixed: tiles are written to a `.part` name and renamed into place, and an empty or non-PNG entry is removed on read (`shell_helpers::write_tile_disk` / `read_tile_disk`). The `[tile_disk]` tests cover round-trip, refused store, dropped entries and a miss; the Qt and GTK shells and the test target build |
+| L176 | Low | message_access_body table cache keyed by whole bodies | The table-summary cache is keyed by the formatted body hash instead of the body text, so it no longer retains large bodies (still cleared at 256 entries). |
 | L179 | Low | CLI: a value-taking option swallows the next argument even when it looks like an option | Fixed: a long or short value option no longer takes an argument that looks like an option (`--x`, `-x`; a lone `-` is still a value). The option is reported as missing its value. `cli` test added |
 | L180 | Low | `on_messages_updated_batch` silently drops the whole batch when `indices.size() != events.size()` | Fixed: the drop is logged to stderr with the two counts, as the other bridge drops are. A batch with an out-of-range index logs the index. No test: the log line is not checked |
 | L184 | Low | Hard-coded English in MessageSearchView row text | Relative-time labels use tk::trf/tk::tr (new msgids in every catalog); the sender/snippet row text and the accessibility name now join their parts with the existing translated {0}: {1}, {0}, {1} and {0}, {1}, {2} templates instead of literal separators. |
