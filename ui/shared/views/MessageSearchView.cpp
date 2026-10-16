@@ -152,7 +152,7 @@ public:
 
         std::string snippet = one_line(hit.body);
         if (!hit.sender_name.empty())
-            snippet = hit.sender_name + ": " + snippet;
+            snippet = tk::trf(tk::tr("{0}: {1}"), {hit.sender_name, snippet});
         tk::TextStyle ss{};
         ss.role = tk::FontRole::SidebarPreview;
         ss.trim = tk::TextTrim::Ellipsis;
@@ -175,16 +175,15 @@ public:
         if (index >= owner_.results_.size())
             return {};
         const auto& hit = owner_.results_[index];
-        std::string name =
+        const std::string room =
             hit.room_name.empty() ? tk::tr("Unknown room") : hit.room_name;
         std::string snippet = one_line(hit.body);
         if (!hit.sender_name.empty())
-            snippet = hit.sender_name + ": " + snippet;
-        name += ", " + snippet;
+            snippet = tk::trf(tk::tr("{0}: {1}"), {hit.sender_name, snippet});
         const std::string t = relative_time(hit.timestamp_ms);
-        if (!t.empty())
-            name += ", " + t;
-        return name;
+        if (t.empty())
+            return tk::trf(tk::tr("{0}, {1}"), {room, snippet});
+        return tk::trf(tk::tr("{0}, {1}, {2}"), {room, snippet, t});
     }
     bool access_activate_row(std::size_t index) override
     {
