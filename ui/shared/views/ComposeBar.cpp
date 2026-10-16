@@ -72,13 +72,15 @@ inline bool any_loading(const std::vector<ComposeBar::PendingAttachment>& pendin
 std::string ComposeBar::make_filename(const std::string& mime)
 {
     using namespace std::chrono;
+    // UTC, not local time: the name is sent in the event, and a local clock
+    // would reveal the sender's UTC offset against the server timestamp.
     auto now = system_clock::now();
     std::time_t tt = system_clock::to_time_t(now);
     std::tm tm{};
 #if defined(_WIN32)
-    localtime_s(&tm, &tt);
+    gmtime_s(&tm, &tt);
 #else
-    localtime_r(&tt, &tm);
+    gmtime_r(&tt, &tm);
 #endif
     char buf[64];
     std::snprintf(buf, sizeof(buf), "clipboard-%04d%02d%02d-%02d%02d%02d",

@@ -172,7 +172,7 @@ public:
     /// `filename` is the basename the homeserver will receive in the
     /// `m.image` event's MSC2530 `filename` field. Pass an empty string
     /// for clipboard pastes (the widget synthesises
-    /// `clipboard-YYYYMMDD-HHMMSS.ext`); pass the original filename for
+    /// `clipboard-YYYYMMDD-HHMMSS.ext`, UTC); pass the original filename for
     /// file drops so the recipient sees the real name.
     ///
     /// `is_animated` marks the payload as an animated GIF/WebP: it is
