@@ -6,6 +6,10 @@
 # This workflow never creates a GitHub Release; it only uploads build
 # artifacts for manual download from the Actions run.
 #
+# Windows can optionally be signed with a Certum SimplySign cloud certificate
+# via ssign (windows_sign input; secrets live in the "signing" environment).
+# package.yml signs with a PFX instead, so this part has no mirror there.
+#
 # NOTE: job bodies here are intentionally duplicated from package.yml rather
 # than shared via a reusable workflow, to keep the tag-triggered release
 # pipeline untouched. If you change dependency installs, CMake flags, or
@@ -20,6 +24,10 @@ on:
         description: 'Windows (NSIS .exe)'
         type: boolean
         default: true
+      windows_sign:
+        description: 'Windows: sign with Certum SimplySign via ssign (needs CERTUM_EMAIL / CERTUM_OTP in the "signing" environment)'
+        type: boolean
+        default: false
       macos_arm64:
         description: 'macOS arm64 (DMG)'
         type: boolean
@@ -65,6 +73,9 @@ jobs:
     if: ${{ inputs.windows }}
     name: Windows (NSIS)
     runs-on: windows-latest
+    # Only a signing run enters the "signing" environment (its secrets and any
+    # required-reviewer gate); unsigned runs behave as before.
+    environment: ${{ inputs.windows_sign && 'signing' || '' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -93,6 +104,34 @@ jobs:
 
       - name: Install NSIS
         run: choco install nsis --no-progress -y
+
+      # Certum SimplySign signing via ssign (https://github.com/Le-Syl21/ssign):
+      # plain HTTPS to Certum's cloud, no PFX or SimplySign Desktop. Requested
+      # but misconfigured aborts here, before the long build. The `secrets`
+      # context can't be read in an `if:`, so presence is checked via env.
+      - name: Check Certum signing secrets
+        if: ${{ inputs.windows_sign }}
+        shell: pwsh
+        env:
+          CERTUM_EMAIL: ${{ secrets.CERTUM_EMAIL }}
+          CERTUM_OTP: ${{ secrets.CERTUM_OTP }}
+        run: |
+          if (-not $env:CERTUM_EMAIL -or -not $env:CERTUM_OTP) {
+            Write-Output "::error::Signing requested but CERTUM_EMAIL / CERTUM_OTP are missing from the 'signing' environment"
+            exit 1
+          }
+
+      - name: Cache ssign
+        if: ${{ inputs.windows_sign }}
+        id: ssign_cache
+        uses: actions/cache@v4
+        with:
+          path: ~\.cargo\bin\ssign.exe
+          key: ssign-0.1.8-${{ runner.os }}
+
+      - name: Install ssign
+        if: ${{ inputs.windows_sign && steps.ssign_cache.outputs.cache-hit != 'true' }}
+        run: cargo install --locked ssign --version 0.1.8
 
       # msgfmt compiles i18n/*.po into the .mo catalogs the installer ships;
       # without it CMake configures fine but packages no translations. Same
@@ -155,8 +194,43 @@ jobs:
       - name: Build
         run: cmake --build build/windows-release
 
+      # Signed in place before packaging so CPack installs the signed exe.
+      # The OTP seed is passed via env only (never -O on the command line).
+      - name: Sign Tesseract.exe
+        if: ${{ inputs.windows_sign }}
+        env:
+          CERTUM_EMAIL: ${{ secrets.CERTUM_EMAIL }}
+          CERTUM_OTP: ${{ secrets.CERTUM_OTP }}
+        run: ssign build/windows-release/ui/windows/Tesseract.exe
+
       - name: Package (CPack → NSIS)
         run: cmake --build build/windows-release --target package
+
+      - name: Sign installer
+        if: ${{ inputs.windows_sign }}
+        shell: pwsh
+        env:
+          CERTUM_EMAIL: ${{ secrets.CERTUM_EMAIL }}
+          CERTUM_OTP: ${{ secrets.CERTUM_OTP }}
+        run: |
+          $installers = @(Get-ChildItem build/windows-release/Tesseract-*.exe)
+          if ($installers.Count -eq 0) { throw "no installer found to sign" }
+          ssign $installers.FullName
+          if ($LASTEXITCODE -ne 0) { throw "ssign failed" }
+
+      - name: Verify signatures
+        if: ${{ inputs.windows_sign }}
+        shell: pwsh
+        run: |
+          $files = @(Get-Item build/windows-release/ui/windows/Tesseract.exe) +
+                   @(Get-ChildItem build/windows-release/Tesseract-*.exe)
+          $bad = $false
+          foreach ($f in $files) {
+            $sig = Get-AuthenticodeSignature $f.FullName
+            Write-Output "$($f.Name): $($sig.Status) | $($sig.SignerCertificate.Subject) | timestamp: $($sig.TimeStamperCertificate.Subject)"
+            if ($sig.Status -ne 'Valid') { $bad = $true }
+          }
+          if ($bad) { throw "signature verification failed" }
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
