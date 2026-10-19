@@ -3979,8 +3979,10 @@ void MainWindow::ensure_settings_view_()
     // ensure_settings_controller_() already ran at login time, before this
     // view existed — its wiring into settings_view_ was a silent no-op
     // (guarded on settings_view_ being non-null). Redo it now that the view
-    // is real, or the Account section opens unwired the first time.
-    bind_settings_controller_();
+    // is real, or the Account section opens unwired the first time. Skipped
+    // when Settings is opened from the login view: no controller exists yet.
+    if (settings_controller_)
+        bind_settings_controller_();
 
     // server_info_ may have already arrived before this lazy view was
     // created — apply it now so capability gating (e.g. the Server tab) is
