@@ -683,6 +683,13 @@ void ShellBase::schedule_relayout_()
 
 void ShellBase::handle_timeline_reset_ui_(std::string room_id, EventList snapshot)
 {
+    for (const auto& e : snapshot)
+    {
+        if (e)
+        {
+            smoke_observe_(room_id, *e);
+        }
+    }
     if (main_window_shows_(room_id) && room_view_)
     {
         // RoomPane::on_timeline_reset applies the same display gate (genuine
@@ -776,6 +783,7 @@ void ShellBase::handle_message_inserted_ui_(std::string room_id, std::size_t ind
         return;
     }
     note_member_event_(room_id, *ev);
+    smoke_observe_(room_id, *ev);
     // In-thread replies belong to a thread, not the main timeline. The main
     // window's list excludes them; pop-out main lists must do the same, or
     // their rows diverge from the main window and later update/remove indices
@@ -848,6 +856,7 @@ void ShellBase::handle_message_updated_ui_(std::string room_id, std::size_t inde
         return;
     }
     note_member_event_(room_id, *ev);
+    smoke_observe_(room_id, *ev);
     // See handle_message_inserted_ui_: in-thread replies are excluded from the
     // main timeline on both the main window and pop-outs, keeping their rows
     // aligned with the main-timeline indices used by updates/removals.
@@ -940,6 +949,13 @@ void ShellBase::handle_message_removed_ui_(std::string room_id, std::size_t inde
 // no per-row relayout/scroll concern to preserve).
 void ShellBase::handle_messages_prepended_ui_(std::string room_id, EventList events)
 {
+    for (const auto& e : events)
+    {
+        if (e)
+        {
+            smoke_observe_(room_id, *e);
+        }
+    }
     const bool in_thread =
         !events.empty() && events.front() && !events.front()->thread_root_id.empty();
     if (main_window_shows_(room_id) && !in_thread && room_view_)
@@ -1029,6 +1045,7 @@ void ShellBase::handle_messages_appended_ui_(std::string room_id, EventList even
         if (e)
         {
             note_member_event_(room_id, *e);
+            smoke_observe_(room_id, *e);
         }
     }
     const bool in_thread =
@@ -1086,6 +1103,7 @@ void ShellBase::handle_messages_updated_batch_ui_(std::string room_id,
         if (e)
         {
             note_member_event_(room_id, *e);
+            smoke_observe_(room_id, *e);
         }
     }
     const bool in_thread =

@@ -303,6 +303,11 @@ summary every 10 s.
 which the option drives). "Create an account" with an empty homeserver
 field then goes straight to the default homeserver (matrix.org).
 
+`-DTESSERACT_ENABLE_SMOKE_MODE=ON` (default `OFF`; needs
+`TESSERACT_ENABLE_LEGACY_LOGIN=ON`) adds the `--smoke-test=<result.json>`
+launch option used by the smoke workflow, see [Smoke test](#smoke-test). Keep
+it off for release builds.
+
 ### Unity builds and precompiled headers
 
 `-DTESSERACT_UNITY_BUILD=OFF` (default `ON`) disables CMake's unity build
@@ -327,3 +332,44 @@ block, and the two Qt6 files that `#include` their own AUTOMOC-generated
   bridge + client lib) with the same `WHOLE_ARCHIVE` pattern as the UI targets.
 
 See [CLAUDE.md](../CLAUDE.md) for the day-to-day configure/build/test command loop.
+
+### Smoke test
+
+`.github/workflows/smoke.yml` runs the real app against a throwaway Synapse:
+each shell is launched three times on one isolated profile. Phase `fresh`
+signs in with a password, syncs, shows a message another user sent, sends a
+reply in a plain room and another in an encrypted room; the server confirms the
+plain reply arrived, the encrypted one arrived only as `m.room.encrypted`, and
+the app registered one device. Phase `restore` starts without credentials and
+must come back signed in from the stored session, exchange a new ping and
+reply, then sign out; the server confirms the device is gone. Phase
+`signed-out` must show the login view and stay signed out. After `fresh`,
+`run.py` also requires every `session.json` in the profile to hold only the
+`{"v":2}` marker, so a session that fell back to plaintext instead of the OS
+secret store fails the run. The Linux job turns the accessibility bridge on
+and unlocks a real keyring (`linux_session.sh`). All three jobs gate. The app
+only accepts `https://` homeservers, so CI makes a throwaway CA
+(`make_ca.py`), trusts it in the OS store and serves Synapse with a
+certificate it signed.
+
+- App side: build with `-DTESSERACT_ENABLE_SMOKE_MODE=ON`;
+  `ui/shared/app/SmokeDirector.h` runs the steps of the phase picked by
+  `TESSERACT_SMOKE_PHASE` (`fresh` by default, `restore`, `signed-out`) and
+  writes `{ok, failed_step, error, step_ms}` to the `--smoke-test=` file.
+  Inputs come from `TESSERACT_SMOKE_HOMESERVER`, `_USER`, `_PASSWORD`
+  (`fresh` only), `_ROOM_ID`, `_PING`, `_PONG` and, for `fresh`,
+  `_E2EE_ROOM_ID` and `_E2EE_PONG`.
+- Server side: `scripts/ci/smoke/` (Python standard library only, Synapse pinned
+  in `requirements.txt`): `synapse_up.py` starts Synapse, `run.py` seeds a user
+  and rooms, runs one shell through the three phases and checks the server
+  after each. `--isolate` keeps the app off a real profile: `xdg` / `windows`
+  point its config/data/cache variables into the work dir; `profile` (macOS)
+  uses `--profile=` instead, since a relocated `HOME` leaves macOS without a
+  login keychain and the first keychain write blocks on a dialog.
+- To try it by hand, follow the steps in `smoke.yml`'s Linux job: make the CA,
+  trust it (`update-ca-certificates` / `security add-trusted-cert` /
+  `certutil -addstore Root`), start Synapse, then run `run.py ... -- <app>`.
+  Linux and macOS run Synapse natively; Windows runs it inside WSL2, with WSL's
+  firewall and localhost relay turned off and a `netsh` port proxy from
+  `127.0.0.1:8448` to the distro, and Synapse and the app in one step so the
+  distro stays up.

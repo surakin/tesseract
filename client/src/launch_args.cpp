@@ -149,6 +149,17 @@ std::vector<OptionSpec> launch_option_specs(const LaunchHelpFn& help)
          true,
          {}},
 #endif
+#ifdef TESSERACT_SMOKE_MODE_ENABLED
+        {"smoke-test",
+         "smoke-test",
+         '\0',
+         Arity::Required,
+         "FILE",
+         h("smoke-test"),
+         false,
+         true,
+         {}},
+#endif
     };
     return specs;
 }
@@ -257,6 +268,13 @@ LaunchArgs parse_launch_args(const std::vector<std::string>& args)
     if (auto dir = parsed.value("screenshot-dir"); dir && !dir->empty())
     {
         result.screenshot_dir = std::move(*dir);
+    }
+#endif
+
+#ifdef TESSERACT_SMOKE_MODE_ENABLED
+    if (auto path = parsed.value("smoke-test"); path && !path->empty())
+    {
+        result.smoke_result = std::move(*path);
     }
 #endif
 

@@ -455,6 +455,7 @@ set(_app_sources
     app/image_send.cpp
     app/SendPipeline.h
     app/SendPipeline.cpp
+    app/StepHost.h
     app/WorkerPool.h
     app/WorkerPool.cpp
     app/status_links.h
@@ -472,6 +473,13 @@ if(TESSERACT_ENABLE_SCREENSHOT_MODE)
         app/ScreenshotDirector.cpp
         app/ScreenshotFixture.h
         app/ScreenshotFixture.cpp)
+endif()
+
+if(TESSERACT_ENABLE_SMOKE_MODE)
+    list(APPEND _app_sources
+        app/SmokeDirector.h
+        app/SmokeDirector.cpp
+        app/ShellBase_smoke.cpp)
 endif()
 
 # Per-platform backend sources (canvas_*, host_*, audio/video/*_<platform>,

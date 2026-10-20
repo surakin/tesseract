@@ -65,6 +65,10 @@
 #include "app/ScreenshotDirector.h"
 #include "app/ScreenshotFixture.h"
 #endif
+#ifdef TESSERACT_SMOKE_MODE_ENABLED
+#include "app/SmokeDirector.h"
+#include "views/LoginView.h"
+#endif
 
 #include <array>
 #include <condition_variable>
@@ -4354,6 +4358,37 @@ private:
     std::unique_ptr<screenshot::ScreenshotDirector> screenshot_director_;
 
 protected:
+#endif
+
+#ifdef TESSERACT_SMOKE_MODE_ENABLED
+    /// Smoke mode (CI): drive the real shell through login, room open,
+    /// receive and send against a homeserver, then exit through `host`.
+    /// Inputs come from the TESSERACT_SMOKE_* environment
+    /// variables; `result_path` receives the result JSON. `host` must outlive
+    /// the run.
+    void start_smoke_director_(smoke::SmokeHost& host, std::string result_path);
+    /// Records what the timeline handlers deliver so the run can see the
+    /// received and echoed messages.
+    void smoke_observe_(const std::string& room_id, const Event& ev);
+
+private:
+    struct SmokeSeen
+    {
+        std::string room_id;
+        std::string sender;
+        std::string body;
+        std::string event_id;
+        std::string pending_state;
+    };
+    std::vector<SmokeSeen> smoke_seen_;
+    std::vector<std::string> smoke_needles_; // bodies worth recording
+    std::unique_ptr<smoke::SmokeDirector> smoke_director_;
+
+protected:
+#else
+    void smoke_observe_(const std::string&, const Event&)
+    {
+    }
 #endif
 
     // ── Command-line launch actions ───────────────────────────────────────────

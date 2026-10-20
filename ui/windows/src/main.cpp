@@ -242,7 +242,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR /*l
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
                      screenshot_mode ? L"io.gnomos.Tesseract.ScreenshotModeMutex" :
 #endif
-                                     single_instance_mutex_name().c_str());
+#ifdef TESSERACT_SMOKE_MODE_ENABLED
+                     launch.smoke_result ? L"io.gnomos.Tesseract.SmokeModeMutex"
+                                         :
+#endif
+                                         single_instance_mutex_name().c_str());
     bool duplicate = !single_inst_mutex || GetLastError() == ERROR_ALREADY_EXISTS;
     if (duplicate && single_inst_mutex && launch.relaunch)
     {
@@ -263,6 +267,16 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR /*l
                 CloseHandle(single_inst_mutex);
             }
             return 0;
+        }
+#endif
+#ifdef TESSERACT_SMOKE_MODE_ENABLED
+        if (launch.smoke_result)
+        {
+            if (single_inst_mutex)
+            {
+                CloseHandle(single_inst_mutex);
+            }
+            return 1; // two smoke runs at once would share one profile
         }
 #endif
         // A hidden/autostart launch with nothing to forward has no meaningful
@@ -488,6 +502,13 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPWSTR /*l
             {
                 window.open_matrix_link(startup_uri);
             }
+
+#ifdef TESSERACT_SMOKE_MODE_ENABLED
+            if (launch.smoke_result)
+            {
+                window.start_smoke_mode(*launch.smoke_result);
+            }
+#endif
 
             MSG msg{};
             while (GetMessageW(&msg, nullptr, 0, 0) > 0)

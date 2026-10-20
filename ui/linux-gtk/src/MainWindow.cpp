@@ -973,6 +973,56 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, GtkApplicatio
     broadcast_rebuild_tray_();
 }
 
+#if defined(TESSERACT_SCREENSHOT_MODE_ENABLED) || defined(TESSERACT_SMOKE_MODE_ENABLED)
+void MainWindow::finish_step_run_(bool ok)
+{
+    // g_application_run's status can't be set from here; a failed run must
+    // still fail the CI step.
+    if (!ok)
+    {
+        std::exit(EXIT_FAILURE);
+    }
+    g_application_quit(G_APPLICATION(app_));
+}
+
+namespace
+{
+
+/// Timer + exit plumbing shared by the screenshot and smoke runs; `Base` is
+/// StepHost itself (smoke) or a host interface derived from it (screenshots).
+template <class Base>
+class GtkSteps : public Base
+{
+public:
+    explicit GtkSteps(MainWindow& window) : window_(window)
+    {
+    }
+
+    void run_after(int ms, std::function<void()> fn) override
+    {
+        g_timeout_add(
+            static_cast<guint>(ms),
+            +[](gpointer data) -> gboolean
+            {
+                std::unique_ptr<std::function<void()>> step(
+                    static_cast<std::function<void()>*>(data));
+                (*step)();
+                return G_SOURCE_REMOVE;
+            },
+            new std::function<void()>(std::move(fn)));
+    }
+    void finish(bool ok) override
+    {
+        window_.finish_step_run_(ok);
+    }
+
+protected:
+    MainWindow& window_;
+};
+
+} // namespace
+#endif
+
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
 bool MainWindow::save_screenshot_(const char* filename)
 {
@@ -1007,10 +1057,10 @@ bool MainWindow::save_screenshot_(const char* filename)
 namespace
 {
 
-class GtkScreenshotHost final : public tesseract::screenshot::ScreenshotHost
+class GtkScreenshotHost final : public GtkSteps<tesseract::screenshot::ScreenshotHost>
 {
 public:
-    explicit GtkScreenshotHost(MainWindow& window) : window_(window)
+    explicit GtkScreenshotHost(MainWindow& window) : GtkSteps(window)
     {
     }
 
@@ -1026,26 +1076,6 @@ public:
     {
         return window_.save_screenshot_(filename.c_str());
     }
-    void run_after(int ms, std::function<void()> fn) override
-    {
-        g_timeout_add(
-            static_cast<guint>(ms),
-            +[](gpointer data) -> gboolean
-            {
-                std::unique_ptr<std::function<void()>> step(
-                    static_cast<std::function<void()>*>(data));
-                (*step)();
-                return G_SOURCE_REMOVE;
-            },
-            new std::function<void()>(std::move(fn)));
-    }
-    void finish(bool ok) override
-    {
-        window_.finish_screenshots_(ok);
-    }
-
-private:
-    MainWindow& window_;
 };
 
 } // namespace
@@ -1060,23 +1090,12 @@ void MainWindow::refresh_for_screenshot_()
     main_app_surface_->relayout();
 }
 
-void MainWindow::finish_screenshots_(bool ok)
-{
-    // g_application_run's status can't be set from here; a failed capture
-    // must still fail the CI step.
-    if (!ok)
-    {
-        std::exit(EXIT_FAILURE);
-    }
-    g_application_quit(G_APPLICATION(app_));
-}
-
 void MainWindow::start_screenshot_mode()
 {
     if (!seed_screenshot_fixture_(main_app_surface_->factory()))
     {
         g_printerr("Could not load screenshot assets\n");
-        finish_screenshots_(false);
+        finish_step_run_(false);
         return;
     }
     // show_rooms() keeps GTK's spaces-last ordering.
@@ -1090,13 +1109,21 @@ void MainWindow::start_screenshot_mode()
     if (ec)
     {
         g_printerr("Could not create screenshot directory: %s\n", screenshot_dir_.string().c_str());
-        finish_screenshots_(false);
+        finish_step_run_(false);
         return;
     }
 
     gtk_window_present(GTK_WINDOW(window_));
     screenshot_host_ = std::make_unique<GtkScreenshotHost>(*this);
     start_screenshot_director_(*screenshot_host_, "gtk4");
+}
+#endif
+
+#ifdef TESSERACT_SMOKE_MODE_ENABLED
+void MainWindow::start_smoke_mode(const std::string& result_path)
+{
+    smoke_host_ = std::make_unique<GtkSteps<tesseract::StepHost>>(*this);
+    start_smoke_director_(*smoke_host_, result_path);
 }
 #endif
 

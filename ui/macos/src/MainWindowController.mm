@@ -1,4 +1,5 @@
 #import "MainWindowController.h"
+#include "MacSteps.h"
 #include "MainWindow.h"
 #import "tk_locale.h"
 
@@ -28,7 +29,8 @@
 namespace
 {
 
-class MacScreenshotHost final : public tesseract::screenshot::ScreenshotHost
+class MacScreenshotHost final
+    : public tesseract::macos::MacSteps<tesseract::screenshot::ScreenshotHost>
 {
 public:
     MacScreenshotHost(MainWindowController* controller, NSString* directory)
@@ -53,22 +55,6 @@ public:
         }
         NSLog(@"Could not save screenshot: %@", path);
         return false;
-    }
-    void run_after(int ms, std::function<void()> fn) override
-    {
-        __block std::function<void()> step = std::move(fn);
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, static_cast<int64_t>(ms) * NSEC_PER_MSEC),
-                       dispatch_get_main_queue(), ^{
-                           step();
-                       });
-    }
-    void finish(bool ok) override
-    {
-        if (!ok)
-        {
-            std::exit(EXIT_FAILURE);
-        }
-        [NSApp terminate:nil];
     }
 
 private:
@@ -153,6 +139,13 @@ private:
 {
     return _window.get();
 }
+
+#ifdef TESSERACT_SMOKE_MODE_ENABLED
+- (void)startSmokeWithResultPath:(NSString*)path
+{
+    _window->start_smoke_mode(std::string(path.UTF8String));
+}
+#endif
 
 // Spawned-window init: shares an existing AccountManager rather than owning one.
 // Sets _sharedAccountManager before calling the designated -init so that

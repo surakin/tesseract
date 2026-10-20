@@ -131,6 +131,12 @@ public:
     void refresh_for_screenshot_();
 #endif
 
+#ifdef TESSERACT_SMOKE_MODE_ENABLED
+    /// Start the CI smoke run; the result JSON goes to `result_path` and the
+    /// event loop exits 0/1. Only present in smoke-mode builds.
+    void startSmoke(const std::string& result_path);
+#endif
+
     bool is_main_window_visible_() const override
     {
         return isVisible() && !isMinimized();
@@ -186,6 +192,10 @@ private:
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
     bool screenshot_mode_ = false;
     std::unique_ptr<tesseract::screenshot::ScreenshotHost> screenshot_host_;
+#endif
+
+#ifdef TESSERACT_SMOKE_MODE_ENABLED
+    std::unique_ptr<tesseract::smoke::SmokeHost> smoke_host_;
 #endif
 
     // Forward room picker — opened by "Forward message" action.

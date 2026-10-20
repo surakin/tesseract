@@ -189,6 +189,22 @@ if(TESSERACT_ENABLE_SCREENSHOT_MODE)
     add_compile_definitions(TESSERACT_SCREENSHOT_MODE_ENABLED)
 endif()
 
+# CI-only end-to-end smoke run (smoke.yml): the real shell logs in to a
+# homeserver, receives and sends a message, writes a result file and exits.
+# Off for every normal developer/package build so production binaries carry
+# neither the director nor the --smoke-test entry point. Needs password login.
+option(TESSERACT_ENABLE_SMOKE_MODE
+    "Enable the CI smoke-test entry point (--smoke-test)"
+    OFF)
+if(TESSERACT_ENABLE_SMOKE_MODE)
+    if(NOT TESSERACT_ENABLE_LEGACY_LOGIN)
+        message(FATAL_ERROR
+            "TESSERACT_ENABLE_SMOKE_MODE needs TESSERACT_ENABLE_LEGACY_LOGIN=ON "
+            "(the smoke run signs in with a password)")
+    endif()
+    add_compile_definitions(TESSERACT_SMOKE_MODE_ENABLED)
+endif()
+
 # Batches multiple .cpp files per translation unit (CMake's CMAKE_UNITY_BUILD)
 # to cut redundant header parsing/instantiation across a full build. Must be
 # set before the first add_subdirectory() below, since CMAKE_UNITY_BUILD is

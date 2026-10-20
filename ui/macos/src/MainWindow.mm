@@ -1,5 +1,6 @@
 #import "MainWindowController.h"
 #import "MainWindow.h"
+#import "MacSteps.h"
 #import "util.h"
 #import "tk_locale.h"
 #import "MacOSTrayIcon.h"
@@ -1230,6 +1231,14 @@ void MainWindow::on_os_appearance_changed()
         apply_current_theme_();
     }
 }
+
+#ifdef TESSERACT_SMOKE_MODE_ENABLED
+void MainWindow::start_smoke_mode(const std::string& result_path)
+{
+    smoke_host_ = std::make_unique<MacSteps<tesseract::StepHost>>();
+    start_smoke_director_(*smoke_host_, result_path);
+}
+#endif
 
 void MainWindow::observe_system_changes()
 {

@@ -74,6 +74,12 @@ struct LaunchArgs
     std::optional<std::string> screenshot_dir;
 #endif
 
+#ifdef TESSERACT_SMOKE_MODE_ENABLED
+    /// Result-file path for the CI smoke run. This field and its parser
+    /// branch do not exist in normal production builds.
+    std::optional<std::string> smoke_result;
+#endif
+
     /// Parser warnings (unknown options, bad values, ...). Never fatal —
     /// callers print them to stderr and carry on.
     std::vector<cli::Diagnostic> diagnostics;

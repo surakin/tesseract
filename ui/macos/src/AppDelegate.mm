@@ -106,6 +106,12 @@ static NSString* const kActivateRoomKey = @"room_id";
         return; // Screenshot builds may run beside an installed instance.
     }
 #endif
+#ifdef TESSERACT_SMOKE_MODE_ENABLED
+    if (_launchPlan.args.smoke_result)
+    {
+        return; // CI smoke runs use their own isolated profile.
+    }
+#endif
 
     // Raise the existing instance of this --profile and abort if we are a
     // duplicate. Finder/Dock launches already reuse the running instance
@@ -208,6 +214,14 @@ static NSString* const kActivateRoomKey = @"room_id";
                           roomId:[NSString
                                      stringWithUTF8String:launch.room_id.value_or(std::string{})
                                                               .c_str()]];
+#ifdef TESSERACT_SMOKE_MODE_ENABLED
+        if (launch.smoke_result)
+        {
+            [_windowController
+                startSmokeWithResultPath:[NSString
+                                             stringWithUTF8String:launch.smoke_result->c_str()]];
+        }
+#endif
     });
 }
 

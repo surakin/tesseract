@@ -1,0 +1,1 @@
+matrix-synapse==1.160.0

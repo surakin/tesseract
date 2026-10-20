@@ -98,13 +98,23 @@ public:
         open_quick_switch_();
     }
 
+#if defined(TESSERACT_SCREENSHOT_MODE_ENABLED) || defined(TESSERACT_SMOKE_MODE_ENABLED)
+    // StepHost hook (see GtkSteps in MainWindow.cpp): quit the scripted run.
+    void finish_step_run_(bool ok);
+#endif
+
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
     void start_screenshot_mode();
     // ScreenshotHost adapter hooks (see GtkScreenshotHost in MainWindow.cpp).
     void apply_screenshot_theme_(bool dark);
     void refresh_for_screenshot_();
     bool save_screenshot_(const char* filename);
-    void finish_screenshots_(bool ok);
+#endif
+
+#ifdef TESSERACT_SMOKE_MODE_ENABLED
+    /// Start the CI smoke run; the result JSON goes to `result_path` and the
+    /// process exits 0/1. Only present in smoke-mode builds.
+    void start_smoke_mode(const std::string& result_path);
 #endif
 
 private:
@@ -334,6 +344,9 @@ private:
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
     std::filesystem::path screenshot_dir_;
     std::unique_ptr<tesseract::screenshot::ScreenshotHost> screenshot_host_;
+#endif
+#ifdef TESSERACT_SMOKE_MODE_ENABLED
+    std::unique_ptr<tesseract::smoke::SmokeHost> smoke_host_;
 #endif
     GtkWidget* window_ = nullptr;
     GtkWidget* content_stack_ = nullptr;

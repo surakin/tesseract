@@ -166,6 +166,37 @@ public:
         apply_discovery_result_(ok, base_url_or_error, supports_password);
     }
 
+#if defined(TESSERACT_SMOKE_MODE_ENABLED) && defined(TESSERACT_LEGACY_LOGIN_ENABLED)
+    // Smoke run (CI): fill the form the way a user would. Compiled only into
+    // smoke builds.
+    void smoke_enter_homeserver(const std::string& text)
+    {
+        if (hs_field_)
+        {
+            hs_field_->set_text(text);
+        }
+        hs_changed_(text);
+    }
+    /// The visible status line (e.g. "Sign-in failed: …"), "" when hidden.
+    std::string smoke_status_text() const
+    {
+        return status_lbl_ && status_lbl_->visible() ? status_lbl_->text() : std::string{};
+    }
+    void smoke_sign_in(const std::string& user, const std::string& password)
+    {
+        switch_to_password_form_();
+        if (username_field_)
+        {
+            username_field_->set_text(user);
+        }
+        if (password_field_)
+        {
+            password_field_->set_text(password);
+        }
+        submit_password_();
+    }
+#endif
+
     // -----------------------------------------------------------------------
     // Controller wiring — call before finish_init()
     // -----------------------------------------------------------------------

@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- ci(smoke): new `smoke.yml` runs each shell against a throwaway Synapse: sign-in, messages (plain and encrypted), session restore, sign-out. CI green on Linux, macOS and Windows
 - fix(gtk): closing a screen with text fields, such as the sign-in screen after signing in, no longer touches freed GTK widgets. Linux CI smoke test
 - fix(macos): signed-in sessions are stored in the login keychain, not in plaintext on disk, when the build lacks the data-protection keychain entitlement. macOS CI smoke test (ad-hoc signed build)
 - privacy(gif): Mac App Store builds send one fixed hashed Klipy customer ID instead of a hash of your Matrix ID. Rust unit tests

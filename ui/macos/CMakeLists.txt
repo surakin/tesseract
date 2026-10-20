@@ -58,6 +58,7 @@ add_executable(tesseract_macos MACOSX_BUNDLE
     src/AppDelegate.mm
     src/MainWindow.h
     src/MainWindow.mm
+    src/MacSteps.h
     src/MainWindowController.h
     src/MainWindowController.mm
     src/MacOSTrayIcon.h

@@ -134,6 +134,11 @@ public:
     // Observes backing-scale changes of the window and system colour (accent)
     // changes; the observers are removed in the destructor.
     void observe_system_changes();
+#ifdef TESSERACT_SMOKE_MODE_ENABLED
+    // Start the CI smoke run; the result JSON goes to `result_path` and the
+    // app terminates when the run ends.
+    void start_smoke_mode(const std::string& result_path);
+#endif
     // Forwarded from the controller's KVO on NSApp.effectiveAppearance.
     void on_os_appearance_changed();
     // Drops the popup, settings and account-picker surfaces before the main
@@ -533,6 +538,9 @@ private:
     // Dock-bounce token; 0 = no request in flight.
     NSInteger attention_request_token_ = 0;
 
+#ifdef TESSERACT_SMOKE_MODE_ENABLED
+    std::unique_ptr<tesseract::smoke::SmokeHost> smoke_host_;
+#endif
     // NSNotificationCenter tokens (see observe_system_changes).
     id backing_properties_observer_ = nil;
     id system_colors_observer_ = nil;

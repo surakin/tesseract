@@ -1,0 +1,421 @@
+# End-to-end smoke test: each shipped shell signs in to a real (throwaway)
+# Synapse over TLS, syncs, shows a message another user sent, sends a reply
+# (also into an encrypted room), restarts to check the session is restored,
+# signs out and restarts again to check it stays signed out; the server
+# confirms each step. See scripts/ci/smoke/ and
+# ui/shared/app/SmokeDirector.h.
+#
+# The app only accepts https:// homeservers, so each job makes a throwaway CA
+# (scripts/ci/smoke/make_ca.py), trusts it in the OS store and serves Synapse
+# with a certificate it signed.
+#
+# All three platforms gate. The Windows job runs Synapse inside WSL2.
+#
+# Dependency installs and toolchain setup mirror compile-check.yml's and
+# build-platform.yml's jobs. If you change those there, mirror the change here
+# too.
+
+name: Smoke Test
+
+on:
+  push:
+    branches: [main, development, 'review-*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smoke-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Linux (Qt6, GTK4)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up clang (webrtc-sys needs clang 21 or later)
+        uses: ./.github/actions/setup-clang
+
+      - name: Install build and display dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y \
+            qt6-base-dev qt6-base-private-dev qt6-multimedia-dev \
+            qt6-wayland \
+            qt6-image-formats-plugins \
+            libgtk-4-dev \
+            ninja-build \
+            libgl-dev \
+            libopus-dev \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            libsecret-1-dev \
+            libwayland-dev \
+            libxtst-dev \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-libav \
+            xvfb xauth gdb \
+            at-spi2-core gnome-keyring \
+            fonts-noto-color-emoji
+
+      - name: Expose opus to the Rust SDK build
+        run: |
+          echo "OPUS_LIB_DIR=$(pkg-config --variable=libdir opus)" >> "$GITHUB_ENV"
+          echo "OPUS_INCLUDE_DIR=$(pkg-config --variable=includedir opus)" >> "$GITHUB_ENV"
+          echo "OPUS_STATIC=1" >> "$GITHUB_ENV"
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> build/linux-release/cargo/build
+          cache-on-failure: true
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Configure smoke build
+        run: >-
+          cmake --preset linux-release
+          -DTESSERACT_UI=linux
+          -DTESSERACT_BUILD_TESTS=OFF
+          -DTESSERACT_ENABLE_SMOKE_MODE=ON
+          "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
+
+      - name: Build apps
+        run: cmake --build build/linux-release --target tesseract_qt tesseract_gtk
+
+      - name: Install Synapse
+        run: pip install -r scripts/ci/smoke/requirements.txt
+
+      - name: Throwaway CA, trusted by the OS
+        run: |
+          python scripts/ci/smoke/make_ca.py "$RUNNER_TEMP/smoke-ca"
+          sudo cp "$RUNNER_TEMP/smoke-ca/ca.crt" /usr/local/share/ca-certificates/tesseract-smoke-ca.crt
+          sudo update-ca-certificates
+
+      - name: Start Synapse
+        run: python scripts/ci/smoke/synapse_up.py --dir "$RUNNER_TEMP/smoke-syn" --certs "$RUNNER_TEMP/smoke-ca"
+
+      - name: Smoke test (Qt6)
+        id: qt6
+        env:
+          TZ: UTC
+          LANG: C.UTF-8
+          QT_SCALE_FACTOR: '1'
+          # Turns the accessibility bridge on, which the smoke run then
+          # exercises (it already caught a Qt a11y factory crash).
+          QT_LINUX_ACCESSIBILITY_ALWAYS_ON: '1'
+        run: >-
+          python scripts/ci/smoke/run.py --name qt6 --isolate xdg
+          --ca "$RUNNER_TEMP/smoke-ca/ca.crt"
+          --secret-file "$RUNNER_TEMP/smoke-syn/registration_secret"
+          --workdir "$RUNNER_TEMP/smoke-run"
+          -- dbus-run-session -- sh scripts/ci/smoke/linux_session.sh
+          gdb -batch -return-child-result -ex run -ex bt -ex 'thread apply all bt 12'
+          --args build/linux-release/ui/linux-qt/tesseract
+
+      # Runs after a Qt6 failure so it doesn't hide whether GTK4 works, but not
+      # when the setup steps before Qt6 failed (then Qt6 was skipped).
+      - name: Smoke test (GTK4)
+        if: ${{ !cancelled() && steps.qt6.outcome != 'skipped' }}
+        env:
+          TZ: UTC
+          LANG: C.UTF-8
+          # Turns the accessibility bridge on (see the Qt6 step).
+          GTK_A11Y: atspi
+        run: >-
+          python scripts/ci/smoke/run.py --name gtk4 --isolate xdg
+          --ca "$RUNNER_TEMP/smoke-ca/ca.crt"
+          --secret-file "$RUNNER_TEMP/smoke-syn/registration_secret"
+          --workdir "$RUNNER_TEMP/smoke-run"
+          -- dbus-run-session -- sh scripts/ci/smoke/linux_session.sh
+          build/linux-release/ui/linux-gtk/tesseract
+
+      - name: Upload logs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-linux-logs
+          path: |
+            ${{ runner.temp }}/smoke-run/**/result-*.json
+            ${{ runner.temp }}/smoke-run/**/app-*.log
+            ${{ runner.temp }}/smoke-syn/synapse.log
+            ${{ runner.temp }}/smoke-syn/synapse.stdout.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  macos:
+    name: macOS arm64
+    runs-on: macos-latest
+    timeout-minutes: 90
+    # Matches CMAKE_OSX_DEPLOYMENT_TARGET (root CMakeLists.txt).
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s "/Applications/Xcode_26.4.1.app"
+          echo "DEVELOPER_DIR=/Applications/Xcode_26.4.1.app/Contents/Developer" >> "$GITHUB_ENV"
+          unset SDKROOT
+          sdk="$(xcrun --sdk macosx --show-sdk-path)"
+          echo "SDKROOT=$sdk" >> "$GITHUB_ENV"
+
+      - name: Install build dependencies
+        run: brew install go resvg autoconf automake libtool
+
+      - name: Build opus from source
+        run: |
+          git clone --depth 1 --branch v1.5.2 https://github.com/xiph/opus.git opus-src
+          cmake -S opus-src -B opus-build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_SYSROOT="$SDKROOT" \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET" \
+            -DOPUS_BUILD_SHARED_LIBRARY=ON \
+            -DOPUS_BUILD_PROGRAMS=OFF \
+            -DOPUS_BUILD_TESTING=OFF
+          cmake --build opus-build
+          mkdir -p opus-build/pkgconfig
+          cp opus-build/opus.pc opus-build/pkgconfig/
+          echo "OPUS_LIB_DIR=$PWD/opus-build" >> $GITHUB_ENV
+          echo "OPUS_INCLUDE_DIR=$PWD/opus-src/include" >> $GITHUB_ENV
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+          components: llvm-tools-preview
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> build/macos-appkit-arm64-release/cargo/build
+          # Same key as prime-rust-cache.yml, which seeds this cache nightly.
+          shared-key: macos-arm64-xcode-26.4.1
+          cache-on-failure: true
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Configure smoke build
+        run: >-
+          cmake --preset macos-appkit-arm64-release
+          "-DCMAKE_OSX_SYSROOT=$SDKROOT"
+          "-DCMAKE_EXE_LINKER_FLAGS=-L$SDKROOT/usr/lib"
+          -DTESSERACT_BUILD_TESTS=OFF
+          -DTESSERACT_ENABLE_SMOKE_MODE=ON
+          "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
+
+      - name: Build
+        run: cmake --build build/macos-appkit-arm64-release
+
+      - name: Install Synapse
+        run: pip install -r scripts/ci/smoke/requirements.txt
+
+      - name: Throwaway CA, trusted by the OS
+        run: |
+          python scripts/ci/smoke/make_ca.py "$RUNNER_TEMP/smoke-ca"
+          sudo security add-trusted-cert -d -r trustRoot \
+            -k /Library/Keychains/System.keychain "$RUNNER_TEMP/smoke-ca/ca.crt"
+
+      - name: Start Synapse
+        run: python scripts/ci/smoke/synapse_up.py --dir "$RUNNER_TEMP/smoke-syn" --certs "$RUNNER_TEMP/smoke-ca"
+
+      - name: Smoke test (AppKit)
+        run: >-
+          python scripts/ci/smoke/run.py --name appkit --isolate profile
+          --ca "$RUNNER_TEMP/smoke-ca/ca.crt"
+          --secret-file "$RUNNER_TEMP/smoke-syn/registration_secret"
+          --workdir "$RUNNER_TEMP/smoke-run"
+          -- build/macos-appkit-arm64-release/ui/macos/Tesseract.app/Contents/MacOS/Tesseract
+
+      - name: Upload logs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-macos-logs
+          path: |
+            ${{ runner.temp }}/smoke-run/**/result-*.json
+            ${{ runner.temp }}/smoke-run/**/app-*.log
+            ${{ runner.temp }}/smoke-syn/synapse.log
+            ${{ runner.temp }}/smoke-syn/synapse.stdout.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  windows:
+    name: Windows (Synapse in WSL)
+    runs-on: windows-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> build/windows-release/cargo/build
+          cache-on-failure: true
+
+      # resvg-py 0.3.2 only ships wheels up to cp312, so pin Python 3.12 and
+      # hand that exact interpreter to CMake (see compile-check.yml).
+      - name: Set up Python (icon generation, smoke scripts)
+        id: python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Install resvg-py (icon generation)
+        run: pip install resvg-py
+
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Build opus from source
+        run: |
+          git clone --depth 1 --branch v1.5.2 https://github.com/xiph/opus.git opus-src
+          cmake -S opus-src -B opus-build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL `
+            -DOPUS_BUILD_SHARED_LIBRARY=OFF `
+            -DOPUS_BUILD_PROGRAMS=OFF `
+            -DOPUS_BUILD_TESTING=OFF
+          cmake --build opus-build
+          $lib = (Resolve-Path opus-build).Path
+          $inc = (Resolve-Path opus-src/include).Path
+          "OPUS_LIB_DIR=$lib" >> $env:GITHUB_ENV
+          "OPUS_INCLUDE_DIR=$inc" >> $env:GITHUB_ENV
+          "OPUS_STATIC=1" >> $env:GITHUB_ENV
+
+      - name: Configure smoke build
+        run: >-
+          cmake --preset windows-release
+          "-DPython3_EXECUTABLE=${{ steps.python.outputs.python-path }}"
+          -DTESSERACT_BUILD_TESTS=OFF
+          -DTESSERACT_ENABLE_SMOKE_MODE=ON
+          "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
+
+      - name: Build
+        run: cmake --build build/windows-release
+
+      - name: Throwaway CA, trusted by the OS
+        run: |
+          $env:OPENSSL = "C:\Program Files\Git\usr\bin\openssl.exe"
+          python scripts/ci/smoke/make_ca.py "$env:RUNNER_TEMP\smoke-ca"
+          certutil -addstore -f Root "$env:RUNNER_TEMP\smoke-ca\ca.crt"
+
+      # Synapse is unsupported on Windows, so it runs in WSL2. Hosted runners
+      # block Windows <-> WSL2 traffic with Windows Firewall, and WSL's own
+      # localhost relay is unreliable there, so turn both off before the VM
+      # starts and reach Synapse through a port proxy to the distro's IP.
+      - name: Configure WSL2 networking
+        run: |
+          @"
+          [wsl2]
+          firewall=false
+          localhostForwarding=false
+          "@ | Set-Content -Path "$env:USERPROFILE\.wslconfig"
+
+      - uses: Vampire/setup-wsl@v7
+        with:
+          distribution: Ubuntu-24.04
+          additional-packages: python3-venv python3-pip
+
+      - name: Install Synapse (WSL)
+        shell: wsl-bash {0}
+        run: |
+          python3 -m venv /tmp/smoke-venv
+          /tmp/smoke-venv/bin/pip install -r "$(wslpath -a '${{ github.workspace }}')/scripts/ci/smoke/requirements.txt"
+
+      # Synapse and the smoke test share one step: the distro only stays up
+      # while the foreground wsl.exe that runs Synapse is alive, and that
+      # process does not survive past the end of the step that started it.
+      - name: Smoke test (Win32, Synapse in WSL)
+        run: |
+          # wsl.exe hands its arguments to a Linux shell, which eats backslashes.
+          $repo = (wsl -d Ubuntu-24.04 -- wslpath -a ("${{ github.workspace }}" -replace '\\', '/')).Trim()
+          $certs = (wsl -d Ubuntu-24.04 -- wslpath -a (Join-Path $env:RUNNER_TEMP 'smoke-ca' | ForEach-Object { $_ -replace '\\', '/' })).Trim()
+          $syn = Start-Process wsl -PassThru -WindowStyle Hidden `
+            -RedirectStandardOutput "$env:RUNNER_TEMP\synapse-wsl.out.log" `
+            -RedirectStandardError "$env:RUNNER_TEMP\synapse-wsl.err.log" `
+            -ArgumentList @("-d","Ubuntu-24.04","--","/tmp/smoke-venv/bin/python","$repo/scripts/ci/smoke/synapse_up.py","--dir","/tmp/smoke-syn","--certs",$certs,"--bind","0.0.0.0","--foreground")
+          $secret = ""
+          for ($i = 0; $i -lt 90 -and -not $secret; $i++) {
+            Start-Sleep -Seconds 2
+            $secret = (wsl -d Ubuntu-24.04 -- cat /tmp/smoke-syn/registration_secret 2>$null)
+          }
+          if (-not $secret) { throw "Synapse never wrote its registration secret" }
+          Set-Content -NoNewline -Path "$env:RUNNER_TEMP\smoke-secret" -Value $secret
+          # The WSL network interface exists now: let its traffic through the
+          # firewall and forward 127.0.0.1:8448 to Synapse in the distro, so
+          # https://localhost:8448 stays valid for the certificate.
+          Set-NetFirewallProfile -Profile Public,Private,Domain -DisabledInterfaceAliases "vEthernet (WSL)"
+          $wslip = ((wsl -d Ubuntu-24.04 -- hostname -I) -split '\s+')[0]
+          netsh interface portproxy add v4tov4 listenaddress=127.0.0.1 listenport=8448 connectaddress=$wslip connectport=8448
+          # The secret is written before Synapse starts listening, so wait until
+          # Windows can really reach it (reachability only; the smoke test
+          # itself verifies the certificate); fail here, with the evidence, if not.
+          $ready = $false
+          for ($i = 0; $i -lt 60 -and -not $ready; $i++) {
+            curl.exe -sS -f -k -m 5 https://localhost:8448/_matrix/client/versions *> $null
+            if ($LASTEXITCODE -eq 0) { $ready = $true } else { Start-Sleep -Seconds 2 }
+          }
+          if (-not $ready) {
+            wsl -l -v
+            "WSL ip: $wslip"
+            netsh interface portproxy show all
+            Get-NetAdapter | Format-Table Name, Status
+            curl.exe -sS -k -m 10 "https://${wslip}:8448/_matrix/client/versions"
+            curl.exe -sS -v -k -m 10 https://localhost:8448/_matrix/client/versions
+            curl.exe -sS -v -m 10 --cacert "$env:RUNNER_TEMP\smoke-ca\ca.crt" https://localhost:8448/_matrix/client/versions
+            wsl -d Ubuntu-24.04 -- sh -c "curl -sS -k -m 10 https://127.0.0.1:8448/_matrix/client/versions; ps aux | grep -i [s]ynapse; tail -n 40 /tmp/smoke-syn/synapse.log"
+            Get-Content "$env:RUNNER_TEMP\synapse-wsl.out.log", "$env:RUNNER_TEMP\synapse-wsl.err.log" -ErrorAction SilentlyContinue
+            throw "Synapse is not reachable from Windows on https://localhost:8448"
+          }
+
+          python scripts/ci/smoke/run.py --name win32 --isolate windows `
+            --ca "$env:RUNNER_TEMP\smoke-ca\ca.crt" `
+            --secret-file "$env:RUNNER_TEMP\smoke-secret" `
+            --workdir "$env:RUNNER_TEMP\smoke-run" `
+            -- build/windows-release/ui/windows/Tesseract.exe
+          $code = $LASTEXITCODE
+
+          if ($code -ne 0) {
+            wsl -l -v
+            wsl -d Ubuntu-24.04 -- sh -c "ps aux | grep -i [s]ynapse"
+          }
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\smoke-syn" | Out-Null
+          wsl -d Ubuntu-24.04 -- cat /tmp/smoke-syn/synapse.log > "$env:RUNNER_TEMP\smoke-syn\synapse.log"
+          Stop-Process -Id $syn.Id -ErrorAction SilentlyContinue
+          exit $code
+
+      - name: Upload logs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-windows-logs
+          path: |
+            ${{ runner.temp }}/smoke-run/**/result-*.json
+            ${{ runner.temp }}/smoke-run/**/app-*.log
+            ${{ runner.temp }}/smoke-syn/synapse.log
+            ${{ runner.temp }}/synapse-wsl.out.log
+            ${{ runner.temp }}/synapse-wsl.err.log
+          if-no-files-found: ignore
+          retention-days: 7

@@ -6,6 +6,8 @@
 #include <string_view>
 #include <vector>
 
+#include "app/StepHost.h"
+
 namespace tesseract::screenshot
 {
 
@@ -16,18 +18,12 @@ enum class ScreenshotTheme
 };
 
 /// Native side of screenshot capture, implemented by each shell.
-struct ScreenshotHost
+struct ScreenshotHost : StepHost
 {
-    virtual ~ScreenshotHost() = default;
     virtual void apply_theme(ScreenshotTheme theme) = 0;
     /// Relayout + schedule a repaint after a scene or theme change.
     virtual void refresh() = 0;
     virtual bool save_png(const std::string& filename) = 0;
-    /// Run `fn` once on the UI thread after `ms`. The director never has
-    /// more than one call pending, so a shell may back this with one timer.
-    virtual void run_after(int ms, std::function<void()> fn) = 0;
-    /// Called exactly once; quit the app with a matching exit status.
-    virtual void finish(bool ok) = 0;
 };
 
 struct Scene

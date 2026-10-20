@@ -30,6 +30,12 @@
 - (void)captureScreenshotsToDirectory:(NSString*)directory;
 #endif
 
+#ifdef TESSERACT_SMOKE_MODE_ENABLED
+/// Start the CI smoke run: write the result JSON to `path`, then terminate
+/// (exit 1 on failure).
+- (void)startSmokeWithResultPath:(NSString*)path;
+#endif
+
 /// Stop the background sync loop. Called from
 /// `applicationWillTerminate:` so the SDK exits cleanly.
 - (void)stopSync;

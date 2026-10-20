@@ -1384,11 +1384,11 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
             }
             return 0;
         }
-#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
-        if (wParam == kScreenshotStepTimerId)
+#if defined(TESSERACT_SCREENSHOT_MODE_ENABLED) || defined(TESSERACT_SMOKE_MODE_ENABLED)
+        if (wParam == kStepTimerId)
         {
-            KillTimer(hwnd, kScreenshotStepTimerId);
-            if (auto step = std::exchange(self->screenshot_step_, nullptr))
+            KillTimer(hwnd, kStepTimerId);
+            if (auto step = std::exchange(self->step_, nullptr))
             {
                 step();
             }
@@ -2244,11 +2244,44 @@ void MainWindow::start_login()
         network_available);
 }
 
-#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
-class MainWindow::Win32ScreenshotHost final : public tesseract::screenshot::ScreenshotHost
+#if defined(TESSERACT_SCREENSHOT_MODE_ENABLED) || defined(TESSERACT_SMOKE_MODE_ENABLED)
+/// Timer + exit plumbing shared by the screenshot and smoke runs; `Base` is
+/// StepHost itself (smoke) or a host interface derived from it (screenshots).
+template <class Base>
+class MainWindow::Win32Steps : public Base
 {
 public:
-    explicit Win32ScreenshotHost(MainWindow& window) : window_(window)
+    explicit Win32Steps(MainWindow& window) : window_(window)
+    {
+    }
+
+    void run_after(int ms, std::function<void()> fn) override
+    {
+        window_.step_ = std::move(fn);
+        SetTimer(window_.hwnd_, kStepTimerId, static_cast<UINT>(ms), nullptr);
+    }
+    void finish(bool ok) override
+    {
+        // The message loop's exit code isn't reachable from here; a failed
+        // run must still fail the CI step.
+        if (!ok)
+        {
+            std::exit(EXIT_FAILURE);
+        }
+        DestroyWindow(window_.hwnd_);
+    }
+
+protected:
+    MainWindow& window_;
+};
+#endif
+
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+class MainWindow::Win32ScreenshotHost final
+    : public MainWindow::Win32Steps<tesseract::screenshot::ScreenshotHost>
+{
+public:
+    explicit Win32ScreenshotHost(MainWindow& window) : Win32Steps(window)
     {
     }
 
@@ -2282,24 +2315,6 @@ public:
         OutputDebugStringW(L"Tesseract screenshot: failed to save image\n");
         return false;
     }
-    void run_after(int ms, std::function<void()> fn) override
-    {
-        window_.screenshot_step_ = std::move(fn);
-        SetTimer(window_.hwnd_, kScreenshotStepTimerId, static_cast<UINT>(ms), nullptr);
-    }
-    void finish(bool ok) override
-    {
-        // The message loop's exit code isn't reachable from here; a failed
-        // capture must still fail the CI step.
-        if (!ok)
-        {
-            std::exit(EXIT_FAILURE);
-        }
-        DestroyWindow(window_.hwnd_);
-    }
-
-private:
-    MainWindow& window_;
 };
 
 void MainWindow::start_screenshot_mode_()
@@ -2400,6 +2415,14 @@ bool MainWindow::save_screenshot_(const wchar_t* filename)
     DeleteDC(memory_dc);
     ReleaseDC(hwnd_, window_dc);
     return saved;
+}
+#endif
+
+#ifdef TESSERACT_SMOKE_MODE_ENABLED
+void MainWindow::start_smoke_mode(const std::string& result_path)
+{
+    smoke_host_ = std::make_unique<Win32Steps<tesseract::StepHost>>(*this);
+    start_smoke_director_(*smoke_host_, result_path);
 }
 #endif
 

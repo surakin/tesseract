@@ -325,6 +325,17 @@ TEST_CASE("parse_launch_args: screenshot output is available in CI builds")
 }
 #endif
 
+#ifdef TESSERACT_SMOKE_MODE_ENABLED
+TEST_CASE("parse_launch_args: smoke result path is available in CI builds")
+{
+    auto args = tesseract::parse_launch_args({"--smoke-test=/tmp/tesseract-smoke.json"});
+    REQUIRE(args.smoke_result);
+    CHECK(*args.smoke_result == "/tmp/tesseract-smoke.json");
+    CHECK_FALSE(args.autostart);
+    CHECK_FALSE(args.matrix_uri);
+}
+#endif
+
 TEST_CASE("parse_launch_args: options after -- are not honoured")
 {
     auto args = tesseract::parse_launch_args({"--", "--logoutall"});

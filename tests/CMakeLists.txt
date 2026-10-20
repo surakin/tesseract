@@ -318,6 +318,7 @@ add_executable(tesseract_tests
     cpp/test_screenshot_director.cpp
     cpp/test_screenshot_fixture.cpp
     cpp/test_screenshot_view_hooks.cpp
+    cpp/test_smoke_director.cpp
     cpp/test_tk_access_tree_extensions.cpp
     cpp/test_encryption_overlay_accessibility.cpp
     cpp/test_lists_accessibility.cpp
@@ -346,6 +347,12 @@ if(NOT TESSERACT_ENABLE_SCREENSHOT_MODE)
     target_sources(tesseract_tests PRIVATE
         ${CMAKE_SOURCE_DIR}/ui/shared/app/ScreenshotDirector.cpp
         ${CMAKE_SOURCE_DIR}/ui/shared/app/ScreenshotFixture.cpp)
+endif()
+
+# Smoke-mode sources are only in tesseract_app when the mode is ON.
+if(NOT TESSERACT_ENABLE_SMOKE_MODE)
+    target_sources(tesseract_tests PRIVATE
+        ${CMAKE_SOURCE_DIR}/ui/shared/app/SmokeDirector.cpp)
 endif()
 
 # tk::clean_device_display_name() lives in platform/linux/gst_device_listing.cpp, which is

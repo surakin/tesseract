@@ -161,6 +161,9 @@ int main(int argc, char* argv[])
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
         !screenshot_mode &&
 #endif
+#ifdef TESSERACT_SMOKE_MODE_ENABLED
+        !launch.smoke_result &&
+#endif
         !tk::acquire_single_instance_lock(plan.instance_lock_wait()).acquired)
     {
         // A hidden/autostart launch with nothing to forward has no meaningful
@@ -243,6 +246,12 @@ int main(int argc, char* argv[])
         window.show();
         window.activateOnStartup();
     }
+#ifdef TESSERACT_SMOKE_MODE_ENABLED
+    if (launch.smoke_result)
+    {
+        window.startSmoke(*launch.smoke_result);
+    }
+#endif
     // Else: stays hidden until MainWindow::doLogin()'s async restore
     // completes — hidden (tray-only) on a successful silent restore, or
     // force-shown if there's no saved session to restore.

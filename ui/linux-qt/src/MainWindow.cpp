@@ -501,14 +501,45 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, QWidget* pare
     broadcast_rebuild_tray_();
 }
 
+#if defined(TESSERACT_SCREENSHOT_MODE_ENABLED) || defined(TESSERACT_SMOKE_MODE_ENABLED)
+namespace
+{
+
+/// Timer + exit plumbing shared by the screenshot and smoke runs; `Base` is
+/// StepHost itself (smoke) or a host interface derived from it (screenshots).
+template <class Base>
+class QtSteps : public Base
+{
+public:
+    explicit QtSteps(QObject& context) : context_(context)
+    {
+    }
+
+    void run_after(int ms, std::function<void()> fn) override
+    {
+        QTimer::singleShot(ms, &context_, std::move(fn));
+    }
+    void finish(bool ok) override
+    {
+        qApp->exit(ok ? 0 : 1);
+    }
+
+private:
+    QObject& context_;
+};
+
+} // namespace
+#endif
+
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
 namespace
 {
 
-class QtScreenshotHost final : public tesseract::screenshot::ScreenshotHost
+class QtScreenshotHost final : public QtSteps<tesseract::screenshot::ScreenshotHost>
 {
 public:
-    QtScreenshotHost(MainWindow& window, QString dir) : window_(window), dir_(std::move(dir))
+    QtScreenshotHost(MainWindow& window, QString dir)
+        : QtSteps(window), window_(window), dir_(std::move(dir))
     {
     }
 
@@ -529,14 +560,6 @@ public:
         }
         qCritical("Could not save screenshot: %s", qPrintable(path));
         return false;
-    }
-    void run_after(int ms, std::function<void()> fn) override
-    {
-        QTimer::singleShot(ms, &window_, std::move(fn));
-    }
-    void finish(bool ok) override
-    {
-        qApp->exit(ok ? 0 : 1);
     }
 
 private:
@@ -581,6 +604,14 @@ void MainWindow::captureScreenshots(const std::string& output_dir)
 
     screenshot_host_ = std::make_unique<QtScreenshotHost>(*this, dir);
     start_screenshot_director_(*screenshot_host_, "qt6");
+}
+#endif
+
+#ifdef TESSERACT_SMOKE_MODE_ENABLED
+void MainWindow::startSmoke(const std::string& result_path)
+{
+    smoke_host_ = std::make_unique<QtSteps<tesseract::StepHost>>(*this);
+    start_smoke_director_(*smoke_host_, result_path);
 }
 #endif
 

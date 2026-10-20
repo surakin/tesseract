@@ -118,6 +118,9 @@ int main(int argc, char** argv)
     static const std::filesystem::path screenshot_dir =
         plan.args.screenshot_dir.value_or(std::string{});
 #endif
+#ifdef TESSERACT_SMOKE_MODE_ENABLED
+    static const std::string smoke_result = plan.args.smoke_result.value_or(std::string{});
+#endif
 
     // Every launch intent was consumed above, so GApplication gets only the
     // program name. Forwarding the rest would make G_APPLICATION_HANDLES_OPEN
@@ -133,6 +136,9 @@ int main(int argc, char** argv)
     if (
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
         screenshot_dir.empty() &&
+#endif
+#ifdef TESSERACT_SMOKE_MODE_ENABLED
+        smoke_result.empty() &&
 #endif
         !tk::acquire_single_instance_lock(plan.instance_lock_wait()).acquired)
     {
@@ -218,6 +224,10 @@ int main(int argc, char** argv)
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
                            if (!screenshot_dir.empty())
                                win->start_screenshot_mode();
+#endif
+#ifdef TESSERACT_SMOKE_MODE_ENABLED
+                           if (!smoke_result.empty())
+                               win->start_smoke_mode(smoke_result);
 #endif
                            if (!startup_uri.empty())
                            {

@@ -2,6 +2,17 @@
 
 Snapshot of every feature that has landed on `main`. Last updated **2026-11-01**. 3825 C++ + 1572 Rust tests.
 
+> **End-to-end smoke test in CI (2026-11-02).**
+> `smoke.yml` runs the Qt6, GTK4, AppKit and Win32 shells against a throwaway
+> TLS Synapse and gates on all three platforms. Each shell is launched three
+> times on one isolated profile: password sign-in, receive and reply in a plain
+> room, reply in an encrypted room (the server sees only ciphertext); a restart
+> that restores the session without credentials, then sign-out (the server
+> drops the device); and a restart that stays signed out. It also fails when a
+> session is saved in plaintext instead of the OS secret store, and runs the
+> Linux shells with the accessibility bridge on. CI green on Linux, macOS and
+> Windows.
+
 > **Forwarded messages, MSC4553 (2026-10-30).**
 > A forward carries the original message, its author, room and event in
 > `org.matrix.msc4553.forwarded`, plus a "Forwarded from … - view original

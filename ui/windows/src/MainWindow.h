@@ -117,6 +117,12 @@ public:
     {
         return taskbar_;
     }
+#ifdef TESSERACT_SMOKE_MODE_ENABLED
+    /// Start the CI smoke run; the result JSON goes to `result_path`, and the
+    /// message loop ends (or the process exits 1 on failure). Only present
+    /// in smoke-mode builds.
+    void start_smoke_mode(const std::string& result_path);
+#endif
 
     // Called by the main message loop before TranslateMessage/DispatchMessage.
     // Routes application accelerators (e.g. Ctrl+K → quick switcher) to the
@@ -206,6 +212,13 @@ private:
     bool save_screenshot_(const wchar_t* filename);
     // ScreenshotHost adapter; nested so it can reach the private hooks.
     class Win32ScreenshotHost;
+#endif
+#if defined(TESSERACT_SCREENSHOT_MODE_ENABLED) || defined(TESSERACT_SMOKE_MODE_ENABLED)
+    // StepHost timer/exit plumbing shared by the screenshot and smoke runs
+    // (the smoke run uses Win32Steps<StepHost> directly); nested so it can
+    // reach the private hooks.
+    template <class Base>
+    class Win32Steps;
 #endif
     void show_login_page_ui_() override;
     void show_main_content_() override;
@@ -339,8 +352,13 @@ private:
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
     std::filesystem::path screenshot_dir_;
     std::unique_ptr<tesseract::screenshot::ScreenshotHost> screenshot_host_;
+#endif
+#ifdef TESSERACT_SMOKE_MODE_ENABLED
+    std::unique_ptr<tesseract::smoke::SmokeHost> smoke_host_;
+#endif
+#if defined(TESSERACT_SCREENSHOT_MODE_ENABLED) || defined(TESSERACT_SMOKE_MODE_ENABLED)
     // The director never has two steps pending, so one timer id suffices.
-    std::function<void()> screenshot_step_;
+    std::function<void()> step_;
 #endif
     // rooms_, current_room_id_, pending_restore_room_, space_stack_
     // are inherited from tesseract::ShellBase.
@@ -363,8 +381,8 @@ private:
     static constexpr UINT_PTR kAnimTimerId = 0xA01u;
     static constexpr UINT_PTR kInflightTimerId = 0xA02u;
     static constexpr UINT_PTR kPresenceTickTimerId = 8;
-#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
-    static constexpr UINT_PTR kScreenshotStepTimerId = 9;
+#if defined(TESSERACT_SCREENSHOT_MODE_ENABLED) || defined(TESSERACT_SMOKE_MODE_ENABLED)
+    static constexpr UINT_PTR kStepTimerId = 9;
 #endif
     static constexpr UINT kAnimTimerMs = 16; // ~60 fps
     bool anim_timer_running_ = false;
