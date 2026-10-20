@@ -12,6 +12,14 @@ resolver = "2"
 [profile.dev.package."*"]
 debug = "line-tables-only"
 
+# Without LTO the release staticlib carries every dependency's object code
+# (~800 MB per copy, and Corrosion keeps several copies). Fat LTO with a single
+# codegen unit lets rustc drop unused code and emit one merged object, trading
+# a slower release build for a much smaller archive on disk.
+[profile.release]
+lto           = "fat"
+codegen-units = 1
+
 # Use our fork instead of the upstream crates.io releases (pinned to the fork's
 # matrix-sdk-0.19.1 tag commit). matrix-sdk-base and matrix-sdk-ui come along
 # via path deps within the fork's own workspace, as do the transitive
