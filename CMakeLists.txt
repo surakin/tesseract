@@ -222,8 +222,9 @@ endif()
 # ---------------------------------------------------------------------------
 # macOS / AppKit deployment target. CMakePresets.json picks the architecture
 # (arm64 or x86_64) and the matching Rust target triple via
-# CMAKE_OSX_ARCHITECTURES + Rust_CARGO_TARGET. Both targets compile against
-# the standard macOS SDK — no iOSSupport / Catalyst plumbing.
+# CMAKE_OSX_ARCHITECTURES + Rust_CARGO_TARGET; the universal Mac App Store
+# preset lists both architectures (see cmake/MacUniversal.cmake). All of them
+# compile against the standard macOS SDK — no iOSSupport / Catalyst plumbing.
 # ---------------------------------------------------------------------------
 if(TESSERACT_UI STREQUAL "macos")
     if(NOT APPLE)
@@ -308,6 +309,10 @@ add_subdirectory(third_party/nlohmann_json)
 # Import the Cargo workspace.  Corrosion walks Cargo.toml and produces
 # CMake targets mirroring each crate's [lib] / [[bin]] entries.
 corrosion_import_crate(MANIFEST_PATH ${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml)
+
+# Universal macOS builds (CMAKE_OSX_ARCHITECTURES with several entries): sets
+# TESSERACT_MAC_UNIVERSAL and defines the helpers called below. No-op otherwise.
+include(${CMAKE_SOURCE_DIR}/cmake/MacUniversal.cmake)
 
 # matrix-sdk is rustls-only (no native-tls feature), so no system OpenSSL is
 # required. SQLite is bundled via the `bundled-sqlite` feature, so
@@ -418,6 +423,12 @@ if(APPLE)
         COMMENT "Stripping stray protoc-plugin objects from libtesseract_sdk_ffi.a (if present)"
         VERBATIM
     )
+
+    # Universal build: add the second architecture's Rust archive and lipo it
+    # in. Must follow the strip above (Apple `ar` can't edit a fat archive).
+    if(TESSERACT_MAC_UNIVERSAL)
+        tesseract_mac_universal_rust_slice()
+    endif()
 endif()
 
 # audiopus_sys emits cargo:rustc-link-lib=opus but Corrosion may place it
@@ -426,6 +437,10 @@ endif()
 # follows the archive in the link command.  MSVC CI builds bundle opus into
 # the Rust archive via OPUS_STATIC=1; non-Windows needs it explicitly.
 if(NOT WIN32)
+    # Universal macOS builds build libopus themselves and preset OPUS_LIB.
+    if(TESSERACT_MAC_UNIVERSAL)
+        tesseract_mac_universal_opus()
+    endif()
     find_library(OPUS_LIB NAMES opus
         HINTS "$ENV{OPUS_LIB_DIR}" /opt/homebrew/lib /usr/local/lib
         REQUIRED)

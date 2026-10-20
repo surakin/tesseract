@@ -161,8 +161,8 @@ All presets live in `CMakePresets.json`:
 `windows-debug`, `windows-release`, `windows-xwin-debug`,
 `windows-xwin-release` (Linux host, see above), `linux-debug`, `linux-release`,
 `macos-appkit-arm64-debug`, `macos-appkit-arm64-release`,
-`macos-appkit-arm64-appstore` (Mac App Store, below),
-`macos-appkit-x86_64-debug`, `macos-appkit-x86_64-release`.
+`macos-appkit-x86_64-debug`, `macos-appkit-x86_64-release`,
+`macos-appkit-appstore` (universal Mac App Store, below).
 
 The `linux-*` presets configure and build both the GTK4 and Qt6 UIs from a
 single configure (`TESSERACT_UI=linux`), producing
@@ -179,13 +179,22 @@ and install/package a single Linux backend instead of both.
 
 ## Mac App Store
 
-`-DTESSERACT_MAC_APP_STORE=ON` (or the `macos-appkit-arm64-appstore` preset,
-arm64 only) builds the sandboxed App Store edition: App Sandbox entitlements
+`-DTESSERACT_MAC_APP_STORE=ON` (or the `macos-appkit-appstore` preset, a
+universal arm64 + x86_64 build) builds the sandboxed App Store edition: App Sandbox entitlements
 (`ui/macos/Tesseract-AppStore.entitlements.in`), App Store signing, no
 self-update checks, and a one-time move of an existing DMG install's data into
 the sandbox container (`ui/macos/container-migration.plist`; the data is moved,
 so a DMG install on the same Mac starts empty afterwards). It cannot be combined
 with `TESSERACT_ENABLE_CRASH_HANDLER`.
+
+The universal preset needs both Rust targets (`rustup target add
+aarch64-apple-darwin x86_64-apple-darwin`). One build tree holds both
+architectures: Corrosion builds the arm64 Rust archive, a custom target builds
+the x86_64 one, and the two are `lipo`'d together
+(`cmake/MacUniversal.cmake`), so expect roughly double the disk footprint of a
+single-arch build. CMake also fetches libopus (v1.5.2, so configure needs
+network access) and builds it per architecture into a universal dylib, which
+keeps its minimum macOS at the deployment target.
 
 Cache variables:
 

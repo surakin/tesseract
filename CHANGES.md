@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- build(macos): the `macos-appkit-appstore` preset replaces `macos-appkit-arm64-appstore` and builds a universal arm64 + x86_64 Mac App Store app in one tree; `cmake/MacUniversal.cmake` adds the second Rust slice (Corrosion is single-target) and builds a universal libopus. Not configured or built, untested
 - fix(ui): the screen-share picker can no longer choose a source or cancel twice on macOS. macOS release build, ctest 3729/3729 (ASan)
 - fix(settings): an avatar file picker that finishes after its settings controller is gone no longer touches freed memory. macOS release build, ctest 3729/3729 (ASan)
 - test: shell tests run worker callbacks on the test thread, fixing a race that crashed the invites test. macOS release build, ctest 3729/3729 (ASan)

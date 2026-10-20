@@ -430,7 +430,7 @@ jobs:
   macos-appstore:
     # Disabled until the Mac App Store build is ready; remove this line to re-enable.
     if: false
-    name: macOS arm64 (Mac App Store pkg)
+    name: macOS universal (Mac App Store pkg)
     runs-on: macos-latest
     # Matches CMAKE_OSX_DEPLOYMENT_TARGET (root CMakeLists.txt); also read by
     # CMake, rustc and cc-built C dependencies.
@@ -464,38 +464,20 @@ jobs:
         if: steps.as_check.outputs.present == 'true'
         run: brew install go resvg autoconf automake libtool
 
-      # Homebrew's opus bottle targets the runner's own macOS; App Store
-      # validation rejects a dylib newer than LSMinimumSystemVersion.
-      - name: Build opus from source (arm64)
-        if: steps.as_check.outputs.present == 'true'
-        run: |
-          git clone --depth 1 --branch v1.5.2 https://github.com/xiph/opus.git opus-src
-          cmake -S opus-src -B opus-build -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_OSX_ARCHITECTURES=arm64 \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET" \
-            -DOPUS_BUILD_SHARED_LIBRARY=ON \
-            -DOPUS_BUILD_PROGRAMS=OFF \
-            -DOPUS_BUILD_TESTING=OFF
-          cmake --build opus-build
-          # Lay opus.pc where Corrosion's PKG_CONFIG_PATH (…/pkgconfig) will find it.
-          mkdir -p opus-build/pkgconfig
-          cp opus-build/opus.pc opus-build/pkgconfig/
-          echo "OPUS_LIB_DIR=$PWD/opus-build" >> $GITHUB_ENV
-          echo "OPUS_INCLUDE_DIR=$PWD/opus-src/include" >> $GITHUB_ENV
-
-      - name: Install Rust (stable, aarch64 target)
+      # libopus is built from source by CMake (cmake/MacUniversal.cmake): the
+      # Homebrew bottle targets the runner's own macOS and is single-arch.
+      - name: Install Rust (stable, aarch64 + x86_64 targets)
         if: steps.as_check.outputs.present == 'true'
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-darwin
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
           components: llvm-tools-preview
 
       - name: Cache Rust build artifacts
         if: steps.as_check.outputs.present == 'true'
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: . -> build/macos-appkit-arm64-appstore/cargo/build
+          workspaces: . -> build/macos-appkit-appstore/cargo/build
           key: xcode-26.4.1
           cache-on-failure: true
 
@@ -528,10 +510,10 @@ jobs:
           echo "profile_path=$RUNNER_TEMP/tesseract.provisionprofile" >> "$GITHUB_OUTPUT"
 
       # CFBundleVersion = run number: App Store Connect rejects a repeated one.
-      - name: Configure (Mac App Store, arm64)
+      - name: Configure (Mac App Store, universal)
         if: steps.as_check.outputs.present == 'true'
         run: |
-          cmake --preset macos-appkit-arm64-appstore \
+          cmake --preset macos-appkit-appstore \
             "-DTESSERACT_GITHUB_REPO=${{ github.repository }}" \
             "-DTESSERACT_MAC_APPSTORE_APP_IDENTITY=${{ vars.TESSERACT_MAC_APPSTORE_APP_IDENTITY }}" \
             "-DTESSERACT_MAC_APPSTORE_INSTALLER_IDENTITY=${{ vars.TESSERACT_MAC_APPSTORE_INSTALLER_IDENTITY }}" \
@@ -541,18 +523,20 @@ jobs:
 
       - name: Build signed .pkg
         if: steps.as_check.outputs.present == 'true'
-        run: cmake --build build/macos-appkit-arm64-appstore --target appstore-pkg
+        run: cmake --build build/macos-appkit-appstore --target appstore-pkg
 
       - name: Check bundled libopus minimum macOS
         if: steps.as_check.outputs.present == 'true'
         run: |
-          for f in build/macos-appkit-arm64-appstore/ui/macos/Tesseract.app/Contents/Frameworks/libopus*.dylib; do
-            minos=$(vtool -show-build "$f" | awk '/minos/ {print $2; exit}')
-            echo "$f: minos $minos"
-            if [ "$(printf '%s\n%s\n' "$minos" "$MACOSX_DEPLOYMENT_TARGET" | sort -V | tail -n 1)" != "$MACOSX_DEPLOYMENT_TARGET" ]; then
-              echo "::error::$f needs macOS $minos, newer than the $MACOSX_DEPLOYMENT_TARGET deployment target"
-              exit 1
-            fi
+          for f in build/macos-appkit-appstore/ui/macos/Tesseract.app/Contents/Frameworks/libopus*.dylib; do
+            # A universal dylib prints one build record per slice; check each.
+            for minos in $(vtool -show-build "$f" | awk '/minos/ {print $2}'); do
+              echo "$f: minos $minos"
+              if [ "$(printf '%s\n%s\n' "$minos" "$MACOSX_DEPLOYMENT_TARGET" | sort -V | tail -n 1)" != "$MACOSX_DEPLOYMENT_TARGET" ]; then
+                echo "::error::$f needs macOS $minos, newer than the $MACOSX_DEPLOYMENT_TARGET deployment target"
+                exit 1
+              fi
+            done
           done
 
       - name: Upload App Store pkg artifact
@@ -560,7 +544,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: tesseract-macos-appstore
-          path: build/macos-appkit-arm64-appstore/Tesseract-*-appstore.pkg
+          path: build/macos-appkit-appstore/Tesseract-*-appstore.pkg
           if-no-files-found: error
           retention-days: 90
 
