@@ -1476,8 +1476,8 @@ impl ClientFfi {
     /// (`build_msc4491_dm_create_room_body`) wants `invite` populated with
     /// the one target user, since the reason rides along as an extra JSON
     /// key merged onto this same request's fields. Pulled out as a pure
-    /// function so its shape (is_direct, preset, exactly one initial_state
-    /// entry) can be unit tested without a live homeserver.
+    /// function so its shape (is_direct, preset, the encryption and call-slot
+    /// initial_state entries) can be unit tested without a live homeserver.
     fn build_dm_create_room_request(
         invite: Vec<matrix_sdk::ruma::OwnedUserId>,
     ) -> matrix_sdk::ruma::api::client::room::create_room::v3::Request {
@@ -1490,10 +1490,14 @@ impl ClientFfi {
         request.is_direct = true;
         request.preset = Some(RoomPreset::TrustedPrivateChat);
         request.invite = invite;
-        request.initial_state = vec![InitialStateEvent::with_empty_state_key(
-            RoomEncryptionEventContent::with_recommended_defaults(),
-        )
-        .to_raw_any()];
+        request.initial_state = vec![
+            InitialStateEvent::with_empty_state_key(
+                RoomEncryptionEventContent::with_recommended_defaults(),
+            )
+            .to_raw_any(),
+            // MSC4196: a private room starts with calls enabled.
+            crate::client::rtc::mrtc_membership::slot_initial_state_event(true),
+        ];
         request
     }
 
@@ -1818,7 +1822,12 @@ mod account_dm_tests {
             request.preset.as_ref().map(|p| p.as_str()),
             Some("trusted_private_chat")
         );
-        assert_eq!(request.initial_state.len(), 1);
+        // Encryption, then the call slot (a DM is a private room: calls on).
+        assert_eq!(request.initial_state.len(), 2);
+        let slot: serde_json::Value =
+            serde_json::from_str(request.initial_state[1].json().get()).unwrap();
+        assert_eq!(slot["type"], "org.matrix.msc4143.rtc.slot");
+        assert_eq!(slot["content"]["encryption"]["type"], "m.per_member");
     }
 
     #[test]
@@ -1844,8 +1853,9 @@ mod account_dm_tests {
         assert_eq!(body["is_direct"], true);
         assert_eq!(body["preset"], "trusted_private_chat");
         let initial_state = body["initial_state"].as_array().unwrap();
-        assert_eq!(initial_state.len(), 1);
+        assert_eq!(initial_state.len(), 2);
         assert_eq!(initial_state[0]["type"], "m.room.encryption");
+        assert_eq!(initial_state[1]["type"], "org.matrix.msc4143.rtc.slot");
     }
 }
 

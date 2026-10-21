@@ -5,11 +5,18 @@
 
 pub mod audio_mix;
 pub mod e2ee;
-pub mod livekit_room;
+pub mod key_rotation;
 pub mod members;
+pub mod model;
+pub mod mrtc_membership;
+pub mod identity;
+pub mod invites;
+pub mod livekit_room;
 pub mod session;
+pub mod slots;
 pub mod sfu_set;
 pub mod signaling;
+pub mod sticky;
 pub mod transport;
 
 pub use session::{start_call, RtcSession};

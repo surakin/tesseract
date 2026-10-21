@@ -1846,6 +1846,11 @@ public:
     /// any uncertainty.
     bool can_join_call_in_room(const std::string& room_id);
 
+    /// Decline an incoming MatrixRTC call invite (`m.rtc.decline` referencing
+    /// `invite_event_id`). Fire-and-forget; no callback.
+    void decline_call_invite_async(const std::string& room_id,
+                                   const std::string& invite_event_id);
+
     /// True iff the user can join (above) and also send the
     /// org.matrix.msc3401.call state event, i.e. may start a call that is
     /// not yet running. Cached read — no network. False on any uncertainty.

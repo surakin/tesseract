@@ -425,6 +425,10 @@ public:
                          std::vector<CallBanner::Member>    members,
                          bool                               join_enabled);
     void clear_call_banner();
+    // Show (non-empty) or hide (empty) the banner's Decline button, which the
+    // shell offers while an invite to the call is pending.
+    void set_call_banner_decline(std::function<void()> on_decline);
+    bool call_banner_decline_visible() const;
     // Resolves a member's avatar image for the banner's avatar stack.
     void set_call_banner_avatar_provider(CallBanner::AvatarProvider p);
     // Returns true while the call banner is visible.

@@ -66,6 +66,8 @@ struct CallShell : tesseract::test::TestShellBase
     using ShellBase::current_room_id_;
     using ShellBase::end_call;
     using ShellBase::handle_call_video_error_;
+    using ShellBase::decline_pending_call_invite_;
+    using ShellBase::handle_rtc_invitation_ui_;
     using ShellBase::handle_rtc_participant_joined_ui_;
     using ShellBase::handle_rtc_participant_left_ui_;
     using ShellBase::handle_rtc_participant_updated_ui_;
@@ -75,6 +77,7 @@ struct CallShell : tesseract::test::TestShellBase
     using ShellBase::mark_room_index_dirty_;
     using ShellBase::my_user_id_;
     using ShellBase::overlay_mode_from_settings_;
+    using ShellBase::pending_call_invites_;
     using ShellBase::refresh_call_banners_;
     using ShellBase::room_view_;
     using ShellBase::rooms_;
@@ -326,6 +329,106 @@ TEST_CASE("an in-progress call shows the join banner in the room",
     REQUIRE(f.s.call_banner_rosters_.count("!call:x") == 1);
     // Display names fall back to the localpart when members are unknown.
     CHECK(f.s.call_banner_rosters_["!call:x"].names[0].second == "alice");
+}
+
+TEST_CASE("an active invite adds Decline to the call banner", "[shell][calls][banner]")
+{
+    BannerFixture f;
+    f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "video", 60000, "$inv");
+    CHECK(f.app->room_view()->call_banner_visible());
+    CHECK(f.app->room_view()->call_banner_decline_visible());
+}
+
+TEST_CASE("declining clears the pending invite and the Decline button",
+          "[shell][calls][banner]")
+{
+    BannerFixture f;
+    f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "video", 60000, "$inv");
+    REQUIRE(f.s.pending_call_invites_.count("!call:x") == 1);
+    f.s.decline_pending_call_invite_("!call:x");
+    CHECK(f.s.pending_call_invites_.empty());
+    CHECK_FALSE(f.app->room_view()->call_banner_decline_visible());
+    // The call itself is still in progress; only the invite is gone.
+    CHECK(f.app->room_view()->call_banner_visible());
+}
+
+TEST_CASE("a withdrawn invite removes the Decline button", "[shell][calls][banner]")
+{
+    BannerFixture f;
+    f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "video", 60000, "$inv");
+    REQUIRE(f.app->room_view()->call_banner_decline_visible());
+    // A zero lifetime with an event id means the invite is no longer active.
+    f.s.handle_rtc_invitation_ui_("!call:x", "", "", "", 0, "$another");
+    CHECK(f.app->room_view()->call_banner_decline_visible());
+    f.s.handle_rtc_invitation_ui_("!call:x", "", "", "", 0, "$inv");
+    CHECK_FALSE(f.app->room_view()->call_banner_decline_visible());
+    CHECK(f.s.pending_call_invites_.empty());
+    CHECK(f.app->room_view()->call_banner_visible());
+}
+
+TEST_CASE("a call member event without an event id leaves invites alone", "[shell][calls][banner]")
+{
+    BannerFixture f;
+    f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "video", 60000, "$inv");
+    f.s.handle_rtc_invitation_ui_("!call:x", "", "@alice:x", "", 0, "");
+    CHECK(f.app->room_view()->call_banner_decline_visible());
+}
+
+TEST_CASE("showing or hiding Decline relayouts the room view", "[shell][calls][banner]")
+{
+    BannerFixture f;
+    f.s.refresh_call_banners_(); // the banner is up without an invite
+    int layouts = 0;
+    f.app->room_view()->on_layout_changed = [&] { ++layouts; };
+    f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "video", 60000, "$inv");
+    CHECK(layouts >= 1);
+    const int after_show = layouts;
+    f.s.handle_rtc_invitation_ui_("!call:x", "", "", "", 0, "$inv");
+    CHECK(layouts > after_show);
+}
+
+TEST_CASE("an invite without an event id or lifetime offers no Decline",
+          "[shell][calls][banner]")
+{
+    BannerFixture f;
+    f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "video", 60000, "");
+    CHECK_FALSE(f.app->room_view()->call_banner_decline_visible());
+    f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "video", 0, "$inv");
+    CHECK_FALSE(f.app->room_view()->call_banner_decline_visible());
+    CHECK(f.s.pending_call_invites_.empty());
+}
+
+TEST_CASE("an expired invite no longer offers Decline", "[shell][calls][banner]")
+{
+    BannerFixture f;
+    f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "video", 60000, "$inv");
+    f.s.pending_call_invites_["!call:x"].expires =
+        std::chrono::steady_clock::now() - std::chrono::seconds(1);
+    f.s.refresh_call_banners_();
+    CHECK_FALSE(f.app->room_view()->call_banner_decline_visible());
+    CHECK(f.s.pending_call_invites_.empty());
+}
+
+TEST_CASE("an invite shows the banner before the call roster has members",
+          "[shell][calls][banner]")
+{
+    BannerFixture f;
+    f.s.rooms_[0].call_members.clear();
+    f.s.mark_room_index_dirty_();
+    f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "audio", 60000, "$inv");
+    CHECK(f.app->room_view()->call_banner_visible());
+    CHECK(f.app->room_view()->call_banner_decline_visible());
+    REQUIRE(f.s.call_banner_rosters_.count("!call:x") == 1);
+    CHECK(f.s.call_banner_rosters_["!call:x"].names[0].second == "alice");
+}
+
+TEST_CASE("joining the call drops the pending invite", "[shell][calls][banner]")
+{
+    BannerFixture f;
+    f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "video", 60000, "$inv");
+    shell_calls_install_session(f.s, f.client, "!call:x");
+    f.s.refresh_call_banners_();
+    CHECK(f.s.pending_call_invites_.empty());
 }
 
 TEST_CASE("the banner is hidden when calls are unsupported or the room is empty",

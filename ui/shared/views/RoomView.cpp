@@ -1719,6 +1719,19 @@ void RoomView::clear_call_banner()
     if (on_layout_changed) on_layout_changed();
 }
 
+void RoomView::set_call_banner_decline(std::function<void()> on_decline)
+{
+    if (!call_banner_) return;
+    // The button changes the banner's layout, which only a relayout applies.
+    if (call_banner_->set_decline(std::move(on_decline)) && on_layout_changed)
+        on_layout_changed();
+}
+
+bool RoomView::call_banner_decline_visible() const
+{
+    return call_banner_ && call_banner_->visible() && call_banner_->decline_visible();
+}
+
 void RoomView::set_call_banner_avatar_provider(CallBanner::AvatarProvider p)
 {
     if (call_banner_) call_banner_->set_avatar_provider(std::move(p));

@@ -44,13 +44,13 @@ jemalloc = ["dep:tikv-jemallocator"]
 cxx        = "1.0"
 zeroize    = "1.9"
 tokio      = { version = "1", features = ["full"] }
-matrix-sdk    = { version = "0.19", features = ["unstable-msc4426", "unstable-msc4274", "e2e-encryption", "bundled-sqlite", "local-server", "markdown", "qrcode", "experimental-send-custom-to-device", "experimental-element-recent-emojis"] }
+matrix-sdk    = { version = "0.19", features = ["unstable-msc4354", "unstable-msc4426", "unstable-msc4274", "e2e-encryption", "bundled-sqlite", "local-server", "markdown", "qrcode", "experimental-send-custom-to-device", "experimental-element-recent-emojis"] }
 qrcode        = "0.14"
 # Needed for `UtdCause` in the timeline converter — matrix-sdk doesn't
 # re-export the crypto types module.
 matrix-sdk-base = "0.19"
 async-trait = "0.1"
-matrix-sdk-ui = { version = "0.19", features = ["unstable-msc4426", "unstable-msc4274"] }
+matrix-sdk-ui = { version = "0.19", features = ["unstable-msc4354", "unstable-msc4426", "unstable-msc4274"] }
 # Enable decryption of `m.sticker` events sent in encrypted rooms (MSC2545
 # implementations that wrap the media source as an `EncryptedFile`).
 ruma          = { version = "0.17", default-features = false, features = ["api", "compat-encrypted-stickers", "unstable-msc3245-v1-compat", "unstable-msc2448", "unstable-msc4075", "unstable-msc4095", "unstable-msc3417", "unstable-msc4334", "unstable-msc4274", "html"] }

@@ -2548,6 +2548,17 @@ bool Client::can_join_call_in_room(const std::string& room_id)
     return impl_->ffi->can_join_call_in_room(room_id);
 }
 
+void Client::decline_call_invite_async(const std::string& room_id,
+                                       const std::string& invite_event_id)
+{
+    if (!impl_)
+    {
+        return;
+    }
+    SH_FFI;
+    impl_->ffi->rtc_decline_invite_async(room_id, invite_event_id);
+}
+
 bool Client::can_start_call_in_room(const std::string& room_id)
 {
     SH_FFI;

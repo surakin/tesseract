@@ -221,9 +221,10 @@ pub(super) async fn collect_reactions(
     room: &Room,
     me: Option<&UserId>,
 ) -> Vec<ReactionGroup> {
-    let Some(table) = event_item.content().reactions() else {
+    let table = event_item.reactions();
+    if table.is_empty() {
         return Vec::new();
-    };
+    }
 
     let mut out: Vec<ReactionGroup> = Vec::with_capacity(table.len());
     for (key, by_sender) in table.iter() {

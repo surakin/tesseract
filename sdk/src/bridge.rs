@@ -4654,6 +4654,10 @@ pub mod ffi {
         /// Reads cached power levels — no network round-trip. False on any
         /// uncertainty.
         fn can_start_call_in_room(self: &ClientFfi, room_id: &str) -> bool;
+
+        /// Decline an incoming MatrixRTC invite: sends `m.rtc.decline`
+        /// referencing `invite_event_id`. Non-blocking, no callback.
+        fn rtc_decline_invite_async(self: &ClientFfi, room_id: &str, invite_event_id: &str);
         fn can_join_call_in_room(self: &ClientFfi, room_id: &str) -> bool;
 
         /// Start a MatrixRTC call in `room_id` / `slot_id`. Returns an error when

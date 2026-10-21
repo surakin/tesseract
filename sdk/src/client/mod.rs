@@ -3458,37 +3458,26 @@ pub(super) async fn build_room_info_unfiltered(
     };
     let is_encrypted = room.encryption_state().is_encrypted();
     let (has_active_call, call_members, call_intent) = {
-        use matrix_sdk::deserialized_responses::SyncOrStrippedState;
-        use matrix_sdk::ruma::events::{call::member::CallMemberEventContent, SyncStateEvent};
         let own_user = client.user_id();
         let own_device = client.device_id();
-        let mut active = false;
-        let mut participants = Vec::new();
-        for raw in room
-            .get_state_events_static::<CallMemberEventContent>()
-            .await
-            .unwrap_or_default()
-        {
-            if let Ok(SyncOrStrippedState::Sync(SyncStateEvent::Original(o))) = raw.deserialize() {
-                // active_memberships() filters out expired memberships using
-                // origin_server_ts as the fallback for created_ts; non-empty
-                // result means at least one participant is still in the call.
-                if !o
-                    .content
-                    .active_memberships(Some(o.origin_server_ts))
-                    .is_empty()
-                {
-                    active = true;
-                }
-                if let (Some(u), Some(d)) = (own_user, own_device) {
-                    participants.extend(rtc::members::call_participants(
-                        &o.content,
-                        &o.sender,
-                        o.origin_server_ts,
-                        u,
-                        d,
-                    ));
-                }
+        // Every live legacy membership, ours included, read from the raw
+        // events (ruma's typed model drops those of newer clients).
+        let all = rtc::members::read_call_members(room, None).await;
+        let mut active = !all.is_empty();
+        let others: Vec<rtc::members::CallMember> = all
+            .into_iter()
+            .filter(|m| match (own_user, own_device) {
+                (Some(u), Some(d)) => !(m.user_id == u.as_str() && m.device_id == d.as_str()),
+                _ => true,
+            })
+            .collect();
+        let mut participants = rtc::slots::participants_from_members(&others);
+        // Sticky MatrixRTC members (only those seen in timelines / history).
+        if let (Some(u), Some(d)) = (own_user, own_device) {
+            let mrtc = rtc::slots::read_mrtc_members(room, u, d).await;
+            if !mrtc.is_empty() {
+                active = true;
+                participants.extend(rtc::slots::participants_from_members(&mrtc));
             }
         }
         let (members, intent) = rtc::members::summarize_participants(participants);
@@ -4697,6 +4686,13 @@ mod tests {
     fn decline_invite_async_does_not_panic_when_not_logged_in() {
         let c = ClientFfi::new();
         c.decline_invite_async("!room:example.com");
+    }
+
+    #[test]
+    fn rtc_decline_invite_async_does_not_panic_when_not_logged_in() {
+        let c = ClientFfi::new();
+        c.rtc_decline_invite_async("!room:example.com", "$invite:example.com");
+        c.rtc_decline_invite_async("not a room id", "");
     }
 
     #[test]

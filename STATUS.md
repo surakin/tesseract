@@ -42,6 +42,19 @@ Snapshot of every feature that has landed on `main`. Last updated **2026-10-29**
 > Bubbles layouts), fetched lazily per visible sender. Linux release build,
 > ctest 3757/3757.
 
+> **MatrixRTC, current MSCs (2026-10-21).**
+> Calls now understand the post-rewrite MatrixRTC: sticky `m.rtc.member`
+> events, the `m.call` slot, hashed LiveKit identities, `m.rtc.encryption_key`
+> in both shapes, and `m.rtc.invite` with a Decline button on the call banner.
+> Calls also publish a sticky `m.rtc.member` and ring DMs with `m.rtc.invite`
+> (matrix-sdk is pinned to an upstream commit with MSC4354 sticky events;
+> homeservers need MSC4354 enabled). Call keys are checked against the
+> sender's membership and cross-signing; a joiner is sent the key in use and
+> only leaves and a 30 minute timer rotate it (5 s activation delay). Call
+> members from newer Element clients, which ruma's typed model rejects, are read
+> from the raw event. The call lobby releases the camera before the call
+> opens it. A withdrawn call invite removes the Decline button. Qt6 build, ctest 3504/3504, cargo 1309/1310.
+
 > **Timeline content column (2026-10-21, v0.9.5).**
 > Room timelines lay their rows out in a column that is a percentage of the
 > window (100% by default, so nothing changes until you narrow it; the column

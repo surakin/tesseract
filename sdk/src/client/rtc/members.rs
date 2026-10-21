@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 
 use matrix_sdk::ruma::{
     events::call::member::{ActiveFocus, CallMemberEventContent, Focus},
-    DeviceId, MilliSecondsSinceUnixEpoch, UserId,
+    DeviceId, MilliSecondsSinceUnixEpoch, UInt, UserId,
 };
 
 pub const SELECTION_MULTI_SFU: &str = "multi_sfu";
@@ -21,6 +21,28 @@ pub const SELECTION_OLDEST: &str = "oldest_membership";
 pub struct LkFocus {
     pub service_url: String,
     pub alias: String,
+    /// The SFU WebSocket URL, when the member's event names one (MSC4195).
+    pub sfu_url: Option<String>,
+    /// Set when the member publishes on another homeserver's SFU.
+    pub server_name: Option<String>,
+}
+
+impl LkFocus {
+    /// What identifies this SFU: the JWT service URL when known, else the SFU URL.
+    pub fn key(&self) -> &str {
+        if self.service_url.is_empty() {
+            self.sfu_url.as_deref().unwrap_or("")
+        } else {
+            &self.service_url
+        }
+    }
+}
+
+/// Which membership format a call member was read from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MemberSource {
+    Legacy,
+    MatrixRtc,
 }
 
 /// One live (unexpired, joined) call member device.
@@ -32,6 +54,12 @@ pub struct CallMember {
     pub joined_at: MilliSecondsSinceUnixEpoch,
     pub focus_selection: String,
     pub foci_preferred: Vec<LkFocus>,
+    /// The MatrixRTC `member.id` (for legacy members, the state key).
+    pub member_id: String,
+    pub source: MemberSource,
+    /// `m.audio` / `m.video` (or the reference implementation's spelling).
+    pub intent: Option<String>,
+    pub capabilities: Option<Vec<String>>,
 }
 
 impl CallMember {
@@ -44,6 +72,7 @@ impl CallMember {
 ///
 /// Skips expired and leave memberships, non-call applications and our own
 /// user+device (a stale membership of a previous session).
+#[cfg(test)]
 pub fn members_from_call_member(
     content: &CallMemberEventContent,
     state_key: &str,
@@ -52,11 +81,21 @@ pub fn members_from_call_member(
     own_user: &UserId,
     own_device: &DeviceId,
 ) -> Vec<CallMember> {
+    members_from_call_member_inner(content, state_key, sender, origin_server_ts, Some((own_user, own_device)))
+}
+
+fn members_from_call_member_inner(
+    content: &CallMemberEventContent,
+    state_key: &str,
+    sender: &UserId,
+    origin_server_ts: MilliSecondsSinceUnixEpoch,
+    exclude: Option<(&UserId, &DeviceId)>,
+) -> Vec<CallMember> {
     content
         .active_memberships(Some(origin_server_ts))
         .into_iter()
         .filter(|m| m.is_call())
-        .filter(|m| !(sender == own_user && m.device_id() == own_device))
+        .filter(|m| !exclude.is_some_and(|(u, d)| sender == u && m.device_id() == d))
         .map(|m| {
             let focus_selection = match m.focus_active() {
                 ActiveFocus::Livekit(a) => a.focus_selection.as_str().to_owned(),
@@ -69,6 +108,8 @@ pub fn members_from_call_member(
                     Focus::Livekit(lk) if !lk.service_url.is_empty() => Some(LkFocus {
                         service_url: lk.service_url.clone(),
                         alias: lk.alias.clone(),
+                        sfu_url: None,
+                        server_name: None,
                     }),
                     _ => None,
                 })
@@ -80,6 +121,14 @@ pub fn members_from_call_member(
                 joined_at: m.created_ts().unwrap_or(origin_server_ts),
                 focus_selection,
                 foci_preferred,
+                member_id: state_key.to_owned(),
+                source: MemberSource::Legacy,
+                intent: match m.call_intent() {
+                    Some(matrix_sdk::ruma::events::rtc::notification::CallIntent::Video) => Some("video".to_owned()),
+                    Some(matrix_sdk::ruma::events::rtc::notification::CallIntent::Audio) => Some("audio".to_owned()),
+                    _ => None,
+                },
+                capabilities: None,
             }
         })
         .collect()
@@ -155,33 +204,6 @@ pub struct Participant {
     pub intent: Option<&'static str>,
 }
 
-/// The live memberships of one call-member event, excluding this device.
-pub fn call_participants(
-    content: &CallMemberEventContent,
-    sender: &UserId,
-    origin_server_ts: MilliSecondsSinceUnixEpoch,
-    own_user: &UserId,
-    own_device: &DeviceId,
-) -> Vec<Participant> {
-    use matrix_sdk::ruma::events::rtc::notification::CallIntent;
-
-    content
-        .active_memberships(Some(origin_server_ts))
-        .into_iter()
-        .filter(|m| m.is_call())
-        .filter(|m| !(sender == own_user && m.device_id() == own_device))
-        .map(|m| Participant {
-            user_id: sender.to_string(),
-            joined_at: m.created_ts().unwrap_or(origin_server_ts),
-            intent: match m.call_intent() {
-                Some(CallIntent::Video) => Some("video"),
-                Some(CallIntent::Audio) => Some("audio"),
-                _ => None,
-            },
-        })
-        .collect()
-}
-
 /// Distinct users, oldest join first, and the call's overall intent: `"video"`
 /// if any member is in it with video, else `"audio"` if any declared audio,
 /// else empty.
@@ -203,33 +225,138 @@ pub fn summarize_participants(mut participants: Vec<Participant>) -> (Vec<String
     (users, intent.to_owned())
 }
 
+/// The live members of one `org.matrix.msc3401.call.member` event, from its
+/// raw content. ruma's typed model is tried first (it also covers the old
+/// `memberships` array); when it finds no membership, the flat session form is
+/// read leniently: newer clients leave out fields ruma insists on (such as
+/// `livekit_alias`), which makes ruma silently see an empty membership.
+pub fn members_from_event_json(
+    content: &serde_json::Value,
+    state_key: &str,
+    sender: &UserId,
+    origin_server_ts: MilliSecondsSinceUnixEpoch,
+    exclude: Option<(&UserId, &DeviceId)>,
+    now_ms: u64,
+) -> Vec<CallMember> {
+    if let Ok(typed) = serde_json::from_value::<CallMemberEventContent>(content.clone()) {
+        if !typed.memberships().is_empty() {
+            return members_from_call_member_inner(&typed, state_key, sender, origin_server_ts, exclude);
+        }
+    }
+    let Some(obj) = content.as_object() else { return Vec::new() };
+    if obj.get("application").and_then(serde_json::Value::as_str) != Some("m.call") {
+        return Vec::new();
+    }
+    let Some(device_id) = obj.get("device_id").and_then(serde_json::Value::as_str) else {
+        return Vec::new();
+    };
+    if exclude.is_some_and(|(u, d)| sender == u && d.as_str() == device_id) {
+        return Vec::new();
+    }
+    let origin_ms = u64::from(origin_server_ts.0);
+    let base_ms = obj.get("created_ts").and_then(serde_json::Value::as_u64).unwrap_or(origin_ms);
+    let expires_ms = obj.get("expires").and_then(serde_json::Value::as_u64).unwrap_or(4 * 3_600_000);
+    if now_ms > base_ms.saturating_add(expires_ms) {
+        return Vec::new();
+    }
+    let foci_preferred = obj
+        .get("foci_preferred")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|f| f.get("type").and_then(serde_json::Value::as_str) == Some("livekit"))
+        .filter_map(|f| {
+            let service_url = f.get("livekit_service_url")?.as_str()?.to_owned();
+            (!service_url.is_empty()).then(|| LkFocus {
+                service_url,
+                alias: f.get("livekit_alias").and_then(serde_json::Value::as_str).unwrap_or_default().to_owned(),
+                sfu_url: None,
+                server_name: None,
+            })
+        })
+        .collect();
+    let focus_selection = content
+        .pointer("/focus_active/focus_selection")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+    let intent = match obj.get("m.call.intent").and_then(serde_json::Value::as_str) {
+        Some(i @ ("audio" | "video")) => Some(i.to_owned()),
+        _ => None,
+    };
+    vec![CallMember {
+        user_id: sender.to_string(),
+        device_id: device_id.to_owned(),
+        state_key: state_key.to_owned(),
+        joined_at: MilliSecondsSinceUnixEpoch(UInt::new(base_ms).unwrap_or(UInt::MIN)),
+        focus_selection,
+        foci_preferred,
+        member_id: state_key.to_owned(),
+        source: MemberSource::Legacy,
+        intent,
+        capabilities: None,
+    }]
+}
+
+/// The `call_id` of a call member event, from the flat session form or the
+/// first membership of the old `memberships` array; empty when there is none.
+pub fn call_id_of(content: &serde_json::Value) -> String {
+    content
+        .get("call_id")
+        .or_else(|| content.pointer("/memberships/0/call_id"))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .to_owned()
+}
+
+/// Every live call member of `room` (legacy format), optionally leaving out
+/// one user+device, read from the raw state events.
+pub async fn read_call_members(
+    room: &matrix_sdk::Room,
+    exclude: Option<(&UserId, &DeviceId)>,
+) -> Vec<CallMember> {
+    use matrix_sdk::deserialized_responses::RawAnySyncOrStrippedState;
+    use matrix_sdk::ruma::events::StateEventType;
+
+    let now_ms = u64::from(MilliSecondsSinceUnixEpoch::now().0);
+    let mut members = Vec::new();
+    for raw in room
+        .get_state_events(StateEventType::from("org.matrix.msc3401.call.member"))
+        .await
+        .unwrap_or_default()
+    {
+        let json = match &raw {
+            RawAnySyncOrStrippedState::Sync(r) => r.json().get(),
+            RawAnySyncOrStrippedState::Stripped(_) => continue,
+        };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else { continue };
+        let (Some(sender), Some(state_key), Some(origin)) = (
+            v.get("sender").and_then(serde_json::Value::as_str).and_then(|s| UserId::parse(s).ok()),
+            v.get("state_key").and_then(serde_json::Value::as_str),
+            v.get("origin_server_ts").and_then(serde_json::Value::as_u64),
+        ) else {
+            continue;
+        };
+        let origin = MilliSecondsSinceUnixEpoch(UInt::new(origin).unwrap_or(UInt::MIN));
+        members.extend(members_from_event_json(
+            v.get("content").unwrap_or(&serde_json::Value::Null),
+            state_key,
+            &sender,
+            origin,
+            exclude,
+            now_ms,
+        ));
+    }
+    members
+}
+
 /// Read every live remote call member of `room` from the local state store.
 pub async fn read_live_members(
     room: &matrix_sdk::Room,
     own_user: &UserId,
     own_device: &DeviceId,
 ) -> Vec<CallMember> {
-    use matrix_sdk::deserialized_responses::SyncOrStrippedState;
-    use matrix_sdk::ruma::events::SyncStateEvent;
-
-    let mut members = Vec::new();
-    for raw in room
-        .get_state_events_static::<CallMemberEventContent>()
-        .await
-        .unwrap_or_default()
-    {
-        if let Ok(SyncOrStrippedState::Sync(SyncStateEvent::Original(o))) = raw.deserialize() {
-            members.extend(members_from_call_member(
-                &o.content,
-                o.state_key.as_ref(),
-                &o.sender,
-                o.origin_server_ts,
-                own_user,
-                own_device,
-            ));
-        }
-    }
-    members
+    read_call_members(room, Some((own_user, own_device))).await
 }
 
 #[cfg(test)]
@@ -342,16 +469,8 @@ mod tests {
 
     #[test]
     fn oldest_membership_counts_our_own_membership() {
-        let all = one(
-            content("D1", "oldest_membership", "https://sfu.b.org", None),
-            "kb",
-            "@b:b.org",
-            100,
-        );
-        let own = LkFocus {
-            service_url: "https://sfu.a.org".into(),
-            alias: "!r".into(),
-        };
+        let all = one(content("D1", "oldest_membership", "https://sfu.b.org", None), "kb", "@b:b.org", 100);
+        let own = LkFocus { service_url: "https://sfu.a.org".into(), alias: "!r".into(), sfu_url: None, server_name: None };
         // we joined before b, so b (legacy) publishes on our SFU
         assert_eq!(
             transport_of(&all[0], &all, Some((ts(10), &own)))
@@ -502,14 +621,18 @@ mod tests {
         assert!(!map.contains_key(&("@c:c.org".to_owned(), "D2".to_owned())));
     }
 
+    /// The "call in progress" participants of one event, through the same
+    /// raw-JSON path production uses.
     fn participants(c: &CallMemberEventContent, sender: &str, t: u32) -> Vec<Participant> {
-        call_participants(
-            c,
+        let members = members_from_event_json(
+            &serde_json::to_value(c).unwrap(),
+            "_k_m.call",
             &UserId::parse(sender).unwrap(),
             ts(t),
-            user_id!("@me:a.org"),
-            &owned_device_id!("MYDEV"),
-        )
+            Some((user_id!("@me:a.org"), &owned_device_id!("MYDEV"))),
+            u64::from(MilliSecondsSinceUnixEpoch::now().0),
+        );
+        crate::client::rtc::slots::participants_from_members(&members)
     }
 
     #[test]
@@ -594,5 +717,111 @@ mod tests {
         .unwrap();
         assert_eq!(json["created_ts"], serde_json::to_value(created).unwrap());
         assert_eq!(json["focus_active"]["focus_selection"], "multi_sfu");
+    }
+
+    // ── members_from_event_json: events ruma's typed model cannot read ─────────
+
+    /// ruma checks expiry against the real clock, so the tests do too.
+    fn now_ms() -> u64 {
+        u64::from(MilliSecondsSinceUnixEpoch::now().0)
+    }
+
+    fn at_ms(ms: u64) -> MilliSecondsSinceUnixEpoch {
+        MilliSecondsSinceUnixEpoch(UInt::new(ms).unwrap())
+    }
+
+    /// The member event Element's phone app wrote: no `livekit_alias`.
+    fn phone_content() -> serde_json::Value {
+        serde_json::json!({
+            "application": "m.call", "call_id": "",
+            "device_id": "PWV0V67kd3/SBN0d3sb5ur8GPNN0DXeWsZvv48B8BGw",
+            "expires": 14_400_000,
+            "foci_preferred": [{"livekit_service_url": "https://jwt.example.org/livekit/jwt", "type": "livekit"}],
+            "focus_active": {"focus_selection": "multi_sfu", "type": "livekit"},
+            "m.call.intent": "video",
+            "membershipID": "@surak:example.org:PWV0V67kd3/SBN0d3sb5ur8GPNN0DXeWsZvv48B8BGw",
+            "scope": "m.room"
+        })
+    }
+
+    fn json_members(content: serde_json::Value, origin: u64, exclude: Option<(&UserId, &DeviceId)>) -> Vec<CallMember> {
+        members_from_event_json(
+            &content,
+            "_@surak:example.org_PWV0V67kd3/SBN0d3sb5ur8GPNN0DXeWsZvv48B8BGw_m.call",
+            user_id!("@surak:example.org"),
+            at_ms(origin),
+            exclude,
+            now_ms(),
+        )
+    }
+
+    #[test]
+    fn a_member_event_without_livekit_alias_still_counts() {
+        let got = json_members(phone_content(), now_ms() - 60_000, None);
+        assert_eq!(got.len(), 1);
+        let m = &got[0];
+        assert_eq!(m.user_id, "@surak:example.org");
+        assert_eq!(m.device_id, "PWV0V67kd3/SBN0d3sb5ur8GPNN0DXeWsZvv48B8BGw");
+        assert_eq!(m.focus_selection, "multi_sfu");
+        assert_eq!(m.foci_preferred[0].service_url, "https://jwt.example.org/livekit/jwt");
+        assert_eq!(m.intent.as_deref(), Some("video"));
+        assert_eq!(m.source, MemberSource::Legacy);
+    }
+
+    #[test]
+    fn an_event_with_a_livekit_alias_still_counts_once() {
+        let mut c = phone_content();
+        c["foci_preferred"][0]["livekit_alias"] = serde_json::json!("!r:example.org");
+        assert_eq!(json_members(c, now_ms() - 60_000, None).len(), 1);
+    }
+
+    #[test]
+    fn an_expired_membership_is_ignored() {
+        // Written five hours ago with a four hour lifetime.
+        assert!(json_members(phone_content(), now_ms() - 5 * 3_600_000, None).is_empty());
+        // `created_ts` wins over the event time.
+        let mut c = phone_content();
+        c["created_ts"] = serde_json::json!(now_ms() - 3_600_000);
+        assert_eq!(json_members(c, now_ms() - 5 * 3_600_000, None).len(), 1);
+    }
+
+    #[test]
+    fn empty_other_application_and_deviceless_content_is_ignored() {
+        assert!(json_members(serde_json::json!({}), now_ms(), None).is_empty(), "a leave");
+        let mut other = phone_content();
+        other["application"] = serde_json::json!("m.whiteboard");
+        assert!(json_members(other, now_ms(), None).is_empty());
+        let mut no_device = phone_content();
+        no_device.as_object_mut().unwrap().remove("device_id");
+        assert!(json_members(no_device, now_ms(), None).is_empty());
+    }
+
+    #[test]
+    fn our_own_device_is_excluded_when_asked() {
+        let me = user_id!("@surak:example.org");
+        let dev = owned_device_id!("PWV0V67kd3/SBN0d3sb5ur8GPNN0DXeWsZvv48B8BGw");
+        assert!(json_members(phone_content(), now_ms(), Some((me, &dev))).is_empty());
+        let other = owned_device_id!("SOMEOTHER");
+        assert_eq!(json_members(phone_content(), now_ms(), Some((me, &other))).len(), 1);
+    }
+
+    #[test]
+    fn an_event_without_a_service_url_is_a_member_without_a_transport() {
+        let mut c = phone_content();
+        c["foci_preferred"] = serde_json::json!([]);
+        let got = json_members(c, now_ms(), None);
+        assert_eq!(got.len(), 1);
+        assert!(got[0].foci_preferred.is_empty());
+    }
+
+    #[test]
+    fn call_id_is_read_from_either_membership_form() {
+        assert_eq!(call_id_of(&serde_json::json!({"call_id": "abc", "application": "m.call"})), "abc");
+        assert_eq!(
+            call_id_of(&serde_json::json!({"memberships": [{"application": "m.call", "call_id": "xyz"}]})),
+            "xyz"
+        );
+        assert_eq!(call_id_of(&serde_json::json!({"memberships": [{"application": "m.call"}]})), "");
+        assert_eq!(call_id_of(&serde_json::json!({})), "");
     }
 }

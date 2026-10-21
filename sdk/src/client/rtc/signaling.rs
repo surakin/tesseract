@@ -66,28 +66,6 @@ pub struct RtcFocus {
     pub focus_selection: String,
 }
 
-/// Per-participant identity claims inside m.rtc.member.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct RtcMemberDetails {
-    #[serde(default)]
-    pub id: String,
-    #[serde(default)]
-    pub claimed_device_id: String,
-    #[serde(default)]
-    pub claimed_user_id: String,
-}
-
-/// Transport descriptor inside m.rtc.member.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(tag = "type")]
-pub enum RtcTransport {
-    #[serde(rename = "livekit")]
-    LiveKit {
-        livekit_service_url: String,
-        livekit_alias: String,
-    },
-}
-
 // ---------------------------------------------------------------------------
 // MSC3401 types (used by Element Web / matrix-js-sdk)
 // ---------------------------------------------------------------------------
@@ -108,50 +86,6 @@ pub struct Msc3401CallEventContent {
 // ---------------------------------------------------------------------------
 // MSC4143 / MSC4195 types
 // ---------------------------------------------------------------------------
-
-/// `org.matrix.msc4143.rtc.slot` state event — opens/closes a call slot.
-#[derive(Clone, Debug, Serialize, Deserialize, EventContent)]
-#[ruma_event(type = "org.matrix.msc4143.rtc.slot", kind = State, state_key_type = String)]
-pub struct RtcSlotEventContent {
-    pub application: RtcApplication,
-}
-
-/// `org.matrix.msc4143.rtc.member` state event — participant join/leave.
-/// State key = member_id (same as sticky_key per MSC4354).
-///
-/// We send BOTH the MSC4195 fields (`rtc_transports`, `member`) AND the
-/// current Element Call fields (`focus_active`, `foci_preferred`, `device_id`)
-/// so that both spec revisions can parse our events.
-#[derive(Clone, Debug, Serialize, Deserialize, EventContent)]
-#[ruma_event(type = "org.matrix.msc4143.rtc.member", kind = State, state_key_type = String)]
-pub struct RtcMemberEventContent {
-    // All fields are optional in deserialization: leave events intentionally
-    // send only `disconnect_reason` with no join-state fields present.
-
-    // ── MSC4195 fields ──────────────────────────────────────────────────────
-    #[serde(default)]
-    pub slot_id: String,
-    #[serde(default)]
-    pub application: RtcApplication,
-    #[serde(default)]
-    pub member: RtcMemberDetails,
-    #[serde(default)]
-    pub rtc_transports: Vec<RtcTransport>,
-    #[serde(default)]
-    pub sticky_key: String,
-    #[serde(default)]
-    pub versions: Vec<String>,
-
-    // ── Element Call compat fields (matrix-js-sdk ≥ 34.x) ──────────────────
-    // Element looks for `focus_active.type == "livekit"` to show the join UI.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub focus_active: Option<RtcFocus>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub foci_preferred: Vec<RtcFocus>,
-    // Top-level device_id that Element uses to identify the participant.
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub device_id: String,
-}
 
 /// Key material carried in `io.element.call.encryption_keys` to-device events.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -192,6 +126,36 @@ pub struct RtcEncryptionKeyEventContent {
     pub session: RtcKeySession,
     #[serde(default)]
     pub sent_ts: u64,
+}
+
+/// `org.matrix.msc3401.call.member` as received, kept as raw JSON. ruma's typed
+/// `CallMemberEventContent` refuses events that omit fields it requires (for
+/// example `livekit_alias`), and a handler typed on it is then never called;
+/// this one always matches. Read with
+/// [`super::members::members_from_event_json`].
+#[derive(Clone, Debug, Serialize, Deserialize, EventContent)]
+#[ruma_event(type = "org.matrix.msc3401.call.member", kind = State, state_key_type = String)]
+pub struct CallMemberRawEventContent {
+    #[serde(default, flatten)]
+    pub fields: serde_json::Map<String, serde_json::Value>,
+}
+
+/// `io.element.call.encryption_keys` as received: the legacy and the MSC4143
+/// shapes both parse (see [`super::model::MediaKeyContent`]). Receive-only;
+/// we send [`RtcEncryptionKeyEventContent`]'s shape.
+#[derive(Clone, Debug, Serialize, Deserialize, EventContent)]
+#[ruma_event(type = "io.element.call.encryption_keys", kind = ToDevice)]
+pub struct MediaKeyUnstableEventContent {
+    #[serde(flatten)]
+    pub inner: super::model::MediaKeyContent,
+}
+
+/// The stable name of the same event, `m.rtc.encryption_key` (MSC4143).
+#[derive(Clone, Debug, Serialize, Deserialize, EventContent)]
+#[ruma_event(type = "m.rtc.encryption_key", kind = ToDevice)]
+pub struct MediaKeyStableEventContent {
+    #[serde(flatten)]
+    pub inner: super::model::MediaKeyContent,
 }
 
 // ---------------------------------------------------------------------------
@@ -614,103 +578,6 @@ pub async fn cancel_delayed_event(client: &matrix_sdk::Client, delay_id: &str) {
     let _ = update_delayed_event(client, delay_id, UpdateAction::Cancel).await;
 }
 
-/// Open or refresh the call slot. State key = slot_id.
-/// Per MSC4143 §slot: the presence of this event tells other clients that
-/// the slot is active. Idempotent — safe to re-send.
-pub async fn send_rtc_slot(
-    room: &matrix_sdk::Room,
-    slot_id: &str,
-    call_intent: &str,
-) -> anyhow::Result<()> {
-    let content = RtcSlotEventContent {
-        application: RtcApplication::call(call_intent),
-    };
-    room.send_state_event_for_key(slot_id, content).await?;
-    Ok(())
-}
-
-/// Send an m.rtc.member join event. State key = member_id (= sticky_key).
-pub async fn send_rtc_member_join(
-    room: &matrix_sdk::Room,
-    slot_id: &str,
-    member_id: &str,
-    service_url: &str,
-    livekit_alias: &str,
-    device_id: &str,
-    user_id: &str,
-    call_intent: &str,
-) -> anyhow::Result<()> {
-    let focus = RtcFocus {
-        kind: "livekit".to_owned(),
-        livekit_service_url: service_url.to_owned(),
-        ..Default::default()
-    };
-    let content = RtcMemberEventContent {
-        // MSC4195 fields
-        slot_id: slot_id.to_owned(),
-        application: RtcApplication::call(call_intent),
-        member: RtcMemberDetails {
-            id: member_id.to_owned(),
-            claimed_device_id: device_id.to_owned(),
-            claimed_user_id: user_id.to_owned(),
-        },
-        rtc_transports: vec![RtcTransport::LiveKit {
-            livekit_service_url: service_url.to_owned(),
-            livekit_alias: livekit_alias.to_owned(),
-        }],
-        sticky_key: member_id.to_owned(),
-        versions: vec!["v0".to_owned()],
-        // Element Call compat fields
-        // Include livekit_alias so receiving clients can identify which room
-        // we are in (matching their own livekit_alias).
-        focus_active: Some(RtcFocus {
-            kind: focus.kind.clone(),
-            livekit_service_url: focus.livekit_service_url.clone(),
-            livekit_alias: livekit_alias.to_owned(),
-            ..Default::default()
-        }),
-        foci_preferred: vec![RtcFocus {
-            kind: focus.kind.clone(),
-            livekit_service_url: focus.livekit_service_url.clone(),
-            livekit_alias: livekit_alias.to_owned(),
-            ..Default::default()
-        }],
-        device_id: device_id.to_owned(),
-    };
-    // matrix-sdk 0.18: send_state_event_for_key(&state_key, content)
-    room.send_state_event_for_key(member_id, content).await?;
-    Ok(())
-}
-
-/// Send an m.rtc.member disconnect event (minimal content that does not satisfy
-/// the connected-state schema, per MSC4143 §leave).
-pub async fn send_rtc_member_leave(
-    room: &matrix_sdk::Room,
-    member_id: &str,
-    reason: &str,
-) -> anyhow::Result<()> {
-    use matrix_sdk::ruma::{
-        api::client::state::send_state_event,
-        events::{AnyStateEventContent, StateEventType},
-    };
-
-    let body = serde_json::json!({
-        "disconnect_reason": {
-            "class": "user",
-            "reason": reason,
-        }
-    });
-    let raw_body = serde_json::value::to_raw_value(&body)
-        .map(|v| matrix_sdk::ruma::serde::Raw::<AnyStateEventContent>::from_json(v))
-        .map_err(|e| anyhow::anyhow!("serialize leave body: {e}"))?;
-    let event_type = StateEventType::from("org.matrix.msc4143.rtc.member");
-    let room_id = room.room_id().to_owned();
-    let request =
-        send_state_event::v3::Request::new_raw(room_id, event_type, member_id.to_owned(), raw_body);
-    room.client().send(request).await?;
-    Ok(())
-}
-
 // ---------------------------------------------------------------------------
 // MSC4075 — ring notification event types and helpers
 // ---------------------------------------------------------------------------
@@ -782,58 +649,6 @@ pub async fn send_rtc_notification(
     room.send_raw("org.matrix.msc4075.rtc.notification", body)
         .await
         .map_err(|e| anyhow::anyhow!("send rtc notification: {e}"))?;
-    Ok(())
-}
-
-/// Send MSC4075 m.call.ring.ack to-device message to the caller.
-/// Called when we display IncomingCallBanner to acknowledge ringing.
-pub async fn send_ring_ack(
-    client: &matrix_sdk::Client,
-    caller_user_id: &str,
-    caller_device_id: &str,
-    notification_event_id: &str,
-) -> anyhow::Result<()> {
-    use matrix_sdk::ruma::{
-        api::client::to_device::send_event_to_device,
-        events::{AnyToDeviceEventContent, ToDeviceEventType},
-        to_device::DeviceIdOrAllDevices,
-        OwnedDeviceId, OwnedUserId, TransactionId,
-    };
-    use std::collections::BTreeMap;
-
-    let our_device_id = client
-        .device_id()
-        .ok_or_else(|| anyhow::anyhow!("no device_id for ring_ack"))?
-        .to_string();
-
-    let body = serde_json::json!({
-        "device_id": our_device_id,
-        "m.relates_to": {
-            "rel_type": "m.reference",
-            "event_id": notification_event_id
-        }
-    });
-    let raw = serde_json::value::to_raw_value(&body)
-        .map(|v| matrix_sdk::ruma::serde::Raw::<AnyToDeviceEventContent>::from_json(v))
-        .map_err(|e| anyhow::anyhow!("serialize ring_ack: {e}"))?;
-
-    let uid: OwnedUserId = caller_user_id
-        .parse()
-        .context("invalid caller_user_id for ring_ack")?;
-    let did: OwnedDeviceId = caller_device_id.into();
-
-    let mut per_user: BTreeMap<OwnedUserId, BTreeMap<DeviceIdOrAllDevices, _>> = BTreeMap::new();
-    let mut per_device = BTreeMap::new();
-    per_device.insert(DeviceIdOrAllDevices::DeviceId(did), raw);
-    per_user.insert(uid, per_device);
-
-    let event_type = ToDeviceEventType::from("org.matrix.msc4075.call.ring.ack");
-    let request =
-        send_event_to_device::v3::Request::new_raw(event_type, TransactionId::new(), per_user);
-    client
-        .send(request)
-        .await
-        .map_err(|e| anyhow::anyhow!("send ring_ack: {e}"))?;
     Ok(())
 }
 
@@ -959,67 +774,6 @@ mod tests {
         // Entirely empty object is tolerated.
         let empty: RtcFocus = serde_json::from_value(json!({})).unwrap();
         assert!(empty.kind.is_empty());
-    }
-
-    #[test]
-    fn rtc_transport_roundtrip_uses_type_tag() {
-        let t = RtcTransport::LiveKit {
-            livekit_service_url: "u".into(),
-            livekit_alias: "a".into(),
-        };
-        let v = serde_json::to_value(&t).unwrap();
-        assert_eq!(
-            v,
-            json!({"type": "livekit", "livekit_service_url": "u", "livekit_alias": "a"})
-        );
-        let RtcTransport::LiveKit {
-            livekit_service_url,
-            livekit_alias,
-        } = serde_json::from_value(v).unwrap();
-        assert_eq!(
-            (livekit_service_url.as_str(), livekit_alias.as_str()),
-            ("u", "a")
-        );
-        assert!(serde_json::from_value::<RtcTransport>(json!({"type": "other"})).is_err());
-    }
-
-    #[test]
-    fn member_event_leave_content_deserializes_to_defaults() {
-        let c: RtcMemberEventContent = serde_json::from_value(
-            json!({"disconnect_reason": {"class": "user", "reason": "bye"}}),
-        )
-        .unwrap();
-        assert!(c.slot_id.is_empty() && c.sticky_key.is_empty() && c.device_id.is_empty());
-        assert!(c.rtc_transports.is_empty() && c.foci_preferred.is_empty());
-        assert!(c.focus_active.is_none());
-    }
-
-    #[test]
-    fn member_event_serialization_skips_empty_compat_fields() {
-        let c = RtcMemberEventContent {
-            slot_id: "s".into(),
-            application: RtcApplication::call("voice"),
-            member: RtcMemberDetails {
-                id: "m".into(),
-                claimed_device_id: "D".into(),
-                claimed_user_id: "@a:x".into(),
-            },
-            rtc_transports: vec![],
-            sticky_key: "m".into(),
-            versions: vec!["v0".into()],
-            focus_active: None,
-            foci_preferred: vec![],
-            device_id: String::new(),
-        };
-        let v = serde_json::to_value(&c).unwrap();
-        assert!(v.get("focus_active").is_none());
-        assert!(v.get("foci_preferred").is_none());
-        assert!(v.get("device_id").is_none());
-        assert_eq!(v["member"]["claimed_user_id"], "@a:x");
-        assert_eq!(v["versions"], json!(["v0"]));
-        let back: RtcMemberEventContent = serde_json::from_value(v).unwrap();
-        assert_eq!(back.sticky_key, "m");
-        assert_eq!(back.application.call_intent, "voice");
     }
 
     #[test]

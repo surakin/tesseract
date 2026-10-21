@@ -103,6 +103,104 @@ impl E2eeManager {
     }
 }
 
+/// How long a key from a not-yet-known call member is kept waiting for its
+/// membership event (MSC4143: clients SHOULD store keys that arrive first).
+pub const PARK_TTL: std::time::Duration = std::time::Duration::from_secs(60);
+/// Most keys kept waiting at once; the most prolific sender loses its oldest first.
+pub const PARK_CAP: usize = 64;
+/// Most keys kept waiting per sending device, so one sender cannot push out the rest.
+pub const PER_SENDER_CAP: usize = 8;
+
+/// A frame key whose sender is not a live call member (yet).
+#[derive(Clone, Debug)]
+pub struct ParkedKey {
+    pub user_id: String,
+    pub device_id: String,
+    pub index: i32,
+    pub raw_key: Vec<u8>,
+}
+
+/// Keys that arrived before their sender's membership event.
+#[derive(Default)]
+pub struct ParkedKeys {
+    entries: Vec<(std::time::Instant, ParkedKey)>,
+}
+
+impl ParkedKeys {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn park(&mut self, key: ParkedKey, now: std::time::Instant) {
+        self.entries.retain(|(at, _)| now.saturating_duration_since(*at) <= PARK_TTL);
+        let same = |k: &ParkedKey| k.user_id == key.user_id && k.device_id == key.device_id;
+        // Per sender: drop its oldest key.
+        if self.entries.iter().filter(|(_, k)| same(k)).count() >= PER_SENDER_CAP {
+            if let Some(i) = self.entries.iter().position(|(_, k)| same(k)) {
+                self.entries.remove(i);
+            }
+        }
+        // Overall: drop the oldest key of whoever holds the most.
+        if self.entries.len() >= PARK_CAP {
+            let mut counts: std::collections::HashMap<(&str, &str), usize> = std::collections::HashMap::new();
+            for (_, k) in &self.entries {
+                *counts.entry((k.user_id.as_str(), k.device_id.as_str())).or_default() += 1;
+            }
+            let worst = counts
+                .into_iter()
+                .max_by_key(|(_, n)| *n)
+                .map(|((u, d), _)| (u.to_owned(), d.to_owned()));
+            if let Some((u, d)) = worst {
+                if let Some(i) = self.entries.iter().position(|(_, k)| k.user_id == u && k.device_id == d) {
+                    self.entries.remove(i);
+                }
+            }
+        }
+        self.entries.push((now, key));
+    }
+
+    /// Remove and return the parked keys whose sender is in `members`
+    /// (`(user_id, device_id)`); expired ones are dropped.
+    pub fn take_for(&mut self, members: &[(String, String)], now: std::time::Instant) -> Vec<ParkedKey> {
+        self.entries.retain(|(at, _)| now.saturating_duration_since(*at) <= PARK_TTL);
+        let mut released = Vec::new();
+        self.entries.retain(|(_, k)| {
+            let member = members.iter().any(|(u, d)| *u == k.user_id && *d == k.device_id);
+            if member {
+                released.push(k.clone());
+            }
+            !member
+        });
+        released
+    }
+}
+
+/// The to-device content of a frame key: Element's `keys`/`member`/`session`
+/// shape, plus MSC4143's `member_id`/`media_key` when we have a MatrixRTC
+/// member id (the reference implementation sends both).
+pub fn key_event_content(
+    room_id: &str,
+    lk_identity: &str,
+    our_device_id: &str,
+    key_b64: &str,
+    index: u8,
+    mrtc_member_id: Option<&str>,
+    now_ms: u64,
+) -> serde_json::Value {
+    let mut content = serde_json::json!({
+        "keys": { "key": key_b64, "index": index },
+        "room_id": room_id,
+        "member": { "claimed_device_id": our_device_id, "id": lk_identity },
+        "session": { "call_id": "", "application": "m.call", "scope": "m.room" },
+        "sent_ts": now_ms,
+    });
+    if let Some(id) = mrtc_member_id {
+        content["member_id"] = serde_json::Value::String(id.to_owned());
+        content["media_key"] = serde_json::json!({ "key": key_b64, "index": index });
+    }
+    content
+}
+
 /// Send a frame key to one specific Matrix user by their user ID.
 ///
 /// Preferred over `broadcast_key` when the recipient is known via a LiveKit
@@ -120,6 +218,7 @@ pub async fn send_frame_key_to_user(
     lk_identity: &str,
     key_b64: &str,
     index: u8,
+    mrtc_member_id: Option<&str>,
 ) -> anyhow::Result<()> {
     use matrix_sdk::encryption::identities::Device;
     use matrix_sdk::ruma::{events::AnyToDeviceEventContent, UserId};
@@ -138,13 +237,15 @@ pub async fn send_frame_key_to_user(
         .unwrap_or_default()
         .as_millis() as u64;
 
-    let content = serde_json::json!({
-        "keys": { "key": key_b64, "index": index },
-        "room_id": room_id,
-        "member": { "claimed_device_id": our_device_id, "id": lk_identity },
-        "session": { "call_id": "", "application": "m.call", "scope": "m.room" },
-        "sent_ts": now_ms,
-    });
+    let content = key_event_content(
+        room_id,
+        lk_identity,
+        &our_device_id,
+        key_b64,
+        index,
+        mrtc_member_id,
+        now_ms,
+    );
     let raw_value =
         serde_json::value::to_raw_value(&content).context("serialize encryption key")?;
     let raw_content: matrix_sdk::ruma::serde::Raw<AnyToDeviceEventContent> =
@@ -214,6 +315,7 @@ pub async fn broadcast_key_to_members(
     lk_identity: &str,
     key_b64: &str,
     index: u8,
+    mrtc_member_id: Option<&str>,
 ) {
     tracing::info!(
         "e2ee: sending key index={index} to {} call member device(s)",
@@ -228,6 +330,7 @@ pub async fn broadcast_key_to_members(
             lk_identity,
             key_b64,
             index,
+            mrtc_member_id,
         )
         .await
         {
@@ -364,5 +467,99 @@ mod tests {
             .unwrap();
         assert_eq!(mgr.peer_keys["p"][&0], second);
         assert_eq!(mgr.peer_keys["p"].len(), 1);
+    }
+
+    fn parked(user: &str, device: &str, index: i32) -> ParkedKey {
+        ParkedKey {
+            user_id: user.into(),
+            device_id: device.into(),
+            index,
+            raw_key: vec![index as u8; 32],
+        }
+    }
+
+    #[test]
+    fn key_before_member_event_is_stored() {
+        let t0 = std::time::Instant::now();
+        let mut p = ParkedKeys::new();
+        p.park(parked("@a:x", "DEV", 0), t0);
+        // Not a member yet: nothing is released and the key is kept.
+        assert!(p.take_for(&[("@b:x".into(), "DEV".into())], t0).is_empty());
+        // The member event arrives: the key is released exactly once.
+        let got = p.take_for(&[("@a:x".into(), "DEV".into())], t0);
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].index, 0);
+        assert!(p.take_for(&[("@a:x".into(), "DEV".into())], t0).is_empty());
+    }
+
+    #[test]
+    fn parked_keys_expire_after_the_ttl() {
+        let t0 = std::time::Instant::now();
+        let mut p = ParkedKeys::new();
+        p.park(parked("@a:x", "DEV", 0), t0);
+        let late = t0 + PARK_TTL + std::time::Duration::from_secs(1);
+        assert!(p.take_for(&[("@a:x".into(), "DEV".into())], late).is_empty());
+    }
+
+    #[test]
+    fn one_sender_is_capped_to_its_newest_keys() {
+        let t0 = std::time::Instant::now();
+        let mut p = ParkedKeys::new();
+        for i in 0..(PER_SENDER_CAP as i32 + 5) {
+            p.park(parked("@a:x", "DEV", i), t0);
+        }
+        let got = p.take_for(&[("@a:x".into(), "DEV".into())], t0);
+        assert_eq!(got.len(), PER_SENDER_CAP);
+        assert_eq!(got[0].index, 5, "the oldest made way");
+    }
+
+    #[test]
+    fn one_sender_cannot_evict_another_senders_key() {
+        let t0 = std::time::Instant::now();
+        let mut p = ParkedKeys::new();
+        p.park(parked("@honest:x", "DEV", 0), t0);
+        for i in 0..500 {
+            p.park(parked("@spam:x", "DEV", i), t0);
+        }
+        let got = p.take_for(&[("@honest:x".into(), "DEV".into())], t0);
+        assert_eq!(got.len(), 1);
+    }
+
+    #[test]
+    fn the_global_cap_drops_the_most_prolific_sender_first() {
+        let t0 = std::time::Instant::now();
+        let mut p = ParkedKeys::new();
+        for u in 0..PARK_CAP {
+            p.park(parked(&format!("@u{u}:x"), "D", 0), t0);
+        }
+        // Two keys from u0 make it the most prolific; the next newcomer evicts one of its keys.
+        p.park(parked("@u0:x", "D", 1), t0);
+        p.park(parked("@new:x", "D", 0), t0);
+        let all: Vec<(String, String)> = (0..PARK_CAP)
+            .map(|u| (format!("@u{u}:x"), "D".to_owned()))
+            .chain(std::iter::once(("@new:x".to_owned(), "D".to_owned())))
+            .collect();
+        let got = p.take_for(&all, t0);
+        assert_eq!(got.len(), PARK_CAP, "the cap holds");
+        assert!(got.iter().any(|k| k.user_id == "@new:x"), "the newcomer was kept");
+        assert_eq!(got.iter().filter(|k| k.user_id == "@u0:x").count(), 1, "u0 lost one key");
+    }
+
+    #[test]
+    fn legacy_key_body_is_unchanged_without_a_matrixrtc_member() {
+        let v = key_event_content("!r:x", "@a:x:DEV", "DEV", "S0VZ", 3, None, 1234);
+        assert_eq!(v["keys"], serde_json::json!({"key": "S0VZ", "index": 3}));
+        assert_eq!(v["member"], serde_json::json!({"claimed_device_id": "DEV", "id": "@a:x:DEV"}));
+        assert_eq!(v["session"]["application"], "m.call");
+        assert!(v.get("member_id").is_none() && v.get("media_key").is_none());
+    }
+
+    #[test]
+    fn a_matrixrtc_member_adds_the_stable_fields_next_to_the_legacy_ones() {
+        let v = key_event_content("!r:x", "@a:x:DEV", "DEV", "S0VZ", 3, Some("mid1"), 1234);
+        assert_eq!(v["member_id"], "mid1");
+        assert_eq!(v["media_key"], serde_json::json!({"key": "S0VZ", "index": 3}));
+        assert_eq!(v["keys"]["index"], 3, "reference-implementation clients still read keys/member");
+        assert_eq!(v["room_id"], "!r:x");
     }
 }

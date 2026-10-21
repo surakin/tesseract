@@ -189,6 +189,33 @@ TEST_CASE("call lobby with a failed camera joins with video muted, not audio-onl
     REQUIRE(video_muted);
 }
 
+TEST_CASE("call lobby releases the camera before the call starts", "[call_lobby]")
+{
+    // The call's own capture opens the same device inside on_join; if the
+    // lobby still held it then, the call would find the camera busy.
+    FakeFactory factory;
+    CallLobbyView lobby;
+    bool camera_running_during_join = true;
+    bool joined = false;
+    lobby.on_join = [&](const std::string&, const std::string&, bool, bool, bool)
+    {
+        joined = true;
+        camera_running_during_join = !factory.created.empty() && factory.created.front()->running;
+    };
+
+    lobby.open("!room:x", "call#default", false);
+    REQUIRE(factory.created.size() == 1);
+    REQUIRE(factory.created.front()->running);
+
+    int buttons = 0;
+    for (const auto& ch : lobby.children())
+        if (auto* b = dynamic_cast<tk::Button*>(ch.get()); b && ++buttons == 3)
+            b->click();
+
+    REQUIRE(joined);
+    REQUIRE_FALSE(camera_running_during_join);
+}
+
 TEST_CASE("selfie overlay shows camera errors instead of vanishing", "[camera_widget]")
 {
     FakeFactory factory;

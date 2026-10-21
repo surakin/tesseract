@@ -40,6 +40,29 @@ TEST_CASE("CallBanner shows until cleared and has only a Join button",
     CHECK(banner->members().empty());
 }
 
+TEST_CASE("CallBanner offers Decline only while an invite is pending", "[banner]")
+{
+    auto banner = tk::create_root_widget<CallBanner>(nullptr);
+    banner->set_call("video", {{"@a:x.org", "Alice"}}, [] {}, true);
+    CHECK_FALSE(banner->decline_visible());
+
+    int declined = 0;
+    banner->set_decline([&] { ++declined; });
+    CHECK(banner->decline_visible());
+    REQUIRE(banner->children().size() == 2);
+    auto* btn = dynamic_cast<tk::Button*>(banner->children()[1].get());
+    REQUIRE(btn != nullptr);
+    btn->click();
+    CHECK(declined == 1);
+
+    banner->set_decline({});
+    CHECK_FALSE(banner->decline_visible());
+
+    banner->set_decline([] {});
+    banner->clear();
+    CHECK_FALSE(banner->decline_visible());
+}
+
 TEST_CASE("RoomPreviewView summarises the room; None until a summary is set",
          "[banner][accessibility]")
 {

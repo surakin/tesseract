@@ -698,6 +698,14 @@ impl ClientFfi {
             );
         }
 
+        // MSC4196: private rooms start with calls enabled (an open m.call slot).
+        // Not for public rooms, and a space is not somewhere to hold a call.
+        if opts.visibility != "public" && !opts.is_space {
+            initial_state.push(crate::client::rtc::mrtc_membership::slot_initial_state_event(
+                opts.encrypted,
+            ));
+        }
+
         let (visibility, preset) = if opts.visibility == "public" {
             (Visibility::Public, RoomPreset::PublicChat)
         } else {
@@ -2328,26 +2336,7 @@ impl ClientFfi {
             ))
             .map(|v| i64::from(*v))
             .unwrap_or_else(|| i64::from(pl.state_default));
-        let start_calls = pl
-            .events
-            .get(&matrix_sdk::ruma::events::TimelineEventType::from(
-                "org.matrix.msc3401.call",
-            ))
-            .map(|v| i64::from(*v))
-            .unwrap_or_else(|| i64::from(pl.state_default));
-        let join_calls = pl
-            .events
-            .get(&matrix_sdk::ruma::events::TimelineEventType::from(
-                "org.matrix.msc4143.rtc.member",
-            ))
-            .or_else(|| {
-                pl.events
-                    .get(&matrix_sdk::ruma::events::TimelineEventType::from(
-                        "org.matrix.msc3401.call.member",
-                    ))
-            })
-            .map(|v| i64::from(*v))
-            .unwrap_or_else(|| i64::from(pl.state_default));
+        let (start_calls, join_calls) = call_permission_levels(&pl.events, i64::from(pl.state_default));
         crate::ffi::RoomPowerLevelsFfi {
             default_role: i64::from(pl.users_default),
             send_messages: i64::from(pl.events_default),
@@ -3458,10 +3447,9 @@ fn apply_power_level_levels(
         TimelineEventType::from("m.room.power_levels"),
         to_int(levels.change_permissions)?,
     );
-    pl.events.insert(
-        TimelineEventType::from("org.matrix.msc3401.call"),
-        to_int(levels.start_calls)?,
-    );
+    let start_calls_level = to_int(levels.start_calls)?;
+    pl.events.insert(TimelineEventType::from("org.matrix.msc3401.call"), start_calls_level);
+    pl.events.insert(TimelineEventType::from("org.matrix.msc4143.rtc.slot"), start_calls_level);
     let join_calls_level = to_int(levels.join_calls)?;
     pl.events.insert(
         TimelineEventType::from("org.matrix.msc4143.rtc.member"),
@@ -3472,6 +3460,25 @@ fn apply_power_level_levels(
         join_calls_level,
     );
     Ok(())
+}
+
+/// The levels needed to start and to join a call: the MatrixRTC event types
+/// first, then the legacy ones, then the room's default state level.
+fn call_permission_levels(
+    events: &std::collections::BTreeMap<matrix_sdk::ruma::events::TimelineEventType, matrix_sdk::ruma::Int>,
+    state_default: i64,
+) -> (i64, i64) {
+    use matrix_sdk::ruma::events::TimelineEventType;
+    let level = |keys: &[&str]| {
+        keys.iter()
+            .find_map(|k| events.get(&TimelineEventType::from(*k)))
+            .map(|v| i64::from(*v))
+            .unwrap_or(state_default)
+    };
+    (
+        level(&["org.matrix.msc4143.rtc.slot", "org.matrix.msc3401.call"]),
+        level(&["org.matrix.msc4143.rtc.member", "org.matrix.msc3401.call.member"]),
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -3575,12 +3582,56 @@ mod create_room_tests {
         o.encrypted = true;
         let body = ClientFfi::build_msc4491_create_room_body(&o).unwrap();
         let initial_state = body["initial_state"].as_array().unwrap();
-        assert_eq!(initial_state.len(), 1);
+        // The encryption event first, then the call slot.
+        assert_eq!(initial_state.len(), 2);
         assert_eq!(initial_state[0]["type"], "m.room.encryption");
-        assert_eq!(
-            initial_state[0]["content"]["algorithm"],
-            "m.megolm.v1.aes-sha2"
-        );
+        assert_eq!(initial_state[0]["content"]["algorithm"], "m.megolm.v1.aes-sha2");
+        assert_eq!(initial_state[1]["type"], "org.matrix.msc4143.rtc.slot");
+    }
+
+    fn slot_events(request: &matrix_sdk::ruma::api::client::room::create_room::v3::Request) -> Vec<serde_json::Value> {
+        request
+            .initial_state
+            .iter()
+            .filter_map(|e| serde_json::from_str::<serde_json::Value>(e.json().get()).ok())
+            .filter(|v| v["type"] == "org.matrix.msc4143.rtc.slot")
+            .collect()
+    }
+
+    #[test]
+    fn private_room_is_created_with_an_open_call_slot() {
+        let o = opts(vec![], "");
+        let slots = slot_events(&ClientFfi::build_create_room_request(&o, true).unwrap());
+        assert_eq!(slots.len(), 1);
+        assert_eq!(slots[0]["state_key"], "m.call#room");
+        assert_eq!(slots[0]["content"]["status"], "open");
+        assert_eq!(slots[0]["content"]["application"]["type"], "m.call");
+        assert!(slots[0]["content"].get("encryption").is_none());
+    }
+
+    #[test]
+    fn slot_declares_per_member_encryption_iff_the_room_is_encrypted() {
+        let mut o = opts(vec![], "");
+        o.encrypted = true;
+        let slots = slot_events(&ClientFfi::build_create_room_request(&o, true).unwrap());
+        assert_eq!(slots[0]["content"]["encryption"]["type"], "m.per_member");
+    }
+
+    #[test]
+    fn public_rooms_and_spaces_get_no_call_slot() {
+        let mut o = opts(vec![], "");
+        o.visibility = "public".to_owned();
+        assert!(slot_events(&ClientFfi::build_create_room_request(&o, true).unwrap()).is_empty());
+        let mut sp = opts(vec![], "");
+        sp.is_space = true;
+        assert!(slot_events(&ClientFfi::build_create_room_request(&sp, true).unwrap()).is_empty());
+    }
+
+    #[test]
+    fn call_rooms_get_the_slot_too() {
+        let mut o = opts(vec![], "");
+        o.is_call_room = true;
+        assert_eq!(slot_events(&ClientFfi::build_create_room_request(&o, true).unwrap()).len(), 1);
     }
 
     #[test]
@@ -3634,7 +3685,7 @@ mod room_settings_tests {
 
 #[cfg(test)]
 mod room_power_levels_tests {
-    use super::apply_power_level_levels;
+    use super::{apply_power_level_levels, call_permission_levels};
     use crate::ffi::RoomPowerLevelsFfi;
     use matrix_sdk::ruma::events::room::power_levels::RoomPowerLevelsEventContent;
     use matrix_sdk::ruma::events::TimelineEventType;
@@ -3691,6 +3742,44 @@ mod room_power_levels_tests {
 
         assert_eq!(i64::from(pl.users["@mod:example.org"]), 50);
         assert_eq!(event_level(&pl, "m.room.name"), 50);
+    }
+
+    #[test]
+    fn call_levels_read_the_matrixrtc_keys_before_the_legacy_ones() {
+        let mut pl = server_content();
+        for (k, v) in [
+            ("org.matrix.msc4143.rtc.slot", 25),
+            ("org.matrix.msc4143.rtc.member", 10),
+            ("org.matrix.msc3401.call", 99),
+            ("org.matrix.msc3401.call.member", 98),
+        ] {
+            pl.events.insert(TimelineEventType::from(k), v.into());
+        }
+        assert_eq!(call_permission_levels(&pl.events, i64::from(pl.state_default)), (25, 10));
+    }
+
+    #[test]
+    fn call_levels_fall_back_to_legacy_then_state_default() {
+        let mut pl = server_content();
+        pl.events.insert(TimelineEventType::from("org.matrix.msc3401.call"), 40.into());
+        let (start, join) = call_permission_levels(&pl.events, i64::from(pl.state_default));
+        assert_eq!(start, 40);
+        assert_eq!(join, i64::from(pl.state_default));
+    }
+
+    #[test]
+    fn edit_writes_both_call_event_families() {
+        let mut pl = server_content();
+        let mut l = levels();
+        l.start_calls = 20;
+        l.join_calls = 5;
+        apply_power_level_levels(&mut pl, &l).unwrap();
+        for k in ["org.matrix.msc3401.call", "org.matrix.msc4143.rtc.slot"] {
+            assert_eq!(event_level(&pl, k), 20, "{k}");
+        }
+        for k in ["org.matrix.msc3401.call.member", "org.matrix.msc4143.rtc.member"] {
+            assert_eq!(event_level(&pl, k), 5, "{k}");
+        }
     }
 
     #[test]

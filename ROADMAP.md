@@ -178,6 +178,14 @@ and in-progress work, as a single backlog ordered by priority/urgency.
 
 - Group calls beyond current MatrixRTC support, Multi-SFU tracking as the
   spec evolves.
+- **MatrixRTC, remaining**: publishers still use the lk-jwt-service
+  `/sfu/get` token and legacy LiveKit identity, as Element Call does; the
+  homeserver `get_token` endpoint, hashed publisher identities and delegated
+  delayed leave are not used. No delayed leave is scheduled for the
+  `m.rtc.member` event (a delayed event cannot be encrypted client-side); its
+  5 minute sticky lifetime bounds how long a crashed client looks joined.
+  Verified live against Element Call and an Element phone on a Synapse with
+  MSC4354; still untested: servers without it, and the GTK4/Windows/macOS builds.
 - **Notifications, layer 2 server pushers** — Windows deferred (WNS needs
   Store registration; UnifiedPush distributors on Windows are an option);
   macOS deferred (APNs).

@@ -2672,9 +2672,8 @@ impl ClientFfi {
                 let tl = self.timeline_for_event(&rid, &eid).await?;
                 let item = tl.item_by_event_id(&eid).await?;
                 let mine = item
-                    .content()
                     .reactions()
-                    .and_then(|t| t.get(key))
+                    .get(key)
                     .is_some_and(|by_sender| by_sender.contains_key(me));
                 mine.then_some(tl)
             });

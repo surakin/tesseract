@@ -1151,12 +1151,10 @@ impl ClientFfi {
                 .store(true, std::sync::atomic::Ordering::Relaxed);
             // Tracked so stop_sync removes them: a sync restart on the same
             // client would otherwise stack a second set and ring twice.
-            self.event_handler_handles
-                .push(rtc::session::register_invitation_handler(&client));
-            self.event_handler_handles
-                .push(rtc::session::register_msc3401_invitation_handler(&client));
-            self.event_handler_handles
-                .extend(rtc::session::register_rtc_notification_handler(&client));
+            self.event_handler_handles.push(rtc::session::register_msc3401_invitation_handler(&client));
+            self.event_handler_handles.extend(rtc::session::register_rtc_notification_handler(&client));
+            // Announce MatrixRTC invites as the SDK's sticky maps change.
+            self.spawn_tracked("rtc-invite-watcher", rtc::sticky::watch_invites(client.clone()));
         }
 
         self.spawn_tracked("sync-supervisor", async move {

@@ -3868,6 +3868,16 @@ protected:
         std::unordered_map<std::string, std::string> avatar_urls; // user id -> mxc
     };
     std::unordered_map<std::string, CallBannerRoster> call_banner_rosters_;
+    // An unanswered MatrixRTC invite per room: shown as a Decline button on the
+    // call banner until it expires, is declined, or the user joins the call.
+    struct PendingCallInvite
+    {
+        std::string event_id;
+        std::string caller;
+        std::chrono::steady_clock::time_point expires;
+    };
+    std::unordered_map<std::string, PendingCallInvite> pending_call_invites_;
+    void decline_pending_call_invite_(const std::string& room_id);
     // Display names and avatar URLs of the active call room's members for the
     // call overlay's per-participant providers, which run on every paint.
     // Rebuilt at most once per kCallOverlayRosterMaxAge, or when the call's

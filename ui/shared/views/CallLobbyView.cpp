@@ -74,6 +74,9 @@ CallLobbyView::CallLobbyView()
         [this]
         {
             const bool cam_failed = cam_error_ != tk::VideoCapture::Error::None;
+            // Let go of the camera first: on_join opens it for the call, and a
+            // lobby still holding it would make the call find it busy.
+            stop_camera_();
             if (on_join)
                 on_join(room_id_, slot_id_,
                         /*audio_only=*/!cam_enabled_ && !cam_failed,

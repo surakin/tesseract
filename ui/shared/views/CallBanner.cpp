@@ -49,11 +49,39 @@ void CallBanner::set_call(const std::string& call_intent, std::vector<Member> me
     set_visible(true);
 }
 
+bool CallBanner::set_decline(std::function<void()> on_decline)
+{
+    const bool was_visible = decline_visible();
+    if (!on_decline)
+    {
+        if (decline_btn_)
+        {
+            decline_btn_->set_on_click({});
+            decline_btn_->set_visible(false);
+        }
+        return was_visible;
+    }
+    if (!decline_btn_)
+    {
+        decline_btn_ = add_child(tk::create_widget<tk::Button>(
+            this, tk::tr("Decline"), std::function<void()>{}, tk::Button::Variant::Subtle));
+    }
+    decline_btn_->set_on_click(std::move(on_decline));
+    decline_btn_->set_visible(true);
+    return !was_visible;
+}
+
+bool CallBanner::decline_visible() const
+{
+    return decline_btn_ && decline_btn_->visible();
+}
+
 void CallBanner::clear()
 {
     call_intent_.clear();
     members_.clear();
     if (join_btn_) join_btn_->set_on_click({});
+    set_decline({});
     set_visible(false);
 }
 
@@ -76,16 +104,23 @@ void CallBanner::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     const float right = bounds_.x + bounds_.w - kPadX;
     const tk::Rect join_r = {right - kBtnW, mid_y - kBtnH * 0.5f, kBtnW, kBtnH};
     if (join_btn_) join_btn_->arrange(ctx, join_r);
+    float buttons_left = join_r.x;
+    if (decline_visible())
+    {
+        const tk::Rect decline_r = {join_r.x - kGap - kBtnW, mid_y - kBtnH * 0.5f, kBtnW, kBtnH};
+        decline_btn_->arrange(ctx, decline_r);
+        buttons_left = decline_r.x;
+    }
 
     const std::size_t slots = avatar_slots(members_.size());
     const float stack_w = slots == 0
         ? 0.0f
         : kAvatarD + static_cast<float>(slots - 1) * (kAvatarD - kOverlap);
-    avatars_rect_ = {join_r.x - kGap - stack_w, mid_y - kAvatarD * 0.5f, stack_w, kAvatarD};
+    avatars_rect_ = {buttons_left - kGap - stack_w, mid_y - kAvatarD * 0.5f, stack_w, kAvatarD};
 
     // Text area between the icon and the avatar stack.
     const float text_x = icon_rect_.x + kIconSz + kGap;
-    const float text_end = slots == 0 ? join_r.x : avatars_rect_.x;
+    const float text_end = slots == 0 ? buttons_left : avatars_rect_.x;
     text_rect_ = {text_x, bounds_.y, std::max(0.0f, text_end - kGap - text_x), bounds_.h};
 }
 

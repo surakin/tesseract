@@ -17,7 +17,7 @@ use tokio::task::AbortHandle;
 use tracing::{info, warn};
 
 use super::RtcParticipantInfo;
-use crate::client::rtc::{audio_mix::RemoteAudioMixer, RtcEventSink};
+use crate::client::rtc::{audio_mix::RemoteAudioMixer, identity::IdentityMap, RtcEventSink};
 
 use livekit::{
     e2ee::{
@@ -46,10 +46,15 @@ use livekit::{
 pub struct SharedKeys {
     pub key_provider: KeyProvider,
     pending: Arc<StdMutex<HashMap<(String, String), HashMap<i32, Vec<u8>>>>>,
+    identities: IdentityMap,
 }
 
 impl SharedKeys {
     pub fn new() -> Self {
+        Self::with_identities(IdentityMap::default())
+    }
+
+    pub fn with_identities(identities: IdentityMap) -> Self {
         // Match Element Call's key provider: HKDF, ratchet window 10, keyring
         // 256 (MSC4195 / Element's MatrixKeyProvider). PBKDF2 would derive a
         // different key and frames could not be decrypted.
@@ -63,7 +68,19 @@ impl SharedKeys {
         Self {
             key_provider,
             pending: Arc::new(StdMutex::new(HashMap::new())),
+            identities,
         }
+    }
+
+    pub fn identities(&self) -> IdentityMap {
+        self.identities.clone()
+    }
+
+    /// Whether the LiveKit participant `identity` belongs to `(user_id,
+    /// device_id)`: a parsed `@user:server:DEVICE` identity, or a hashed one
+    /// the member reconciler resolved.
+    pub fn owner_matches(&self, identity: &str, user_id: &str, device_id: &str) -> bool {
+        identity_owner_matches(&self.identities, identity, user_id, device_id)
     }
 
     /// Remember a peer key (all indices are kept so frames encrypted before a
@@ -89,7 +106,7 @@ impl SharedKeys {
     fn apply_all_to(&self, room: &Room) {
         let pending = self.pending.lock().unwrap_or_else(|e| e.into_inner());
         for (identity, _) in room.remote_participants() {
-            apply_pending_for(&self.key_provider, &pending, &identity);
+            apply_pending_for(&self.key_provider, &pending, &self.identities, &identity);
         }
     }
 
@@ -105,7 +122,7 @@ impl SharedKeys {
         let mut applied = 0usize;
         for (identity, _) in room.remote_participants() {
             let id_str = identity.as_str();
-            if key_owner_matches(id_str, sender_user_id, sender_device_id) {
+            if self.owner_matches(id_str, sender_user_id, sender_device_id) {
                 info!(
                     "e2ee: set_key for participant {id_str} \
                      (from {sender_user_id}/{sender_device_id} index={index})"
@@ -140,15 +157,23 @@ fn key_owner_matches(identity: &str, user_id: &str, device_id: &str) -> bool {
     }
 }
 
+fn identity_owner_matches(identities: &IdentityMap, identity: &str, user_id: &str, device_id: &str) -> bool {
+    key_owner_matches(identity, user_id, device_id)
+        || identities
+            .resolve(identity)
+            .is_some_and(|(u, d)| u == user_id && (device_id.is_empty() || d == device_id))
+}
+
 /// Set every stored key that belongs to `identity` (`{user_id}:{device}`).
 fn apply_pending_for(
     key_provider: &KeyProvider,
     pending: &HashMap<(String, String), HashMap<i32, Vec<u8>>>,
+    identities: &IdentityMap,
     identity: &ParticipantIdentity,
 ) {
     let id_str = identity.as_str();
     for ((user_id, device_id), keys_by_index) in pending {
-        if key_owner_matches(id_str, user_id, device_id) {
+        if identity_owner_matches(identities, id_str, user_id, device_id) {
             for (idx, raw_key) in keys_by_index {
                 key_provider.set_key(identity, *idx, raw_key.clone());
             }
@@ -159,11 +184,16 @@ fn apply_pending_for(
 /// Which SFU each live call member publishes on (`(user_id, device_id)` ->
 /// JWT service URL), kept current by the session's member reconciler.
 #[derive(Clone, Default)]
-pub struct MemberTransports(Arc<parking_lot::Mutex<HashMap<(String, String), String>>>);
+pub struct MemberTransports(Arc<parking_lot::Mutex<HashMap<(String, String), String>>>, IdentityMap);
 
 impl MemberTransports {
     pub fn replace(&self, map: HashMap<(String, String), String>) {
         *self.0.lock() = map;
+    }
+
+    /// The hashed-identity table shared with the call's [`SharedKeys`].
+    pub fn identities(&self) -> IdentityMap {
+        self.1.clone()
     }
 
     /// Whether a LiveKit participant seen on the SFU `sfu_url` is a real call
@@ -173,7 +203,10 @@ impl MemberTransports {
     /// So an identity must look like `@user:server:DEVICE`, and a known member
     /// must actually publish on this SFU.
     fn allows(&self, sfu_url: &str, identity: &str) -> bool {
-        let (user, device) = split_identity(identity);
+        let (user, device) = self
+            .1
+            .resolve(identity)
+            .unwrap_or_else(|| split_identity(identity));
         if device.is_empty() {
             return false;
         }
@@ -924,12 +957,13 @@ fn spawn_event_task(
                     // ParticipantConnected for these pre-existing participants.
                     for (participant, _pubs) in &participants_with_tracks {
                         if let Some(ref s) = sink {
-                            s.on_participant_joined(session_id, participant_info(participant));
+                            s.on_participant_joined(session_id, participant_info(participant, &shared.identities));
                         }
                         // Apply any stored E2EE keys for this participant.
                         apply_pending_for(
                             &shared.key_provider,
                             &shared.pending.lock().unwrap(),
+                            &shared.identities,
                             &participant.identity(),
                         );
                     }
@@ -956,11 +990,12 @@ fn spawn_event_task(
                 RoomEvent::ParticipantConnected(p) => {
                     info!("rtc: participant connected: {}", p.identity());
                     if let Some(ref s) = sink {
-                        s.on_participant_joined(session_id, participant_info(&p));
+                        s.on_participant_joined(session_id, participant_info(&p, &shared.identities));
                     }
                     apply_pending_for(
                         &shared.key_provider,
                         &shared.pending.lock().unwrap(),
+                        &shared.identities,
                         &p.identity(),
                     );
                 }
@@ -983,7 +1018,7 @@ fn spawn_event_task(
                     // (0 pubs), so is_video_muted=true and the tile shows an avatar
                     // even though frames are arriving. Refreshing here fixes that.
                     if let Some(ref s) = sink {
-                        s.on_participant_updated(session_id, participant_info(&participant));
+                        s.on_participant_updated(session_id, participant_info(&participant, &shared.identities));
                     }
                     let pid = participant.identity().as_str().to_owned();
                     match track {
@@ -1075,7 +1110,7 @@ fn spawn_event_task(
                     if let Some(ref s) = sink {
                         let identity = participant.identity();
                         if let Some(rp) = room.remote_participants().get(&identity) {
-                            s.on_participant_updated(session_id, participant_info(&rp));
+                            s.on_participant_updated(session_id, participant_info(&rp, &shared.identities));
                         } else if identity == room.local_participant().identity() {
                             s.on_participant_updated(
                                 session_id,
@@ -1088,7 +1123,7 @@ fn spawn_event_task(
                     if let Some(ref s) = sink {
                         let identity = participant.identity();
                         if let Some(rp) = room.remote_participants().get(&identity) {
-                            s.on_participant_updated(session_id, participant_info(&rp));
+                            s.on_participant_updated(session_id, participant_info(&rp, &shared.identities));
                         } else if identity == room.local_participant().identity() {
                             s.on_participant_updated(
                                 session_id,
@@ -1103,7 +1138,7 @@ fn spawn_event_task(
                     // so is_screen_sharing recomputes to false and the ":screen"
                     // tile is removed, even if a TrackMuted event was missed.
                     if let Some(ref s) = sink {
-                        s.on_participant_updated(session_id, participant_info(&participant));
+                        s.on_participant_updated(session_id, participant_info(&participant, &shared.identities));
                     }
                 }
                 RoomEvent::Reconnecting => {
@@ -1132,7 +1167,7 @@ fn spawn_event_task(
     .abort_handle()
 }
 
-fn participant_info(p: &RemoteParticipant) -> RtcParticipantInfo {
+fn participant_info(p: &RemoteParticipant, identities: &IdentityMap) -> RtcParticipantInfo {
     let pubs = p.track_publications();
     let is_audio_muted = !pubs
         .values()
@@ -1148,7 +1183,9 @@ fn participant_info(p: &RemoteParticipant) -> RtcParticipantInfo {
     // user_id is a Matrix ID (@localpart:server_name, where server_name may
     // carry a port).  `split_identity` finds the device boundary, which is not
     // simply the second ':'.
-    let (user_id, device_id) = split_identity(&identity);
+    let (user_id, device_id) = identities
+        .resolve(&identity)
+        .unwrap_or_else(|| split_identity(&identity));
     RtcParticipantInfo {
         participant_id: identity,
         user_id,
@@ -1334,6 +1371,33 @@ mod participant_filter_tests {
             "https://sfu.a",
             "W9SGZNapjtEwbxf1GgfA6thQiWT4zZvHrJHxWIj/lJs"
         ));
+    }
+
+    #[test]
+    fn hashed_publisher_is_allowed_on_its_sfu() {
+        let id = crate::client::rtc::identity::livekit_participant_identity("@b:matrix.org", "mid1");
+        let m = members(&[("@b:matrix.org", "DEV", "https://sfu.matrix.org")]);
+        m.identities().replace(HashMap::from([(id.clone(), ("@b:matrix.org".to_owned(), "DEV".to_owned()))]));
+        assert!(m.allows("https://sfu.matrix.org", &id));
+        assert!(!m.allows("https://sfu.gnomos.org", &id), "subscribe-only copy elsewhere");
+    }
+
+    #[test]
+    fn unknown_hashed_identity_is_still_a_phantom() {
+        let m = members(&[]);
+        m.identities().replace(HashMap::from([("known".to_owned(), ("@b:x".to_owned(), "D".to_owned()))]));
+        assert!(!m.allows("https://sfu.a", "W9SGZNapjtEwbxf1GgfA6thQiWT4zZvHrJHxWIj/lJs"));
+    }
+
+    #[test]
+    fn keys_reach_a_hashed_participant() {
+        let shared = SharedKeys::new();
+        shared.identities().replace(HashMap::from([("hashedid".to_owned(), ("@b:x".to_owned(), "PHONE".to_owned()))]));
+        assert!(shared.owner_matches("hashedid", "@b:x", "PHONE"));
+        assert!(!shared.owner_matches("hashedid", "@b:x", "LAPTOP"));
+        assert!(!shared.owner_matches("otherid", "@b:x", "PHONE"));
+        // Legacy identities keep working.
+        assert!(shared.owner_matches("@b:x:PHONE", "@b:x", "PHONE"));
     }
 
     #[test]
@@ -1724,5 +1788,17 @@ mod helper_tests {
             *rec.0.lock().unwrap(),
             vec!["joined:@me:x:D", "ended:bye", "invite:!r:x"]
         );
+    }
+}
+
+#[cfg(test)]
+mod key_provider_pin_tests {
+    use livekit::e2ee::key_provider::KeyProviderOptions;
+
+    /// MSC4195 requires the LiveKit default ratchet salt; pin it so a livekit
+    /// upgrade that changes the default fails here instead of on the wire.
+    #[test]
+    fn default_ratchet_salt_matches_msc4195() {
+        assert_eq!(KeyProviderOptions::default().ratchet_salt, b"LKFrameEncryptionKey".to_vec());
     }
 }

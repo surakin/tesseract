@@ -185,4 +185,27 @@ impl ClientFfi {
             session.push_screen_frame_i420(y, u, v, width, height, stride_y, stride_u, stride_v);
         }
     }
+
+    /// Decline an incoming MatrixRTC invite (`m.rtc.decline` referencing the
+    /// invite event). Fire and forget; failures are logged.
+    pub fn rtc_decline_invite_async(&self, room_id: &str, invite_event_id: &str) {
+        let Some(client) = self.client.clone() else {
+            return;
+        };
+        let Ok(room_id) = room_id.parse::<matrix_sdk::ruma::OwnedRoomId>() else {
+            return;
+        };
+        if invite_event_id.is_empty() {
+            return;
+        }
+        let invite_event_id = invite_event_id.to_owned();
+        self.rt.spawn(async move {
+            let Some(room) = client.get_room(&room_id) else {
+                return;
+            };
+            if let Err(e) = crate::client::rtc::invites::send_decline(&room, &invite_event_id).await {
+                tracing::warn!("rtc: declining {invite_event_id} failed: {e}");
+            }
+        });
+    }
 }
