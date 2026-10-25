@@ -47,6 +47,7 @@ private:
     tk::CheckButton* send_maps_urls_as_location_cb_ = nullptr;
     tk::CheckButton* recompress_cb_ = nullptr;
     tk::CheckButton* show_membership_events_cb_ = nullptr;
+    tk::CheckButton* show_deleted_messages_cb_ = nullptr;
     tk::CheckButton* show_sender_status_cb_ = nullptr;
     tk::CheckButton* show_sender_timezone_cb_ = nullptr;
     tk::CheckButton* bundled_url_previews_cb_ = nullptr;

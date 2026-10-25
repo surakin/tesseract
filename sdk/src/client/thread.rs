@@ -102,7 +102,7 @@ impl ClientFfi {
             Arc::clone(&cancelled),
             self.search_index_ctx(),
             None,
-            Arc::clone(&self.show_membership_events),
+            self.visibility_flags(),
             Arc::clone(&self.show_unhandled_events),
             Arc::clone(&self.thread_chip_overrides),
             false,
@@ -308,6 +308,7 @@ impl ClientFfi {
             .map(|hh| std::sync::Arc::clone(&hh.timeline));
         let me_for_chips = client.user_id().map(|u| u.to_owned());
         let chip_overrides = std::sync::Arc::clone(&self.thread_chip_overrides);
+        let visibility_flags = self.visibility_flags();
         let abort = self
             .rt
             .spawn(async move {
@@ -338,6 +339,7 @@ impl ClientFfi {
                         &svc_for_watch.items(),
                         &mut chip_cache,
                         &chip_overrides,
+                        &visibility_flags,
                     )
                     .await;
                 }
@@ -358,6 +360,7 @@ impl ClientFfi {
                             &svc_for_watch.items(),
                             &mut chip_cache,
                             &chip_overrides,
+                            &visibility_flags,
                         )
                         .await;
                     }
@@ -1007,6 +1010,7 @@ async fn apply_thread_chips(
     items: &[matrix_sdk_ui::timeline::thread_list_service::ThreadListItem],
     cache: &mut std::collections::HashMap<String, ChipCount>,
     overrides: &ThreadChipOverrides,
+    visibility_flags: &super::timeline_convert::VisibilityFlags,
 ) {
     use super::timeline::{emit_updated, TimelineChannel};
     use super::timeline_convert::timeline_item_to_ffi;
@@ -1110,6 +1114,9 @@ async fn apply_thread_chips(
         .collect();
 
     let timeline_items = room_timeline.items().await;
+    // Redacted rows only occupy a slot when "Show deleted messages" is on,
+    // matching `filter_visibility`; otherwise visible_idx would drift.
+    let show_redacted = visibility_flags.snapshot().redacted;
     let mut visible_idx: u64 = 0;
     for tl_item in timeline_items.iter() {
         use matrix_sdk_ui::timeline::{
@@ -1139,9 +1146,8 @@ async fn apply_thread_chips(
             TimelineItemContent::MsgLike(MsgLikeContent {
                 kind, thread_root, ..
             }) => match kind {
-                MsgLikeKind::UnableToDecrypt(_)
-                | MsgLikeKind::Redacted
-                | MsgLikeKind::Sticker(_) => true,
+                MsgLikeKind::UnableToDecrypt(_) | MsgLikeKind::Sticker(_) => true,
+                MsgLikeKind::Redacted => show_redacted,
                 // Thread replies are excluded from the Room channel.
                 MsgLikeKind::Message(_) | MsgLikeKind::Poll(_) => thread_root.is_none(),
                 // Reactions and other kinds are filtered out.

@@ -160,6 +160,7 @@ TEST_CASE("sessionless Client: fire-and-forget calls are harmless no-ops", "[cli
     CHECK_NOTHROW(c.set_low_power_mode(true));
     CHECK_NOTHROW(c.set_show_membership_events(true));
     CHECK_NOTHROW(c.set_show_unhandled_events(true));
+    CHECK_NOTHROW(c.set_show_redacted_events(true));
     CHECK_NOTHROW(c.set_bundled_url_previews(true, false));
     CHECK_NOTHROW(c.set_msc2545_legacy_compat(true));
     CHECK_NOTHROW(c.poll_presence_now());

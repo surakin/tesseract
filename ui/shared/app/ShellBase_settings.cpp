@@ -511,6 +511,18 @@ void ShellBase::apply_index_messages_()
     }
 }
 
+void ShellBase::apply_show_deleted_messages_()
+{
+    if (client_)
+    {
+        client_->set_show_redacted_events(tesseract::Settings::instance().show_deleted_messages);
+        if (!current_room_id_.empty())
+        {
+            client_->subscribe_room(current_room_id_);
+        }
+    }
+}
+
 void ShellBase::apply_show_membership_events_()
 {
     if (client_)
@@ -752,6 +764,9 @@ void ShellBase::apply_setting_to_window_(views::SettingKey key)
     case K::AutoDetectTimezone:
         sync_detected_timezone_();
         break;
+    case K::ShowDeletedMessages:
+        apply_show_deleted_messages_();
+        break;
     case K::ShowSenderStatus:
     case K::ShowSenderTimezone:
     case K::MessageLayout:
@@ -825,6 +840,15 @@ void ShellBase::apply_unhandled_events_pref_(tesseract::Client& client)
     if (s.developer_mode && s.show_unhandled_events)
     {
         client.set_show_unhandled_events(true);
+    }
+}
+
+void ShellBase::apply_deleted_messages_pref_(tesseract::Client& client)
+{
+    // Rust-side default is false; push only when the preference is on.
+    if (tesseract::Settings::instance().show_deleted_messages)
+    {
+        client.set_show_redacted_events(true);
     }
 }
 

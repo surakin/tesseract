@@ -4770,6 +4770,8 @@ protected:
     // their timelines are rebuilt under the new filter. Callers invoke it only
     // when the effective value changed.
     void apply_show_unhandled_events_();
+    // "Show deleted messages": same shape as apply_show_membership_events_.
+    void apply_show_deleted_messages_();
 
     // Sidebar user strip: avatar URL to show now — the user's own avatar in
     // the active room when it has one, else the account avatar. Called from
@@ -4820,6 +4822,8 @@ protected:
     // Pushes the effective "Show unhandled events" value to a freshly created
     // account client (no re-subscribe: nothing is open yet).
     void apply_unhandled_events_pref_(tesseract::Client& client);
+    // Same for the persisted "show deleted messages" preference.
+    void apply_deleted_messages_pref_(tesseract::Client& client);
 
     // Apply the persisted "Link previews" preferences to a freshly-restored
     // account's Rust client, alongside apply_membership_events_pref_.

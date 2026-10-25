@@ -1471,6 +1471,14 @@ impl ClientFfi {
         }
     }
 
+    /// Show or hide redacted (deleted) event rows in room and thread
+    /// timelines. Thread-safe; takes effect on the next timeline reset, so
+    /// callers re-`subscribe_room` the active room after toggling.
+    pub fn set_show_redacted_events(&self, enabled: bool) {
+        self.show_redacted_events
+            .store(enabled, std::sync::atomic::Ordering::Relaxed);
+    }
+
     // -----------------------------------------------------------------------
     // Recently-active rooms (image-pack fetch scope)
     // -----------------------------------------------------------------------
