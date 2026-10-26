@@ -4620,6 +4620,63 @@ private:
         }
     }
 
+    void paint_centered_membership_text_(const std::string& text,
+                                         tk::PaintCtx& ctx,
+                                         tk::Rect bounds) const
+    {
+        tk::TextStyle st{};
+        st.role = tk::FontRole::Small;
+        st.wrap = false;
+        st.trim = tk::TextTrim::Ellipsis;
+        st.max_width = std::max(0.0f, bounds.w - kMsgListPadX * 2);
+        auto lo = ctx.factory.build_text(text, st);
+        if (!lo)
+            return;
+
+        const tk::Size sz = lo->measure();
+        const float cx = bounds.x + bounds.w * 0.5f;
+        const float cy = bounds.y + kPinnedEventH * 0.5f;
+        ctx.canvas.draw_text(*lo, {cx - sz.w * 0.5f, cy - sz.h * 0.5f},
+                             ctx.theme.palette.text_muted);
+    }
+
+    void paint_centered_membership_line_(const MessageRowData& m,
+                                         tk::PaintCtx& ctx,
+                                         tk::Rect bounds) const
+    {
+        if (!m.pronoun_resolved &&
+            m.membership_action == tesseract::MembershipAction::KnockRetracted &&
+            !m.membership_target_user_id.empty() && owner_.on_member_pronoun_needed)
+            owner_.on_member_pronoun_needed(m.membership_target_user_id);
+
+        paint_centered_membership_text_(membership_expanded_phrase(m), ctx,
+                                        bounds);
+    }
+
+    void paint_centered_membership_summary_(std::size_t start, std::size_t end,
+                                            tk::PaintCtx& ctx,
+                                            tk::Rect bounds) const
+    {
+        float y = bounds.y;
+        for (const auto& run : membership_group_actions(start, end))
+        {
+            const auto& first = owner_.messages_[run.rows.front()];
+            const bool uses_pronoun =
+                run.rows.size() == 1 &&
+                (run.action == tesseract::MembershipAction::InvitationRevoked ||
+                 run.action == tesseract::MembershipAction::KnockRetracted);
+            if (uses_pronoun && !first.pronoun_resolved &&
+                !first.membership_target_user_id.empty() &&
+                owner_.on_member_pronoun_needed)
+                owner_.on_member_pronoun_needed(first.membership_target_user_id);
+
+            paint_centered_membership_text_(
+                membership_run_phrase(owner_.messages_, run), ctx,
+                {bounds.x, y, bounds.w, kPinnedEventH});
+            y += kPinnedEventH;
+        }
+    }
+
     // One expanded membership-group member: a small target avatar, the
     // per-event phrase (see membership_expanded_phrase), and the event
     // timestamp right-aligned. Left-aligned like a compact row header
@@ -7475,6 +7532,21 @@ public:
         rp.ad.render_bubble_row_(rp);
     }
     const char* name() const override { return "bubble"; }
+
+    bool paint_membership_line(const MessageRowData& m, tk::PaintCtx& ctx,
+                               tk::Rect bounds,
+                               const Adapter& ad) const override
+    {
+        ad.paint_centered_membership_line_(m, ctx, bounds);
+        return true;
+    }
+    bool paint_membership_summary(std::size_t start, std::size_t end,
+                                  tk::PaintCtx& ctx, tk::Rect bounds,
+                                  const Adapter& ad) const override
+    {
+        ad.paint_centered_membership_summary_(start, end, ctx, bounds);
+        return true;
+    }
 };
 
 // mIRC look-alike: one flat monospaced left-aligned column, every line

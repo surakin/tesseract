@@ -1,16 +1,27 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "tk/canvas.h"
+#include "tk/theme.h"
+#include "tk/widget.h"
+#include "tk_test_surface.h"
 #include "views/MessageListView.h"
 #include "views/MembershipGroupExpander.h"
 #include "tesseract/types.h"
 
+#include <tesseract/settings.h>
+
+#include <cstdint>
+#include <utility>
+
 using tesseract::MembershipAction;
+using tesseract::Settings;
 using tesseract::views::is_membership_group_start;
 using tesseract::views::MembershipGroupExpander;
 using tesseract::views::membership_group_actions;
 using tesseract::views::membership_group_end;
 using tesseract::views::membership_group_expandable;
 using tesseract::views::membership_group_start_of;
+using tesseract::views::MessageListView;
 using tesseract::views::MessageRowData;
 using tesseract::views::make_row_data;
 using tesseract::views::with_membership_reason;
@@ -41,6 +52,58 @@ MessageRowData day_separator_row()
     MessageRowData r;
     r.kind = MessageRowData::Kind::DaySeparator;
     return r;
+}
+
+std::vector<std::uint32_t> render_system_row(Settings::MessageLayout layout,
+                                             bool membership,
+                                             bool repeated = false)
+{
+    Settings::instance().message_layout = layout;
+    auto surface = TestSurface::create(320, 64);
+    if (!surface)
+        return {};
+
+    MessageRowData row;
+    if (membership)
+    {
+        row = membership_row("$membership", MembershipAction::Left);
+        row.membership_target_name = "Alice";
+        row.membership_target_user_id = "@alice:example.org";
+    }
+    else
+    {
+        row.kind = MessageRowData::Kind::PinnedEvent;
+        row.sender_name = "Alice";
+        row.body = "left the room";
+    }
+
+    std::vector<MessageRowData> rows{row};
+    if (membership && repeated)
+    {
+        row.event_id = "$membership-2";
+        rows.push_back(row);
+    }
+
+    MessageListView view;
+    view.set_messages(std::move(rows), true);
+    surface->canvas().clear(tk::Color::rgb(0xffffff));
+    tk::LayoutCtx lc{surface->factory(), tk::Theme::light()};
+    view.measure(lc, {320.0f, 64.0f});
+    view.arrange(lc, {0.0f, 0.0f, 320.0f, 64.0f});
+    tk::PaintCtx pc{surface->canvas(), surface->factory(), tk::Theme::light()};
+    view.paint(pc);
+
+    std::vector<std::uint32_t> pixels;
+    pixels.reserve(320 * 64);
+    for (int y = 0; y < 64; ++y)
+        for (int x = 0; x < 320; ++x)
+        {
+            const tk::Color c = surface->read_pixel(x, y);
+            pixels.push_back((std::uint32_t(c.r) << 24) |
+                             (std::uint32_t(c.g) << 16) |
+                             (std::uint32_t(c.b) << 8) | c.a);
+        }
+    return pixels;
 }
 
 } // namespace
@@ -342,4 +405,41 @@ TEST_CASE("membership_run_phrase counts each person once", "[message_list][membe
         MembershipActionRun run{MembershipAction::Kicked, {0}};
         CHECK(membership_run_phrase(msgs, run).find("Reason: spam") != std::string::npos);
     }
+}
+
+TEST_CASE("bubble membership notices are centered without horizontal rules",
+          "[message_list][membership][layout]")
+{
+    struct RestoreLayout
+    {
+        Settings::MessageLayout previous = Settings::instance().message_layout;
+        ~RestoreLayout() { Settings::instance().message_layout = previous; }
+    } restore;
+
+    const auto membership = render_system_row(Settings::MessageLayout::Bubbles, true);
+    const auto pinned = render_system_row(Settings::MessageLayout::Bubbles, false);
+    REQUIRE_FALSE(membership.empty());
+    REQUIRE_FALSE(pinned.empty());
+
+    bool pinned_left_rule = false;
+    bool pinned_right_rule = false;
+    for (std::size_t y = 0; y < 64; ++y)
+    {
+        const std::size_t row = y * 320;
+        const std::size_t left = row + 20;
+        const std::size_t right = row + 300;
+        CHECK(membership[left] == membership[row + 5]);
+        CHECK(membership[right] == membership[row + 315]);
+        pinned_left_rule |= pinned[left] != pinned[row + 5];
+        pinned_right_rule |= pinned[right] != pinned[row + 315];
+    }
+    CHECK(pinned_left_rule);
+    CHECK(pinned_right_rule);
+
+    CHECK(render_system_row(Settings::MessageLayout::Bubbles, true, true) ==
+          membership);
+    CHECK(render_system_row(Settings::MessageLayout::Classic, true) !=
+          render_system_row(Settings::MessageLayout::Classic, false));
+    CHECK(render_system_row(Settings::MessageLayout::Irc, true) !=
+          render_system_row(Settings::MessageLayout::Irc, false));
 }
