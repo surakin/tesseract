@@ -106,7 +106,7 @@ impl ClientFfi {
 
     /// Mute or unmute the local audio track.
     pub fn rtc_set_audio_muted(&self, muted: bool) {
-        // mute() calls livekit_runtime::spawn → tokio::task::spawn, which
+        // mute() calls tokio::task::spawn, which
         // panics if there is no tokio runtime on the current thread. Enter
         // the runtime context so the spawn lands on our executor.
         let _guard = self.rt.enter();

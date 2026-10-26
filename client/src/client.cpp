@@ -878,7 +878,7 @@ Client::start_background_backfill(const std::vector<std::string>& room_ids)
     // Mutex<Option<AbortHandle>>) — SH_FFI so this never blocks a concurrent
     // UI-thread SH_FFI read (e.g. list_room_threads) behind it.
     SH_FFI;
-    return from_ffi(impl_->ffi->start_background_backfill(room_ids));
+    return from_ffi(impl_->ffi->start_background_backfill(to_rust_strings(room_ids)));
 }
 
 Result
@@ -904,14 +904,14 @@ Result
 Client::start_bridge_status_check(const std::vector<std::string>& room_ids)
 {
     SH_FFI;
-    return from_ffi(impl_->ffi->start_bridge_status_check(room_ids));
+    return from_ffi(impl_->ffi->start_bridge_status_check(to_rust_strings(room_ids)));
 }
 
 Result
 Client::start_unread_prefetch(const std::vector<std::string>& room_ids)
 {
     SH_FFI;
-    return from_ffi(impl_->ffi->start_unread_prefetch(room_ids));
+    return from_ffi(impl_->ffi->start_unread_prefetch(to_rust_strings(room_ids)));
 }
 
 void Client::stop_unread_prefetch()

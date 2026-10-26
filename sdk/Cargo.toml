@@ -96,12 +96,12 @@ zip            = { version = "2", default-features = false, features = ["deflate
 # built against. Cargo.lock is committed (see root .gitignore) as the
 # primary pin; these exact versions are the last combination verified to
 # build cleanly — bump both together and rebuild before loosening either.
-livekit   = { version = "=0.7.53", features = ["rustls-tls-native-roots"] }
+livekit   = { version = "=0.9.7", features = ["rustls-tls-native-roots"] }
 rustls    = { version = "0.23", features = ["aws_lc_rs"] }
 hkdf      = { version = "0.12" }
 base64ct  = { version = "1",    features = ["alloc"] }
 rand      = { version = "0.8" }
-webrtc-sys = { version = "=0.3.39" }
+webrtc-sys = { version = "=0.3.51" }
 img-parts = "0.4.0"
 little_exif = "0.6.23"
 # /myroomavatar <url>: decode, square-crop, resize and re-encode a fetched image.

@@ -262,7 +262,7 @@ impl ClientFfi {
     }
 
     #[cfg(not(test))]
-    pub fn start_background_backfill(&self, room_ids: &cxx::CxxVector<cxx::CxxString>) -> OpResult {
+    pub fn start_background_backfill(&self, room_ids: &Vec<String>) -> OpResult {
         // Idempotent: if a previous orchestrator is still running, leave it
         // alone. Finished/aborted handles can be replaced.
         {
@@ -292,11 +292,8 @@ impl ClientFfi {
         let waiting = backfill_waiting_rooms(&self.backfill_retry);
 
         let mut to_backfill: Vec<OwnedRoomId> = Vec::new();
-        for id_cxx in room_ids {
-            let Ok(id_str) = id_cxx.to_str() else {
-                continue;
-            };
-            let Ok(id) = OwnedRoomId::try_from(id_str) else {
+        for id_str in room_ids {
+            let Ok(id) = OwnedRoomId::try_from(id_str.as_str()) else {
                 continue;
             };
             if skip.contains(&id) {
@@ -566,15 +563,13 @@ impl ClientFfi {
     /// Idempotent: if a check is still in flight the call is a no-op.
     /// Called by the C++ shell whenever the visible room set changes.
     #[cfg(not(test))]
-    pub fn start_bridge_status_check(&self, room_ids: &cxx::CxxVector<cxx::CxxString>) -> OpResult {
+    pub fn start_bridge_status_check(&self, room_ids: &Vec<String>) -> OpResult {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
 
-        let ids: Vec<matrix_sdk::ruma::OwnedRoomId> = room_ids
-            .iter()
-            .filter_map(|s| s.to_str().ok()?.parse().ok())
-            .collect();
+        let ids: Vec<matrix_sdk::ruma::OwnedRoomId> =
+            room_ids.iter().filter_map(|s| s.parse().ok()).collect();
 
         // A check is still running: hand it the newest set to process when its
         // current pass finishes (coalesced, only the latest is kept) so rooms
@@ -829,7 +824,7 @@ impl ClientFfi {
     // Skips rooms with a live foreground timeline (open room + pop-outs).
     // Idempotent while a prefetch is in flight.
     #[cfg(not(test))]
-    pub fn start_unread_prefetch(&self, room_ids: &cxx::CxxVector<cxx::CxxString>) -> OpResult {
+    pub fn start_unread_prefetch(&self, room_ids: &Vec<String>) -> OpResult {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
@@ -837,12 +832,7 @@ impl ClientFfi {
         let skip: std::collections::HashSet<OwnedRoomId> =
             self.timelines.read().keys().cloned().collect();
 
-        let ids: Vec<String> = room_ids
-            .iter()
-            .filter_map(|s| s.to_str().ok().map(str::to_owned))
-            .collect();
-
-        let to_prefetch = select_prefetch_rooms(&ids, &skip, |id| {
+        let to_prefetch = select_prefetch_rooms(room_ids, &skip, |id| {
             client.get_room(id).map(|room| room.is_tombstoned())
         });
 

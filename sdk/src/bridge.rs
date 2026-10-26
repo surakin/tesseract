@@ -2836,8 +2836,7 @@ pub mod ffi {
         /// path. Silent: emits no `on_message_event` / `on_timeline_reset`
         /// callbacks for the rooms it visits. The persistent SDK event
         /// cache is what gets warmed.
-        fn start_background_backfill(self: &ClientFfi, room_ids: &CxxVector<CxxString>)
-            -> OpResult;
+        fn start_background_backfill(self: &ClientFfi, room_ids: &Vec<String>) -> OpResult;
 
         /// Cancel an in-progress background backfill. No-op if none is
         /// running. Also called automatically from `stop_sync` and `Drop`.
@@ -2862,8 +2861,7 @@ pub mod ffi {
         /// newly discovered bridged room changes what the UI shows. Idempotent
         /// while a check is already in flight. Called by the shell when the
         /// visible room set changes (same pattern as start_background_backfill).
-        fn start_bridge_status_check(self: &ClientFfi, room_ids: &CxxVector<CxxString>)
-            -> OpResult;
+        fn start_bridge_status_check(self: &ClientFfi, room_ids: &Vec<String>) -> OpResult;
 
         /// One-shot prefetch of recent messages for the given unread rooms into
         /// the SDK event cache, so opening them is instant. The caller passes
@@ -2875,7 +2873,7 @@ pub mod ffi {
         /// concurrency on a task independent of the inactive-grouping backfill,
         /// so the two never abort each other. Silent (no callbacks). Idempotent
         /// while a prefetch is in flight.
-        fn start_unread_prefetch(self: &ClientFfi, room_ids: &CxxVector<CxxString>) -> OpResult;
+        fn start_unread_prefetch(self: &ClientFfi, room_ids: &Vec<String>) -> OpResult;
 
         /// Cancel an in-progress unread prefetch. No-op if none is running.
         /// Also called automatically from `stop_sync` and `Drop`.
