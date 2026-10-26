@@ -61,8 +61,9 @@ flowchart TB
 The platform shells supply native windows, menus, accessibility, notifications,
 and toolkit backends. Shared views use the toolkit abstractions, while
 `ShellBase` and its controllers coordinate accounts and application behavior.
-The platform shells inherit from `ShellBase`; macOS embeds a derived `MacShell`
-inside its Objective-C++ window controller. `ShellBase` is implemented across
+Each platform shell's main window inherits from `ShellBase`; on macOS that is
+`macos::MainWindow`, and its Objective-C++ `MainWindowController` only forwards
+AppKit delegate and menu callbacks to it. `ShellBase` is implemented across
 `ShellBase_<subsystem>.cpp` files (accounts, calls, encryption, media, navigation,
 profile, rooms, search, settings, spaces, timeline, windows and view wiring); its worker
 pool, account-lifecycle types, media types and pure helpers are separate headers.
@@ -94,7 +95,7 @@ flowchart TB
     native["Native main window<br/>MainWindow / MainWindowController"]
     shell["ShellBase<br/>Window state, room selection, worker pools"]
     root["MainAppWidget"]
-    sidebar["RoomListView / AccountPicker"]
+    sidebar["RoomListView / AccountPicker / SpacePickerView"]
     room["RoomView"]
     timeline["MessageListView<br/>Timeline media, receipts, spoilers, link layout"]
     compose["ComposeBar<br/>Text, attachments, replies, mentions"]

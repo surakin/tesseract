@@ -267,6 +267,12 @@ sets recovery up by itself, keeps the key in the OS secure storage until the
 user saves it, reminds them to save it, and unlocks a re-signed-in device with
 the stored key.
 
+`-DTESSERACT_ENABLE_SERVER_BROWSER=OFF` (default `ON`) removes the login view's
+"Find a server" browser, the community homeserver list it fetches, and the
+`Client::load_server_list` API (and the Rust `server_browser` Cargo feature,
+which the option drives). "Create an account" with an empty homeserver
+field then goes straight to the default homeserver (matrix.org).
+
 ### Unity builds and precompiled headers
 
 `-DTESSERACT_UNITY_BUILD=OFF` (default `ON`) disables CMake's unity build

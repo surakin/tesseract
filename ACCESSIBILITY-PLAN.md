@@ -106,14 +106,14 @@ For the long tail (live regions, custom actions, set-size/position-in-set for li
 Continue directly from the spike — two shells sharing one adapter is the strongest test that Phase 1's walker is genuinely shared, not accidentally single-platform-shaped.
 
 - `ui/linux-qt/tk/host_qt.h/.cpp`, `ui/linux-gtk/tk/host_gtk.h/.cpp`: `Surface` gets a member owning the adapter handle (the new crate's `cxx` opaque type), constructed alongside `host_`.
-- **Update hook**: reuse `Surface::set_on_layout(std::function<void()> cb)` — already present on all four `Surface` classes, documented as firing "at the tail of every relayout" and currently used to keep native text overlays aligned (`host_qt.h:71`). Register a callback there that rebuilds/diffs the AT tree.
+- **Update hook**: reuse `SurfaceBase::add_layout_listener(std::function<void()> cb)` — already present on all four `Surface` classes, documented as firing "at the tail of every relayout" and currently used to keep native text overlays aligned (`host_qt.h:71`). Register a callback there that rebuilds/diffs the AT tree.
 - **Update frequency**: do not push a full tree diff on every relayout — scroll/typing can relayout many times/sec. Mirror the existing `request_repaint()` vs `request_relayout()` split on `Host` (`host.h:357-431`, `request_relayout()` documented as heavier than `request_repaint()`'s "redraw only, reusing whatever geometry"): (1) structural diffs (nodes added/removed, role changes) only when the node-id set actually changes; (2) narrow value/state-only pushes (focus moved, a checkbox toggled, live-region text changed) fired directly from the mutation site, not gated on relayout.
 - **Focus events**: hook exactly where `Host` flips `has_focus_` — `widget.h:640` documents this as the sole authority point ("Only Host may flip has_focus_"). This is also where the project's known focus-system gotchas live (`focusable()`/`focus_on_click()` split, `claim_native_focus_container_()`, Qt's Tab-interception override at `host_qt.h:77-84`) — land AT focus wiring in the same review pass as those, not bolted on separately.
 
 ## Phase 3 — Rollout to remaining platforms
 
-- **Windows**: AccessKit's `SubclassingAdapter` against the raw `HWND` `ui/windows/tk/host_win32.h`'s `Surface` already owns; same `set_on_layout` hook pattern.
-- **macOS**: AccessKit's macOS adapter attaches to the single `NSView` subclass `ui/macos/tk/host_macos.h`'s `Surface` owns; same hook pattern (the shell being composition-based, `MacShell : ShellBase`, is a shell-level detail, not a Surface-level one).
+- **Windows**: AccessKit's `SubclassingAdapter` against the raw `HWND` `ui/windows/tk/host_win32.h`'s `Surface` already owns; same `add_layout_listener` hook pattern.
+- **macOS**: AccessKit's macOS adapter attaches to the single `NSView` subclass `ui/macos/tk/host_macos.h`'s `Surface` owns; same hook pattern (the shell's `macos::MainWindow : ShellBase` is a shell-level detail, not a Surface-level one).
 - Payoff of doing Linux first: the `Role`/`AccessState` model and tree walker are already shared and debugged against two different `Host`/`Surface` implementations — Phase 3 is "only" two more thin adapter-attachment points, not a redesign.
 
 ## Phase 4 — Widget-by-widget mapping (prioritized, incremental — runs over weeks)
@@ -155,7 +155,7 @@ Can run in a separate session/track with no ordering dependency on the AT-tree w
 - `CMakeLists.txt` (root) — new `access/` crate wiring (`corrosion_import_crate`/`corrosion_add_cxxbridge`)
 - `Cargo.toml` (root) — add `"access"` workspace member
 - `access/Cargo.toml`, `access/src/lib.rs` — new crate
-- `ui/linux-qt/tk/host_qt.h`/`.cpp`, `ui/linux-gtk/tk/host_gtk.h`/`.cpp` — first platform bridge attachment via existing `set_on_layout`
+- `ui/linux-qt/tk/host_qt.h`/`.cpp`, `ui/linux-gtk/tk/host_gtk.h`/`.cpp` — first platform bridge attachment via existing `add_layout_listener`
 - `ui/shared/views/MessageListView.h` — `on_visible_range_changed` extension for virtualized AT rows
 
 ## Verification

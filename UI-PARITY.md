@@ -39,7 +39,7 @@ Sidebar width: `kSidebarWidth` (260 px) by default. The sidebar is
 resizable: dragging its separator below `kSidebarMinExpandedWidth`
 (180 px) snaps it to the icon-only collapsed width
 (`kSidebarCollapsedWidth`, 68 px), which shows a hover flyout per room.
-User strip height: `kUserStripHeight` (64 px).
+User strip height: at least `kUserStripHeight` (64 px), growing with the user's fonts (`UserInfo::measure`). It spans the space-picker column when one is shown.
 Compose bar grows with content between `kComposeMinHeight` and
 `kComposeMaxHeight`.
 
