@@ -3164,6 +3164,44 @@ impl ClientFfi {
         err("not logged in")
     }
 
+    /// Report `event_id` in `room_id` to the homeserver administrators
+    /// (`POST /rooms/{roomId}/report/{eventId}`). `reason` may be empty. The
+    /// room must be joined; the event need not be in a subscribed timeline.
+    /// Room moderators are not notified — that is server-side policy.
+    #[cfg(not(test))]
+    pub fn report_event(&self, room_id: &str, event_id: &str, reason: &str) -> OpResult {
+        let Some(client) = self.client.as_ref() else {
+            return err("not logged in");
+        };
+
+        let room_id = try_op!(parse_room_id(room_id));
+        let event_id: matrix_sdk::ruma::OwnedEventId = match event_id.parse() {
+            Ok(id) => id,
+            Err(e) => return err(format!("invalid event id: {e}")),
+        };
+        let Some(room) = client.get_room(&room_id) else {
+            return err("room not found");
+        };
+        let reason_opt = if reason.is_empty() {
+            None
+        } else {
+            Some(reason.to_owned())
+        };
+
+        match self
+            .block_on_cancellable(async move { room.report_content(event_id, reason_opt).await })
+        {
+            Some(Ok(_)) => ok(""),
+            Some(Err(e)) => err(e.to_string()),
+            None => err("cancelled"),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn report_event(&self, _room_id: &str, _event_id: &str, _reason: &str) -> OpResult {
+        err("not logged in")
+    }
+
     /// True iff the current user's power level meets the room's
     /// m.room.power_levels `redact` threshold, i.e. they may redact events
     /// sent by OTHER users in this room. Own events are always redactable

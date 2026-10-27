@@ -488,6 +488,7 @@ public:
     void send_edit_(const std::string& event_id, const std::string& new_body,
                     bool is_caption = false);
     void delete_event_(const std::string& event_id);
+    void report_event_(const std::string& event_id, const std::string& reason);
     void toggle_reaction_(const std::string& event_id, const std::string& key,
                           const std::string& source_mxc);
     void vote_poll_(const std::string& event_id, std::vector<std::string> ids);

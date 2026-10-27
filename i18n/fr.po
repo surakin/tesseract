@@ -6980,3 +6980,27 @@ msgstr "L'appareil est toujours connecté. Terminez d'abord la déconnexion dans
 #: ui/shared/app/SettingsController.cpp
 msgid "The server does not provide an account-management page."
 msgstr "Le serveur ne fournit pas de page de gestion de compte."
+
+#: ui/shared/views/MessageActions.cpp
+msgid "Report message"
+msgstr "Signaler le message"
+
+#: ui/shared/views/RoomView.cpp
+msgid "Report this message?"
+msgstr "Signaler ce message ?"
+
+#: ui/shared/views/RoomView.cpp
+msgid "The report is sent to your homeserver's administrators, not to this room's moderators. The message stays visible."
+msgstr "Le signalement est envoyé aux administrateurs de votre serveur, pas aux modérateurs de ce salon. Le message reste visible."
+
+#: ui/shared/views/RoomView.cpp
+msgid "Report"
+msgstr "Signaler"
+
+#: ui/shared/app/RoomPane.cpp
+msgid "Message reported"
+msgstr "Message signalé"
+
+#: ui/shared/app/RoomPane.cpp
+msgid "Couldn't report message: {0}"
+msgstr "Impossible de signaler le message : {0}"

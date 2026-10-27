@@ -958,6 +958,11 @@ public:
     Result redact_event(const std::string& room_id, const std::string& event_id,
                         const std::string& reason = "");
 
+    /// Report `event_id` to the homeserver administrators (not the room's
+    /// moderators). `reason` may be empty. The room must be joined.
+    Result report_event(const std::string& room_id, const std::string& event_id,
+                        const std::string& reason = "");
+
     /// True iff the current user's power level meets the room's redact
     /// threshold — i.e. they may delete events sent by OTHER users in this
     /// room. Own events are always redactable regardless of this (see

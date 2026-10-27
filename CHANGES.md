@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- feat(ui): messages from other people can be reported to your homeserver's administrators from the message menu, with an optional reason. Linux release build, ctest 3751/3751
 - fix(settings): signing out a device on an account-portal (MAS) server now opens the portal page instead of failing with 404. Linux release build, cargo test
 - fix(macos): "Restart now" restarts the Mac App Store build reliably instead of showing an error. Untested
 - fix(macos): another user on the same Mac can run Tesseract while it's open in your session. Untested

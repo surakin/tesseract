@@ -7511,3 +7511,27 @@ msgstr ""
 #, c++-format
 msgid "View profile of {0}"
 msgstr ""
+
+#: ui/shared/views/MessageActions.cpp
+msgid "Report message"
+msgstr ""
+
+#: ui/shared/views/RoomView.cpp
+msgid "Report this message?"
+msgstr ""
+
+#: ui/shared/views/RoomView.cpp
+msgid "The report is sent to your homeserver's administrators, not to this room's moderators. The message stays visible."
+msgstr ""
+
+#: ui/shared/views/RoomView.cpp
+msgid "Report"
+msgstr ""
+
+#: ui/shared/app/RoomPane.cpp
+msgid "Message reported"
+msgstr ""
+
+#: ui/shared/app/RoomPane.cpp
+msgid "Couldn't report message: {0}"
+msgstr ""

@@ -1344,6 +1344,14 @@ Result Client::redact_event(const std::string& room_id,
     return from_ffi(impl_->ffi->redact_event(room_id, event_id, reason));
 }
 
+Result Client::report_event(const std::string& room_id,
+                            const std::string& event_id,
+                            const std::string& reason)
+{
+    SH_FFI;
+    return from_ffi(impl_->ffi->report_event(room_id, event_id, reason));
+}
+
 Result Client::send_reply(const std::string& room_id,
                           const std::string& event_id, const std::string& body,
                           const std::string& formatted_body,

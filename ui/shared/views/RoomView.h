@@ -544,6 +544,10 @@ public:
 
     std::function<void(std::string event_id)> on_delete_requested;
     std::function<void(std::string event_id)> on_forward_requested;
+    // Fired after the user confirms the "Report message" prompt. `reason` is
+    // the trimmed optional text (empty if none).
+    std::function<void(std::string event_id, std::string reason)>
+        on_report_requested;
     // Fired from the "Copy event source" overflow-menu item, shown only
     // when Settings::developer_mode is on. Hosts route this to
     // Client::get_event_source() + a clipboard write.
@@ -888,6 +892,9 @@ private:
     void confirm_and_moderate_member_(bool ban, std::string room_id,
                                       std::string user_id,
                                       std::string display_name);
+    // Asks for an optional reason, then fires on_report_requested. Falls back
+    // to firing directly (no reason) if confirm_provider_ is unset.
+    void confirm_and_report_(std::string event_id);
     // Swap room_info_panel_ for knock_requests_panel_. Mirrors
     // show_room_settings(); the reverse (knock_requests_panel_->on_close)
     // calls show_room_info() to go back, unlike Settings' Cancel which

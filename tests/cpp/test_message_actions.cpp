@@ -34,7 +34,8 @@ TEST_CASE("message actions: someone else's plain message", "[message_actions]")
     const auto a = build_message_actions(in);
     CHECK(ids(a) == std::vector{MessageActionId::React, MessageActionId::Reply,
                                 MessageActionId::ReplyInThread,
-                                MessageActionId::Forward});
+                                MessageActionId::Forward,
+                                MessageActionId::Report});
     CHECK_FALSE(has(a, MessageActionId::Edit));
     CHECK_FALSE(has(a, MessageActionId::Delete));
 }
@@ -116,4 +117,40 @@ TEST_CASE("message actions: unconfirmed echoes are not forwardable",
     MessageActionInputs in;
     in.pending = true;
     CHECK_FALSE(has(build_message_actions(in), MessageActionId::Forward));
+}
+
+TEST_CASE("message actions: only confirmed messages from others are reportable",
+          "[message_actions]")
+{
+    MessageActionInputs in;
+    CHECK(has(build_message_actions(in), MessageActionId::Report));
+
+    in.poll = true;
+    CHECK(has(build_message_actions(in), MessageActionId::Report));
+
+    in = {};
+    in.is_own = true;
+    CHECK_FALSE(has(build_message_actions(in), MessageActionId::Report));
+
+    in = {};
+    in.pending = true;
+    CHECK_FALSE(has(build_message_actions(in), MessageActionId::Report));
+
+    in = {};
+    in.redacted = true;
+    CHECK_FALSE(has(build_message_actions(in), MessageActionId::Report));
+    in = {};
+    in.utd = true;
+    CHECK_FALSE(has(build_message_actions(in), MessageActionId::Report));
+}
+
+TEST_CASE("message actions: Report is destructive and lives in the overflow",
+          "[message_actions]")
+{
+    const auto a = build_message_actions({});
+    const auto it = std::find_if(a.begin(), a.end(), [](const MessageAction& m)
+                                 { return m.id == MessageActionId::Report; });
+    REQUIRE(it != a.end());
+    CHECK(it->destructive);
+    CHECK_FALSE(it->in_pill);
 }

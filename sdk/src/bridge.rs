@@ -3347,6 +3347,10 @@ pub mod ffi {
         /// permission errors surface as `OpResult { ok: false, message: ... }`.
         fn redact_event(self: &ClientFfi, room_id: &str, event_id: &str, reason: &str) -> OpResult;
 
+        /// Report `event_id` to the homeserver administrators. `reason` may be
+        /// empty. Requires a joined room; does not notify room moderators.
+        fn report_event(self: &ClientFfi, room_id: &str, event_id: &str, reason: &str) -> OpResult;
+
         /// True iff the current user may redact OTHER users' events in this
         /// room (own events are always redactable — see redact_event).
         /// Cached read, no network round-trip.

@@ -5342,3 +5342,27 @@ msgstr "Enheten er fortsatt pålogget. Fullfør utloggingen i nettleseren først
 #: ui/shared/app/SettingsController.cpp
 msgid "The server does not provide an account-management page."
 msgstr "Serveren tilbyr ingen side for kontoadministrasjon."
+
+#: ui/shared/views/MessageActions.cpp
+msgid "Report message"
+msgstr "Rapporter melding"
+
+#: ui/shared/views/RoomView.cpp
+msgid "Report this message?"
+msgstr "Rapportere denne meldingen?"
+
+#: ui/shared/views/RoomView.cpp
+msgid "The report is sent to your homeserver's administrators, not to this room's moderators. The message stays visible."
+msgstr "Rapporten sendes til administratorene på hjemmeserveren din, ikke til moderatorene i dette rommet. Meldingen forblir synlig."
+
+#: ui/shared/views/RoomView.cpp
+msgid "Report"
+msgstr "Rapporter"
+
+#: ui/shared/app/RoomPane.cpp
+msgid "Message reported"
+msgstr "Melding rapportert"
+
+#: ui/shared/app/RoomPane.cpp
+msgid "Couldn't report message: {0}"
+msgstr "Kunne ikke rapportere meldingen: {0}"

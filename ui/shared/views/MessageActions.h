@@ -21,6 +21,7 @@ enum class MessageActionId
     Pin,
     Unpin,
     Delete,
+    Report,
     CopyEventSource,
 };
 

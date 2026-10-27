@@ -32,6 +32,11 @@ std::vector<MessageAction> build_message_actions(const MessageActionInputs& in)
     if (in.is_own || in.can_redact_others)
         out.push_back({MessageActionId::Delete, tk::tr("Delete message"), kRedactSvg,
                        true});
+    // Only other people's confirmed messages can be reported (own messages
+    // have nothing to report; a local echo has no server event yet).
+    if (!in.is_own && !in.pending)
+        out.push_back({MessageActionId::Report, tk::tr("Report message"),
+                       kShieldAlertSvg, true});
     if (in.can_pin)
         out.push_back({in.is_pinned ? MessageActionId::Unpin : MessageActionId::Pin,
                        in.is_pinned ? tk::tr("Unpin message") : tk::tr("Pin message"),

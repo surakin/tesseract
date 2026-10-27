@@ -430,6 +430,9 @@ void RoomView::wire_message_list_callbacks_(MessageListView* ml)
             if (on_delete_requested)
                 on_delete_requested(event_id);
             break;
+        case MessageActionId::Report:
+            confirm_and_report_(event_id);
+            break;
         case MessageActionId::Pin:
             if (on_pin_requested)
                 on_pin_requested(event_id);
@@ -1169,6 +1172,37 @@ void RoomView::confirm_and_moderate_member_(bool ban, std::string room_id,
                        user_id = std::move(user_id),
                        display_name = std::move(display_name)]()
                       { forward(room_id, user_id, display_name, std::move(*reason)); });
+}
+
+void RoomView::confirm_and_report_(std::string event_id)
+{
+    if (!confirm_provider_)
+    {
+        if (on_report_requested) on_report_requested(std::move(event_id), {});
+        return;
+    }
+
+    ConfirmDialog::Options opts;
+    opts.title         = tk::tr("Report this message?");
+    opts.body          = tk::tr("The report is sent to your homeserver's "
+                                "administrators, not to this room's moderators. "
+                                "The message stays visible.");
+    opts.confirm_label = tk::tr("Report");
+    opts.cancel_label  = tk::tr("Cancel");
+    opts.destructive   = true;
+    opts.reason_field       = true;
+    opts.reason_placeholder = tk::tr("Reason (optional)");
+    // on_reason fires immediately before the confirm callback; stash the text
+    // for it to forward.
+    auto reason = std::make_shared<std::string>();
+    opts.on_reason = [reason](std::string r) { *reason = std::move(r); };
+
+    confirm_provider_(std::move(opts),
+                      [this, reason, event_id = std::move(event_id)]()
+                      {
+                          if (on_report_requested)
+                              on_report_requested(event_id, std::move(*reason));
+                      });
 }
 
 void RoomView::sync_side_panel_state_()

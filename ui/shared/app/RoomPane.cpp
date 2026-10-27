@@ -1036,6 +1036,11 @@ void RoomPane::wire_room_view_()
     {
         delete_event_(event_id);
     };
+    rv->on_report_requested =
+        [this](const std::string& event_id, const std::string& reason)
+    {
+        report_event_(event_id, reason);
+    };
     rv->on_copy_event_source_requested = [this](const std::string& event_id)
     {
         copy_event_source_to_clipboard_(event_id);
@@ -2945,6 +2950,31 @@ void RoomPane::delete_event_(const std::string& event_id)
     run_async_mut_([sess, rid, eid]() mutable {
         if (!sess || !sess->client) return;
         sess->client->redact_event(rid, eid);
+    });
+}
+
+void RoomPane::report_event_(const std::string& event_id,
+                             const std::string& reason)
+{
+    if (event_id.empty() || room_id_.empty() || !pane_client_())
+    {
+        return;
+    }
+    auto sess = session_();
+    auto rid = room_id_;
+    auto eid = event_id;
+    auto why = reason;
+    run_async_mut_([this, sess, rid, eid, why,
+                    ui = ui_poster(shell_poster(shell_))]() mutable {
+        if (!ui.owner_alive() || !sess || !sess->client) return;
+        auto res = sess->client->report_event(rid, eid, why);
+        ui([this, ok = static_cast<bool>(res), message = res.message]() mutable {
+            if (ok)
+                deps_.host->show_toast(tk::tr("Message reported"));
+            else
+                shell_show_status_message_(tk::trf(
+                    tk::tr("Couldn't report message: {0}"), {message}));
+        });
     });
 }
 
