@@ -321,6 +321,10 @@ pub(super) async fn member_display_name_local(
     }
 }
 
+/// Message codes the UI maps to translated text (the SDK has no catalog).
+pub(crate) const DEVICE_STILL_SIGNED_IN: &str = "device_still_signed_in";
+pub(crate) const NO_ACCOUNT_MANAGEMENT_PAGE: &str = "no_account_management_page";
+
 /// Build the spec'd UIAA fallback URL for `stage` and `session`. The
 /// homeserver base may or may not end with `/`; the spec path is
 /// `_matrix/client/v3/auth/<stage>/fallback/web?session=<session>`.

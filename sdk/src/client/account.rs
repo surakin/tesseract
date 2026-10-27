@@ -35,6 +35,41 @@ enum ValidateOutcome {
     NotMatrix,
 }
 
+/// First half of deleting a device on an OAuth (MAS) homeserver: hand the UI
+/// the account-management page for that device. `session` stays empty.
+#[cfg(not(test))]
+async fn oauth_delete_device_begin(
+    client: &Client,
+    device_id: &matrix_sdk::ruma::DeviceId,
+) -> crate::ffi::DeleteDeviceBegin {
+    use matrix_sdk::ruma::api::client::discovery::get_authorization_server_metadata::v1::{
+        AccountManagementActionData, DeviceDeleteData,
+    };
+    let fail = |message: String| crate::ffi::DeleteDeviceBegin {
+        ok: false,
+        message,
+        needs_uia: false,
+        fallback_url: String::new(),
+        session: String::new(),
+    };
+    let metadata = match client.oauth().server_metadata().await {
+        Ok(m) => m,
+        Err(e) => return fail(e.to_string()),
+    };
+    match metadata.account_management_url_with_action(AccountManagementActionData::DeviceDelete(
+        DeviceDeleteData::new(device_id),
+    )) {
+        Some(url) => crate::ffi::DeleteDeviceBegin {
+            ok: true,
+            message: String::new(),
+            needs_uia: true,
+            fallback_url: url.to_string(),
+            session: String::new(),
+        },
+        None => fail(super::NO_ACCOUNT_MANAGEMENT_PAGE.into()),
+    }
+}
+
 /// Read the user's MSC4356 recent-emoji blob with stable → unstable →
 /// Element (`io.element.recent_emoji`) precedence. Returns an empty Vec if no blob exists, the client
 /// is in a fresh-login state, or every parse path errors out.
@@ -1187,6 +1222,11 @@ impl ClientFfi {
             "account/begin_delete_device".to_string(),
         );
         self.rt.block_on(async move {
+            // OAuth (MAS) homeservers don't serve `/delete_devices`; the user
+            // ends the session on the account-management page instead.
+            if client.oauth().full_session().is_some() {
+                return oauth_delete_device_begin(&client, &owned).await;
+            }
             match client.delete_devices(&[owned], None).await {
                 Ok(_) => crate::ffi::DeleteDeviceBegin {
                     ok: true,
@@ -1244,6 +1284,25 @@ impl ClientFfi {
             return err("not logged in");
         };
         let owned: OwnedDeviceId = device_id.into();
+        if client.oauth().full_session().is_some() {
+            // The session was ended on the account-management page: confirm
+            // the device is really gone instead of replaying a UIA session.
+            let _guard = super::InFlightGuard::new(
+                &self.in_flight,
+                &self.handler,
+                #[cfg(debug_assertions)]
+                &self.in_flight_urls,
+                #[cfg(debug_assertions)]
+                "account/complete_delete_device".to_string(),
+            );
+            return match self.rt.block_on(client.devices()) {
+                Ok(r) if r.devices.iter().any(|d| d.device_id == owned) => {
+                    err(super::DEVICE_STILL_SIGNED_IN)
+                }
+                Ok(_) => ok(""),
+                Err(e) => err(e.to_string()),
+            };
+        }
         let auth = uiaa::AuthData::FallbackAcknowledgement(uiaa::FallbackAcknowledgement::new(
             session.to_owned(),
         ));

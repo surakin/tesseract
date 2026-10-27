@@ -79,6 +79,19 @@ bool SettingsController::acquire_device_op_(const std::string& device_id)
     return device_ops_in_flight_.insert(device_id).second;
 }
 
+namespace
+{
+// The SDK reports a few device-deletion outcomes as codes; the catalog lives here.
+std::string device_error_text_(std::string message)
+{
+    if (message == "device_still_signed_in")
+        return tk::tr("The device is still signed in. Finish signing it out in the browser first.");
+    if (message == "no_account_management_page")
+        return tk::tr("The server does not provide an account-management page.");
+    return message;
+}
+} // namespace
+
 void SettingsController::release_device_op_(const std::string& device_id)
 {
     std::lock_guard<std::mutex> lock(device_ops_mu_);
@@ -712,7 +725,7 @@ void SettingsController::delete_device(std::string device_id)
                         release_device_op_(device_id);
                         if (on_device_deleted)
                             on_device_deleted(std::move(device_id), false,
-                                              std::move(begin.message));
+                                              device_error_text_(std::move(begin.message)));
                         return;
                     }
                     if (begin.needs_uia)
@@ -770,7 +783,7 @@ void SettingsController::confirm_device_deletion(std::string device_id,
                         return;
                     if (on_device_deleted)
                         on_device_deleted(std::move(device_id), result.ok,
-                                          result.message);
+                                          device_error_text_(std::move(result.message)));
                 });
         });
 }

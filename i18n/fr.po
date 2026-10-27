@@ -6972,3 +6972,11 @@ msgstr "Les paramètres de chiffrement s'appliqueront à la fin de l'appel."
 
 msgid "Encryption settings will apply once you finish confirming your device."
 msgstr "Les paramètres de chiffrement s'appliqueront une fois la confirmation de votre appareil terminée."
+
+#: ui/shared/app/SettingsController.cpp
+msgid "The device is still signed in. Finish signing it out in the browser first."
+msgstr "L'appareil est toujours connecté. Terminez d'abord la déconnexion dans le navigateur."
+
+#: ui/shared/app/SettingsController.cpp
+msgid "The server does not provide an account-management page."
+msgstr "Le serveur ne fournit pas de page de gestion de compte."

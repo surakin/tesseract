@@ -7381,3 +7381,11 @@ msgstr "[Éñçryptïöñ séttïñgs wïll àpply öñçé thé çàll éñds.x
 
 msgid "Encryption settings will apply once you finish confirming your device."
 msgstr "[Éñçryptïöñ séttïñgs wïll àpply öñçé yöù fïñïsh çöñfïrmïñg yöùr dévïçé.xxxxxxxxxxxxxx]"
+
+#: ui/shared/app/SettingsController.cpp
+msgid "The device is still signed in. Finish signing it out in the browser first."
+msgstr "[Thé dévïçé ïs stïll sïgñéd ïñ. Fïñïsh sïgñïñg ït öùt ïñ thé bröwsér fïrst.xxxxxxxxxxxxxx]"
+
+#: ui/shared/app/SettingsController.cpp
+msgid "The server does not provide an account-management page."
+msgstr "[Thé sérvér döés ñöt prövïdé àñ àççöùñt-màñàgéméñt pàgé.xxxxxxxxxxx]"

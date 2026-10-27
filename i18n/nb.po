@@ -5334,3 +5334,11 @@ msgstr "Krypteringsinnstillingene brukes når samtalen er over."
 
 msgid "Encryption settings will apply once you finish confirming your device."
 msgstr "Krypteringsinnstillingene brukes når du er ferdig med å bekrefte enheten din."
+
+#: ui/shared/app/SettingsController.cpp
+msgid "The device is still signed in. Finish signing it out in the browser first."
+msgstr "Enheten er fortsatt pålogget. Fullfør utloggingen i nettleseren først."
+
+#: ui/shared/app/SettingsController.cpp
+msgid "The server does not provide an account-management page."
+msgstr "Serveren tilbyr ingen side for kontoadministrasjon."

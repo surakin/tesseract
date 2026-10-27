@@ -7070,3 +7070,11 @@ msgstr "La configuración de cifrado se aplicará cuando termine la llamada."
 
 msgid "Encryption settings will apply once you finish confirming your device."
 msgstr "La configuración de cifrado se aplicará cuando termines de confirmar tu dispositivo."
+
+#: ui/shared/app/SettingsController.cpp
+msgid "The device is still signed in. Finish signing it out in the browser first."
+msgstr "El dispositivo sigue con la sesión iniciada. Termina primero de cerrar la sesión en el navegador."
+
+#: ui/shared/app/SettingsController.cpp
+msgid "The server does not provide an account-management page."
+msgstr "El servidor no ofrece una página de gestión de cuenta."

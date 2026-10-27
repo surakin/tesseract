@@ -7552,3 +7552,11 @@ msgstr "Налаштування шифрування застосуються �
 
 msgid "Encryption settings will apply once you finish confirming your device."
 msgstr "Налаштування шифрування застосуються, коли ви завершите підтвердження пристрою."
+
+#: ui/shared/app/SettingsController.cpp
+msgid "The device is still signed in. Finish signing it out in the browser first."
+msgstr "Пристрій досі підключено. Спершу завершіть вихід у браузері."
+
+#: ui/shared/app/SettingsController.cpp
+msgid "The server does not provide an account-management page."
+msgstr "Сервер не надає сторінки керування обліковим записом."

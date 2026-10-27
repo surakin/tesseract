@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(settings): signing out a device on an account-portal (MAS) server now opens the portal page instead of failing with 404. Linux release build, cargo test
 - fix(macos): "Restart now" restarts the Mac App Store build reliably instead of showing an error. Untested
 - fix(macos): another user on the same Mac can run Tesseract while it's open in your session. Untested
 - fix(ui): saving a file from the media viewer works in the sandboxed Mac App Store build. Untested
