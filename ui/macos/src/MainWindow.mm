@@ -982,11 +982,10 @@ MainWindow::create_secondary_room_window_(const std::string& room_id)
 bool MainWindow::spawn_relaunch_(const std::vector<std::string>& args)
 {
 #ifdef TESSERACT_MAC_APP_STORE
-    // The sandbox likely kills a child process that is not an inherit helper,
-    // so go through LaunchServices instead. NEEDS LIVE VERIFICATION: this must
-    // actually start a second instance despite LSMultipleInstancesProhibited
-    // (createsNewApplicationInstance is meant to override it). If it does not,
-    // profile switching must be hidden in this edition.
+    // The sandbox kills a child process that is not an inherit helper, so go
+    // through LaunchServices instead. createsNewApplicationInstance starts a
+    // second instance (which waits for our lock, see --relaunch); it only
+    // works because Info.plist has no LSMultipleInstancesProhibited.
     NSURL* bundle_url = NSBundle.mainBundle.bundleURL;
     if (!bundle_url)
         return false;
@@ -996,21 +995,33 @@ bool MainWindow::spawn_relaunch_(const std::vector<std::string>& args)
     NSWorkspaceOpenConfiguration* cfg = [NSWorkspaceOpenConfiguration configuration];
     cfg.createsNewApplicationInstance = YES;
     cfg.arguments = ns_args;
+
+    // Quit only once LaunchServices has started a different process; on an
+    // error the caller keeps this instance running and asks the user to
+    // restart. The handler runs off the main queue, so a short bounded wait
+    // here can't deadlock.
+    __block BOOL launched = NO;
+    dispatch_semaphore_t done = dispatch_semaphore_create(0);
+    const pid_t self_pid = NSProcessInfo.processInfo.processIdentifier;
     [NSWorkspace.sharedWorkspace
         openApplicationAtURL:bundle_url
                configuration:cfg
            completionHandler:^(NSRunningApplication* app, NSError* error)
            {
                if (error)
-               {
                    NSLog(@"relaunch failed: %@", error);
-               }
+               launched = app && !error && app.processIdentifier != self_pid;
+               dispatch_semaphore_signal(done);
            }];
-    return true;
+    if (dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC)) != 0)
+    {
+        NSLog(@"relaunch failed: LaunchServices did not answer");
+        return false;
+    }
+    return launched;
 #else
-    // Exec the bundle's binary directly rather than via LaunchServices:
-    // LSMultipleInstancesProhibited would make NSWorkspace/`open` just
-    // re-activate this (still running) instance. A direct launch is what a
+    // Exec the bundle's binary directly rather than via LaunchServices, which
+    // by default just re-activates this (still running) instance. A direct launch is what a
     // terminal launch does; --relaunch makes it wait for our lock.
     NSString* exe = NSBundle.mainBundle.executablePath;
     if (!exe)

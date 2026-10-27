@@ -109,9 +109,11 @@ static NSString* const kActivateRoomKey = @"room_id";
 #endif
 
     // Raise the existing instance of this --profile and abort if we are a
-    // duplicate. LSMultipleInstancesProhibited in Info.plist covers
-    // Finder/Dock launches; this handles command-line and IDE launches where
-    // LaunchServices is bypassed. A per-profile flock (not a bundle-id scan)
+    // duplicate. Finder/Dock launches already reuse the running instance
+    // (LaunchServices' default); this handles command-line and IDE launches
+    // where LaunchServices is bypassed. No LSMultipleInstancesProhibited: it
+    // also locks out other users' sessions and blocks the App Store
+    // edition's NSWorkspace relaunch (see MainWindow::spawn_relaunch_). A per-profile flock (not a bundle-id scan)
     // decides, so a named profile started from a terminal runs beside the
     // default one instead of being mistaken for a duplicate.
     if (!tk::acquire_single_instance_lock(_launchPlan.instance_lock_wait()).acquired)
