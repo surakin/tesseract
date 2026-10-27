@@ -4351,36 +4351,25 @@ void RoomPane::post_to_ui_(std::function<void()> fn)
 
 namespace
 {
-// Writes `bytes` to `dest` through a sibling temp file, renamed over `dest` only
-// once complete, so a failed write never leaves a truncated file under the chosen
-// name. The path is UTF-8 and is converted as such, which matters on Windows.
-bool save_bytes_atomically_(const std::string& dest,
-                            const std::vector<std::uint8_t>& bytes)
+// Writes `bytes` straight to `dest`, deleting it again if the write fails. No
+// sibling temp file: a sandboxed Mac App Store build may only write the exact
+// path picked in the save panel. The path is UTF-8 and is converted as such,
+// which matters on Windows.
+bool save_bytes_to_file_(const std::string& dest,
+                         const std::vector<std::uint8_t>& bytes)
 {
     namespace fs = std::filesystem;
     const fs::path target(reinterpret_cast<const char8_t*>(dest.c_str()));
-    fs::path temp = target;
-    temp += ".part";
+    std::ofstream f(target, std::ios::binary | std::ios::trunc);
+    if (!f)
+        return false; // never opened: leave any existing file alone
+    f.write(reinterpret_cast<const char*>(bytes.data()),
+            static_cast<std::streamsize>(bytes.size()));
+    f.close();
+    if (!f)
     {
-        std::ofstream f(temp, std::ios::binary | std::ios::trunc);
-        if (f)
-            f.write(reinterpret_cast<const char*>(bytes.data()),
-                    static_cast<std::streamsize>(bytes.size()));
-        if (f)
-            f.close();
-        if (!f)
-        {
-            std::error_code ec;
-            fs::remove(temp, ec);
-            return false;
-        }
-    }
-    std::error_code ec;
-    fs::rename(temp, target, ec);
-    if (ec)
-    {
-        std::error_code ignored;
-        fs::remove(temp, ignored);
+        std::error_code ec;
+        fs::remove(target, ec);
         return false;
     }
     return true;
@@ -4401,7 +4390,7 @@ void RoomPane::save_source_to_file_(std::string source_json,
             shell->run_async_(
                 [shell, dest = std::move(dest), bytes = std::move(bytes)]() mutable
                 {
-                    const bool ok = !bytes.empty() && save_bytes_atomically_(dest, bytes);
+                    const bool ok = !bytes.empty() && save_bytes_to_file_(dest, bytes);
                     shell->post_to_ui_(
                         [shell, dest, ok]
                         {

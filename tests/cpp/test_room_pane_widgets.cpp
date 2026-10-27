@@ -392,7 +392,7 @@ TEST_CASE("install_media_viewer_save_ asks the shell for a path and saves the it
     f.viewer->on_close();
 }
 
-TEST_CASE("a saved attachment is written through a temp file and the outcome is reported",
+TEST_CASE("a saved attachment is written to the chosen file and the outcome is reported",
           "[roompane][widgets][save]")
 {
     using tesseract::views::MediaViewerItem;
@@ -433,6 +433,7 @@ TEST_CASE("a saved attachment is written through a temp file and the outcome is 
     std::ifstream in(good, std::ios::binary);
     std::string written((std::istreambuf_iterator<char>(in)), {});
     CHECK(written == "%PDF");
+    // Only the chosen path is written: a sandboxed build may not create siblings.
     CHECK_FALSE(fs::exists(good + ".part"));
 
     // A write that cannot be made (missing folder) is reported, and no file appears.
@@ -444,6 +445,19 @@ TEST_CASE("a saved attachment is written through a temp file and the outcome is 
     // An empty download is reported too, rather than writing an empty file.
     save(good, {});
     CHECK(f.s.statuses.back() == "Couldn't save the file.");
+
+    // A file that can't be opened for writing is reported and left untouched.
+    const auto writable = fs::status(good).permissions();
+    fs::permissions(good, fs::perms::owner_write | fs::perms::group_write |
+                              fs::perms::others_write,
+                    fs::perm_options::remove);
+    save(good, {'n', 'e', 'w'});
+    CHECK(f.s.statuses.back() == "Couldn't save the file.");
+    std::ifstream again(good, std::ios::binary);
+    std::string kept((std::istreambuf_iterator<char>(again)), {});
+    CHECK(kept == "%PDF");
+    again.close();
+    fs::permissions(good, writable, ec);
 
     f.viewer->on_close();
     fs::remove_all(dir, ec);

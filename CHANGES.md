@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(ui): saving a file from the media viewer works in the sandboxed Mac App Store build. Untested
 - build(macos): the Mac App Store preset now builds a universal arm64 + x86_64 app. CI universal build
 - build(rust): `-DTESSERACT_RUST_LTO=ON` builds the Rust library with fat LTO, much smaller on disk but slower to build. macOS build
 - ci(macos): the Mac App Store jobs read their secrets from the `appstore` environment. CI universal build
