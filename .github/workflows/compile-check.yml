@@ -5,6 +5,12 @@
 # The opt-in windows-xwin job is the one exception: it also builds the NSIS
 # installer and uploads it, as a trial of Linux-hosted Windows packaging.
 #
+# It also runs nightly on the default branch (development). That run exists to
+# keep the Rust build caches warm: PRs and tag builds can only restore caches
+# saved on their own ref or the default branch, so without it package.yml starts
+# every release from a cold cache. Keep the rust-cache keys here identical to
+# the ones in package.yml / build-platform.yml for the cache to be shared.
+#
 # Steps here mirror build-platform.yml's per-platform jobs with every
 # packaging step and packaging-only dependency removed. If you change
 # dependency installs or CMake flags in build-platform.yml/package.yml,
@@ -13,6 +19,8 @@
 name: Compile Check
 
 on:
+  schedule:
+    - cron: '17 3 * * *'  # 03:17 UTC; off the hour, when runners are busiest
   workflow_dispatch:
     # Untick a platform to skip its job. All three are on by default.
     inputs:
@@ -39,11 +47,12 @@ on:
 
 concurrency:
   group: compile-check-${{ github.ref }}
-  cancel-in-progress: true
+  # A manual run must not cancel the nightly cache-warming run mid-build.
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
 
 jobs:
   windows:
-    if: ${{ inputs.windows }}
+    if: ${{ github.event_name == 'schedule' || inputs.windows }}
     name: Windows (compile only)
     runs-on: windows-latest
     timeout-minutes: 60
@@ -58,7 +67,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> build/windows-release/cargo/build
-          cache-on-failure: true
 
       # resvg-py 0.3.2 only ships wheels up to cp312, so pin Python 3.12.
       # The id lets us hand the exact interpreter to CMake below — otherwise
@@ -113,7 +121,7 @@ jobs:
   # (fail-fast off, so one failing doesn't cancel the other). If this works out,
   # package.yml's and build-platform.yml's macOS jobs can follow the same shape.
   macos:
-    if: ${{ inputs.macos }}
+    if: ${{ github.event_name == 'schedule' || inputs.macos }}
     name: macOS ${{ matrix.arch }} (compile only)
     runs-on: macos-latest
     timeout-minutes: 60
@@ -185,10 +193,9 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> build/macos-appkit-${{ matrix.arch }}-release/cargo/build
-          # The job id is the same for both archs, so key on the arch instead.
-          add-job-id-key: false
-          key: macos-${{ matrix.arch }}-xcode-26.4.1
-          cache-on-failure: true
+          # Shared with package.yml / build-platform.yml so this run seeds
+          # their cache; the job id is the same for both archs, so key on arch.
+          shared-key: macos-${{ matrix.arch }}-xcode-26.4.1
 
       - name: Configure (Release, ${{ matrix.arch }})
         run: cmake --preset macos-appkit-${{ matrix.arch }}-release "-DCMAKE_OSX_SYSROOT=$SDKROOT" "-DCMAKE_EXE_LINKER_FLAGS=-L$SDKROOT/usr/lib" "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
@@ -197,7 +204,7 @@ jobs:
         run: cmake --build build/macos-appkit-${{ matrix.arch }}-release
 
   linux:
-    if: ${{ inputs.linux }}
+    if: ${{ github.event_name == 'schedule' || inputs.linux }}
     name: Linux GTK4 + Qt6 (compile only)
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -248,7 +255,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> build/linux-release/cargo/build
-          cache-on-failure: true
 
       # Tests stay on. Under TESSERACT_UI=linux the test target picks the Qt6
       # TestSurface (tests/CMakeLists.txt maps "linux" to "qt6"), so the GTK
@@ -300,7 +306,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> build/windows-xwin-release/cargo/build
-          cache-on-failure: true
 
       # Keyed on the setup script so a change to it refreshes the sysroot.
       # Running the script accepts Microsoft's CRT/SDK license terms.

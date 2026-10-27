@@ -28,7 +28,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> build/windows-release/cargo/build
-          cache-on-failure: true
 
       # resvg-py 0.3.2 only ships wheels up to cp312, so pin Python 3.12.
       # The id lets us hand the exact interpreter to CMake below — otherwise
@@ -297,8 +296,8 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> build/macos-appkit-arm64-release/cargo/build
-          key: xcode-26.4.1
-          cache-on-failure: true
+          # Same key as compile-check.yml so its run seeds this cache.
+          shared-key: macos-arm64-xcode-26.4.1
 
       - name: Check for signing secrets
         id: sign_check
@@ -482,7 +481,6 @@ jobs:
         with:
           workspaces: . -> build/macos-appkit-appstore/cargo/build
           key: xcode-26.4.1
-          cache-on-failure: true
 
       # Certificates go into a throwaway keychain; the profile is written
       # under RUNNER_TEMP so neither lands in the checkout.
@@ -631,8 +629,8 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> build/macos-appkit-x86_64-release/cargo/build
-          key: xcode-26.4.1
-          cache-on-failure: true
+          # Same key as compile-check.yml so its run seeds this cache.
+          shared-key: macos-x86_64-xcode-26.4.1
 
       - name: Check for signing secrets
         id: sign_check
@@ -798,7 +796,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> build/linux-release/cargo/build
-          cache-on-failure: true
 
       - name: Configure (Release)
         run: cmake --preset linux-release -DTESSERACT_UI=qt6 "-DTESSERACT_GITHUB_REPO=${{ github.repository }}" -DTESSERACT_BUILD_TESTS=OFF

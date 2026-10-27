@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- ci: the compile check runs nightly to keep the Rust build cache warm for releases and PRs, and failed builds no longer save a cache. YAML parse only
 - feat(ui): messages from other people can be reported to your homeserver's administrators from the message menu, with an optional reason. Linux release build, ctest 3751/3751
 - fix(settings): signing out a device on an account-portal (MAS) server now opens the portal page instead of failing with 404. Linux release build, cargo test
 - fix(macos): "Restart now" restarts the Mac App Store build reliably instead of showing an error. Untested

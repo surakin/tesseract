@@ -265,12 +265,20 @@ link order.
 
 ### CI Rust cache
 
-Every workflow job caches its Cargo output with `Swatinem/rust-cache` and
-`cache-on-failure: true`, so a run that fails after the Rust build (C++,
-packaging, signing) still saves it for the next attempt. A saved key is never
-overwritten: a cache from a run that failed mid-Rust stays partial until
-`Cargo.lock`, the toolchain or the job changes, and cargo rebuilds what's
-missing. Jobs cancelled by `package.yml`'s cancel-on-failure step may not save.
+Every workflow job that builds Rust caches its Cargo output with
+`Swatinem/rust-cache`. A failed job saves nothing, so a cache never holds the
+output of a half-finished build. The key is the job id (or `shared-key`), the
+toolchain and a hash of `Cargo.lock`; a saved key is never overwritten, and a
+new `Cargo.lock` falls back to the latest cache of the same job.
+
+A run can only restore caches saved on its own ref or on the default branch
+(`development`), so PRs and tag builds start from whatever `development` holds.
+`compile-check.yml` runs nightly on `development` to keep that cache warm. The
+Windows and Linux jobs share the job ids `windows` and `linux` with
+`package.yml` / `build-platform.yml`, and the macOS arm64 / x86_64 jobs share
+`shared-key: macos-<arch>-xcode-26.4.1` with them; keep these identical when
+editing any of the three. `test.yml` jobs use their own keys and are only
+warmed per PR.
 
 ### Feature options
 

@@ -47,7 +47,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: .
-          cache-on-failure: true
 
       - name: SDK unit tests
         run: cargo test -p tesseract-sdk-ffi --lib
@@ -130,7 +129,6 @@ jobs:
           # Distinct per matrix entry: the build dirs (and so the cached
           # target dirs) differ, and the ASan one must not restore Debug's.
           key: ${{ matrix.name }}
-          cache-on-failure: true
 
       - name: Configure (Debug, tests on)
         run: cmake --preset linux-debug -B ${{ matrix.build_dir }} -DTESSERACT_UI=qt6 "-DTESSERACT_GITHUB_REPO=${{ github.repository }}" ${{ matrix.cmake_args }}
