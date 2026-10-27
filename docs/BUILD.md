@@ -250,6 +250,10 @@ link order.
   cache of a superseded configuration (any env/flag change starts a fresh
   one). `-DTESSERACT_CARGO_INCREMENTAL=ON` turns it back on for faster
   rebuilds while iterating on `sdk/src/*.rs`.
+- **Rust LTO** is off by default. `-DTESSERACT_RUST_LTO=ON` builds the Rust
+  SDK crate with fat LTO in release builds, cutting its archive from ~800 MB
+  to ~100 MB per copy at the cost of a much slower, more memory-hungry Rust
+  build.
 - **Compressed debug info** (Linux): object files build with `-gz=zlib` and
   executables link with `--compress-debug-sections=zlib`. Every UI and test
   executable carries the whole Rust archive's debug info, so this roughly

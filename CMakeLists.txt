@@ -342,6 +342,20 @@ option(TESSERACT_CARGO_INCREMENTAL
 if(NOT TESSERACT_CARGO_INCREMENTAL)
     corrosion_set_env_vars(tesseract_sdk_ffi CARGO_INCREMENTAL=0)
 endif()
+
+# Without LTO the release staticlib carries every dependency's object code
+# (~800 MB per copy, and Corrosion keeps several copies). Fat LTO with one
+# codegen unit cuts the Rust part to ~100 MB but makes release Rust builds
+# much slower and hungrier for RAM, so it's opt-in for disk-constrained
+# machines rather than set in Cargo.toml for every build. Release only.
+option(TESSERACT_RUST_LTO
+    "Fat LTO for the Rust SDK crate in release builds (much smaller archive, slower build)"
+    OFF)
+if(TESSERACT_RUST_LTO)
+    corrosion_set_env_vars(tesseract_sdk_ffi
+        CARGO_PROFILE_RELEASE_LTO=fat
+        CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1)
+endif()
 if(MSVC)
     corrosion_set_env_vars(tesseract_sdk_ffi AWS_LC_SYS_PREBUILT_NASM=1)
 endif()

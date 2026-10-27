@@ -5,9 +5,9 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
-- build(macos): the Mac App Store preset now builds a universal arm64 + x86_64 app. Untested
-- build(rust): release builds use fat LTO for a much smaller Rust library, at the cost of slower builds. x86_64 macOS release build
-- ci(macos): the Mac App Store jobs read their secrets from the `appstore` environment. Untested
+- build(macos): the Mac App Store preset now builds a universal arm64 + x86_64 app. CI universal build
+- build(rust): `-DTESSERACT_RUST_LTO=ON` builds the Rust library with fat LTO, much smaller on disk but slower to build. macOS build
+- ci(macos): the Mac App Store jobs read their secrets from the `appstore` environment. CI universal build
 - fix(ui): the screen-share picker can no longer choose a source or cancel twice on macOS. macOS release build, ctest 3729/3729 (ASan)
 - fix(settings): an avatar file picker that finishes after its settings controller is gone no longer touches freed memory. macOS release build, ctest 3729/3729 (ASan)
 - test: shell tests run worker callbacks on the test thread, fixing a race that crashed the invites test. macOS release build, ctest 3729/3729 (ASan)
