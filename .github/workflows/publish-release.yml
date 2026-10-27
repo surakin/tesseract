@@ -51,6 +51,7 @@
 #   Variables:
 #     TESSERACT_MSIX_STORE_PRODUCT_ID   Partner Center's Store product ID
 #     TESSERACT_MAC_APPSTORE_APPLE_ID   the app's numeric Apple ID in App Store Connect
+#                                       (in the "appstore" environment)
 #   Secrets:
 #     FLATPAK_GPG_PRIVATE_KEY, FLATPAK_GPG_PASSPHRASE, FLATPAK_GPG_KEY_ID
 #     AZURE_AD_TENANT_ID, AZURE_AD_APPLICATION_CLIENT_ID,
@@ -293,6 +294,8 @@ jobs:
     # restore `github.event_name == 'release' || inputs.appstore` to re-enable.
     if: false
     runs-on: macos-latest
+    # Holds the App Store Connect API key and TESSERACT_MAC_APPSTORE_APPLE_ID.
+    environment: appstore
     permissions:
       contents: read
       actions: read

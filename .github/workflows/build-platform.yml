@@ -37,7 +37,7 @@ on:
         type: boolean
         default: true
       macos_appstore:
-        description: 'macOS arm64 Mac App Store .pkg (needs the App Store signing secrets)'
+        description: 'macOS universal Mac App Store .pkg (needs the "appstore" environment)'
         type: boolean
         default: false
       macos_appstore_upload:
@@ -597,7 +597,7 @@ jobs:
           rm -f "$RUNNER_TEMP/developer-id.p12" "$RUNNER_TEMP/AuthKey.p8"
 
   # ---------------------------------------------------------------------------
-  # macOS arm64 — Mac App Store .pkg (sandboxed). Same as package.yml's
+  # macOS universal — Mac App Store .pkg (sandboxed). Same as package.yml's
   # macos-appstore job (secrets/variables: see there), plus an optional
   # validate + upload (macos_appstore_upload) for TestFlight testing without
   # tagging a release.
@@ -606,6 +606,8 @@ jobs:
     if: ${{ inputs.macos_appstore || inputs.macos_appstore_upload }}
     name: macOS universal (Mac App Store pkg)
     runs-on: macos-latest
+    # Holds the App Store certificates, profile and identity variables.
+    environment: appstore
     # Matches CMAKE_OSX_DEPLOYMENT_TARGET (root CMakeLists.txt); also read by
     # CMake, rustc and cc-built C dependencies.
     env:

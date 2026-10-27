@@ -416,8 +416,9 @@ jobs:
         run: gh run cancel ${{ github.run_id }} --repo ${{ github.repository }}
 
   # ---------------------------------------------------------------------------
-  # macOS arm64 — Mac App Store .pkg (sandboxed; uploaded by publish-release.yml)
+  # macOS universal — Mac App Store .pkg (sandboxed; uploaded by publish-release.yml)
   #
+  # Secrets and variables live in the "appstore" environment.
   # Secrets: TESSERACT_MAC_APPSTORE_APP_CERT_P12 (Apple Distribution, base64
   # .p12), TESSERACT_MAC_APPSTORE_INSTALLER_CERT_P12 (3rd Party Mac Developer
   # Installer, base64 .p12), TESSERACT_MAC_APPSTORE_CERT_PASSWORD (password of
@@ -432,6 +433,8 @@ jobs:
     if: false
     name: macOS universal (Mac App Store pkg)
     runs-on: macos-latest
+    # Holds the App Store certificates, profile and identity variables.
+    environment: appstore
     # Matches CMAKE_OSX_DEPLOYMENT_TARGET (root CMakeLists.txt); also read by
     # CMake, rustc and cc-built C dependencies.
     env:
