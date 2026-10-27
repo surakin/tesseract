@@ -6,6 +6,7 @@
 #import "MacNowPlaying.h"
 #import "MacSpotlightSearch.h"
 #import "MacAutostart.h"
+#import "MacRelaunchHandoff.h"
 #import "MacPowerMonitor.h"
 #import "MacScreenLock.h"
 #import "RoomWindowController.h"
@@ -984,17 +985,17 @@ bool MainWindow::spawn_relaunch_(const std::vector<std::string>& args)
 #ifdef TESSERACT_MAC_APP_STORE
     // The sandbox kills a child process that is not an inherit helper, so go
     // through LaunchServices instead. createsNewApplicationInstance starts a
-    // second instance (which waits for our lock, see --relaunch); it only
-    // works because Info.plist has no LSMultipleInstancesProhibited.
+    // second instance; it only works because Info.plist has no
+    // LSMultipleInstancesProhibited. LaunchServices ignores the arguments of
+    // a sandboxed caller, so they travel in a handoff file and the new
+    // instance reads them in main() (--relaunch makes it wait for our lock).
     NSURL* bundle_url = NSBundle.mainBundle.bundleURL;
     if (!bundle_url)
         return false;
-    NSMutableArray<NSString*>* ns_args = [NSMutableArray array];
-    for (const auto& a : args)
-        [ns_args addObject:[NSString stringWithUTF8String:a.c_str()]];
+    if (!mac::write_relaunch_handoff(args))
+        return false;
     NSWorkspaceOpenConfiguration* cfg = [NSWorkspaceOpenConfiguration configuration];
     cfg.createsNewApplicationInstance = YES;
-    cfg.arguments = ns_args;
 
     // Quit only once LaunchServices has started a different process; on an
     // error the caller keeps this instance running and asks the user to
@@ -1016,8 +1017,11 @@ bool MainWindow::spawn_relaunch_(const std::vector<std::string>& args)
     if (dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC)) != 0)
     {
         NSLog(@"relaunch failed: LaunchServices did not answer");
+        mac::discard_relaunch_handoff();
         return false;
     }
+    if (!launched)
+        mac::discard_relaunch_handoff();
     return launched;
 #else
     // Exec the bundle's binary directly rather than via LaunchServices, which

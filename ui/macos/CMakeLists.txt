@@ -72,6 +72,8 @@ add_executable(tesseract_macos MACOSX_BUNDLE
     src/MacPowerMonitor.mm
     src/MacAutostart.h
     src/MacAutostart.mm
+    src/MacRelaunchHandoff.h
+    src/MacRelaunchHandoff.mm
     src/RoomWindowController.h
     src/RoomWindowController.mm
     "${_icns}"

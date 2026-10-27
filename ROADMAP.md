@@ -19,20 +19,23 @@ and in-progress work, as a single backlog ordered by priority/urgency.
   `appstore-pkg` passes `altool --validate-app` and runs from TestFlight.
   Verified: DMG→container migration, keychain sessions surviving it, camera
   and mic, screen share, OAuth loopback login, drag-and-drop send, history
-  export to a chosen folder. Media-viewer save failed (it wrote a sibling
-  `.part` file the sandbox doesn't grant); now writes the chosen file
-  directly, retest. Settings' "Restart now" (`NSWorkspace` relaunch) failed 2
-  of 3 times with "the application is not open anymore":
-  `LSMultipleInstancesProhibited` makes LaunchServices refuse a second
-  instance; flag removed, relaunch now waits for LaunchServices, retest (and
-  check `--relaunch` survives the sandboxed launch). Still to test: key
-  export/import, avatar picker. Location: on a Mac upgraded from the DMG build
-  no permission prompt appeared and the request waited until access was
-  granted in System Settings; cause unconfirmed (suspected stale
-  location-service entry for the shared bundle ID), retest under a fresh macOS
-  user. Confirm `ITSAppUsesNonExemptEncryption` against the export-compliance
-  answer (Tesseract's own crypto needs a French declaration if sold in
-  France).
+  export to a chosen folder. Verified too: media-viewer save (after writing
+  the chosen file directly), avatar picker, key export/import. Settings'
+  "Restart now": `LSMultipleInstancesProhibited` made LaunchServices refuse
+  the second instance (flag removed), and LaunchServices ignores a sandboxed
+  caller's launch arguments, so the new instance lacked `--relaunch` and quit
+  as a duplicate; the arguments now travel in a handoff file in the
+  container's temp dir, retest. A duplicate launch can't forward to the
+  running instance in the sandbox (distributed notification with userInfo is
+  blocked); matters only for Terminal launches. Location: on a Mac upgraded
+  from the DMG build no permission prompt appeared and the request waited
+  until access was granted in System Settings; the log shows `locationd`
+  denied reading the app bundle at that moment (App Management protection,
+  `com.apple.macl`?), cause unconfirmed, retest under a fresh macOS user. The
+  sandbox also logged `deny hid-control` during calls: check push-to-talk /
+  global shortcuts. Confirm `ITSAppUsesNonExemptEncryption` against the
+  export-compliance answer (Tesseract's own crypto needs a French declaration
+  if sold in France).
 - **DM-counterpart avatar picks the bridge bot itself** when the bridge
   doesn't publish `io.element.functional_members` (MSC4171) — heisenbridge
   currently lacks the state event, so 1:1 control rooms show the bot's own
