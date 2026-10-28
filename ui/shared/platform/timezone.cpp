@@ -1,6 +1,9 @@
 #include "timezone.h"
 
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <string_view>
 
 #if defined(__APPLE__)
 #include <CoreFoundation/CoreFoundation.h>
@@ -53,8 +56,47 @@ std::optional<int> timezone_utc_offset_minutes(const std::string& iana,
 
 #else
 
+#if !defined(_WIN32)
+namespace
+{
+
+// The zone the user configured, as named by the system. libstdc++'s
+// current_zone() matches /etc/localtime against the tz database by content and
+// returns the first zone with identical rules (Europe/Oslo reads back as
+// Europe/Berlin), so the configured name is read first.
+std::string configured_timezone()
+{
+    namespace fs = std::filesystem;
+    constexpr std::string_view kMarker = "zoneinfo/";
+    std::error_code ec;
+    const fs::path link = fs::read_symlink("/etc/localtime", ec);
+    if (!ec)
+    {
+        const std::string target = link.generic_string();
+        if (const auto pos = target.find(kMarker); pos != std::string::npos)
+            return target.substr(pos + kMarker.size());
+    }
+    std::ifstream f("/etc/timezone");
+    std::string line;
+    if (f && std::getline(f, line))
+    {
+        while (!line.empty() && (line.back() == '\r' || line.back() == ' '))
+            line.pop_back();
+        return line;
+    }
+    return {};
+}
+
+} // namespace
+#endif
+
 std::string system_timezone()
 {
+#if !defined(_WIN32)
+    if (const std::string configured = configured_timezone();
+        !configured.empty() && timezone_utc_offset_minutes(configured, std::chrono::system_clock::now()))
+        return configured;
+#endif
     try
     {
         const std::chrono::time_zone* z = std::chrono::current_zone();
