@@ -4,7 +4,7 @@
 
 #include "app/Launch.h"
 #include "app/UpdateChecker.h"
-#include "tk/single_instance.h"
+#include "platform/single_instance.h"
 
 #include <algorithm>
 #include <string>

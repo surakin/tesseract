@@ -11,7 +11,7 @@
 // error, or the device being unplugged are reported through the same error
 // callback.
 
-#include "video_capture.h"
+#include "platform/video_capture.h"
 
 #include <tesseract/settings.h>
 

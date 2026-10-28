@@ -4,9 +4,9 @@
 // D-Bus dance on a dedicated background thread, then feeds the PipeWire
 // fd + node_id into a pipewiresrc GStreamer pipeline.  Requires gio-2.0
 // (already linked) and gst-plugins-good with PipeWire support.
-#include "screen_capture.h"
-#include "gst_hw_probe.h"
-#include "i18n.h"
+#include "platform/screen_capture.h"
+#include "platform/linux/gst_hw_probe.h"
+#include "tk/i18n.h"
 
 // Qt defines 'signals' as a keyword alias (expands to 'public').  GIO's
 // gdbusintrospection.h uses 'signals' as a struct member name, which causes a

@@ -4,7 +4,7 @@
 #include "canvas_cairo.h"
 #include "emoji_support.h"
 #include "device_listing.h"
-#include "gst_device_listing.h"
+#include "platform/linux/gst_device_listing.h"
 #include "gtk_accessible.h"
 #include "emoji_segmentation.h"
 #include "pill.h"
@@ -4279,7 +4279,7 @@ std::unique_ptr<::tk::AudioPlayback> Host::make_audio_playback()
 // ─────────────────────────────────────────────────────────────────────────
 
 // Enumeration itself is shared with the Qt6 shell — see
-// ui/shared/tk/gst_device_listing.cpp.
+// ui/shared/platform/linux/gst_device_listing.cpp.
 
 std::vector<tk::DeviceListing> Host::enumerate_audio_inputs() const
 {

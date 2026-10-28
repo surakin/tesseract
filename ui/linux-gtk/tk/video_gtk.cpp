@@ -12,7 +12,7 @@
 // returns nullptr and the viewer shows a static thumbnail.
 
 #include "video.h"
-#include "gst_hw_probe.h"
+#include "platform/linux/gst_hw_probe.h"
 
 // cairo.h must be included before canvas_cairo.h so that the elaborated
 // struct _cairo_surface type specifier in canvas_cairo.h resolves to the

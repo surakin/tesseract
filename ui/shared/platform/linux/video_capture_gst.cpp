@@ -22,7 +22,7 @@
 // classifies errors on the posting thread and drops every message, which
 // also keeps the bus queue from growing unbounded.
 
-#include "video_capture.h"
+#include "platform/video_capture.h"
 
 #include <tesseract/settings.h>
 

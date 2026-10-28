@@ -20,7 +20,7 @@
 #include <unordered_set>
 #include <wrl/client.h>
 
-#include "winrt_coroutine_shim.h"
+#include "platform/win32/winrt_coroutine_shim.h"
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.UI.StartScreen.h>

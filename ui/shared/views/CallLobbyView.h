@@ -22,7 +22,7 @@
 #include "ParticipantTile.h"
 
 #include "tk/controls.h"
-#include "tk/video_capture.h"
+#include "platform/video_capture.h"
 #include "tk/widget.h"
 
 #include <cstdint>

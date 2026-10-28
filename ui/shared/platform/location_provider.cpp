@@ -1,4 +1,4 @@
-#include "location_provider.h"
+#include "platform/location_provider.h"
 
 namespace tk
 {

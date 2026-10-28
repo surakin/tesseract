@@ -8,7 +8,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "app/CallWindowBase.h"
-#include "app/SettingsController.h"
+#include "views/settings/SettingsController.h"
 #include "app/ShellBase.h"
 #include "settings_guard.h"
 #include "shell_test_double.h"

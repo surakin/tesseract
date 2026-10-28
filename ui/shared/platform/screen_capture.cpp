@@ -1,4 +1,4 @@
-#include "screen_capture.h"
+#include "platform/screen_capture.h"
 
 namespace tk
 {

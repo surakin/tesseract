@@ -8,7 +8,7 @@
 // playbin) never attempts them — and never emits the per-play hardware probe
 // errors that gst-libav otherwise prints via av_log on every setSourceDevice.
 
-#include "gst_hw_probe.h"
+#include "platform/linux/gst_hw_probe.h"
 
 // Qt defines 'signals' as 'public' for its meta-object system.
 // GLib's gdbusintrospection.h declares a struct field named 'signals', which

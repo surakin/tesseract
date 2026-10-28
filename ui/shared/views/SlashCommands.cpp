@@ -1,4 +1,4 @@
-#include "SlashCommands.h"
+#include "views/SlashCommands.h"
 
 #include "tk/i18n.h"
 

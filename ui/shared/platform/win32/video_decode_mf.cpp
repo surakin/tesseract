@@ -8,7 +8,7 @@
 // Pixel repacking follows the same stride/alignment strategy as video_win32.cpp
 // to avoid diagonal shearing caused by GPU row-padding.
 
-#include "video_decode.h"
+#include "platform/video_decode.h"
 
 // Keep NOMINMAX / WIN32_LEAN_AND_MEAN consistent with the rest of the Win32
 // targets (set by the toolkit's CMake definitions).

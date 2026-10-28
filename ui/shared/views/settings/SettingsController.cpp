@@ -1,4 +1,4 @@
-#include "SettingsController.h"
+#include "views/settings/SettingsController.h"
 
 #include <algorithm>
 

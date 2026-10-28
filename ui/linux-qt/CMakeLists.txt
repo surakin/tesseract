@@ -62,8 +62,8 @@ qt_add_executable(tesseract_qt
     src/LinuxQtTrayIcon.h     # MOC input
     # tk:: backend implementation — Qt6-specific, so it lives here rather
     # than in ui/shared (which holds only genuinely cross-platform code).
-    # GStreamer support (video_decode_gst.cpp, gst_hw_probe.cpp) is shared
-    # between this and ui/linux-gtk, and stays linked into tesseract_tk —
+    # GStreamer support (platform/linux/video_decode_gst.cpp, gst_hw_probe.cpp) is shared
+    # between this and ui/linux-gtk, and stays linked into tesseract_platform —
     # its PUBLIC link to GStreamer propagates here too.
     tk/canvas_qpainter.h
     tk/canvas_qpainter.cpp    # MOC input (see the BlankTextObjectInterface it defines)
@@ -129,7 +129,7 @@ target_link_libraries(tesseract_qt PRIVATE
     # Link them as whole-archive so every symbol is unconditionally present,
     # removing all ordering constraints between them.
     $<LINK_LIBRARY:WHOLE_ARCHIVE,tesseract_sdk_bridge_cxx,tesseract_client,tesseract_sdk_ffi-static>
-    tesseract_tk
+    tesseract_app
     Qt6::Core
     Qt6::Widgets
     Qt6::Multimedia

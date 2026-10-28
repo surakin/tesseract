@@ -24,7 +24,7 @@
 #include "tk/image_sniff.h"
 #include "tk/status_icons.h"
 #include "tk/svg.h" // Gdiplus comes in via Theme.h above (NOMINMAX-safe)
-#include "tk/video_decode.h"
+#include "platform/video_decode.h"
 
 #include <tesseract/account_session.h>
 #include <tesseract/paths.h>

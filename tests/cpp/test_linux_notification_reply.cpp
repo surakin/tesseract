@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "linux_notification_reply.h"
+#include "platform/linux/linux_notification_reply.h"
 
 using tesseract::linux_notify::NotificationCorrelation;
 using tesseract::linux_notify::supports_inline_reply;

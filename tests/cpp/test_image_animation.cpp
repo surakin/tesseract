@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "app/image_animation.h"
+#include "views/image_animation.h"
 
 #include <fstream>
 #include <iterator>

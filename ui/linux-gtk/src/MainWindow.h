@@ -13,7 +13,7 @@
 
 #include "app/AccountManager.h"
 #include "app/EventHandlerBase.h"
-#include "app/SettingsController.h"
+#include "views/settings/SettingsController.h"
 #include "app/ShellBase.h"
 #include "tk/canvas.h"
 #include "tk/host.h"

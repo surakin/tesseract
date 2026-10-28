@@ -1,5 +1,5 @@
 #include "app/Launch.h"
-#include "app/font_prefs.h"
+#include "views/font_prefs.h"
 
 #include "tk/i18n.h"
 
@@ -17,10 +17,6 @@ namespace tesseract
 
 namespace
 {
-
-std::string g_launch_language;
-Settings::ProxyMode g_launch_proxy_mode = Settings::ProxyMode::System;
-std::string g_launch_proxy_url;
 
 std::string help_for(std::string_view id)
 {
@@ -167,12 +163,12 @@ LaunchPlan prepare_launch(const std::vector<std::string>& args,
         // the baseline is the requested setting either way; only an unknown
         // mode value falls back to System.
         const bool manual = s.proxy_mode == Settings::ProxyMode::Manual;
-        g_launch_proxy_mode = (ok || manual) ? s.proxy_mode : Settings::ProxyMode::System;
-        g_launch_proxy_url = (ok || manual) ? s.proxy_url : std::string();
+        set_launch_proxy((ok || manual) ? s.proxy_mode : Settings::ProxyMode::System,
+                         (ok || manual) ? s.proxy_url : std::string());
     }
     {
         std::string lang = Settings::instance().language;
-        g_launch_language = lang;
+        set_launch_language(lang);
         if ((lang == "auto" || lang.empty()) && hooks.detect_system_lang)
         {
             lang = hooks.detect_system_lang();
@@ -213,20 +209,6 @@ LaunchPlan prepare_launch(const std::vector<std::string>& args,
         return plan;
     }
     return plan;
-}
-
-const std::string& launch_language()
-{
-    return g_launch_language;
-}
-
-bool proxy_changed_since_launch(Settings::ProxyMode mode, const std::string& url)
-{
-    if (mode != g_launch_proxy_mode)
-    {
-        return true;
-    }
-    return mode == Settings::ProxyMode::Manual && url != g_launch_proxy_url;
 }
 
 void apply_proxy_live(Settings::ProxyMode mode, const std::string& url)

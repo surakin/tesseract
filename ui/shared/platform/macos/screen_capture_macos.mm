@@ -3,8 +3,8 @@
 // Requests screen recording permission via CGPreflightScreenCaptureAccess /
 // CGRequestScreenCaptureAccess before starting.
 // Frames arrive as NV12 CVPixelBuffers and are deinterleaved to I420.
-#include "screen_capture.h"
-#include "i18n.h"
+#include "platform/screen_capture.h"
+#include "tk/i18n.h"
 
 #import <AVFoundation/AVFoundation.h>
 #import <CoreGraphics/CoreGraphics.h>

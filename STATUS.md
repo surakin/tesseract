@@ -1,6 +1,6 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-10-26**. 3742 C++ + 1182 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-10-28**. 3742 C++ + 1182 Rust tests.
 
 > **Timeline content column (2026-10-21, v0.9.5).**
 > Room timelines lay their rows out in a column that is a percentage of the
@@ -2611,7 +2611,9 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **Space children hidden from the root room list** — they appear only when navigating into the parent.
 - **Unjoined space children** — a collapsible "Not joined" section below the joined-rooms list shows every child room the user hasn't joined. Clicking opens `RoomPreviewView` (name, avatar, topic, member count, Join button) without leaving the current room. Summaries fetched concurrently via MSC3266 with generation-based cancellation.
 
-## Shared UI toolkit (`tesseract_tk`)
+## Shared UI toolkit (`ui/shared/`)
+
+The shared UI code builds as four static libraries, each linking the previous: `tesseract_tk` (`tk/`), `tesseract_platform` (`platform/`, non-UI OS services), `tesseract_views` (`views/`) and `tesseract_app` (`app/`); the `layering_check` ctest enforces the include direction. The bullets below describe the toolkit and views.
 
 - **`tk::Canvas`** — abstract 2D backend with four concrete impls (`canvas_d2d`, `canvas_qpainter`, `canvas_cairo`, `canvas_cg`). Color / Rect / Point / Image / TextLayout primitives; rounded-rect, stroke, push/pop clip; circle-cropped image draw; initials disc helper.
 - **`tk::Widget`** — measure / arrange / paint + pointer / wheel dispatch with `dispatch_pointer_down` + `world_to_local` capture semantics. Every subclass is constructed exclusively through `tk::create_widget()`/`create_root_widget()` (a Host-aware factory backed by a thread-local pending-`Host*` stack), never directly — constructors are `protected` and friend the factory via `TK_WIDGET_FACTORY_FRIEND`, so `host()` is valid from the first line of any constructor with no manual parameter plumbing.
@@ -2746,7 +2748,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - Push-rule evaluation via `evaluate_push_rules` in `sdk/src/client.rs`; fires on `VectorDiff::PushBack` (live events only); `is_mention` from `Action::is_highlight()`.
 - **Win32** — WinRT `Windows.UI.Notifications.ToastNotificationManager`; `ToastGeneric` XML with sender, optional room name (omitted for DMs), 120-char body preview; `WM_TESSERACT_NOTIFY_CLICK` navigates to the room. AUMID registered in `HKCU\Software\Classes\AppUserModelId\` at startup (required for non-packaged apps); `notify()` wrapped in `try`/`catch(winrt::hresult_error)` for robustness.
 - **Qt6** — `QDBusInterface` against `org.freedesktop.Notifications` (legacy D-Bus, used everywhere except Flatpak); always a fresh popup (`replaces_id=0`, never updates a prior one in place); click navigates + raises window.
-- **GTK4** — `GDBusConnection` (session bus); same legacy-D-Bus/Flatpak-portal split and always-fresh-popup behavior as Qt6, via a shared `tesseract::linux_notify::NotificationCorrelation` helper (`ui/shared/linux_notification_reply.h`) for the id↔room/event bookkeeping both notifiers need.
+- **GTK4** — `GDBusConnection` (session bus); same legacy-D-Bus/Flatpak-portal split and always-fresh-popup behavior as Qt6, via a shared `tesseract::linux_notify::NotificationCorrelation` helper (`ui/shared/platform/linux/linux_notification_reply.h`) for the id↔room/event bookkeeping both notifiers need.
 - **macOS** — `UNUserNotificationCenter`; `UNUserNotificationCenterDelegate` on `MainWindowController`; in-foreground suppression when the source room is active; click navigates to the room.
 - **Image & sticker previews** — `m.image` / `m.sticker` notifications embed the message picture (SDK fetch, 2 MiB cap, E2EE-transparent; a dedicated `m.sticker` push handler — stickers are a distinct event type). Win32 large inline `<image>` + circular avatar `appLogoOverride`; macOS `UNNotificationAttachment`; Linux single image slot. Gated by the `notification_image_previews` setting.
 - **Lock-screen privacy gate** — cross-platform `tesseract::IScreenLock` (Win32 WTS, macOS `com.apple.screenIsLocked`, Linux logind `LockedHint`); `ShellBase::notification_image_allowed_()` strips the picture whenever the screen is locked (avatars are not gated).

@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "linux_autostart.h"
+#include "platform/linux/linux_autostart.h"
 
 #include <tesseract/paths.h>
 

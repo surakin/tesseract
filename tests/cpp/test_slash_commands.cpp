@@ -1,4 +1,4 @@
-#include "app/SlashCommands.h"
+#include "views/SlashCommands.h"
 #include <tesseract/client.h>
 #include <catch2/catch_test_macros.hpp>
 

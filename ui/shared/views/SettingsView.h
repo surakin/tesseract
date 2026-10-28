@@ -37,7 +37,7 @@
 #include "views/settings/ServerSection.h"
 #include "views/ConfirmDialog.h"
 
-#include "app/SettingsController.h"
+#include "views/settings/SettingsController.h"
 
 #include "tk/controls.h"
 #include "tk/host.h"

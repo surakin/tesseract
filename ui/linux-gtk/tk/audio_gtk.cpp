@@ -5,7 +5,7 @@
 // the on_progress handler is already on the UI thread.
 
 #include "audio.h"
-#include "gst_hw_probe.h"
+#include "platform/linux/gst_hw_probe.h"
 
 #include <gio/gio.h>
 #include <glib.h>

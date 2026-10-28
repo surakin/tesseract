@@ -30,9 +30,9 @@ finish-args:
   - --socket=pulseaudio          # Qt Multimedia audio capture (ui/linux-qt/tk/audio_capture_qt.cpp)
                                   # ultimately talks to PulseAudio/PipeWire-pulse
   - --device=all                 # camera: raw v4l2src/GstDeviceMonitor, no Camera portal exists
-                                  # (ui/shared/tk/video_capture_gst.cpp) — precedented for V4L2 apps
+                                  # (ui/shared/platform/linux/video_capture_gst.cpp) — precedented for V4L2 apps
   - --talk-name=org.kde.StatusNotifierWatcher   # tray icon (ui/linux-qt/src/LinuxQtTrayIcon.cpp)
-  - --system-talk-name=org.freedesktop.GeoClue2 # /location (ui/shared/tk/location_provider_geoclue.cpp,
+  - --system-talk-name=org.freedesktop.GeoClue2 # /location (ui/shared/platform/linux/location_provider_geoclue.cpp,
                                                  # system bus, not session bus)
   # Deliberately NOT included:
   # --filesystem=home  — file dialogs are portal-backed (GtkFileDialog / QFileDialog
@@ -40,7 +40,7 @@ finish-args:
   # anything for notifications — already portal-aware when FLATPAK_ID is set
   #                      (ui/linux-qt/src/LinuxNotifier.cpp)
   # anything extra for screen share — already full org.freedesktop.portal.ScreenCast
-  #                      + PipeWire (ui/shared/tk/screen_capture_portal.cpp)
+  #                      + PipeWire (ui/shared/platform/linux/screen_capture_portal.cpp)
 
 # Rust's own official prebuilt toolchain (rustc + cargo + std), vendored as a
 # pinned/checksummed source instead of relying on Flathub's rust-stable SDK

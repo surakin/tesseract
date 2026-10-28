@@ -266,6 +266,7 @@ endif()
 # the directory-scoped compile/link options propagate to every C++ target.
 # ---------------------------------------------------------------------------
 include(${CMAKE_SOURCE_DIR}/cmake/Hardening.cmake)
+include(${CMAKE_SOURCE_DIR}/cmake/CppWinRT.cmake)
 
 # Compress DWARF debug info (ELF only). Every UI and test executable links the
 # whole Rust archive, debug info included, so uncompressed Debug executables
@@ -506,7 +507,7 @@ if(MSVC)
     # mismatch).
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded" CACHE STRING "" FORCE)
 
-    # Unity builds (ui/shared/CMakeFiles/tesseract_tk.dir/Unity) merge enough
+    # Unity builds (ui/shared/CMakeFiles/tesseract_{tk,views,app}.dir/Unity) merge enough
     # translation units per object file to exceed the COFF section limit
     # (C1128) without /bigobj.
     add_compile_options(/bigobj)
@@ -798,9 +799,9 @@ target_include_directories(tesseract_client PUBLIC
     "${CMAKE_CURRENT_BINARY_DIR}/include")
 
 # ---------------------------------------------------------------------------
-# Shared UI toolkit (tesseract_tk) — widget tree, theme, abstract Canvas,
+# Shared UI libraries (tesseract_tk, tesseract_views, tesseract_app) — widget tree, theme, abstract Canvas,
 # and the per-platform Canvas/TextLayout backend implementations selected
-# by TESSERACT_UI. Always compiled; each platform UI links against it.
+# by TESSERACT_UI. Always compiled; each platform UI links tesseract_app.
 # ---------------------------------------------------------------------------
 add_subdirectory(ui/shared)
 

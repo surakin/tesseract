@@ -70,7 +70,7 @@
 #include <QAudioDevice>
 #include <QtNetwork/QNetworkInformation>
 
-#include "gst_device_listing.h"
+#include "platform/linux/gst_device_listing.h"
 
 namespace tk::qt6
 {
@@ -3680,7 +3680,7 @@ std::vector<tk::DeviceListing> Host::enumerate_audio_outputs() const
 std::vector<tk::DeviceListing> Host::enumerate_cameras() const
 {
     // Enumeration is shared with the GTK4 shell — see
-    // ui/shared/tk/gst_device_listing.cpp.
+    // ui/shared/platform/linux/gst_device_listing.cpp.
     return tk::enumerate_gst_devices("Video/Source", "video/x-raw");
 }
 

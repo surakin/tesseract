@@ -1,4 +1,4 @@
-#include "linux_up_connector_core.h"
+#include "platform/linux/linux_up_connector_core.h"
 
 #include <tesseract/client.h>
 #include <tesseract/settings.h>

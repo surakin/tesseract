@@ -120,7 +120,7 @@ TEST_CASE("CachedTextLayout empties itself when the config changes", "[font]")
     CHECK_FALSE(slot);
 }
 
-#include "app/font_prefs.h"
+#include "views/font_prefs.h"
 
 TEST_CASE("apply_font_prefs converts and reports changes", "[font]")
 {

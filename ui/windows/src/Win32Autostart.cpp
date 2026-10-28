@@ -5,7 +5,7 @@
 
 #include <string>
 
-#include "winrt_coroutine_shim.h"
+#include "platform/win32/winrt_coroutine_shim.h"
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.ApplicationModel.h>
 

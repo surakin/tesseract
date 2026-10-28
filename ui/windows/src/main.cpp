@@ -6,7 +6,7 @@
 #include <ole2.h>
 // <shobjidl.h> declares SetCurrentProcessExplicitAppUserModelID on the Windows SDK.
 #include <shobjidl.h>
-#include "winrt_coroutine_shim.h" // must precede any <winrt/...> include
+#include "platform/win32/winrt_coroutine_shim.h" // must precede any <winrt/...> include
 #include <winrt/base.h>
 #include <filesystem>
 #include <fstream>

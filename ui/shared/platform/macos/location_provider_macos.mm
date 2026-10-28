@@ -2,8 +2,8 @@
 // Uses CLLocationManager. Requests "when in use" authorization if not yet
 // determined, then takes a single location update and stops.
 
-#include "location_provider.h"
-#include "weak_self.h"
+#include "platform/location_provider.h"
+#include "tk/weak_self.h"
 
 #import <CoreLocation/CoreLocation.h>
 

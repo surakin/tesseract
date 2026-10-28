@@ -9,8 +9,8 @@
 // the current user's desktop. Protected/elevated windows (UAC dialogs) appear
 // black — this is a Windows security constraint, not a bug.
 
-#include "screen_capture.h"
-#include "i18n.h"
+#include "platform/screen_capture.h"
+#include "tk/i18n.h"
 
 #include <algorithm>
 #include <atomic>

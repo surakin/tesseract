@@ -1,4 +1,4 @@
-#include "image_animation.h"
+#include "views/image_animation.h"
 
 #include <tesseract/jxl.h>
 

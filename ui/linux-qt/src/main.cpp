@@ -15,10 +15,10 @@
 #include "MainWindow.h"
 #include "app/AccountManager.h"
 #include "app/Launch.h"
-#include "tk/gst_hw_probe.h"
+#include "platform/linux/gst_hw_probe.h"
 #include "tk/qt_accessible.h"
 #include "tk/i18n.h"
-#include "tk/single_instance.h"
+#include "platform/single_instance.h"
 extern "C" {
 }
 #include <tesseract/client.h>
@@ -146,7 +146,7 @@ int main(int argc, char* argv[])
 #endif
 
     // Single-instance guard shared with the GTK4 build (same flock path,
-    // same activation-socket protocol — see ui/shared/tk/single_instance.h)
+    // same activation-socket protocol — see ui/shared/platform/single_instance.h)
     // so launching one backend while the other already holds the lock is
     // detected too, not just two instances of the same backend.
     if (
@@ -175,7 +175,7 @@ int main(int argc, char* argv[])
     // Matches the desktop file basename packages actually install
     // (packaging/tesseract.desktop.in is renamed tesseract-matrix.desktop —
     // see packaging/debian/rules, packaging/arch/PKGBUILD.in — same name
-    // ui/shared/linux_autostart.h already uses). Read back via desktopFileName() in
+    // ui/shared/platform/linux/linux_autostart.h already uses). Read back via desktopFileName() in
     // LinuxNotifier.cpp to populate the "desktop-entry" hint on legacy D-Bus
     // notifications — required for the daemon's ActivationToken signal to
     // know which app to mint a Wayland xdg_activation_v1 token for (see

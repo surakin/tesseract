@@ -2,7 +2,7 @@
 #include "app/image_send.h"
 #include "app/ShellBase.h"
 #include "app/shell_helpers.h"
-#include "app/SlashCommands.h"
+#include "views/SlashCommands.h"
 #include "views/ForwardRoomPicker.h"
 #include "views/MediaViewerOverlay.h"
 #include "views/media_viewer_items.h"

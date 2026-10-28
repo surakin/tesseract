@@ -1,11 +1,11 @@
 // MSC4391 in-room bot commands: FFI struct conversion (ffi_convert.h's
 // parse_param_schema/from_ffi), Client::match_bot_command_arguments's
-// positional-matching convention, and app/SlashCommands.cpp's
+// positional-matching convention, and views/SlashCommands.cpp's
 // dispatch_bot_command_send coercion + error paths.
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "app/SlashCommands.h"
+#include "views/SlashCommands.h"
 #include "ffi_convert.h"
 #include <tesseract/bot_command.h>
 #include <tesseract/client.h>

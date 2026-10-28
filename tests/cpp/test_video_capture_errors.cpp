@@ -2,7 +2,7 @@
 
 #include "tk/controls.h"
 #include "tk/theme.h"
-#include "tk/video_capture.h"
+#include "platform/video_capture.h"
 #include "tk_test_surface.h"
 #include "views/CallLobbyView.h"
 #include "views/CameraWidget.h"

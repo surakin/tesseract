@@ -1,88 +1,18 @@
 cmake_minimum_required(VERSION 3.30)
 
-# tesseract_tk — the shared UI toolkit core. Cross-platform widget classes,
-# layout, theme, and the abstract Canvas interface (see tk/canvas.h).
+# Four static libraries, layered tk <- platform <- views <- app (shells link
+# tesseract_app):
+#   tesseract_tk       - toolkit core: widget classes, layout, theme, the
+#                        abstract Canvas interface (see tk/canvas.h).
+#   tesseract_platform - OS services (capture, decode, location); platform/.
+#   tesseract_views    - shared views built on tk.
+#   tesseract_app      - ShellBase and the other platform-agnostic shell logic.
 #
 # Per-platform backend translation units (Direct2D on Win32, CoreGraphics on
 # macOS, QPainter on Qt6, Cairo+Pango on GTK4) live in each ui/<platform>/tk/
-# instead, compiled directly into that platform's own executable target —
-# see the TESSERACT_UI conditional below for the one exception (GStreamer,
-# shared between the Qt6 and GTK4 backends).
+# instead, compiled directly into that platform's own executable target.
 
 set(_tk_sources
-    app/ShellBase.h
-    app/ShellBase.cpp
-    app/ShellBase_accounts.cpp
-    app/ShellBase_calls.cpp
-    app/ShellBase_encryption.cpp
-    app/ShellBase_media_fetch.cpp
-    app/ShellBase_media_images.cpp
-    app/ShellBase_navigation.cpp
-    app/ShellBase_profile.cpp
-    app/ShellBase_rooms.cpp
-    app/ShellBase_search.cpp
-    app/ShellBase_settings.cpp
-    app/ShellBase_spaces.cpp
-    app/ShellBase_timeline.cpp
-    app/ShellBase_windows.cpp
-    app/ShellBase_wiring.cpp
-    app/DeferredTeardown.h
-    app/AccountLifecycleTypes.h
-    app/AccountManager.h
-    app/MediaTypes.h
-    app/AccountManager.cpp
-    app/Launch.h
-    app/Launch.cpp
-    app/font_prefs.h
-    app/font_prefs.cpp
-    app/EventHandlerBase.h
-    app/EventHandlerBase.cpp
-    app/RoomWindowBase.h
-    app/RoomWindowBase.cpp
-    app/RoomPane.h
-    app/RoomPane.cpp
-    app/ComposerPopups.h
-    app/ComposerPopups.cpp
-    app/SettingsController.h
-    app/SettingsController.cpp
-    app/HistoryExportController.h
-    app/HistoryExportController.cpp
-    app/PresenceTracker.h
-    app/PresenceTracker.cpp
-    app/ActivityRegistry.h
-    app/ActivityRegistry.cpp
-    app/AuxWindowBase.h
-    app/PowerPolicy.h
-    app/PowerPolicy.cpp
-    app/ThreadPanelController.h
-    app/ThreadPanelController.cpp
-    app/EncryptionFlowController.h
-    app/EncryptionFlowController.cpp
-    app/SearchBackend.h
-    app/SearchBackend.cpp
-    app/MediaPlaybackHub.h
-    app/MediaPlaybackHub.cpp
-    app/SlashCommands.h
-    app/shell_helpers.h
-    app/shell_helpers.cpp
-    app/jxl_decode.h
-    app/jxl_decode.cpp
-    app/image_animation.h
-    app/image_animation.cpp
-    app/image_send.h
-    app/image_send.cpp
-    app/SendPipeline.h
-    app/SendPipeline.cpp
-    app/WorkerPool.h
-    app/WorkerPool.cpp
-    app/SlashCommands.cpp
-    app/status_links.h
-    app/status_links.cpp
-    app/UpdateChecker.h
-    app/GithubUpdateChecker.h
-    app/GithubUpdateChecker.cpp
-    app/AurUpdateChecker.h
-    app/AurUpdateChecker.cpp
     tk/audio.h
     tk/audio_capture.h
     tk/video.h
@@ -178,6 +108,20 @@ set(_tk_sources
     tk/animator.h
     tk/kinetic_scroller.h
     tk/kinetic_scroller.cpp
+)
+
+set(_views_sources
+    views/font_prefs.h
+    views/font_prefs.cpp
+    views/launch_baseline.h
+    views/launch_baseline.cpp
+    views/update_checks.h
+    views/settings/SettingsController.h
+    views/settings/SettingsController.cpp
+    views/SlashCommands.h
+    views/image_animation.h
+    views/image_animation.cpp
+    views/SlashCommands.cpp
     views/BrandView.h
     views/BrandView.cpp
     views/LoginView.h
@@ -454,8 +398,76 @@ set(_tk_sources
     views/settings/ImagePacksSection.cpp
 )
 
+set(_app_sources
+    app/ShellBase.h
+    app/ShellBase.cpp
+    app/ShellBase_accounts.cpp
+    app/ShellBase_calls.cpp
+    app/ShellBase_encryption.cpp
+    app/ShellBase_media_fetch.cpp
+    app/ShellBase_media_images.cpp
+    app/ShellBase_navigation.cpp
+    app/ShellBase_profile.cpp
+    app/ShellBase_rooms.cpp
+    app/ShellBase_search.cpp
+    app/ShellBase_settings.cpp
+    app/ShellBase_spaces.cpp
+    app/ShellBase_timeline.cpp
+    app/ShellBase_windows.cpp
+    app/ShellBase_wiring.cpp
+    app/DeferredTeardown.h
+    app/AccountLifecycleTypes.h
+    app/AccountManager.h
+    app/MediaTypes.h
+    app/AccountManager.cpp
+    app/Launch.h
+    app/Launch.cpp
+    app/EventHandlerBase.h
+    app/EventHandlerBase.cpp
+    app/RoomWindowBase.h
+    app/RoomWindowBase.cpp
+    app/RoomPane.h
+    app/RoomPane.cpp
+    app/ComposerPopups.h
+    app/ComposerPopups.cpp
+    app/HistoryExportController.h
+    app/HistoryExportController.cpp
+    app/PresenceTracker.h
+    app/PresenceTracker.cpp
+    app/ActivityRegistry.h
+    app/ActivityRegistry.cpp
+    app/AuxWindowBase.h
+    app/PowerPolicy.h
+    app/PowerPolicy.cpp
+    app/ThreadPanelController.h
+    app/ThreadPanelController.cpp
+    app/EncryptionFlowController.h
+    app/EncryptionFlowController.cpp
+    app/SearchBackend.h
+    app/SearchBackend.cpp
+    app/MediaPlaybackHub.h
+    app/MediaPlaybackHub.cpp
+    app/shell_helpers.h
+    app/shell_helpers.cpp
+    app/jxl_decode.h
+    app/jxl_decode.cpp
+    app/image_send.h
+    app/image_send.cpp
+    app/SendPipeline.h
+    app/SendPipeline.cpp
+    app/WorkerPool.h
+    app/WorkerPool.cpp
+    app/status_links.h
+    app/status_links.cpp
+    app/UpdateChecker.h
+    app/GithubUpdateChecker.h
+    app/GithubUpdateChecker.cpp
+    app/AurUpdateChecker.h
+    app/AurUpdateChecker.cpp
+)
+
 if(TESSERACT_ENABLE_SCREENSHOT_MODE)
-    list(APPEND _tk_sources
+    list(APPEND _app_sources
         app/ScreenshotDirector.h
         app/ScreenshotDirector.cpp
         app/ScreenshotFixture.h
@@ -464,35 +476,10 @@ endif()
 
 # Per-platform backend sources (canvas_*, host_*, audio/video/*_<platform>,
 # …) live in each ui/<platform>/tk/ and are added directly to that
-# platform's own executable target by its own CMakeLists.txt. The exception
-# is GStreamer-based video decode/capture, genuinely shared between the two
-# Linux backends (qt6, gtk) rather than single-platform, which stays here.
-if(TESSERACT_UI STREQUAL "qt6" OR TESSERACT_UI STREQUAL "gtk" OR TESSERACT_UI STREQUAL "linux")
-    list(APPEND _tk_sources
-        tk/video_decode_gst.cpp
-        tk/gst_hw_probe.cpp
-        tk/gst_device_listing.cpp
-        # Transport-independent half of the Qt6/GTK4 UnifiedPush connectors.
-        linux_up_connector_core.cpp
-    )
-endif()
+# platform's own executable target by its own CMakeLists.txt. The OS service
+# layer (capture, decode, location, single-instance) is tesseract_platform.
 
-# VideoCapture — unconditional so CameraWidget (/selfie) works without calls.
-list(APPEND _tk_sources
-    tk/video_capture.cpp
-    tk/video_capture_gst.cpp
-)
-if(TESSERACT_UI STREQUAL "macos")
-    # video_capture_macos.mm lives in ui/macos/tk/ and is added by
-    # ui/macos/CMakeLists.txt instead — this target has no macos sources.
-    list(REMOVE_ITEM _tk_sources tk/video_capture_gst.cpp)
-elseif(TESSERACT_UI STREQUAL "win32")
-    # video_capture_win32.cpp lives in ui/windows/tk/ and is added by
-    # ui/windows/CMakeLists.txt instead — this target has no win32 sources.
-    list(REMOVE_ITEM _tk_sources tk/video_capture_gst.cpp)
-endif()
-
-list(APPEND _tk_sources
+list(APPEND _views_sources
     views/CallBanner.h
     views/CallBanner.cpp
     views/ParticipantTile.h
@@ -503,36 +490,15 @@ list(APPEND _tk_sources
     views/CallLobbyView.cpp
     views/ScreenPickerWidget.h
     views/ScreenPickerWidget.cpp
+)
+list(APPEND _app_sources
     app/CallWindowBase.h
     app/CallWindowBase.cpp
-    tk/screen_capture.cpp
-    tk/location_provider.h
-    tk/location_provider.cpp
 )
-if(TESSERACT_UI STREQUAL "macos")
-    # screen_capture_macos.mm / location_provider_macos.mm live in
-    # ui/macos/tk/ and are added by ui/macos/CMakeLists.txt instead.
-    # single_instance is plain POSIX (flock): the macOS shell uses its
-    # per-profile lock for duplicate-launch detection.
-    list(APPEND _tk_sources
-        tk/single_instance.h
-        tk/single_instance.cpp
-    )
-elseif(TESSERACT_UI STREQUAL "win32")
-    # screen_capture_win32.cpp / location_provider_win32.cpp live in
-    # ui/windows/tk/ and are added by ui/windows/CMakeLists.txt instead —
-    # this target has no win32 sources.
-else()
-    list(APPEND _tk_sources
-        tk/screen_capture_gst.cpp
-        tk/screen_capture_portal.cpp
-        tk/location_provider_geoclue.cpp
-        tk/single_instance.h
-        tk/single_instance.cpp
-    )
-endif()
-
-add_library(tesseract_tk STATIC ${_tk_sources})
+add_library(tesseract_tk    STATIC ${_tk_sources})
+add_subdirectory(platform)
+add_library(tesseract_views STATIC ${_views_sources})
+add_library(tesseract_app   STATIC ${_app_sources})
 
 # svg.cpp is a single-header-library implementation TU (NANOSVG_IMPLEMENTATION /
 # NANOSVGRAST_IMPLEMENTATION) — it gains nothing from unity-batch merging and
@@ -558,7 +524,7 @@ if(EXISTS "${_icon_png}")
         "#include <cstdint>\n\n"
         "static constexpr std::uint8_t kBrandIconPng[] = { ${_icon_bytes} };\n"
     )
-    target_compile_definitions(tesseract_tk PRIVATE TESSERACT_HAS_BRAND_ICON=1)
+    target_compile_definitions(tesseract_views PRIVATE TESSERACT_HAS_BRAND_ICON=1)
 endif()
 
 # Embed Lucide SVG icons as C byte arrays (rasterized + tinted at runtime by
@@ -647,8 +613,11 @@ add_custom_command(
 
 add_custom_target(tesseract_icons DEPENDS "${_icons_h}")
 add_dependencies(tesseract_tk tesseract_icons)
+add_dependencies(tesseract_views tesseract_icons)
 
+# icons.h (tk/status_icons.cpp, many views) and brand_icon.h (BrandView).
 target_include_directories(tesseract_tk PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+target_include_directories(tesseract_views PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 
 # Update-checker configuration. Exactly one of TESSERACT_GITHUB_REPO /
 # TESSERACT_AUR_PACKAGE should be set. TESSERACT_UPDATE_CHECKS is the
@@ -657,17 +626,17 @@ target_include_directories(tesseract_tk PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 # redundant AUR configure, TESSERACT_GITHUB_REPO cleared), trigger_update_check_()
 # is a no-op and no network request is made.
 if(TESSERACT_GITHUB_REPO)
-    target_compile_definitions(tesseract_tk PUBLIC
+    target_compile_definitions(tesseract_views PUBLIC
         TESSERACT_GITHUB_REPO="${TESSERACT_GITHUB_REPO}"
     )
 endif()
 if(TESSERACT_AUR_PACKAGE)
-    target_compile_definitions(tesseract_tk PUBLIC
+    target_compile_definitions(tesseract_views PUBLIC
         TESSERACT_AUR_PACKAGE="${TESSERACT_AUR_PACKAGE}"
     )
 endif()
 if(TESSERACT_GITHUB_REPO OR TESSERACT_AUR_PACKAGE)
-    target_compile_definitions(tesseract_tk PUBLIC TESSERACT_UPDATE_CHECKS)
+    target_compile_definitions(tesseract_views PUBLIC TESSERACT_UPDATE_CHECKS)
 endif()
 
 target_compile_features(tesseract_tk PUBLIC cxx_std_20)
@@ -677,63 +646,47 @@ target_include_directories(tesseract_tk PUBLIC
 )
 
 # The toolkit interacts with shared visual constants and (eventually) the
-# client event-handler interface.
+# client event-handler interface. Layering: tk <- platform <- views <- app.
 target_link_libraries(tesseract_tk PUBLIC
     tesseract_client
 )
+target_link_libraries(tesseract_views PUBLIC tesseract_platform)
+target_link_libraries(tesseract_app   PUBLIC tesseract_views)
 
-# app/SlashCommands.cpp builds MSC4391 bot-command `arguments` JSON objects.
 # tesseract_client links nlohmann_json PRIVATE, so it isn't propagated here —
 # link it directly (header-only, so this is purely an include-path grant).
-target_link_libraries(tesseract_tk PRIVATE
-    nlohmann_json::nlohmann_json
-)
+# views/SlashCommands.cpp (MSC4391 bot-command `arguments`) and
+# app/shell_helpers.cpp use it.
+foreach(_t tesseract_tk tesseract_views tesseract_app)
+    target_link_libraries(${_t} PRIVATE nlohmann_json::nlohmann_json)
+endforeach()
 
 # Precompiled headers: the cross-platform std base shared by ~90 TUs. The
-# active backend appends its heavy framework umbrella headers below. (Project
+# active backend appends its heavy framework umbrella headers (the GStreamer
+# ones for tesseract_platform are in platform/CMakeLists.txt). (Project
 # headers like tk/theme.h are intentionally excluded — see the root option.)
-tesseract_target_pch(tesseract_tk
-    <algorithm>
-    <memory>
-    <utility>
-    <vector>
-    <string>
-    <string_view>
-    <cstring>
-    <cstdint>
-    <cmath>
-    <chrono>
-    <unordered_map>
-    <unordered_set>
-    <mutex>
-    <atomic>
-    <functional>
-    <optional>
-)
+foreach(_t tesseract_tk tesseract_views tesseract_app)
+    tesseract_target_pch(${_t}
+        <algorithm>
+        <memory>
+        <utility>
+        <vector>
+        <string>
+        <string_view>
+        <cstring>
+        <cstdint>
+        <cmath>
+        <chrono>
+        <unordered_map>
+        <unordered_set>
+        <mutex>
+        <atomic>
+        <functional>
+        <optional>
+    )
+endforeach()
 
-# All platform-UI-toolkit (Qt6/GTK4/AppKit) and platform-media (Media
-# Foundation/AVFoundation) dependencies live in each ui/<platform>/
-# CMakeLists.txt now, alongside the tk:: backend sources that need them
-# (see tk/canvas_d2d.* etc.'s move out of this directory). The one exception
-# is GStreamer: video_decode_gst.cpp and gst_hw_probe.cpp are genuinely
-# shared between the two Linux backends (qt6, gtk) rather than
-# single-platform, and stay compiled into tesseract_tk here — its PUBLIC
-# link propagates GStreamer to whichever of ui/linux-qt / ui/linux-gtk
-# links this library.
-if(TESSERACT_UI STREQUAL "qt6" OR TESSERACT_UI STREQUAL "gtk" OR TESSERACT_UI STREQUAL "linux")
-    find_package(PkgConfig REQUIRED)
-    pkg_check_modules(TK_GST REQUIRED IMPORTED_TARGET
-        gstreamer-1.0
-        gstreamer-app-1.0
-        gstreamer-video-1.0
-        gio-2.0
-    )
-    target_link_libraries(tesseract_tk PUBLIC
-        PkgConfig::TK_GST
-        ${CMAKE_DL_LIBS}
-    )
-    tesseract_target_pch(tesseract_tk
-        <gst/gst.h>
-        <glib.h>
-    )
-endif()
+# The platform-service backends (GStreamer, Media Foundation, AVFoundation,
+# CoreLocation, WinRT geolocation) and their libraries live on tesseract_platform
+# (platform/CMakeLists.txt). Only the UI-toolkit deps (Qt6/GTK4/AppKit, plus the
+# Host-vended audio/video players) stay in each ui/<platform>/CMakeLists.txt.

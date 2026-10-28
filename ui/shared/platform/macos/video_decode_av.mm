@@ -8,7 +8,7 @@
 // This function is safe to call from any thread (AVAssetReader and
 // CoreFoundation/CoreGraphics APIs do not require the main thread).
 
-#include "video_decode.h"
+#include "platform/video_decode.h"
 
 #import <Foundation/Foundation.h>
 #import <AVFoundation/AVFoundation.h>

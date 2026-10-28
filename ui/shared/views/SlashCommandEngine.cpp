@@ -1,5 +1,5 @@
 #include "views/SlashCommandEngine.h"
-#include "app/SlashCommands.h"
+#include "views/SlashCommands.h"
 
 namespace tesseract::views
 {

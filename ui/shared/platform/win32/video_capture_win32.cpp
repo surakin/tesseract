@@ -18,7 +18,7 @@
 // MFT failed to start). That source is dead — re-issuing ReadSample just
 // fails again forever — so the first failure is reported and reading stops.
 
-#include "video_capture.h"
+#include "platform/video_capture.h"
 
 #include <tesseract/settings.h>
 

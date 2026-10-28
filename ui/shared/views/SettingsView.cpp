@@ -6,7 +6,7 @@
 #include "views/settings/StatusEditor.h"
 #include "views/settings/TimezonePicker.h"
 
-#include "app/Launch.h"
+#include "views/launch_baseline.h"
 #include "tk/i18n.h"
 #include "tk/theme.h"
 

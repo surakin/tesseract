@@ -1,6 +1,6 @@
 #pragma once
 #include <tesseract/notifier.h>
-#include "../../shared/linux_notification_reply.h"
+#include "platform/linux/linux_notification_reply.h"
 #include <gio/gio.h>
 #include <functional>
 #include <memory>
@@ -15,7 +15,7 @@ public:
     // on_reply: (room_id, event_id, reply_text), fired from either the
     // KDE-only legacy D-Bus "inline-reply" extension, or the portal's
     // standardized "im.reply-with-text" button purpose (interface v2+) —
-    // see ui/shared/linux_notification_reply.h for both. Never fires when
+    // see ui/shared/platform/linux/linux_notification_reply.h for both. Never fires when
     // neither is supported. Deliberately separate from on_activate — a
     // reply must not switch account or navigate, unlike a click.
     explicit LinuxNotifierGtk(

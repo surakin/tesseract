@@ -1,6 +1,6 @@
 #include "views/SlashCommandController.h"
 
-#include "app/SlashCommands.h"
+#include "views/SlashCommands.h"
 
 #include <tesseract/client.h>
 

@@ -9,11 +9,11 @@
 #include "views/BrandView.h"
 #include "views/media_drop.h"
 #include "views/shortcut_registry.h"
-#include "../../shared/linux_autostart.h"
+#include "platform/linux/linux_autostart.h"
 #include "LinuxPowerMonitorQt.h"
 #include "LinuxScreenLockQt.h"
 #include "app/DeferredTeardown.h"
-#include "app/SlashCommands.h"
+#include "views/SlashCommands.h"
 #include "app/status_links.h"
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
 #include "app/ScreenshotFixture.h"
@@ -26,7 +26,7 @@
 #include "tk/status_icons.h"
 #include "tk/svg.h"
 #include "tk/theme.h"
-#include "tk/video_decode.h"
+#include "platform/video_decode.h"
 
 #include <QThreadPool>
 #include <QMenu>
@@ -710,7 +710,7 @@ const xdg_activation_token_v1_listener kTokenDoneListener = {s_token_done};
 
 void MainWindow::setupActivationListener_()
 {
-    // Protocol: see tk::ActivationRequest (ui/shared/tk/single_instance.h).
+    // Protocol: see tk::ActivationRequest (ui/shared/platform/single_instance.h).
     // Shared with GTK4 — either backend's "losing" launch can forward here
     // regardless of which one won the lock.
     activationListener_ = std::make_unique<tk::ActivationListener>(

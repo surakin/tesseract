@@ -1,6 +1,6 @@
-#include "video_capture.h"
+#include "platform/video_capture.h"
 
-#include "i18n.h"
+#include "tk/i18n.h"
 
 namespace tk
 {

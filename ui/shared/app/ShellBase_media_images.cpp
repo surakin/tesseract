@@ -2,7 +2,7 @@
 #include "app/shell_helpers.h"
 #include "app/media_preview_policy.h"
 #include "tk/blurhash.h"
-#include "tk/video_decode.h"
+#include "platform/video_decode.h"
 #include "views/GifPopup.h"
 #include "views/MainAppWidget.h"
 #include <algorithm>

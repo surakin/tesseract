@@ -1,6 +1,6 @@
 #pragma once
 
-#include "tk/video_capture.h"
+#include "platform/video_capture.h"
 #include "tk/widget.h"
 
 #include <chrono>

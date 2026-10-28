@@ -21,9 +21,9 @@
 // version: "device.path" historically, "api.v4l2.path" since the api-prefixed
 // property convention landed. Both are tried.
 
-#include "gst_device_listing.h"
+#include "platform/linux/gst_device_listing.h"
 
-#include "gst_hw_probe.h"
+#include "platform/linux/gst_hw_probe.h"
 
 #include <gst/gst.h>
 

@@ -92,8 +92,6 @@ add_executable(tesseract_macos MACOSX_BUNDLE
     tk/audio_capture_macos.mm
     tk/audio_playback_macos.mm
     tk/video_macos.mm
-    tk/video_decode_av.mm
-    tk/video_capture_macos.mm
 )
 
 target_sources(tesseract_macos PRIVATE
@@ -101,8 +99,6 @@ target_sources(tesseract_macos PRIVATE
     src/AuxWindowController.mm
     src/CallWindowController.h
     src/CallWindowController.mm
-    tk/screen_capture_macos.mm
-    tk/location_provider_macos.mm
 )
 
 set_source_files_properties("${_icns}" PROPERTIES
@@ -115,7 +111,7 @@ target_compile_options(tesseract_macos  PRIVATE -fobjc-arc)
 
 # video_macos.mm predates ARC and manually manages refcounts (explicit
 # alloc/retain/release/dealloc) — it compiled fine under MRC back when it
-# lived in tesseract_tk (never ARC-enabled); now that it's a direct source of
+# lived in the shared libraries (never ARC-enabled); now that it's a direct source of
 # this -fobjc-arc target, override ARC back off for just this file rather
 # than rewriting its memory management.
 # SKIP_PRECOMPILE_HEADERS: the target's ObjC++ PCH is built with ARC (the
@@ -231,7 +227,7 @@ endif()
 # with WHOLE_ARCHIVE so every symbol is present regardless of order.
 target_link_libraries(tesseract_macos PRIVATE
     $<LINK_LIBRARY:WHOLE_ARCHIVE,tesseract_sdk_bridge_cxx,tesseract_client,tesseract_sdk_ffi-static>
-    tesseract_tk
+    tesseract_app
     "-framework AppKit"
     "-framework Carbon"                   # tk/host_macos.mm TIS input sources (Cmd shortcuts on non-Latin layouts)
     "-framework Foundation"
@@ -246,7 +242,6 @@ target_link_libraries(tesseract_macos PRIVATE
     "-framework CoreAudio"                # tk/audio_capture_macos.mm, host_macos.mm
     "-framework AudioToolbox"             # tk/audio_capture_macos.mm, host_macos.mm
     "-framework UserNotifications"
-    "-framework CoreLocation"             # tk/location_provider_macos.mm
     "-framework ServiceManagement"        # src/MacAutostart.mm (SMAppService)
     "-framework MediaPlayer"              # src/MacNowPlaying.mm
     "-framework CoreSpotlight"            # src/MacSpotlightSearch.mm

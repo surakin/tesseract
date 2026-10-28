@@ -101,7 +101,7 @@ flowchart TB
     compose["ComposeBar<br/>Text, attachments, replies, mentions"]
     thread["ThreadView / ThreadListView"]
     overlays["Pickers, media viewers, settings<br/>EncryptionSetupOverlay"]
-    controllers["Shell collaborators<br/>SettingsController / EncryptionFlowController<br/>ThreadPanelController / HistoryExportController<br/>SendPipeline / PowerPolicy"]
+    controllers["Shell collaborators<br/>SettingsController (views/settings/) / EncryptionFlowController<br/>ThreadPanelController / HistoryExportController<br/>SendPipeline / PowerPolicy"]
     manager["AccountManager — shared across windows<br/>Session registry, media caches, playback hub"]
     account["AccountSession — one per account<br/>Client + IEventHandler bridge<br/>Notifier + optional UnifiedPush connector"]
     backend["Platform toolkit backend<br/>Canvas, Host, native text controls<br/>Audio/video capture and playback"]
@@ -313,13 +313,17 @@ flowchart LR
     cmake --> clientlib["tesseract_client<br/>C++ client library"]
     rustlib --> clientlib
     glue --> clientlib
-    cmake --> sharedlib["tesseract_tk<br/>Shared toolkit, views and app code"]
+    cmake --> tklib["tesseract_tk<br/>Canvas, Widget, Layout, Host"]
+    tklib --> platformlib["tesseract_platform<br/>Per-OS capture, location, single-instance services"]
+    platformlib --> viewslib["tesseract_views<br/>Shared views and settings helpers"]
+    viewslib --> applib["tesseract_app<br/>ShellBase and event dispatch"]
     clientlib --> executable["Selected platform executable<br/>Native shell + toolkit backend"]
-    sharedlib --> executable
+    applib --> executable
     cmake --> executable
 ```
 
 Linux can build both Qt6 and GTK4 executables using the same shared layers.
+The shared libraries form a chain (`tesseract_tk` <- `tesseract_platform` <- `tesseract_views` <- `tesseract_app`), and the `layering_check` ctest enforces the include direction.
 Platform-specific toolkit implementations compile into their platform targets.
 The Rust and C++ layers are linked into the desktop application; the FFI boundary
 is an in-process language boundary, not an IPC or network service.
@@ -330,6 +334,7 @@ is an in-process language boundary, not an IPC or network service.
 | --- | --- |
 | Shared application and callback dispatch | [ShellBase.h](../ui/shared/app/ShellBase.h) (implemented in `ShellBase_*.cpp`), [EventHandlerBase.h](../ui/shared/app/EventHandlerBase.h) |
 | Shared views and toolkit | [ui/shared/views](../ui/shared/views/), [ui/shared/tk](../ui/shared/tk/) |
+| Non-UI platform services | [ui/shared/platform](../ui/shared/platform/) (per-OS backends in `linux/`, `win32/`, `macos/`) |
 | Platform shells and backends | [Windows](../ui/windows/), [macOS](../ui/macos/), [Qt6](../ui/linux-qt/), [GTK4](../ui/linux-gtk/) |
 | C++ API and event bridge | [client.h](../client/include/tesseract/client.h), [event_handler_bridge.cpp](../client/src/event_handler_bridge.cpp) |
 | Rust FFI and orchestration | [bridge.rs](../sdk/src/bridge.rs), [client/mod.rs](../sdk/src/client/mod.rs) |

@@ -1,4 +1,4 @@
-#include "font_prefs.h"
+#include "views/font_prefs.h"
 
 namespace tesseract
 {

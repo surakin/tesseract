@@ -1,6 +1,6 @@
 #include "app/ShellBase.h"
 #include "app/shell_helpers.h"
-#include "app/SlashCommands.h"
+#include "views/SlashCommands.h"
 #include "app/UploadDraft.h"
 #include "app/UnreadPrefetch.h"
 #include "views/MainAppWidget.h"

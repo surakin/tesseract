@@ -5,8 +5,8 @@
 // Pipeline: ximagesrc ! videoconvert ! video/x-raw,format=I420 ! appsink
 //
 // Frames are delivered at ~15 fps on a GStreamer streaming thread.
-#include "screen_capture.h"
-#include "i18n.h"
+#include "platform/screen_capture.h"
+#include "tk/i18n.h"
 
 #include <gst/gst.h>
 #include <gst/app/gstappsink.h>

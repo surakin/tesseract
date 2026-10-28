@@ -4,7 +4,7 @@
 #include "tk/canvas.h"
 #include "tk/controls.h"
 #include "tk/scrollable_base.h"
-#include "tk/screen_capture.h"
+#include "platform/screen_capture.h"
 
 #include <cstdint>
 #include <functional>

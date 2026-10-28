@@ -11,9 +11,9 @@
 #include "MainWindow.h"
 #include "app/AccountManager.h"
 #include "app/Launch.h"
-#include "tk/gst_hw_probe.h"
+#include "platform/linux/gst_hw_probe.h"
 #include "tk/i18n.h"
-#include "tk/single_instance.h"
+#include "platform/single_instance.h"
 #include <tesseract/paths.h>
 #include <tesseract/settings.h>
 

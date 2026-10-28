@@ -13,8 +13,8 @@
 // directly on the streaming thread that emits them, and the bus is polled
 // synchronously.
 
-#include "video_decode.h"
-#include "gst_hw_probe.h"
+#include "platform/video_decode.h"
+#include "platform/linux/gst_hw_probe.h"
 
 // Qt defines 'signals' as 'public' for its meta-object system.
 // GLib's gdbusintrospection.h declares a struct field named 'signals', which

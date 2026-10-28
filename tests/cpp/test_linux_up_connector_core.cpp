@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "linux_up_connector_core.h"
+#include "platform/linux/linux_up_connector_core.h"
 
 using tesseract::up::extract_push_room_id;
 using tesseract::up::normalize_gateway_url;

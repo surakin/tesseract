@@ -336,7 +336,7 @@ target_sources(tesseract_tests PRIVATE cpp/test_isolation_listener.cpp)
 set_source_files_properties(cpp/test_isolation_listener.cpp
     PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
 
-# Screenshot-mode sources are only in tesseract_tk when the mode is ON (they
+# Screenshot-mode sources are only in tesseract_app when the mode is ON (they
 # stay out of release builds); compile them into the test binary otherwise so
 # the director/fixture stay covered by the normal ctest run.
 if(NOT TESSERACT_ENABLE_SCREENSHOT_MODE)
@@ -345,8 +345,8 @@ if(NOT TESSERACT_ENABLE_SCREENSHOT_MODE)
         ${CMAKE_SOURCE_DIR}/ui/shared/app/ScreenshotFixture.cpp)
 endif()
 
-# tk::clean_device_display_name() lives in tk/gst_device_listing.cpp, which is
-# a Linux-only source in tesseract_tk (see the guard in ui/shared/CMakeLists.txt).
+# tk::clean_device_display_name() lives in platform/linux/gst_device_listing.cpp, which is
+# a Linux-only source in tesseract_platform (see ui/shared/platform/CMakeLists.txt).
 # Same for linux_up_connector_core.cpp; linux_autostart.h is POSIX/procfs-only.
 # Keep the test with it: listed unconditionally above, the Win32 and macOS test
 # binaries would reference a symbol that isn't defined there.
@@ -422,18 +422,14 @@ elseif(_TESSERACT_TEST_UI STREQUAL "win32")
         # option: force the CRT startup stub explicitly.
         target_link_options(tesseract_tests PRIVATE "/ENTRY:wmainCRTStartup")
     endif()
-    # video_capture_win32.cpp supplies tk::make_video_capture_win32(), which
-    # tk::VideoCapture::create() (still in tesseract_tk) calls unconditionally
-    # on _WIN32 — it moved out of tesseract_tk like canvas_d2d.cpp, so linking
-    # tests pulls in libtesseract_tk's reference with no definition unless
-    # compiled here (mirrors the macOS branch below).
     target_sources(tesseract_tests PRIVATE
         cpp/test_win32_taskbar_progress.cpp
         cpp/tk_test_surface_win32.cpp
-        "${CMAKE_SOURCE_DIR}/ui/windows/tk/canvas_d2d.cpp"
-        "${CMAKE_SOURCE_DIR}/ui/windows/tk/video_capture_win32.cpp")
+        "${CMAKE_SOURCE_DIR}/ui/windows/tk/canvas_d2d.cpp")
     target_include_directories(tesseract_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/ui/windows"
+        # test_win32_taskbar_progress.cpp includes "Win32Taskbar.h".
+        "${CMAKE_SOURCE_DIR}/ui/windows/src"
         "${CMAKE_SOURCE_DIR}/ui/shared/tk")
     target_compile_definitions(tesseract_tests PRIVATE
         UNICODE _UNICODE
@@ -445,71 +441,12 @@ elseif(_TESSERACT_TEST_UI STREQUAL "win32")
         d3d11
         dxgi
         dcomp
-        dwrite
-        mf
-        mfplat
-        mfreadwrite
-        mfuuid
-        # location_provider_win32.cpp's C++/WinRT calls (RoGetActivationFactory,
-        # RoOriginateLanguageException, ...) resolve through windowsapp.lib
-        # (mirrors tesseract_win32's own link libraries).
-        windowsapp)
-    # tk::ScreenCapture::create()'s _WIN32 branch (and screen_capture.cpp as a
-    # whole) lives outside tesseract_tk; same move-out gap as video capture
-    # above, so mirror it here (mirrors the macOS branch below).
-    target_sources(tesseract_tests PRIVATE
-        "${CMAKE_SOURCE_DIR}/ui/windows/tk/screen_capture_win32.cpp")
-    # ShellBase::gif_strip_image_ (in tesseract_tk) calls
-    # tk::decode_video_frames(), whose Win32 backend lives outside
-    # tesseract_tk; same move-out gap as the capture backends above.
-    target_sources(tesseract_tests PRIVATE
-        "${CMAKE_SOURCE_DIR}/ui/windows/tk/video_decode_mf.cpp")
-    # tk::create_location_provider()'s _WIN32 branch calls
-    # tk::make_location_provider_win32(), defined in location_provider_win32.cpp
-    # which lives outside tesseract_tk; same move-out gap as screen/video
-    # capture above, so mirror it here (mirrors the macOS branch below).
-    target_sources(tesseract_tests PRIVATE
-        "${CMAKE_SOURCE_DIR}/ui/windows/tk/location_provider_win32.cpp")
-    # location_provider_win32.cpp bare-#includes "winrt_coroutine_shim.h",
-    # which lives in ui/windows/src (mirrors tesseract_win32's own include
-    # wiring in ui/windows/CMakeLists.txt).
-    target_include_directories(tesseract_tests PRIVATE
-        "${CMAKE_SOURCE_DIR}/ui/windows/src")
-    if(MSVC)
-        # C++/WinRT headers on Windows SDK 10.0.19041 predate /permissive-'s
-        # two-phase lookup rules; relax it for this TU (mirrors the same
-        # exclusion in ui/windows/CMakeLists.txt).
-        set_source_files_properties(
-            "${CMAKE_SOURCE_DIR}/ui/windows/tk/location_provider_win32.cpp"
-            PROPERTIES COMPILE_OPTIONS "/Zc:twoPhase-")
-
-        # C++/WinRT headers live in <WinSDK>/include/<ver>/cppwinrt/ (SDK
-        # 10.0.17134+). The MSVC toolchain adds <sdk>/winrt/ as an external
-        # path for WRL-style Windows Runtime headers, but NOT cppwinrt/ —
-        # add it explicitly (mirrors ui/windows/CMakeLists.txt).
-        cmake_host_system_information(RESULT _winsdk_root QUERY WINDOWS_REGISTRY
-            "HKLM/SOFTWARE/Microsoft/Windows Kits/Installed Roots"
-            VALUE "KitsRoot10" VIEW BOTH)
-        if(_winsdk_root)
-            file(GLOB _cppwinrt_ver_dirs LIST_DIRECTORIES true
-                 "${_winsdk_root}include/10.*")
-            list(SORT _cppwinrt_ver_dirs ORDER DESCENDING)
-            list(GET  _cppwinrt_ver_dirs 0 _cppwinrt_ver_dir)
-            get_filename_component(_cppwinrt_ver "${_cppwinrt_ver_dir}" NAME)
-            target_include_directories(tesseract_tests SYSTEM PRIVATE
-                "${_winsdk_root}include/${_cppwinrt_ver}/cppwinrt")
-        endif()
-    endif()
+        dwrite)
 elseif(_TESSERACT_TEST_UI STREQUAL "macos")
     # canvas_cg.cpp (tk::cg::make_factory/make_canvas) now lives in ui/macos
     # rather than tesseract_tk, so the test surface must compile it itself.
     # canvas_cg.h bare-#includes "canvas.h" from ui/shared/tk; add that so it
     # resolves (mirrors tesseract_macos's own include wiring).
-    #
-    # video_capture_macos.mm supplies tk::make_video_capture_macos(), which
-    # tk::VideoCapture::create() (still in tesseract_tk) calls unconditionally
-    # on __APPLE__ — it also moved out of tesseract_tk, so linking tests pulls
-    # in libtesseract_tk.a's reference with no definition unless compiled here.
     # canvas_cg_webp.cpp (tk::cg::is_webp_data/decode_webp_bytes_libwebp/
     # decode_webp_bytes_windowed_libwebp) is what canvas_cg.cpp's animated
     # decode now delegates to for WebP content — link its object in the same
@@ -517,14 +454,7 @@ elseif(_TESSERACT_TEST_UI STREQUAL "macos")
     target_sources(tesseract_tests PRIVATE
         cpp/tk_test_surface_cg.cpp
         "${CMAKE_SOURCE_DIR}/ui/macos/tk/canvas_cg.cpp"
-        "${CMAKE_SOURCE_DIR}/ui/macos/tk/canvas_cg_webp.cpp"
-        "${CMAKE_SOURCE_DIR}/ui/macos/tk/video_capture_macos.mm")
-    # SKIP_PRECOMPILE_HEADERS: the target's ObjC++ PCH is built without ARC
-    # (tesseract_tests has no target-wide -fobjc-arc), which conflicts with
-    # the ARC this one file needs.
-    set_source_files_properties(
-        "${CMAKE_SOURCE_DIR}/ui/macos/tk/video_capture_macos.mm"
-        PROPERTIES COMPILE_OPTIONS "-fobjc-arc" SKIP_PRECOMPILE_HEADERS ON)
+        "${CMAKE_SOURCE_DIR}/ui/macos/tk/canvas_cg_webp.cpp")
     # tk_test_surface_cg.cpp and canvas_cg.cpp bare-#include CoreGraphics.h,
     # whose transitive MacTypes.h declares global-namespace `Point`/`Rect`
     # (legacy QuickDraw types). Many test_tk_*.cpp files have a file-scope
@@ -543,46 +473,10 @@ elseif(_TESSERACT_TEST_UI STREQUAL "macos")
         "-framework CoreGraphics"
         "-framework CoreText"
         "-framework ImageIO"
-        "-framework UniformTypeIdentifiers"
-        "-framework AVFoundation"
-        "-framework CoreVideo"
-        "-framework CoreMedia"    # video_capture_macos.mm: CMSampleBufferGetImageBuffer
-        "-framework Foundation")  # video_capture_macos.mm: NSString/NSNumber
+        "-framework UniformTypeIdentifiers")
     target_include_directories(tesseract_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/ui/macos"
         "${CMAKE_SOURCE_DIR}/ui/shared/tk")
-
-    # tk::ScreenCapture::create()'s __APPLE__ branch (and screen_capture.cpp
-    # as a whole) lives outside tesseract_tk; same move-out gap as video
-    # capture above, so mirror it here.
-    target_sources(tesseract_tests PRIVATE
-        "${CMAKE_SOURCE_DIR}/ui/macos/tk/screen_capture_macos.mm")
-    set_source_files_properties(
-        "${CMAKE_SOURCE_DIR}/ui/macos/tk/screen_capture_macos.mm"
-        PROPERTIES COMPILE_OPTIONS "-fobjc-arc" SKIP_PRECOMPILE_HEADERS ON)
-    target_link_libraries(tesseract_tests PRIVATE
-        "-weak_framework ScreenCaptureKit")
-
-    # tk::create_location_provider()'s __APPLE__ branch calls
-    # tk::make_location_provider_macos(), defined in location_provider_macos.mm
-    # which lives outside tesseract_tk; same move-out gap as screen/video
-    # capture above, so mirror it here.
-    target_sources(tesseract_tests PRIVATE
-        "${CMAKE_SOURCE_DIR}/ui/macos/tk/location_provider_macos.mm")
-    set_source_files_properties(
-        "${CMAKE_SOURCE_DIR}/ui/macos/tk/location_provider_macos.mm"
-        PROPERTIES COMPILE_OPTIONS "-fobjc-arc" SKIP_PRECOMPILE_HEADERS ON)
-    target_link_libraries(tesseract_tests PRIVATE
-        "-framework CoreLocation")
-
-    # ShellBase::gif_strip_image_ (in tesseract_tk) calls
-    # tk::decode_video_frames(), whose macOS backend lives outside
-    # tesseract_tk; same move-out gap as the backends above.
-    target_sources(tesseract_tests PRIVATE
-        "${CMAKE_SOURCE_DIR}/ui/macos/tk/video_decode_av.mm")
-    set_source_files_properties(
-        "${CMAKE_SOURCE_DIR}/ui/macos/tk/video_decode_av.mm"
-        PROPERTIES COMPILE_OPTIONS "-fobjc-arc" SKIP_PRECOMPILE_HEADERS ON)
 
     if(TESSERACT_LD_NO_WARN_DUPLICATE_LIBRARIES)
         target_link_options(tesseract_tests PRIVATE "LINKER:-no_warn_duplicate_libraries")
@@ -640,13 +534,13 @@ if(WIN32)
         Catch2::Catch2WithMain
         $<LINK_LIBRARY:WHOLE_ARCHIVE,tesseract_sdk_bridge_cxx,tesseract_client>
         tesseract_sdk_ffi-static
-        tesseract_tk
+        tesseract_app
     )
 else()
     target_link_libraries(tesseract_tests PRIVATE
         Catch2::Catch2WithMain
         $<LINK_LIBRARY:WHOLE_ARCHIVE,tesseract_sdk_bridge_cxx,tesseract_client,tesseract_sdk_ffi-static>
-        tesseract_tk
+        tesseract_app
     )
 endif()
 # Register each Catch2 TEST_CASE as an individual ctest test.
@@ -671,4 +565,11 @@ if(Python3_Interpreter_FOUND AND XGETTEXT_FOR_TESTS)
     add_test(NAME i18n_catalogs_complete
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/i18n/check_i18n.py
                 ${CMAKE_SOURCE_DIR})
+endif()
+
+# ui/shared layers only include downward (see tests/check_layering.py).
+if(Python3_Interpreter_FOUND)
+    add_test(NAME layering_check
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/check_layering.py
+                ${CMAKE_SOURCE_DIR}/ui/shared)
 endif()

@@ -3,7 +3,7 @@
 #include "view_test_util.h"
 #include "views/settings/FontsEditor.h"
 
-#include "app/font_prefs.h"
+#include "views/font_prefs.h"
 
 #include <vector>
 

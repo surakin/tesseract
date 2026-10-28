@@ -11,7 +11,7 @@
 #include <QMetaType>
 #include <QStandardPaths>
 #include <QTemporaryFile>
-#include "../../shared/linux_portal.h"
+#include "platform/linux/linux_portal.h"
 #include "tk/i18n.h"
 
 namespace
@@ -120,7 +120,7 @@ LinuxNotifierQt::LinuxNotifierQt(
         SLOT(onActivationToken(uint, const QString&)));
 
     // KDE Plasma-only extension: fired when the user submits text via the
-    // inline-reply action (see ui/shared/linux_notification_reply.h). Other
+    // inline-reply action (see ui/shared/platform/linux/linux_notification_reply.h). Other
     // daemons never emit this signal, so this connection is simply dormant
     // there — no capability check needed before subscribing.
     QDBusConnection::sessionBus().connect(

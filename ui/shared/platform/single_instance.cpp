@@ -1,4 +1,4 @@
-#include "single_instance.h"
+#include "platform/single_instance.h"
 
 #include <tesseract/paths.h>
 

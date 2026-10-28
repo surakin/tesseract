@@ -2,7 +2,7 @@
 
 #include "SettingsGroup.h"
 
-#include "app/UpdateChecker.h"
+#include "views/update_checks.h"
 #include "tesseract/settings.h"
 #include "tk/i18n.h"
 

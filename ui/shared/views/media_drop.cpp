@@ -1,6 +1,6 @@
 #include "views/media_drop.h"
 
-#include "app/image_animation.h"
+#include "views/image_animation.h"
 #include "views/ComposeBar.h"
 
 namespace tesseract::views

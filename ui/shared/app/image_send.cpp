@@ -1,6 +1,6 @@
 #include "image_send.h"
 
-#include "image_animation.h"
+#include "views/image_animation.h"
 
 namespace tesseract
 {

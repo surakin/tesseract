@@ -22,7 +22,7 @@
 #include <tesseract/settings.h>
 #include <tesseract/visual.h>
 #include "app/DeferredTeardown.h"
-#include "app/SlashCommands.h"
+#include "views/SlashCommands.h"
 #include "app/status_links.h"
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
 #include "app/ScreenshotFixture.h"
@@ -32,7 +32,7 @@
 #include "tk/inflight_dot.h"
 #include "tk/status_icons.h"
 #include "tk/svg.h"
-#include "tk/video_decode.h"
+#include "platform/video_decode.h"
 #include "tk/emoji_support.h"
 #include "tk/host.h"
 #include "tk/host_macos.h"
@@ -61,7 +61,7 @@
 #include "app/ShellBase.h"
 #include "app/shell_helpers.h"
 #include "app/EventHandlerBase.h"
-#include "app/SettingsController.h"
+#include "views/settings/SettingsController.h"
 #include "views/AccountPicker.h"
 #include <algorithm>
 #include <cmath>

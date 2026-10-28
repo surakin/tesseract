@@ -3,7 +3,7 @@
 #include <memory>
 #include <string>
 #include <gdk-pixbuf/gdk-pixbuf.h>
-#include "../../shared/linux_portal.h"
+#include "platform/linux/linux_portal.h"
 #include "tk/i18n.h"
 
 namespace
@@ -45,7 +45,7 @@ LinuxNotifierGtk::LinuxNotifierGtk(
         G_DBUS_SIGNAL_FLAGS_NONE, on_activation_token_cb, this, nullptr);
 
     // KDE Plasma-only extension: fired when the user submits text via the
-    // inline-reply action (see ui/shared/linux_notification_reply.h). Other
+    // inline-reply action (see ui/shared/platform/linux/linux_notification_reply.h). Other
     // daemons never emit this signal, so this subscription is simply dormant
     // there — no capability check needed before subscribing.
     replied_sub_ = g_dbus_connection_signal_subscribe(

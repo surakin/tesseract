@@ -3,7 +3,7 @@
 // single_instance.cpp is compiled into tesseract_tk for Linux and macOS only.
 #if !defined(_WIN32)
 
-#include "tk/single_instance.h"
+#include "platform/single_instance.h"
 
 #include <tesseract/paths.h>
 

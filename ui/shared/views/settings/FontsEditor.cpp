@@ -2,7 +2,7 @@
 
 #include "FontFamilyPicker.h"
 
-#include "app/font_prefs.h"
+#include "views/font_prefs.h"
 #include "tk/canvas.h"
 #include "tk/font_config.h"
 #include "tk/i18n.h"

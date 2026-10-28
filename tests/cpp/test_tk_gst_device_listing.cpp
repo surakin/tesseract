@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "tk/gst_device_listing.h"
+#include "platform/linux/gst_device_listing.h"
 
 using tk::clean_device_display_name;
 

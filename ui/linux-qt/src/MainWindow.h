@@ -18,7 +18,7 @@ class QMoveEvent;
 
 #include "app/AccountManager.h"
 #include "app/EventHandlerBase.h"
-#include "app/SettingsController.h"
+#include "views/settings/SettingsController.h"
 #include "app/ShellBase.h"
 #include "tk/canvas.h"
 #include "tk/host.h"
@@ -49,7 +49,7 @@ class QMoveEvent;
 #include <vector>
 
 #include <QSocketNotifier>
-#include "tk/single_instance.h"
+#include "platform/single_instance.h"
 
 class QTimer;
 
@@ -398,7 +398,7 @@ private:
 
     // Listens for activation requests forwarded by a later launch of either
     // Linux backend (Qt/GTK share the same lock + socket protocol — see
-    // ui/shared/tk/single_instance.h) and raises this window.
+    // ui/shared/platform/single_instance.h) and raises this window.
     std::unique_ptr<tk::ActivationListener> activationListener_;
     QSocketNotifier* activationNotifier_ = nullptr;
 

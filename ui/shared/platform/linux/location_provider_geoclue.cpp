@@ -8,7 +8,7 @@
 // shared connection dispatches on the *main* thread's default context, not
 // ours) as screen_capture_portal.cpp's portal dance. Requires gio-2.0
 // (already linked for the GStreamer backends).
-#include "location_provider.h"
+#include "platform/location_provider.h"
 
 // Qt defines 'signals' as a keyword alias (expands to 'public'). GIO's
 // gdbusintrospection.h uses 'signals' as a struct member name, which causes a

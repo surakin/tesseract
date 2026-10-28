@@ -4,10 +4,10 @@
 // bundled SDK's coroutine header breaks under /std:c++20, so async WinRT
 // operations here are driven via .Completed(...) delegates, never co_await.
 
-#include "location_provider.h"
+#include "platform/location_provider.h"
 
-#include "winrt_coroutine_shim.h" // must precede any <winrt/...> include
-#include "weak_self.h"
+#include "platform/win32/winrt_coroutine_shim.h" // must precede any <winrt/...> include
+#include "tk/weak_self.h"
 
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Devices.Geolocation.h>

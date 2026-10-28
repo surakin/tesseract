@@ -7,7 +7,7 @@
 #include "tesseract/launch_args.h"
 #include "tesseract/paths.h"
 #include "tesseract/session_store.h"
-#include "tk/single_instance.h"
+#include "platform/single_instance.h"
 #include "views/shortcut_registry.h"
 #include <string>
 #include <utility>

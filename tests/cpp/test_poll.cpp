@@ -4,7 +4,7 @@
 #include "views/poll_logic.h"
 #include "views/PollCardDisplay.h"
 #include "views/CreatePollDialog.h"
-#include "app/SlashCommands.h"
+#include "views/SlashCommands.h"
 #include "tk_test_host.h"
 #include "tk/access_tree.h"
 #include "access_test_util.h"
