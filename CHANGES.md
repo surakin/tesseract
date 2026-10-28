@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(ui): screenshot mode no longer crashes when a voice message is on screen. macOS release build
 - build(macos): the macOS build no longer prints the duplicate `-lSystem` linker warning or the null-reference test warning. Linux release build, ctest
 - ci: a nightly workflow builds only the Rust SDK for every build type to keep the Rust cache warm, and failed builds no longer save a cache. YAML parse only
 - feat(ui): messages from other people can be reported to your homeserver's administrators from the message menu, with an optional reason. Linux release build, ctest 3751/3751

@@ -1407,7 +1407,8 @@ void ShellBase::ensure_row_media_(const Event& ev, bool fetch_avatars)
     else if (ev.type == EventType::Voice)
     {
         const auto& v = static_cast<const VoiceEvent&>(ev);
-        if (v.source)
+        // No client in screenshot mode (or before sign-in): nothing to fetch.
+        if (v.source && client_)
         {
             const std::string src = v.source->fetch_token();
             const bool audio_new =
@@ -1469,7 +1470,7 @@ void ShellBase::ensure_row_media_(const Event& ev, bool fetch_avatars)
     else if (ev.type == EventType::Audio)
     {
         const auto& a = static_cast<const AudioEvent&>(ev);
-        if (a.source &&
+        if (a.source && client_ &&
             tesseract::Settings::instance().prefetch_full_media)
         {
             const std::string src = a.source->fetch_token();
@@ -1633,7 +1634,8 @@ void ShellBase::ensure_row_media_(const views::MessageRowData& row,
     }
     else if (row.kind == Kind::Voice)
     {
-        if (row.audio_source)
+        // No client in screenshot mode (or before sign-in): nothing to fetch.
+        if (row.audio_source && client_)
         {
             const std::string src   = row.audio_source->fetch_token();
             const bool audio_new    = voice_prefetched_.insert(src).second;
@@ -1686,7 +1688,7 @@ void ShellBase::ensure_row_media_(const views::MessageRowData& row,
     }
     else if (row.kind == Kind::Audio)
     {
-        if (row.audio_source &&
+        if (row.audio_source && client_ &&
             tesseract::Settings::instance().prefetch_full_media)
         {
             const std::string src = row.audio_source->fetch_token();
