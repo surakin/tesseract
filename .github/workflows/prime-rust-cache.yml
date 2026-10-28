@@ -1,0 +1,394 @@
+# Nightly: build only the Rust SDK (tesseract-sdk-ffi) for every build type, so
+# the rust-cache entries exist on the default branch for everything else.
+#
+# A run can only restore caches saved on its own ref or on the default branch,
+# so PRs and tag builds start cold unless something runs here first. This
+# workflow does exactly that and nothing else: each job installs the same
+# toolchain and dependencies as the build it primes, configures CMake the same
+# way, and builds just the `cargo-build_tesseract_sdk_ffi` target (no C++).
+#
+# The cache key is the rust-cache prefix + job id (or `shared-key`) + a hash of
+# the toolchain and Cargo.lock, so a job here only primes a consumer when ALL of
+# these match it:
+#   - the job id (or shared-key),
+#   - the `workspaces` target dir,
+#   - the toolchain and rust targets,
+#   - the CMake configure arguments (they decide the cargo features/flags).
+# Keep it in sync with the consumers listed on each job when you change them.
+#
+# update-screenshots.yml is not primed: its jobs use their own keys.
+
+name: Prime Rust Cache
+
+on:
+  schedule:
+    - cron: '17 3 * * *'  # 03:17 UTC; off the hour, when runners are busiest
+  workflow_dispatch:
+
+concurrency:
+  group: prime-rust-cache
+  cancel-in-progress: false
+
+jobs:
+  # Primes: compile-check.yml, package.yml, build-platform.yml (windows).
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> build/windows-release/cargo/build
+
+      - name: Set up Python (icon generation)
+        id: python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install resvg-py (icon generation)
+        run: pip install resvg-py
+
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Build opus from source
+        run: |
+          git clone --depth 1 --branch v1.5.2 https://github.com/xiph/opus.git opus-src
+          cmake -S opus-src -B opus-build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDLL `
+            -DOPUS_BUILD_SHARED_LIBRARY=OFF `
+            -DOPUS_BUILD_PROGRAMS=OFF `
+            -DOPUS_BUILD_TESTING=OFF
+          cmake --build opus-build
+          $lib = (Resolve-Path opus-build).Path
+          $inc = (Resolve-Path opus-src/include).Path
+          "OPUS_LIB_DIR=$lib" >> $env:GITHUB_ENV
+          "OPUS_INCLUDE_DIR=$inc" >> $env:GITHUB_ENV
+          "OPUS_STATIC=1" >> $env:GITHUB_ENV
+
+      - name: Configure (Release)
+        run: cmake --preset windows-release "-DPython3_EXECUTABLE=${{ steps.python.outputs.python-path }}" "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
+
+      - name: Build the Rust SDK only
+        run: cmake --build build/windows-release --target cargo-build_tesseract_sdk_ffi
+
+  # Primes: compile-check.yml, package.yml, build-platform.yml (macos-arm64 and
+  # macos-x86_64). Both archs share the key `macos-<arch>-xcode-26.4.1`.
+  macos:
+    name: macOS ${{ matrix.arch }}
+    runs-on: macos-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            rust_target: aarch64-apple-darwin
+          - arch: x86_64
+            rust_target: x86_64-apple-darwin
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s "/Applications/Xcode_26.4.1.app"
+          echo "DEVELOPER_DIR=/Applications/Xcode_26.4.1.app/Contents/Developer" >> "$GITHUB_ENV"
+          unset SDKROOT
+          sdk="$(xcrun --sdk macosx --show-sdk-path)"
+          echo "SDKROOT=$sdk" >> "$GITHUB_ENV"
+          xcodebuild -version
+          echo "SDKROOT=$sdk"
+
+      - name: Install build dependencies
+        run: brew install go resvg autoconf automake libtool
+
+      - name: Build opus from source
+        run: |
+          git clone --depth 1 --branch v1.5.2 https://github.com/xiph/opus.git opus-src
+          cmake -S opus-src -B opus-build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }} \
+            -DCMAKE_OSX_SYSROOT="$SDKROOT" \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET" \
+            -DOPUS_BUILD_SHARED_LIBRARY=ON \
+            -DOPUS_BUILD_PROGRAMS=OFF \
+            -DOPUS_BUILD_TESTING=OFF
+          cmake --build opus-build
+          mkdir -p opus-build/pkgconfig
+          cp opus-build/opus.pc opus-build/pkgconfig/
+          echo "OPUS_LIB_DIR=$PWD/opus-build" >> $GITHUB_ENV
+          echo "OPUS_INCLUDE_DIR=$PWD/opus-src/include" >> $GITHUB_ENV
+
+      - name: Install Rust (stable, ${{ matrix.rust_target }})
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+          components: llvm-tools-preview
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> build/macos-appkit-${{ matrix.arch }}-release/cargo/build
+          shared-key: macos-${{ matrix.arch }}-xcode-26.4.1
+
+      - name: Configure (Release, ${{ matrix.arch }})
+        run: cmake --preset macos-appkit-${{ matrix.arch }}-release "-DCMAKE_OSX_SYSROOT=$SDKROOT" "-DCMAKE_EXE_LINKER_FLAGS=-L$SDKROOT/usr/lib" "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
+
+      - name: Build the Rust SDK only
+        run: cmake --build build/macos-appkit-${{ matrix.arch }}-release --target cargo-build_tesseract_sdk_ffi
+
+  # Primes: package.yml and build-platform.yml (macos-appstore). The universal
+  # build compiles both slices into one target dir. The signing variables are
+  # left out: they only matter to the packaging steps, not to the cargo build.
+  macos-appstore:
+    name: macOS universal (Mac App Store)
+    runs-on: macos-latest
+    timeout-minutes: 90
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s "/Applications/Xcode_26.4.1.app"
+          echo "DEVELOPER_DIR=/Applications/Xcode_26.4.1.app/Contents/Developer" >> "$GITHUB_ENV"
+          unset SDKROOT
+          sdk="$(xcrun --sdk macosx --show-sdk-path)"
+          echo "SDKROOT=$sdk" >> "$GITHUB_ENV"
+          xcodebuild -version
+          echo "SDKROOT=$sdk"
+
+      - name: Install build dependencies
+        run: brew install go resvg autoconf automake libtool
+
+      # libopus is built from source by CMake (cmake/MacUniversal.cmake).
+      - name: Install Rust (stable, aarch64 + x86_64 targets)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+          components: llvm-tools-preview
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> build/macos-appkit-appstore/cargo/build
+          shared-key: macos-appstore-xcode-26.4.1
+
+      - name: Configure (Mac App Store, universal)
+        run: cmake --preset macos-appkit-appstore "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
+
+      - name: Build the Rust SDK only
+        run: cmake --build build/macos-appkit-appstore --target cargo-build_tesseract_sdk_ffi
+
+  # Primes: compile-check.yml, package.yml, build-platform.yml (linux).
+  linux:
+    name: Linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y \
+            qt6-base-dev qt6-base-private-dev qt6-multimedia-dev \
+            qt6-wayland \
+            qt6-image-formats-plugins \
+            libgtk-4-dev \
+            ninja-build \
+            libgl-dev \
+            libopus-dev \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            libsecret-1-dev \
+            libwayland-dev \
+            libxtst-dev \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-libav \
+            fonts-noto-color-emoji
+
+      - name: Expose opus to audiopus_sys
+        run: |
+          echo "OPUS_LIB_DIR=$(pkg-config --variable=libdir opus)" >> $GITHUB_ENV
+          echo "OPUS_INCLUDE_DIR=$(pkg-config --variable=includedir opus)" >> $GITHUB_ENV
+          echo "OPUS_STATIC=1" >> $GITHUB_ENV
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> build/linux-release/cargo/build
+
+      - name: Configure (Release)
+        run: cmake --preset linux-release -DTESSERACT_UI=linux "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
+
+      - name: Build the Rust SDK only
+        run: cmake --build build/linux-release --target cargo-build_tesseract_sdk_ffi
+
+  # Primes: compile-check.yml (windows-xwin).
+  windows-xwin:
+    name: Windows via xwin
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y ninja-build nsis gettext python3-venv
+          curl -fsSL https://apt.llvm.org/llvm.sh -o llvm.sh
+          sudo bash llvm.sh 20
+          sudo apt-get install -y lld-20
+
+      - name: Put unversioned LLVM tools on PATH
+        run: |
+          llvm_bin="$(ls -d /usr/lib/llvm-*/bin | sort -V | tail -n1)"
+          echo "$llvm_bin" >> "$GITHUB_PATH"
+          PATH="$llvm_bin:$PATH"
+          for t in clang-cl lld-link llvm-lib llvm-rc llvm-mt; do command -v "$t"; done
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> build/windows-xwin-release/cargo/build
+
+      - name: Cache xwin sysroot
+        id: xwin-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/xwin
+          key: xwin-${{ runner.os }}-${{ hashFiles('cmake/toolchains/xwin-setup.sh') }}
+
+      - name: Set up xwin sysroot
+        if: steps.xwin-cache.outputs.cache-hit != 'true'
+        run: cmake/toolchains/xwin-setup.sh --accept-license
+
+      - name: Configure (Release, xwin)
+        run: cmake --preset windows-xwin-release -DTESSERACT_BUILD_TESTS=OFF "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
+
+      - name: Build the Rust SDK only
+        run: cmake --build build/windows-xwin-release --target cargo-build_tesseract_sdk_ffi
+
+  # Primes: test.yml (rust-and-i18n). `cargo test --no-run` compiles the same
+  # test profile `cargo test` uses without running anything.
+  rust-and-i18n:
+    name: Rust tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y libglib2.0-dev libopus-dev
+
+      - name: Expose opus to audiopus_sys
+        run: |
+          echo "OPUS_LIB_DIR=$(pkg-config --variable=libdir opus)" >> $GITHUB_ENV
+          echo "OPUS_INCLUDE_DIR=$(pkg-config --variable=includedir opus)" >> $GITHUB_ENV
+          echo "OPUS_STATIC=1" >> $GITHUB_ENV
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+
+      - name: Build the SDK unit tests
+        run: cargo test -p tesseract-sdk-ffi --lib --no-run
+
+  # Primes: test.yml (cpp-tests). The job id and `key` must match test.yml's.
+  cpp-tests:
+    name: C++ tests (${{ matrix.name }}, Linux Qt6)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Debug
+            build_dir: build/linux-debug
+            cmake_args: ""
+          - name: ASan
+            build_dir: build/linux-asan
+            cmake_args: >-
+              "-DCMAKE_CXX_FLAGS=-fsanitize=address -fno-omit-frame-pointer"
+              "-DCMAKE_C_FLAGS=-fsanitize=address -fno-omit-frame-pointer"
+              "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address"
+              "-DCMAKE_SHARED_LINKER_FLAGS=-fsanitize=address"
+              -DTESSERACT_ENABLE_JEMALLOC=OFF
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y \
+            qt6-base-dev qt6-base-private-dev qt6-multimedia-dev \
+            qt6-wayland \
+            qt6-image-formats-plugins \
+            libgtk-4-dev \
+            ninja-build \
+            libgl-dev \
+            libopus-dev \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            libsecret-1-dev \
+            libwayland-dev \
+            libxtst-dev \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
+            gstreamer1.0-libav
+
+      - name: Expose opus to audiopus_sys
+        run: |
+          echo "OPUS_LIB_DIR=$(pkg-config --variable=libdir opus)" >> $GITHUB_ENV
+          echo "OPUS_INCLUDE_DIR=$(pkg-config --variable=includedir opus)" >> $GITHUB_ENV
+          echo "OPUS_STATIC=1" >> $GITHUB_ENV
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> ${{ matrix.build_dir }}/cargo/build
+          key: ${{ matrix.name }}
+
+      - name: Configure (Debug, tests on)
+        run: cmake --preset linux-debug -B ${{ matrix.build_dir }} -DTESSERACT_UI=qt6 "-DTESSERACT_GITHUB_REPO=${{ github.repository }}" ${{ matrix.cmake_args }}
+
+      - name: Build the Rust SDK only
+        run: cmake --build ${{ matrix.build_dir }} --target cargo-build_tesseract_sdk_ffi

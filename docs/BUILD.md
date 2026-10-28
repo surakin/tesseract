@@ -273,12 +273,13 @@ new `Cargo.lock` falls back to the latest cache of the same job.
 
 A run can only restore caches saved on its own ref or on the default branch
 (`development`), so PRs and tag builds start from whatever `development` holds.
-`compile-check.yml` runs nightly on `development` to keep that cache warm. The
-Windows and Linux jobs share the job ids `windows` and `linux` with
-`package.yml` / `build-platform.yml`, and the macOS arm64 / x86_64 jobs share
-`shared-key: macos-<arch>-xcode-26.4.1` with them; keep these identical when
-editing any of the three. `test.yml` jobs use their own keys and are only
-warmed per PR.
+`prime-rust-cache.yml` runs nightly on `development` and builds only the Rust
+SDK (`cargo-build_tesseract_sdk_ffi`, no C++) for every build type that uses
+the cache, to keep that cache warm. Its jobs mirror their consumers' job ids or
+`shared-key`, `workspaces` target dir, toolchain and CMake configure arguments;
+the key only matches when all of these do, so update it together with any of
+`compile-check.yml`, `package.yml`, `build-platform.yml` and `test.yml`.
+`update-screenshots.yml` uses its own keys and is not primed.
 
 ### Feature options
 
