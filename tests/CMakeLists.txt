@@ -583,6 +583,10 @@ elseif(_TESSERACT_TEST_UI STREQUAL "macos")
     set_source_files_properties(
         "${CMAKE_SOURCE_DIR}/ui/macos/tk/video_decode_av.mm"
         PROPERTIES COMPILE_OPTIONS "-fobjc-arc" SKIP_PRECOMPILE_HEADERS ON)
+
+    if(TESSERACT_LD_NO_WARN_DUPLICATE_LIBRARIES)
+        target_link_options(tesseract_tests PRIVATE "LINKER:-no_warn_duplicate_libraries")
+    endif()
 endif()
 
 target_compile_features(tesseract_tests PRIVATE cxx_std_20)

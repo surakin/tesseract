@@ -253,6 +253,9 @@ target_link_libraries(tesseract_macos PRIVATE
     "-framework SystemConfiguration"      # tk/host_macos.mm is_network_available()
     "-framework IOKit"                    # src/MacPowerMonitor.mm (IOPowerSources)
 )
+if(TESSERACT_LD_NO_WARN_DUPLICATE_LIBRARIES)
+    target_link_options(tesseract_macos PRIVATE "LINKER:-no_warn_duplicate_libraries")
+endif()
 
 
 # ---------------------------------------------------------------------------

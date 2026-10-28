@@ -88,6 +88,13 @@ endforeach()
 # CMAKE_OBJCXX_COMPILE_OBJECT unset in CMake 4.x.
 if(APPLE)
     enable_language(OBJCXX)
+
+    # Corrosion adds the Rust library's `-lSystem` next to the one the compiler
+    # driver already passes, and Xcode 15+'s ld warns about the duplicate. The
+    # flag is unknown to the older ld, so only use it where the linker has it.
+    include(CheckLinkerFlag)
+    check_linker_flag(CXX "LINKER:-no_warn_duplicate_libraries"
+        TESSERACT_LD_NO_WARN_DUPLICATE_LIBRARIES)
 endif()
 
 # ---------------------------------------------------------------------------

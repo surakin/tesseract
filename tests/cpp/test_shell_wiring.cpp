@@ -35,6 +35,7 @@
 #include <tesseract/settings.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <condition_variable>
 #include <mutex>
 #include <filesystem>
@@ -77,7 +78,7 @@ struct FakeSettingsSurface final : tk::SurfaceBase
     }
     ~FakeSettingsSurface() override { --*alive_; }
     tk::Host& host() override { return host_; }
-    tk::CanvasFactory& factory() override { return *static_cast<tk::CanvasFactory*>(nullptr); }
+    tk::CanvasFactory& factory() override { std::abort(); }
     const tk::Theme& theme() const override { return *theme_; }
     void set_root(std::unique_ptr<tk::Widget> r) override { root_ = std::move(r); }
     tk::Widget* root() const override { return root_.get(); }
