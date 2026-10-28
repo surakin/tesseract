@@ -312,9 +312,93 @@ Mode current_mode()
     return g_mode;
 }
 
+namespace
+{
+bool g_has_accent = false;
+AccentColors g_accent{};
+Palette g_active{};
+bool g_active_valid = false;
+Mode g_active_mode = Mode::Light;
+int g_accent_on_title_bars = -1; // -1 = not read yet
+} // namespace
+
 const Palette& palette()
 {
-    return current_mode() == Mode::Dark ? dark_palette() : light_palette();
+    Mode m = current_mode();
+    if (!g_active_valid || g_active_mode != m)
+    {
+        g_active = (m == Mode::Dark) ? dark_palette() : light_palette();
+        if (g_has_accent)
+        {
+            g_active.accent = g_accent.accent;
+            g_active.accent_hover = g_accent.accent_hover;
+            g_active.accent_pressed = g_accent.accent_pressed;
+            g_active.text_on_accent = g_accent.text_on_accent;
+        }
+        g_active_mode = m;
+        g_active_valid = true;
+    }
+    return g_active;
+}
+
+void set_accent(const AccentColors& a)
+{
+    g_accent = a;
+    g_has_accent = true;
+    g_active_valid = false;
+}
+
+namespace
+{
+int read_accent_on_title_bars()
+{
+    DWORD value = 0, size = sizeof(value);
+    LSTATUS rc = RegGetValueW(HKEY_CURRENT_USER,
+                              L"Software\\Microsoft\\Windows\\DWM",
+                              L"ColorPrevalence", RRF_RT_REG_DWORD, nullptr,
+                              &value, &size);
+    return (rc == ERROR_SUCCESS && value == 1) ? 1 : 0;
+}
+} // namespace
+
+bool accent_on_title_bars()
+{
+    if (g_accent_on_title_bars < 0)
+    {
+        g_accent_on_title_bars = read_accent_on_title_bars();
+    }
+    return g_accent_on_title_bars == 1;
+}
+
+bool refresh_accent_on_title_bars()
+{
+    int old = g_accent_on_title_bars;
+    g_accent_on_title_bars = read_accent_on_title_bars();
+    return old != g_accent_on_title_bars;
+}
+
+TitleBarColors title_bar_colors(bool active)
+{
+    const auto& pal = palette();
+    if (active && accent_on_title_bars())
+    {
+        return {pal.accent, pal.text_on_accent, pal.accent_hover,
+                pal.accent_pressed, pal.accent};
+    }
+    return {pal.chrome_bg, active ? pal.text_primary : pal.text_secondary,
+            pal.subtle_hover, pal.subtle_pressed, pal.separator};
+}
+
+void apply_border_color(HWND hwnd, bool active)
+{
+    if (!hwnd)
+    {
+        return;
+    }
+    const auto& pal = palette();
+    COLORREF col =
+        (active && accent_on_title_bars()) ? pal.accent : pal.border;
+    DwmSetWindowAttribute(hwnd, kDwmaBorderColor, &col, sizeof(col));
 }
 
 bool refresh_from_system()
@@ -395,12 +479,10 @@ void apply_window_attributes(HWND hwnd)
     const auto& pal = palette();
     COLORREF caption = pal.chrome_bg;
     COLORREF caption_text = pal.text_primary;
-    COLORREF border_col = pal.border;
     DwmSetWindowAttribute(hwnd, kDwmaCaptionColor, &caption, sizeof(caption));
     DwmSetWindowAttribute(hwnd, kDwmaTextColor, &caption_text,
                           sizeof(caption_text));
-    DwmSetWindowAttribute(hwnd, kDwmaBorderColor, &border_col,
-                          sizeof(border_col));
+    apply_border_color(hwnd, GetForegroundWindow() == hwnd);
 
     // Mica backdrop (Win11 22H2+). Ignored on older builds.
     int backdrop = kDwmsbtMainWindow;

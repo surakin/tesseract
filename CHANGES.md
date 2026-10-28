@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(windows): the title bar, window border and status-bar links follow the in-app accent, tinting the title bar with Windows' accent option. Windows release build + ctest 3720/3720; user-verified live
 - build(ui): the shared UI code builds as separate toolkit, platform, views and app libraries. Linux Qt6 + GTK, Windows and macOS builds, Qt6 ctest
 - build(macos): screenshot mode captures a 1440×900 window, a Mac App Store screenshot size. macOS release build
 - fix(macos): text no longer draws upside down after other drawing leaves CoreText's text matrix flipped. macOS release build

@@ -103,15 +103,6 @@ and in-progress work, as a single backlog ordered by priority/urgency.
   skip the fetch when the notification won't be shown. The macOS + Linux
   (Qt6/GTK4) `IScreenLock` impls and notifier-render paths still need
   on-device smoke tests (built only on Win32 here).
-- **Win32 title-bar chrome doesn't follow the in-app accent choice** —
-  `ui/windows/src/Theme.h`/`.cpp` (`win32::theme`) is a separate,
-  GDI/DWM-only system governing native, non-client-area rendering (caption
-  colors, immersive-dark-mode toggling); it reads the OS's own registry
-  accent color and has no coupling to `tk::Palette` or
-  `Settings::theme_accent`. Picking a non-Blue accent (Forest/Sunset/Violet)
-  in Settings → Appearance currently only affects in-app widget painting,
-  not the window's own title bar. Out of scope for the accent-themes
-  feature; a distinct, Windows-only follow-up if wanted.
 - **GTK4 shell: dead CSS rules** — the static CSS block in
   `ui/linux-gtk/src/MainWindow.cpp` defines `.sidebar`, `.sidebar-separator`,
   `.message-body`, `.sender-name`, `.timestamp`, `.avatar-initial`,

@@ -683,6 +683,12 @@ void MainWindow::apply_native_theme_(const tk::Theme& t)
     win32::theme::set_mode(t.mode == tk::ThemeMode::Dark
                                ? win32::theme::Mode::Dark
                                : win32::theme::Mode::Light);
+    auto cref = [](const tk::Color& c)
+    { return RGB(c.r, c.g, c.b); };
+    win32::theme::set_accent({cref(t.palette.accent),
+                              cref(t.palette.accent_hover),
+                              cref(t.palette.accent_pressed),
+                              cref(t.palette.text_on_accent)});
     win32::theme::apply_window_attributes(hwnd_);
     InvalidateRect(hwnd_, nullptr, TRUE);
     if (hStatus_)
@@ -992,6 +998,7 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             title_rc.bottom = self->title_bar_.height_px();
             InvalidateRect(hwnd, &title_rc, TRUE);
         }
+        theme::apply_border_color(hwnd, active);
         // Clicking the app's own popup (the account picker) activates it; the
         // window is not being left, and closing the popup now would drop the
         // click before it lands.
@@ -1148,8 +1155,14 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             auto* name = reinterpret_cast<const wchar_t*>(lParam);
             if (name && wcscmp(name, L"ImmersiveColorSet") == 0)
             {
+                const bool bars_changed =
+                    theme::refresh_accent_on_title_bars();
                 self->on_system_theme_changed();
                 self->on_system_accent_changed_();
+                if (bars_changed)
+                {
+                    self->apply_theme_ui_(self->current_theme_);
+                }
             }
         }
         return 0;
@@ -1160,7 +1173,14 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         // Settings > Personalization > Colors. Ignore wParam (the new
         // colorization color) and re-read AccentColorMenu via
         // accent_colorref(), the source it prefers.
-        self->on_system_accent_changed_();
+        {
+            const bool bars_changed = theme::refresh_accent_on_title_bars();
+            self->on_system_accent_changed_();
+            if (bars_changed)
+            {
+                self->apply_theme_ui_(self->current_theme_);
+            }
+        }
         return 0;
 
     case WM_DPICHANGED:

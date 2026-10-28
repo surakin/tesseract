@@ -360,9 +360,9 @@ void CustomTitleBar::paint(HDC hdc, HWND hwnd, const RECT& client_rc,
 {
     RECT strip = client_rc;
     strip.bottom = strip.top + height_px_;
-    const auto& pal = theme::palette();
+    const theme::TitleBarColors tb = theme::title_bar_colors(active);
 
-    FillRect(hdc, &strip, theme::brush(pal.chrome_bg));
+    FillRect(hdc, &strip, theme::brush(tb.bg));
 
     RECT btn_min{}, btn_max{}, btn_close{};
     compute_button_rects(client_rc.right, btn_min, btn_max, btn_close);
@@ -402,18 +402,18 @@ void CustomTitleBar::paint(HDC hdc, HWND hwnd, const RECT& client_rc,
         if (is_pressed)
         {
             bg_brush = is_close ? CreateSolidBrush(kClosePressedBg)
-                                : theme::brush(pal.subtle_pressed);
+                                : theme::brush(tb.button_pressed);
             bg_owned = is_close;
         }
         else if (is_hovered)
         {
             bg_brush = is_close ? CreateSolidBrush(kCloseHoverBg)
-                                : theme::brush(pal.subtle_hover);
+                                : theme::brush(tb.button_hover);
             bg_owned = is_close;
         }
         else
         {
-            bg_brush = theme::brush(pal.chrome_bg);
+            bg_brush = theme::brush(tb.bg);
         }
         FillRect(hdc, &s.rc, bg_brush);
         if (bg_owned)
@@ -424,8 +424,7 @@ void CustomTitleBar::paint(HDC hdc, HWND hwnd, const RECT& client_rc,
         const bool glyph_on_red = is_close && (is_pressed || is_hovered);
         const COLORREF glyph_color = glyph_on_red
                                          ? kCloseGlyphOnRed
-                                         : (active ? pal.text_primary
-                                                  : pal.text_secondary);
+                                         : tb.text;
         if (Gdiplus::Bitmap* bmp = icon_bitmap(s.glyph, icon_px, glyph_color))
         {
             const int x =
@@ -440,7 +439,7 @@ void CustomTitleBar::paint(HDC hdc, HWND hwnd, const RECT& client_rc,
     // background fill, which spans the button's full height including this
     // row.
     RECT sep{strip.left, strip.bottom - 1, strip.right, strip.bottom};
-    FillRect(hdc, &sep, theme::brush(pal.separator));
+    FillRect(hdc, &sep, theme::brush(tb.separator));
 
     HICON icon = reinterpret_cast<HICON>(GetClassLongPtrW(hwnd, GCLP_HICONSM));
     const int icon_size = GetSystemMetricsForDpi(SM_CXSMICON, dpi_);
@@ -462,7 +461,7 @@ void CustomTitleBar::paint(HDC hdc, HWND hwnd, const RECT& client_rc,
         if (text_rc.right > text_rc.left)
         {
             const std::wstring text(title, static_cast<std::size_t>(n));
-            const COLORREF fg = active ? pal.text_primary : pal.text_secondary;
+            const COLORREF fg = tb.text;
             const bool text_changed = text != last_text_;
             const bool color_changed = fg != last_fg_;
             const bool rect_changed = !EqualRect(&text_rc, &last_rect_);
@@ -521,7 +520,9 @@ void CustomTitleBar::paint(HDC hdc, HWND hwnd, const RECT& client_rc,
                 BetterTextSetTheme(text_hwnd_, &bt_theme);
                 last_fg_ = fg;
 
-                if (text_changed)
+                // Re-insert on a colour-only change too: run colours are
+                // baked in at insert time.
+                if (text_changed || color_changed)
                 {
                     BetterTextSetText(text_hwnd_, text.c_str());
                     last_text_ = text;

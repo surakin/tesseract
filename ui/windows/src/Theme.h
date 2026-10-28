@@ -72,6 +72,33 @@ COLORREF accent_colorref();
 // Force a specific mode (user preference override). Clears the brush cache.
 void set_mode(Mode);
 
+// Accent fields of the active palette, overridden by the in-app accent choice.
+// Survives later set_mode() calls.
+struct AccentColors
+{
+    COLORREF accent;
+    COLORREF accent_hover;
+    COLORREF accent_pressed;
+    COLORREF text_on_accent;
+};
+void set_accent(const AccentColors&);
+
+// Windows' "Show accent color on title bars and window borders" option
+// (HKCU\...\DWM\ColorPrevalence). Cached; refresh re-reads and returns true
+// if the value changed.
+bool accent_on_title_bars();
+bool refresh_accent_on_title_bars();
+
+struct TitleBarColors
+{
+    COLORREF bg, text, button_hover, button_pressed, separator;
+};
+// Accent-tinted only when the option is on and the window is active.
+TitleBarColors title_bar_colors(bool active);
+
+// Window border: accent when the option is on and the window is active.
+void apply_border_color(HWND, bool active);
+
 // Register the main window so apply_window_attributes() can be re-applied
 // when the system theme flips at runtime (WM_SETTINGCHANGE).
 void register_main_window(HWND);

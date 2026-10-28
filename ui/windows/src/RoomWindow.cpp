@@ -675,6 +675,7 @@ LRESULT RoomWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam,
             title_rc.bottom = title_bar_.height_px();
             InvalidateRect(hwnd, &title_rc, TRUE);
         }
+        theme::apply_border_color(hwnd, active);
         return DefWindowProcW(hwnd, msg, wParam, lParam);
     }
 
