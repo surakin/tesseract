@@ -5,6 +5,21 @@
 #include <memory>
 
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+// Screenshot builds only: lets the capture window keep its exact size when
+// it's taller than the screen (AppKit otherwise shrinks it to fit below the
+// menu bar, and the screenshots come out short).
+@interface TesseractScreenshotWindow : NSWindow
+@property(nonatomic) BOOL unconstrained;
+@end
+
+@implementation TesseractScreenshotWindow
+- (NSRect)constrainFrameRect:(NSRect)frameRect toScreen:(NSScreen*)screen
+{
+    return self.unconstrained ? frameRect
+                              : [super constrainFrameRect:frameRect toScreen:screen];
+}
+@end
+
 @interface MainWindowController ()
 - (BOOL)_saveScreenshotToPath:(NSString*)path;
 - (void)_screenshotApplyDark:(BOOL)dark;
@@ -89,11 +104,15 @@ private:
     NSWindowStyleMask mask =
         NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
         NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable;
-    NSWindow* window =
-        [[NSWindow alloc] initWithContentRect:frame
-                                    styleMask:mask
-                                      backing:NSBackingStoreBuffered
-                                        defer:NO];
+#ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
+    Class window_class = TesseractScreenshotWindow.class;
+#else
+    Class window_class = NSWindow.class;
+#endif
+    NSWindow* window = [[window_class alloc] initWithContentRect:frame
+                                                       styleMask:mask
+                                                         backing:NSBackingStoreBuffered
+                                                           defer:NO];
     window.title = @"Tesseract";
     window.minSize = NSMakeSize(tesseract::visual::kMinWindowWidth,
                                  tesseract::visual::kMinWindowHeight);
@@ -223,7 +242,10 @@ private:
         NSLog(@"Could not load screenshot assets");
         std::exit(EXIT_FAILURE);
     }
-    [self.window setContentSize:NSMakeSize(1100, 768)];
+    // 16:10, the Mac App Store's screenshot ratio: captured at the backing
+    // scale this is 1440x900 (1x) or 2880x1800 (2x), both accepted sizes.
+    ((TesseractScreenshotWindow*)self.window).unconstrained = YES;
+    [self.window setContentSize:NSMakeSize(1440, 900)];
     [self.window makeKeyAndOrderFront:self];
 
     _screenshotHost = std::make_unique<MacScreenshotHost>(self, directory);
