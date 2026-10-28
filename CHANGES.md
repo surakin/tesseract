@@ -23,6 +23,7 @@ Tagged releases summarize all changes since the previous tag.
 - chore(ci): the manually-run test workflow adds an AddressSanitizer build and a keyring for the keychain tests. YAML parse only
 - feat(ui): right-clicking a message offers the same actions as its hover toolbar. Linux Qt6 build
 - chore(ci): the Flatpak job retries its source and runtime downloads, so a transient crates.io or Flathub error no longer cancels the release run. YAML parse only
+- feat(ui): "Show deleted messages" in Settings → Appearance → Timeline, off by default: deleted messages are hidden from room and thread timelines unless enabled, and a reply quote of a hidden deleted message is no longer clickable; toggling applies to the active account. macOS build, ctest 3517/3517, user-verified
 
 ## v0.9.5 — 2026-10-26
 

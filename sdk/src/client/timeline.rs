@@ -15,7 +15,7 @@ use super::{err, ok, ClientFfi, SendHandler, TimelineHandle};
 use super::{err, ClientFfi};
 
 #[cfg(not(test))]
-use super::timeline_convert::timeline_item_to_ffi;
+use super::timeline_convert::{timeline_item_to_ffi, RowVisibility, VisibilityFlags};
 
 #[cfg(not(test))]
 use crate::ffi::TimelineEvent;
@@ -346,12 +346,14 @@ pub(super) fn filter_for_channel(
 // Runtime-toggleable visibility gate for membership-change rows, applied at
 // the same call sites as filter_for_channel so it participates in the
 // visible/visible_ids index bookkeeping for free (see visible_index_of).
-// `show` is a fresh snapshot of ClientFfi::show_membership_events, read once
-// per collect_timeline_ops/refresh_receipts call by the caller.
+// `vis` is a fresh snapshot of ClientFfi's membership/redacted settings (see
+// VisibilityFlags::snapshot), read once per collect_timeline_ops /
+// refresh_receipts call by the caller. Also gates redacted ("deleted message")
+// tombstones.
 #[cfg(not(test))]
-fn filter_membership(
+fn filter_visibility(
     ev: Option<TimelineEvent>,
-    show: bool,
+    vis: RowVisibility,
     me: Option<&UserId>,
 ) -> Option<TimelineEvent> {
     ev.filter(|e| {
@@ -359,9 +361,9 @@ fn filter_membership(
             &e.msg_type,
             &e.membership_action,
             &e.membership_target_user_id,
-            show,
+            vis.membership,
             me.map(|u| u.as_str()),
-        )
+        ) && super::timeline_convert::redacted_event_visible(&e.msg_type, vis.redacted)
     })
 }
 
@@ -415,7 +417,7 @@ pub(super) async fn collect_timeline_ops(
     room_id: &str,
     room: &Room,
     me: Option<&UserId>,
-    show_membership_events: &AtomicBool,
+    visibility_flags: &VisibilityFlags,
     channel: &TimelineChannel,
     cancelled: &AtomicBool,
     search_index: &Option<super::search::SearchIndexCtx>,
@@ -425,19 +427,19 @@ pub(super) async fn collect_timeline_ops(
     if cancelled.load(Ordering::Acquire) {
         return;
     }
-    let show_membership = show_membership_events.load(Ordering::Relaxed);
+    let vis = visibility_flags.snapshot();
     match diff {
         VectorDiff::Append { values } => {
             // Collect all visible items from the Append batch into one
             // Appended op so the whole group crosses the FFI in a single call.
             let mut batch: Vec<TimelineEvent> = Vec::new();
             for item in values {
-                let ev = filter_membership(
+                let ev = filter_visibility(
                     filter_for_channel(
                         timeline_item_to_ffi(&item, room_id, room, me).await,
                         channel,
                     ),
-                    show_membership,
+                    vis,
                     me,
                 );
                 if let Some(ev) = ev {
@@ -460,12 +462,12 @@ pub(super) async fn collect_timeline_ops(
             }
         }
         VectorDiff::PushBack { value } => {
-            let ev = filter_membership(
+            let ev = filter_visibility(
                 filter_for_channel(
                     timeline_item_to_ffi(&value, room_id, room, me).await,
                     channel,
                 ),
-                show_membership,
+                vis,
                 me,
             );
             if let Some(ev) = ev {
@@ -484,12 +486,12 @@ pub(super) async fn collect_timeline_ops(
             }
         }
         VectorDiff::PushFront { value } => {
-            let ev = filter_membership(
+            let ev = filter_visibility(
                 filter_for_channel(
                     timeline_item_to_ffi(&value, room_id, room, me).await,
                     channel,
                 ),
-                show_membership,
+                vis,
                 me,
             );
             if let Some(ev) = ev {
@@ -514,12 +516,12 @@ pub(super) async fn collect_timeline_ops(
             // emit that, but a bad index on a task thread must not crash
             // timeline tracking — clamp to an append.
             let index = index.min(visible.len());
-            let ev = filter_membership(
+            let ev = filter_visibility(
                 filter_for_channel(
                     timeline_item_to_ffi(&value, room_id, room, me).await,
                     channel,
                 ),
-                show_membership,
+                vis,
                 me,
             );
             if let Some(ev) = ev {
@@ -560,12 +562,12 @@ pub(super) async fn collect_timeline_ops(
                 );
                 return;
             }
-            let new_ev = filter_membership(
+            let new_ev = filter_visibility(
                 filter_for_channel(
                     timeline_item_to_ffi(&value, room_id, room, me).await,
                     channel,
                 ),
-                show_membership,
+                vis,
                 me,
             );
             let was_visible = visible.get(index).copied().unwrap_or(false);
@@ -689,12 +691,12 @@ pub(super) async fn collect_timeline_ops(
             visible_ids.reserve(values.len());
             let mut snapshot: Vec<TimelineEvent> = Vec::new();
             for item in &values {
-                let ev = filter_membership(
+                let ev = filter_visibility(
                     filter_for_channel(
                         timeline_item_to_ffi(item, room_id, room, me).await,
                         channel,
                     ),
-                    show_membership,
+                    vis,
                     me,
                 );
                 if let Some(ev) = ev {
@@ -740,13 +742,13 @@ async fn refresh_receipts(
     room_id: &str,
     room: &Room,
     me: Option<&UserId>,
-    show_membership_events: &AtomicBool,
+    visibility_flags: &VisibilityFlags,
     channel: &TimelineChannel,
     cancelled: &AtomicBool,
     chip_overrides: &super::thread::ThreadChipOverrides,
 ) {
     let items = tl.items().await;
-    let show_membership = show_membership_events.load(Ordering::Relaxed);
+    let vis = visibility_flags.snapshot();
 
     // Collect all receipt-bearing updates first, then emit as a single batch
     // instead of N individual on_message_updated calls.
@@ -763,9 +765,9 @@ async fn refresh_receipts(
             break;
         }
 
-        let ev = filter_membership(
+        let ev = filter_visibility(
             filter_for_channel(timeline_item_to_ffi(item, room_id, room, me).await, channel),
-            show_membership,
+            vis,
             me,
         );
         let was_visible_in_shadow = visible[slot_idx];
@@ -848,7 +850,7 @@ impl ClientFfi {
         cancelled: Arc<AtomicBool>,
         index: Option<super::search::SearchIndexCtx>,
         room_media: Option<super::room_media_store::MediaCtx>,
-        show_membership_events: Arc<AtomicBool>,
+        visibility_flags: VisibilityFlags,
         chip_overrides: super::thread::ThreadChipOverrides,
         prewarm_cached: bool,
     ) -> (tokio::task::AbortHandle, tokio::task::AbortHandle) {
@@ -912,19 +914,20 @@ impl ClientFfi {
                 // whose `timeline_item_to_ffi` yields Some — this covers both
                 // real message events and virtual items (day-dividers,
                 // read-markers, timeline-start). Membership-change rows are
-                // visible only when show_membership_events is enabled; all
-                // other state events remain always filtered.
+                // visible only when the membership setting is on, and redacted
+                // tombstones only when show-deleted is on; all other state
+                // events remain always filtered.
                 let mut visible: Vec<bool> = Vec::with_capacity(initial_items.len());
                 let mut visible_ids: Vec<String> = Vec::with_capacity(initial_items.len());
                 let mut snapshot: Vec<TimelineEvent> = Vec::new();
-                let show_membership = show_membership_events.load(Ordering::Relaxed);
+                let vis = visibility_flags.snapshot();
                 for item in initial_items.iter() {
-                    let ev = filter_membership(
+                    let ev = filter_visibility(
                         filter_for_channel(
                             timeline_item_to_ffi(item, &rid, &room_clone, me.as_deref()).await,
                             &ch,
                         ),
-                        show_membership,
+                        vis,
                         me.as_deref(),
                     );
                     if let Some(ev) = ev {
@@ -991,7 +994,7 @@ impl ClientFfi {
                                     &rid,
                                     &room_clone,
                                     me.as_deref(),
-                                    &show_membership_events,
+                                    &visibility_flags,
                                     &ch,
                                     &cancelled_stream,
                                     &index,
@@ -1024,7 +1027,7 @@ impl ClientFfi {
                                     &rid,
                                     &room_clone,
                                     me.as_deref(),
-                                    &show_membership_events,
+                                    &visibility_flags,
                                     &ch,
                                     &cancelled_stream,
                                     &chip_overrides,
@@ -1115,7 +1118,7 @@ impl ClientFfi {
                         Arc::clone(&new_cancelled),
                         self.search_index_ctx(),
                         self.media_ctx(),
-                        Arc::clone(&self.show_membership_events),
+                        self.visibility_flags(),
                         Arc::clone(&self.thread_chip_overrides),
                         false,
                     );
@@ -1201,7 +1204,7 @@ impl ClientFfi {
             Arc::clone(&cancelled),
             self.search_index_ctx(),
             self.media_ctx(),
-            Arc::clone(&self.show_membership_events),
+            self.visibility_flags(),
             Arc::clone(&self.thread_chip_overrides),
             true,
         );
@@ -1903,7 +1906,7 @@ impl ClientFfi {
             Arc::clone(&cancelled),
             self.search_index_ctx(),
             self.media_ctx(),
-            Arc::clone(&self.show_membership_events),
+            self.visibility_flags(),
             Arc::clone(&self.thread_chip_overrides),
             false,
         );

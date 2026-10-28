@@ -894,9 +894,13 @@ pub struct ClientFfi {
     /// When `false` (the default), room membership-change rows
     /// (join/leave/kick/ban/invite/knock and their accept/reject/revoke
     /// variants) are filtered out at the same point pinned-events/etc.
-    /// visibility is decided (see `filter_membership` in `client::timeline`).
+    /// visibility is decided (see `filter_visibility` in `client::timeline`).
     /// Controlled by `set_show_membership_events`.
     pub(super) show_membership_events: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// When `false` (the default), redacted (deleted) events, which would
+    /// render as an `m.redacted` tombstone, are filtered out of room and
+    /// thread timelines. Controlled by `set_show_redacted_events`.
+    pub(super) show_redacted_events: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// Sender-side MSC4095 bundled URL previews opt-in (via the homeserver's
     /// `/preview_url`). Set by `set_bundled_url_previews`; see
     /// `client::url_preview_gen`.
@@ -1409,6 +1413,7 @@ impl ClientFfi {
                 .unwrap_or_else(|_| reqwest::Client::new()),
             presence_polling_enabled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             show_membership_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            show_redacted_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             bundled_url_previews: std::sync::atomic::AtomicBool::new(false),
             bundled_url_previews_direct: std::sync::atomic::AtomicBool::new(false),
             homeserver_preview_url_enabled: std::sync::Arc::new(
@@ -1528,6 +1533,7 @@ impl ClientFfi {
             http_client: reqwest::Client::new(),
             presence_polling_enabled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             show_membership_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            show_redacted_events: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             bundled_url_previews: std::sync::atomic::AtomicBool::new(false),
             bundled_url_previews_direct: std::sync::atomic::AtomicBool::new(false),
             homeserver_preview_url_enabled: std::sync::Arc::new(
@@ -1674,6 +1680,22 @@ impl ClientFfi {
     pub fn set_show_membership_events(&self, enabled: bool) {
         self.show_membership_events
             .store(enabled, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Enable or disable redacted (deleted) event rows. Thread-safe.
+    /// (Production impl lives in `client::sync`; this test stub mirrors it.)
+    #[cfg(test)]
+    pub fn set_show_redacted_events(&self, enabled: bool) {
+        self.show_redacted_events
+            .store(enabled, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Handles to the live row-visibility settings, for timeline tasks.
+    pub(super) fn visibility_flags(&self) -> timeline_convert::VisibilityFlags {
+        timeline_convert::VisibilityFlags {
+            membership: std::sync::Arc::clone(&self.show_membership_events),
+            redacted: std::sync::Arc::clone(&self.show_redacted_events),
+        }
     }
 
     /// Enter or leave low power mode. Thread-safe. (Production impl lives
@@ -4659,6 +4681,23 @@ mod tests {
         c.set_show_membership_events(false);
         assert!(!c
             .show_membership_events
+            .load(std::sync::atomic::Ordering::Relaxed));
+    }
+
+    #[test]
+    fn set_show_redacted_events_roundtrips() {
+        let c = ClientFfi::new();
+        assert!(!c
+            .show_redacted_events
+            .load(std::sync::atomic::Ordering::Relaxed));
+        c.set_show_redacted_events(true);
+        assert!(c
+            .show_redacted_events
+            .load(std::sync::atomic::Ordering::Relaxed));
+        assert!(c.visibility_flags().snapshot().redacted);
+        c.set_show_redacted_events(false);
+        assert!(!c
+            .show_redacted_events
             .load(std::sync::atomic::Ordering::Relaxed));
     }
 

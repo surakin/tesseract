@@ -4725,6 +4725,9 @@ msgstr "Часова шкала"
 msgid "Show room join/leave events"
 msgstr "Показувати події приєднання до кімнати та виходу з неї"
 
+msgid "Show deleted messages"
+msgstr "Показувати видалені повідомлення"
+
 #: ui/shared/views/settings/AppearanceSection.cpp:307
 msgid "Animate avatars"
 msgstr "Анімувати аватари"

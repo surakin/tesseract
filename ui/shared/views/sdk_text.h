@@ -14,4 +14,7 @@ namespace tesseract::views::sdk_text
 // so is a code this build doesn't know, minus its marker.
 std::string localize(std::string_view text);
 
+// True when `text` is the SDK code `name` (with or without an argument).
+bool is_code(std::string_view text, std::string_view name);
+
 } // namespace tesseract::views::sdk_text

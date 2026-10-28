@@ -18,6 +18,14 @@ std::string counted(const char* one, const char* many, const std::string& arg)
 }
 } // namespace
 
+bool is_code(std::string_view text, std::string_view name)
+{
+    if (text.empty() || text.front() != kMark)
+        return false;
+    text.remove_prefix(1);
+    return text.substr(0, text.find(kMark)) == name;
+}
+
 std::string localize(std::string_view text)
 {
     if (text.empty() || text.front() != kMark)

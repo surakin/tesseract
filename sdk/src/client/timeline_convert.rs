@@ -665,6 +665,41 @@ pub(crate) fn membership_event_visible(
         || (is_profile_action(action) && me.is_some_and(|m| m == target_user_id))
 }
 
+/// Whether a row reaches the UI given the "Show deleted messages" setting:
+/// redacted events (`m.redacted` tombstones) are hidden unless `show`.
+pub(crate) fn redacted_event_visible(msg_type: &str, show: bool) -> bool {
+    show || msg_type != "m.redacted"
+}
+
+/// Per-call snapshot of the runtime-toggleable timeline row visibility
+/// settings. `Copy` so it is read once from [`VisibilityFlags`] and then
+/// passed by value to every filter in a pass.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct RowVisibility {
+    /// "Show room join/leave events".
+    pub membership: bool,
+    /// "Show deleted messages".
+    pub redacted: bool,
+}
+
+/// Shared handles to the live settings behind [`RowVisibility`]; built by
+/// `ClientFfi::visibility_flags` and cloned into each timeline task.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct VisibilityFlags {
+    pub membership: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pub redacted: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl VisibilityFlags {
+    pub(crate) fn snapshot(&self) -> RowVisibility {
+        use std::sync::atomic::Ordering::Relaxed;
+        RowVisibility {
+            membership: self.membership.load(Relaxed),
+            redacted: self.redacted.load(Relaxed),
+        }
+    }
+}
+
 /// True for the actions `profile_change_action` produces.
 pub(crate) fn is_profile_action(action: &str) -> bool {
     matches!(
@@ -1125,7 +1160,7 @@ pub(super) async fn timeline_item_to_ffi(
     // m.room.member state events representing an actual membership
     // transition (join/leave/kick/ban/invite/knock and their
     // accept/reject/revoke counterparts). Visibility is gated downstream by
-    // the caller (see `filter_membership` in timeline.rs) — this conversion
+    // the caller (see `filter_visibility` in timeline.rs) — this conversion
     // is unconditional, matching the m.room.pinned_events precedent above.
     // Profile-only changes while already joined are
     // TimelineItemContent::ProfileChange — handled just below.
@@ -2131,7 +2166,9 @@ mod pinned_action_tests {
 
 #[cfg(test)]
 mod profile_change_tests {
-    use super::{is_profile_action, membership_event_visible, profile_change_action};
+    use super::{
+        is_profile_action, membership_event_visible, profile_change_action, redacted_event_visible,
+    };
 
     #[test]
     fn maps_each_combination() {
@@ -2224,6 +2261,14 @@ mod profile_change_tests {
             false,
             me
         ));
+    }
+
+    #[test]
+    fn redacted_rows_hidden_unless_enabled() {
+        assert!(!redacted_event_visible("m.redacted", false));
+        assert!(redacted_event_visible("m.redacted", true));
+        assert!(redacted_event_visible("m.room.message", false));
+        assert!(redacted_event_visible("m.room.message", true));
     }
 
     #[test]

@@ -218,6 +218,7 @@ struct MessageRowData
     std::string in_reply_to_id;
     std::string in_reply_to_sender_name;
     std::string in_reply_to_body;
+    bool in_reply_to_deleted = false; // the replied-to message was redacted
     // Sanitized HTML of the replied-to message, when it had a formatted body.
     // Rendered (flat, single line) in the quote card in place of the raw body.
     std::string in_reply_to_formatted_body;
@@ -1640,6 +1641,10 @@ private:
     // Scroll to (or ask the shell to load) the message `reply_event_id`
     // replies to — the reply-quote click. False when there's nothing to do.
     bool jump_to_reply_original_(const std::string& reply_event_id);
+    // Whether the reply quote of `m` can be followed. The original of a
+    // deleted message is filtered out of the timeline while deleted messages
+    // are hidden, so it can never be scrolled to.
+    bool reply_jump_available_(const MessageRowData& m) const;
     // A clicked link: a matrix.to user link opens the profile, anything else
     // goes to on_link_clicked. False when neither callback is set.
     bool open_link_(const std::string& url);

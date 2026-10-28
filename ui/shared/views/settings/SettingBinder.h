@@ -42,6 +42,7 @@ enum class SettingKey
     InactivePeriod,
     AutoscrollUnread,
     ShowMembershipEvents,
+    ShowDeletedMessages,
     ShowSenderStatus,
     AnimateAvatars,
     MessageLayout,

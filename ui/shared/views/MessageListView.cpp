@@ -478,6 +478,7 @@ MessageRowData make_row_data(const tesseract::Event& ev,
     row.in_reply_to_id = ev.in_reply_to_id;
     row.in_reply_to_sender_name = ev.in_reply_to_sender_name;
     row.in_reply_to_formatted_body = ev.in_reply_to_formatted_body;
+    row.in_reply_to_deleted = sdk_text::is_code(ev.in_reply_to_body, "deleted");
     // Collapse newlines to spaces: the quote card has a fixed height and no
     // clip rect, so hard line-breaks in a multiline original message cause
     // the text to render outside the card bounds.
@@ -3856,7 +3857,7 @@ public:
                                            return true;
                                        }));
         }
-        if (m.has_reply())
+        if (v->reply_jump_available_(m))
             out.push_back(action_node_(tk::tr("Jump to replied message"),
                                        [v, ev] { return v->jump_to_reply_original_(ev); }));
 
@@ -5665,7 +5666,8 @@ private:
         tk::Rect card{x, y, col_w, block_h};
 
         // Record world-coord rect so on_pointer_down can hit-test it.
-        owner_.quote_block_geom_[m.event_id] = card;
+        if (owner_.reply_jump_available_(m))
+            owner_.quote_block_geom_[m.event_id] = card;
 
         // Background + border
         ctx.canvas.fill_rounded_rect(card, 4.0f,
@@ -5855,7 +5857,8 @@ private:
         if (lo)
             ctx.canvas.draw_text(*lo, {x, y},
                                  ctx.theme.palette.text_secondary);
-        owner_.quote_block_geom_[m.event_id] = tk::Rect{x, y, col_w, h};
+        if (owner_.reply_jump_available_(m))
+            owner_.quote_block_geom_[m.event_id] = tk::Rect{x, y, col_w, h};
         return y + h + msgirc::kIrcPrefixGap;
     }
 
@@ -8671,6 +8674,12 @@ void MessageListView::set_highlighted_event(const std::string& event_id)
     }
 }
 
+bool MessageListView::reply_jump_available_(const MessageRowData& m) const
+{
+    return m.has_reply() &&
+           (!m.in_reply_to_deleted || tesseract::Settings::instance().show_deleted_messages);
+}
+
 bool MessageListView::jump_to_reply_original_(const std::string& reply_event_id)
 {
     for (std::size_t i = 0; i < messages_.size(); ++i)
@@ -8678,7 +8687,7 @@ bool MessageListView::jump_to_reply_original_(const std::string& reply_event_id)
         if (messages_[i].event_id != reply_event_id)
             continue;
         const std::string orig_id = messages_[i].in_reply_to_id;
-        if (orig_id.empty())
+        if (orig_id.empty() || !reply_jump_available_(messages_[i]))
             return false;
         for (std::size_t j = 0; j < messages_.size(); ++j)
         {

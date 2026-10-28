@@ -3100,6 +3100,9 @@ msgstr "Tidslinje"
 msgid "Show room join/leave events"
 msgstr "Vis hendelser når folk blir med i eller forlater rom"
 
+msgid "Show deleted messages"
+msgstr "Vis slettede meldinger"
+
 msgid "Animate avatars"
 msgstr "Animer avatarer"
 

@@ -52,6 +52,10 @@ public:
     // Default off.
     bool show_room_join_leave_events = false;
 
+    // Show redacted (deleted) messages as a placeholder row in the timeline.
+    // Default off: they are hidden.
+    bool show_deleted_messages = false;
+
     // Draw each sender's MSC4426 status emoji after their name in the
     // timeline (hover shows the status text). Default off.
     bool show_sender_status_in_timeline = false;

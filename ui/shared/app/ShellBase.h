@@ -4518,6 +4518,9 @@ protected:
     // reflected immediately instead of waiting for the next room switch.
     void apply_show_membership_events_();
 
+    // "Show deleted messages": same shape as apply_show_membership_events_.
+    void apply_show_deleted_messages_();
+
     // Sidebar user strip: avatar URL to show now — the user's own avatar in
     // the active room when it has one, else the account avatar. Called from
     // UserInfo's paint via set_avatar_url_provider; a cache read that kicks a
@@ -4563,6 +4566,9 @@ protected:
     // reflects the setting instead of defaulting to the Rust-side AtomicBool's
     // off default. A plain atomic store on the Rust side — non-blocking.
     void apply_membership_events_pref_(tesseract::Client& client);
+
+    // Same for the persisted "show deleted messages" preference.
+    void apply_deleted_messages_pref_(tesseract::Client& client);
 
     // Apply the persisted "Link previews" preferences to a freshly-restored
     // account's Rust client, alongside apply_membership_events_pref_.

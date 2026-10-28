@@ -1425,6 +1425,9 @@ msgstr "Fil des messages"
 msgid "Show room join/leave events"
 msgstr "Afficher les arrivées et départs dans le salon"
 
+msgid "Show deleted messages"
+msgstr "Afficher les messages supprimés"
+
 #: ui/shared/views/settings/AppearanceSection.cpp:312
 msgid "Show status emoji next to names"
 msgstr "Afficher l'émoji de statut à côté des noms"

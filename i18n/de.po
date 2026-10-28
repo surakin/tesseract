@@ -1425,6 +1425,9 @@ msgstr "Verlauf"
 msgid "Show room join/leave events"
 msgstr "Bei- und Austritte im Chat anzeigen"
 
+msgid "Show deleted messages"
+msgstr "Gelöschte Nachrichten anzeigen"
+
 #: ui/shared/views/settings/AppearanceSection.cpp:312
 msgid "Show status emoji next to names"
 msgstr "Status-Emoji neben Namen anzeigen"

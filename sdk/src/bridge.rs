@@ -4229,6 +4229,11 @@ pub mod ffi {
         /// the active room after toggling to refresh it immediately.
         fn set_show_membership_events(self: &ClientFfi, enabled: bool);
 
+        /// Show or hide redacted (deleted) event rows in room and thread
+        /// timelines; off by default. Same refresh rule as
+        /// `set_show_membership_events`.
+        fn set_show_redacted_events(self: &ClientFfi, enabled: bool);
+
         /// Configure sender-side MSC4095 bundled URL previews. `enabled`
         /// previews http(s) links in outgoing `m.text` messages (sends,
         /// replies, thread messages, edits) via the homeserver's

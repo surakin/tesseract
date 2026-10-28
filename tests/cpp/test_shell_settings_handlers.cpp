@@ -165,11 +165,13 @@ TEST_CASE("settings handlers persist plain toggles", "[shell][settings_handlers]
     st.send_maps_urls_as_location = false;
     st.index_messages_for_search = true;
     st.show_room_join_leave_events = true;
+    st.show_deleted_messages = true;
     st.msc2545_legacy_compat = false;
     st.send_bundled_url_previews = true;
     st.fetch_url_previews_directly = true;
     for (K k : {K::DeveloperMode, K::SendMapsAsLocation, K::IndexMessages,
-                K::ShowMembershipEvents, K::Msc2545Compat, K::BundledUrlPreviews})
+                K::ShowMembershipEvents, K::ShowDeletedMessages, K::Msc2545Compat,
+                K::BundledUrlPreviews})
         changed(s, k);
 
     // Every key is persisted: flip the in-memory values, reload from disk.
@@ -177,6 +179,7 @@ TEST_CASE("settings handlers persist plain toggles", "[shell][settings_handlers]
     st.send_maps_urls_as_location = true;
     st.index_messages_for_search = false;
     st.show_room_join_leave_events = false;
+    st.show_deleted_messages = false;
     st.msc2545_legacy_compat = true;
     st.send_bundled_url_previews = false;
     st.fetch_url_previews_directly = false;
@@ -185,6 +188,7 @@ TEST_CASE("settings handlers persist plain toggles", "[shell][settings_handlers]
     CHECK_FALSE(st.send_maps_urls_as_location);
     CHECK(st.index_messages_for_search);
     CHECK(st.show_room_join_leave_events);
+    CHECK(st.show_deleted_messages);
     CHECK_FALSE(st.msc2545_legacy_compat);
     CHECK(st.send_bundled_url_previews);
     CHECK(st.fetch_url_previews_directly);
@@ -200,6 +204,7 @@ TEST_CASE("toggles that need a client push to clients when present",
     s.current_room_id_ = "!r:x";
     using K = tesseract::views::SettingKey;
     CHECK_NOTHROW(changed(s, K::ShowMembershipEvents));
+    CHECK_NOTHROW(changed(s, K::ShowDeletedMessages));
     CHECK_NOTHROW(changed(s, K::Msc2545Compat));
 
     auto sess = settings_handlers_account("@a:x");

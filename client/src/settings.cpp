@@ -175,6 +175,7 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
     index_messages_for_search    = j.value("index_messages_for_search",   false);
     check_for_updates            = j.value("check_for_updates",            true);
     show_room_join_leave_events  = j.value("show_room_join_leave_events", false);
+    show_deleted_messages        = j.value("show_deleted_messages",       false);
     show_sender_status_in_timeline = j.value("show_sender_status_in_timeline", false);
     animate_avatars              = j.value("animate_avatars",              true);
     msc2545_legacy_compat        = j.value("msc2545_legacy_compat",        true);
@@ -445,6 +446,7 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
         {"index_messages_for_search",        index_messages_for_search},
         {"check_for_updates",                check_for_updates},
         {"show_room_join_leave_events",      show_room_join_leave_events},
+        {"show_deleted_messages",            show_deleted_messages},
         {"show_sender_status_in_timeline",   show_sender_status_in_timeline},
         {"animate_avatars",                  animate_avatars},
         {"msc2545_legacy_compat",            msc2545_legacy_compat},

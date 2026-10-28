@@ -363,6 +363,12 @@ AppearanceSection::AppearanceSection(SettingBinder& binder)
         binder.bind(show_membership_events_cb_, &S::show_room_join_leave_events,
                     SettingKey::ShowMembershipEvents);
 
+        auto cb_deleted = tk::create_widget<tk::CheckButton>(
+            this, tk::tr("Show deleted messages"), s.show_deleted_messages);
+        show_deleted_messages_cb_ = timeline_group->add_widget(std::move(cb_deleted));
+        binder.bind(show_deleted_messages_cb_, &S::show_deleted_messages,
+                    SettingKey::ShowDeletedMessages);
+
         auto cb_anim_avatars = tk::create_widget<tk::CheckButton>(
             this, tk::tr("Animate avatars"), s.animate_avatars);
         animate_avatars_cb_ = timeline_group->add_widget(std::move(cb_anim_avatars));
