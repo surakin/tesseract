@@ -85,6 +85,8 @@ SettingsView::SettingsView()
     // Account section.
     auto account = tk::create_widget<AccountSection>(this);
     account_ = account.get();
+    if (auto* auto_tz = account_->tz_auto_check())
+        binder_.bind(auto_tz, &tesseract::Settings::auto_detect_timezone, SettingKey::AutoDetectTimezone);
 
     // General section.
     auto general = std::make_unique<GeneralSection>(binder_);
@@ -295,6 +297,14 @@ SettingsView::SettingsView()
         if (on_setting_changed) on_setting_changed(key);
     };
     binder_.reload();
+    apply_tz_auto_state_();
+}
+
+void SettingsView::apply_tz_auto_state_()
+{
+    // While following the computer's timezone the manual picker is read-only.
+    if (auto* tz = account_->tz_field())
+        tz->set_enabled(!tesseract::Settings::instance().auto_detect_timezone);
 }
 
 void SettingsView::react_locally_(SettingKey key)
@@ -302,6 +312,9 @@ void SettingsView::react_locally_(SettingKey key)
     const auto& s = tesseract::Settings::instance();
     switch (key)
     {
+    case SettingKey::AutoDetectTimezone:
+        apply_tz_auto_state_();
+        break;
     case SettingKey::IndexMessages:
         request_relayout();
         break;
@@ -494,6 +507,7 @@ void SettingsView::load_device_lists()
 void SettingsView::load_persisted_settings()
 {
     binder_.reload();
+    apply_tz_auto_state_();
 }
 
 void SettingsView::set_search_index_stats(

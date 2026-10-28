@@ -374,6 +374,13 @@ AppearanceSection::AppearanceSection(SettingBinder& binder)
         show_sender_status_cb_ = timeline_group->add_widget(std::move(cb_status));
         binder.bind(show_sender_status_cb_, &S::show_sender_status_in_timeline,
                     SettingKey::ShowSenderStatus);
+
+        auto cb_tz = tk::create_widget<tk::CheckButton>(
+            this, tk::tr("Show timezone difference next to names"),
+            s.show_sender_timezone_in_timeline);
+        show_sender_timezone_cb_ = timeline_group->add_widget(std::move(cb_tz));
+        binder.bind(show_sender_timezone_cb_, &S::show_sender_timezone_in_timeline,
+                    SettingKey::ShowSenderTimezone);
     }
 }
 

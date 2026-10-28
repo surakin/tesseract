@@ -1146,6 +1146,9 @@ bool ShellBase::switch_active_account_impl_(const std::string& user_id)
     member_gender_cache_.clear();
     member_gender_inflight_.clear();
     pending_member_gender_requests_.clear();
+    member_tz_cache_.clear();
+    member_tz_inflight_.clear();
+    pending_member_tz_requests_.clear();
     reset_gif_strip_state_();
     // In-flight searches belong to the outgoing account; their responses route
     // to that account's (possibly different) shell, so drop the pending map and
@@ -1858,6 +1861,9 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
     member_gender_cache_.clear();
     member_gender_inflight_.clear();
     pending_member_gender_requests_.clear();
+    member_tz_cache_.clear();
+    member_tz_inflight_.clear();
+    pending_member_tz_requests_.clear();
     reset_gif_strip_state_();
     reset_server_info_();
     push_own_status_to_strip_(); // blank the strip status on logout
@@ -2154,6 +2160,9 @@ void ShellBase::restart_sdk_begin_(
     member_gender_cache_.clear();
     member_gender_inflight_.clear();
     pending_member_gender_requests_.clear();
+    member_tz_cache_.clear();
+    member_tz_inflight_.clear();
+    pending_member_tz_requests_.clear();
     reset_gif_strip_state_();
     cancel_debounce_(DebounceSlot::MessageSearch);
     search_pending_queries_.clear();

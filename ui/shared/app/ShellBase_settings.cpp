@@ -615,7 +615,11 @@ void ShellBase::apply_setting_to_window_(views::SettingKey key)
     case K::ShowMembershipEvents:
         apply_show_membership_events_();
         break;
+    case K::AutoDetectTimezone:
+        sync_detected_timezone_();
+        break;
     case K::ShowSenderStatus:
+    case K::ShowSenderTimezone:
     case K::MessageLayout:
     case K::BubblesOwnAvatar:
     case K::TimelineColumnWidth:

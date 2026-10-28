@@ -56,6 +56,14 @@ public:
     // timeline (hover shows the status text). Default off.
     bool show_sender_status_in_timeline = false;
 
+    // Show the difference between each sender's profile timezone and this
+    // computer's, as a short dimmed "+2h" after their name. Default off.
+    bool show_sender_timezone_in_timeline = false;
+
+    // Keep the profile timezone in sync with this computer's timezone
+    // (the picker in Account settings is disabled while on). Default off.
+    bool auto_detect_timezone = false;
+
     // Play animated avatars (GIF / animated WebP / APNG) instead of showing
     // their first frame. Not applied while low power mode is active. Default on.
     bool animate_avatars = true;

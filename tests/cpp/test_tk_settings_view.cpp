@@ -101,8 +101,9 @@ TEST_CASE("AppearanceSection: the sender-status checkbox writes Settings and rep
     std::vector<tk::CheckButton*> boxes;
     collect_check_buttons(section, boxes);
     REQUIRE_FALSE(boxes.empty());
-    // Added last, to the Timeline group.
-    tk::CheckButton* status_cb = boxes.back();
+    // Second to last in the Timeline group (the timezone checkbox follows it).
+    REQUIRE(boxes.size() >= 2);
+    tk::CheckButton* status_cb = boxes[boxes.size() - 2];
 
     std::vector<tesseract::views::SettingKey> fired;
     binder.on_changed = [&](tesseract::views::SettingKey k) { fired.push_back(k); };
@@ -117,6 +118,34 @@ TEST_CASE("AppearanceSection: the sender-status checkbox writes Settings and rep
     CHECK_FALSE(st.show_sender_status_in_timeline);
 
     st.show_sender_status_in_timeline = saved;
+}
+
+TEST_CASE("AppearanceSection: the sender-timezone checkbox writes Settings and reports its key",
+          "[settings-view]")
+{
+    auto& st = tesseract::Settings::instance();
+    const bool saved = st.show_sender_timezone_in_timeline;
+    st.show_sender_timezone_in_timeline = false;
+
+    tesseract::views::SettingBinder binder;
+    tesseract::views::AppearanceSection section(binder);
+    std::vector<tk::CheckButton*> boxes;
+    collect_check_buttons(section, boxes);
+    REQUIRE_FALSE(boxes.empty());
+    tk::CheckButton* tz_cb = boxes.back(); // added last, to the Timeline group
+
+    std::vector<tesseract::views::SettingKey> fired;
+    binder.on_changed = [&](tesseract::views::SettingKey k) { fired.push_back(k); };
+
+    binder.reload();
+    CHECK_FALSE(tz_cb->checked());
+
+    tz_cb->on_change(true);
+    REQUIRE(fired.size() == 1);
+    CHECK(fired[0] == tesseract::views::SettingKey::ShowSenderTimezone);
+    CHECK(st.show_sender_timezone_in_timeline);
+
+    st.show_sender_timezone_in_timeline = saved;
 }
 
 TEST_CASE("LanguageSection: Restart now shows only while a restart is pending",

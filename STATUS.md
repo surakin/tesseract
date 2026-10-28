@@ -1,6 +1,14 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-10-28**. 3742 C++ + 1182 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-10-28**. 3757 C++ + 1182 Rust tests.
+
+> **Profile timezone: auto-detect and timeline offset (2026-10-28).**
+> A "Detect automatically" checkbox next to the profile timezone picker keeps
+> the profile in sync with the computer's timezone (per-device setting; the
+> picker is disabled while on). Settings → Appearance → Timeline can show each
+> sender's timezone difference after their name (`+2h`, `-5:30`; Classic and
+> Bubbles layouts), fetched lazily per visible sender. Linux release build,
+> ctest 3757/3757.
 
 > **Timeline content column (2026-10-21, v0.9.5).**
 > Room timelines lay their rows out in a column that is a percentage of the

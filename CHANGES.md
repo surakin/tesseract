@@ -5,6 +5,8 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- feat(settings): a "Detect automatically" checkbox next to the profile timezone keeps it in sync with this computer's timezone. Linux release build, ctest 3757/3757
+- feat(ui): Appearance > Timeline can show each sender's timezone difference (like "+2h") next to their name, off by default. Linux release build, ctest 3757/3757
 - fix(windows): the title bar, window border and status-bar links follow the in-app accent, tinting the title bar with Windows' accent option. Windows release build + ctest 3720/3720; user-verified live
 - build(ui): the shared UI code builds as separate toolkit, platform, views and app libraries. Linux Qt6 + GTK, Windows and macOS builds, Qt6 ctest
 - build(macos): screenshot mode captures a 1440×900 window, a Mac App Store screenshot size. macOS release build

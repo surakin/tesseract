@@ -460,6 +460,10 @@ public:
     {
         return tz_picker_;
     }
+    tk::CheckButton* tz_auto_check() const
+    {
+        return tz_auto_cb_;
+    }
     tk::TextField* bio_field() const
     {
         return bio_field_;
@@ -509,6 +513,7 @@ private:
     // idx-0-is-tz/idx-1-is-bio convention for state/painting, which doesn't
     // care about the field's C++ type.
     TimezonePicker* tz_picker_ = nullptr;
+    tk::CheckButton* tz_auto_cb_ = nullptr; // "Detect automatically", beside tz_picker_
     tk::TextField* bio_field_ = nullptr;
     StatusEditor* status_editor_ = nullptr; // MSC4426; owned via add_child
 
@@ -539,6 +544,9 @@ AccountSection::ExtendedFields::ExtendedFields()
 
     auto tz = tk::create_widget<TimezonePicker>(this);
     tz_picker_ = add_child(std::move(tz));
+
+    auto tz_auto = tk::create_widget<tk::CheckButton>(this, tk::tr("Detect automatically"));
+    tz_auto_cb_ = add_child(std::move(tz_auto));
 
     auto bio = tk::create_widget<tk::TextField>(this, kBioH);
     bio->set_placeholder(tk::tr("Short biography"));
@@ -720,8 +728,32 @@ void AccountSection::ExtendedFields::arrange(tk::LayoutCtx& ctx, tk::Rect bounds
         const tk::Rect r = field_rect_for(0);
         const bool show = !r.empty() && visible_in_tree();
         tz_picker_->set_visible(show);
+        if (tz_auto_cb_)
+            tz_auto_cb_->set_visible(show);
         if (show)
-            tz_picker_->arrange(ctx, r);
+        {
+            // The picker keeps its natural width so the checkbox fits beside
+            // it; on a narrow window the picker gives up width (down to a
+            // usable minimum) before the checkbox label would be clipped.
+            constexpr float kMinPickerW = 160.0f;
+            const float picker_nat = tz_picker_->measure(ctx, {r.w, r.h}).w;
+            tk::Size cb_sz{0.0f, 0.0f};
+            if (tz_auto_cb_)
+            {
+                cb_sz = tz_auto_cb_->measure(ctx, {0.0f, r.h});
+                // arrange() re-wraps the label to exactly this width, and a
+                // text width with no slack ellipsises on rounding.
+                cb_sz.w += 8.0f;
+            }
+            const float cb_total = tz_auto_cb_ ? cb_sz.w + kAccountSectionFieldGap : 0.0f;
+            const float picker_w = std::clamp(r.w - cb_total, std::min(kMinPickerW, picker_nat), picker_nat);
+            tz_picker_->arrange(ctx, {r.x, r.y, picker_w, r.h});
+            if (tz_auto_cb_)
+            {
+                const float x = r.x + picker_w + kAccountSectionFieldGap;
+                tz_auto_cb_->arrange(ctx, {x, r.y + (r.h - cb_sz.h) * 0.5f, cb_sz.w, cb_sz.h});
+            }
+        }
     }
     if (bio_field_)
     {
@@ -1053,6 +1085,11 @@ PronounsEditor* AccountSection::pronouns_editor() const
 TimezonePicker* AccountSection::tz_field() const
 {
     return ext_fields_->tz_field();
+}
+
+tk::CheckButton* AccountSection::tz_auto_check() const
+{
+    return ext_fields_->tz_auto_check();
 }
 
 tk::TextField* AccountSection::bio_field() const

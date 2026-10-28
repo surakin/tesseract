@@ -1072,6 +1072,10 @@ void RoomPane::wire_room_view_()
     {
         shell_->request_member_pronoun_ui_(user_id);
     };
+    rv->on_sender_timezone_needed = [this](const std::string& user_id)
+    {
+        shell_->request_sender_timezone_ui_(user_id);
+    };
     rv->on_link_clicked = [this](const std::string& url)
     {
         if (tesseract::Client::parse_matrix_link(url).kind

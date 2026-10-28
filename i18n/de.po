@@ -7002,3 +7002,12 @@ msgstr "Nachricht gemeldet"
 #: ui/shared/app/RoomPane.cpp
 msgid "Couldn't report message: {0}"
 msgstr "Nachricht konnte nicht gemeldet werden: {0}"
+
+msgid "Detect automatically"
+msgstr "Automatisch erkennen"
+
+msgid "Show timezone difference next to names"
+msgstr "Zeitzonenunterschied neben Namen anzeigen"
+
+msgid "{0} ({1} from you): {2}"
+msgstr "{0} ({1} von dir): {2}"

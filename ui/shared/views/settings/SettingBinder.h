@@ -43,6 +43,8 @@ enum class SettingKey
     AutoscrollUnread,
     ShowMembershipEvents,
     ShowSenderStatus,
+    ShowSenderTimezone,
+    AutoDetectTimezone,
     AnimateAvatars,
     MessageLayout,
     BubblesOwnAvatar,

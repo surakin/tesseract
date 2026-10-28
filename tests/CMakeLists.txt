@@ -105,6 +105,7 @@ add_executable(tesseract_tests
     cpp/test_launch_proxy.cpp
     cpp/test_launchable_url.cpp
     cpp/test_single_instance.cpp
+    cpp/test_timezone.cpp
     cpp/test_pending_send.cpp
     cpp/test_compose_bar_media.cpp
     cpp/test_media_drop.cpp

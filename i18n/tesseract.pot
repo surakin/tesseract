@@ -7535,3 +7535,12 @@ msgstr ""
 #: ui/shared/app/RoomPane.cpp
 msgid "Couldn't report message: {0}"
 msgstr ""
+
+msgid "Detect automatically"
+msgstr ""
+
+msgid "Show timezone difference next to names"
+msgstr ""
+
+msgid "{0} ({1} from you): {2}"
+msgstr ""

@@ -183,6 +183,10 @@ private:
     Rect chevron_rect_{}; // the ▾ cell
     bool chevron_hovered_ = false;
     bool chevron_pressed_ = false;
+    // Field text colours from the last theme; the muted one shows while disabled.
+    bool  text_color_set_ = false;
+    Color text_color_{};
+    Color text_color_muted_{};
 
     float field_h_  = 32.0f;
     float row_h_    = 28.0f;

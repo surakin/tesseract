@@ -221,16 +221,20 @@ TEST_CASE("sender status, layout and density changes relayout",
     changed(s, K::ShowSenderStatus);
     CHECK(s.relayouts == 1);
 
+    st.show_sender_timezone_in_timeline = true;
+    changed(s, K::ShowSenderTimezone);
+    CHECK(s.relayouts == 2);
+
     st.message_layout = st.message_layout == Settings::MessageLayout::Bubbles
                             ? Settings::MessageLayout::Classic
                             : Settings::MessageLayout::Bubbles;
     changed(s, K::MessageLayout);
-    CHECK(s.relayouts == 2);
+    CHECK(s.relayouts == 3);
 
     using RD = Settings::RoomListDensity;
     st.room_list_density = RD::Compact;
     changed(s, K::RoomListDensity);
-    CHECK(s.relayouts == 3);
+    CHECK(s.relayouts == 4);
     st.room_list_density = RD::Normal;
 }
 

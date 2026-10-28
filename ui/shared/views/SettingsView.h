@@ -357,6 +357,7 @@ private:
     SettingBinder binder_;
     // View-local reactions to a preference change (restart rows, repaint, ...).
     void react_locally_(SettingKey key);
+    void apply_tz_auto_state_();
 
     // MSC4426 status-emoji picker. Not a tree child (Host popup, like
     // RoomView's) — see show_status_emoji_picker_().

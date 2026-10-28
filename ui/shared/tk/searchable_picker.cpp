@@ -428,7 +428,12 @@ void SearchablePicker::set_enabled(bool enabled)
 {
     Widget::set_enabled(enabled);
     if (field_)
+    {
         field_->set_enabled(enabled);
+        // Dim the text so a disabled picker reads as inert (no theme yet = keep).
+        if (text_color_set_)
+            field_->set_text_color(enabled ? text_color_ : text_color_muted_);
+    }
     if (!enabled)
         collapse_();
 }
@@ -634,7 +639,8 @@ void SearchablePicker::paint_before_children(PaintCtx& ctx)
                               chevron_rect_.w - 1.0f, chevron_rect_.h - 2.0f},
                              chevron_pressed_ ? pal.subtle_pressed
                                               : pal.subtle_hover);
-    ctx.canvas.stroke_rounded_rect(bounds_, kRadius, pal.border);
+    ctx.canvas.stroke_rounded_rect(bounds_, kRadius,
+                                   enabled_ ? pal.border : pal.border.with_alpha(pal.border.a / 2));
     draw_chevron_down(ctx.canvas, chevron_rect_,
                       enabled_ ? pal.text_secondary : pal.text_muted);
 }
@@ -705,8 +711,11 @@ void SearchablePicker::on_pointer_leave()
 
 void SearchablePicker::on_theme_changed(const Theme& t)
 {
+    text_color_set_   = true;
+    text_color_       = t.palette.text_primary;
+    text_color_muted_ = t.palette.text_muted;
     if (field_)
-        field_->set_text_color(t.palette.text_primary);
+        field_->set_text_color(enabled_ ? text_color_ : text_color_muted_);
     if (popup_)
         popup_->set_theme(t);
 }

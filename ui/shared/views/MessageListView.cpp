@@ -1,4 +1,5 @@
 #include "MessageListView.h"
+#include "platform/timezone.h"
 #include "views/poll_logic.h"
 #include "views/sdk_text.h"
 #include "views/send_block.h"
@@ -2365,9 +2366,26 @@ public:
                 }
                 rc.sender_col_w = -1; // name width depends on the emoji width
             }
+            const std::string tz_key =
+                tesseract::Settings::instance().show_sender_timezone_in_timeline
+                    ? owner_.sender_tz_diff_(m.sender)
+                    : std::string{};
+            if (rc.tz_key != tz_key)
+            {
+                rc.tz.reset();
+                rc.tz_key = tz_key;
+                if (!tz_key.empty())
+                {
+                    tk::TextStyle ts{};
+                    ts.role = tk::FontRole::Small;
+                    rc.tz = ctx.factory.build_text(tz_key, ts);
+                }
+                rc.sender_col_w = -1;
+            }
             const float status_w =
                 rc.status ? rc.status->measure().w + kStatusGap : 0.0f;
-            const float name_max_w = std::max(0.0f, sender_max_w - status_w);
+            const float tz_w = rc.tz ? rc.tz->measure().w + kStatusGap : 0.0f;
+            const float name_max_w = std::max(0.0f, sender_max_w - status_w - tz_w);
 
             if (!rc.sender || rc.sender_key != skey ||
                 rc.sender_col_w != name_max_w)
@@ -2383,7 +2401,8 @@ public:
             if (right_align && rc.sender)
             {
                 sender_x -= rc.sender->measure().w +
-                            (rc.status ? kStatusGap + rc.status->measure().w : 0.0f);
+                            (rc.status ? kStatusGap + rc.status->measure().w : 0.0f) +
+                            (rc.tz ? kStatusGap + rc.tz->measure().w : 0.0f);
             }
             if (rc.sender)
             {
@@ -2401,6 +2420,16 @@ public:
                 if (rp.hovered)
                     owner_.hovered_row_geom_.status_emoji =
                         tk::Rect{ex, sender_y, esz.w, sender_h()};
+            }
+            if (rc.sender && rc.tz)
+            {
+                const tk::Size nsz = rc.sender->measure();
+                const tk::Size tsz = rc.tz->measure();
+                const float tx = sender_x + nsz.w +
+                                 (rc.status ? kStatusGap + rc.status->measure().w : 0.0f) +
+                                 kStatusGap;
+                const float ty = sender_y + (sender_h() - tsz.h) * 0.5f;
+                ctx.canvas.draw_text(*rc.tz, {tx, ty}, ctx.theme.palette.text_secondary);
             }
         }
     }
@@ -3731,6 +3760,16 @@ public:
                 : tk::trf(tk::tr("{0} {1}"),
                           {m.sender_status_emoji, m.sender_status_text});
             name = tk::trf(tk::tr("{0} ({1}): {2}"), {m.sender_name, status, body});
+        }
+        if (!m.sender_name.empty() &&
+            tesseract::Settings::instance().show_sender_timezone_in_timeline &&
+            tesseract::Settings::instance().message_layout !=
+                tesseract::Settings::MessageLayout::Irc)
+        {
+            if (const auto it = owner_.sender_tz_diffs_.find(m.sender);
+                it != owner_.sender_tz_diffs_.end() && !it->second.empty())
+                name = tk::trf(tk::tr("{0} ({1} from you): {2}"),
+                               {m.sender_name, it->second, body});
         }
         std::vector<std::string> extras;
         if (m.pending_state == MessageRowData::PendingState::Failed)
@@ -7401,6 +7440,9 @@ private:
         // Status emoji after the name (opt-in); empty key == none.
         std::string status_key;
         std::unique_ptr<tk::TextLayout> status;
+        // Timezone difference after the name (opt-in); empty key == none.
+        std::string tz_key;
+        std::unique_ptr<tk::TextLayout> tz;
 
         // One glyph run: either an emoji grapheme cluster (drawn at the
         // reference FontRole::ReactionEmoji size) or a plain-text run (drawn
@@ -7426,6 +7468,8 @@ private:
             sender.reset();
             status_key.clear();
             status.reset();
+            tz_key.clear();
+            tz.reset();
             reactions.clear();
         }
     };
@@ -9173,6 +9217,36 @@ void MessageListView::update_member_pronoun(const std::string& user_id,
                 invalidate_row(start);
         }
     });
+}
+
+const std::string& MessageListView::sender_tz_diff_(const std::string& user_id) const
+{
+    static const std::string kNone;
+    if (const auto it = sender_tz_diffs_.find(user_id); it != sender_tz_diffs_.end())
+        return it->second;
+    if (on_sender_timezone_needed && sender_tz_asked_.insert(user_id).second)
+        on_sender_timezone_needed(user_id);
+    return kNone;
+}
+
+void MessageListView::update_sender_timezone(const std::string& user_id, const std::string& tz)
+{
+    std::string diff;
+    if (!tz.empty())
+    {
+        const auto now = std::chrono::system_clock::now();
+        const auto theirs = tk::timezone_utc_offset_minutes(tz, now);
+        const auto mine = tk::timezone_utc_offset_minutes(tk::system_timezone(), now);
+        if (theirs && mine)
+            diff = tk::format_offset_diff(*theirs - *mine);
+    }
+    sender_tz_asked_.insert(user_id);
+    auto& slot = sender_tz_diffs_[user_id];
+    if (slot == diff)
+        return;
+    slot = std::move(diff);
+    if (request_repaint_)
+        request_repaint_();
 }
 
 void MessageListView::update_member_profile(

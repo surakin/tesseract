@@ -946,3 +946,28 @@ TEST_CASE("Settings timeline column clamps and sanitizes bad values")
     s.timeline_column_pct = 100;
     fs::remove_all(dir);
 }
+
+TEST_CASE("Settings timezone flags round-trip and default to false", "[settings]")
+{
+    reset_settings();
+    auto dir = make_tmp_dir("timezone_flags");
+    auto& s = tesseract::Settings::instance();
+
+    write_file(dir / "app_settings.json", "{\"theme\":\"dark\"}");
+    s.show_sender_timezone_in_timeline = true;
+    s.auto_detect_timezone = true;
+    s.load_from_disk(dir);
+    CHECK_FALSE(s.show_sender_timezone_in_timeline);
+    CHECK_FALSE(s.auto_detect_timezone);
+
+    s.show_sender_timezone_in_timeline = true;
+    s.auto_detect_timezone = true;
+    s.save_to_disk(dir);
+    s.show_sender_timezone_in_timeline = false;
+    s.auto_detect_timezone = false;
+    s.load_from_disk(dir);
+    CHECK(s.show_sender_timezone_in_timeline);
+    CHECK(s.auto_detect_timezone);
+
+    fs::remove_all(dir);
+}

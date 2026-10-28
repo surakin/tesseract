@@ -7413,3 +7413,12 @@ msgstr "[Méssàgé répörtédxxx]"
 #: ui/shared/app/RoomPane.cpp
 msgid "Couldn't report message: {0}"
 msgstr "[Çöùldñ't répört méssàgé: {0}xxxxx]"
+
+msgid "Detect automatically"
+msgstr "[Détéct àùtömàtïcàllý xxxxx]"
+
+msgid "Show timezone difference next to names"
+msgstr "[Shöw tímézöñé dïffèrèñcé ñéxt tö ñàmés xxxxxxxxxx]"
+
+msgid "{0} ({1} from you): {2}"
+msgstr "[{0} ({1} frö̀m yöù): {2}xxx]"

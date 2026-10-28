@@ -9,6 +9,7 @@
 #include "SettingsPage.h"
 
 #include "tk/canvas.h"
+#include "tk/controls.h"
 #include "tk/host.h"
 #include "tk/text_field.h"
 #include "tk/widget.h"
@@ -98,6 +99,9 @@ public:
     // single TextField, since a user can register more than one language.
     PronounsEditor* pronouns_editor() const;
     TimezonePicker* tz_field() const;
+    // "Detect automatically" checkbox beside the timezone picker; bound by
+    // SettingsView to Settings::auto_detect_timezone.
+    tk::CheckButton* tz_auto_check() const;
     tk::TextField* bio_field() const;
     // MSC4426 own-status editor (emoji + text). Null without a Host.
     StatusEditor* status_editor() const;

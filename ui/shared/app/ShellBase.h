@@ -1305,6 +1305,18 @@ protected:
     // made on behalf of request_member_pronoun_ui_.
     std::unordered_map<std::uint64_t, std::string> pending_member_gender_requests_;
 
+    // ── Per-sender profile timezone cache (timeline timezone difference) ─────
+    // Lazily populated for senders whose name is currently on screen; entries
+    // expire after an hour so a changed zone eventually shows up.
+    struct MemberTz
+    {
+        std::string tz; // IANA name, empty = none set
+        std::chrono::steady_clock::time_point fetched;
+    };
+    std::unordered_map<std::string, MemberTz> member_tz_cache_;
+    std::unordered_set<std::string> member_tz_inflight_;
+    std::unordered_map<std::uint64_t, std::string> pending_member_tz_requests_;
+
     // ── Sync / backup state ───────────────────────────────────────────────────
     RoomListState last_room_list_state_ = RoomListState::Init;
     BackupState last_backup_state_ = BackupState::Unknown;
@@ -4375,6 +4387,17 @@ protected:
     /// membership-narration text (see the member_gender_cache_ comment
     /// above).
     void request_member_pronoun_ui_(const std::string& user_id);
+
+    /// Resolve user_id's profile timezone for the opt-in timeline timezone
+    /// difference (Settings::show_sender_timezone_in_timeline). Served from
+    /// member_tz_cache_ while fresh, else fetched lazily; the answer is pushed
+    /// to every open message list. Never a bulk preload.
+    void request_sender_timezone_ui_(const std::string& user_id);
+    void deliver_sender_timezone_(const std::string& user_id, const std::string& tz);
+
+    /// With Settings::auto_detect_timezone on, publish this computer's IANA
+    /// timezone to the profile when it differs from the one on the server.
+    void sync_detected_timezone_();
 
     // Returns cached summaries if present; triggers a fetch and returns {}
     // otherwise. Call from refresh_room_list_() while drilled into a space.

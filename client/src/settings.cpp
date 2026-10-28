@@ -176,6 +176,8 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
     check_for_updates            = j.value("check_for_updates",            true);
     show_room_join_leave_events  = j.value("show_room_join_leave_events", false);
     show_sender_status_in_timeline = j.value("show_sender_status_in_timeline", false);
+    show_sender_timezone_in_timeline = j.value("show_sender_timezone_in_timeline", false);
+    auto_detect_timezone = j.value("auto_detect_timezone", false);
     animate_avatars              = j.value("animate_avatars",              true);
     msc2545_legacy_compat        = j.value("msc2545_legacy_compat",        true);
     developer_mode               = j.value("developer_mode",              false);
@@ -446,6 +448,8 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
         {"check_for_updates",                check_for_updates},
         {"show_room_join_leave_events",      show_room_join_leave_events},
         {"show_sender_status_in_timeline",   show_sender_status_in_timeline},
+        {"show_sender_timezone_in_timeline", show_sender_timezone_in_timeline},
+        {"auto_detect_timezone",             auto_detect_timezone},
         {"animate_avatars",                  animate_avatars},
         {"msc2545_legacy_compat",            msc2545_legacy_compat},
         {"developer_mode",                   developer_mode},

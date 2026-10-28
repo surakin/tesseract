@@ -14,6 +14,8 @@ set(_platform_sources
     location_provider.h
     location_provider.cpp
     video_decode.h
+    timezone.h
+    timezone.cpp
 )
 
 if(NOT TESSERACT_UI STREQUAL "win32")
@@ -139,6 +141,7 @@ elseif(TESSERACT_UI STREQUAL "macos")
             SKIP_UNITY_BUILD_INCLUSION ON)
     target_link_libraries(tesseract_platform PUBLIC
         "-framework Foundation"
+        "-framework CoreFoundation"
         "-framework AVFoundation"
         "-framework CoreMedia"
         "-framework CoreVideo"

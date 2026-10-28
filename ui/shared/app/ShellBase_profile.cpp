@@ -1,11 +1,14 @@
 #include "app/ShellBase.h"
 #include "app/Launch.h"
 #include "app/shell_helpers.h"
+#include "platform/timezone.h"
 #include "tk/text_util.h"
 #include "views/MainAppWidget.h"
 #include "views/SettingsView.h"
 #include "views/pronoun_utils.h"
 #include <tesseract/prefs.h>
+#include <tesseract/settings.h>
+#include <nlohmann/json.hpp>
 #include <algorithm>
 #include <cmath>
 
@@ -684,9 +687,68 @@ void ShellBase::request_member_pronoun_ui_(const std::string& user_id)
     client_->get_extended_profile_async(req_id, user_id);
 }
 
+void ShellBase::request_sender_timezone_ui_(const std::string& user_id)
+{
+    if (!client_ || user_id.empty() || member_tz_inflight_.count(user_id))
+        return;
+    constexpr auto kTtl = std::chrono::hours(1);
+    if (const auto it = member_tz_cache_.find(user_id);
+        it != member_tz_cache_.end() &&
+        std::chrono::steady_clock::now() - it->second.fetched < kTtl)
+    {
+        // Not delivered inline: the caller is mid-paint.
+        post_to_ui_alive_([this, user_id, tz = it->second.tz]
+                          { deliver_sender_timezone_(user_id, tz); });
+        return;
+    }
+    member_tz_inflight_.insert(user_id);
+    const auto req_id = next_request_id_++;
+    pending_member_tz_requests_[req_id] = user_id;
+    client_->get_extended_profile_async(req_id, user_id);
+}
+
+void ShellBase::deliver_sender_timezone_(const std::string& user_id, const std::string& tz)
+{
+    if (room_view_)
+        if (auto* ml = room_view_->message_list())
+            ml->update_sender_timezone(user_id, tz);
+    for (const auto& [rid, w] : secondary_windows_)
+        if (auto* rv = w->room_view())
+            if (auto* ml = rv->message_list())
+                ml->update_sender_timezone(user_id, tz);
+}
+
+void ShellBase::sync_detected_timezone_()
+{
+    if (!client_ || !tesseract::Settings::instance().auto_detect_timezone)
+        return;
+    if (!server_info_.supports_profile_fields || !server_info_.profile_fields_enabled)
+        return;
+    const std::string tz = tk::system_timezone();
+    if (tz.empty() || tz == own_extended_profile_.tz)
+        return;
+    // Both keys, as the settings picker does (reads prefer m.tz).
+    const std::string json = nlohmann::json(tz).dump();
+    handle_profile_field_change_("m.tz", json);
+    handle_profile_field_change_("us.cloke.msc4175.tz", json);
+}
+
 void ShellBase::handle_extended_profile_ready_ui_(std::uint64_t request_id,
                                                    std::string profile_json)
 {
+    // Timeline timezone-difference case.
+    if (const auto tit = pending_member_tz_requests_.find(request_id);
+        tit != pending_member_tz_requests_.end())
+    {
+        const std::string user_id = std::move(tit->second);
+        pending_member_tz_requests_.erase(tit);
+        member_tz_inflight_.erase(user_id);
+        const auto p = tesseract::UserProfile::from_json(profile_json);
+        member_tz_cache_[user_id] = {p.tz, std::chrono::steady_clock::now()};
+        deliver_sender_timezone_(user_id, p.tz);
+        return;
+    }
+
     // User-panel case: deliver to the requesting panel.
     auto pit = pending_user_profiles_.find(request_id);
     if (pit != pending_user_profiles_.end())
@@ -785,6 +847,7 @@ void ShellBase::handle_extended_profile_ready_ui_(std::uint64_t request_id,
         own_extended_profile_ = {p.pronouns,    p.tz,          p.biography,
                                  p.status_emoji, p.status_text, p.call_joined_ts};
         notify_own_extended_profile_changed_();
+        sync_detected_timezone_();
     }
 }
 

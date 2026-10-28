@@ -591,6 +591,11 @@ public:
     // invalidate_row, no full re-measure).
     void update_member_pronoun(const std::string& user_id, std::string pronoun);
 
+    // Called by the host shell once the profile timezone (IANA name, empty =
+    // none set) of `user_id` is known. Repaints the sender names that show the
+    // timezone difference (Settings::show_sender_timezone_in_timeline).
+    void update_sender_timezone(const std::string& user_id, const std::string& tz);
+
     // A member changed their display name and/or avatar in this room: patch
     // every row that user sent (nullopt = unchanged; an empty avatar_url means
     // "removed") so existing messages show the new profile without waiting for
@@ -995,6 +1000,12 @@ public:
     // eagerly for every member in the timeline; only qualifying, currently-
     // visible rows trigger it.
     std::function<void(const std::string& user_id)> on_member_pronoun_needed;
+
+    // Fired at most once per user_id while a *visible* sender name wants its
+    // timezone difference (opt-in setting). The host wires this to
+    // ShellBase::request_sender_timezone_ui_(user_id); the answer comes back
+    // through update_sender_timezone().
+    std::function<void(const std::string& user_id)> on_sender_timezone_needed;
 
     // Fired with the media fetch tokens of the currently-visible rows whenever
     // that set changes (scroll, room enter, async data update). The host raises
@@ -1710,6 +1721,14 @@ private:
     // Per-frame chip geometry for the hovered row. Mutable so paint_row
     // can write into it from a const-ish paint pass.
     mutable RowChipGeom hovered_row_geom_;
+
+    // Per-sender timezone difference text ("+2h"; empty = same zone or none
+    // set), keyed by mxid. Filled by update_sender_timezone(); sender_tz_asked_
+    // keeps on_sender_timezone_needed to one call per sender.
+    mutable std::unordered_map<std::string, std::string> sender_tz_diffs_;
+    mutable std::unordered_set<std::string> sender_tz_asked_;
+    // Diff text for `user_id`, requesting the timezone on first use.
+    const std::string& sender_tz_diff_(const std::string& user_id) const;
 
     // Per-frame inline-sticker geometry, keyed by event_id. Populated by
     // `Adapter::paint_row` when it paints a Kind::Sticker row; consumed by

@@ -5366,3 +5366,12 @@ msgstr "Melding rapportert"
 #: ui/shared/app/RoomPane.cpp
 msgid "Couldn't report message: {0}"
 msgstr "Kunne ikke rapportere meldingen: {0}"
+
+msgid "Detect automatically"
+msgstr "Oppdag automatisk"
+
+msgid "Show timezone difference next to names"
+msgstr "Vis tidssoneforskjell ved siden av navn"
+
+msgid "{0} ({1} from you): {2}"
+msgstr "{0} ({1} fra deg): {2}"

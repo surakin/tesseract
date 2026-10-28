@@ -7102,3 +7102,12 @@ msgstr "Mensaje reportado"
 #: ui/shared/app/RoomPane.cpp
 msgid "Couldn't report message: {0}"
 msgstr "No se pudo reportar el mensaje: {0}"
+
+msgid "Detect automatically"
+msgstr "Detectar automáticamente"
+
+msgid "Show timezone difference next to names"
+msgstr "Mostrar la diferencia horaria junto a los nombres"
+
+msgid "{0} ({1} from you): {2}"
+msgstr "{0} ({1} respecto a ti): {2}"

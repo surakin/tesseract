@@ -41,6 +41,7 @@ private:
     tk::CheckButton* autoscroll_cb_      = nullptr;
     tk::CheckButton* show_membership_events_cb_ = nullptr;
     tk::CheckButton* show_sender_status_cb_     = nullptr;
+    tk::CheckButton* show_sender_timezone_cb_   = nullptr;
     tk::CheckButton* animate_avatars_cb_        = nullptr;
     tk::ComboBox*    message_layout_combo_      = nullptr;
     tk::Label*       message_layout_desc_       = nullptr;

@@ -575,6 +575,10 @@ public:
     // target user's MSC4247 grammatical-gender pronoun resolved. The host
     // wires this to ShellBase::request_member_pronoun_ui_.
     std::function<void(std::string user_id)> on_member_pronoun_needed;
+    // Forwarded from MessageListView: a visible sender name wants its profile
+    // timezone for the opt-in timezone difference. The host wires this to
+    // ShellBase::request_sender_timezone_ui_.
+    std::function<void(std::string user_id)> on_sender_timezone_needed;
     // Forwarded from MessageListView (both the main list and the thread panel):
     // the visible rows' media tokens changed; the host re-prioritizes them.
     std::function<void(const std::vector<std::string>&)> on_visible_range_changed;

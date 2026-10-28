@@ -7584,3 +7584,12 @@ msgstr "Скаргу надіслано"
 #: ui/shared/app/RoomPane.cpp
 msgid "Couldn't report message: {0}"
 msgstr "Не вдалося надіслати скаргу: {0}"
+
+msgid "Detect automatically"
+msgstr "Визначати автоматично"
+
+msgid "Show timezone difference next to names"
+msgstr "Показувати різницю часових поясів поруч з іменами"
+
+msgid "{0} ({1} from you): {2}"
+msgstr "{0} ({1} від вас): {2}"
