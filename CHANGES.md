@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(macos): text no longer draws upside down after other drawing leaves CoreText's text matrix flipped. macOS release build
 - fix(ui): screenshot mode no longer crashes when a voice message is on screen. macOS release build
 - build(macos): the macOS build no longer prints the duplicate `-lSystem` linker warning or the null-reference test warning. Linux release build, ctest
 - ci: a nightly workflow builds only the Rust SDK for every build type to keep the Rust cache warm, and failed builds no longer save a cache. YAML parse only

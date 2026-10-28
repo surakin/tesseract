@@ -113,6 +113,11 @@ void set_stroke(CGContextRef ctx, Color c)
 void draw_line_runs(CGContextRef ctx, CTLineRef line, CGPoint origin,
                     Color default_c)
 {
+    // The text matrix isn't part of the graphics state, so whatever else drew
+    // into this context last (AppKit, a native control) may have left it
+    // flipped, which would draw every glyph upside down. Our CTMs already
+    // flip y; the text matrix must be the identity.
+    CGContextSetTextMatrix(ctx, CGAffineTransformIdentity);
     CGContextSetTextPosition(ctx, origin.x, origin.y);
     CFArrayRef runs = CTLineGetGlyphRuns(line);
     CFIndex nr = CFArrayGetCount(runs);
@@ -1304,6 +1309,7 @@ public:
         CGContextSaveGState(ctx_);
         CGContextTranslateCTM(ctx_, tx, baseline);
         CGContextScaleCTM(ctx_, 1, -1);
+        CGContextSetTextMatrix(ctx_, CGAffineTransformIdentity); // see draw_line_runs
         CGContextSetTextPosition(ctx_, 0, 0);
         set_fill(ctx_, fg);
         CTLineDraw(line.get(), ctx_);
