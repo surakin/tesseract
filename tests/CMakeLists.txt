@@ -574,4 +574,9 @@ if(Python3_Interpreter_FOUND)
     add_test(NAME layering_check
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/check_layering.py
                 ${CMAKE_SOURCE_DIR}/ui/shared)
+
+    # No CxxString / CxxVector across the Rust bridge (see the script).
+    add_test(NAME bridge_no_cxx_strings
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/check_bridge_strings.py
+                ${CMAKE_SOURCE_DIR}/sdk/src/bridge.rs)
 endif()
