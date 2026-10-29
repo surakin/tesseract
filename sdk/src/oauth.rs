@@ -358,6 +358,7 @@ pub async fn begin(
     homeserver: &str,
     sqlite_path: &std::path::Path,
     register: bool,
+    user_id_hint: &str,
     store_key: &[u8; 32],
 ) -> anyhow::Result<BeginResult> {
     // 1. Bind a loopback redirect server on a random port. We need the port
@@ -425,6 +426,10 @@ pub async fn begin(
     if register {
         use matrix_sdk::ruma::api::client::discovery::get_authorization_server_metadata::v1::Prompt;
         login_builder = login_builder.prompt(vec![Prompt::Create]);
+    } else if let Ok(user_id) = matrix_sdk::ruma::UserId::parse(user_id_hint) {
+        // MSC4198: lets the authorization server prefill the username. An empty
+        // or malformed hint is simply not sent.
+        login_builder = login_builder.user_id_hint(&user_id);
     }
     let mut auth_data = login_builder
         .build()
@@ -977,7 +982,7 @@ mod pending_flow_tests {
                 .as_nanos()
         ));
         let _ = std::fs::create_dir_all(&dir);
-        let res = begin("not a valid homeserver \0", &dir, false, &[3u8; 32]).await;
+        let res = begin("not a valid homeserver \0", &dir, false, "", &[3u8; 32]).await;
         assert!(res.is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }

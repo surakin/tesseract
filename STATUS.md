@@ -1,6 +1,15 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-10-28**. 3757 C++ + 1182 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-10-29**. 3762 C++ + 1182 Rust tests.
+
+> **Provisioned username and sign-in hint (2026-10-29).**
+> A per-user `provisioning.json` in the config folder (`%APPDATA%\Tesseract\`
+> on Windows) can preset `default_homeserver` and `default_username`, overriding
+> the registry, macOS preference and `/etc` sources; the registry value and
+> preference `DefaultUsername` work too. The username prefills the password
+> form, and a Matrix ID provisioned or typed in the homeserver field is sent to
+> Matrix Authentication Service as an MSC4198 hint. Any provisioning hides
+> "Find a server". Linux release build, ctest 3762/3762.
 
 > **Profile timezone: auto-detect and timeline offset (2026-10-28).**
 > A "Detect automatically" checkbox next to the profile timezone picker keeps

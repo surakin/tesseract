@@ -44,6 +44,7 @@ Change proposals where the homeserver advertises support for them:
 - [MSC2666](https://github.com/matrix-org/matrix-spec-proposals/pull/2666) — rooms in common: a user's profile lists the rooms you share with them (needs a homeserver that supports it; the list is hidden otherwise)
 - [MSC4334](https://github.com/matrix-org/matrix-spec-proposals/pull/4334) — room language: shown in the room info panel, and announced to screen readers as the language of the room's messages (Qt6, Windows and macOS)
 - [MSC4108](https://github.com/matrix-org/matrix-spec-proposals/pull/4108) — QR-code login
+- [MSC4198](https://github.com/matrix-org/matrix-spec-proposals/pull/4198) — sign-in hint: a Matrix ID typed in the homeserver field, or provisioned, prefills the username on Matrix Authentication Service
 - [MSC4153](https://github.com/matrix-org/matrix-spec-proposals/pull/4153) — "exclude insecure devices" *(opt-in setting)*: message keys go only to confirmed devices, messages from devices that aren't confirmed are hidden, and encrypted rooms warn when a member's digital identity is reset. By default (Privacy setting) a send is also refused while a member you verified has an unconfirmed device or a reset identity, and a dialog explains why and what can be done
 - [MSC4405](https://github.com/matrix-org/matrix-spec-proposals/pull/4405) — SAS verification compares the `decimal` numbers first; emoji are shown only as a secondary check, and a decimal-only peer works
 - [MSC4391](https://github.com/matrix-org/matrix-spec-proposals/pull/4391) — in-room bot commands

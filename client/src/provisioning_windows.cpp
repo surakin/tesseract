@@ -7,7 +7,7 @@
 namespace
 {
 
-std::optional<std::string> read_value(HKEY root)
+std::optional<std::string> read_value(HKEY root, const wchar_t* name)
 {
     HKEY key = nullptr;
     if (RegOpenKeyExW(root, L"Software\\Tesseract-Matrix", 0, KEY_QUERY_VALUE | KEY_WOW64_64KEY, &key)
@@ -17,12 +17,12 @@ std::optional<std::string> read_value(HKEY root)
     std::optional<std::string> result;
     DWORD type = 0;
     DWORD bytes = 0;
-    if (RegQueryValueExW(key, L"DefaultHomeserver", nullptr, &type, nullptr, &bytes)
+    if (RegQueryValueExW(key, name, nullptr, &type, nullptr, &bytes)
             == ERROR_SUCCESS
         && type == REG_SZ && bytes >= sizeof(wchar_t))
     {
         std::wstring wide(bytes / sizeof(wchar_t), L'\0');
-        if (RegQueryValueExW(key, L"DefaultHomeserver", nullptr, nullptr,
+        if (RegQueryValueExW(key, name, nullptr, nullptr,
                              reinterpret_cast<LPBYTE>(wide.data()), &bytes)
             == ERROR_SUCCESS)
         {
@@ -48,12 +48,15 @@ std::optional<std::string> read_value(HKEY root)
 namespace tesseract::detail
 {
 
-std::optional<std::string> read_provisioned_homeserver_raw()
+ProvisionedValues read_platform_provisioning_raw()
 {
     // Per-user value overrides the machine-wide one.
-    if (auto v = read_value(HKEY_CURRENT_USER); v && !v->empty())
-        return v;
-    return read_value(HKEY_LOCAL_MACHINE);
+    auto read = [](const wchar_t* name) -> std::optional<std::string> {
+        if (auto v = read_value(HKEY_CURRENT_USER, name); v && !v->empty())
+            return v;
+        return read_value(HKEY_LOCAL_MACHINE, name);
+    };
+    return {read(L"DefaultHomeserver"), read(L"DefaultUsername")};
 }
 
 } // namespace tesseract::detail

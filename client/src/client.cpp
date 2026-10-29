@@ -157,10 +157,11 @@ std::vector<uint8_t> Client::store_key() const
 }
 
 Client::OAuthFlow Client::begin_oauth(const std::string& homeserver,
-                                      bool register_account)
+                                      bool register_account,
+                                      const std::string& user_id_hint)
 {
     MUT_FFI;
-    auto r = impl_->ffi->oauth_begin(homeserver, register_account);
+    auto r = impl_->ffi->oauth_begin(homeserver, register_account, user_id_hint);
     return OAuthFlow{
         .ok = r.ok,
         .message = std::string(r.message),

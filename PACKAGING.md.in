@@ -62,6 +62,14 @@ The installer lands at
   the default. macOS reads the `DefaultHomeserver` preference (e.g. an MDM
   profile); Linux reads `default_homeserver` from
   `/etc/tesseract/provisioning.json`.
+- A per-user `provisioning.json` in the config folder (`%APPDATA%\Tesseract\` on
+  Windows) overrides all of the above, on every platform:
+  `{"default_homeserver": "matrix.example.com", "default_username": "alice"}`.
+  `default_username` (also the `DefaultUsername` registry value / macOS
+  preference) is a localpart or full Matrix ID; it prefills the password form
+  and is sent as a login hint to Matrix Authentication Service. A Matrix ID
+  typed into the homeserver field is sent as the hint too, and wins over the
+  provisioned one. Setting either value hides "Find a server".
 
 ### Code signing (optional)
 

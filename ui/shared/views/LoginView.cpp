@@ -45,7 +45,7 @@ constexpr const char* kBuiltinDefaultHomeserver = "matrix.org";
 LoginView::LoginView()
     : default_homeserver_(tesseract::provisioned_default_homeserver().value_or(
           kBuiltinDefaultHomeserver)),
-      provisioned_(tesseract::provisioned_default_homeserver().has_value())
+      provisioned_(tesseract::login_provisioned())
 {
     rebuild_tree();
 }
@@ -567,6 +567,8 @@ void LoginView::finish_password_init()
     username_field_->set_placeholder(tk::tr("@user:example.org"));
     username_field_->set_on_submit([this] { submit_password_(); });
     username_field_->set_visible(password_available_);
+    if (auto user_id = tesseract::provisioned_user_id())
+        username_field_->set_text(*user_id);
 
     password_field_->set_password(true);
     password_field_->set_on_submit([this] { submit_password_(); });
@@ -659,6 +661,17 @@ void LoginView::start_oauth_(bool register_account)
     if (hs_raw.empty())
         hs_raw = default_homeserver_; // empty field shows the placeholder default
 
+    // OAuth login hint (prefills the username on the server): a Matrix ID typed
+    // into the homeserver field wins over the provisioned one.
+    std::string user_id_hint;
+    if (!register_account)
+    {
+        if (hs_raw.size() > 1 && hs_raw.front() == '@' && hs_raw.find(':') != std::string::npos)
+            user_id_hint = hs_raw;
+        else if (auto user_id = tesseract::provisioned_user_id())
+            user_id_hint = *user_id;
+    }
+
     // Use the pre-resolved URL when available; extract server name from a
     // raw MXID so begin_oauth() doesn't receive "@user:server".
     std::string hs;
@@ -688,9 +701,9 @@ void LoginView::start_oauth_(bool register_account)
 
     auto* c = client_; // snapshot: set_client() may race with this worker
     worker_ = std::thread(
-        [this, hs, c, register_account]
+        [this, hs, c, register_account, user_id_hint]
         {
-            auto flow = c->begin_oauth(hs, register_account);
+            auto flow = c->begin_oauth(hs, register_account, user_id_hint);
             if (cancelled_.load())
                 return;
             bool        ok      = static_cast<bool>(flow);

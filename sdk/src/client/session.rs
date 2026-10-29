@@ -390,7 +390,12 @@ impl ClientFfi {
     // OAuth login
     // -----------------------------------------------------------------------
 
-    pub fn oauth_begin(&mut self, homeserver: &str, register_account: bool) -> OAuthBegin {
+    pub fn oauth_begin(
+        &mut self,
+        homeserver: &str,
+        register_account: bool,
+        user_id_hint: &str,
+    ) -> OAuthBegin {
         if let Some(prev) = self.oauth_flow.take() {
             oauth::cancel(&prev);
         }
@@ -417,7 +422,7 @@ impl ClientFfi {
 
         match self
             .rt
-            .block_on(oauth::begin(&hs, &path, register_account, &key))
+            .block_on(oauth::begin(&hs, &path, register_account, user_id_hint, &key))
         {
             Ok(begin) => {
                 let auth_url = begin.auth_url;

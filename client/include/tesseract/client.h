@@ -199,8 +199,11 @@ public:
 
     /// Begin OAuth login, or account registration when `register_account` is
     /// true (OIDC prompt=create). Returns the auth URL to open in a browser.
+    /// A full Matrix ID in `user_id_hint` asks the server to prefill the
+    /// username (ignored for registration or when malformed).
     OAuthFlow begin_oauth(const std::string& homeserver,
-                          bool register_account = false);
+                          bool register_account = false,
+                          const std::string& user_id_hint = {});
 
     /// Best-effort: does `homeserver` advertise OIDC registration support?
     /// Blocks the calling thread — invoke from a worker thread.

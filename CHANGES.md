@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- feat(login): a per-user `provisioning.json` can preset the homeserver and username, and a Matrix ID typed or provisioned prefills the sign-in page. Linux release build, ctest 3762/3762
 - feat(windows): the whole app follows Windows High Contrast themes, overriding the in-app theme and accent while it is on. Windows release build + ctest 3732/3732; user-verified live
 - fix(windows): the custom title bar follows High Contrast themes and uses the system caption font. Windows release build; user-verified live
 - feat(settings): a "Detect automatically" checkbox next to the profile timezone keeps it in sync with this computer's timezone. Linux release build, ctest 3757/3757

@@ -2396,11 +2396,13 @@ pub mod ffi {
 
         /// Begin the OAuth login (or, when `register_account` is true,
         /// registration via OIDC prompt=create) flow. Returns the auth URL to
-        /// open in a browser.
+        /// open in a browser. A non-empty `user_id_hint` (a full Matrix ID) is sent as
+        /// the MSC4198 login hint so the server can prefill the username.
         fn oauth_begin(
             self: &mut ClientFfi,
             homeserver: &str,
             register_account: bool,
+            user_id_hint: &str,
         ) -> OAuthBegin;
 
         /// Best-effort: does `homeserver` advertise OIDC registration support
