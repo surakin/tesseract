@@ -9,7 +9,9 @@ use matrix_sdk::{
     Room,
 };
 
-use super::members::{read_live_members, CallMember, LkFocus, MemberSource, Participant, SELECTION_MULTI_SFU};
+use super::members::{
+    read_live_members, senders_to_keep, CallMember, JoinCheck, LkFocus, MemberSource, Participant, SELECTION_MULTI_SFU,
+};
 use super::model::{
     transport_is_livekit, MemberContent, SlotContent, CALL_SLOT_ID, MEMBER_TYPE, SLOT_TYPE,
 };
@@ -205,26 +207,20 @@ pub async fn read_slot(room: &Room) -> Option<SlotContent> {
     None
 }
 
-/// The live MatrixRTC (sticky) members of `room`, excluding our own device.
-pub async fn read_mrtc_members(room: &Room, own_user: &UserId, own_device: &DeviceId) -> Vec<CallMember> {
+/// The live MatrixRTC (sticky) members of `room`, excluding our own device,
+/// whose senders pass `check`.
+pub async fn read_mrtc_members(
+    room: &Room,
+    own_user: &UserId,
+    own_device: &DeviceId,
+    check: JoinCheck,
+) -> Vec<CallMember> {
     let now = now_ms();
     let entries = live_entries(room);
     if entries.is_empty() {
         return Vec::new();
     }
-    let mut in_room: HashSet<String> = HashSet::new();
-    for e in &entries {
-        if in_room.contains(&e.sender) {
-            continue;
-        }
-        let joined = match UserId::parse(&e.sender) {
-            Ok(u) => matches!(room.get_member(&u).await, Ok(Some(m)) if *m.membership() == MembershipState::Join),
-            Err(_) => false,
-        };
-        if joined {
-            in_room.insert(e.sender.clone());
-        }
-    }
+    let in_room = senders_to_keep(room, entries.iter().map(|e| e.sender.clone()).collect(), check).await;
     let slot = read_slot(room).await;
     let encrypted = room.encryption_state().is_encrypted();
     let mut members: Vec<CallMember> =
@@ -239,10 +235,22 @@ pub async fn read_mrtc_members(room: &Room, own_user: &UserId, own_device: &Devi
     members
 }
 
-/// Legacy and MatrixRTC members together, excluding our own device.
+/// Legacy and MatrixRTC members together, excluding our own device, whose
+/// senders are joined to the room (the member list is fetched if it must be).
 pub async fn read_all_live_members(room: &Room, own_user: &UserId, own_device: &DeviceId) -> Vec<CallMember> {
-    let legacy = read_live_members(room, own_user, own_device).await;
-    let mrtc = read_mrtc_members(room, own_user, own_device).await;
+    read_all_live_members_checked(room, own_user, own_device, JoinCheck::Strict).await
+}
+
+/// [`read_all_live_members`] with the sender check of your choice; `Cached`
+/// never asks the homeserver.
+pub async fn read_all_live_members_checked(
+    room: &Room,
+    own_user: &UserId,
+    own_device: &DeviceId,
+    check: JoinCheck,
+) -> Vec<CallMember> {
+    let legacy = read_live_members(room, own_user, own_device, check).await;
+    let mrtc = read_mrtc_members(room, own_user, own_device, check).await;
     merge_members(legacy, mrtc)
 }
 

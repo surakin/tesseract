@@ -6,10 +6,13 @@
 //! members share the oldest member's SFU. This mirrors matrix-js-sdk's
 //! `CallMembership.getTransport()`.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 
 use matrix_sdk::ruma::{
-    events::call::member::{ActiveFocus, CallMemberEventContent, Focus},
+    events::{
+        call::member::{ActiveFocus, CallMemberEventContent, Focus},
+        room::member::MembershipState,
+    },
     DeviceId, MilliSecondsSinceUnixEpoch, UInt, UserId,
 };
 
@@ -66,6 +69,166 @@ impl CallMember {
     pub fn key(&self) -> (String, String) {
         (self.user_id.clone(), self.device_id.clone())
     }
+
+    /// What tells one session of a device from the next, for a device that
+    /// leaves and rejoins within its old membership's lifetime. A MatrixRTC
+    /// member has a fresh `member.id` per session. A legacy one has only its
+    /// `created_ts` (the state key stays the same per device): clients keep it
+    /// across refreshes and take a new one when they join, so a changed value
+    /// means a new session. Without a `created_ts` it is the event time, which
+    /// then also changes on a refresh: that costs a resent key, nothing more.
+    pub fn session_tag(&self) -> String {
+        match self.source {
+            MemberSource::MatrixRtc => self.member_id.clone(),
+            MemberSource::Legacy => u64::from(self.joined_at.0).to_string(),
+        }
+    }
+}
+
+/// How strictly the sender of a call member is checked against the room.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum JoinCheck {
+    /// The sender must be a joined member. The room's member list is fetched
+    /// first if it is not loaded yet; for who may receive a media key.
+    Strict,
+    /// Local store only, no request: a sender the store does not know is kept
+    /// and one known not to be joined is dropped; cheap enough for the room list.
+    Cached,
+}
+
+/// Whether a sender with this membership (`None`: not in the store) counts.
+pub fn sender_counts(membership: Option<&MembershipState>, check: JoinCheck) -> bool {
+    match (membership, check) {
+        (Some(m), _) => *m == MembershipState::Join,
+        (None, JoinCheck::Strict) => false,
+        (None, JoinCheck::Cached) => true,
+    }
+}
+
+/// The members whose sender is in `keep`: a kicked or banned user's call
+/// membership stays valid on its own until it expires, but is no call member.
+pub fn retain_senders(members: Vec<CallMember>, keep: &HashSet<String>) -> Vec<CallMember> {
+    members.into_iter().filter(|m| keep.contains(&m.user_id)).collect()
+}
+
+/// What looking a sender up in the room gave.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SenderLookup {
+    /// The room answered: the sender's membership, `None` if it has none.
+    Known(Option<MembershipState>),
+    /// The lookup failed (a members fetch that did not complete, a store error):
+    /// that says nothing about whether the sender is joined.
+    Unknown,
+}
+
+/// Whether the sender counts. An `Unknown` lookup repeats the verdict of the
+/// last pass (`previous`), so a request that failed once does not turn a joined
+/// member into a leaver; without one it is as unknown as `check` treats a
+/// sender the room does not know.
+pub fn judge_sender(lookup: &SenderLookup, previous: Option<bool>, check: JoinCheck) -> bool {
+    match lookup {
+        SenderLookup::Known(m) => sender_counts(m.as_ref(), check),
+        SenderLookup::Unknown => previous.unwrap_or_else(|| sender_counts(None, check)),
+    }
+}
+
+/// The verdict worth remembering for later passes: one the room gave, not one
+/// that only reflects what the local store happens not to know.
+pub fn lasting_verdict(lookup: &SenderLookup, check: JoinCheck) -> Option<bool> {
+    match (lookup, check) {
+        (SenderLookup::Known(Some(m)), _) => Some(*m == MembershipState::Join),
+        (SenderLookup::Known(None), JoinCheck::Strict) => Some(false),
+        _ => None,
+    }
+}
+
+/// The last verdict per (room, sender), bounded.
+#[derive(Default)]
+pub struct VerdictCache {
+    map: std::collections::HashMap<(String, String), bool>,
+}
+
+impl VerdictCache {
+    const CAP: usize = 2048;
+
+    pub fn get(&self, room: &str, sender: &str) -> Option<bool> {
+        self.map.get(&(room.to_owned(), sender.to_owned())).copied()
+    }
+
+    pub fn set(&mut self, room: &str, sender: &str, verdict: bool) {
+        if self.map.len() >= Self::CAP {
+            self.map.clear();
+        }
+        self.map.insert((room.to_owned(), sender.to_owned()), verdict);
+    }
+}
+
+fn verdicts() -> &'static std::sync::Mutex<VerdictCache> {
+    static VERDICTS: std::sync::OnceLock<std::sync::Mutex<VerdictCache>> = std::sync::OnceLock::new();
+    VERDICTS.get_or_init(Default::default)
+}
+
+/// Look `sender` up under `check`. A strict lookup that fails (the member
+/// list could not be fetched) falls back on what the store has; `fetch_ok` goes
+/// false at the first failed fetch, so the rest of a pass does not repeat it.
+async fn lookup_sender(
+    room: &matrix_sdk::Room,
+    sender: &UserId,
+    check: JoinCheck,
+    fetch_ok: &mut bool,
+) -> SenderLookup {
+    let membership = |m: Option<matrix_sdk::room::RoomMember>| m.map(|m| m.membership().clone());
+    match check {
+        JoinCheck::Cached => match room.get_member_no_sync(sender).await {
+            Ok(m) => SenderLookup::Known(membership(m)),
+            Err(_) => SenderLookup::Unknown,
+        },
+        JoinCheck::Strict => {
+            if *fetch_ok {
+                match room.get_member(sender).await {
+                    Ok(m) => return SenderLookup::Known(membership(m)),
+                    Err(e) => {
+                        *fetch_ok = false;
+                        tracing::debug!("rtc: member list fetch failed ({e}); using the local store");
+                    }
+                }
+            }
+            match room.get_member_no_sync(sender).await {
+                Ok(Some(m)) => SenderLookup::Known(membership(Some(m))),
+                _ => SenderLookup::Unknown,
+            }
+        }
+    }
+}
+
+/// Which of `senders` count as call members of `room` under `check`.
+pub async fn senders_to_keep(
+    room: &matrix_sdk::Room,
+    senders: Vec<String>,
+    check: JoinCheck,
+) -> HashSet<String> {
+    let mut keep: HashSet<String> = HashSet::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    let room_id = room.room_id().to_string();
+    let mut fetch_ok = true;
+    for sender in senders {
+        if !seen.insert(sender.clone()) {
+            continue;
+        }
+        let Ok(user) = UserId::parse(&sender) else { continue };
+        let lookup = lookup_sender(room, &user, check, &mut fetch_ok).await;
+        let previous = verdicts().lock().unwrap_or_else(|p| p.into_inner()).get(&room_id, &sender);
+        let counts = judge_sender(&lookup, previous, check);
+        if let Some(verdict) = lasting_verdict(&lookup, check) {
+            verdicts().lock().unwrap_or_else(|p| p.into_inner()).set(&room_id, &sender, verdict);
+        }
+        if counts {
+            keep.insert(sender);
+        } else {
+            tracing::debug!("rtc: {sender} is not a call member of {room_id}: {lookup:?} (last pass: {previous:?})");
+        }
+    }
+    keep
 }
 
 /// Extract the live members from one `org.matrix.msc3401.call.member` event.
@@ -309,11 +472,13 @@ pub fn call_id_of(content: &serde_json::Value) -> String {
         .to_owned()
 }
 
-/// Every live call member of `room` (legacy format), optionally leaving out
-/// one user+device, read from the raw state events.
+/// Every live call member of `room` (legacy format) whose sender passes
+/// `check`, optionally leaving out one user+device, read from the raw state
+/// events. The one place every legacy read goes through.
 pub async fn read_call_members(
     room: &matrix_sdk::Room,
     exclude: Option<(&UserId, &DeviceId)>,
+    check: JoinCheck,
 ) -> Vec<CallMember> {
     use matrix_sdk::deserialized_responses::RawAnySyncOrStrippedState;
     use matrix_sdk::ruma::events::StateEventType;
@@ -347,7 +512,11 @@ pub async fn read_call_members(
             now_ms,
         ));
     }
-    members
+    if members.is_empty() {
+        return members;
+    }
+    let keep = senders_to_keep(room, members.iter().map(|m| m.user_id.clone()).collect(), check).await;
+    retain_senders(members, &keep)
 }
 
 /// Read every live remote call member of `room` from the local state store.
@@ -355,8 +524,9 @@ pub async fn read_live_members(
     room: &matrix_sdk::Room,
     own_user: &UserId,
     own_device: &DeviceId,
+    check: JoinCheck,
 ) -> Vec<CallMember> {
-    read_call_members(room, Some((own_user, own_device))).await
+    read_call_members(room, Some((own_user, own_device)), check).await
 }
 
 #[cfg(test)]
@@ -823,5 +993,98 @@ mod tests {
         );
         assert_eq!(call_id_of(&serde_json::json!({"memberships": [{"application": "m.call"}]})), "");
         assert_eq!(call_id_of(&serde_json::json!({})), "");
+    }
+
+    // ── Room membership of the sender ──────────────────────────────────────────
+
+    #[test]
+    fn only_joined_senders_count_when_strict() {
+        assert!(sender_counts(Some(&MembershipState::Join), JoinCheck::Strict));
+        for gone in [MembershipState::Leave, MembershipState::Ban, MembershipState::Invite] {
+            assert!(!sender_counts(Some(&gone), JoinCheck::Strict), "{gone:?}");
+            assert!(!sender_counts(Some(&gone), JoinCheck::Cached), "{gone:?}");
+        }
+        assert!(!sender_counts(None, JoinCheck::Strict), "an unknown sender gets no key");
+    }
+
+    #[test]
+    fn the_cached_check_keeps_senders_the_store_does_not_know() {
+        assert!(sender_counts(None, JoinCheck::Cached));
+    }
+
+    #[test]
+    fn a_failed_lookup_repeats_the_last_verdict() {
+        let unknown = SenderLookup::Unknown;
+        assert!(judge_sender(&unknown, Some(true), JoinCheck::Strict), "joined last time: still joined");
+        assert!(!judge_sender(&unknown, Some(false), JoinCheck::Strict));
+        assert!(!judge_sender(&unknown, None, JoinCheck::Strict), "no earlier verdict: fail closed");
+        assert!(judge_sender(&unknown, None, JoinCheck::Cached), "the cheap read keeps what it cannot tell");
+    }
+
+    #[test]
+    fn an_answer_from_the_room_beats_the_last_verdict() {
+        let left = SenderLookup::Known(Some(MembershipState::Leave));
+        assert!(!judge_sender(&left, Some(true), JoinCheck::Strict), "a kicked member is out at once");
+        let joined = SenderLookup::Known(Some(MembershipState::Join));
+        assert!(judge_sender(&joined, Some(false), JoinCheck::Strict));
+        let nobody = SenderLookup::Known(None);
+        assert!(!judge_sender(&nobody, Some(true), JoinCheck::Strict));
+    }
+
+    #[test]
+    fn only_answers_from_the_room_are_remembered() {
+        let join = SenderLookup::Known(Some(MembershipState::Join));
+        let ban = SenderLookup::Known(Some(MembershipState::Ban));
+        assert_eq!(lasting_verdict(&join, JoinCheck::Strict), Some(true));
+        assert_eq!(lasting_verdict(&ban, JoinCheck::Cached), Some(false));
+        assert_eq!(lasting_verdict(&SenderLookup::Known(None), JoinCheck::Strict), Some(false));
+        assert_eq!(lasting_verdict(&SenderLookup::Known(None), JoinCheck::Cached), None, "the store just does not know");
+        assert_eq!(lasting_verdict(&SenderLookup::Unknown, JoinCheck::Strict), None);
+    }
+
+    #[test]
+    fn the_verdict_cache_is_per_room_and_bounded() {
+        let mut c = VerdictCache::default();
+        c.set("!r1:x", "@a:x", true);
+        c.set("!r2:x", "@a:x", false);
+        assert_eq!(c.get("!r1:x", "@a:x"), Some(true));
+        assert_eq!(c.get("!r2:x", "@a:x"), Some(false));
+        assert_eq!(c.get("!r1:x", "@b:x"), None);
+        for i in 0..(VerdictCache::CAP * 2) {
+            c.set("!r:x", &format!("@u{i}:x"), true);
+        }
+        assert!(c.map.len() <= VerdictCache::CAP);
+    }
+
+    #[test]
+    fn a_kicked_users_live_membership_is_dropped() {
+        let mut all = one(content("D1", "multi_sfu", "https://s", None), "k1", "@kicked:b.org", 1);
+        all.extend(one(content("D2", "multi_sfu", "https://s", None), "k2", "@stays:b.org", 2));
+        all.extend(one(content("D3", "multi_sfu", "https://s", None), "k3", "@stays:b.org", 3));
+        let keep: HashSet<String> = ["@stays:b.org".to_owned()].into();
+        let left = retain_senders(all, &keep);
+        assert_eq!(left.len(), 2);
+        assert!(left.iter().all(|m| m.user_id == "@stays:b.org"));
+        assert!(retain_senders(left, &HashSet::new()).is_empty());
+    }
+
+    // ── Session tag ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn a_legacy_session_is_told_apart_by_its_creation_time() {
+        let first = one(content("D1", "multi_sfu", "https://s", Some(ts(10))), "same", "@b:b.org", 1);
+        let again = one(content("D1", "multi_sfu", "https://s", Some(ts(10))), "same", "@b:b.org", 99);
+        let restarted = one(content("D1", "multi_sfu", "https://s", Some(ts(500))), "same", "@b:b.org", 600);
+        assert_eq!(first[0].key(), restarted[0].key(), "same user and device");
+        assert_eq!(first[0].session_tag(), again[0].session_tag(), "a refresh keeps created_ts");
+        assert_ne!(first[0].session_tag(), restarted[0].session_tag());
+    }
+
+    #[test]
+    fn a_matrixrtc_session_is_its_member_id() {
+        let mut m = one(content("D1", "multi_sfu", "https://s", None), "k", "@b:b.org", 1).remove(0);
+        m.source = MemberSource::MatrixRtc;
+        m.member_id = "mid-1".into();
+        assert_eq!(m.session_tag(), "mid-1");
     }
 }

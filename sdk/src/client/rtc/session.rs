@@ -16,17 +16,17 @@ use tokio::task::AbortHandle;
 use tracing::{info, warn};
 
 use super::{
-    e2ee::{broadcast_key_to_members, ParkedKey, ParkedKeys},
-    key_rotation::{KeyRotator, RotationAction},
+    e2ee::{recheck_device_id, ClientKeySender, KeyDelivery, ParkedKey, ParkedKeys, RateLimiter, Recheck},
+    key_rotation::{ActivationGate, KeyRotator, RotationAction, Sessions},
     livekit_room::{LiveKitRoom, MemberTransports, PrimaryEnded, SharedKeys},
-    members::{desired_sfus, transport_map, LkFocus},
+    members::{desired_sfus, transport_map, JoinCheck, LkFocus},
     mrtc_membership::{
         can_send_member_event, can_send_slot, encryption_flipped_mid_call, leave_reason_now,
         new_member_id as new_mrtc_member_id, open_slot as open_mrtc_slot, send_invite,
         should_open_slot, should_write_member_events, slot_matches_room, withdraw_invite,
         JoinParams, LeaveCode, MrtcMembership,
     },
-    slots::{hashed_identities, read_all_live_members, read_slot, stale_own_members},
+    slots::{hashed_identities, read_all_live_members, read_all_live_members_checked, read_slot, stale_own_members},
     sfu_set::{SfuContext, SfuSet},
     signaling::{
         self, send_msc3401_call_open, send_msc3401_member_join, send_msc3401_member_leave,
@@ -47,6 +47,12 @@ const DELAYED_LEAVE_HEARTBEAT: Duration = Duration::from_secs(5);
 const MEMBERSHIP_REFRESH: Duration = Duration::from_secs(3600);
 /// Safety net in case a member-change sync event is missed.
 const RECONCILE_INTERVAL: Duration = Duration::from_secs(30);
+/// The member list of a room that was never fully loaded is fetched when a call
+/// starts; the call does not wait longer than this for it.
+const INITIAL_MEMBERS_TIMEOUT: Duration = Duration::from_secs(8);
+/// While a new key waits to be put to use, sends that end are looked at at most
+/// this often.
+const GATE_RECHECK_COALESCE: Duration = Duration::from_millis(250);
 
 fn next_session_id() -> u64 {
     SESSION_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
@@ -94,6 +100,9 @@ pub struct RtcSession {
     ),
     /// Removes the call-member state handler when the session is dropped.
     _member_guard: matrix_sdk::event_handler::EventHandlerDropGuard,
+    /// Removes the room-membership handler (a kick, ban or leave wakes the
+    /// reconcile loop) when the session is dropped.
+    _room_member_guard: matrix_sdk::event_handler::EventHandlerDropGuard,
 }
 
 impl RtcSession {
@@ -408,7 +417,7 @@ pub async fn start_call(
     audio_only: bool,
 ) -> anyhow::Result<RtcSession> {
     use matrix_sdk::ruma::{
-        events::{call::member::CallMemberEventContent, SyncStateEvent},
+        events::{call::member::CallMemberEventContent, room::member::SyncRoomMemberEvent, SyncStateEvent},
         MilliSecondsSinceUnixEpoch,
     };
 
@@ -447,7 +456,21 @@ pub async fn start_call(
     let lk_alias = livekit_room_alias(room_id, slot_id);
     info!("rtc: publishing on local SFU {local_service_url}");
 
-    let initial_members = read_all_live_members(&room, uid, &own_device).await;
+    // A big room that was never fully loaded would fetch its member list here:
+    // the call does not wait for it past the timeout, and goes on with what the
+    // local store knows (the reconcile loop corrects it with the full list).
+    let initial_members = match tokio::time::timeout(
+        INITIAL_MEMBERS_TIMEOUT,
+        read_all_live_members(&room, uid, &own_device),
+    )
+    .await
+    {
+        Ok(members) => members,
+        Err(_) => {
+            warn!("rtc: the room's member list is slow to load; starting with the members already known");
+            read_all_live_members_checked(&room, uid, &own_device, JoinCheck::Cached).await
+        }
+    };
     info!(
         "rtc: {} other call member(s) already joined: {:?}",
         initial_members.len(),
@@ -521,14 +544,17 @@ pub async fn start_call(
     // Keys from senders whose membership event we have not seen yet wait here
     // (MSC4143) until `reconcile_loop` sees them join.
     let parked: Arc<PLMutex<ParkedKeys>> = Arc::new(PLMutex::new(ParkedKeys::new()));
-    let key_ctx = KeyCtx {
-        shared: shared.clone(),
-        holder: Arc::clone(&sfus_holder),
-        room: room.clone(),
-        parked: Arc::clone(&parked),
-        own_user: uid.to_owned(),
-        own_device: own_device.clone(),
-    };
+    // Wakes the reconcile loop: a member change, or a parked key to judge again.
+    let (member_tx, member_rx) = tokio::sync::mpsc::channel::<()>(4);
+    let key_ctx = KeyCtx::new(
+        shared.clone(),
+        Arc::clone(&sfus_holder),
+        room.clone(),
+        Arc::clone(&parked),
+        uid.to_owned(),
+        own_device.clone(),
+        member_tx.clone(),
+    );
     use crate::client::rtc::signaling::{MediaKeyStableEventContent, MediaKeyUnstableEventContent};
     let ctx_a = key_ctx.clone();
     let unstable_handle = client.add_event_handler(
@@ -537,7 +563,7 @@ pub async fn start_call(
             handle_key_event(ctx_a.clone(), ev.sender, ev.content.inner, info)
         },
     );
-    let ctx_b = key_ctx;
+    let ctx_b = key_ctx.clone();
     let stable_handle = client.add_event_handler(
         move |ev: matrix_sdk::ruma::events::ToDeviceEvent<MediaKeyStableEventContent>,
               info: Option<matrix_sdk::deserialized_responses::EncryptionInfo>| {
@@ -792,26 +818,26 @@ pub async fn start_call(
 
     // ── Our frame key ─────────────────────────────────────────────────────
     let e2ee = Arc::new(PLMutex::new(KeyRotator::new(
-        initial_members.iter().map(|m| m.key()).collect(),
+        initial_members.iter().map(|m| (m.key(), m.session_tag())).collect(),
         Instant::now(),
     )));
+    // Keys go out from a worker of their own, never from the call's setup or
+    // from the reconcile loop.
+    let delivery = KeyDelivery::new();
     if use_e2ee {
+        announced.register_task(delivery.spawn(Arc::new(ClientKeySender::new(
+            client.clone(),
+            room_id.to_owned(),
+            lk_identity.clone(),
+            mrtc.as_ref().map(|m| m.member_id().to_owned()),
+        ))));
         let (idx, key_b64, raw) = e2ee.lock().initial();
         // Set our own key first so the FrameCryptor can start encrypting
         // before we broadcast (avoids sending the key before frames are ready).
         sfus.primary.set_own_frame_key(&raw, idx as i32);
         let recipients: Vec<(String, String)> =
             initial_members.iter().map(|m| m.key()).collect();
-        broadcast_key_to_members(
-            client,
-            &recipients,
-            room_id,
-            &lk_identity,
-            &key_b64,
-            idx,
-            mrtc.as_ref().map(|m| m.member_id()),
-        )
-        .await;
+        delivery.enqueue(&recipients, idx, &key_b64);
     }
 
     // ── Background tasks ──────────────────────────────────────────────────
@@ -826,7 +852,6 @@ pub async fn start_call(
         Arc::clone(&announced),
     ));
 
-    let (member_tx, member_rx) = tokio::sync::mpsc::channel::<()>(4);
     let member_tx_h = member_tx.clone();
     let member_handle = room.add_event_handler(move |_ev: SyncStateEvent<signaling::CallMemberRawEventContent>| {
         let tx = member_tx_h.clone();
@@ -835,6 +860,23 @@ pub async fn start_call(
         }
     });
     let member_guard = client.event_handler_drop_guard(member_handle);
+    // A kick, ban or leave is an m.room.member change, not a call.member one: wake
+    // the loop on those too, so the user stops receiving keys and the leave rotation
+    // happens at once instead of at the next 30 s pass. A profile change does not.
+    let member_tx_r = member_tx.clone();
+    let room_member_handle = room.add_event_handler(move |ev: SyncRoomMemberEvent| {
+        let tx = member_tx_r.clone();
+        async move {
+            let prev = match &ev {
+                SyncRoomMemberEvent::Original(o) => o.prev_content().map(|c| c.membership.clone()),
+                SyncRoomMemberEvent::Redacted(_) => None,
+            };
+            if membership_event_matters(ev.membership(), prev.as_ref()) {
+                let _ = tx.try_send(());
+            }
+        }
+    });
+    let room_member_guard = client.event_handler_drop_guard(room_member_handle);
     // MatrixRTC members arrive as sticky events: wake the reconcile loop on those too.
     {
         let mut changes = room.sticky_events().subscribe();
@@ -865,12 +907,11 @@ pub async fn start_call(
         join_ts,
         Arc::clone(&sfus),
         Arc::clone(&e2ee),
+        delivery,
         use_e2ee,
-        room_id.to_owned(),
-        lk_identity.clone(),
         initial_members.iter().map(|m| m.key()).collect(),
         member_rx,
-        parked,
+        key_ctx,
         mrtc.clone(),
         Arc::clone(&announced),
         session_id,
@@ -900,7 +941,18 @@ pub async fn start_call(
         runtime: tokio::runtime::Handle::current(),
         _enc_key_guards: enc_key_guards,
         _member_guard: member_guard,
+        _room_member_guard: room_member_guard,
     })
+}
+
+/// Whether an `m.room.member` event can change who is a call member: anything
+/// but a join that stays a join (a profile change).
+fn membership_event_matters(
+    now: &matrix_sdk::ruma::events::room::member::MembershipState,
+    before: Option<&matrix_sdk::ruma::events::room::member::MembershipState>,
+) -> bool {
+    use matrix_sdk::ruma::events::room::member::MembershipState::Join;
+    !(*now == Join && before == Some(&Join))
 }
 
 /// How long `end_call` waits for the memberships to be taken back before it
@@ -1059,37 +1111,188 @@ fn evaluate_key_event(
     Ok(AcceptedKey { device: device.to_owned(), index, key_b64 })
 }
 
-/// Whether a frame-key to-device event may be used for this call: the content
-/// checks, the device-trust check, and the sender must be joined to the room.
-/// Anything else could inject keys for other calls or from outsiders.
-async fn accept_key_event(
+/// Why a frame-key event was not accepted.
+#[derive(Debug, PartialEq, Eq)]
+enum KeyRejection {
+    /// It never will be.
+    Final(String),
+    /// The sending device is not known yet (or not far enough along to be
+    /// judged): worth judging again once it is.
+    Retry(String),
+}
+
+/// Whether a key failed because its sending device is just not known (yet),
+/// as opposed to being known and wrong. `sender_device` is as in
+/// [`check_key_event_fields`]; `state` is the event's verification state.
+fn device_not_known_yet(
+    sender_device: Option<Option<&str>>,
+    state: Option<&matrix_sdk::deserialized_responses::VerificationState>,
+) -> bool {
+    use matrix_sdk::deserialized_responses::{DeviceLinkProblem, VerificationLevel, VerificationState};
+    matches!(sender_device, Some(None))
+        || matches!(
+            state,
+            Some(VerificationState::Unverified(VerificationLevel::None(DeviceLinkProblem::MissingDevice)))
+        )
+}
+
+/// The verdict on a frame-key event from what the event and the room say, with
+/// no I/O: the content checks and the device-trust check, and whether a
+/// failure can still clear up. `info` is the sending device
+/// and the event's verification state, `None` when it arrived unencrypted.
+fn judge_key_event(
+    expected_room: &str,
+    c: &crate::client::rtc::model::MediaKeyContent,
+    sender: &str,
+    info: Option<(Option<&str>, &matrix_sdk::deserialized_responses::VerificationState)>,
+    members: &[crate::client::rtc::members::CallMember],
+    exclude_insecure: bool,
+) -> Result<AcceptedKey, KeyRejection> {
+    let not_yet = device_not_known_yet(info.map(|(d, _)| d), info.map(|(_, s)| s));
+    let reject = |why: String| if not_yet { KeyRejection::Retry(why) } else { KeyRejection::Final(why) };
+    let accepted =
+        evaluate_key_event(expected_room, c, sender, info.map(|(d, _)| d), members).map_err(reject)?;
+    if let Some((_, state)) = info {
+        check_device_trusted(state, exclude_insecure).map_err(reject)?;
+    }
+    Ok(accepted)
+}
+
+/// [`judge_key_event`] for a decrypted to-device event.
+fn accept_key_event(
     room: &Room,
     sender: &matrix_sdk::ruma::UserId,
     content: &crate::client::rtc::model::MediaKeyContent,
     info: Option<&matrix_sdk::deserialized_responses::EncryptionInfo>,
     members: &[crate::client::rtc::members::CallMember],
-) -> Result<AcceptedKey, String> {
-    use matrix_sdk::ruma::events::room::member::MembershipState;
-
-    let accepted = evaluate_key_event(
+) -> Result<AcceptedKey, KeyRejection> {
+    judge_key_event(
         room.room_id().as_str(),
         content,
         sender.as_str(),
-        info.map(|i| i.sender_device.as_deref().map(|d| d.as_str())),
+        info.map(|i| (i.sender_device.as_deref().map(|d| d.as_str()), &i.verification_state)),
         members,
-    )?;
-    if let Some(i) = info {
-        check_device_trusted(
-            &i.verification_state,
-            crate::client::identity::exclude_insecure_devices(),
-        )?;
+        crate::client::identity::exclude_insecure_devices(),
+    )
+}
+
+/// The longest base64 key we look at: a 32-byte key is 44 characters.
+const MAX_KEY_B64_LEN: usize = 256;
+/// The longest `member_id` we look at (the longest real one is a UUID).
+const MAX_MEMBER_ID_LEN: usize = 512;
+
+/// The checks a key event must pass before anything is read from the room:
+/// encrypted, for this room, and of a sane size. Anyone who can message us
+/// can send events, so nothing here may cost more than a comparison.
+fn cheap_key_checks(
+    expected_room: &str,
+    content: &crate::client::rtc::model::MediaKeyContent,
+    encrypted: bool,
+) -> Result<(), String> {
+    if !encrypted {
+        return Err("sent unencrypted".to_owned());
     }
-    match room.get_member(sender).await {
-        Ok(Some(m)) if *m.membership() == MembershipState::Join => Ok(accepted),
-        Ok(_) => Err("sender is not joined to the room".to_owned()),
-        Err(e) => Err(format!("could not look up the sender's membership: {e}")),
+    if content.room_id != expected_room {
+        return Err(format!("for another room ({})", content.room_id));
+    }
+    let (_, key_b64) = content.media_key_parts().ok_or_else(|| "carries no key".to_owned())?;
+    if key_b64.len() > MAX_KEY_B64_LEN {
+        return Err(format!("key is {} characters long", key_b64.len()));
+    }
+    if content.member_id.as_ref().is_some_and(|id| id.len() > MAX_MEMBER_ID_LEN) {
+        return Err("member id is too long".to_owned());
+    }
+    Ok(())
+}
+
+/// Whether the sender of a key is joined to the room.
+#[derive(Debug, PartialEq, Eq)]
+enum SenderJoin {
+    Joined,
+    NotJoined,
+    /// The lookup failed: nothing is known about the sender.
+    Unknown(String),
+}
+
+/// The verdict on a member lookup: only a definite answer rules a sender out.
+fn classify_sender<E: std::fmt::Display>(
+    found: Result<Option<matrix_sdk::ruma::events::room::member::MembershipState>, E>,
+) -> SenderJoin {
+    use matrix_sdk::ruma::events::room::member::MembershipState;
+    match found {
+        Ok(Some(MembershipState::Join)) => SenderJoin::Joined,
+        Ok(_) => SenderJoin::NotJoined,
+        Err(e) => SenderJoin::Unknown(format!("could not look up the sender's membership: {e}")),
     }
 }
+
+/// The sender must be joined to the room: anything else could inject keys
+/// from outsiders.
+async fn sender_is_joined(room: &Room, sender: &matrix_sdk::ruma::UserId) -> SenderJoin {
+    classify_sender(room.get_member(sender).await.map(|m| m.map(|m| m.membership().clone())))
+}
+
+/// The verification state of a device we now know, the way the crypto layer
+/// states it for a decrypted event.
+fn verification_state_for_device(
+    verified: bool,
+    cross_signed_by_owner: bool,
+    identity_has_violation: bool,
+) -> matrix_sdk::deserialized_responses::VerificationState {
+    use matrix_sdk::deserialized_responses::{VerificationLevel, VerificationState};
+    if verified {
+        VerificationState::Verified
+    } else if cross_signed_by_owner {
+        VerificationState::Unverified(if identity_has_violation {
+            VerificationLevel::VerificationViolation
+        } else {
+            VerificationLevel::UnverifiedIdentity
+        })
+    } else {
+        VerificationState::Unverified(VerificationLevel::UnsignedDevice)
+    }
+}
+
+/// `info` as it would read now: the sending device, found by the Olm key the
+/// event came from, and its trust as the crypto store has it. `None` while
+/// the device is still not known.
+async fn refreshed_encryption_info(
+    client: &matrix_sdk::Client,
+    info: &matrix_sdk::deserialized_responses::EncryptionInfo,
+) -> Option<matrix_sdk::deserialized_responses::EncryptionInfo> {
+    use matrix_sdk::deserialized_responses::AlgorithmInfo;
+    let AlgorithmInfo::OlmV1Curve25519AesSha2 { curve25519_public_key_base64: curve } = &info.algorithm_info
+    else {
+        return None;
+    };
+    let devices = client.encryption().get_user_devices(&info.sender).await.ok()?;
+    let device = devices
+        .devices()
+        .find(|d| d.curve25519_key().is_some_and(|k| k.to_base64() == *curve))?;
+    let violation = client
+        .encryption()
+        .get_user_identity(&info.sender)
+        .await
+        .ok()
+        .flatten()
+        .is_some_and(|i| i.has_verification_violation());
+    Some(matrix_sdk::deserialized_responses::EncryptionInfo {
+        sender_device: Some(device.device_id().to_owned()),
+        verification_state: verification_state_for_device(
+            device.is_verified(),
+            device.is_cross_signed_by_owner(),
+            violation,
+        ),
+        ..info.clone()
+    })
+}
+
+/// Most one log line per sender and this long, for events we ignore or park.
+const IGNORED_KEY_WARN_INTERVAL: Duration = Duration::from_secs(10);
+/// A sender whose unknown device we ask the homeserver about at most this often.
+const DEVICE_QUERY_INTERVAL: Duration = Duration::from_secs(30);
+/// Senders remembered by the two limiters above.
+const LIMITER_SENDERS: usize = 256;
 
 /// Everything a key-event handler needs; cloned per event.
 #[derive(Clone)]
@@ -1100,6 +1303,142 @@ struct KeyCtx {
     parked: Arc<PLMutex<ParkedKeys>>,
     own_user: matrix_sdk::ruma::OwnedUserId,
     own_device: matrix_sdk::ruma::OwnedDeviceId,
+    /// Wakes the reconcile loop, which judges parked keys again.
+    wake: tokio::sync::mpsc::Sender<()>,
+    ignored_warns: Arc<PLMutex<RateLimiter>>,
+    parked_notes: Arc<PLMutex<RateLimiter>>,
+    device_queries: Arc<PLMutex<RateLimiter>>,
+}
+
+impl KeyCtx {
+    fn new(
+        shared: SharedKeys,
+        holder: Arc<PLMutex<Option<Arc<SfuSet>>>>,
+        room: Room,
+        parked: Arc<PLMutex<ParkedKeys>>,
+        own_user: matrix_sdk::ruma::OwnedUserId,
+        own_device: matrix_sdk::ruma::OwnedDeviceId,
+        wake: tokio::sync::mpsc::Sender<()>,
+    ) -> Self {
+        Self {
+            shared,
+            holder,
+            room,
+            parked,
+            own_user,
+            own_device,
+            wake,
+            ignored_warns: Arc::new(PLMutex::new(RateLimiter::new(IGNORED_KEY_WARN_INTERVAL, LIMITER_SENDERS))),
+            parked_notes: Arc::new(PLMutex::new(RateLimiter::new(IGNORED_KEY_WARN_INTERVAL, LIMITER_SENDERS))),
+            device_queries: Arc::new(PLMutex::new(RateLimiter::new(DEVICE_QUERY_INTERVAL, LIMITER_SENDERS))),
+        }
+    }
+
+    /// Say why a key event was ignored, once per sender per interval.
+    fn warn_ignored(&self, sender: &str, why: &str) {
+        if self.ignored_warns.lock().allow(sender, Instant::now()) {
+            warn!("e2ee: ignoring key event from {sender}: {why}");
+        }
+    }
+
+    /// Whether to log that a key from `sender` was parked: once per sender per
+    /// interval, since a member can send these as fast as it likes.
+    fn note_parked(&self, sender: &str) -> bool {
+        self.parked_notes.lock().allow(sender, Instant::now())
+    }
+
+    /// Ask the homeserver for the devices of `sender` (once in a while), then
+    /// have the parked keys judged again.
+    fn query_devices_of(&self, sender: &matrix_sdk::ruma::UserId) {
+        if !self.device_queries.lock().allow(sender.as_str(), Instant::now()) {
+            return;
+        }
+        let client = self.room.client();
+        let sender = sender.to_owned();
+        let wake = self.wake.clone();
+        tokio::spawn(async move {
+            if let Err(e) = client.encryption().request_user_identity(&sender).await {
+                warn!("e2ee: could not query the devices of {sender}: {e}");
+            }
+            let _ = wake.try_send(());
+        });
+    }
+
+    /// A key that passed the checks: use it for its member, or park it until
+    /// that member's membership shows up.
+    fn apply_or_park(
+        &self,
+        sender: &str,
+        accepted: AcceptedKey,
+        members: &[crate::client::rtc::members::CallMember],
+    ) {
+        let index = accepted.index as i32;
+        let key_b64_len = accepted.key_b64.len();
+        let raw_key = match Base64::decode_vec(&accepted.key_b64) {
+            Ok(k) if k.is_empty() => {
+                warn!("e2ee: peer key from {sender} index={index} decoded to empty bytes — dropping");
+                return;
+            }
+            Ok(k) => k,
+            Err(e) => {
+                warn!("e2ee: bad base64 in peer key from {sender} index={index} key_b64_len={key_b64_len}: {e}");
+                return;
+            }
+        };
+        let device = accepted.device.as_str();
+        // Same reason as in the reconcile loop: resolve hashed identities first.
+        self.shared.identities().replace(hashed_identities(members));
+        let keys: Vec<(String, String)> = members.iter().map(|m| m.key()).collect();
+        if !is_live_member(&keys, sender, device) {
+            if self.note_parked(sender) {
+                info!("e2ee: parking key from {sender}/{device}: no live membership yet");
+            }
+            self.parked.lock().park(
+                ParkedKey {
+                    user_id: sender.to_owned(),
+                    device_id: device.to_owned(),
+                    index,
+                    raw_key,
+                    recheck: None,
+                },
+                Instant::now(),
+            );
+            return;
+        }
+        let set = self.holder.lock().clone();
+        match set {
+            Some(set) => set.apply_key(sender, device, index, raw_key),
+            None => self.shared.store(sender, device, index, raw_key),
+        }
+    }
+
+    /// Keep a key whose sending device is not known yet, to judge it again at
+    /// the next reconcile pass, and ask the homeserver for the sender's devices.
+    fn park_for_recheck(
+        &self,
+        sender: &matrix_sdk::ruma::UserId,
+        content: crate::client::rtc::model::MediaKeyContent,
+        info: matrix_sdk::deserialized_responses::EncryptionInfo,
+        at: Instant,
+    ) {
+        use matrix_sdk::deserialized_responses::AlgorithmInfo;
+        let AlgorithmInfo::OlmV1Curve25519AesSha2 { curve25519_public_key_base64: curve } = &info.algorithm_info
+        else {
+            self.warn_ignored(sender.as_str(), "sender device is unknown and cannot be looked up");
+            return;
+        };
+        if self.note_parked(sender.as_str()) {
+            info!("e2ee: parking key from {sender}: sending device not known yet");
+        }
+        let key = ParkedKey {
+            user_id: sender.to_string(),
+            device_id: recheck_device_id(curve),
+            index: 0,
+            raw_key: Vec::new(),
+            recheck: Some(Recheck { content, info }),
+        };
+        self.parked.lock().park(key, at);
+    }
 }
 
 async fn handle_key_event(
@@ -1109,43 +1448,80 @@ async fn handle_key_event(
     info: Option<matrix_sdk::deserialized_responses::EncryptionInfo>,
 ) {
     let sender = sender_id.to_string();
-    let members = read_all_live_members(&ctx.room, &ctx.own_user, &ctx.own_device).await;
-    let accepted = match accept_key_event(&ctx.room, &sender_id, &content, info.as_ref(), &members).await {
-        Ok(a) => a,
-        Err(why) => {
-            warn!("e2ee: ignoring key event from {sender}: {why}");
-            return;
-        }
-    };
-    let index = accepted.index as i32;
-    let key_b64_len = accepted.key_b64.len();
-    let raw_key = match Base64::decode_vec(&accepted.key_b64) {
-        Ok(k) if k.is_empty() => {
-            warn!("e2ee: peer key from {sender} index={index} decoded to empty bytes — dropping");
-            return;
-        }
-        Ok(k) => k,
-        Err(e) => {
-            warn!("e2ee: bad base64 in peer key from {sender} index={index} key_b64_len={key_b64_len}: {e}");
-            return;
-        }
-    };
-    let device = accepted.device.as_str();
-    // Same reason as in the reconcile loop: resolve hashed identities first.
-    ctx.shared.identities().replace(hashed_identities(&members));
-    let keys: Vec<(String, String)> = members.iter().map(|m| m.key()).collect();
-    if !is_live_member(&keys, &sender, device) {
-        info!("e2ee: parking key from {sender}/{device}: no live membership yet");
-        ctx.parked.lock().park(
-            ParkedKey { user_id: sender, device_id: device.to_owned(), index, raw_key },
-            Instant::now(),
-        );
+    // Cheapest first: anyone may send us this event, so nothing is read from
+    // the room until the event has earned it.
+    if let Err(why) = cheap_key_checks(ctx.room.room_id().as_str(), &content, info.is_some()) {
+        ctx.warn_ignored(&sender, &why);
         return;
     }
-    let set = ctx.holder.lock().clone();
-    match set {
-        Some(set) => set.apply_key(&sender, device, index, raw_key),
-        None => ctx.shared.store(&sender, device, index, raw_key),
+    match sender_is_joined(&ctx.room, &sender_id).await {
+        SenderJoin::Joined => {}
+        SenderJoin::NotJoined => {
+            ctx.warn_ignored(&sender, "sender is not joined to the room");
+            return;
+        }
+        SenderJoin::Unknown(why) => {
+            ctx.warn_ignored(&sender, &why);
+            return;
+        }
+    }
+    let members = read_all_live_members(&ctx.room, &ctx.own_user, &ctx.own_device).await;
+    match accept_key_event(&ctx.room, &sender_id, &content, info.as_ref(), &members) {
+        Ok(accepted) => ctx.apply_or_park(&sender, accepted, &members),
+        Err(KeyRejection::Retry(why)) => {
+            if let Some(info) = info {
+                tracing::debug!("e2ee: key from {sender} cannot be judged yet: {why}");
+                ctx.park_for_recheck(&sender_id, content, info, Instant::now());
+                ctx.query_devices_of(&sender_id);
+            }
+        }
+        Err(KeyRejection::Final(why)) => ctx.warn_ignored(&sender, &why),
+    }
+}
+
+/// Judge the keys parked for want of a known sending device again: the ones
+/// whose device is known now are used (or parked for their membership), the
+/// ones that turn out to be untrustworthy are dropped, and the rest wait on
+/// until their time is up.
+async fn recheck_parked_keys(ctx: &KeyCtx, members: &[crate::client::rtc::members::CallMember]) {
+    let waiting = ctx.parked.lock().take_rechecks(Instant::now());
+    if waiting.is_empty() {
+        return;
+    }
+    let client = ctx.room.client();
+    for (parked_at, key) in waiting {
+        let Some(recheck) = key.recheck else { continue };
+        let Ok(sender_id) = matrix_sdk::ruma::UserId::parse(&key.user_id) else { continue };
+        let Some(info) = refreshed_encryption_info(&client, &recheck.info).await else {
+            ctx.parked.lock().park(
+                ParkedKey { recheck: Some(recheck), ..key },
+                parked_at,
+            );
+            continue;
+        };
+        match sender_is_joined(&ctx.room, &sender_id).await {
+            SenderJoin::Joined => {}
+            SenderJoin::NotJoined => {
+                ctx.warn_ignored(&key.user_id, "sender is not joined to the room");
+                continue;
+            }
+            SenderJoin::Unknown(why) => {
+                // A failed lookup says nothing: judge it again at the next pass.
+                tracing::debug!("e2ee: {why}; keeping the key from {} to judge again", key.user_id);
+                ctx.parked.lock().park(ParkedKey { recheck: Some(recheck), ..key }, parked_at);
+                continue;
+            }
+        }
+        match accept_key_event(&ctx.room, &sender_id, &recheck.content, Some(&info), members) {
+            Ok(accepted) => {
+                tracing::debug!("e2ee: judged the key from {} now that its device is known", key.user_id);
+                ctx.apply_or_park(&key.user_id, accepted, members);
+            }
+            Err(KeyRejection::Retry(_)) => {
+                ctx.parked.lock().park(ParkedKey { recheck: Some(recheck), ..key }, parked_at);
+            }
+            Err(KeyRejection::Final(why)) => ctx.warn_ignored(&key.user_id, &why),
+        }
     }
 }
 
@@ -1271,6 +1647,36 @@ fn spawn_membership_task(
     .abort_handle()
 }
 
+/// Hand the rotator's decisions on: keys to the delivery worker, activations to the gate.
+fn apply_key_actions(actions: Vec<RotationAction>, delivery: &KeyDelivery, gate: &mut ActivationGate, now: Instant) {
+    for action in actions {
+        match action {
+            RotationAction::Send { index, key_b64, to } => delivery.enqueue(&to, index, &key_b64),
+            RotationAction::Activate { index, raw_key } => gate.hold(index, raw_key, now),
+        }
+    }
+}
+
+/// Put the held key to use if its delivery has settled (or the wait is over),
+/// and tell the rotator, which then counts it as the key in use.
+fn release_gate(
+    gate: &mut ActivationGate,
+    delivery: &KeyDelivery,
+    e2ee: &Arc<PLMutex<KeyRotator>>,
+    sfus: &Arc<SfuSet>,
+) {
+    let now = Instant::now();
+    let Some((index, raw_key)) = gate.release(|i| delivery.settled(i), now) else { return };
+    sfus.primary.set_own_frame_key(&raw_key, index as i32);
+    let (more, live) = {
+        let mut rotator = e2ee.lock();
+        let more = rotator.activated(index, now);
+        (more, rotator.live_indices())
+    };
+    apply_key_actions(more, delivery, gate, now);
+    delivery.retain_indices(&live);
+}
+
 /// Follows the room's call members: connects to the SFUs they publish on,
 /// drops SFUs nobody uses any more, and keeps the E2EE key distribution in
 /// step (send our key to new members, rotate when someone leaves).
@@ -1285,12 +1691,11 @@ async fn reconcile_loop(
     join_ts: matrix_sdk::ruma::MilliSecondsSinceUnixEpoch,
     sfus: Arc<SfuSet>,
     e2ee: Arc<PLMutex<KeyRotator>>,
+    delivery: KeyDelivery,
     use_e2ee: bool,
-    room_id: String,
-    lk_identity: String,
     mut previous: HashSet<(String, String)>,
     mut changes: tokio::sync::mpsc::Receiver<()>,
-    parked: Arc<PLMutex<ParkedKeys>>,
+    key_ctx: KeyCtx,
     mrtc: Option<Arc<MrtcMembership>>,
     announced: Arc<Announced>,
     session_id: u64,
@@ -1298,6 +1703,8 @@ async fn reconcile_loop(
     let mut interval = tokio::time::interval(RECONCILE_INTERVAL);
     interval.tick().await;
     let mut first = true;
+    // A new key that waits for its first delivery round before it is used.
+    let mut gate = ActivationGate::default();
     loop {
         if !first {
             let key_deadline = e2ee
@@ -1305,10 +1712,23 @@ async fn reconcile_loop(
                 .next_deadline()
                 .map(tokio::time::Instant::from_std)
                 .unwrap_or_else(|| tokio::time::Instant::now() + RECONCILE_INTERVAL);
+            let gate_deadline = gate.deadline().map(tokio::time::Instant::from_std);
+            let mut only_the_gate = false;
             tokio::select! {
                 _ = changes.recv() => {}
                 _ = interval.tick() => {}
                 _ = tokio::time::sleep_until(key_deadline), if use_e2ee => {}
+                _ = async {
+                    delivery.progressed().await;
+                    // Sends end one after the other: look once for the burst.
+                    tokio::time::sleep(GATE_RECHECK_COALESCE).await;
+                }, if gate_deadline.is_some() => { only_the_gate = true; }
+                _ = tokio::time::sleep_until(gate_deadline.unwrap_or(key_deadline)), if gate_deadline.is_some() => {}
+            }
+            // A send ended while a key waits to be used: that is all there is to look at.
+            if only_the_gate {
+                release_gate(&mut gate, &delivery, &e2ee, &sfus);
+                continue;
             }
             // Coalesce a burst of member events into one pass.
             while changes.try_recv().is_ok() {}
@@ -1357,13 +1777,16 @@ async fn reconcile_loop(
         if have_hashed {
             sfus.apply_all_keys();
         }
-        let released = parked
+        let released = key_ctx
+            .parked
             .lock()
             .take_for(&current.iter().cloned().collect::<Vec<_>>(), Instant::now());
         for k in released {
             info!("e2ee: applying parked key from {}/{}", k.user_id, k.device_id);
             sfus.apply_key(&k.user_id, &k.device_id, k.index, k.raw_key);
         }
+        // Keys whose sending device was not known when they arrived.
+        recheck_parked_keys(&key_ctx, &members).await;
         let joined: Vec<(String, String)> = current.difference(&previous).cloned().collect();
         let someone_left = previous.difference(&current).next().is_some();
         if !joined.is_empty() || someone_left {
@@ -1377,31 +1800,20 @@ async fn reconcile_loop(
 
         if use_e2ee {
             let now = Instant::now();
+            let sessions: Sessions = members.iter().map(|m| (m.key(), m.session_tag())).collect();
+            delivery.retain_recipients(&current);
             let actions = {
                 let mut rotator = e2ee.lock();
-                let mut a = rotator.on_members_changed(&current, now);
+                let mut a = rotator.on_members_changed(&sessions, now);
                 a.extend(rotator.poll(now));
                 a
             };
-            for action in actions {
-                match action {
-                    RotationAction::Send { index, key_b64, to } => {
-                        broadcast_key_to_members(
-                            &client,
-                            &to,
-                            &room_id,
-                            &lk_identity,
-                            &key_b64,
-                            index,
-                            mrtc.as_ref().map(|m| m.member_id()),
-                        )
-                        .await;
-                    }
-                    RotationAction::Activate { index, raw_key } => {
-                        sfus.primary.set_own_frame_key(&raw_key, index as i32);
-                    }
-                }
-            }
+            // Sending is the delivery worker's job: nothing here waits on the
+            // network. A new key is only put to use once its delivery has
+            // settled (see `ActivationGate`).
+            apply_key_actions(actions, &delivery, &mut gate, now);
+            delivery.retain_indices(&e2ee.lock().live_indices());
+            release_gate(&mut gate, &delivery, &e2ee, &sfus);
         }
 
         member_transports.replace(transport_map(&members, Some((join_ts, &local_focus))));
@@ -1885,6 +2297,138 @@ mod key_event_tests {
         assert!(!is_live_member(&members, "@b:x.org", "DEV"));
     }
 
+    // ── Judging a key whose sending device may not be known yet ────────────────
+
+    use matrix_sdk::deserialized_responses::{DeviceLinkProblem, VerificationLevel, VerificationState};
+
+    fn missing() -> VerificationState {
+        VerificationState::Unverified(VerificationLevel::None(DeviceLinkProblem::MissingDevice))
+    }
+
+    fn judge(
+        device: Option<&str>,
+        state: &VerificationState,
+        strict: bool,
+    ) -> Result<AcceptedKey, KeyRejection> {
+        let c = stable("!r:x.org", "unseen");
+        judge_key_event("!r:x.org", &c, "@a:x.org", Some((device, state)), &[], strict)
+    }
+
+    #[test]
+    fn a_key_from_a_device_not_known_yet_is_worth_judging_again() {
+        // Strict or not, the verdict has to wait for the device.
+        for strict in [true, false] {
+            assert!(matches!(judge(None, &missing(), strict), Err(KeyRejection::Retry(_))), "strict={strict}");
+        }
+        assert!(device_not_known_yet(Some(None), None));
+        assert!(device_not_known_yet(Some(Some("DEV")), Some(&missing())));
+        assert!(!device_not_known_yet(Some(Some("DEV")), Some(&VerificationState::Verified)));
+        assert!(!device_not_known_yet(None, None), "unencrypted is final");
+    }
+
+    #[test]
+    fn a_known_device_that_is_not_trusted_is_rejected_outright() {
+        let unsigned = VerificationState::Unverified(VerificationLevel::UnsignedDevice);
+        assert!(matches!(judge(Some("DEV"), &unsigned, true), Err(KeyRejection::Final(_))));
+        let violation = VerificationState::Unverified(VerificationLevel::VerificationViolation);
+        assert!(matches!(judge(Some("DEV"), &violation, true), Err(KeyRejection::Final(_))));
+        let mismatched = VerificationState::Unverified(VerificationLevel::MismatchedSender);
+        assert!(matches!(judge(Some("DEV"), &mismatched, true), Err(KeyRejection::Final(_))));
+    }
+
+    #[test]
+    fn an_insecure_source_is_final() {
+        let insecure = VerificationState::Unverified(VerificationLevel::None(DeviceLinkProblem::InsecureSource));
+        // Not a device we are waiting to learn about: this will not get better.
+        assert!(!device_not_known_yet(Some(Some("DEV")), Some(&insecure)));
+        assert!(matches!(judge(Some("DEV"), &insecure, true), Err(KeyRejection::Final(_))));
+    }
+
+    #[test]
+    fn a_known_trusted_device_is_accepted_and_lax_mode_ignores_trust() {
+        assert!(judge(Some("DEV"), &VerificationState::Verified, true).is_ok());
+        let unsigned = VerificationState::Unverified(VerificationLevel::UnsignedDevice);
+        assert!(judge(Some("DEV"), &unsigned, false).is_ok());
+    }
+
+    #[test]
+    fn an_unencrypted_key_is_final() {
+        let c = stable("!r:x.org", "m");
+        assert_eq!(
+            judge_key_event("!r:x.org", &c, "@a:x.org", None, &[], true).unwrap_err(),
+            KeyRejection::Final("sent unencrypted".to_owned())
+        );
+    }
+
+    #[test]
+    fn a_wrong_member_is_final_for_a_known_device() {
+        let members = vec![mrtc_member("@a:x.org", "DEV", "mid1")];
+        let c = stable("!r:x.org", "mid1");
+        let r = judge_key_event(
+            "!r:x.org",
+            &c,
+            "@a:x.org",
+            Some((Some("OTHER"), &VerificationState::Verified)),
+            &members,
+            true,
+        );
+        assert!(matches!(r, Err(KeyRejection::Final(_))));
+    }
+
+    #[test]
+    fn a_device_found_later_is_judged_by_how_the_crypto_layer_states_it() {
+        use VerificationLevel::*;
+        assert_eq!(verification_state_for_device(true, false, false), VerificationState::Verified);
+        assert_eq!(verification_state_for_device(true, true, true), VerificationState::Verified);
+        assert_eq!(
+            verification_state_for_device(false, true, false),
+            VerificationState::Unverified(UnverifiedIdentity)
+        );
+        assert_eq!(
+            verification_state_for_device(false, true, true),
+            VerificationState::Unverified(VerificationViolation)
+        );
+        assert_eq!(
+            verification_state_for_device(false, false, false),
+            VerificationState::Unverified(UnsignedDevice)
+        );
+        // ...so strict mode takes the first two kinds and refuses the rest.
+        assert!(check_device_trusted(&verification_state_for_device(false, true, false), true).is_ok());
+        assert!(check_device_trusted(&verification_state_for_device(false, true, true), true).is_err());
+        assert!(check_device_trusted(&verification_state_for_device(false, false, false), true).is_err());
+    }
+
+    // ── Checks before the room is read ─────────────────────────────────────────
+
+    #[test]
+    fn cheap_checks_turn_away_bad_events_without_the_room() {
+        let ok = stable("!r:x.org", "m");
+        assert!(cheap_key_checks("!r:x.org", &ok, true).is_ok());
+        assert_eq!(cheap_key_checks("!r:x.org", &ok, false).unwrap_err(), "sent unencrypted");
+        assert!(cheap_key_checks("!other:x.org", &ok, true).unwrap_err().contains("another room"));
+        let none = media(serde_json::json!({ "room_id": "!r:x.org", "member_id": "m" }));
+        assert_eq!(cheap_key_checks("!r:x.org", &none, true).unwrap_err(), "carries no key");
+    }
+
+    #[test]
+    fn cheap_checks_cap_the_size_of_what_we_look_at() {
+        let long_key = media(serde_json::json!({
+            "room_id": "!r:x.org", "member_id": "m",
+            "media_key": { "index": 1, "key": "A".repeat(MAX_KEY_B64_LEN + 1) }
+        }));
+        assert!(cheap_key_checks("!r:x.org", &long_key, true).unwrap_err().contains("characters"));
+        let long_id = media(serde_json::json!({
+            "room_id": "!r:x.org", "member_id": "m".repeat(MAX_MEMBER_ID_LEN + 1),
+            "media_key": { "index": 1, "key": "AAAA" }
+        }));
+        assert!(cheap_key_checks("!r:x.org", &long_id, true).is_err());
+        let edge = media(serde_json::json!({
+            "room_id": "!r:x.org", "member_id": "m".repeat(MAX_MEMBER_ID_LEN),
+            "media_key": { "index": 1, "key": "A".repeat(MAX_KEY_B64_LEN) }
+        }));
+        assert!(cheap_key_checks("!r:x.org", &edge, true).is_ok());
+    }
+
     #[test]
     fn unencrypted_is_rejected_before_other_checks() {
         // Wrong room and wrong application, but the unencrypted verdict wins.
@@ -1893,6 +2437,33 @@ mod key_event_tests {
             check_key_event_fields("!r:x.org", &c, None).unwrap_err(),
             "sent unencrypted"
         );
+    }
+}
+
+#[cfg(test)]
+mod sender_membership_tests {
+    use super::*;
+    use matrix_sdk::ruma::events::room::member::MembershipState;
+
+    #[test]
+    fn only_a_definite_answer_rules_a_sender_out() {
+        assert_eq!(classify_sender::<String>(Ok(Some(MembershipState::Join))), SenderJoin::Joined);
+        for gone in [MembershipState::Leave, MembershipState::Ban, MembershipState::Invite] {
+            assert_eq!(classify_sender::<String>(Ok(Some(gone))), SenderJoin::NotJoined);
+        }
+        assert_eq!(classify_sender::<String>(Ok(None)), SenderJoin::NotJoined);
+        // A failed request is not "not joined": the parked key must survive it.
+        assert!(matches!(classify_sender(Err("timed out")), SenderJoin::Unknown(_)));
+    }
+
+    #[test]
+    fn a_profile_change_does_not_wake_the_reconcile_loop_but_a_kick_does() {
+        use MembershipState::{Ban, Invite, Join, Leave};
+        assert!(!membership_event_matters(&Join, Some(&Join)), "a new display name");
+        assert!(membership_event_matters(&Leave, Some(&Join)), "a leave or a kick");
+        assert!(membership_event_matters(&Ban, Some(&Join)));
+        assert!(membership_event_matters(&Join, Some(&Invite)), "a join");
+        assert!(membership_event_matters(&Join, None), "no previous state to compare with");
     }
 }
 

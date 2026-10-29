@@ -3462,7 +3462,7 @@ pub(super) async fn build_room_info_unfiltered(
         let own_device = client.device_id();
         // Every live legacy membership, ours included, read from the raw
         // events (ruma's typed model drops those of newer clients).
-        let all = rtc::members::read_call_members(room, None).await;
+        let all = rtc::members::read_call_members(room, None, rtc::members::JoinCheck::Cached).await;
         let mut active = !all.is_empty();
         let others: Vec<rtc::members::CallMember> = all
             .into_iter()
@@ -3474,7 +3474,7 @@ pub(super) async fn build_room_info_unfiltered(
         let mut participants = rtc::slots::participants_from_members(&others);
         // Sticky MatrixRTC members (only those seen in timelines / history).
         if let (Some(u), Some(d)) = (own_user, own_device) {
-            let mrtc = rtc::slots::read_mrtc_members(room, u, d).await;
+            let mrtc = rtc::slots::read_mrtc_members(room, u, d, rtc::members::JoinCheck::Cached).await;
             if !mrtc.is_empty() {
                 active = true;
                 participants.extend(rtc::slots::participants_from_members(&mrtc));
