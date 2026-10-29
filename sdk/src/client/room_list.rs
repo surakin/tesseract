@@ -3462,23 +3462,27 @@ fn apply_power_level_levels(
     Ok(())
 }
 
-/// The levels needed to start and to join a call: the MatrixRTC event types
-/// first, then the legacy ones, then the room's default state level.
+/// The levels needed to start and to join a call, as the gate that decides
+/// whether we may (`may_start_call`, `may_join_call`) reads them: the legacy
+/// `call.member` state event for joining, plus the legacy `call` event for
+/// starting, each falling back to the room's default state level. The
+/// MatrixRTC `rtc.slot` / `rtc.member` types are no part of the gate (a session
+/// that may not write them runs legacy-only), so the tab must not show them: a
+/// level the tab shows is the level that is enforced. The tab writes both
+/// families, so rooms it has edited agree either way.
 fn call_permission_levels(
     events: &std::collections::BTreeMap<matrix_sdk::ruma::events::TimelineEventType, matrix_sdk::ruma::Int>,
     state_default: i64,
 ) -> (i64, i64) {
     use matrix_sdk::ruma::events::TimelineEventType;
-    let level = |keys: &[&str]| {
-        keys.iter()
-            .find_map(|k| events.get(&TimelineEventType::from(*k)))
+    let level = |key: &str| {
+        events
+            .get(&TimelineEventType::from(key))
             .map(|v| i64::from(*v))
             .unwrap_or(state_default)
     };
-    (
-        level(&["org.matrix.msc4143.rtc.slot", "org.matrix.msc3401.call"]),
-        level(&["org.matrix.msc4143.rtc.member", "org.matrix.msc3401.call.member"]),
-    )
+    let join = level("org.matrix.msc3401.call.member");
+    (join.max(level("org.matrix.msc3401.call")), join)
 }
 
 // ---------------------------------------------------------------------------
@@ -3745,26 +3749,34 @@ mod room_power_levels_tests {
     }
 
     #[test]
-    fn call_levels_read_the_matrixrtc_keys_before_the_legacy_ones() {
+    fn call_levels_follow_the_legacy_events_the_gate_reads() {
         let mut pl = server_content();
-        for (k, v) in [
-            ("org.matrix.msc4143.rtc.slot", 25),
-            ("org.matrix.msc4143.rtc.member", 10),
-            ("org.matrix.msc3401.call", 99),
-            ("org.matrix.msc3401.call.member", 98),
-        ] {
+        // MatrixRTC types alone do not set the levels shown: they are not enforced.
+        for (k, v) in [("org.matrix.msc4143.rtc.slot", 25), ("org.matrix.msc4143.rtc.member", 10)] {
             pl.events.insert(TimelineEventType::from(k), v.into());
         }
-        assert_eq!(call_permission_levels(&pl.events, i64::from(pl.state_default)), (25, 10));
+        assert_eq!(call_permission_levels(&pl.events, i64::from(pl.state_default)), (50, 50));
+        for (k, v) in [("org.matrix.msc3401.call", 30), ("org.matrix.msc3401.call.member", 10)] {
+            pl.events.insert(TimelineEventType::from(k), v.into());
+        }
+        assert_eq!(call_permission_levels(&pl.events, i64::from(pl.state_default)), (30, 10));
     }
 
     #[test]
-    fn call_levels_fall_back_to_legacy_then_state_default() {
+    fn starting_a_call_needs_at_least_the_level_of_joining_it() {
+        let mut pl = server_content();
+        pl.events.insert(TimelineEventType::from("org.matrix.msc3401.call"), 10.into());
+        pl.events.insert(TimelineEventType::from("org.matrix.msc3401.call.member"), 40.into());
+        assert_eq!(call_permission_levels(&pl.events, i64::from(pl.state_default)), (40, 40));
+    }
+
+    #[test]
+    fn call_levels_fall_back_to_the_state_default() {
         let mut pl = server_content();
         pl.events.insert(TimelineEventType::from("org.matrix.msc3401.call"), 40.into());
         let (start, join) = call_permission_levels(&pl.events, i64::from(pl.state_default));
-        assert_eq!(start, 40);
         assert_eq!(join, i64::from(pl.state_default));
+        assert_eq!(start, i64::from(pl.state_default), "joining needs 50, so starting does too");
     }
 
     #[test]

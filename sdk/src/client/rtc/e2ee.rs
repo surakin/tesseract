@@ -1,10 +1,112 @@
-use anyhow::Context;
-use base64ct::{Base64, Encoding};
+use base64ct::{Base64, Base64Unpadded, Base64Url, Base64UrlUnpadded, Encoding};
 use hkdf::Hkdf;
 use rand::RngCore;
 use sha2::Sha256;
-use std::collections::HashMap;
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
+
+/// Secret bytes or text (a frame key in any encoding): wiped when dropped, and
+/// never printed, so a `{:?}` of a struct holding one cannot leak it. Clones
+/// are wiped too. Serializes like the value it holds.
+///
+/// This covers the copies we own, not every copy: the key is also handed on as
+/// a plain `Vec` to LiveKit's `set_key` (which keeps its own), serialized into
+/// the to-device event's JSON (a `RawValue` we cannot wipe, then the SDK's
+/// encryption buffers), and a `Copy` array moved into [`Secret::new`] leaves
+/// its source behind (see [`Secret::take`]). Those live as long as the library
+/// or the SDK keeps them.
+pub struct Secret<T: Zeroize>(Zeroizing<T>);
+
+pub type SecretString = Secret<String>;
+pub type SecretBytes = Secret<Vec<u8>>;
+pub type SecretKey = Secret<[u8; 32]>;
+
+impl<T: Zeroize> Secret<T> {
+    pub fn new(value: T) -> Self {
+        Self(Zeroizing::new(value))
+    }
+}
+
+impl<const N: usize> Secret<[u8; N]> {
+    /// Move a key out of `src`, leaving zeros there: `Secret::new(*src)` would
+    /// leave a second copy of the key behind.
+    pub fn take(src: &mut [u8; N]) -> Self {
+        let secret = Self::new(*src);
+        src.zeroize();
+        secret
+    }
+}
+
+impl<T: Zeroize> std::ops::Deref for Secret<T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.0
+    }
+}
+
+impl<T: Zeroize + Clone> Clone for Secret<T> {
+    fn clone(&self) -> Self {
+        Self::new((*self.0).clone())
+    }
+}
+
+impl<T: Zeroize + PartialEq> PartialEq for Secret<T> {
+    fn eq(&self, other: &Self) -> bool {
+        *self.0 == *other.0
+    }
+}
+
+impl<T: Zeroize + Eq> Eq for Secret<T> {}
+
+impl<T: Zeroize> std::fmt::Debug for Secret<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Secret(<redacted>)")
+    }
+}
+
+impl<T: Zeroize + serde::Serialize> serde::Serialize for Secret<T> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        (*self.0).serialize(s)
+    }
+}
+
+impl<'de, T: Zeroize + serde::Deserialize<'de>> serde::Deserialize<'de> for Secret<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        T::deserialize(d).map(Self::new)
+    }
+}
+
+/// The lengths of frame-key material we accept from a peer: Element Call
+/// generates 16-byte keys (AES-128), we generate 32. LiveKit derives the frame
+/// key from the material with HKDF, so both work; anything else is not a key.
+pub const ACCEPTED_KEY_LENGTHS: [usize; 2] = [16, 32];
+
+/// Decode `s` with encoding `E` into `buf` (large enough for any input of its
+/// length); `buf` is wiped again when it fails, so no half-decoded key is left.
+fn decode_with<E: Encoding>(s: &str, buf: &mut [u8]) -> Option<Vec<u8>> {
+    match E::decode(s, buf) {
+        Ok(out) => Some(out.to_vec()),
+        Err(_) => {
+            buf.zeroize();
+            None
+        }
+    }
+}
+
+/// Decode a peer's base64 frame key and check its length. Padded or unpadded,
+/// standard or URL-safe alphabet, as clients differ.
+pub fn decode_frame_key(key_b64: &str) -> Result<SecretBytes, String> {
+    let mut buf = Zeroizing::new(vec![0u8; key_b64.len() / 4 * 3 + 3]);
+    let raw = decode_with::<Base64>(key_b64, &mut buf)
+        .or_else(|| decode_with::<Base64Unpadded>(key_b64, &mut buf))
+        .or_else(|| decode_with::<Base64Url>(key_b64, &mut buf))
+        .or_else(|| decode_with::<Base64UrlUnpadded>(key_b64, &mut buf))
+        .map(Secret::new)
+        .ok_or_else(|| "bad base64".to_owned())?;
+    if !ACCEPTED_KEY_LENGTHS.contains(&raw.len()) {
+        return Err(format!("a key of {} bytes (16 or 32 expected)", raw.len()));
+    }
+    Ok(raw)
+}
 
 /// 32-byte raw key material (pre-HKDF).
 pub type KeyMaterial = [u8; 32];
@@ -16,12 +118,10 @@ pub type FrameKey = [u8; 16];
 pub struct E2eeManager {
     own_key: KeyMaterial,
     own_index: u8,
-    /// member_id → (rotation_index → frame_key)
-    peer_keys: HashMap<String, HashMap<u8, FrameKey>>,
 }
 
 // The stored key is wiped when the manager goes away. Copies handed out by
-// `own_raw_key` / `own_key_b64` are the caller's, and are not wiped here.
+// `own_raw_key` is borrowed, and `own_key_b64` hands out a wiped-on-drop copy.
 impl Drop for E2eeManager {
     fn drop(&mut self) {
         self.own_key.zeroize();
@@ -30,29 +130,35 @@ impl Drop for E2eeManager {
 
 impl E2eeManager {
     pub fn new() -> Self {
-        Self {
-            own_key: Self::generate_key(),
+        let mut manager = Self {
+            own_key: [0u8; 32],
             own_index: 0,
-            peer_keys: HashMap::new(),
-        }
+        };
+        manager.fill_key();
+        manager
     }
 
-    fn generate_key() -> KeyMaterial {
-        let mut key = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut key);
-        key
+    /// Fresh random key material, written in place: a key returned by value
+    /// would leave a copy on the stack.
+    fn fill_key(&mut self) {
+        rand::thread_rng().fill_bytes(&mut self.own_key);
     }
 
     pub fn own_index(&self) -> u8 {
         self.own_index
     }
 
-    pub fn own_key_b64(&self) -> String {
-        Base64::encode_string(&self.own_key)
+    pub fn own_key_b64(&self) -> SecretString {
+        Secret::new(Base64::encode_string(&self.own_key))
     }
 
     pub fn own_raw_key(&self) -> &KeyMaterial {
         &self.own_key
+    }
+
+    /// The key as a wiped-on-drop copy, for a caller that must keep it.
+    pub fn own_secret_key(&self) -> SecretKey {
+        Secret::new(self.own_key)
     }
 
     /// Derive the 16-byte frame key for our own outgoing track.
@@ -64,31 +170,11 @@ impl E2eeManager {
     /// Returns `(new_index, base64_key_material)`.
     /// The caller is responsible for the 5-second delay before activating the
     /// new key in the FrameCryptor (coalesced by the session's debounce timer).
-    pub fn rotate(&mut self) -> (u8, String) {
+    pub fn rotate(&mut self) -> (u8, SecretString) {
         self.own_key.zeroize();
-        self.own_key = Self::generate_key();
+        self.fill_key();
         self.own_index = self.own_index.wrapping_add(1);
         (self.own_index, self.own_key_b64())
-    }
-
-    /// Store a peer key received via m.rtc.encryption_key to-device.
-    /// Returns the derived frame key for immediate FrameCryptor registration.
-    pub fn receive_peer_key(
-        &mut self,
-        member_id: &str,
-        index: u8,
-        key_b64: &str,
-    ) -> anyhow::Result<FrameKey> {
-        let raw = Base64::decode_vec(key_b64).context("decode peer key base64")?;
-        let material: KeyMaterial = raw
-            .try_into()
-            .map_err(|_| anyhow::anyhow!("peer key must be exactly 32 bytes"))?;
-        let frame_key = Self::derive_frame_key(&material, member_id, index);
-        self.peer_keys
-            .entry(member_id.to_owned())
-            .or_default()
-            .insert(index, frame_key);
-        Ok(frame_key)
     }
 
     /// HKDF-SHA256: ikm=key_material, salt=b"livekit_frame", info=member_id||[index].
@@ -125,7 +211,7 @@ pub struct ParkedKey {
     pub user_id: String,
     pub device_id: String,
     pub index: i32,
-    pub raw_key: Vec<u8>,
+    pub raw_key: SecretBytes,
     /// Set for a key whose sending device is not known yet: the event as it
     /// arrived, judged again once the device is. `device_id` is then
     /// [`recheck_device_id`] and `index` / `raw_key` are unused.
@@ -287,28 +373,59 @@ impl RateLimiter {
 
 /// The to-device content of a frame key: Element's `keys`/`member`/`session`
 /// shape, plus MSC4143's `member_id`/`media_key` when we have a MatrixRTC
-/// member id (the reference implementation sends both).
-pub fn key_event_content(
-    room_id: &str,
-    lk_identity: &str,
-    our_device_id: &str,
-    key_b64: &str,
+/// member id (the reference implementation sends both). Typed, and borrowing
+/// the key, so building it makes no copy of the key (a `serde_json::Value`
+/// would hold two unwiped ones).
+#[derive(serde::Serialize)]
+pub struct KeyEventContent<'a> {
+    keys: KeyBody<'a>,
+    room_id: &'a str,
+    member: KeyMember<'a>,
+    session: KeySession,
+    sent_ts: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    member_id: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    media_key: Option<KeyBody<'a>>,
+}
+
+#[derive(serde::Serialize)]
+struct KeyBody<'a> {
+    key: &'a str,
     index: u8,
-    mrtc_member_id: Option<&str>,
+}
+
+#[derive(serde::Serialize)]
+struct KeyMember<'a> {
+    claimed_device_id: &'a str,
+    id: &'a str,
+}
+
+#[derive(serde::Serialize)]
+struct KeySession {
+    call_id: &'static str,
+    application: &'static str,
+    scope: &'static str,
+}
+
+pub fn key_event_content<'a>(
+    room_id: &'a str,
+    lk_identity: &'a str,
+    our_device_id: &'a str,
+    key_b64: &'a str,
+    index: u8,
+    mrtc_member_id: Option<&'a str>,
     now_ms: u64,
-) -> serde_json::Value {
-    let mut content = serde_json::json!({
-        "keys": { "key": key_b64, "index": index },
-        "room_id": room_id,
-        "member": { "claimed_device_id": our_device_id, "id": lk_identity },
-        "session": { "call_id": "", "application": "m.call", "scope": "m.room" },
-        "sent_ts": now_ms,
-    });
-    if let Some(id) = mrtc_member_id {
-        content["member_id"] = serde_json::Value::String(id.to_owned());
-        content["media_key"] = serde_json::json!({ "key": key_b64, "index": index });
+) -> KeyEventContent<'a> {
+    KeyEventContent {
+        keys: KeyBody { key: key_b64, index },
+        room_id,
+        member: KeyMember { claimed_device_id: our_device_id, id: lk_identity },
+        session: KeySession { call_id: "", application: "m.call", scope: "m.room" },
+        sent_ts: now_ms,
+        member_id: mrtc_member_id,
+        media_key: mrtc_member_id.map(|_| KeyBody { key: key_b64, index }),
     }
-    content
 }
 
 /// How one send of a key to one recipient device ended.
@@ -498,14 +615,14 @@ pub const MAX_CONCURRENT_SENDS: usize = 8;
 pub struct DeliveryJob {
     pub to: Recipient,
     pub index: u8,
-    pub key_b64: String,
+    pub key_b64: SecretString,
     /// Which enqueue this belongs to; a result for a replaced entry is stale.
     seq: u64,
 }
 
 #[derive(Debug)]
 struct Owed {
-    key_b64: String,
+    key_b64: SecretString,
     seq: u64,
     /// Attempts that did not deliver in the current round.
     failures: usize,
@@ -553,12 +670,12 @@ impl PendingDeliveries {
     /// Owe `index` to `to`, due now. A key already owed for the same recipient
     /// and index is replaced (a new session starts from scratch); a send of the
     /// replaced one that is still running is stale when it ends.
-    pub fn enqueue(&mut self, to: &[Recipient], index: u8, key_b64: &str, now: std::time::Instant) {
+    pub fn enqueue(&mut self, to: &[Recipient], index: u8, key_b64: &SecretString, now: std::time::Instant) {
         for r in to {
             self.seq += 1;
             self.owed.insert(
                 (r.clone(), index),
-                Owed { key_b64: key_b64.to_owned(), seq: self.seq, failures: 0, rounds: 0, next_try: now },
+                Owed { key_b64: key_b64.clone(), seq: self.seq, failures: 0, rounds: 0, next_try: now },
             );
         }
     }
@@ -737,7 +854,7 @@ impl KeyDelivery {
         }
     }
 
-    pub fn enqueue(&self, to: &[Recipient], index: u8, key_b64: &str) {
+    pub fn enqueue(&self, to: &[Recipient], index: u8, key_b64: &SecretString) {
         if to.is_empty() {
             return;
         }
@@ -862,6 +979,86 @@ async fn delivery_worker(shared: std::sync::Arc<DeliveryShared>, sender: std::sy
 mod tests {
     use super::*;
 
+    fn sk(s: &str) -> SecretString {
+        Secret::new(s.to_owned())
+    }
+
+    #[test]
+    fn peer_keys_must_be_16_or_32_bytes_in_either_base64_padding() {
+        for len in [16usize, 32] {
+            let raw = vec![7u8; len];
+            let padded = Base64::encode_string(&raw);
+            let unpadded = Base64Unpadded::encode_string(&raw);
+            assert_eq!(decode_frame_key(&padded).unwrap().as_slice(), raw.as_slice(), "len {len}");
+            assert_eq!(decode_frame_key(&unpadded).unwrap().as_slice(), raw.as_slice(), "len {len} unpadded");
+        }
+        for len in [0usize, 1, 15, 17, 24, 31, 33, 64] {
+            let err = decode_frame_key(&Base64::encode_string(&vec![1u8; len])).unwrap_err();
+            assert!(err.contains("16 or 32"), "len {len}: {err}");
+        }
+        assert!(decode_frame_key("not base64 !!!").unwrap_err().contains("bad base64"));
+        assert!(decode_frame_key("").is_err());
+    }
+
+    #[test]
+    fn peer_keys_in_the_url_safe_alphabet_are_accepted_too() {
+        // Bytes whose encodings differ between the alphabets (`+/` against `-_`).
+        let raw: Vec<u8> = (0..32u8).map(|i| 0xfb ^ i.wrapping_mul(0x11)).chain([0xff, 0xfe]).take(32).collect();
+        assert!(Base64::encode_string(&raw).contains(['+', '/']));
+        for len in [16usize, 32] {
+            let raw = &raw[..len];
+            let url = Base64Url::encode_string(raw);
+            let url_unpadded = Base64UrlUnpadded::encode_string(raw);
+            assert_eq!(decode_frame_key(&url).unwrap().as_slice(), raw, "len {len} padded");
+            assert_eq!(decode_frame_key(&url_unpadded).unwrap().as_slice(), raw, "len {len} unpadded");
+        }
+        // Still length-checked, and still refuses text that is in neither alphabet.
+        assert!(decode_frame_key(&Base64UrlUnpadded::encode_string(&[9u8; 24])).unwrap_err().contains("16 or 32"));
+        assert!(decode_frame_key("ab+_cd").is_err(), "mixed alphabets");
+    }
+
+    #[test]
+    fn taking_a_key_out_of_an_array_leaves_zeros_behind() {
+        let mut src = [0x5au8; 32];
+        let secret = SecretKey::take(&mut src);
+        assert_eq!(*secret, [0x5au8; 32]);
+        assert_eq!(src, [0u8; 32]);
+    }
+
+    #[test]
+    fn a_manager_rotates_its_key_in_place() {
+        let mut m = E2eeManager::new();
+        let first = *m.own_raw_key();
+        assert_ne!(first, [0u8; 32]);
+        let (index, _) = m.rotate();
+        assert_eq!(index, 1);
+        assert_ne!(*m.own_raw_key(), first);
+    }
+
+    #[test]
+    fn debug_output_of_key_holders_does_not_show_the_key() {
+        let job_key = sk("c2VjcmV0LWtleS1tYXRlcmlhbA==");
+        let parked = ParkedKey {
+            user_id: "@a:x".into(),
+            device_id: "D".into(),
+            index: 0,
+            raw_key: Secret::new(vec![0xAB; 32]),
+            recheck: None,
+        };
+        let shown = format!("{job_key:?} {parked:?} {:?}", Secret::new([0xCDu8; 32]));
+        assert!(!shown.contains("c2VjcmV0"), "{shown}");
+        assert!(!shown.contains("171"), "{shown}");
+        assert!(!shown.contains("205"), "{shown}");
+        assert!(shown.contains("redacted"));
+    }
+
+    #[test]
+    fn a_secret_round_trips_through_json_as_the_plain_value() {
+        let k: SecretString = serde_json::from_str("\"AAAA\"").unwrap();
+        assert_eq!(k.as_str(), "AAAA");
+        assert_eq!(serde_json::to_string(&k).unwrap(), "\"AAAA\"");
+    }
+
     #[test]
     fn key_derivation_is_deterministic() {
         let material = [42u8; 32];
@@ -901,17 +1098,6 @@ mod tests {
         mgr.own_index = 255;
         let (idx, _) = mgr.rotate();
         assert_eq!(idx, 0);
-    }
-
-    #[test]
-    fn receive_peer_key_roundtrip() {
-        let mut mgr = E2eeManager::new();
-        // Generate a key and base64-encode it
-        let raw = [7u8; 32];
-        let b64 = Base64::encode_string(&raw);
-        let fk = mgr.receive_peer_key("peer-1", 0, &b64).unwrap();
-        let expected = E2eeManager::derive_frame_key(&raw, "peer-1", 0);
-        assert_eq!(fk, expected);
     }
 
     #[test]
@@ -958,42 +1144,12 @@ mod tests {
         assert_ne!(&old, mgr.own_raw_key());
     }
 
-    #[test]
-    fn receive_peer_key_rejects_bad_base64() {
-        let mut mgr = E2eeManager::new();
-        assert!(mgr.receive_peer_key("p", 0, "not base64 !!!").is_err());
-        assert!(!mgr.peer_keys.contains_key("p"));
-    }
-
-    #[test]
-    fn receive_peer_key_rejects_wrong_length() {
-        let mut mgr = E2eeManager::new();
-        for len in [0usize, 16, 31, 33] {
-            let b64 = Base64::encode_string(&vec![1u8; len]);
-            let err = mgr.receive_peer_key("p", 0, &b64).unwrap_err();
-            assert!(err.to_string().contains("32 bytes"), "len {len}: {err}");
-        }
-        assert!(!mgr.peer_keys.contains_key("p"));
-    }
-
-    #[test]
-    fn receive_peer_key_same_index_overwrites() {
-        let mut mgr = E2eeManager::new();
-        mgr.receive_peer_key("p", 0, &Base64::encode_string(&[1u8; 32]))
-            .unwrap();
-        let second = mgr
-            .receive_peer_key("p", 0, &Base64::encode_string(&[2u8; 32]))
-            .unwrap();
-        assert_eq!(mgr.peer_keys["p"][&0], second);
-        assert_eq!(mgr.peer_keys["p"].len(), 1);
-    }
-
     fn parked(user: &str, device: &str, index: i32) -> ParkedKey {
         ParkedKey {
             user_id: user.into(),
             device_id: device.into(),
             index,
-            raw_key: vec![index as u8; 32],
+            raw_key: Secret::new(vec![index as u8; 32]),
             recheck: None,
         }
     }
@@ -1088,7 +1244,7 @@ mod tests {
 
     #[test]
     fn legacy_key_body_is_unchanged_without_a_matrixrtc_member() {
-        let v = key_event_content("!r:x", "@a:x:DEV", "DEV", "S0VZ", 3, None, 1234);
+        let v = serde_json::to_value(key_event_content("!r:x", "@a:x:DEV", "DEV", "S0VZ", 3, None, 1234)).unwrap();
         assert_eq!(v["keys"], serde_json::json!({"key": "S0VZ", "index": 3}));
         assert_eq!(v["member"], serde_json::json!({"claimed_device_id": "DEV", "id": "@a:x:DEV"}));
         assert_eq!(v["session"]["application"], "m.call");
@@ -1097,7 +1253,7 @@ mod tests {
 
     #[test]
     fn a_matrixrtc_member_adds_the_stable_fields_next_to_the_legacy_ones() {
-        let v = key_event_content("!r:x", "@a:x:DEV", "DEV", "S0VZ", 3, Some("mid1"), 1234);
+        let v = serde_json::to_value(key_event_content("!r:x", "@a:x:DEV", "DEV", "S0VZ", 3, Some("mid1"), 1234)).unwrap();
         assert_eq!(v["member_id"], "mid1");
         assert_eq!(v["media_key"], serde_json::json!({"key": "S0VZ", "index": 3}));
         assert_eq!(v["keys"]["index"], 3, "reference-implementation clients still read keys/member");
@@ -1114,7 +1270,7 @@ mod tests {
             user_id: user.into(),
             device_id: recheck_device_id(curve),
             index: 0,
-            raw_key: Vec::new(),
+            raw_key: Secret::new(Vec::new()),
             recheck: Some(Recheck {
                 content: serde_json::from_value(serde_json::json!({
                     "room_id": "!r:x", "member_id": "m1", "media_key": { "index": 1, "key": "AAAA" }
@@ -1283,7 +1439,7 @@ mod tests {
     fn a_delivered_key_is_not_owed_any_more() {
         let t0 = std::time::Instant::now();
         let mut p = PendingDeliveries::new();
-        p.enqueue(&[to("@a:x"), to("@b:x")], 3, "KEY", t0);
+        p.enqueue(&[to("@a:x"), to("@b:x")], 3, &sk("KEY"), t0);
         let jobs = p.take_due(t0);
         assert_eq!(jobs.len(), 2);
         assert!(p.take_due(t0).is_empty(), "in flight sends are not handed out twice");
@@ -1297,7 +1453,7 @@ mod tests {
     fn an_undelivered_key_is_retried_on_the_backoff_then_again_every_minute() {
         let t0 = std::time::Instant::now();
         let mut p = PendingDeliveries::new();
-        p.enqueue(&[to("@a:x")], 1, "KEY", t0);
+        p.enqueue(&[to("@a:x")], 1, &sk("KEY"), t0);
         let mut now = t0;
         for wait in RETRY_BACKOFF {
             let job = p.take_due(now).pop().expect("due");
@@ -1327,7 +1483,7 @@ mod tests {
     fn a_recipient_that_comes_back_gets_the_key_after_the_give_up() {
         let t0 = std::time::Instant::now();
         let mut p = PendingDeliveries::new();
-        p.enqueue(&[to("@a:x")], 1, "KEY", t0);
+        p.enqueue(&[to("@a:x")], 1, &sk("KEY"), t0);
         let mut now = t0;
         for _ in 0..=RETRY_BACKOFF.len() {
             let job = p.take_due(now).pop().expect("due");
@@ -1343,7 +1499,7 @@ mod tests {
     fn a_withheld_key_is_not_tried_again() {
         let t0 = std::time::Instant::now();
         let mut p = PendingDeliveries::new();
-        p.enqueue(&[to("@a:x")], 1, "KEY", t0);
+        p.enqueue(&[to("@a:x")], 1, &sk("KEY"), t0);
         let job = p.take_due(t0).pop().unwrap();
         assert_eq!(p.record(&job, &Delivery::Withheld("untrusted".into()), t0), Recorded::Final);
         assert!(p.is_empty());
@@ -1354,8 +1510,8 @@ mod tests {
     fn keys_no_longer_in_use_are_not_owed_any_more() {
         let t0 = std::time::Instant::now();
         let mut p = PendingDeliveries::new();
-        p.enqueue(&[to("@a:x")], 1, "OLD", t0);
-        p.enqueue(&[to("@a:x")], 2, "NEW", t0);
+        p.enqueue(&[to("@a:x")], 1, &sk("OLD"), t0);
+        p.enqueue(&[to("@a:x")], 2, &sk("NEW"), t0);
         p.retain_indices(&[2]);
         let jobs = p.take_due(t0);
         assert_eq!(jobs.len(), 1);
@@ -1366,7 +1522,7 @@ mod tests {
     fn a_retry_that_delivers_ends_the_schedule() {
         let t0 = std::time::Instant::now();
         let mut p = PendingDeliveries::new();
-        p.enqueue(&[to("@a:x")], 1, "KEY", t0);
+        p.enqueue(&[to("@a:x")], 1, &sk("KEY"), t0);
         let job = p.take_due(t0).pop().unwrap();
         p.record(&job, &Delivery::NoDevice, t0);
         let retry = p.take_due(t0 + secs(2)).pop().unwrap();
@@ -1378,12 +1534,12 @@ mod tests {
     fn a_new_enqueue_restarts_the_schedule_and_makes_the_old_result_stale() {
         let t0 = std::time::Instant::now();
         let mut p = PendingDeliveries::new();
-        p.enqueue(&[to("@a:x")], 1, "OLD", t0);
+        p.enqueue(&[to("@a:x")], 1, &sk("OLD"), t0);
         let old = p.take_due(t0).pop().unwrap();
-        p.enqueue(&[to("@a:x")], 1, "NEW", t0 + secs(1));
+        p.enqueue(&[to("@a:x")], 1, &sk("NEW"), t0 + secs(1));
         assert_eq!(p.record(&old, &Delivery::Delivered, t0 + secs(2)), Recorded::Stale);
         let new = p.take_due(t0 + secs(1)).pop().unwrap();
-        assert_eq!(new.key_b64, "NEW");
+        assert_eq!(new.key_b64.as_str(), "NEW");
         assert_eq!(p.record(&new, &Delivery::Delivered, t0 + secs(2)), Recorded::Done);
     }
 
@@ -1391,7 +1547,7 @@ mod tests {
     fn leavers_are_no_longer_owed_anything() {
         let t0 = std::time::Instant::now();
         let mut p = PendingDeliveries::new();
-        p.enqueue(&[to("@a:x"), to("@b:x")], 1, "KEY", t0);
+        p.enqueue(&[to("@a:x"), to("@b:x")], 1, &sk("KEY"), t0);
         let jobs = p.take_due(t0);
         p.retain_recipients(&[to("@a:x")].into_iter().collect());
         let b = jobs.iter().find(|j| j.to == to("@b:x")).unwrap();
@@ -1404,8 +1560,8 @@ mod tests {
         let t0 = std::time::Instant::now();
         let mut p = PendingDeliveries::new();
         assert!(p.settled(1), "nothing owed");
-        p.enqueue(&[to("@a:x"), to("@b:x")], 1, "KEY", t0);
-        p.enqueue(&[to("@a:x")], 2, "OTHER", t0);
+        p.enqueue(&[to("@a:x"), to("@b:x")], 1, &sk("KEY"), t0);
+        p.enqueue(&[to("@a:x")], 2, &sk("OTHER"), t0);
         assert!(!p.settled(1));
         let jobs = p.take_due(t0);
         let job = |u: &str, i: u8| jobs.iter().find(|j| j.to == to(u) && j.index == i).unwrap().clone();
@@ -1420,7 +1576,7 @@ mod tests {
     fn an_unreachable_recipient_does_not_hold_a_new_key_back() {
         let t0 = std::time::Instant::now();
         let mut p = PendingDeliveries::new();
-        p.enqueue(&[to("@ghost:x")], 1, "K1", t0);
+        p.enqueue(&[to("@ghost:x")], 1, &sk("K1"), t0);
         let mut now = t0;
         for _ in 0..=RETRY_BACKOFF.len() {
             let job = p.take_due(now).pop().unwrap();
@@ -1428,7 +1584,7 @@ mod tests {
             now = p.next_due().unwrap();
         }
         // The next key is owed to the ghost too, but it is known not to answer.
-        p.enqueue(&[to("@ghost:x"), to("@live:x")], 2, "K2", now);
+        p.enqueue(&[to("@ghost:x"), to("@live:x")], 2, &sk("K2"), now);
         assert!(!p.settled(2), "@live has not got it yet");
         let jobs = p.take_due(now);
         let job = |u: &str, i: u8| jobs.iter().find(|j| j.to == to(u) && j.index == i).unwrap().clone();
@@ -1436,7 +1592,7 @@ mod tests {
         assert!(p.settled(2), "only the unreachable ghost is left");
         // Reaching it again makes it count again.
         p.record(&job("@ghost:x", 1), &Delivery::Delivered, now);
-        p.enqueue(&[to("@ghost:x")], 3, "K3", now);
+        p.enqueue(&[to("@ghost:x")], 3, &sk("K3"), now);
         assert!(!p.settled(3));
     }
 
@@ -1446,10 +1602,10 @@ mod tests {
     fn a_user_with_a_send_in_flight_is_not_handed_a_second() {
         let t0 = std::time::Instant::now();
         let mut p = PendingDeliveries::new();
-        p.enqueue(&[to("@a:x")], 1, "K1", t0);
+        p.enqueue(&[to("@a:x")], 1, &sk("K1"), t0);
         let first = p.take_due(t0).pop().unwrap();
         // The new key replaces nothing and is due, but @a is busy.
-        p.enqueue(&[to("@a:x")], 2, "K2", t0);
+        p.enqueue(&[to("@a:x")], 2, &sk("K2"), t0);
         assert!(p.take_due(t0 + secs(1)).is_empty());
         assert_eq!(p.next_due(), None, "nothing is due while @a is busy; its send reports back");
         p.record(&first, &Delivery::Delivered, t0 + secs(1));
@@ -1461,12 +1617,12 @@ mod tests {
     fn a_replaced_entry_does_not_start_a_second_send_while_the_first_runs() {
         let t0 = std::time::Instant::now();
         let mut p = PendingDeliveries::new();
-        p.enqueue(&[to("@a:x")], 1, "OLD", t0);
+        p.enqueue(&[to("@a:x")], 1, &sk("OLD"), t0);
         let old = p.take_due(t0).pop().unwrap();
-        p.enqueue(&[to("@a:x")], 1, "NEW", t0);
+        p.enqueue(&[to("@a:x")], 1, &sk("NEW"), t0);
         assert!(p.take_due(t0).is_empty(), "the old send still runs");
         assert_eq!(p.record(&old, &Delivery::Delivered, t0), Recorded::Stale);
-        assert_eq!(p.take_due(t0).pop().unwrap().key_b64, "NEW");
+        assert_eq!(p.take_due(t0).pop().unwrap().key_b64.as_str(), "NEW");
     }
 
     #[test]
@@ -1474,8 +1630,8 @@ mod tests {
         let t0 = std::time::Instant::now();
         let mut p = PendingDeliveries::new();
         // Index 255 is older than index 0 (the index wrapped): the order is the enqueue order.
-        p.enqueue(&[to("@a:x")], 255, "OLD", t0);
-        p.enqueue(&[to("@a:x")], 0, "NEW", t0);
+        p.enqueue(&[to("@a:x")], 255, &sk("OLD"), t0);
+        p.enqueue(&[to("@a:x")], 0, &sk("NEW"), t0);
         let jobs = p.take_due(t0);
         assert_eq!(jobs.iter().map(|j| j.index).collect::<Vec<_>>(), vec![255, 0]);
     }
@@ -1484,9 +1640,9 @@ mod tests {
     fn other_users_are_served_while_one_is_busy() {
         let t0 = std::time::Instant::now();
         let mut p = PendingDeliveries::new();
-        p.enqueue(&[to("@a:x")], 1, "K", t0);
+        p.enqueue(&[to("@a:x")], 1, &sk("K"), t0);
         p.take_due(t0);
-        p.enqueue(&[to("@a:x"), to("@b:x")], 2, "K2", t0);
+        p.enqueue(&[to("@a:x"), to("@b:x")], 2, &sk("K2"), t0);
         let jobs = p.take_due(t0);
         assert_eq!(jobs.len(), 1);
         assert_eq!(jobs[0].to, to("@b:x"));
@@ -1558,7 +1714,7 @@ mod tests {
         sender.script.lock().insert("@a:x".into(), vec![Delivery::NoDevice, Delivery::NoDevice]);
         let d = KeyDelivery::new();
         let _worker = d.spawn(sender.clone());
-        d.enqueue(&[to("@a:x")], 5, "KEY");
+        d.enqueue(&[to("@a:x")], 5, &sk("KEY"));
         assert!(!d.settled(5));
         tokio::time::sleep(secs(60)).await;
         assert_eq!(sender.starts_for("@a:x"), vec![secs(0), secs(2), secs(7)], "2 s, then 5 s");
@@ -1573,7 +1729,7 @@ mod tests {
         sender.script.lock().insert("@a:x".into(), vec![Delivery::Failed("offline".into()); 5]);
         let d = KeyDelivery::new();
         let _worker = d.spawn(sender.clone());
-        d.enqueue(&[to("@a:x")], 1, "KEY");
+        d.enqueue(&[to("@a:x")], 1, &sk("KEY"));
         tokio::time::sleep(secs(100)).await;
         assert_eq!(
             sender.starts_for("@a:x"),
@@ -1593,7 +1749,7 @@ mod tests {
         sender.script.lock().insert("@a:x".into(), vec![Delivery::NoDevice; 100]);
         let d = KeyDelivery::new();
         let _worker = d.spawn(sender.clone());
-        d.enqueue(&[to("@a:x")], 1, "KEY");
+        d.enqueue(&[to("@a:x")], 1, &sk("KEY"));
         tokio::time::sleep(secs(400)).await;
         assert!(sender.starts_for("@a:x").len() > 8, "tries went on after the first round");
         d.retain_recipients(&Default::default());
@@ -1609,10 +1765,10 @@ mod tests {
         let sender = std::sync::Arc::new(fake);
         let d = KeyDelivery::new();
         let _worker = d.spawn(sender.clone());
-        d.enqueue(&[to("@a:x")], 1, "K1");
+        d.enqueue(&[to("@a:x")], 1, &sk("K1"));
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        d.enqueue(&[to("@a:x")], 1, "K1 again");
-        d.enqueue(&[to("@a:x")], 2, "K2");
+        d.enqueue(&[to("@a:x")], 1, &sk("K1 again"));
+        d.enqueue(&[to("@a:x")], 2, &sk("K2"));
         tokio::time::sleep(secs(20)).await;
         assert_eq!(sender.most_running.load(std::sync::atomic::Ordering::SeqCst), 1);
         let order: Vec<u8> = sender.started.lock().iter().map(|s| s.1).collect();
@@ -1626,7 +1782,7 @@ mod tests {
         sender.panic_once.lock().push("@a:x".into());
         let d = KeyDelivery::new();
         let _worker = d.spawn(sender.clone());
-        d.enqueue(&[to("@a:x")], 1, "KEY");
+        d.enqueue(&[to("@a:x")], 1, &sk("KEY"));
         tokio::time::sleep(secs(30)).await;
         assert_eq!(sender.starts_for("@a:x").len(), 2, "the failed send was retried");
         assert!(d.shared.pending.lock().is_empty(), "and delivered");
@@ -1640,7 +1796,7 @@ mod tests {
         let d = KeyDelivery::new();
         let _worker = d.spawn(sender.clone());
         let users: Vec<Recipient> = (0..20).map(|i| to(&format!("@u{i}:x"))).collect();
-        d.enqueue(&users, 1, "KEY");
+        d.enqueue(&users, 1, &sk("KEY"));
         tokio::time::sleep(secs(10)).await;
         assert!(d.settled(1));
         assert_eq!(
@@ -1660,7 +1816,7 @@ mod tests {
         let sender = std::sync::Arc::new(fake);
         let d = KeyDelivery::new();
         let _worker = d.spawn(sender.clone());
-        d.enqueue(&[to("@stuck:x"), to("@fine:x")], 1, "KEY");
+        d.enqueue(&[to("@stuck:x"), to("@fine:x")], 1, &sk("KEY"));
         tokio::time::sleep(secs(1)).await;
         assert!(!d.settled(1), "the stuck recipient has not been tried out yet");
         tokio::time::sleep(SEND_TIMEOUT * 3).await;
@@ -1674,7 +1830,7 @@ mod tests {
         sender.script.lock().insert("@a:x".into(), vec![Delivery::NoDevice; 10]);
         let d = KeyDelivery::new();
         let _worker = d.spawn(sender.clone());
-        d.enqueue(&[to("@a:x")], 1, "KEY");
+        d.enqueue(&[to("@a:x")], 1, &sk("KEY"));
         tokio::time::sleep(secs(1)).await;
         d.retain_recipients(&Default::default());
         tokio::time::sleep(secs(120)).await;

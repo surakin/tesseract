@@ -35,6 +35,24 @@ struct Result
     }
 };
 
+/// Prefix of the `on_rtc_session_ended` reason of a call that could not be set
+/// up after `Client::rtc_start_call` accepted it; the rest is the message.
+inline constexpr char kRtcStartFailedReason[] = "start_failed:";
+
+/// Result of `Client::rtc_start_call`: on success the id every event of the
+/// call carries (never 0), known before the call is up.
+struct RtcStartResult
+{
+    bool ok = false;
+    std::string message;
+    std::uint64_t session_id = 0;
+
+    explicit operator bool() const noexcept
+    {
+        return ok;
+    }
+};
+
 /// Result of `Client::paginate_back_with_status` and `paginate_forward`.
 /// `reached_start` is true when matrix-sdk-ui reports the timeline has no
 /// further history to load. `reached_end` is true when a focused timeline
@@ -2475,14 +2493,27 @@ public:
     // ------------------------------------------------------------------
 
     /// Start a MatrixRTC call in `room_id` / `slot_id` (`"call#default"` by
-    /// convention). Returns an error when not logged in or already in a call.
+    /// convention). Returns at once with the call's session id (an error when
+    /// not logged in): the previous call is taken down and the new one set up
+    /// in the background, so this never waits on the network. A call that
+    /// cannot be set up ends with `on_rtc_session_ended` for that id, with a
+    /// reason starting `start_failed:` (see `kRtcStartFailedReason`). Mute
+    /// requests made before the call is up apply once it is.
     /// `audio_only` controls the `m.call.intent` advertised to other clients.
-    Result rtc_start_call(const std::string& room_id,
-                          const std::string& slot_id,
-                          bool audio_only);
+    RtcStartResult rtc_start_call(const std::string& room_id,
+                                  const std::string& slot_id,
+                                  bool audio_only);
 
-    /// Gracefully leave the active call. No-op when no call is active.
+    /// Gracefully leave the active call without waiting for the network: the
+    /// call is over for every other `rtc_*` method at once, its leave events
+    /// finish in the background, and the next `rtc_start_call` waits for them.
+    /// For UI-thread callers. No-op when no call is active.
     void rtc_end_call();
+
+    /// As `rtc_end_call`, but returns once the leave has gone out and the media
+    /// connections are closed (a few seconds at most). Blocks: use it only
+    /// where the client is torn down right after (sign-out, quit).
+    void rtc_end_call_wait();
 
     /// Mute or unmute the local audio track. No-op when no call is active.
     void rtc_set_audio_muted(bool muted);

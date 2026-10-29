@@ -2406,7 +2406,7 @@ void MainWindow::stop_sync()
     // when no call is active, and covers both app quit (applicationWillTerminate:)
     // and normal window close (dealloc), which both funnel through this method.
     // Without this, quitting mid-call skips the graceful MSC3401/MSC4143 leave.
-    end_call();
+    end_call(true);
 
     // Send this window's deferred "New messages" moves before the clients
     // stop.

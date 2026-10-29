@@ -112,7 +112,7 @@ struct CoFx
         s.room_view_ = app->room_view();
         s.my_user_id_ = "@me:x";
         s.current_room_id_ = "!call:x";
-        s.call_session_ = std::make_unique<CallSession>(&client, "!call:x", "slot");
+        s.call_session_ = std::make_unique<CallSession>(&client, "!call:x", "slot", 1);
     }
 };
 
@@ -301,7 +301,7 @@ TEST_CASE("request_call_ wires the lobby join to start_call", "[shell][call_over
     CHECK(f.s.statuses.back().rfind("Call failed", 0) == 0);
 
     // A different room's active call is ended before joining.
-    f.s.call_session_ = std::make_unique<CallSession>(&f.client, "!old:x", "slot");
+    f.s.call_session_ = std::make_unique<CallSession>(&f.client, "!old:x", "slot", 2);
     lobby->on_join("!call:x", "slot", true, false, false);
     CHECK(f.s.call_session_ == nullptr);
 

@@ -17,6 +17,11 @@ inline Result from_ffi(const tesseract_ffi::OpResult& r)
     return {r.ok, std::string(r.message)};
 }
 
+inline RtcStartResult from_ffi(const tesseract_ffi::RtcStartResult& r)
+{
+    return {r.ok, std::string(r.message), r.session_id};
+}
+
 inline PaginateResult from_ffi(const tesseract_ffi::PaginateResult& r)
 {
     return {r.ok, std::string(r.message), r.reached_start, r.reached_end};

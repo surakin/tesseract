@@ -58,6 +58,7 @@ struct CallShell : tesseract::test::TestShellBase
     }
     std::vector<std::string> status;
 
+    using ShellBase::call_account_;
     using ShellBase::call_auto_floated_;
     using ShellBase::call_banner_rosters_;
     using ShellBase::call_invite_decline_targets_;
@@ -66,6 +67,7 @@ struct CallShell : tesseract::test::TestShellBase
     using ShellBase::client_;
     using ShellBase::current_room_id_;
     using ShellBase::end_call;
+    using ShellBase::event_account_;
     using ShellBase::handle_call_video_error_;
     using ShellBase::decline_pending_call_invite_;
     using ShellBase::handle_rtc_invitation_ui_;
@@ -114,10 +116,11 @@ tesseract::RtcParticipantInfo shell_calls_participant(const std::string& id)
     return p;
 }
 
-void shell_calls_install_session(CallShell& s, tesseract::Client& c, const std::string& room)
+void shell_calls_install_session(CallShell& s, tesseract::Client& c, const std::string& room,
+                                 std::uint64_t session_id = 5)
 {
     s.client_ = &c;
-    s.call_session_ = std::make_unique<CallSession>(&c, room, "slot");
+    s.call_session_ = std::make_unique<CallSession>(&c, room, "slot", session_id);
 }
 
 } // namespace
@@ -152,7 +155,7 @@ TEST_CASE("start_call is ignored while a call is already active", "[shell][calls
     CHECK(s.status.empty());
 }
 
-TEST_CASE("participant events build the roster and pin the session id",
+TEST_CASE("participant events build the roster of the call they belong to",
           "[shell][calls]")
 {
     tesseract::Client c; // outlives the shell (its CallSession hangs up on it)
@@ -162,13 +165,14 @@ TEST_CASE("participant events build the roster and pin the session id",
     CHECK(s.call_session_ == nullptr);
 
     shell_calls_install_session(s, c, "!r:x");
+    CHECK(s.call_session_->session_id() == 5); // known from the start
     s.handle_rtc_participant_joined_ui_(5, shell_calls_participant("a"));
     s.handle_rtc_participant_joined_ui_(5, shell_calls_participant("b"));
-    CHECK(s.call_session_->session_id() == 5);
     CHECK(s.call_session_->participants().size() == 2);
 
-    // Events for another session are ignored.
+    // Events for another session, or for none, are ignored.
     s.handle_rtc_participant_left_ui_(99, "a");
+    s.handle_rtc_participant_left_ui_(0, "a");
     s.handle_rtc_participant_updated_ui_(99, shell_calls_participant("zzz"));
     CHECK(s.call_session_->participants().size() == 2);
 
@@ -182,27 +186,27 @@ TEST_CASE("participant events build the roster and pin the session id",
     CHECK(s.call_session_->participants()[0].participant_id == "b");
 }
 
-TEST_CASE("a join for another session does not replace the known session id",
-          "[shell][calls]")
+TEST_CASE("a join for another session is ignored", "[shell][calls]")
 {
     tesseract::Client c;
     CallShell s;
     shell_calls_install_session(s, c, "!r:x");
-    s.handle_rtc_participant_joined_ui_(5, shell_calls_participant("a"));
-    REQUIRE(s.call_session_->session_id() == 5);
     s.handle_rtc_participant_joined_ui_(9, shell_calls_participant("late"));
+    s.handle_rtc_participant_joined_ui_(0, shell_calls_participant("none"));
     CHECK(s.call_session_->session_id() == 5);
-    CHECK(s.call_session_->participants().size() == 1);
+    CHECK(s.call_session_->participants().empty());
 }
 
-TEST_CASE("a session end for another call is ignored", "[shell][calls]")
+TEST_CASE("a session end for another call, or for none, is ignored", "[shell][calls]")
 {
     tesseract::Client c; // outlives the shell (its CallSession hangs up on it)
     CallShell s;
     shell_calls_install_session(s, c, "!r:x");
     s.handle_rtc_participant_joined_ui_(5, shell_calls_participant("a"));
     s.handle_rtc_session_ended_ui_(77, "hangup");
+    s.handle_rtc_session_ended_ui_(0, "something_new");
     CHECK(s.call_session_ != nullptr);
+    CHECK(s.status.empty());
 }
 
 TEST_CASE("a session end before any participant joined is accepted",
@@ -210,10 +214,62 @@ TEST_CASE("a session end before any participant joined is accepted",
 {
     tesseract::Client c; // outlives the shell (its CallSession hangs up on it)
     CallShell s;
-    shell_calls_install_session(s, c, "!r:x");
+    shell_calls_install_session(s, c, "!r:x", 42);
     s.handle_rtc_session_ended_ui_(42, "hangup");
     CHECK(s.call_session_ == nullptr);
     CHECK(s.status.empty()); // normal end reasons are silent
+}
+
+TEST_CASE("a late end of a hung-up call does not end the call started after it",
+          "[shell][calls]")
+{
+    tesseract::Client c; // outlives the shell (its CallSession hangs up on it)
+    CallShell s;
+    shell_calls_install_session(s, c, "!r:x", 5);
+    s.end_call(); // hang up
+    // Join again at once: a new call, a new id, no participant yet.
+    shell_calls_install_session(s, c, "!r:x", 6);
+    // The old call's disconnect arrives now.
+    s.handle_rtc_session_ended_ui_(5, "ClientInitiated");
+    REQUIRE(s.call_session_ != nullptr);
+    CHECK(s.call_session_->session_id() == 6);
+    CHECK(s.status.empty()); // no "ended unexpectedly"
+    // The new call's own end still works.
+    s.handle_rtc_session_ended_ui_(6, "ClientInitiated");
+    CHECK(s.call_session_ == nullptr);
+}
+
+TEST_CASE("an end tagged with another account is not this call's", "[shell][calls]")
+{
+    tesseract::Client c; // outlives the shell (its CallSession hangs up on it)
+    CallShell s;
+    shell_calls_install_session(s, c, "!r:x", 5);
+    auto account = std::make_shared<tesseract::AccountSession>();
+    account->user_id = "@a:x";
+    s.call_account_ = account;
+
+    s.event_account_ = "@b:x";
+    s.handle_rtc_session_ended_ui_(5, "hangup");
+    s.handle_rtc_participant_joined_ui_(5, shell_calls_participant("p"));
+    CHECK(s.call_session_ != nullptr);
+    CHECK(s.call_session_->participants().empty());
+
+    s.event_account_ = "@a:x";
+    s.handle_rtc_session_ended_ui_(5, "hangup");
+    CHECK(s.call_session_ == nullptr);
+    s.event_account_.clear();
+}
+
+TEST_CASE("a call that could not be set up ends with the reason shown",
+          "[shell][calls]")
+{
+    tesseract::Client c;
+    CallShell s;
+    shell_calls_install_session(s, c, "!r:x", 8);
+    s.handle_rtc_session_ended_ui_(8, std::string(tesseract::kRtcStartFailedReason) + "room not found");
+    CHECK(s.call_session_ == nullptr);
+    REQUIRE(s.status.size() == 1);
+    CHECK(s.status[0] == "Call failed: room not found");
 }
 
 TEST_CASE("normal end reasons are silent; failures are explained",
@@ -245,7 +301,7 @@ TEST_CASE("normal end reasons are silent; failures are explained",
         tesseract::Client client;
         CallShell s;
         shell_calls_install_session(s, client, "!r:x");
-        s.handle_rtc_session_ended_ui_(0, c.reason);
+        s.handle_rtc_session_ended_ui_(5, c.reason);
         INFO(c.reason);
         CHECK(s.call_session_ == nullptr);
         if (c.silent)
@@ -581,7 +637,7 @@ TEST_CASE("the banner is hidden in the room the user is already calling from",
 {
     BannerFixture f;
     f.s.call_session_ =
-        std::make_unique<CallSession>(&f.client, "!call:x", "slot");
+        std::make_unique<CallSession>(&f.client, "!call:x", "slot", 3);
     f.s.refresh_call_banners_();
     CHECK_FALSE(f.app->room_view()->call_banner_visible());
 }

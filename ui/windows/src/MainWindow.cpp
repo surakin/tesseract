@@ -2008,7 +2008,7 @@ void MainWindow::on_destroy()
         // Hang up an active call while the SDK can still send the leave. Once the
         // sync stops, the call would only end with the session, and others would
         // still see us in it.
-        end_call();
+        end_call(true);
         for (auto& s : account_manager_.accounts())
         {
             if (s && s->client)

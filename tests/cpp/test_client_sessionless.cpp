@@ -157,6 +157,7 @@ TEST_CASE("sessionless Client: fire-and-forget calls are harmless no-ops",
     CHECK_NOTHROW(c.set_msc2545_legacy_compat(true));
     CHECK_NOTHROW(c.poll_presence_now());
     CHECK_NOTHROW(c.rtc_end_call());
+    CHECK_NOTHROW(c.rtc_end_call_wait());
     CHECK_NOTHROW(c.rtc_set_audio_muted(true));
     CHECK_NOTHROW(c.rtc_set_video_muted(true));
     CHECK_NOTHROW(c.rtc_stop_screen_share());

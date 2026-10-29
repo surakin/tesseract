@@ -6,6 +6,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use super::e2ee::SecretString;
 use super::signaling::{RtcKeyContent, RtcKeyMember, RtcKeySession};
 
 pub const SLOT_TYPE: &str = "org.matrix.msc4143.rtc.slot";
@@ -219,7 +220,7 @@ pub struct DeclineContent {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MediaKey {
     pub index: u8,
-    pub key: String,
+    pub key: SecretString,
 }
 
 /// `m.rtc.encryption_key` to-device content, in the stable shape and/or
@@ -241,7 +242,7 @@ pub struct MediaKeyContent {
 
 impl MediaKeyContent {
     /// `(index, base64 key)` from whichever shape is present.
-    pub fn media_key_parts(&self) -> Option<(u8, String)> {
+    pub fn media_key_parts(&self) -> Option<(u8, SecretString)> {
         if let Some(k) = &self.media_key {
             return Some((k.index, k.key.clone()));
         }
@@ -412,7 +413,7 @@ mod tests {
             "media_key": { "index": 3, "key": "AAAA" }
         }))
         .unwrap();
-        assert_eq!(c.media_key_parts(), Some((3, "AAAA".to_owned())));
+        assert_eq!(c.media_key_parts(), Some((3, SecretString::new("AAAA".to_owned()))));
     }
 
     #[test]
@@ -424,7 +425,7 @@ mod tests {
             "session": { "call_id": "", "application": "m.call", "scope": "m.room" }
         }))
         .unwrap();
-        assert_eq!(c.media_key_parts(), Some((7, "BBBB".to_owned())));
+        assert_eq!(c.media_key_parts(), Some((7, SecretString::new("BBBB".to_owned()))));
         assert!(c.member_id.is_none());
     }
 

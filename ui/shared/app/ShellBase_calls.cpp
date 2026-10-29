@@ -733,7 +733,10 @@ void ShellBase::start_call(const std::string& room_id, const std::string& slot_i
         return;
     }
 
-    call_session_ = std::make_unique<CallSession>(client_, room_id, slot_id);
+    // The call comes up in the background; its events already carry this id.
+    // A failure to set it up arrives as a session-ended event.
+    call_session_ = std::make_unique<CallSession>(client_, room_id, slot_id,
+                                                  result.session_id);
     call_account_ = active_account_;
     call_audio_output_ = make_call_audio_output_();
     if (start_audio_muted)
@@ -932,7 +935,7 @@ void ShellBase::handle_call_room_navigation_()
                              call_session_->room_id() == current_room_id_);
 }
 
-void ShellBase::end_call()
+void ShellBase::end_call(bool wait_for_leave)
 {
     // Clear active indicator before tearing down session.
     if (room_view_ && room_view_->header())
@@ -960,7 +963,14 @@ void ShellBase::end_call()
     }
     if (call_session_)
     {
-        call_session_->hang_up();
+        if (wait_for_leave)
+        {
+            call_session_->hang_up_and_wait();
+        }
+        else
+        {
+            call_session_->hang_up();
+        }
         call_session_.reset();
     }
     if (call_window_)
@@ -976,17 +986,22 @@ void ShellBase::end_call()
     refresh_call_banners_();
 }
 
+bool ShellBase::is_current_call_event_(std::uint64_t session_id) const
+{
+    if (!call_session_ || !call_session_->owns_event(session_id))
+        return false;
+    // The id is unique across accounts; the account check is a second guard.
+    if (event_account_.empty())
+        return true;
+    const auto account = call_account_.lock();
+    return !account || account->user_id == event_account_;
+}
+
 void ShellBase::handle_rtc_participant_joined_ui_(std::uint64_t session_id,
                                                    RtcParticipantInfo info)
 {
-    if (!call_session_)
+    if (!is_current_call_event_(session_id))
         return;
-    // Adopt the session id only while it is unknown. A join for another session,
-    // such as a late event from an earlier call, must not replace the known one.
-    const std::uint64_t known = call_session_->session_id();
-    if (known != 0 && known != session_id)
-        return;
-    call_session_->set_session_id(session_id);
     call_session_->on_participant_joined(info);
     if (auto* ov = active_call_overlay_())
         ov->update_participants(call_session_->participants());
@@ -995,7 +1010,7 @@ void ShellBase::handle_rtc_participant_joined_ui_(std::uint64_t session_id,
 void ShellBase::handle_rtc_participant_left_ui_(std::uint64_t session_id,
                                                  std::string participant_id)
 {
-    if (!call_session_ || call_session_->session_id() != session_id)
+    if (!is_current_call_event_(session_id))
         return;
     call_session_->on_participant_left(participant_id);
     if (auto* ov = active_call_overlay_())
@@ -1005,7 +1020,7 @@ void ShellBase::handle_rtc_participant_left_ui_(std::uint64_t session_id,
 void ShellBase::handle_rtc_participant_updated_ui_(std::uint64_t session_id,
                                                     RtcParticipantInfo info)
 {
-    if (!call_session_ || call_session_->session_id() != session_id)
+    if (!is_current_call_event_(session_id))
         return;
     call_session_->on_participant_updated(info);
     if (auto* ov = active_call_overlay_())
@@ -1015,12 +1030,9 @@ void ShellBase::handle_rtc_participant_updated_ui_(std::uint64_t session_id,
 void ShellBase::handle_rtc_session_ended_ui_(std::uint64_t session_id,
                                               std::string reason)
 {
-    if (!call_session_)
-        return;
-    // Accept the end event if session_id matches, OR if session_id_ is still 0
-    // (no participant joined yet — the session never got its id confirmed).
-    if (call_session_->session_id() != 0 &&
-        call_session_->session_id() != session_id)
+    // Only the end of this very call counts. A late end of an earlier one (a
+    // hang-up, another account's call) must not tear down a call started since.
+    if (!is_current_call_event_(session_id))
         return;
 
     // Surface disconnect reason for non-normal ends.
@@ -1030,7 +1042,10 @@ void ShellBase::handle_rtc_session_ended_ui_(std::uint64_t session_id,
         && reason != "switch_device")
     {
         std::string msg;
-        if (reason == "ice_failed" || reason == "dtls_failed" || reason == "network_error")
+        if (reason.rfind(kRtcStartFailedReason, 0) == 0)
+            msg = tk::trf(tk::tr("Call failed: {0}"),
+                          {reason.substr(sizeof(kRtcStartFailedReason) - 1)});
+        else if (reason == "ice_failed" || reason == "dtls_failed" || reason == "network_error")
             msg = tk::tr("Call disconnected due to a network error.");
         else if (reason == "media_error" || reason == "transport_failure")
             msg = tk::tr("Call ended due to a media error.");

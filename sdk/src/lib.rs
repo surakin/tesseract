@@ -372,6 +372,13 @@ pub mod ffi {
     }
 
     #[derive(Debug, PartialEq, Default)]
+    pub struct RtcStartResult {
+        pub ok: bool,
+        pub message: String,
+        pub session_id: u64,
+    }
+
+    #[derive(Debug, PartialEq, Default)]
     pub struct UpdateResult {
         pub has_update: bool,
         pub version: String,

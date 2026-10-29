@@ -3516,18 +3516,28 @@ Result Client::hint_push_room(const std::string& room_id)
     return from_ffi(impl_->ffi->hint_push_room(room_id));
 }
 
-Result Client::rtc_start_call(const std::string& room_id,
-                               const std::string& slot_id,
-                               bool audio_only)
+RtcStartResult Client::rtc_start_call(const std::string& room_id,
+                                      const std::string& slot_id,
+                                      bool audio_only)
 {
+    // Returns at once (the setup runs on the SDK's runtime): the lock is held
+    // only to hand over the previous call.
     MUT_FFI;
     return from_ffi(impl_->ffi->rtc_start_call(room_id, slot_id, audio_only));
 }
 
 void Client::rtc_end_call()
 {
+    // Returns at once: the lock is held only to take the session, never while
+    // the leave runs on the SDK's runtime.
     MUT_FFI;
     impl_->ffi->rtc_end_call();
+}
+
+void Client::rtc_end_call_wait()
+{
+    MUT_FFI;
+    impl_->ffi->rtc_end_call_wait();
 }
 
 void Client::rtc_set_audio_muted(bool muted)

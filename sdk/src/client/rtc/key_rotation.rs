@@ -20,10 +20,16 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use super::e2ee::E2eeManager;
+use super::e2ee::{E2eeManager, Secret, SecretKey, SecretString};
 
 /// A new key is sent first and only used for encryption after this delay, so
 /// receivers have it by the time frames carry its index (MSC4143: 5 s).
+///
+/// By design, someone who leaves (or is removed) can still decrypt our media
+/// until the new key is in use: this delay plus, at most, [`MAX_ACTIVATION_WAIT`]
+/// after the rotation. Switching sooner would cut off members who do not have
+/// the new key yet, and the leaver heard the call up to the moment of leaving
+/// anyway; what the rotation protects is everything after that window.
 pub const ACTIVATION_DELAY: Duration = Duration::from_secs(5);
 /// Rotate even when membership is stable (the MSC asks for periodic rotation
 /// without giving a period).
@@ -36,9 +42,9 @@ pub type Sessions = HashMap<Member, String>;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RotationAction {
     /// Send the key (base64 raw material, `index`) to these `(user, device)`s.
-    Send { index: u8, key_b64: String, to: Vec<Member> },
+    Send { index: u8, key_b64: SecretString, to: Vec<Member> },
     /// Start encrypting our media with this key.
-    Activate { index: u8, raw_key: [u8; 32] },
+    Activate { index: u8, raw_key: SecretKey },
 }
 
 /// A new key waits for its delivery to settle before it is put to use, but not
@@ -55,18 +61,18 @@ pub const MAX_ACTIVATION_WAIT: Duration = Duration::from_secs(3);
 /// [`MAX_ACTIVATION_WAIT`] has passed.
 #[derive(Default)]
 pub struct ActivationGate {
-    held: Option<(u8, [u8; 32], Instant)>,
+    held: Option<(u8, SecretKey, Instant)>,
 }
 
 impl ActivationGate {
     /// Hold the activation of `index`; a newer one replaces an older still held.
-    pub fn hold(&mut self, index: u8, raw_key: [u8; 32], now: Instant) {
+    pub fn hold(&mut self, index: u8, raw_key: SecretKey, now: Instant) {
         self.held = Some((index, raw_key, now + MAX_ACTIVATION_WAIT));
     }
 
     /// The activation to apply now, if its key is settled (`settled(index)`)
     /// or the wait is over.
-    pub fn release(&mut self, settled: impl Fn(u8) -> bool, now: Instant) -> Option<(u8, [u8; 32])> {
+    pub fn release(&mut self, settled: impl Fn(u8) -> bool, now: Instant) -> Option<(u8, SecretKey)> {
         let (index, _, give_up_at) = self.held.as_ref()?;
         if settled(*index) || now >= *give_up_at {
             return self.held.take().map(|(i, k, _)| (i, k));
@@ -85,7 +91,7 @@ pub struct KeyRotator {
     /// The key we are encrypting with right now. It differs from the newest
     /// key (`mgr`) from a rotation until the caller confirms the activation.
     active_index: u8,
-    active_b64: String,
+    active_b64: SecretString,
     members: Sessions,
     /// Time of the last rotation (or of creation).
     last_rotation: Instant,
@@ -110,8 +116,8 @@ impl KeyRotator {
     }
 
     /// The key in use from the start: `(index, base64, raw)`.
-    pub fn initial(&self) -> (u8, String, [u8; 32]) {
-        (self.mgr.own_index(), self.mgr.own_key_b64(), *self.mgr.own_raw_key())
+    pub fn initial(&self) -> (u8, SecretString, SecretKey) {
+        (self.mgr.own_index(), self.mgr.own_key_b64(), self.mgr.own_secret_key())
     }
 
     fn rotate(&mut self, now: Instant) -> RotationAction {
@@ -200,7 +206,7 @@ impl KeyRotator {
             self.activate_at = None;
             out.push(RotationAction::Activate {
                 index: self.mgr.own_index(),
-                raw_key: *self.mgr.own_raw_key(),
+                raw_key: self.mgr.own_secret_key(),
             });
         }
         if !self.rotation_pending() && now.saturating_duration_since(self.last_rotation) >= PERIODIC_ROTATION {
@@ -493,10 +499,10 @@ mod tests {
         let t0 = Instant::now();
         let mut g = ActivationGate::default();
         assert!(g.release(|_| true, t0).is_none(), "nothing held");
-        g.hold(3, [7; 32], t0);
+        g.hold(3, Secret::new([7; 32]), t0);
         assert_eq!(g.deadline(), Some(t0 + MAX_ACTIVATION_WAIT));
         assert!(g.release(|_| false, t0 + Duration::from_secs(1)).is_none());
-        assert_eq!(g.release(|i| i == 3, t0 + Duration::from_secs(2)), Some((3, [7; 32])));
+        assert_eq!(g.release(|i| i == 3, t0 + Duration::from_secs(2)), Some((3, Secret::new([7; 32]))));
         assert!(g.release(|_| true, t0 + Duration::from_secs(3)).is_none(), "released once");
         assert!(g.deadline().is_none());
     }
@@ -505,18 +511,18 @@ mod tests {
     fn a_stuck_delivery_cannot_hold_an_activation_forever() {
         let t0 = Instant::now();
         let mut g = ActivationGate::default();
-        g.hold(1, [1; 32], t0);
+        g.hold(1, Secret::new([1; 32]), t0);
         assert!(g.release(|_| false, t0 + MAX_ACTIVATION_WAIT - Duration::from_millis(1)).is_none());
-        assert_eq!(g.release(|_| false, t0 + MAX_ACTIVATION_WAIT), Some((1, [1; 32])));
+        assert_eq!(g.release(|_| false, t0 + MAX_ACTIVATION_WAIT), Some((1, Secret::new([1; 32]))));
     }
 
     #[test]
     fn a_newer_activation_replaces_a_held_one() {
         let t0 = Instant::now();
         let mut g = ActivationGate::default();
-        g.hold(1, [1; 32], t0);
-        g.hold(2, [2; 32], t0 + Duration::from_secs(1));
-        assert_eq!(g.release(|_| true, t0 + Duration::from_secs(2)), Some((2, [2; 32])));
+        g.hold(1, Secret::new([1; 32]), t0);
+        g.hold(2, Secret::new([2; 32]), t0 + Duration::from_secs(1));
+        assert_eq!(g.release(|_| true, t0 + Duration::from_secs(2)), Some((2, Secret::new([2; 32]))));
     }
 
     #[test]

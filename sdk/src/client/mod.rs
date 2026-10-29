@@ -1122,10 +1122,14 @@ pub struct ClientFfi {
     /// `MUTUAL_ROOMS_NONE` / `_UNSTABLE` / `_STABLE`. Picks the request type
     /// `get_mutual_rooms_async` sends.
     pub(super) mutual_rooms_mode: std::sync::Arc<std::sync::atomic::AtomicU8>,
-    /// Active MatrixRTC call session, or `None` when not in a call.
-    /// Owned here so `rtc_push_video_frame_i420` can reach it without a
-    /// separate handle.
-    pub(super) active_rtc_call: Option<Box<crate::client::rtc::RtcSession>>,
+    /// The MatrixRTC call: none, being set up on the runtime, or active. Owned
+    /// here so `rtc_push_video_frame_i420` can reach it without a separate
+    /// handle; shared with the setup, which installs the session when it is up.
+    pub(super) rtc_call: rtc_ffi::SharedCall,
+    /// The teardown of the call last hung up with `rtc_end_call`, still running
+    /// on the runtime. The next call, a blocking hang-up and the drop of this
+    /// client wait for it, so an old call's leave never lands after a new one's.
+    pub(super) rtc_teardown: rtc_ffi::PendingTeardown,
     // Declared last so it drops after all SDK resources; deadpool/SQLite cleanup
     // uses tokio primitives and requires the runtime to still be alive.
     pub(super) rt: Runtime,
@@ -1150,6 +1154,15 @@ impl Drop for ClientFfi {
         if let Some(h) = self.prefetch_task.lock().take() {
             h.abort();
         }
+        // A hang-up still withdrawing the call's announcements, or a call still
+        // being set up (which then takes itself down), gets to finish (bounded)
+        // before the runtime that carries it goes away.
+        if let Some(setup) = self.rtc_call.lock().take_starting() {
+            let handle = self.rt.handle().clone();
+            self.rtc_teardown
+                .spawn(&handle, async move { rtc_ffi::wait_for(Some(setup)).await });
+        }
+        self.rt.block_on(self.rtc_teardown.finish(std::time::Duration::from_secs(10)));
         // Drop SDK objects that call Handle::current() in their Drop impls
         // (SqliteStateStore via matrix_sdk::Client, Timeline) with the runtime
         // handle in TLS.  Without enter() here, dropping pending_login_client_
@@ -1564,7 +1577,8 @@ impl ClientFfi {
             profile_fields_prefix: std::sync::Arc::new(std::sync::RwLock::new(None)),
             supports_invite_reason: std::sync::Arc::new(std::sync::RwLock::new(false)),
             mutual_rooms_mode: std::sync::Arc::new(std::sync::atomic::AtomicU8::new(0)),
-            active_rtc_call: None,
+            rtc_call: Default::default(),
+            rtc_teardown: Default::default(),
             rt: tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 // Timeline construction collects cached events into an
@@ -1635,7 +1649,8 @@ impl ClientFfi {
             profile_fields_prefix: std::sync::Arc::new(std::sync::RwLock::new(None)),
             supports_invite_reason: std::sync::Arc::new(std::sync::RwLock::new(false)),
             mutual_rooms_mode: std::sync::Arc::new(std::sync::atomic::AtomicU8::new(0)),
-            active_rtc_call: None,
+            rtc_call: Default::default(),
+            rtc_teardown: Default::default(),
             rt: tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 .build()

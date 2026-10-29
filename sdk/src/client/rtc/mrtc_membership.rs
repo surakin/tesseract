@@ -18,7 +18,7 @@ use super::sticky::send_sticky;
 use base64ct::{Base64UrlUnpadded, Encoding};
 use rand::RngCore;
 use serde_json::{json, Value};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tracing::{info, warn};
 
 /// How long one `m.rtc.member` event keeps us joined: MSC4354's 5 minute floor.
@@ -372,6 +372,56 @@ pub fn leave_reason_now(
     None
 }
 
+/// Follows the room's slot while we are joined, to leave when it goes away. A
+/// slot that is closed means calls are off. A slot that reads as missing can
+/// also be a store error, a cache re-restore or a sync gap, and reconcile
+/// passes can come milliseconds apart (they also run on member changes), so a
+/// missing slot ends the call only when it has been missing on
+/// [`SlotWatch::MISSES_TO_LEAVE`] reads that span [`SlotWatch::MISS_PERIOD`].
+/// A slot that is there but cannot be read (a shape we do not know, or a read
+/// that failed) is not evidence either way: it is logged and ignored.
+#[derive(Default)]
+pub struct SlotWatch {
+    /// When the slot first read as missing, in the current run of misses.
+    first_miss: Option<Instant>,
+    misses: u32,
+}
+
+impl SlotWatch {
+    pub const MISSES_TO_LEAVE: u32 = 2;
+    pub const MISS_PERIOD: Duration = Duration::from_secs(15);
+
+    /// Feed the slot as read this pass, at `now`; returns why to leave now, if so.
+    pub fn observe(
+        &mut self,
+        state: &SlotState,
+        encrypted_at_join: bool,
+        encrypted_now: bool,
+        now: Instant,
+    ) -> Option<(LeaveCode, &'static str)> {
+        let slot = match state {
+            SlotState::Present(slot) => {
+                self.first_miss = None;
+                self.misses = 0;
+                Some(slot)
+            }
+            SlotState::Unreadable => {
+                warn!("rtc: the room's call slot cannot be read; staying in the call");
+                None
+            }
+            SlotState::Absent => {
+                let since = *self.first_miss.get_or_insert(now);
+                self.misses += 1;
+                if self.misses >= Self::MISSES_TO_LEAVE && now.saturating_duration_since(since) >= Self::MISS_PERIOD {
+                    return Some((LeaveCode::SlotClosed, "the slot was removed"));
+                }
+                None
+            }
+        };
+        leave_reason_now(slot, encrypted_at_join, encrypted_now)
+    }
+}
+
 /// What starting a call does about the room's `m.call` slot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SlotPlan {
@@ -396,12 +446,21 @@ pub enum SlotPlan {
 ///   event is a shape we do not know and must not overwrite), and starting a
 ///   call is not consent to undo that.
 pub fn plan_slot(state: &SlotState, room_encrypted: bool, can_send_slot: bool, others_present: bool) -> SlotPlan {
+    // `others_present` is [`others_may_be_present`]: true when the member read
+    // was cut short too, so an existing slot is never replaced on a guess.
     match state {
         SlotState::Absent if can_send_slot => SlotPlan::Write,
         SlotState::Present(s) if s.is_open() && slot_matches_room(s, room_encrypted) => SlotPlan::Use,
         SlotState::Present(s) if s.is_open() && can_send_slot && !others_present => SlotPlan::Write,
         SlotState::Absent | SlotState::Unreadable | SlotState::Present(_) => SlotPlan::Skip,
     }
+}
+
+/// Whether somebody else may be in the call: members are known, or the member
+/// read did not finish (a big room's list timed out), in which case an empty
+/// list proves nothing.
+pub fn others_may_be_present(known_members: usize, member_read_complete: bool) -> bool {
+    known_members > 0 || !member_read_complete
 }
 
 /// The legacy state events a call runs on (MSC3401).
@@ -541,6 +600,17 @@ mod tests {
     }
 
     #[test]
+    fn an_unfinished_member_read_never_lets_an_existing_slot_be_replaced() {
+        let old = SlotState::Present(slot_for(false));
+        // Read complete, nobody there: replace the stale slot.
+        assert_eq!(plan_slot(&old, true, true, others_may_be_present(0, true)), SlotPlan::Write);
+        // Read timed out with nobody known: others may be mid-call, so leave it.
+        assert_eq!(plan_slot(&old, true, true, others_may_be_present(0, false)), SlotPlan::Skip);
+        // Writing when there is no slot at all stays fine either way.
+        assert_eq!(plan_slot(&SlotState::Absent, true, true, others_may_be_present(0, false)), SlotPlan::Write);
+    }
+
+    #[test]
     fn we_leave_when_the_slot_closes_or_the_room_becomes_encrypted() {
         let closed = SlotContent { status: SlotStatus::Closed, application: None, encryption: None };
         assert_eq!(leave_reason_now(Some(&closed), false, false), Some((LeaveCode::SlotClosed, "the slot was closed")));
@@ -553,6 +623,84 @@ mod tests {
         assert_eq!(leave_reason_now(None, false, false), None);
         // Encrypted from the start and the slot (still) says so.
         assert_eq!(leave_reason_now(Some(&slot_for(true)), true, true), None);
+    }
+
+    fn secs(t0: Instant, n: u64) -> Instant {
+        t0 + Duration::from_secs(n)
+    }
+
+    #[test]
+    fn a_slot_that_stays_gone_for_the_whole_period_ends_the_call() {
+        let t0 = Instant::now();
+        let open = SlotState::Present(slot_for(true));
+        let mut w = SlotWatch::default();
+        assert_eq!(w.observe(&open, true, true, t0), None);
+        assert_eq!(w.observe(&SlotState::Absent, true, true, secs(t0, 1)), None, "the first miss");
+        assert_eq!(w.observe(&SlotState::Absent, true, true, secs(t0, 10)), None, "two reads, too soon");
+        assert_eq!(
+            w.observe(&SlotState::Absent, true, true, secs(t0, 16)),
+            Some((LeaveCode::SlotClosed, "the slot was removed")),
+            "missing for 15 s over several reads"
+        );
+    }
+
+    #[test]
+    fn two_reads_milliseconds_apart_do_not_end_the_call() {
+        let t0 = Instant::now();
+        let mut w = SlotWatch::default();
+        for ms in [0, 5, 20, 40] {
+            let at = t0 + Duration::from_millis(ms);
+            assert_eq!(w.observe(&SlotState::Absent, true, true, at), None, "{ms} ms");
+        }
+        // A long gap with a single read is not two observations.
+        let mut w = SlotWatch::default();
+        assert_eq!(w.observe(&SlotState::Absent, true, true, secs(t0, 100)), None);
+    }
+
+    #[test]
+    fn a_slot_that_cannot_be_read_never_ends_the_call() {
+        let t0 = Instant::now();
+        let mut w = SlotWatch::default();
+        for n in 0..10 {
+            assert_eq!(w.observe(&SlotState::Unreadable, true, true, secs(t0, n * 30)), None);
+        }
+        // Neither does it start or reset the clock of real misses.
+        let mut w = SlotWatch::default();
+        assert_eq!(w.observe(&SlotState::Absent, true, true, t0), None);
+        assert_eq!(w.observe(&SlotState::Unreadable, true, true, secs(t0, 20)), None);
+        assert_eq!(
+            w.observe(&SlotState::Absent, true, true, secs(t0, 30)),
+            Some((LeaveCode::SlotClosed, "the slot was removed"))
+        );
+    }
+
+    #[test]
+    fn a_slot_that_comes_back_resets_the_count() {
+        let t0 = Instant::now();
+        let open = SlotState::Present(slot_for(false));
+        let mut w = SlotWatch::default();
+        assert_eq!(w.observe(&SlotState::Absent, false, false, t0), None);
+        assert_eq!(w.observe(&open, false, false, secs(t0, 14)), None);
+        assert_eq!(w.observe(&SlotState::Absent, false, false, secs(t0, 20)), None, "the earlier miss no longer counts");
+        assert_eq!(w.observe(&SlotState::Absent, false, false, secs(t0, 40)), Some((LeaveCode::SlotClosed, "the slot was removed")));
+    }
+
+    #[test]
+    fn a_closed_slot_and_an_encryption_flip_still_end_the_call_at_once() {
+        let t0 = Instant::now();
+        let closed = SlotState::Present(SlotContent { status: SlotStatus::Closed, application: None, encryption: None });
+        let mut w = SlotWatch::default();
+        assert_eq!(w.observe(&closed, false, false, t0), Some((LeaveCode::SlotClosed, "the slot was closed")));
+        let mut w = SlotWatch::default();
+        // The room became encrypted while the slot cannot be read: that reason is not delayed.
+        assert_eq!(
+            w.observe(&SlotState::Absent, false, true, t0),
+            Some((LeaveCode::SlotClosed, "the room became encrypted"))
+        );
+        assert_eq!(
+            w.observe(&SlotState::Unreadable, false, true, t0),
+            Some((LeaveCode::SlotClosed, "the room became encrypted"))
+        );
     }
 
     // ── MrtcMembership with a recording sink ────────────────────────────────

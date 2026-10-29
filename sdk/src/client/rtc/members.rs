@@ -10,7 +10,7 @@ use std::collections::{BTreeSet, HashSet};
 
 use matrix_sdk::ruma::{
     events::{
-        call::member::{ActiveFocus, CallMemberEventContent, Focus},
+        call::member::{ActiveFocus, Application, CallMemberEventContent, CallScope, Focus, MembershipData},
         room::member::MembershipState,
     },
     DeviceId, MilliSecondsSinceUnixEpoch, UInt, UserId,
@@ -99,6 +99,10 @@ pub struct CallMember {
     /// `m.audio` / `m.video` (or the reference implementation's spelling).
     pub intent: Option<String>,
     pub capabilities: Option<Vec<String>>,
+    /// A legacy membership's `created_ts` as the sender wrote it, unclamped:
+    /// only an identity for [`Self::session_tag`], never a time to order or
+    /// expire by (that is `joined_at`).
+    pub claimed_at_ms: Option<u64>,
 }
 
 impl CallMember {
@@ -111,12 +115,15 @@ impl CallMember {
     /// member has a fresh `member.id` per session. A legacy one has only its
     /// `created_ts` (the state key stays the same per device): clients keep it
     /// across refreshes and take a new one when they join, so a changed value
-    /// means a new session. Without a `created_ts` it is the event time, which
-    /// then also changes on a refresh: that costs a resent key, nothing more.
+    /// means a new session. The value is taken as written: the clamped
+    /// `joined_at` of a sender whose clock runs ahead is the event time on one
+    /// event and the claim on the next, which would look like a new session.
+    /// Without a `created_ts` it is the event time, which then also changes on
+    /// a refresh: that costs a resent key, nothing more.
     pub fn session_tag(&self) -> String {
         match self.source {
             MemberSource::MatrixRtc => self.member_id.clone(),
-            MemberSource::Legacy => u64::from(self.joined_at.0).to_string(),
+            MemberSource::Legacy => self.claimed_at_ms.unwrap_or(u64::from(self.joined_at.0)).to_string(),
         }
     }
 }
@@ -273,6 +280,71 @@ pub async fn senders_to_keep(
     keep
 }
 
+/// How long after its newest event a legacy membership may be live, however
+/// long a lifetime it claims (Element Call uses four hours and refreshes well
+/// before). Counted from the event, not from the join: a call that has run for
+/// days keeps being refreshed, and each refresh is a new event.
+pub const MAX_LEGACY_EXPIRES_MS: u64 = 24 * 3_600_000;
+/// How much older than its own event a membership's `created_ts` is believed
+/// to be: the same window. A member that joined longer ago than this is
+/// ordered as if it joined then, so a made-up ancient `created_ts` cannot make
+/// its sender the oldest member (the SFU choice follows the oldest).
+pub const MAX_LEGACY_AGE_MS: u64 = MAX_LEGACY_EXPIRES_MS;
+/// The lifetime of a flat membership that names none.
+const DEFAULT_LEGACY_EXPIRES_MS: u64 = 4 * 3_600_000;
+
+/// When a legacy membership joined, as MSC3401 defines it:
+/// `MIN(content.created_ts, event.origin_server_ts)`. `created_ts` is the
+/// sender's word, `origin_server_ts` the server's: a `created_ts` after the
+/// event itself is impossible and is ignored, so it can neither push a
+/// membership's expiry into the future nor make it look younger. One claiming
+/// to be older is believed (that is how a refreshed membership keeps its place,
+/// and the same value other clients order by), up to [`MAX_LEGACY_AGE_MS`]
+/// before the event.
+pub fn legacy_join_ms(created_ms: Option<u64>, origin_ms: u64) -> u64 {
+    created_ms.map_or(origin_ms, |c| c.clamp(origin_ms.saturating_sub(MAX_LEGACY_AGE_MS), origin_ms))
+}
+
+/// When a legacy membership started, for working out when its claimed lifetime
+/// ends: `MIN(created_ts, origin_server_ts)` with no age limit. The lifetime a
+/// refresh claims counts from the real join, so the age limit of
+/// [`legacy_join_ms`] (an ordering rule) must not move it.
+pub fn legacy_started_ms(created_ms: Option<u64>, origin_ms: u64) -> u64 {
+    created_ms.map_or(origin_ms, |c| c.min(origin_ms))
+}
+
+/// Whether a legacy membership is still live at `now_ms`: it started at
+/// `join_ms` ([`legacy_started_ms`]) and claims the lifetime `expires_ms`, and it is no more than
+/// [`MAX_LEGACY_EXPIRES_MS`] after its event (`origin_ms`). The cap counts from
+/// the event: our own refresh sets `expires` to the call's age plus four hours,
+/// so a long call's lifetime can exceed a day while its newest event is fresh.
+pub fn legacy_is_live(join_ms: u64, expires_ms: u64, origin_ms: u64, now_ms: u64) -> bool {
+    now_ms <= join_ms.saturating_add(expires_ms).min(origin_ms.saturating_add(MAX_LEGACY_EXPIRES_MS))
+}
+
+/// Whether a membership belongs to the room's default call: `scope` `m.room`
+/// (or not given) and no `call_id`. Other calls of the room are other sessions
+/// whose members are not in ours, and whose media keys are not ours to give.
+pub fn is_room_call(scope: Option<&str>, call_id: Option<&str>) -> bool {
+    scope.is_none_or(|s| s == "m.room") && call_id.is_none_or(str::is_empty)
+}
+
+fn typed_is_room_call(m: &MembershipData<'_>) -> bool {
+    match m.application() {
+        Application::Call(c) => c.scope == CallScope::Room && c.call_id.is_empty(),
+        _ => false,
+    }
+}
+
+fn typed_expires_ms(m: &MembershipData<'_>) -> u64 {
+    let d = match m {
+        MembershipData::Legacy(d) => d.expires,
+        MembershipData::Session(d) => d.expires,
+        _ => return 0,
+    };
+    u64::try_from(d.as_millis()).unwrap_or(u64::MAX)
+}
+
 /// Extract the live members from one `org.matrix.msc3401.call.member` event.
 ///
 /// Skips expired and leave memberships, non-call applications and our own
@@ -286,7 +358,14 @@ pub fn members_from_call_member(
     own_user: &UserId,
     own_device: &DeviceId,
 ) -> Vec<CallMember> {
-    members_from_call_member_inner(content, state_key, sender, origin_server_ts, Some((own_user, own_device)))
+    members_from_call_member_inner(
+        content,
+        state_key,
+        sender,
+        origin_server_ts,
+        Some((own_user, own_device)),
+        u64::from(MilliSecondsSinceUnixEpoch::now().0),
+    )
 }
 
 fn members_from_call_member_inner(
@@ -295,11 +374,19 @@ fn members_from_call_member_inner(
     sender: &UserId,
     origin_server_ts: MilliSecondsSinceUnixEpoch,
     exclude: Option<(&UserId, &DeviceId)>,
+    now_ms: u64,
 ) -> Vec<CallMember> {
     content
-        .active_memberships(Some(origin_server_ts))
+        .memberships()
         .into_iter()
-        .filter(|m| m.is_call())
+        .filter(typed_is_room_call)
+        // Not ruma's own expiry check: it trusts a `created_ts` from the future
+        // and any `expires` (see `legacy_started_ms`, `legacy_is_live`).
+        .filter(|m| {
+            let origin_ms = u64::from(origin_server_ts.0);
+            let started = legacy_started_ms(m.created_ts().map(|t| u64::from(t.0)), origin_ms);
+            legacy_is_live(started, typed_expires_ms(m), origin_ms, now_ms)
+        })
         .filter(|m| !exclude.is_some_and(|(u, d)| sender == u && m.device_id() == d))
         .map(|m| {
             let focus_selection = match m.focus_active() {
@@ -323,7 +410,10 @@ fn members_from_call_member_inner(
                 user_id: sender.to_string(),
                 device_id: m.device_id().to_string(),
                 state_key: state_key.to_owned(),
-                joined_at: m.created_ts().unwrap_or(origin_server_ts),
+                joined_at: MilliSecondsSinceUnixEpoch(
+                    UInt::new(legacy_join_ms(m.created_ts().map(|t| u64::from(t.0)), u64::from(origin_server_ts.0)))
+                        .unwrap_or(UInt::MIN),
+                ),
                 focus_selection,
                 foci_preferred,
                 member_id: state_key.to_owned(),
@@ -334,6 +424,7 @@ fn members_from_call_member_inner(
                     _ => None,
                 },
                 capabilities: None,
+                claimed_at_ms: m.created_ts().map(|t| u64::from(t.0)),
             }
         })
         .collect()
@@ -481,11 +572,17 @@ pub fn members_from_event_json(
 ) -> Vec<CallMember> {
     if let Ok(typed) = serde_json::from_value::<CallMemberEventContent>(content.clone()) {
         if !typed.memberships().is_empty() {
-            return members_from_call_member_inner(&typed, state_key, sender, origin_server_ts, exclude);
+            return members_from_call_member_inner(&typed, state_key, sender, origin_server_ts, exclude, now_ms);
         }
     }
     let Some(obj) = content.as_object() else { return Vec::new() };
     if obj.get("application").and_then(serde_json::Value::as_str) != Some("m.call") {
+        return Vec::new();
+    }
+    if !is_room_call(
+        obj.get("scope").and_then(serde_json::Value::as_str),
+        obj.get("call_id").and_then(serde_json::Value::as_str),
+    ) {
         return Vec::new();
     }
     let Some(device_id) = obj.get("device_id").and_then(serde_json::Value::as_str) else {
@@ -495,9 +592,10 @@ pub fn members_from_event_json(
         return Vec::new();
     }
     let origin_ms = u64::from(origin_server_ts.0);
-    let base_ms = obj.get("created_ts").and_then(serde_json::Value::as_u64).unwrap_or(origin_ms);
-    let expires_ms = obj.get("expires").and_then(serde_json::Value::as_u64).unwrap_or(4 * 3_600_000);
-    if now_ms > base_ms.saturating_add(expires_ms) {
+    let claimed_at_ms = obj.get("created_ts").and_then(serde_json::Value::as_u64);
+    let base_ms = legacy_join_ms(claimed_at_ms, origin_ms);
+    let expires_ms = obj.get("expires").and_then(serde_json::Value::as_u64).unwrap_or(DEFAULT_LEGACY_EXPIRES_MS);
+    if !legacy_is_live(legacy_started_ms(claimed_at_ms, origin_ms), expires_ms, origin_ms, now_ms) {
         return Vec::new();
     }
     let foci_preferred = obj
@@ -536,6 +634,7 @@ pub fn members_from_event_json(
         source: MemberSource::Legacy,
         intent,
         capabilities: None,
+        claimed_at_ms,
     }]
 }
 
@@ -851,7 +950,7 @@ mod tests {
         CallMember {
             user_id: user.into(), device_id: device.into(), state_key: String::new(), joined_at: ts(1),
             focus_selection: SELECTION_MULTI_SFU.into(), foci_preferred: foci, member_id: format!("m-{device}"),
-            source: MemberSource::MatrixRtc, intent: None, capabilities: None,
+            source: MemberSource::MatrixRtc, intent: None, capabilities: None, claimed_at_ms: None,
         }
     }
 
@@ -1149,10 +1248,126 @@ mod tests {
     fn an_expired_membership_is_ignored() {
         // Written five hours ago with a four hour lifetime.
         assert!(json_members(phone_content(), now_ms() - 5 * 3_600_000, None).is_empty());
-        // `created_ts` wins over the event time.
+        // A `created_ts` later than the event itself is impossible and ignored.
         let mut c = phone_content();
         c["created_ts"] = serde_json::json!(now_ms() - 3_600_000);
-        assert_eq!(json_members(c, now_ms() - 5 * 3_600_000, None).len(), 1);
+        assert!(json_members(c, now_ms() - 5 * 3_600_000, None).is_empty());
+        // An earlier one is how a refreshed membership keeps its join time.
+        let mut c = phone_content();
+        c["created_ts"] = serde_json::json!(now_ms() - 3 * 3_600_000);
+        let got = json_members(c, now_ms() - 60_000, None);
+        assert_eq!(u64::from(got[0].joined_at.0), now_ms() - 3 * 3_600_000);
+    }
+
+    #[test]
+    fn a_made_up_created_ts_cannot_extend_or_rejuvenate_a_membership() {
+        // From the future: the join time is the event's.
+        let mut c = phone_content();
+        c["created_ts"] = serde_json::json!(now_ms() + 10 * 3_600_000);
+        let origin = now_ms() - 60_000;
+        let got = json_members(c, origin, None);
+        assert_eq!(u64::from(got[0].joined_at.0), origin);
+        // From long ago: past its lifetime, so not live, however old it claims to be.
+        let mut c = phone_content();
+        c["created_ts"] = serde_json::json!(1_000u64);
+        assert!(json_members(c, now_ms() - 60_000, None).is_empty());
+    }
+
+    #[test]
+    fn a_claimed_lifetime_is_capped_at_a_day_after_the_event() {
+        let mut c = phone_content();
+        c["expires"] = serde_json::json!(u64::MAX / 2);
+        // Written 25 hours ago: dead, whatever it claims.
+        assert!(json_members(c.clone(), now_ms() - 25 * 3_600_000, None).is_empty());
+        assert_eq!(json_members(c, now_ms() - 23 * 3_600_000, None).len(), 1);
+        assert!(legacy_is_live(0, u64::MAX, 100, 100 + MAX_LEGACY_EXPIRES_MS));
+        assert!(!legacy_is_live(0, u64::MAX, 100, 100 + MAX_LEGACY_EXPIRES_MS + 1));
+    }
+
+    #[test]
+    fn a_call_older_than_a_day_stays_live_while_its_member_keeps_refreshing() {
+        // Joined 30 h ago. Our refresh a minute ago claims `expires` = age + 4 h.
+        let created = now_ms() - 30 * 3_600_000;
+        let origin = now_ms() - 60_000;
+        let mut c = phone_content();
+        c["created_ts"] = serde_json::json!(created);
+        c["expires"] = serde_json::json!(origin - created + 4 * 3_600_000);
+        let got = json_members(c.clone(), origin, None);
+        assert_eq!(got.len(), 1, "refreshing, so still in the call");
+        // Ordered as at most a day old, whatever its age.
+        assert_eq!(u64::from(got[0].joined_at.0), origin - MAX_LEGACY_AGE_MS);
+        // The same member that stopped refreshing 5 h ago has run out its lifetime
+        // (created + 25 h + 4 h = 1 h ago); the age limit on ordering does not extend it.
+        let origin = now_ms() - 5 * 3_600_000;
+        c["expires"] = serde_json::json!(origin - created + 4 * 3_600_000);
+        assert!(json_members(c, origin, None).is_empty());
+    }
+
+    #[test]
+    fn a_made_up_ancient_created_ts_does_not_make_its_sender_the_oldest() {
+        let origin = now_ms() - 60_000;
+        let mut c = phone_content();
+        c["created_ts"] = serde_json::json!(1_000u64);
+        c["expires"] = serde_json::json!(u64::MAX / 2);
+        let got = json_members(c, origin, None);
+        assert_eq!(got.len(), 1, "live for a day after its event");
+        assert_eq!(u64::from(got[0].joined_at.0), origin - MAX_LEGACY_AGE_MS);
+        assert_eq!(legacy_join_ms(Some(1_000), origin), origin - MAX_LEGACY_AGE_MS);
+        assert_eq!(legacy_join_ms(Some(origin - 5), origin), origin - 5);
+        assert_eq!(legacy_join_ms(Some(origin + 5), origin), origin);
+    }
+
+    #[test]
+    fn a_senders_clock_running_ahead_does_not_change_the_session_tag() {
+        // First event: `created_ts` is ahead of the server's time for the event.
+        let origin1 = now_ms() - 3_600_000;
+        let ahead = origin1 + 120_000;
+        let mut c = phone_content();
+        c["created_ts"] = serde_json::json!(ahead);
+        let first = json_members(c.clone(), origin1, None);
+        // A refresh an hour later carries the same claim.
+        let refreshed = json_members(c, now_ms() - 60_000, None);
+        assert_eq!(first[0].session_tag(), refreshed[0].session_tag());
+        assert_eq!(first[0].session_tag(), ahead.to_string());
+        // A new session takes a new claim.
+        let mut c2 = phone_content();
+        c2["created_ts"] = serde_json::json!(now_ms() - 30_000);
+        let rejoined = json_members(c2, now_ms() - 30_000, None);
+        assert_ne!(first[0].session_tag(), rejoined[0].session_tag());
+    }
+
+    #[test]
+    fn only_the_rooms_default_call_has_members() {
+        assert!(is_room_call(None, None));
+        assert!(is_room_call(Some("m.room"), Some("")));
+        assert!(!is_room_call(Some("m.user"), Some("")));
+        assert!(!is_room_call(Some("m.room"), Some("side-call")));
+        let mut c = phone_content();
+        c["scope"] = serde_json::json!("m.user");
+        assert!(json_members(c, now_ms(), None).is_empty());
+        let mut c = phone_content();
+        c["call_id"] = serde_json::json!("other");
+        assert!(json_members(c, now_ms(), None).is_empty());
+        // The typed path is held to the same rule.
+        let other_call = {
+            let mut j = serde_json::to_value(content("D1", "multi_sfu", "https://s", None)).unwrap();
+            j["call_id"] = serde_json::json!("other");
+            serde_json::from_value::<CallMemberEventContent>(j).unwrap()
+        };
+        assert!(one(other_call, "k", "@b:b.org", 1).is_empty());
+        let user_scoped = {
+            let mut j = serde_json::to_value(content("D1", "multi_sfu", "https://s", None)).unwrap();
+            j["scope"] = serde_json::json!("m.user");
+            serde_json::from_value::<CallMemberEventContent>(j).unwrap()
+        };
+        assert!(one(user_scoped, "k", "@b:b.org", 1).is_empty());
+    }
+
+    #[test]
+    fn a_typed_membership_cannot_use_a_future_created_ts_either() {
+        let future = at_ms(now_ms() + 10 * 3_600_000);
+        let m = one(content("D1", "oldest_membership", "https://s", Some(future)), "k", "@b:b.org", 1);
+        assert_eq!(m[0].joined_at, ts(1), "the event's own time, not the claim");
     }
 
     #[test]
@@ -1291,7 +1506,7 @@ mod tests {
 
     #[test]
     fn a_legacy_session_is_told_apart_by_its_creation_time() {
-        let first = one(content("D1", "multi_sfu", "https://s", Some(ts(10))), "same", "@b:b.org", 1);
+        let first = one(content("D1", "multi_sfu", "https://s", Some(ts(10))), "same", "@b:b.org", 20);
         let again = one(content("D1", "multi_sfu", "https://s", Some(ts(10))), "same", "@b:b.org", 99);
         let restarted = one(content("D1", "multi_sfu", "https://s", Some(ts(500))), "same", "@b:b.org", 600);
         assert_eq!(first[0].key(), restarted[0].key(), "same user and device");

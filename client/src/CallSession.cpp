@@ -5,15 +5,19 @@
 namespace tesseract
 {
 
-CallSession::CallSession(Client* client, std::string room_id, std::string slot_id)
-    : client_(client), room_id_(std::move(room_id)), slot_id_(std::move(slot_id))
+CallSession::CallSession(Client* client, std::string room_id, std::string slot_id,
+                         std::uint64_t session_id)
+    : client_(client), room_id_(std::move(room_id)), slot_id_(std::move(slot_id)),
+      session_id_(session_id)
 {
 }
 
 CallSession::~CallSession()
 {
+    // Destroyed with the call still up (quit, a shell torn down): the client
+    // may follow, so the leave is not left to a background task.
     if (!ended_)
-        hang_up();
+        hang_up_and_wait();
 }
 
 void CallSession::mute_audio(bool muted)
@@ -36,6 +40,14 @@ void CallSession::hang_up()
     client_->rtc_end_call();
 }
 
+void CallSession::hang_up_and_wait()
+{
+    if (ended_)
+        return;
+    ended_ = true;
+    client_->rtc_end_call_wait();
+}
+
 Result CallSession::start_screen_share()
 {
     if (ended_)
@@ -53,12 +65,6 @@ std::vector<RtcParticipantInfo> CallSession::participants() const
 {
     std::lock_guard<std::mutex> lk(mu_);
     return participants_;
-}
-
-void CallSession::set_session_id(std::uint64_t id)
-{
-    if (session_id_ == 0)
-        session_id_ = id;
 }
 
 void CallSession::on_participant_joined(const RtcParticipantInfo& p)

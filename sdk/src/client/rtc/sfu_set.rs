@@ -15,6 +15,7 @@ use parking_lot::Mutex as PLMutex;
 use tracing::{info, warn};
 
 use super::{
+    e2ee::SecretBytes,
     livekit_room::{LiveKitRoom, MemberTransports, RemoteSfuRoom, SharedKeys},
     session::get_openid_token,
     transport::fetch_livekit_jwt,
@@ -131,7 +132,7 @@ impl SfuSet {
         sender_user_id: &str,
         sender_device_id: &str,
         index: i32,
-        raw_key: Vec<u8>,
+        raw_key: SecretBytes,
     ) {
         self.keys
             .store(sender_user_id, sender_device_id, index, raw_key.clone());
@@ -150,6 +151,11 @@ impl SfuSet {
                  (participant not yet connected)"
             );
         }
+    }
+
+    /// Forget the stored keys of devices that left the call.
+    pub fn forget_departed_keys(&self, live: &std::collections::HashSet<(String, String)>) {
+        self.keys.retain_members(live);
     }
 
     /// Apply every stored key to the participants of every connection.
@@ -293,7 +299,8 @@ impl SfuSet {
     }
 
     /// Leave every SFU, concurrently, without waiting longer than a few
-    /// seconds (this runs on the UI thread's hang-up call).
+    /// seconds (this runs on the runtime, in a hang-up's teardown or when the
+    /// connection to our SFU is lost).
     pub async fn disconnect_all(&self) {
         let remotes: Vec<Arc<RemoteSfuRoom>> =
             self.remotes.lock().drain().map(|(_, r)| r.room).collect();

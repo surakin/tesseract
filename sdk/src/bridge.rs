@@ -810,6 +810,16 @@ pub mod ffi {
         message: String,
     }
 
+    /// Outcome of starting a MatrixRTC call. The call itself comes up on the
+    /// runtime: `session_id` (non-zero on success) is the id every later event
+    /// of the call carries, and a call that cannot be set up ends with an
+    /// `on_rtc_session_ended` whose reason starts with `start_failed:`.
+    struct RtcStartResult {
+        ok: bool,
+        message: String,
+        session_id: u64,
+    }
+
     /// Plain-data descriptor for a MatrixRTC call participant.
     /// Always compiled so the cxx-generated header is unconditional; the fields
     /// are only populated when the `calls` Cargo feature is active.
@@ -4658,20 +4668,29 @@ pub mod ffi {
         fn rtc_decline_invite_async(self: &ClientFfi, room_id: &str, invite_event_id: &str);
         fn can_join_call_in_room(self: &ClientFfi, room_id: &str) -> bool;
 
-        /// Start a MatrixRTC call in `room_id` / `slot_id`. Returns an error when
-        /// not logged in or when the `calls` feature is disabled. On success the
-        /// session is stored inside `ClientFfi`; subsequent `rtc_*` calls operate
-        /// on it. `slot_id` is typically `"call#default"`.
+        /// Start a MatrixRTC call in `room_id` / `slot_id`. Returns at once with
+        /// the new call's session id (an error when not logged in); the call is
+        /// set up on the runtime, after the previous one has fully left, and
+        /// its failure arrives as `on_rtc_session_ended` with a reason that
+        /// starts with `start_failed:`. Mute requests made meanwhile apply
+        /// when the call is up. `slot_id` is typically `"call#default"`.
         fn rtc_start_call(
             self: &mut ClientFfi,
             room_id: &str,
             slot_id: &str,
             audio_only: bool,
-        ) -> OpResult;
+        ) -> RtcStartResult;
 
-        /// Gracefully leave the active call and release its resources. No-op when
-        /// no call is active or when the `calls` feature is disabled.
+        /// Gracefully leave the active call and release its resources, without
+        /// waiting: the leave events go out on the runtime, and the next
+        /// `rtc_start_call` waits for them. No-op when no call is active or
+        /// when the `calls` feature is disabled.
         fn rtc_end_call(self: &mut ClientFfi);
+
+        /// Like `rtc_end_call`, but returns once the leave has gone out and the
+        /// SFU connections are closed (a few seconds at most). For callers that
+        /// tear the client down right after.
+        fn rtc_end_call_wait(self: &mut ClientFfi);
 
         /// Mute or unmute the local audio track. The track stays published but
         /// delivers silence when muted. No-op when no call is active.

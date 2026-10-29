@@ -17,7 +17,7 @@ use tokio::task::AbortHandle;
 use tracing::{info, warn};
 
 use super::RtcParticipantInfo;
-use crate::client::rtc::{audio_mix::RemoteAudioMixer, identity::IdentityMap, RtcEventSink};
+use crate::client::rtc::{audio_mix::RemoteAudioMixer, e2ee::SecretBytes, identity::IdentityMap, RtcEventSink};
 
 use livekit::{
     e2ee::{
@@ -45,8 +45,66 @@ use livekit::{
 #[derive(Clone)]
 pub struct SharedKeys {
     pub key_provider: KeyProvider,
-    pending: Arc<StdMutex<HashMap<(String, String), HashMap<i32, Vec<u8>>>>>,
+    pending: Arc<parking_lot::Mutex<PendingKeys>>,
     identities: IdentityMap,
+}
+
+/// A device whose keys we hold is dropped once it has been absent from the
+/// live call members for this long. The wait covers a key that arrives a
+/// moment before the membership shows in a reconcile pass, and a member one
+/// reconcile read leaves out by mistake (a timed-out or partial read): their
+/// keys must still be there when the next pass lists them again.
+const PENDING_KEY_GRACE: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Peer keys by sending `(user, device)` and key index, with when each device
+/// was last seen (listed as live, or sent a key). Plain state: callers pass the
+/// clock in.
+#[derive(Default)]
+pub struct PendingKeys {
+    devices: HashMap<(String, String), PendingDevice>,
+}
+
+struct PendingDevice {
+    by_index: HashMap<i32, SecretBytes>,
+    /// The last time the device was a live member or stored a key. Absence is
+    /// measured from here, not from the last key: a long-lived member's last
+    /// key can be hours old.
+    last_live_at: std::time::Instant,
+}
+
+impl PendingKeys {
+    pub fn insert(&mut self, user: &str, device: &str, index: i32, key: SecretBytes, now: std::time::Instant) {
+        let d = self
+            .devices
+            .entry((user.to_owned(), device.to_owned()))
+            .or_insert_with(|| PendingDevice { by_index: HashMap::new(), last_live_at: now });
+        d.by_index.insert(index, key);
+        d.last_live_at = now;
+    }
+
+    /// `((user, device), index -> key)` for every device held.
+    pub fn iter(&self) -> impl Iterator<Item = (&(String, String), &HashMap<i32, SecretBytes>)> {
+        self.devices.iter().map(|(k, d)| (k, &d.by_index))
+    }
+
+    pub fn len(&self) -> usize {
+        self.devices.len()
+    }
+
+    /// Note the devices that are live members (`is_live(user, device)`) and
+    /// forget the ones that have been neither live nor given a key for
+    /// [`PENDING_KEY_GRACE`]; the dropped keys are wiped. A key stored without
+    /// a device id belongs to every device of the user, so it stays while any
+    /// of them is live.
+    pub fn retain_live(&mut self, is_live: impl Fn(&str, &str) -> bool, now: std::time::Instant) {
+        self.devices.retain(|(user, device), d| {
+            if is_live(user, device) {
+                d.last_live_at = now;
+                return true;
+            }
+            now.saturating_duration_since(d.last_live_at) < PENDING_KEY_GRACE
+        });
+    }
 }
 
 impl SharedKeys {
@@ -67,7 +125,7 @@ impl SharedKeys {
         });
         Self {
             key_provider,
-            pending: Arc::new(StdMutex::new(HashMap::new())),
+            pending: Arc::new(parking_lot::Mutex::new(PendingKeys::default())),
             identities,
         }
     }
@@ -92,19 +150,30 @@ impl SharedKeys {
         sender_user_id: &str,
         sender_device_id: &str,
         index: i32,
-        raw_key: Vec<u8>,
+        raw_key: SecretBytes,
     ) {
         self.pending
             .lock()
-            .unwrap()
-            .entry((sender_user_id.to_owned(), sender_device_id.to_owned()))
-            .or_default()
-            .insert(index, raw_key);
+            .insert(sender_user_id, sender_device_id, index, raw_key, std::time::Instant::now());
+    }
+
+    /// Drop the keys of devices that are no longer in the call (see
+    /// [`PendingKeys::retain_live`]); without this they would pile up for the
+    /// life of the call.
+    pub fn retain_members(&self, live: &std::collections::HashSet<(String, String)>) {
+        let is_live = |user: &str, device: &str| {
+            if device.is_empty() {
+                live.iter().any(|(u, _)| u == user)
+            } else {
+                live.contains(&(user.to_owned(), device.to_owned()))
+            }
+        };
+        self.pending.lock().retain_live(is_live, std::time::Instant::now());
     }
 
     /// Apply every stored key to the participants currently in `room`.
     fn apply_all_to(&self, room: &Room) {
-        let pending = self.pending.lock().unwrap_or_else(|e| e.into_inner());
+        let pending = self.pending.lock();
         for (identity, _) in room.remote_participants() {
             apply_pending_for(&self.key_provider, &pending, &self.identities, &identity);
         }
@@ -167,15 +236,16 @@ fn identity_owner_matches(identities: &IdentityMap, identity: &str, user_id: &st
 /// Set every stored key that belongs to `identity` (`{user_id}:{device}`).
 fn apply_pending_for(
     key_provider: &KeyProvider,
-    pending: &HashMap<(String, String), HashMap<i32, Vec<u8>>>,
+    pending: &PendingKeys,
     identities: &IdentityMap,
     identity: &ParticipantIdentity,
 ) {
     let id_str = identity.as_str();
-    for ((user_id, device_id), keys_by_index) in pending {
+    for ((user_id, device_id), keys_by_index) in pending.iter() {
         if identity_owner_matches(identities, id_str, user_id, device_id) {
             for (idx, raw_key) in keys_by_index {
-                key_provider.set_key(identity, *idx, raw_key.clone());
+                // LiveKit takes the key by value, so this copy is its own to wipe.
+                key_provider.set_key(identity, *idx, raw_key.to_vec());
             }
         }
     }
@@ -370,8 +440,10 @@ pub struct LiveKitRoom {
     call_start: std::time::Instant,
 }
 
-/// Run when the primary connection drops, before the UI is told the session ended.
-pub type PrimaryEnded = Arc<dyn Fn() + Send + Sync>;
+/// Run when the primary connection drops, before the UI is told the session
+/// ended. Returns whether the call ended on its own: `false` for the end a
+/// hang-up caused, which the UI already knows and must not hear about again.
+pub type PrimaryEnded = Arc<dyn Fn() -> bool + Send + Sync>;
 
 impl LiveKitRoom {
     /// Connect, publish local audio + video tracks, start the event loop.
@@ -967,7 +1039,7 @@ fn spawn_event_task(
                         // Apply any stored E2EE keys for this participant.
                         apply_pending_for(
                             &shared.key_provider,
-                            &shared.pending.lock().unwrap(),
+                            &shared.pending.lock(),
                             &shared.identities,
                             &participant.identity(),
                         );
@@ -999,7 +1071,7 @@ fn spawn_event_task(
                     }
                     apply_pending_for(
                         &shared.key_provider,
-                        &shared.pending.lock().unwrap(),
+                        &shared.pending.lock(),
                         &shared.identities,
                         &p.identity(),
                     );
@@ -1157,9 +1229,10 @@ fn spawn_event_task(
                     // Only the primary (publishing) connection ends the call.
                     // A dropped remote SFU is retried by the SFU reconciler.
                     if let Some(on_ended) = &on_primary_ended {
-                        on_ended();
-                        if let Some(ref s) = sink {
-                            s.on_session_ended(session_id, &format!("{reason:?}"));
+                        if on_ended() {
+                            if let Some(ref s) = sink {
+                                s.on_session_ended(session_id, &format!("{reason:?}"));
+                            }
                         }
                     }
                     break;
@@ -1656,20 +1729,82 @@ mod helper_tests {
         }
     }
 
+    fn key(b: u8) -> SecretBytes {
+        crate::client::rtc::e2ee::Secret::new(vec![b])
+    }
+
     #[test]
     fn shared_keys_store_keeps_one_entry_per_device_and_index() {
         let keys = SharedKeys::new();
-        keys.store("@a:x", "PHONE", 0, vec![1]);
-        keys.store("@a:x", "PHONE", 1, vec![2]);
-        keys.store("@a:x", "LAPTOP", 0, vec![3]);
-        keys.store("@a:x", "PHONE", 0, vec![4]); // overwrite
-        let p = keys.pending.lock().unwrap();
+        keys.store("@a:x", "PHONE", 0, key(1));
+        keys.store("@a:x", "PHONE", 1, key(2));
+        keys.store("@a:x", "LAPTOP", 0, key(3));
+        keys.store("@a:x", "PHONE", 0, key(4)); // overwrite
+        let p = keys.pending.lock();
         assert_eq!(p.len(), 2);
-        let phone = &p[&("@a:x".to_owned(), "PHONE".to_owned())];
+        let by_device: HashMap<_, _> = p.iter().collect();
+        let phone = by_device[&("@a:x".to_owned(), "PHONE".to_owned())];
         assert_eq!(phone.len(), 2);
-        assert_eq!(phone[&0], vec![4]);
-        assert_eq!(phone[&1], vec![2]);
-        assert_eq!(p[&("@a:x".to_owned(), "LAPTOP".to_owned())][&0], vec![3]);
+        assert_eq!(**phone[&0], vec![4]);
+        assert_eq!(**phone[&1], vec![2]);
+        assert_eq!(**by_device[&("@a:x".to_owned(), "LAPTOP".to_owned())][&0], vec![3]);
+    }
+
+    #[test]
+    fn keys_of_devices_that_left_are_dropped_after_a_grace_period() {
+        let t0 = std::time::Instant::now();
+        let mut p = PendingKeys::default();
+        p.insert("@a:x", "PHONE", 0, key(1), t0);
+        p.insert("@b:x", "TAB", 0, key(2), t0);
+        p.insert("@c:x", "", 0, key(3), t0); // no device id: any device of @c
+        let live = |u: &str, d: &str| u == "@a:x" && d == "PHONE";
+        // Just stored: kept even though @b and @c are not live yet.
+        p.retain_live(live, t0 + std::time::Duration::from_secs(5));
+        assert_eq!(p.len(), 3);
+        // Long enough: only the live device's keys remain.
+        p.retain_live(live, t0 + PENDING_KEY_GRACE);
+        assert_eq!(p.len(), 1);
+        assert!(p.iter().all(|((u, d), _)| u == "@a:x" && d == "PHONE"));
+    }
+
+    #[test]
+    fn a_long_lived_member_one_pass_omits_keeps_their_keys() {
+        let t0 = std::time::Instant::now();
+        let hour = std::time::Duration::from_secs(3600);
+        let mut p = PendingKeys::default();
+        p.insert("@a:x", "PHONE", 0, key(1), t0);
+        let live = |u: &str, d: &str| u == "@a:x" && d == "PHONE";
+        let nobody = |_: &str, _: &str| false;
+        // Listed live over a long call; the key itself is hours old.
+        p.retain_live(live, t0 + hour);
+        // One pass whose member read left them out.
+        p.retain_live(nobody, t0 + hour + std::time::Duration::from_secs(30));
+        assert_eq!(p.len(), 1, "a single omission must not delete the key");
+        // Listed again: the absence clock starts over.
+        p.retain_live(live, t0 + hour + std::time::Duration::from_secs(31));
+        p.retain_live(nobody, t0 + hour + std::time::Duration::from_secs(31) + PENDING_KEY_GRACE - std::time::Duration::from_secs(1));
+        assert_eq!(p.len(), 1);
+        // Gone for the whole grace period.
+        p.retain_live(nobody, t0 + hour + std::time::Duration::from_secs(31) + PENDING_KEY_GRACE);
+        assert_eq!(p.len(), 0);
+    }
+
+    #[test]
+    fn retain_members_treats_a_deviceless_key_as_every_device_of_the_user() {
+        let keys = SharedKeys::new();
+        keys.store("@c:x", "", 0, key(3));
+        keys.pending.lock().retain_live(|_, _| false, std::time::Instant::now() + PENDING_KEY_GRACE);
+        assert_eq!(keys.pending.lock().len(), 0);
+        keys.store("@c:x", "", 0, key(3));
+        keys.retain_members(&[("@c:x".to_owned(), "D".to_owned())].into_iter().collect());
+        assert_eq!(keys.pending.lock().len(), 1);
+    }
+
+    #[test]
+    fn a_secret_never_prints_its_value() {
+        let k = crate::client::rtc::e2ee::Secret::new("hunter2-key-material".to_owned());
+        assert!(!format!("{k:?}").contains("hunter2"));
+        assert_eq!(k.clone(), k);
     }
 
     #[test]

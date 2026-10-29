@@ -49,17 +49,59 @@ pub fn classify_identity(identity: &str, user_id: &str, device_id: &str, member_
 
 /// LiveKit identity -> `(user_id, device_id)` for members whose identity is
 /// hashed (MSC4195) and so cannot be parsed. Shared by every connection of a
-/// call and refreshed by the member reconciler.
+/// call. Two tasks write it, each from the member list it read itself (the
+/// reconcile loop and the key handler), and their reads finish in any order, so
+/// each takes a [`Stamp`] before it reads and installs with it: the newest
+/// snapshot replaces the table, and an older one that arrives late can only add
+/// what is missing, never take back a member a newer one has.
 #[derive(Clone, Default)]
-pub struct IdentityMap(Arc<parking_lot::Mutex<HashMap<String, (String, String)>>>);
+pub struct IdentityMap(Arc<parking_lot::Mutex<Identities>>);
+
+#[derive(Default)]
+struct Identities {
+    issued: u64,
+    /// The stamp of the snapshot the table was last replaced with.
+    applied: u64,
+    map: HashMap<String, (String, String)>,
+}
+
+/// The order a snapshot was started in; see [`IdentityMap::stamp`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Stamp(u64);
 
 impl IdentityMap {
+    /// Take a stamp, before reading the members the snapshot is built from.
+    pub fn stamp(&self) -> Stamp {
+        let mut g = self.0.lock();
+        g.issued += 1;
+        Stamp(g.issued)
+    }
+
+    /// Install the snapshot started at `stamp`. Returns whether it replaced the
+    /// table (it is the newest so far) or, being older, only added to it.
+    pub fn replace_stamped(&self, stamp: Stamp, map: HashMap<String, (String, String)>) -> bool {
+        let mut g = self.0.lock();
+        if stamp.0 >= g.applied {
+            g.applied = stamp.0;
+            g.map = map;
+            true
+        } else {
+            for (identity, owner) in map {
+                g.map.entry(identity).or_insert(owner);
+            }
+            false
+        }
+    }
+
+    /// Install a snapshot as the newest one, for a caller whose read is not
+    /// racing another writer's.
     pub fn replace(&self, map: HashMap<String, (String, String)>) {
-        *self.0.lock() = map;
+        let stamp = self.stamp();
+        self.replace_stamped(stamp, map);
     }
 
     pub fn resolve(&self, identity: &str) -> Option<(String, String)> {
-        self.0.lock().get(identity).cloned()
+        self.0.lock().map.get(identity).cloned()
     }
 }
 
@@ -117,5 +159,38 @@ mod tests {
         assert_eq!(m.resolve("x"), Some(("@a:x".to_owned(), "D".to_owned())));
         m.replace(HashMap::new());
         assert_eq!(m.resolve("x"), None);
+    }
+
+    #[test]
+    fn a_late_older_snapshot_cannot_take_a_new_member_back() {
+        let owner = |u: &str| (u.to_owned(), "D".to_owned());
+        let m = IdentityMap::default();
+        // The key handler starts first but its read is slow; the reconcile loop
+        // starts after it, reads, and installs a snapshot with a new member.
+        let slow = m.stamp();
+        let fast = m.stamp();
+        assert!(m.replace_stamped(fast, HashMap::from([("new".to_owned(), owner("@n:x")), ("old".to_owned(), owner("@o:x"))])));
+        // The slow one lands later with the picture from before the join.
+        assert!(!m.replace_stamped(slow, HashMap::from([("old".to_owned(), owner("@o:x")), ("gone".to_owned(), owner("@g:x"))])));
+        assert_eq!(m.resolve("new"), Some(owner("@n:x")), "the newer snapshot's member stays");
+        assert_eq!(m.resolve("old"), Some(owner("@o:x")));
+        // It may still add what the newer one does not know yet (a read that
+        // finished later but was stamped earlier), which the next replace clears.
+        assert_eq!(m.resolve("gone"), Some(owner("@g:x")));
+        let next = m.stamp();
+        assert!(m.replace_stamped(next, HashMap::new()));
+        assert_eq!(m.resolve("gone"), None);
+        assert_eq!(m.resolve("new"), None);
+    }
+
+    #[test]
+    fn the_newest_snapshot_replaces_and_removes() {
+        let m = IdentityMap::default();
+        let first = m.stamp();
+        assert!(m.replace_stamped(first, HashMap::from([("a".to_owned(), ("@a:x".to_owned(), "D".to_owned()))])));
+        let second = m.stamp();
+        assert!(m.replace_stamped(second, HashMap::from([("b".to_owned(), ("@b:x".to_owned(), "D".to_owned()))])));
+        assert_eq!(m.resolve("a"), None);
+        assert!(m.resolve("b").is_some());
     }
 }

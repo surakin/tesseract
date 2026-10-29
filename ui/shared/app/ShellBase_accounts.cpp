@@ -1729,9 +1729,10 @@ ShellBase::LogoutResult ShellBase::logout_active_account_impl_()
         return out; // logged_out=false → shell does nothing
     }
     // A call holds a raw pointer to this account's client, and its capture
-    // threads use the shell's client. Hang up before the client is destroyed.
+    // threads use the shell's client. Hang up before the client is destroyed,
+    // and wait for the leave: it would be lost with the client.
     if (call_session_)
-        end_call();
+        end_call(true);
 
     const std::string uid = active_account_->user_id;
     auto& sess = *active_account_;
@@ -2518,7 +2519,8 @@ void ShellBase::on_account_picker_select_(const std::string& uid)
         return;
     }
     // Switching accounts would send the call's frames to the new account's
-    // client while the session lives on the old one. Hang up first.
+    // client while the session lives on the old one. Hang up first; the old
+    // account's client stays alive, so its leave can finish in the background.
     if (call_session_ && !(active_account_ && active_account_->user_id == uid))
         end_call();
     if (is_ctrl_held_())

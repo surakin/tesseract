@@ -27,26 +27,29 @@ RtcParticipantInfo call_session_participant(const std::string& id, bool audio_mu
 TEST_CASE("CallSession exposes its room and slot", "[call_session]")
 {
     tesseract::Client client;
-    CallSession s(&client, "!room:x", "slot-1");
+    CallSession s(&client, "!room:x", "slot-1", 11);
     CHECK(s.room_id() == "!room:x");
     CHECK(s.slot_id() == "slot-1");
-    CHECK(s.session_id() == 0);
+    CHECK(s.session_id() == 11);
     CHECK(s.participants().empty());
 }
 
-TEST_CASE("CallSession session id is set once", "[call_session]")
+TEST_CASE("CallSession owns only the events of its own session id", "[call_session]")
 {
     tesseract::Client client;
-    CallSession s(&client, "!r:x", "s");
-    s.set_session_id(7);
-    s.set_session_id(9);
-    CHECK(s.session_id() == 7);
+    CallSession s(&client, "!r:x", "s", 7);
+    CHECK(s.owns_event(7));
+    CHECK_FALSE(s.owns_event(9));
+    CHECK_FALSE(s.owns_event(0));
+    // A session built with no id (never from the SDK) owns nothing, not even 0.
+    CallSession none(&client, "!r:x", "s", 0);
+    CHECK_FALSE(none.owns_event(0));
 }
 
 TEST_CASE("CallSession tracks joins, updates and leaves", "[call_session]")
 {
     tesseract::Client client;
-    CallSession s(&client, "!r:x", "s");
+    CallSession s(&client, "!r:x", "s", 1);
     s.on_participant_joined(call_session_participant("a"));
     s.on_participant_joined(call_session_participant("b"));
     REQUIRE(s.participants().size() == 2);
@@ -71,7 +74,7 @@ TEST_CASE("CallSession update for an untracked participant adds it",
           "[call_session]")
 {
     tesseract::Client client;
-    CallSession s(&client, "!r:x", "s");
+    CallSession s(&client, "!r:x", "s", 1);
     s.on_participant_updated(call_session_participant("late"));
     REQUIRE(s.participants().size() == 1);
     CHECK(s.participants()[0].participant_id == "late");
@@ -81,7 +84,7 @@ TEST_CASE("CallSession end clears the roster and blocks further controls",
           "[call_session]")
 {
     tesseract::Client client;
-    CallSession s(&client, "!r:x", "s");
+    CallSession s(&client, "!r:x", "s", 1);
     s.on_participant_joined(call_session_participant("a"));
     s.on_session_ended("remote hung up");
     CHECK(s.participants().empty());
@@ -99,7 +102,7 @@ TEST_CASE("CallSession controls forward while the call is live",
           "[call_session]")
 {
     tesseract::Client client;
-    CallSession s(&client, "!r:x", "s");
+    CallSession s(&client, "!r:x", "s", 1);
     CHECK_NOTHROW(s.mute_audio(true));
     CHECK_NOTHROW(s.mute_video(false));
     CHECK_NOTHROW(s.stop_screen_share());

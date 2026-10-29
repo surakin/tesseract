@@ -1493,7 +1493,7 @@ MainWindow::~MainWindow()
         // Hang up an active call while the SDK can still send the leave. Once
         // request_stop() and stop_sync() run, the call would only end when the
         // session is destroyed, and the others would still see us in it.
-        end_call();
+        end_call(true);
         // Signal every account first, in its own pass, before any stop_sync()
         // call below: request_stop() only needs a shared FFI lock, so it wins
         // the race against a concurrent send_message/subscribe_room on that

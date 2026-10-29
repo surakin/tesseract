@@ -90,8 +90,8 @@ pub struct Msc3401CallEventContent {
 /// Key material carried in `io.element.call.encryption_keys` to-device events.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RtcKeyContent {
-    /// Base64-encoded 32-byte raw key material.
-    pub key: String,
+    /// Base64-encoded raw key material (16 or 32 bytes).
+    pub key: super::e2ee::SecretString,
     /// Rotation index (0-255, wrapping).
     pub index: u8,
 }

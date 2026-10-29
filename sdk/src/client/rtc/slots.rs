@@ -105,6 +105,7 @@ pub fn call_member_from(e: &StickyEntry) -> Option<CallMember> {
         source: MemberSource::MatrixRtc,
         intent: app.and_then(|a| a.intent.clone().or_else(|| a.m_call_intent.clone())),
         capabilities: app.and_then(|a| a.capabilities.clone()),
+        claimed_at_ms: None,
     })
 }
 
@@ -309,11 +310,19 @@ pub async fn read_mrtc_members(
             .into_iter()
             .filter(|m| !(m.user_id == own_user.as_str() && m.device_id == own_device.as_str()))
             .collect();
-    static JOIN_TIMES: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, std::collections::HashMap<String, u64>>>> =
-        std::sync::OnceLock::new();
-    let mut all = JOIN_TIMES.get_or_init(Default::default).lock().unwrap_or_else(|p| p.into_inner());
-    stable_join_times(all.entry(room.room_id().to_string()).or_default(), &mut members);
+    let account = room.client().user_id().map(|u| u.to_string()).unwrap_or_default();
+    join_times().lock().stable(&account, room.room_id().as_str(), &mut members);
     members
+}
+
+fn join_times() -> &'static parking_lot::Mutex<JoinTimes> {
+    static JOIN_TIMES: std::sync::OnceLock<parking_lot::Mutex<JoinTimes>> = std::sync::OnceLock::new();
+    JOIN_TIMES.get_or_init(Default::default)
+}
+
+/// Forget the join times kept for `account`'s view of `room_id`: its call ended.
+pub fn forget_join_times(account: &str, room_id: &str) {
+    join_times().lock().forget_room(account, room_id);
 }
 
 /// Legacy and MatrixRTC members together, excluding our own device, whose
@@ -353,6 +362,66 @@ pub fn stable_join_times(cache: &mut std::collections::HashMap<String, u64>, mem
     }
     let live: HashSet<&str> = members.iter().map(|m| m.member_id.as_str()).collect();
     cache.retain(|id, _| live.contains(id.as_str()));
+}
+
+/// The first-seen join times of every room's members, per signed-in account:
+/// two accounts in one room each have their own view, and one's refresh must
+/// not purge the other's. A room is held only while it has live members, and
+/// at most [`JoinTimes::MAX_ROOMS`] at once: inserting a room when full evicts
+/// the room read longest ago. The room of a call we are in is read on every
+/// reconcile pass, so it is the last to go; reading a room without a call
+/// never evicts anything.
+///
+/// "Joined" is when we first saw the member's `member.id`, taken from its
+/// newest sticky event: a member already in the call when we looked gets the
+/// time of its latest refresh, not its real join. Order among members who were
+/// there before we were is therefore by that refresh time; it is stable from
+/// then on.
+#[derive(Default)]
+pub struct JoinTimes {
+    rooms: std::collections::HashMap<(String, String), RoomJoinTimes>,
+    /// Counts reads; stamps the room read.
+    reads: u64,
+}
+
+struct RoomJoinTimes {
+    first_seen: std::collections::HashMap<String, u64>,
+    last_read: u64,
+}
+
+impl JoinTimes {
+    pub const MAX_ROOMS: usize = 64;
+
+    /// [`stable_join_times`] for `account`'s members of `room_id`.
+    pub fn stable(&mut self, account: &str, room_id: &str, members: &mut [CallMember]) {
+        let key = (account.to_owned(), room_id.to_owned());
+        self.reads += 1;
+        let mut first_seen = self.rooms.remove(&key).map(|r| r.first_seen).unwrap_or_default();
+        stable_join_times(&mut first_seen, members);
+        if first_seen.is_empty() {
+            return;
+        }
+        // The room is out of the map here, so a full map means making room.
+        if self.rooms.len() >= Self::MAX_ROOMS {
+            let oldest = self.rooms.iter().min_by_key(|(_, r)| r.last_read).map(|(k, _)| k.clone());
+            if let Some(oldest) = oldest {
+                self.rooms.remove(&oldest);
+            }
+        }
+        self.rooms.insert(key, RoomJoinTimes { first_seen, last_read: self.reads });
+    }
+
+    pub fn forget_room(&mut self, account: &str, room_id: &str) {
+        self.rooms.remove(&(account.to_owned(), room_id.to_owned()));
+    }
+
+    pub fn len(&self) -> usize {
+        self.rooms.len()
+    }
+
+    pub fn holds(&self, account: &str, room_id: &str) -> bool {
+        self.rooms.contains_key(&(account.to_owned(), room_id.to_owned()))
+    }
 }
 
 /// LiveKit identity -> `(user, device)` for the MatrixRTC members, whose
@@ -570,7 +639,7 @@ mod tests {
             foci_preferred: vec![LkFocus {
                 service_url: "https://jwt.a.org".into(), alias: "!r".into(), sfu_url: None, server_name: None,
             }],
-            member_id: "@a:x:D".into(), source: MemberSource::Legacy, intent: None, capabilities: None,
+            member_id: "@a:x:D".into(), source: MemberSource::Legacy, intent: None, capabilities: None, claimed_at_ms: None,
         };
         let merged = merge_members(vec![legacy], vec![mrtc]);
         assert_eq!(merged.len(), 1);
@@ -659,6 +728,7 @@ mod tests {
             source: MemberSource::Legacy,
             intent: None,
             capabilities: None,
+            claimed_at_ms: None,
         };
         let e = entry("@a:x", join_content("@a:x", Some("D")), true, NOW - 1000, 3_600_000);
         let mrtc = call_member_from(&e).unwrap();
@@ -672,7 +742,7 @@ mod tests {
         let mk = |u: &str, d: &str, s: MemberSource| CallMember {
             user_id: u.into(), device_id: d.into(), state_key: String::new(),
             joined_at: MilliSecondsSinceUnixEpoch::now(), focus_selection: String::new(),
-            foci_preferred: vec![], member_id: String::new(), source: s, intent: None, capabilities: None,
+            foci_preferred: vec![], member_id: String::new(), source: s, intent: None, capabilities: None, claimed_at_ms: None,
         };
         let merged = merge_members(
             vec![mk("@a:x", "D", MemberSource::Legacy)],
@@ -768,7 +838,7 @@ mod tests {
             user_id: user.into(), device_id: "D".into(), state_key: String::new(),
             joined_at: MilliSecondsSinceUnixEpoch(UInt::new(at).unwrap()),
             focus_selection: String::new(), foci_preferred: vec![], member_id: String::new(),
-            source: MemberSource::MatrixRtc, intent: intent.map(str::to_owned), capabilities: None,
+            source: MemberSource::MatrixRtc, intent: intent.map(str::to_owned), capabilities: None, claimed_at_ms: None,
         }
     }
 
@@ -830,5 +900,75 @@ mod tests {
         assert_eq!(u64::from(again[0].joined_at.0), 400_000);
         // Forgotten ids do not linger.
         assert_eq!(cache.len(), 1);
+    }
+
+    #[test]
+    fn two_accounts_in_one_room_keep_their_own_join_times() {
+        let mk = |id: &str, at: u64| {
+            let mut e = entry("@a:x", join_content("@a:x", Some("D")), true, at, 3_600_000);
+            e.content["member"]["id"] = serde_json::json!(id);
+            call_member_from(&e).unwrap()
+        };
+        let mut times = JoinTimes::default();
+        let mut first = vec![mk("mid1", 1_000)];
+        times.stable("@alice:x", "!r:x", &mut first);
+        // Another account reads the same room with nobody live: alice's entry stays.
+        times.stable("@bob:x", "!r:x", &mut Vec::new());
+        let mut refreshed = vec![mk("mid1", 151_000)];
+        times.stable("@alice:x", "!r:x", &mut refreshed);
+        assert_eq!(u64::from(refreshed[0].joined_at.0), 1_000);
+    }
+
+    #[test]
+    fn rooms_without_live_members_are_not_kept_and_the_total_is_bounded() {
+        let mk = |id: &str| {
+            let mut e = entry("@a:x", join_content("@a:x", Some("D")), true, 1_000, 3_600_000);
+            e.content["member"]["id"] = serde_json::json!(id);
+            call_member_from(&e).unwrap()
+        };
+        let mut times = JoinTimes::default();
+        times.stable("@a:x", "!quiet:x", &mut Vec::new());
+        assert_eq!(times.len(), 0, "an empty room leaves nothing behind");
+        for i in 0..(JoinTimes::MAX_ROOMS + 20) {
+            times.stable("@a:x", &format!("!r{i}:x"), &mut vec![mk("m")]);
+        }
+        assert_eq!(times.len(), JoinTimes::MAX_ROOMS);
+        // A call that ended is forgotten at once.
+        times.forget_room("@a:x", "!r0:x");
+        times.forget_room("@a:x", "!r1:x");
+        assert!(times.len() <= JoinTimes::MAX_ROOMS);
+        let before = times.len();
+        times.forget_room("@a:x", "!never:x");
+        assert_eq!(times.len(), before);
+    }
+
+    #[test]
+    fn a_full_map_evicts_the_room_read_longest_ago_and_only_for_a_room_with_members() {
+        let mk = |id: &str| {
+            let mut e = entry("@a:x", join_content("@a:x", Some("D")), true, 1_000, 3_600_000);
+            e.content["member"]["id"] = serde_json::json!(id);
+            call_member_from(&e).unwrap()
+        };
+        let mut times = JoinTimes::default();
+        for i in 0..JoinTimes::MAX_ROOMS {
+            times.stable("@a:x", &format!("!r{i}:x"), &mut vec![mk("m")]);
+        }
+        assert_eq!(times.len(), JoinTimes::MAX_ROOMS);
+        // The call we are in is read again on every pass: it is recent.
+        times.stable("@a:x", "!r0:x", &mut vec![mk("m")]);
+        // Reading an idle room (nobody in it) evicts nothing.
+        times.stable("@a:x", "!idle:x", &mut Vec::new());
+        assert_eq!(times.len(), JoinTimes::MAX_ROOMS);
+        assert!(times.holds("@a:x", "!r1:x"));
+        // A new room with members pushes out the least recently read one: !r1,
+        // not the active call's !r0.
+        times.stable("@a:x", "!new:x", &mut vec![mk("m")]);
+        assert_eq!(times.len(), JoinTimes::MAX_ROOMS);
+        assert!(!times.holds("@a:x", "!r1:x"));
+        assert!(times.holds("@a:x", "!r0:x"), "the active call's room stays");
+        assert!(times.holds("@a:x", "!new:x"));
+        // Re-reading a room already held never evicts.
+        times.stable("@a:x", "!r2:x", &mut vec![mk("m")]);
+        assert!(times.holds("@a:x", "!r3:x"));
     }
 }

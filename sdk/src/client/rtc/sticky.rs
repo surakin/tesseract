@@ -5,9 +5,11 @@
 //! is turning its entries into the plain [`StickyEntry`] the slot and invite
 //! logic works on.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
+use std::time::{Duration, Instant};
 
-use matrix_sdk_base::sticky::StickyEvent;
+use matrix_sdk_base::sticky::{StickyEvent, StickyKey};
 use matrix_sdk::{
     ruma::{api::error::ErrorKind, events::ignored_user_list::IgnoredUserListEventContent, OwnedRoomId, UInt},
     Client, Room,
@@ -102,14 +104,119 @@ fn entry_from_sticky_event(e: &StickyEvent) -> Option<StickyEntry> {
     )
 }
 
-/// The live tracked sticky events of a room.
-pub fn live_entries(room: &Room) -> Vec<StickyEntry> {
-    room.sticky_events()
-        .live()
-        .iter()
-        .filter_map(entry_from_sticky_event)
-        .collect()
+/// Parsed entries of one room, kept between reads. A room's sticky map holds up
+/// to 5000 events and is read on every update, so a member sending many
+/// distinct keys must cost one parse each, not one per read. An entry is reused
+/// while its key still maps to the same event with the same expiry; whatever
+/// left the live set is dropped from the cache on the next read.
+pub struct EntryCache<K> {
+    map: HashMap<K, Cached>,
 }
+
+struct Cached {
+    event_id: String,
+    expires_ms: u64,
+    /// `None` for a tracked event that did not parse: remembered too.
+    entry: Option<StickyEntry>,
+}
+
+impl<K> Default for EntryCache<K> {
+    fn default() -> Self {
+        Self { map: HashMap::new() }
+    }
+}
+
+impl<K: Hash + Eq> EntryCache<K> {
+    /// The entries of `live` (`key`, `event_id`, `expires_ms`, payload),
+    /// parsing a payload with `parse` only when its key is new or now maps to
+    /// another event.
+    pub fn collect<T>(
+        &mut self,
+        live: impl IntoIterator<Item = (K, String, u64, T)>,
+        parse: impl Fn(&T) -> Option<StickyEntry>,
+    ) -> Vec<StickyEntry> {
+        let mut next = HashMap::new();
+        let mut out = Vec::new();
+        for (key, event_id, expires_ms, payload) in live {
+            let cached = match self.map.remove(&key) {
+                Some(c) if c.event_id == event_id && c.expires_ms == expires_ms => c,
+                _ => Cached { entry: parse(&payload), event_id, expires_ms },
+            };
+            out.extend(cached.entry.clone());
+            next.insert(key, cached);
+        }
+        self.map = next;
+        out
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
+    }
+}
+
+/// One cache per (account, room): the same event decrypts to different
+/// attribution on another account.
+fn entry_caches() -> &'static parking_lot::Mutex<HashMap<(String, String), EntryCache<StickyKey>>> {
+    static CACHES: std::sync::OnceLock<
+        parking_lot::Mutex<HashMap<(String, String), EntryCache<StickyKey>>>,
+    > = std::sync::OnceLock::new();
+    CACHES.get_or_init(Default::default)
+}
+
+/// The live tracked sticky events of a room. Events of other types are skipped
+/// before anything is parsed.
+pub fn live_entries(room: &Room) -> Vec<StickyEntry> {
+    let live = room.sticky_events().live();
+    let tracked = live
+        .into_iter()
+        .filter(|e| TRACKED.contains(&e.key.event_type.to_string().as_str()))
+        .map(|e| {
+            let expires_ms = u64::from(UInt::from(e.expires_at.0));
+            (e.key.clone(), e.event_id.to_string(), expires_ms, e)
+        });
+    let id = (
+        room.client().user_id().map(|u| u.to_string()).unwrap_or_default(),
+        room.room_id().to_string(),
+    );
+    let mut caches = entry_caches().lock();
+    let cache = caches.entry(id.clone()).or_default();
+    let out = cache.collect(tracked, entry_from_sticky_event);
+    if cache.is_empty() {
+        caches.remove(&id);
+    }
+    out
+}
+
+/// Spacing for work triggered by every update of a map that a hostile member
+/// can make change thousands of times: at most one pass per `min_interval`,
+/// and an update that arrives sooner is answered by one pass at the end of the
+/// interval (the trailing pass).
+pub struct PassGate {
+    min_interval: Duration,
+    last_pass: Option<Instant>,
+}
+
+impl PassGate {
+    pub fn new(min_interval: Duration) -> Self {
+        Self { min_interval, last_pass: None }
+    }
+
+    /// How long to wait, from `now`, before the pass an update asks for.
+    pub fn delay(&self, now: Instant) -> Duration {
+        match self.last_pass {
+            Some(last) => self.min_interval.saturating_sub(now.saturating_duration_since(last)),
+            None => Duration::ZERO,
+        }
+    }
+
+    /// Record that a pass started at `now`.
+    pub fn ran(&mut self, now: Instant) {
+        self.last_pass = Some(now);
+    }
+}
+
+/// How often the invite watcher re-reads a room's sticky map at most.
+const INVITE_PASS_INTERVAL: Duration = Duration::from_millis(250);
 
 /// Whether `room` has any call member (sticky or legacy), by the local store
 /// alone; cheap enough to ask of every room.
@@ -201,6 +308,8 @@ pub async fn watch_invites(client: Client) {
         tasks.spawn(async move {
             use futures_util::StreamExt;
             let mut rx = room.sticky_events().subscribe();
+            let mut gate = PassGate::new(INVITE_PASS_INTERVAL);
+            gate.ran(Instant::now());
             super::invites::notify_active(&room).await;
             loop {
                 tokio::select! {
@@ -213,6 +322,14 @@ pub async fn watch_invites(client: Client) {
                     // newly unignored one's start.
                     Some(_) = ignores.next() => {}
                 }
+                // A burst of updates is answered by one pass at the end of
+                // the interval; what piled up meanwhile is already in the map.
+                let wait = gate.delay(Instant::now());
+                if !wait.is_zero() {
+                    tokio::time::sleep(wait).await;
+                    while rx.try_recv().is_ok() {}
+                }
+                gate.ran(Instant::now());
                 super::invites::notify_active(&room).await;
             }
         });
@@ -292,6 +409,92 @@ mod tests {
         ev["content"] = json!({"sticky_key": "mid"});
         assert!(entry_from_parts(&ev, 2_000_000, false, None).unwrap().is_withdrawal());
         assert!(!entry_from_parts(&member_event(), 2_000_000, false, None).unwrap().is_withdrawal());
+    }
+
+    fn entry(id: &str) -> StickyEntry {
+        StickyEntry {
+            event_id: id.into(), sender: "@a:x".into(), event_type: MEMBER_TYPE.into(),
+            sticky_key: "k".into(), start_ms: 0, duration_ms: 1000,
+            was_encrypted: false, sender_device: None, content: json!({}),
+        }
+    }
+
+    #[test]
+    fn an_unchanged_event_is_parsed_once_across_reads() {
+        let parses = std::cell::Cell::new(0);
+        let parse = |id: &String| {
+            parses.set(parses.get() + 1);
+            Some(entry(id))
+        };
+        let mut cache = EntryCache::<String>::default();
+        for _ in 0..3 {
+            let live = (0..100).map(|i| (format!("k{i}"), format!("$e{i}"), 5_000u64, format!("$e{i}")));
+            assert_eq!(cache.collect(live, parse).len(), 100);
+        }
+        assert_eq!(parses.get(), 100, "later reads come from the cache");
+    }
+
+    #[test]
+    fn a_replaced_or_re_expired_event_is_parsed_again() {
+        let parses = std::cell::Cell::new(0);
+        let parse = |id: &String| {
+            parses.set(parses.get() + 1);
+            Some(entry(id))
+        };
+        let mut cache = EntryCache::<&str>::default();
+        let read = |cache: &mut EntryCache<&str>, id: &str, exp: u64| {
+            cache.collect([("k", id.to_owned(), exp, id.to_owned())], &parse)
+        };
+        assert_eq!(read(&mut cache, "$a", 10)[0].event_id, "$a");
+        assert_eq!(read(&mut cache, "$a", 10)[0].event_id, "$a");
+        assert_eq!(parses.get(), 1);
+        // Same key, newer event: not the cached one.
+        assert_eq!(read(&mut cache, "$b", 10)[0].event_id, "$b");
+        assert_eq!(parses.get(), 2);
+        // Same event, different expiry: parsed again.
+        read(&mut cache, "$b", 20);
+        assert_eq!(parses.get(), 3);
+    }
+
+    #[test]
+    fn entries_that_left_the_live_set_leave_the_cache() {
+        let mut cache = EntryCache::<&str>::default();
+        let parse = |id: &String| Some(entry(id));
+        cache.collect([("a", "$a".to_owned(), 1, "$a".to_owned()), ("b", "$b".to_owned(), 1, "$b".to_owned())], parse);
+        assert!(!cache.is_empty());
+        let out = cache.collect(std::iter::empty::<(&str, String, u64, String)>(), parse);
+        assert!(out.is_empty());
+        assert!(cache.is_empty());
+    }
+
+    #[test]
+    fn an_unparsable_event_is_remembered_not_retried() {
+        let parses = std::cell::Cell::new(0);
+        let parse = |_: &()| {
+            parses.set(parses.get() + 1);
+            None
+        };
+        let mut cache = EntryCache::<&str>::default();
+        for _ in 0..3 {
+            assert!(cache.collect([("k", "$a".to_owned(), 1, ())], parse).is_empty());
+        }
+        assert_eq!(parses.get(), 1);
+    }
+
+    #[test]
+    fn a_burst_of_updates_gets_one_pass_per_interval() {
+        let mut gate = PassGate::new(Duration::from_millis(250));
+        let t0 = Instant::now();
+        assert_eq!(gate.delay(t0), Duration::ZERO, "the first pass is not held back");
+        gate.ran(t0);
+        // An update 100 ms later waits out the rest of the interval...
+        let t1 = t0 + Duration::from_millis(100);
+        assert_eq!(gate.delay(t1), Duration::from_millis(150));
+        // ...and one that arrives once it has passed runs at once.
+        assert_eq!(gate.delay(t0 + Duration::from_millis(250)), Duration::ZERO);
+        assert_eq!(gate.delay(t0 + Duration::from_secs(5)), Duration::ZERO);
+        gate.ran(t0 + Duration::from_millis(250));
+        assert_eq!(gate.delay(t0 + Duration::from_millis(300)), Duration::from_millis(200));
     }
 
     #[test]

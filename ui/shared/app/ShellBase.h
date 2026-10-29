@@ -277,7 +277,10 @@ public:
                     bool               start_audio_muted = false,
                     bool               start_video_muted = false);
     // End the active call and tear down all call resources. No-op when idle.
-    void end_call();
+    // The leave goes out in the background, so the UI thread is not held up by
+    // the network; pass `wait_for_leave` where the client goes away right after
+    // (sign-out, quit) so the leave is not lost with it.
+    void end_call(bool wait_for_leave = false);
     // Returns the active CallSession, or nullptr when not in a call.
     CallSession* active_call() const { return call_session_.get(); }
     // Resolve whichever window (main window or a pop-out) is currently
@@ -3706,6 +3709,9 @@ protected:
                                                     RtcParticipantInfo info);
     virtual void handle_rtc_session_ended_ui_(std::uint64_t session_id,
                                               std::string reason);
+    // Whether an SDK call event (id, and account when tagged) belongs to the
+    // call we are in now, not to an earlier one or another account's.
+    bool is_current_call_event_(std::uint64_t session_id) const;
     // Decoded, pre-multiplied BGRA video frame from a remote participant.
     // bgra was pre-converted from RGBA on the worker thread in EventHandlerBase;
     // the shared_ptr allows zero-copy handoff to ParticipantTile.
