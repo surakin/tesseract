@@ -20,6 +20,12 @@ use tracing::{info, warn};
 pub const STICKY_DURATION: Duration = Duration::from_secs(300);
 /// Resend before the event expires, so we never flicker out.
 pub const REFRESH_EVERY: Duration = Duration::from_secs(150);
+/// After a failed refresh, retry this soon, doubling up to [`REFRESH_RETRY_MAX`]:
+/// the next regular refresh would otherwise come at the instant the event expires.
+pub const REFRESH_RETRY_MIN: Duration = Duration::from_secs(15);
+pub const REFRESH_RETRY_MAX: Duration = Duration::from_secs(60);
+/// Pause before the one retry of a failed leave.
+const LEAVE_RETRY_DELAY: Duration = Duration::from_millis(500);
 /// How long an invite rings (MSC4075 recommends 90 s).
 pub const INVITE_LIFETIME_MS: u64 = 90_000;
 /// The invite event stays sticky at least as long as it rings.
@@ -113,6 +119,22 @@ pub fn build_member_leave(slot_id: &str, member_id: &str, code: LeaveCode, reaso
     })
 }
 
+/// How long to wait before the next refresh, given how many in a row failed:
+/// the regular cadence after a success, else 15 s doubling to a 60 s ceiling.
+pub fn refresh_delay(consecutive_failures: u32) -> Duration {
+    if consecutive_failures == 0 {
+        return REFRESH_EVERY;
+    }
+    let doublings = (consecutive_failures - 1).min(16);
+    (REFRESH_RETRY_MIN * 2u32.pow(doublings)).min(REFRESH_RETRY_MAX)
+}
+
+/// Whether media is flowing in the clear in a room that has since become
+/// encrypted: `use_e2ee` is fixed when the call starts, so the call must end.
+pub fn encryption_flipped_mid_call(use_e2ee: bool, encrypted_now: bool) -> bool {
+    encrypted_now && !use_e2ee
+}
+
 /// Write MatrixRTC member events only when the server supports sticky events,
 /// the room has an open slot and our power level lets us send the event.
 pub fn should_write_member_events(sticky_supported: bool, slot_open: bool, can_send_member: bool) -> bool {
@@ -178,9 +200,11 @@ pub struct MrtcMembership {
     sink: std::sync::Arc<dyn StickySink>,
     params: JoinParams,
     encrypted_at_join: bool,
-    /// Held across every send, and `left` is only read or set under it, so a
-    /// refresh that raced a leave cannot send its join after the leave.
-    io: tokio::sync::Mutex<()>,
+    /// Held across every send, so a refresh that raced a leave cannot send its
+    /// join after the leave. The value is whether the leave has been delivered.
+    io: tokio::sync::Mutex<bool>,
+    /// We are leaving or have left: no more joins or refreshes. Says nothing
+    /// about whether the leave itself got out (that is the value of `io`).
     left: std::sync::atomic::AtomicBool,
 }
 
@@ -195,7 +219,7 @@ impl MrtcMembership {
             sink,
             params,
             encrypted_at_join,
-            io: tokio::sync::Mutex::new(()),
+            io: tokio::sync::Mutex::new(false),
             left: std::sync::atomic::AtomicBool::new(false),
         }
     }
@@ -217,16 +241,67 @@ impl MrtcMembership {
         self.sink.send(MEMBER_TYPE, build_member_join(&self.params), STICKY_DURATION).await
     }
 
-    /// Leave the slot once; later calls are no-ops.
-    pub async fn leave(&self, code: LeaveCode, reason: Option<&str>) {
-        let _io = self.io.lock().await;
-        if self.left.swap(true, std::sync::atomic::Ordering::SeqCst) {
-            return;
+    /// Leave the slot. The leave is delivered once: it is retried once when the
+    /// send fails, later calls are no-ops after a delivery and try again after
+    /// a failure or a cancelled call. Returns whether it is delivered.
+    pub async fn leave(&self, code: LeaveCode, reason: Option<&str>) -> bool {
+        self.leave_after(code, reason, LEAVE_RETRY_DELAY).await
+    }
+
+    async fn leave_after(&self, code: LeaveCode, reason: Option<&str>, retry_delay: Duration) -> bool {
+        // Before waiting for the lock, so a queued refresh sends nothing.
+        self.left.store(true, std::sync::atomic::Ordering::SeqCst);
+        let mut delivered = self.io.lock().await;
+        if *delivered {
+            return true;
         }
         let body = build_member_leave(CALL_SLOT_ID, &self.params.member_id, code, reason);
-        match self.sink.send(MEMBER_TYPE, body, STICKY_DURATION).await {
-            Ok(()) => info!("rtc: left the MatrixRTC slot ({})", code.as_str()),
+        let mut sent = self.sink.send(MEMBER_TYPE, body.clone(), STICKY_DURATION).await;
+        if let Err(e) = &sent {
+            warn!("rtc: MatrixRTC leave failed, retrying once: {e}");
+            tokio::time::sleep(retry_delay).await;
+            sent = self.sink.send(MEMBER_TYPE, body, STICKY_DURATION).await;
+        }
+        match sent {
+            Ok(()) => {
+                *delivered = true;
+                info!("rtc: left the MatrixRTC slot ({})", code.as_str());
+            }
             Err(e) => warn!("rtc: MatrixRTC leave failed: {e}"),
+        }
+        *delivered
+    }
+
+    /// Withdraw earlier joins of ours (`(slot_id, member_id)`, see
+    /// [`super::slots::stale_own_members`]) that a new session replaces.
+    /// Best effort: a failure only means the ghost lives out its lifetime.
+    pub async fn withdraw_stale(&self, stale: &[(String, String)]) {
+        let _io = self.io.lock().await;
+        for (slot_id, member_id) in stale {
+            let body = build_member_leave(slot_id, member_id, LeaveCode::Leave, Some("replaced by a new session"));
+            match self.sink.send(MEMBER_TYPE, body, STICKY_DURATION).await {
+                Ok(()) => info!("rtc: withdrew a stale MatrixRTC join of ours ({member_id})"),
+                Err(e) => warn!("rtc: could not withdraw a stale MatrixRTC join ({member_id}): {e}"),
+            }
+        }
+    }
+
+    /// Resend the join before it expires until we leave. A failed resend is
+    /// retried soon (see [`refresh_delay`]) instead of at the expiry instant.
+    pub async fn run_refresh(&self) {
+        let mut failures = 0u32;
+        loop {
+            tokio::time::sleep(refresh_delay(failures)).await;
+            if self.has_left() {
+                break;
+            }
+            match self.join().await {
+                Ok(()) => failures = 0,
+                Err(e) => {
+                    failures = failures.saturating_add(1);
+                    warn!("rtc: MatrixRTC membership refresh failed: {e}");
+                }
+            }
         }
     }
 
@@ -504,6 +579,226 @@ mod tests {
                 assert!(sent[pos..].iter().all(|s| *s == "leave"), "a join followed the leave: {sent:?}");
             }
         }
+    }
+
+    /// Fails its first `fail_first` sends, then records the rest; `hang_first`
+    /// makes the very first send never finish (a request stuck in flight).
+    struct FlakySink {
+        fail_first: usize,
+        hang_first: bool,
+        attempts: std::sync::atomic::AtomicUsize,
+        sent: std::sync::Mutex<Vec<Value>>,
+    }
+
+    impl FlakySink {
+        fn new(fail_first: usize, hang_first: bool) -> std::sync::Arc<Self> {
+            std::sync::Arc::new(Self {
+                fail_first,
+                hang_first,
+                attempts: Default::default(),
+                sent: Default::default(),
+            })
+        }
+
+        fn attempts(&self) -> usize {
+            self.attempts.load(std::sync::atomic::Ordering::SeqCst)
+        }
+
+        fn kinds(&self) -> Vec<&'static str> {
+            self.sent
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|c| if c["member"]["membership"] == "leave" { "leave" } else { "join" })
+                .collect()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl StickySink for FlakySink {
+        async fn send(&self, _t: &str, content: Value, _d: Duration) -> anyhow::Result<()> {
+            let n = self.attempts.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if n == 0 && self.hang_first {
+                std::future::pending::<()>().await;
+            }
+            if n < self.fail_first {
+                anyhow::bail!("offline");
+            }
+            self.sent.lock().unwrap().push(content);
+            Ok(())
+        }
+    }
+
+    fn flaky_membership(sink: &std::sync::Arc<FlakySink>) -> MrtcMembership {
+        MrtcMembership::with_sink(
+            sink.clone(),
+            JoinParams {
+                member_id: "mid1".into(), user_id: "@a:x".into(), device_id: "D".into(),
+                sfu_url: "wss://s".into(), service_url: "https://j".into(), audio_only: false,
+            },
+            true,
+        )
+    }
+
+    #[test]
+    fn refresh_delay_backs_off_then_recovers() {
+        let s = |n| Duration::from_secs(n);
+        assert_eq!(refresh_delay(0), REFRESH_EVERY, "regular cadence after a success");
+        assert_eq!(
+            (1..=6).map(refresh_delay).collect::<Vec<_>>(),
+            vec![s(15), s(30), s(60), s(60), s(60), s(60)]
+        );
+        assert_eq!(refresh_delay(u32::MAX), REFRESH_RETRY_MAX, "no overflow");
+        assert!(REFRESH_RETRY_MAX < STICKY_DURATION - REFRESH_EVERY, "a retry lands before the expiry");
+    }
+
+    #[test]
+    fn an_encrypted_room_ends_only_a_call_that_started_in_the_clear() {
+        assert!(encryption_flipped_mid_call(false, true));
+        assert!(!encryption_flipped_mid_call(true, true), "encrypted from the start");
+        assert!(!encryption_flipped_mid_call(false, false));
+        assert!(!encryption_flipped_mid_call(true, false));
+    }
+
+    #[tokio::test]
+    async fn a_failed_leave_is_retried_once() {
+        let sink = FlakySink::new(1, false);
+        let m = flaky_membership(&sink);
+        assert!(m.leave_after(LeaveCode::Leave, None, Duration::ZERO).await);
+        assert_eq!(sink.attempts(), 2);
+        assert_eq!(sink.kinds(), vec!["leave"]);
+    }
+
+    #[tokio::test]
+    async fn a_leave_that_never_got_out_is_attempted_again_later() {
+        let sink = FlakySink::new(2, false);
+        let m = flaky_membership(&sink);
+        assert!(!m.leave_after(LeaveCode::Leave, None, Duration::ZERO).await);
+        assert_eq!(sink.attempts(), 2, "one send and one retry");
+        assert!(m.has_left(), "no refresh may follow a failed leave");
+        m.join().await.unwrap();
+        assert_eq!(sink.attempts(), 2, "a join after the leave sends nothing");
+        assert!(m.leave_after(LeaveCode::Leave, None, Duration::ZERO).await);
+        assert_eq!(sink.kinds(), vec!["leave"]);
+        // Delivered: further leaves are no-ops.
+        assert!(m.leave_after(LeaveCode::Leave, None, Duration::ZERO).await);
+        assert_eq!(sink.attempts(), 3);
+    }
+
+    #[tokio::test]
+    async fn a_cancelled_leave_still_happens_when_asked_again() {
+        // The send hangs; the caller (the reconcile task) is aborted mid-leave.
+        let sink = FlakySink::new(0, true);
+        let m = flaky_membership(&sink);
+        let cancelled =
+            tokio::time::timeout(Duration::from_millis(20), m.leave(LeaveCode::SlotClosed, None)).await;
+        assert!(cancelled.is_err());
+        assert!(m.has_left());
+        assert!(sink.kinds().is_empty());
+        // end_call's own leave must not be mistaken for a repeat.
+        assert!(m.leave(LeaveCode::Leave, None).await);
+        assert_eq!(sink.kinds(), vec!["leave"]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn refresh_retries_soon_after_a_failure_and_stops_after_leaving() {
+        let sink = FlakySink::new(2, false);
+        let m = std::sync::Arc::new(flaky_membership(&sink));
+        let task = {
+            let m = m.clone();
+            tokio::spawn(async move { m.run_refresh().await })
+        };
+        let at = |secs| tokio::time::sleep(Duration::from_secs(secs));
+        at(151).await; // first refresh at 150 s fails
+        assert_eq!(sink.attempts(), 1);
+        at(15).await; // retried 15 s later, fails again
+        assert_eq!(sink.attempts(), 2);
+        at(30).await; // then 30 s later, succeeds
+        assert_eq!(sink.attempts(), 3);
+        assert_eq!(sink.kinds(), vec!["join"]);
+        at(150).await; // back on the regular cadence
+        assert_eq!(sink.attempts(), 4);
+        m.leave_after(LeaveCode::Leave, None, Duration::ZERO).await;
+        at(150).await;
+        task.await.unwrap();
+        assert_eq!(sink.kinds(), vec!["join", "join", "leave"]);
+    }
+
+    /// Its first send waits for `release` (a request stuck in flight), then
+    /// everything is recorded.
+    struct GatedSink {
+        gate: tokio::sync::Notify,
+        attempts: std::sync::atomic::AtomicUsize,
+        sent: std::sync::Mutex<Vec<Value>>,
+    }
+
+    #[async_trait::async_trait]
+    impl StickySink for GatedSink {
+        async fn send(&self, _t: &str, content: Value, _d: Duration) -> anyhow::Result<()> {
+            if self.attempts.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                self.gate.notified().await;
+            }
+            self.sent.lock().unwrap().push(content);
+            Ok(())
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_leave_landing_during_an_in_flight_refresh_stops_the_refresh_for_good() {
+        let sink = std::sync::Arc::new(GatedSink {
+            gate: tokio::sync::Notify::new(),
+            attempts: Default::default(),
+            sent: Default::default(),
+        });
+        let m = std::sync::Arc::new(MrtcMembership::with_sink(
+            sink.clone(),
+            JoinParams {
+                member_id: "mid1".into(), user_id: "@a:x".into(), device_id: "D".into(),
+                sfu_url: "wss://s".into(), service_url: "https://j".into(), audio_only: false,
+            },
+            true,
+        ));
+        let task = {
+            let m = m.clone();
+            tokio::spawn(async move { m.run_refresh().await })
+        };
+        tokio::time::sleep(REFRESH_EVERY + Duration::from_secs(1)).await;
+        assert_eq!(sink.attempts.load(std::sync::atomic::Ordering::SeqCst), 1, "the refresh is in flight");
+        let leaver = {
+            let m = m.clone();
+            tokio::spawn(async move { m.leave_after(LeaveCode::Leave, None, Duration::ZERO).await })
+        };
+        for _ in 0..5 {
+            tokio::task::yield_now().await;
+        }
+        assert!(m.has_left(), "the leave is queued behind the join");
+        assert_eq!(sink.attempts.load(std::sync::atomic::Ordering::SeqCst), 1);
+        sink.gate.notify_one();
+        assert!(leaver.await.unwrap());
+        // The loop ends instead of sending another join on its next turn.
+        tokio::time::sleep(REFRESH_EVERY * 3).await;
+        task.await.unwrap();
+        let kinds: Vec<&str> = sink
+            .sent
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|c| if c["member"]["membership"] == "leave" { "leave" } else { "join" })
+            .collect();
+        assert_eq!(kinds, vec!["join", "leave"]);
+    }
+
+    #[tokio::test]
+    async fn stale_joins_of_ours_are_withdrawn_with_their_own_ids() {
+        let sink = std::sync::Arc::new(FakeSink::default());
+        let m = membership(&sink);
+        m.withdraw_stale(&[("m.call#room".into(), "old1".into()), ("m.call#ROOM".into(), "old2".into())]).await;
+        let sent = sink.sent.lock().unwrap();
+        assert_eq!(sent.len(), 2);
+        assert_eq!(sent[0].1["member"], serde_json::json!({"id": "old1", "membership": "leave"}));
+        assert_eq!(sent[0].1["sticky_key"], "old1");
+        assert_eq!(sent[1].1["slot_id"], "m.call#ROOM");
+        assert!(!m.has_left(), "withdrawing an old join is not leaving the new one");
     }
 
     #[test]

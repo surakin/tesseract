@@ -370,10 +370,14 @@ pub struct LiveKitRoom {
     call_start: std::time::Instant,
 }
 
+/// Run when the primary connection drops, before the UI is told the session ended.
+pub type PrimaryEnded = Arc<dyn Fn() + Send + Sync>;
+
 impl LiveKitRoom {
     /// Connect, publish local audio + video tracks, start the event loop.
     /// This is the primary connection: it publishes on our own homeserver's
-    /// SFU, and its `Disconnected` event ends the call session.
+    /// SFU, and its `Disconnected` event ends the call session (after calling
+    /// `on_ended`, which takes back what the call announced).
     pub async fn connect(
         server_url: &str,
         jwt: &str,
@@ -383,6 +387,7 @@ impl LiveKitRoom {
         shared: SharedKeys,
         sfu_url: &str,
         members: MemberTransports,
+        on_ended: PrimaryEnded,
     ) -> anyhow::Result<Self> {
         // RoomOptions is #[non_exhaustive] in the external crate — must use
         // Default::default() then field-assign rather than struct literal.
@@ -491,7 +496,7 @@ impl LiveKitRoom {
             Arc::clone(&screen_frame_in_flight),
             FilteredSink::wrap(sink.clone(), sfu_url, &members, local_identity.clone()),
             shared.clone(),
-            true,
+            Some(on_ended),
         );
 
         info!("rtc: livekit connected (session {session_id}), local identity={local_identity}");
@@ -804,7 +809,7 @@ impl RemoteSfuRoom {
             Arc::new(AtomicBool::new(false)),
             FilteredSink::wrap(sink.clone(), sfu_url, &members, local_identity),
             shared.clone(),
-            false,
+            None,
         );
         info!("rtc: connected to remote SFU {server_url} (session {session_id})");
         let sink = FilteredSink::wrap(sink, sfu_url, &members, String::new());
@@ -942,7 +947,7 @@ fn spawn_event_task(
     screen_in_flight: Arc<AtomicBool>,
     sink: Option<Arc<dyn RtcEventSink>>,
     shared: SharedKeys,
-    is_primary: bool,
+    on_primary_ended: Option<PrimaryEnded>,
 ) -> AbortHandle {
     tokio::spawn(async move {
         // Created on the first remote audio track; stops with this task.
@@ -1151,7 +1156,8 @@ fn spawn_event_task(
                     info!("rtc: room disconnected: {reason:?}");
                     // Only the primary (publishing) connection ends the call.
                     // A dropped remote SFU is retried by the SFU reconciler.
-                    if is_primary {
+                    if let Some(on_ended) = &on_primary_ended {
+                        on_ended();
                         if let Some(ref s) = sink {
                             s.on_session_ended(session_id, &format!("{reason:?}"));
                         }

@@ -1,7 +1,7 @@
 use std::{
     collections::HashSet,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
     },
     time::{Duration, Instant},
@@ -18,14 +18,15 @@ use tracing::{info, warn};
 use super::{
     e2ee::{broadcast_key_to_members, ParkedKey, ParkedKeys},
     key_rotation::{KeyRotator, RotationAction},
-    livekit_room::{LiveKitRoom, MemberTransports, SharedKeys},
+    livekit_room::{LiveKitRoom, MemberTransports, PrimaryEnded, SharedKeys},
     members::{desired_sfus, transport_map, LkFocus},
     mrtc_membership::{
-        can_send_member_event, can_send_slot, leave_reason_now, new_member_id as new_mrtc_member_id,
-        open_slot as open_mrtc_slot, send_invite, should_open_slot, should_write_member_events,
-        slot_matches_room, withdraw_invite, JoinParams, LeaveCode, MrtcMembership, REFRESH_EVERY,
+        can_send_member_event, can_send_slot, encryption_flipped_mid_call, leave_reason_now,
+        new_member_id as new_mrtc_member_id, open_slot as open_mrtc_slot, send_invite,
+        should_open_slot, should_write_member_events, slot_matches_room, withdraw_invite,
+        JoinParams, LeaveCode, MrtcMembership,
     },
-    slots::{hashed_identities, read_all_live_members, read_slot},
+    slots::{hashed_identities, read_all_live_members, read_slot, stale_own_members},
     sfu_set::{SfuContext, SfuSet},
     signaling::{
         self, send_msc3401_call_open, send_msc3401_member_join, send_msc3401_member_leave,
@@ -80,20 +81,12 @@ pub struct RtcSession {
     /// Our publishing connection plus the subscribe-only connections to the
     /// SFUs other members publish on.
     sfus: Arc<SfuSet>,
-    /// Delayed-leave heartbeat and hourly membership refresh.
-    membership_task: AbortHandle,
-    /// Follows call-member changes: connects/drops SFUs and keeps the E2EE
-    /// frame keys in step with the member set.
-    reconcile_task: AbortHandle,
-    /// The pending MSC4140 delayed leave, cancelled on a graceful hang-up.
-    delay_id: Arc<PLMutex<Option<String>>>,
     e2ee: Arc<PLMutex<KeyRotator>>,
-    /// Our sticky `m.rtc.member` membership, when this call also writes one.
-    mrtc: Option<Arc<MrtcMembership>>,
-    /// Resends the member event before its sticky duration runs out.
-    mrtc_refresh: Option<AbortHandle>,
-    /// We sent a MatrixRTC invite that still needs withdrawing when we leave an empty call.
-    sent_invite: bool,
+    /// The memberships and ring this call announced, the background tasks that
+    /// keep them alive, and the one way to take them back.
+    announced: Arc<Announced>,
+    /// The runtime the call runs on, for the leave that a drop sends.
+    runtime: tokio::runtime::Handle,
     /// Removes the encryption-key to-device handler when the session is dropped.
     _enc_key_guards: (
         matrix_sdk::event_handler::EventHandlerDropGuard,
@@ -166,10 +159,235 @@ impl RtcSession {
 }
 
 impl Drop for RtcSession {
+    /// Stops every background task and, when `end_call` did not already,
+    /// withdraws the memberships on the runtime in a detached task (a session
+    /// replaced or dropped without a hang-up must not keep announcing us). The
+    /// withdrawal is a no-op for whatever a delivered `end_call` took back and
+    /// finishes what a timed-out one left.
     fn drop(&mut self) {
-        self.membership_task.abort();
-        self.reconcile_task.abort();
+        self.announced.shutdown();
+        // Spawning on a runtime that has shut down drops the task; it never panics.
+        let announced = Arc::clone(&self.announced);
+        self.runtime.spawn(async move {
+            announced.withdraw(LeaveCode::Leave, None).await;
+        });
     }
+}
+
+/// How the call's signalling reaches the room. The room in production; a
+/// recorder in tests.
+#[async_trait::async_trait]
+trait Signals: Send + Sync {
+    /// Send the legacy `call.member` leave for the LiveKit identity `member_id`.
+    async fn legacy_leave(&self, member_id: &str) -> anyhow::Result<()>;
+    /// Cancel a pending MSC4140 delayed event (best effort).
+    async fn cancel_delayed(&self, delay_id: &str);
+    /// Whether anyone else has joined the call.
+    async fn call_answered(&self) -> bool;
+    /// Send the withdrawal of our MatrixRTC invite.
+    async fn withdraw_invite(&self) -> anyhow::Result<()>;
+}
+
+struct RoomSignals {
+    room: Room,
+    user_id: String,
+}
+
+#[async_trait::async_trait]
+impl Signals for RoomSignals {
+    async fn legacy_leave(&self, member_id: &str) -> anyhow::Result<()> {
+        send_msc3401_member_leave(&self.room, &self.user_id, member_id).await
+    }
+
+    async fn cancel_delayed(&self, delay_id: &str) {
+        signaling::cancel_delayed_event(&self.room.client(), delay_id).await;
+    }
+
+    async fn call_answered(&self) -> bool {
+        let client = self.room.client();
+        match (client.user_id(), client.device_id()) {
+            (Some(u), Some(d)) => !read_all_live_members(&self.room, u, d).await.is_empty(),
+            // Unknown: leave the ring alone rather than cancel one someone answered.
+            _ => true,
+        }
+    }
+
+    async fn withdraw_invite(&self) -> anyhow::Result<()> {
+        withdraw_invite(&self.room).await
+    }
+}
+
+/// The memberships and ring a call announced, the background tasks that keep
+/// them alive, and how to take it all back. Each part is withdrawn once it is
+/// delivered, however many of `end_call`, a dropped session, an SFU disconnect,
+/// the reconcile loop and a failed setup ask: a request that was cancelled or
+/// failed is tried again by the next one.
+struct Announced {
+    signals: Arc<dyn Signals>,
+    /// LiveKit identities we sent a legacy `call.member` join for (the state key follows it).
+    legacy_ids: PLMutex<Vec<String>>,
+    /// The pending MSC4140 delayed leave of the legacy member.
+    delay_id: Arc<PLMutex<Option<String>>>,
+    /// Our sticky `m.rtc.member` membership, when this call also writes one.
+    /// Kept even when its join failed: the send may still have gone through.
+    mrtc: std::sync::OnceLock<Arc<MrtcMembership>>,
+    /// Whether the legacy leave has been delivered; held while it is sent and
+    /// while the heartbeat sends a join, so the two cannot interleave.
+    legacy_left: tokio::sync::Mutex<bool>,
+    /// We sent a MatrixRTC invite; whether it is settled (withdrawn, or the
+    /// call was answered) is the value, held while it is sent.
+    invite_sent: AtomicBool,
+    invite_settled: tokio::sync::Mutex<bool>,
+    /// The call is being torn down: nothing may announce us any more.
+    closed: AtomicBool,
+    /// The heartbeat and the sticky refresh: the tasks that send joins.
+    tasks: PLMutex<Vec<AbortHandle>>,
+    /// The reconcile loop, kept apart because it tears the call down itself
+    /// when the room turns encrypted and must not abort itself.
+    reconcile: PLMutex<Option<AbortHandle>>,
+}
+
+impl Announced {
+    fn new(signals: Arc<dyn Signals>) -> Self {
+        Self {
+            signals,
+            legacy_ids: PLMutex::new(Vec::new()),
+            delay_id: Arc::new(PLMutex::new(None)),
+            mrtc: std::sync::OnceLock::new(),
+            legacy_left: tokio::sync::Mutex::new(false),
+            invite_sent: AtomicBool::new(false),
+            invite_settled: tokio::sync::Mutex::new(false),
+            closed: AtomicBool::new(false),
+            tasks: PLMutex::new(Vec::new()),
+            reconcile: PLMutex::new(None),
+        }
+    }
+
+    /// Record a legacy join we are about to send, so a withdrawal covers it
+    /// even if the send times out after the homeserver processed it.
+    fn joined_legacy(&self, id: &str) {
+        let mut ids = self.legacy_ids.lock();
+        if !ids.iter().any(|i| i == id) {
+            ids.push(id.to_owned());
+        }
+    }
+
+    /// Record the sticky membership, so a withdrawal covers it.
+    fn set_membership(&self, membership: Arc<MrtcMembership>) {
+        let _ = self.mrtc.set(membership);
+    }
+
+    /// Record that we sent a MatrixRTC invite, so a withdrawal covers it.
+    fn invited(&self) {
+        self.invite_sent.store(true, Ordering::SeqCst);
+    }
+
+    fn is_closed(&self) -> bool {
+        self.closed.load(Ordering::SeqCst)
+    }
+
+    /// Hand a task that announces us over to be stopped by [`Self::close`].
+    /// A task registered after the call closed is stopped at once.
+    fn register_task(&self, task: AbortHandle) {
+        let mut tasks = self.tasks.lock();
+        if self.is_closed() {
+            task.abort();
+        } else {
+            tasks.push(task);
+        }
+    }
+
+    fn register_reconcile(&self, task: AbortHandle) {
+        let mut slot = self.reconcile.lock();
+        if self.is_closed() {
+            task.abort();
+        } else {
+            *slot = Some(task);
+        }
+    }
+
+    /// Stop everything that sends a join and refuse further ones. The reconcile
+    /// loop is left running: it may be the caller (see [`Self::shutdown`]).
+    fn close(&self) {
+        let mut tasks = self.tasks.lock();
+        self.closed.store(true, Ordering::SeqCst);
+        for task in tasks.drain(..) {
+            task.abort();
+        }
+    }
+
+    /// [`Self::close`] plus the reconcile loop: the first step of every
+    /// teardown that is not driven by that loop.
+    fn shutdown(&self) {
+        self.close();
+        if let Some(task) = self.reconcile.lock().take() {
+            task.abort();
+        }
+    }
+
+    /// The legacy-membership lock for sending a join, or `None` once the call
+    /// is closed or the legacy leave is delivered. Held across the send, so a
+    /// join cannot land after the leave.
+    async fn open_for_join(&self) -> Option<tokio::sync::MutexGuard<'_, bool>> {
+        let left = self.legacy_left.lock().await;
+        (!self.is_closed() && !*left).then_some(left)
+    }
+
+    /// Send the leave for a legacy identity we no longer use (a wrong guess at
+    /// our LiveKit identity) and stop tracking it once it is out.
+    async fn leave_legacy_identity(&self, id: &str) {
+        if send_legacy_leave(&*self.signals, id).await {
+            self.legacy_ids.lock().retain(|i| i != id);
+        }
+    }
+
+    /// Take back the legacy and the sticky membership and the ring. The delayed
+    /// leave is the fallback while the legacy leave has not got out, so it is
+    /// only cancelled once that has.
+    async fn withdraw(&self, code: LeaveCode, why: Option<&str>) {
+        {
+            let mut left = self.legacy_left.lock().await;
+            if !*left {
+                let ids = self.legacy_ids.lock().clone();
+                let mut all_sent = true;
+                for id in &ids {
+                    all_sent &= send_legacy_leave(&*self.signals, id).await;
+                }
+                if all_sent {
+                    *left = true;
+                    let pending = self.delay_id.lock().take();
+                    if let Some(id) = pending {
+                        self.signals.cancel_delayed(&id).await;
+                    }
+                }
+            }
+        }
+        if let Some(m) = self.mrtc.get() {
+            m.leave(code, why).await;
+        }
+        if self.invite_sent.load(Ordering::SeqCst) {
+            let mut settled = self.invite_settled.lock().await;
+            if !*settled {
+                // A call somebody joined needs no cancelled ring.
+                *settled = self.signals.call_answered().await
+                    || self.signals.withdraw_invite().await.is_ok();
+            }
+        }
+    }
+}
+
+/// Send the legacy member leave, once more if the first send fails.
+async fn send_legacy_leave(signals: &dyn Signals, member_id: &str) -> bool {
+    for attempt in 0..2 {
+        match signals.legacy_leave(member_id).await {
+            Ok(()) => return true,
+            Err(e) => warn!("rtc: legacy call-member leave failed (attempt {}): {e}", attempt + 1),
+        }
+        if attempt == 0 {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+    }
+    false
 }
 
 // ---------------------------------------------------------------------------
@@ -332,6 +550,11 @@ pub async fn start_call(
     );
 
     // ── Pre-flight Matrix signaling ───────────────────────────────────────
+    // From the first join on, a failed setup takes back everything announced so far.
+    let announced = Arc::new(Announced::new(Arc::new(RoomSignals {
+        room: room.clone(),
+        user_id: user_id.clone(),
+    })));
     if let Some(ref pid) = preflight_identity {
         info!("rtc: pre-flight signaling with identity={pid}");
         if signaling::should_open_call_slot(
@@ -340,7 +563,9 @@ pub async fn start_call(
         ) {
             signaling::start_msc3401_call_slot(&room, "").await?;
         }
-        send_msc3401_member_join(
+        // Recorded before the send: a join that timed out may still have landed.
+        announced.joined_legacy(pid);
+        if let Err(e) = send_msc3401_member_join(
             &room,
             "",
             &device_id,
@@ -351,7 +576,13 @@ pub async fn start_call(
             audio_only,
             None,
         )
-        .await?;
+        .await
+        {
+            announced
+                .withdraw(LeaveCode::TransportError, Some("could not announce the call"))
+                .await;
+            return Err(e);
+        }
     }
 
     // MSC4143: open the room's m.call slot for clients that read it. Best
@@ -372,6 +603,8 @@ pub async fn start_call(
 
     // MatrixRTC membership next to the legacy one, like Element Call's
     // compatibility mode: a sticky m.rtc.member while the slot is usable.
+    // `mrtc` is the membership that joined; `announced` also keeps one whose
+    // join failed, since the send may still have gone through.
     let mrtc: Option<Arc<MrtcMembership>> = if should_write_member_events(
         client.supports_sticky_events().await.unwrap_or(false),
         slot_usable,
@@ -388,8 +621,22 @@ pub async fn start_call(
                 audio_only,
             },
         ));
+        announced.set_membership(Arc::clone(&membership));
         match membership.join().await {
-            Ok(()) => Some(membership),
+            Ok(()) => {
+                // A session of ours that ended without leaving (a restart) is
+                // still joined for minutes under another member id: withdraw it
+                // now that we are in, never before, so a failed join leaves it alone.
+                let stale = stale_own_members(
+                    &super::sticky::live_entries(&room),
+                    &user_id,
+                    &device_id,
+                    membership.member_id(),
+                    super::sticky::now_ms(),
+                );
+                membership.withdraw_stale(&stale).await;
+                Some(membership)
+            }
             Err(e) => {
                 warn!("rtc: MatrixRTC join failed (non-fatal): {e}");
                 None
@@ -412,7 +659,6 @@ pub async fn start_call(
         }
     }
     // The MatrixRTC invite (sticky) rings a DM for clients that read it.
-    let mut sent_invite = false;
     if mrtc.is_some()
         && signaling::should_ring_room(
             !initial_members.is_empty(),
@@ -420,14 +666,41 @@ pub async fn start_call(
         )
         && room.is_direct().await.unwrap_or(false)
     {
-        match send_invite(&room, super::sticky::now_ms()).await {
-            Ok(_) => sent_invite = true,
-            Err(e) => warn!("rtc: MatrixRTC invite failed (non-fatal): {e}"),
+        // Recorded before the send: an invite that timed out may still have landed.
+        announced.invited();
+        if let Err(e) = send_invite(&room, super::sticky::now_ms()).await {
+            warn!("rtc: MatrixRTC invite failed (non-fatal): {e}");
         }
     }
 
     // ── Connect to our SFU ────────────────────────────────────────────────
     let sink = super::sink_for_client(&client);
+    // A lost connection to our SFU ends the call for good (the UI is told by
+    // the connection itself): take back what it announced and stop the tasks
+    // that would keep announcing it. A hang-up closes the call first, so this
+    // does nothing then.
+    let on_primary_ended: PrimaryEnded = {
+        let announced = Arc::clone(&announced);
+        let holder = Arc::clone(&sfus_holder);
+        Arc::new(move || {
+            if announced.is_closed() {
+                return;
+            }
+            warn!("rtc: lost the connection to our SFU; taking back the call's announcements");
+            announced.shutdown();
+            let announced = Arc::clone(&announced);
+            let holder = Arc::clone(&holder);
+            tokio::spawn(async move {
+                let set = holder.lock().clone();
+                if let Some(set) = set {
+                    set.disconnect_all().await;
+                }
+                announced
+                    .withdraw(LeaveCode::TransportError, Some("lost the connection to the SFU"))
+                    .await;
+            });
+        })
+    };
     let lk = match LiveKitRoom::connect(
         &lk_transport.server_url,
         &lk_transport.jwt,
@@ -437,19 +710,15 @@ pub async fn start_call(
         shared.clone(),
         &local_service_url,
         member_transports.clone(),
+        on_primary_ended,
     )
     .await
     {
         Ok(lk) => Arc::new(lk),
         Err(e) => {
-            abandon_announcements(
-                &room,
-                mrtc.as_deref(),
-                sent_invite,
-                LeaveCode::TransportError,
-                "could not connect to the SFU",
-            )
-            .await;
+            announced
+                .withdraw(LeaveCode::TransportError, Some("could not connect to the SFU"))
+                .await;
             return Err(e);
         }
     };
@@ -465,6 +734,8 @@ pub async fn start_call(
             "rtc: identity mismatch — preflight={preflight_identity:?} actual={lk_identity}; \
              re-sending signaling"
         );
+        // The re-sent join may land even when the send reports a failure.
+        announced.joined_legacy(&lk_identity);
         let resent: anyhow::Result<()> = async {
             if signaling::should_open_call_slot(
                 signaling::call_slot_exists(&room, "").await,
@@ -487,18 +758,16 @@ pub async fn start_call(
         }
         .await;
         if let Err(e) = resent {
-            abandon_announcements(
-                &room,
-                mrtc.as_deref(),
-                sent_invite,
-                LeaveCode::TransportError,
-                "could not update the call membership",
-            )
-            .await;
+            announced
+                .withdraw(LeaveCode::TransportError, Some("could not update the call membership"))
+                .await;
             return Err(e);
         }
+        // The membership under the wrong identity would otherwise stay as a ghost.
+        if let Some(wrong) = preflight_identity.as_deref() {
+            announced.leave_legacy_identity(wrong).await;
+        }
     }
-
 
     let sfus = Arc::new(SfuSet::new(
         SfuContext {
@@ -546,8 +815,7 @@ pub async fn start_call(
     }
 
     // ── Background tasks ──────────────────────────────────────────────────
-    let delay_id = Arc::new(PLMutex::new(None));
-    let membership_task = spawn_membership_task(
+    announced.register_task(spawn_membership_task(
         room.clone(),
         lk_identity.clone(),
         local_service_url.clone(),
@@ -555,8 +823,8 @@ pub async fn start_call(
         device_id.clone(),
         user_id.clone(),
         audio_only,
-        Arc::clone(&delay_id),
-    );
+        Arc::clone(&announced),
+    ));
 
     let (member_tx, member_rx) = tokio::sync::mpsc::channel::<()>(4);
     let member_tx_h = member_tx.clone();
@@ -604,26 +872,16 @@ pub async fn start_call(
         member_rx,
         parked,
         mrtc.clone(),
+        Arc::clone(&announced),
+        session_id,
     ))
     .abort_handle();
+    announced.register_reconcile(reconcile_task);
 
-    let mrtc_refresh = mrtc.as_ref().map(|m| {
+    if let Some(m) = &mrtc {
         let m = Arc::clone(m);
-        tokio::spawn(async move {
-            let mut tick = tokio::time::interval(REFRESH_EVERY);
-            tick.tick().await;
-            loop {
-                tick.tick().await;
-                if m.has_left() {
-                    break;
-                }
-                if let Err(e) = m.join().await {
-                    warn!("rtc: MatrixRTC membership refresh failed: {e}");
-                }
-            }
-        })
-        .abort_handle()
-    });
+        announced.register_task(tokio::spawn(async move { m.run_refresh().await }).abort_handle());
+    }
 
     info!(
         "rtc: session {session_id} started in {room_id}/{slot_id} after {:?}",
@@ -637,72 +895,36 @@ pub async fn start_call(
         device_id,
         client: client.clone(),
         sfus,
-        membership_task,
-        reconcile_task,
-        delay_id,
         e2ee,
-        mrtc,
-        mrtc_refresh,
-        sent_invite,
+        announced,
+        runtime: tokio::runtime::Handle::current(),
         _enc_key_guards: enc_key_guards,
         _member_guard: member_guard,
     })
 }
 
-/// Take back what a call announced when its setup fails before it is up:
-/// leave the MatrixRTC slot and withdraw the ring, so peers do not see a
-/// phantom participant or a call that never connected.
-async fn abandon_announcements(
-    room: &Room,
-    mrtc: Option<&MrtcMembership>,
-    sent_invite: bool,
-    code: LeaveCode,
-    why: &str,
-) {
-    if let Some(m) = mrtc {
-        m.leave(code, Some(why)).await;
-    }
-    if sent_invite {
-        let _ = withdraw_invite(room).await;
-    }
-}
+/// How long `end_call` waits for the memberships to be taken back before it
+/// stops blocking the caller. The session's drop finishes what is left.
+const END_CALL_WITHDRAW_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Gracefully leave the call: send disconnect events, tear down LiveKit, abort tasks.
+/// The caller drops the session right after, which finishes any withdrawal
+/// that did not get out within [`END_CALL_WITHDRAW_TIMEOUT`] (offline).
 pub async fn end_call(session: &RtcSession) {
     let t0 = Instant::now();
-    session.membership_task.abort();
-    session.reconcile_task.abort();
-    if let Some(refresh) = &session.mrtc_refresh {
-        refresh.abort();
-    }
-    let pending_leave = session.delay_id.lock().take();
-    if let Some(id) = pending_leave {
-        signaling::cancel_delayed_event(&session.client, &id).await;
-    }
-    let room_oid: matrix_sdk::ruma::OwnedRoomId =
-        session.room_id.parse().unwrap_or_else(|_| unreachable!());
-    if let Some(room) = session.client.get_room(&room_oid) {
-        let user_id = session
-            .client
-            .user_id()
-            .map(|u| u.to_string())
-            .unwrap_or_default();
-        // MSC3401 leave — state key must match the join (uses session member_id, not Matrix device_id)
-        let _ = send_msc3401_member_leave(&room, &user_id, &session.member_id).await;
-    }
-    if let Some(m) = &session.mrtc {
-        m.leave(LeaveCode::Leave, None).await;
-        if session.sent_invite {
-            if let Some(room) = session.client.get_room(&room_oid) {
-                // Withdraw our ring when nobody else ever joined. Best effort:
-                // whatever happens here, the teardown below still runs.
-                if let (Some(u), Some(d)) = (session.client.user_id(), session.client.device_id()) {
-                    if read_all_live_members(&room, u, d).await.is_empty() {
-                        let _ = withdraw_invite(&room).await;
-                    }
-                }
-            }
-        }
+    // Every task that could announce us again stops before the leaves go out.
+    // The leave below is delivered even when this aborts the reconcile task in
+    // the middle of its own: whichever did not get out is sent here.
+    session.announced.shutdown();
+    // Legacy leave (state key must match the join: the LiveKit identity, not
+    // the Matrix device id), its delayed fallback, the sticky leave and the ring.
+    let withdrawn = tokio::time::timeout(
+        END_CALL_WITHDRAW_TIMEOUT,
+        session.announced.withdraw(LeaveCode::Leave, None),
+    )
+    .await;
+    if withdrawn.is_err() {
+        warn!("rtc: taking back the call's announcements is taking long; finishing in the background");
     }
     info!("rtc: leave event sent after {:?}", t0.elapsed());
     session.sfus.disconnect_all().await;
@@ -933,7 +1155,8 @@ async fn handle_key_event(
 
 /// Keeps our membership alive: heartbeats the MSC4140 delayed leave every few
 /// seconds and resends the membership event hourly (with a fresh `expires` and
-/// the original `created_ts`, so peers see a stable join age).
+/// the original `created_ts`, so peers see a stable join age). Sends nothing
+/// once `announced` is closed.
 fn spawn_membership_task(
     room: Room,
     member_id: String,
@@ -942,11 +1165,15 @@ fn spawn_membership_task(
     device_id: String,
     user_id: String,
     audio_only: bool,
-    delay_id: Arc<PLMutex<Option<String>>>,
+    announced: Arc<Announced>,
 ) -> AbortHandle {
     tokio::spawn(async move {
         let client = room.client();
+        let delay_id = &announced.delay_id;
         let mut delayed_ok = true;
+        if announced.is_closed() {
+            return;
+        }
         let first = signaling::schedule_delayed_msc3401_leave(
             &room,
             &user_id,
@@ -963,6 +1190,9 @@ fn spawn_membership_task(
         interval.tick().await; // skip the immediate 0-delay first tick
         loop {
             interval.tick().await;
+            if announced.is_closed() {
+                return;
+            }
             let _job = crate::client::activity::begin(
                 "rtc-membership-refresh",
                 "Calls",
@@ -1001,6 +1231,11 @@ fn spawn_membership_task(
                 }
                 // Without our original join time a resend would reset our age.
                 let Some(ts) = created_ts else { continue };
+                // Held until the resend and its delayed leave are out, so a
+                // teardown's leave cannot be overtaken by them.
+                let Some(_open) = announced.open_for_join().await else {
+                    return;
+                };
                 let sent = send_msc3401_member_join(
                     &room,
                     "",
@@ -1057,6 +1292,8 @@ async fn reconcile_loop(
     mut changes: tokio::sync::mpsc::Receiver<()>,
     parked: Arc<PLMutex<ParkedKeys>>,
     mrtc: Option<Arc<MrtcMembership>>,
+    announced: Arc<Announced>,
+    session_id: u64,
 ) {
     let mut interval = tokio::time::interval(RECONCILE_INTERVAL);
     interval.tick().await;
@@ -1083,6 +1320,25 @@ async fn reconcile_loop(
             "Calls",
             crate::client::activity::JobKind::Periodic,
         );
+        // Media keeps flowing unencrypted once the room turns encrypted; the
+        // call cannot be repaired from here, so end it and say why.
+        if encryption_flipped_mid_call(use_e2ee, room.encryption_state().is_encrypted()) {
+            warn!("rtc: the room became encrypted during a call without frame encryption; ending the call");
+            // Nothing may announce us again. This loop is left running: it is
+            // the caller and returns below.
+            announced.close();
+            // The UI leaves the call and the media stops first, so neither waits
+            // for the network; the leaves below may take a while offline. The
+            // reason goes out before the disconnect, whose own end event would say less.
+            if let Some(sink) = super::sink_for_client(&client) {
+                sink.on_session_ended(session_id, "encryption_error");
+            }
+            sfus.disconnect_all().await;
+            announced
+                .withdraw(LeaveCode::SlotClosed, Some("the room became encrypted"))
+                .await;
+            return;
+        }
         if let Some(m) = mrtc.as_ref().filter(|m| !m.has_left()) {
             let slot = read_slot(&room).await;
             if let Some((code, why)) =
@@ -1687,5 +1943,261 @@ mod id_tests {
         assert!(DELAYED_LEAVE_HEARTBEAT < DELAYED_LEAVE_DELAY);
         // ...and the membership must be resent well inside its 4 h validity.
         assert!(MEMBERSHIP_REFRESH < Duration::from_secs(4 * 3600));
+    }
+}
+
+#[cfg(test)]
+mod announced_tests {
+    use super::*;
+    use crate::client::rtc::mrtc_membership::StickySink;
+    use serde_json::Value;
+    use std::sync::{atomic::AtomicUsize, Mutex};
+
+    type Log = Arc<Mutex<Vec<String>>>;
+
+    /// Records every send in one shared log, so the order across the legacy,
+    /// sticky and invite parts can be asserted.
+    struct FakeSignals {
+        log: Log,
+        legacy_failures: AtomicUsize,
+        invite_failures: AtomicUsize,
+        answered: AtomicBool,
+        /// The next legacy leave never finishes (a request stuck in flight).
+        hang_first_legacy: AtomicBool,
+    }
+
+    /// Count one failure off `n`; whether there was one left.
+    fn take_one(n: &AtomicUsize) -> bool {
+        let left = n.load(Ordering::SeqCst);
+        n.store(left.saturating_sub(1), Ordering::SeqCst);
+        left > 0
+    }
+
+    #[async_trait::async_trait]
+    impl Signals for FakeSignals {
+        async fn legacy_leave(&self, member_id: &str) -> anyhow::Result<()> {
+            let fail = take_one(&self.legacy_failures);
+            let hang = self.hang_first_legacy.swap(false, Ordering::SeqCst);
+            if hang {
+                self.log.lock().unwrap().push(format!("legacy-leave {member_id} (hung)"));
+                std::future::pending::<()>().await;
+            }
+            self.log.lock().unwrap().push(format!("legacy-leave {member_id}{}", if fail { " (failed)" } else { "" }));
+            if fail {
+                anyhow::bail!("offline");
+            }
+            Ok(())
+        }
+
+        async fn cancel_delayed(&self, delay_id: &str) {
+            self.log.lock().unwrap().push(format!("cancel-delayed {delay_id}"));
+        }
+
+        async fn call_answered(&self) -> bool {
+            self.answered.load(Ordering::SeqCst)
+        }
+
+        async fn withdraw_invite(&self) -> anyhow::Result<()> {
+            let fail = take_one(&self.invite_failures);
+            self.log.lock().unwrap().push(format!("withdraw-invite{}", if fail { " (failed)" } else { "" }));
+            if fail {
+                anyhow::bail!("offline");
+            }
+            Ok(())
+        }
+    }
+
+    struct LogSticky(Log);
+
+    #[async_trait::async_trait]
+    impl StickySink for LogSticky {
+        async fn send(&self, _t: &str, content: Value, _d: Duration) -> anyhow::Result<()> {
+            let kind = if content["member"]["membership"] == "leave" { "sticky-leave" } else { "sticky-join" };
+            self.0.lock().unwrap().push(kind.to_owned());
+            Ok(())
+        }
+    }
+
+    fn fake(legacy_failures: usize, invite_failures: usize) -> (Announced, Log, Arc<FakeSignals>) {
+        let log: Log = Arc::default();
+        let signals = Arc::new(FakeSignals {
+            log: log.clone(),
+            legacy_failures: AtomicUsize::new(legacy_failures),
+            invite_failures: AtomicUsize::new(invite_failures),
+            answered: AtomicBool::new(false),
+            hang_first_legacy: AtomicBool::new(false),
+        });
+        (Announced::new(signals.clone()), log, signals)
+    }
+
+    fn with_sticky(a: &Announced, log: &Log) {
+        a.set_membership(Arc::new(MrtcMembership::with_sink(
+            Arc::new(LogSticky(log.clone())),
+            JoinParams {
+                member_id: "m1".into(),
+                user_id: "@a:x".into(),
+                device_id: "D".into(),
+                sfu_url: "wss://s".into(),
+                service_url: "https://j".into(),
+                audio_only: false,
+            },
+            true,
+        )));
+    }
+
+    fn entries(log: &Log) -> Vec<String> {
+        log.lock().unwrap().clone()
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn withdraw_takes_back_legacy_then_delayed_then_sticky_then_invite() {
+        let (a, log, _) = fake(0, 0);
+        with_sticky(&a, &log);
+        a.joined_legacy("id1");
+        a.joined_legacy("id2");
+        a.joined_legacy("id1"); // recorded once
+        *a.delay_id.lock() = Some("delay9".into());
+        a.invited();
+        a.withdraw(LeaveCode::Leave, None).await;
+        assert_eq!(
+            entries(&log),
+            ["legacy-leave id1", "legacy-leave id2", "cancel-delayed delay9", "sticky-leave", "withdraw-invite"]
+        );
+        assert!(a.delay_id.lock().is_none());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_delivered_withdrawal_is_not_repeated() {
+        let (a, log, _) = fake(0, 0);
+        with_sticky(&a, &log);
+        a.joined_legacy("id1");
+        a.invited();
+        a.withdraw(LeaveCode::Leave, None).await;
+        let first = entries(&log);
+        a.withdraw(LeaveCode::Leave, None).await;
+        a.withdraw(LeaveCode::SlotClosed, Some("again")).await;
+        assert_eq!(entries(&log), first, "end_call then drop sends nothing twice");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_failed_legacy_leave_is_retried_once_then_again_by_the_next_withdrawal() {
+        let (a, log, _) = fake(3, 0);
+        a.joined_legacy("id1");
+        *a.delay_id.lock() = Some("delay9".into());
+        a.withdraw(LeaveCode::Leave, None).await;
+        assert_eq!(
+            entries(&log),
+            ["legacy-leave id1 (failed)", "legacy-leave id1 (failed)"],
+            "one retry, and the delayed leave stays as the fallback"
+        );
+        assert_eq!(a.delay_id.lock().as_deref(), Some("delay9"));
+        // The next request (the session's drop) retries and, with one failure
+        // left, succeeds on its own retry.
+        a.withdraw(LeaveCode::Leave, None).await;
+        assert_eq!(
+            entries(&log)[2..],
+            ["legacy-leave id1 (failed)", "legacy-leave id1", "cancel-delayed delay9"]
+        );
+        a.withdraw(LeaveCode::Leave, None).await;
+        assert_eq!(entries(&log).len(), 5, "delivered: nothing more");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_withdrawal_cut_short_by_end_calls_timeout_is_finished_by_the_drop() {
+        let (a, log, signals) = fake(0, 0);
+        with_sticky(&a, &log);
+        a.joined_legacy("id1");
+        a.invited();
+        signals.hang_first_legacy.store(true, Ordering::SeqCst);
+        let cut = tokio::time::timeout(END_CALL_WITHDRAW_TIMEOUT, a.withdraw(LeaveCode::Leave, None)).await;
+        assert!(cut.is_err(), "end_call stops waiting");
+        assert_eq!(entries(&log), ["legacy-leave id1 (hung)"]);
+        // The session's drop asks again and completes every part.
+        a.withdraw(LeaveCode::Leave, None).await;
+        assert_eq!(entries(&log)[1..], ["legacy-leave id1", "sticky-leave", "withdraw-invite"]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_invite_is_withdrawn_only_for_a_call_nobody_joined() {
+        let (a, log, signals) = fake(0, 0);
+        a.invited();
+        signals.answered.store(true, Ordering::SeqCst);
+        a.withdraw(LeaveCode::Leave, None).await;
+        assert!(entries(&log).is_empty(), "an answered call keeps its ring record");
+
+        let (a, log, _) = fake(0, 0);
+        a.withdraw(LeaveCode::Leave, None).await;
+        assert!(entries(&log).is_empty(), "no invite was sent, none is withdrawn");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_failed_invite_withdrawal_is_attempted_again() {
+        let (a, log, _) = fake(0, 1);
+        a.invited();
+        a.withdraw(LeaveCode::Leave, None).await;
+        a.withdraw(LeaveCode::Leave, None).await;
+        a.withdraw(LeaveCode::Leave, None).await;
+        assert_eq!(entries(&log), ["withdraw-invite (failed)", "withdraw-invite"]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_sticky_leave_is_sent_even_when_its_join_never_confirmed() {
+        // The membership is recorded before its join; a withdrawal covers it.
+        let (a, log, _) = fake(0, 0);
+        with_sticky(&a, &log);
+        a.withdraw(LeaveCode::TransportError, Some("lost")).await;
+        assert_eq!(entries(&log), ["sticky-leave"]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_wrong_identity_stays_tracked_until_its_leave_is_out() {
+        let (a, log, _) = fake(2, 0);
+        a.joined_legacy("wrong");
+        a.joined_legacy("right");
+        a.leave_legacy_identity("wrong").await;
+        assert_eq!(a.legacy_ids.lock().clone(), ["wrong", "right"], "both sends failed");
+        a.leave_legacy_identity("wrong").await;
+        assert_eq!(a.legacy_ids.lock().clone(), ["right"]);
+        assert_eq!(entries(&log).len(), 3);
+    }
+
+    #[tokio::test]
+    async fn nothing_joins_once_the_call_is_closed() {
+        let (a, _, _) = fake(0, 0);
+        assert!(a.open_for_join().await.is_some());
+        a.close();
+        assert!(a.is_closed());
+        assert!(a.open_for_join().await.is_none(), "the heartbeat must not send a join");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn nothing_joins_after_the_legacy_leave_is_out() {
+        let (a, _, _) = fake(0, 0);
+        a.joined_legacy("id1");
+        a.withdraw(LeaveCode::Leave, None).await;
+        assert!(a.open_for_join().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn closing_stops_the_announcing_tasks_and_a_late_task_at_once() {
+        let (a, _, _) = fake(0, 0);
+        let heartbeat = tokio::spawn(std::future::pending::<()>());
+        let reconcile = tokio::spawn(std::future::pending::<()>());
+        a.register_task(heartbeat.abort_handle());
+        a.register_reconcile(reconcile.abort_handle());
+        a.close();
+        assert!(heartbeat.await.unwrap_err().is_cancelled());
+        // The reconcile loop is the one task a teardown it drives must not abort.
+        tokio::task::yield_now().await;
+        assert!(!reconcile.is_finished());
+        a.shutdown();
+        assert!(reconcile.await.unwrap_err().is_cancelled());
+
+        let late = tokio::spawn(std::future::pending::<()>());
+        a.register_task(late.abort_handle());
+        assert!(late.await.unwrap_err().is_cancelled(), "registered after the close");
+        let late_reconcile = tokio::spawn(std::future::pending::<()>());
+        a.register_reconcile(late_reconcile.abort_handle());
+        assert!(late_reconcile.await.unwrap_err().is_cancelled());
     }
 }

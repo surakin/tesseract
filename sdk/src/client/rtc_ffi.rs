@@ -25,14 +25,26 @@ impl ClientFfi {
         // has no Send bound, so the non-Send MutexGuard in session.rs is
         // fine.  The handle keeps the same runtime for I/O and spawns.
         let handle = self.rt.handle().clone();
+        // A call still active is ended before the new one starts, not when the
+        // new session is stored: both announce the same legacy member (its state
+        // key follows our device), so a late leave of the old one would erase
+        // the new one's. The new call starts after the old one has left.
+        let previous = self.active_rtc_call.take();
         // A failed spawn or a panic in the setup is a failed call, not a crash of
         // the whole client.
         let spawned = std::thread::Builder::new()
             .stack_size(16 * 1024 * 1024)
             .spawn(move || {
-                handle.block_on(crate::client::rtc::session::start_call(
-                    &client, &http, &room_id, &slot_id, audio_only,
-                ))
+                handle.block_on(async move {
+                    if let Some(old) = previous {
+                        crate::client::rtc::session::end_call(&old).await;
+                        drop(old);
+                    }
+                    crate::client::rtc::session::start_call(
+                        &client, &http, &room_id, &slot_id, audio_only,
+                    )
+                    .await
+                })
             });
         let worker = match spawned {
             Ok(worker) => worker,

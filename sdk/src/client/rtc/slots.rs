@@ -85,9 +85,34 @@ pub fn call_member_from(e: &StickyEntry) -> Option<CallMember> {
     })
 }
 
+/// One member per `(user, device)`, the newest join: a device that restarted
+/// without leaving still has its old session live for a few minutes, and only
+/// the session it is in now counts. Keeps first-seen order; on a tie the first
+/// entry stays.
+pub fn dedupe_by_device(members: Vec<CallMember>) -> Vec<CallMember> {
+    let mut out: Vec<CallMember> = Vec::with_capacity(members.len());
+    let mut at: std::collections::HashMap<(String, String), usize> = std::collections::HashMap::new();
+    for m in members {
+        match at.get(&m.key()) {
+            Some(&i) => {
+                if m.joined_at > out[i].joined_at {
+                    out[i] = m;
+                }
+            }
+            None => {
+                at.insert(m.key(), out.len());
+                out.push(m);
+            }
+        }
+    }
+    out
+}
+
 /// One entry per `(user, device)`: the MatrixRTC member wins, keeping the
 /// legacy member's transports when the newer event names none.
 pub fn merge_members(legacy: Vec<CallMember>, mrtc: Vec<CallMember>) -> Vec<CallMember> {
+    let legacy = dedupe_by_device(legacy);
+    let mrtc = dedupe_by_device(mrtc);
     let mut out: Vec<CallMember> = Vec::with_capacity(legacy.len() + mrtc.len());
     for mut m in mrtc {
         if let Some(l) = legacy.iter().find(|l| l.key() == m.key()) {
@@ -105,6 +130,37 @@ pub fn merge_members(legacy: Vec<CallMember>, mrtc: Vec<CallMember>) -> Vec<Call
     out
 }
 
+/// Our own `m.rtc.member` joins from this device that are still live under a
+/// member id other than `current_member_id`: ghosts of an earlier session that
+/// ended without leaving. Returns `(slot_id, member_id)` for each, so the new
+/// session can withdraw them instead of showing peers two members for one device.
+pub fn stale_own_members(
+    entries: &[StickyEntry],
+    own_user: &str,
+    own_device: &str,
+    current_member_id: &str,
+    now_ms: u64,
+) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    for e in entries {
+        if e.event_type != MEMBER_TYPE || e.sender != own_user || e.end_ms() <= now_ms {
+            continue;
+        }
+        let Ok(m) = serde_json::from_value::<MemberContent>(e.content.clone()) else {
+            continue;
+        };
+        if !m.is_join() || m.member.id == current_member_id {
+            continue;
+        }
+        let device = m.member.device_id.as_deref().or(e.sender_device.as_deref());
+        if device != Some(own_device) || out.iter().any(|(_, id)| *id == m.member.id) {
+            continue;
+        }
+        out.push((m.slot_id.clone(), m.member.id.clone()));
+    }
+    out
+}
+
 /// The MatrixRTC members implied by `entries` for a room whose slot is `slot`.
 pub fn live_mrtc_members(
     entries: &[StickyEntry],
@@ -113,7 +169,7 @@ pub fn live_mrtc_members(
     room_encrypted: bool,
     now_ms: u64,
 ) -> Vec<CallMember> {
-    entries
+    let members = entries
         .iter()
         .filter(|e| e.event_type == MEMBER_TYPE)
         .filter_map(|e| {
@@ -126,7 +182,8 @@ pub fn live_mrtc_members(
             }
             call_member_from(e)
         })
-        .collect()
+        .collect();
+    dedupe_by_device(members)
 }
 
 /// The room's `m.call` slot, if it has one.
@@ -412,6 +469,88 @@ mod tests {
             vec![mk("@b:x", "D", MemberSource::MatrixRtc)],
         );
         assert_eq!(merged.len(), 2);
+    }
+
+    fn entry_with_id(user: &str, id: &str, device: &str, start: u64) -> StickyEntry {
+        let mut c = join_content(user, Some(device));
+        c["member"]["id"] = json!(id);
+        c["sticky_key"] = json!(id);
+        entry(user, c, true, start, 300_000)
+    }
+
+    #[test]
+    fn a_restarted_device_counts_once_with_its_newest_join() {
+        let old = entry_with_id("@a:x", "old", "D", NOW - 200_000);
+        let new = entry_with_id("@a:x", "new", "D", NOW - 5_000);
+        let other = entry_with_id("@a:x", "phone", "P", NOW - 100_000);
+        let s = slot(true, true);
+        for entries in [vec![old.clone(), new.clone(), other.clone()], vec![new, other, old]] {
+            let got = live_mrtc_members(&entries, Some(&s), &|_| true, true, NOW);
+            let mut ids: Vec<&str> = got.iter().map(|m| m.member_id.as_str()).collect();
+            ids.sort();
+            assert_eq!(ids, vec!["new", "phone"]);
+        }
+    }
+
+    #[test]
+    fn dedupe_keeps_the_newest_per_device_and_the_first_on_a_tie() {
+        let mk = |id: &str, dev: &str, at: u64| {
+            let mut m = cm(None, "@a:x", at);
+            m.device_id = dev.into();
+            m.member_id = id.into();
+            m
+        };
+        let got = dedupe_by_device(vec![mk("a", "D", 5), mk("b", "E", 1), mk("c", "D", 9), mk("d", "E", 1)]);
+        assert_eq!(got.iter().map(|m| m.member_id.as_str()).collect::<Vec<_>>(), vec!["c", "b"]);
+        assert!(dedupe_by_device(Vec::new()).is_empty());
+    }
+
+    #[test]
+    fn merging_dedupes_each_side_before_combining() {
+        let mk = |id: &str, at: u64, source: MemberSource| {
+            let mut m = cm(None, "@a:x", at);
+            m.member_id = id.into();
+            m.source = source;
+            m
+        };
+        let merged = merge_members(
+            vec![mk("l1", 1, MemberSource::Legacy), mk("l2", 2, MemberSource::Legacy)],
+            vec![mk("r1", 3, MemberSource::MatrixRtc), mk("r2", 7, MemberSource::MatrixRtc)],
+        );
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].member_id, "r2");
+    }
+
+    #[test]
+    fn our_earlier_session_on_this_device_is_stale() {
+        let ents = vec![
+            entry_with_id("@me:x", "old", "D", NOW - 200_000),
+            entry_with_id("@me:x", "current", "D", NOW - 1_000),
+            entry_with_id("@me:x", "phone", "P", NOW - 1_000),
+            entry_with_id("@them:x", "theirs", "D", NOW - 1_000),
+            entry_with_id("@me:x", "expired", "D", NOW - 400_000),
+        ];
+        assert_eq!(
+            stale_own_members(&ents, "@me:x", "D", "current", NOW),
+            vec![("m.call#room".to_owned(), "old".to_owned())]
+        );
+    }
+
+    #[test]
+    fn leaves_and_withdrawals_are_not_stale_joins() {
+        let mut left = entry_with_id("@me:x", "gone", "D", NOW - 1_000);
+        left.content["member"]["membership"] = json!("leave");
+        let mut withdrawn = entry_with_id("@me:x", "w", "D", NOW - 1_000);
+        withdrawn.content = json!({"sticky_key": "w"});
+        assert!(stale_own_members(&[left, withdrawn], "@me:x", "D", "current", NOW).is_empty());
+    }
+
+    #[test]
+    fn a_stale_join_without_a_device_is_matched_by_the_sending_device() {
+        let mut e = entry("@me:x", join_content("@me:x", None), true, NOW - 1_000, 300_000);
+        e.sender_device = Some("D".into());
+        assert_eq!(stale_own_members(&[e.clone()], "@me:x", "D", "current", NOW).len(), 1);
+        assert!(stale_own_members(&[e], "@me:x", "OTHER", "current", NOW).is_empty());
     }
 
     fn cm(intent: Option<&str>, user: &str, at: u64) -> CallMember {
