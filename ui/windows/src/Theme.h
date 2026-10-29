@@ -89,11 +89,19 @@ void set_accent(const AccentColors&);
 bool accent_on_title_bars();
 bool refresh_accent_on_title_bars();
 
+// Windows High Contrast mode. Cached; refresh re-reads and returns true if
+// the value changed.
+bool high_contrast();
+bool refresh_high_contrast();
+
 struct TitleBarColors
 {
     COLORREF bg, text, button_hover, button_pressed, separator;
+    // Glyph color on a hovered/pressed button.
+    COLORREF button_hover_text;
 };
 // Accent-tinted only when the option is on and the window is active.
+// Uses the system caption colors in High Contrast.
 TitleBarColors title_bar_colors(bool active);
 
 // Window border: accent when the option is on and the window is active.

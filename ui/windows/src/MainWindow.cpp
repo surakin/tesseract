@@ -1141,8 +1141,28 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         return reinterpret_cast<LRESULT>(theme::brush(pal.window_bg));
     }
 
+    case WM_SYSCOLORCHANGE:
+        // High Contrast scheme edits change the system colors the title bar
+        // paints with.
+        theme::apply_window_attributes(hwnd);
+        self->title_bar_.invalidate_strip(hwnd);
+        return 0;
+
     case WM_SETTINGCHANGE:
     {
+        if (wParam == SPI_SETHIGHCONTRAST)
+        {
+            theme::refresh_high_contrast();
+            theme::apply_window_attributes(hwnd);
+            self->title_bar_.invalidate_strip(hwnd);
+            return 0;
+        }
+        if (wParam == SPI_SETNONCLIENTMETRICS)
+        {
+            self->title_bar_.on_system_metrics_changed();
+            self->title_bar_.invalidate_strip(hwnd);
+            return 0;
+        }
         // Watch for OS dark/light flip. lParam carries the changed area name
         // as a wide string when it originated in Personalize. The accent
         // color picker in the same Personalize page also broadcasts

@@ -171,6 +171,38 @@ void CustomTitleBar::on_dpi_changed(UINT dpi)
 {
     dpi_ = dpi > 0 ? dpi : 96;
     height_px_ = static_cast<int>(std::lround(kHeightDip * dpi_ / 96.0f));
+    refresh_caption_font_();
+}
+
+void CustomTitleBar::on_system_metrics_changed()
+{
+    refresh_caption_font_();
+}
+
+void CustomTitleBar::refresh_caption_font_()
+{
+    NONCLIENTMETRICSW ncm{};
+    ncm.cbSize = sizeof(ncm);
+    if (SystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS, sizeof(ncm), &ncm,
+                                   0, dpi_) &&
+        ncm.lfCaptionFont.lfFaceName[0] != L'\0' &&
+        ncm.lfCaptionFont.lfHeight != 0)
+    {
+        const LOGFONTW& lf = ncm.lfCaptionFont;
+        font_family_ = lf.lfFaceName;
+        // lfHeight is in pixels at dpi_; BetterText wants DIPs (96/inch).
+        font_size_dip_ = std::abs(static_cast<float>(lf.lfHeight)) * 96.0f /
+                         static_cast<float>(dpi_);
+        font_weight_ = lf.lfWeight > 0 ? lf.lfWeight : FW_NORMAL;
+    }
+    else
+    {
+        const theme::FontDesc fd = theme::font_desc(theme::FontRole::Ui);
+        font_family_ = fd.family;
+        font_size_dip_ = fd.size_pt * (96.0f / 72.0f);
+        font_weight_ = fd.weight;
+    }
+    font_dirty_ = true;
 }
 
 void CustomTitleBar::compute_button_rects(int client_w_px, RECT& btn_min,
@@ -361,6 +393,11 @@ void CustomTitleBar::paint(HDC hdc, HWND hwnd, const RECT& client_rc,
     RECT strip = client_rc;
     strip.bottom = strip.top + height_px_;
     const theme::TitleBarColors tb = theme::title_bar_colors(active);
+    const bool hc = theme::high_contrast();
+    if (font_family_.empty())
+    {
+        refresh_caption_font_();
+    }
 
     FillRect(hdc, &strip, theme::brush(tb.bg));
 
@@ -393,7 +430,8 @@ void CustomTitleBar::paint(HDC hdc, HWND hwnd, const RECT& client_rc,
 
     for (const auto& s : specs)
     {
-        const bool is_close = (s.ht == HTCLOSE);
+        // Close behaves like the other buttons in High Contrast.
+        const bool is_close = (s.ht == HTCLOSE) && !hc;
         const bool is_pressed = (s.ht == pressed_ht_);
         const bool is_hovered = (s.ht == hovered_ht_);
 
@@ -422,9 +460,10 @@ void CustomTitleBar::paint(HDC hdc, HWND hwnd, const RECT& client_rc,
         }
 
         const bool glyph_on_red = is_close && (is_pressed || is_hovered);
-        const COLORREF glyph_color = glyph_on_red
-                                         ? kCloseGlyphOnRed
-                                         : tb.text;
+        const COLORREF glyph_color =
+            glyph_on_red ? kCloseGlyphOnRed
+                         : ((is_pressed || is_hovered) ? tb.button_hover_text
+                                                       : tb.text);
         if (Gdiplus::Bitmap* bmp = icon_bitmap(s.glyph, icon_px, glyph_color))
         {
             const int x =
@@ -477,7 +516,7 @@ void CustomTitleBar::paint(HDC hdc, HWND hwnd, const RECT& client_rc,
             // ResizeRenderTarget, BetterTextControl.cpp) — doing that once
             // per mouse-move tick was the actual cause of flicker.
             if (text_changed || color_changed || rect_changed ||
-                !last_bitmap_valid_)
+                font_dirty_ || !last_bitmap_valid_)
             {
                 // Style/theme must land BEFORE (re-)setting the document
                 // text below: BetterText bakes each text run's color into
@@ -493,15 +532,12 @@ void CustomTitleBar::paint(HDC hdc, HWND hwnd, const RECT& client_rc,
                 // visible in dark mode). Applied unconditionally whenever
                 // anything changed, not just on their own individual
                 // flags — cheap, and guarantees correct ordering.
-                const theme::FontDesc fd = theme::font_desc(theme::FontRole::Ui);
+                // System caption font, already in DIPs (see
+                // refresh_caption_font_).
                 BetterTextTextStyle style{};
-                style.font_family = fd.family;
-                // pt -> DIP: DirectWrite/BetterText font sizes are in DIPs
-                // (96/inch); theme::font_desc reports points (72/inch) —
-                // same conversion bt_apply_default_font (host_win32.cpp)
-                // uses.
-                style.font_size = fd.size_pt * (96.0f / 72.0f);
-                style.font_weight = fd.weight;
+                style.font_family = font_family_.c_str();
+                style.font_size = font_size_dip_;
+                style.font_weight = font_weight_;
                 BetterTextSetDefaultTextStyle(text_hwnd_, &style);
 
                 // Color comes from BetterTextTheme, not BetterTextTextStyle
@@ -522,10 +558,12 @@ void CustomTitleBar::paint(HDC hdc, HWND hwnd, const RECT& client_rc,
 
                 // Re-insert on a colour-only change too: run colours are
                 // baked in at insert time.
-                if (text_changed || color_changed)
+                // A font change needs the same re-insert.
+                if (text_changed || color_changed || font_dirty_)
                 {
                     BetterTextSetText(text_hwnd_, text.c_str());
                     last_text_ = text;
+                    font_dirty_ = false;
                 }
                 if (rect_changed)
                 {

@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(windows): the custom title bar follows High Contrast themes and uses the system caption font. Windows release build; user-verified live
 - feat(settings): a "Detect automatically" checkbox next to the profile timezone keeps it in sync with this computer's timezone. Linux release build, ctest 3757/3757
 - feat(ui): Appearance > Timeline can show each sender's timezone difference (like "+2h") next to their name, off by default. Linux release build, ctest 3757/3757
 - fix(windows): the title bar, window border and status-bar links follow the in-app accent, tinting the title bar with Windows' accent option. Windows release build + ctest 3720/3720; user-verified live

@@ -377,16 +377,64 @@ bool refresh_accent_on_title_bars()
     return old != g_accent_on_title_bars;
 }
 
+namespace
+{
+int g_high_contrast = -1;
+
+int read_high_contrast()
+{
+    HIGHCONTRASTW hc{sizeof(hc)};
+    if (SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(hc), &hc, 0))
+    {
+        return (hc.dwFlags & HCF_HIGHCONTRASTON) ? 1 : 0;
+    }
+    return 0;
+}
+
+// Tells DWM to pick the color itself.
+constexpr COLORREF kDwmColorDefault = 0xFFFFFFFF;
+} // namespace
+
+bool high_contrast()
+{
+    if (g_high_contrast < 0)
+    {
+        g_high_contrast = read_high_contrast();
+    }
+    return g_high_contrast == 1;
+}
+
+bool refresh_high_contrast()
+{
+    int old = g_high_contrast;
+    g_high_contrast = read_high_contrast();
+    return old != g_high_contrast;
+}
+
 TitleBarColors title_bar_colors(bool active)
 {
+    if (high_contrast())
+    {
+        const COLORREF text = GetSysColor(active ? COLOR_CAPTIONTEXT
+                                                 : COLOR_INACTIVECAPTIONTEXT);
+        const COLORREF hl = GetSysColor(COLOR_HIGHLIGHT);
+        return {GetSysColor(active ? COLOR_ACTIVECAPTION
+                                   : COLOR_INACTIVECAPTION),
+                text,
+                hl,
+                hl,
+                GetSysColor(COLOR_WINDOWTEXT),
+                GetSysColor(COLOR_HIGHLIGHTTEXT)};
+    }
     const auto& pal = palette();
     if (active && accent_on_title_bars())
     {
-        return {pal.accent, pal.text_on_accent, pal.accent_hover,
-                pal.accent_pressed, pal.accent};
+        return {pal.accent,        pal.text_on_accent, pal.accent_hover,
+                pal.accent_pressed, pal.accent,         pal.text_on_accent};
     }
-    return {pal.chrome_bg, active ? pal.text_primary : pal.text_secondary,
-            pal.subtle_hover, pal.subtle_pressed, pal.separator};
+    const COLORREF text = active ? pal.text_primary : pal.text_secondary;
+    return {pal.chrome_bg, text, pal.subtle_hover, pal.subtle_pressed,
+            pal.separator, text};
 }
 
 void apply_border_color(HWND hwnd, bool active)
@@ -396,8 +444,10 @@ void apply_border_color(HWND hwnd, bool active)
         return;
     }
     const auto& pal = palette();
-    COLORREF col =
-        (active && accent_on_title_bars()) ? pal.accent : pal.border;
+    COLORREF col = high_contrast()
+                       ? kDwmColorDefault
+                       : ((active && accent_on_title_bars()) ? pal.accent
+                                                             : pal.border);
     DwmSetWindowAttribute(hwnd, kDwmaBorderColor, &col, sizeof(col));
 }
 
@@ -477,8 +527,9 @@ void apply_window_attributes(HWND hwnd)
     // CAPTION_COLOR overrides the Mica translucency in the caption area in
     // favour of a solid chrome that matches the rest of the window.
     const auto& pal = palette();
-    COLORREF caption = pal.chrome_bg;
-    COLORREF caption_text = pal.text_primary;
+    const bool hc = high_contrast();
+    COLORREF caption = hc ? kDwmColorDefault : pal.chrome_bg;
+    COLORREF caption_text = hc ? kDwmColorDefault : pal.text_primary;
     DwmSetWindowAttribute(hwnd, kDwmaCaptionColor, &caption, sizeof(caption));
     DwmSetWindowAttribute(hwnd, kDwmaTextColor, &caption_text,
                           sizeof(caption_text));

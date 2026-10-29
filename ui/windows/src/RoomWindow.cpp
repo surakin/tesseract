@@ -679,6 +679,27 @@ LRESULT RoomWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam,
         return DefWindowProcW(hwnd, msg, wParam, lParam);
     }
 
+    // Top-level windows each get these broadcasts, in no fixed order, so
+    // re-read the (idempotent) High Contrast flag here too and repaint.
+    case WM_SYSCOLORCHANGE:
+        theme::apply_window_attributes(hwnd);
+        title_bar_.invalidate_strip(hwnd);
+        return 0;
+
+    case WM_SETTINGCHANGE:
+        if (wParam == SPI_SETHIGHCONTRAST)
+        {
+            theme::refresh_high_contrast();
+            theme::apply_window_attributes(hwnd);
+            title_bar_.invalidate_strip(hwnd);
+        }
+        else if (wParam == SPI_SETNONCLIENTMETRICS)
+        {
+            title_bar_.on_system_metrics_changed();
+            title_bar_.invalidate_strip(hwnd);
+        }
+        return 0;
+
     case WM_DPICHANGED:
     {
         theme::on_dpi_changed();

@@ -48,6 +48,9 @@ public:
     void attach(HWND owner);
 
     void on_dpi_changed(UINT dpi);
+    // Re-reads the system caption font (SPI_SETNONCLIENTMETRICS). The caller
+    // should also invalidate the strip.
+    void on_system_metrics_changed();
     int height_px() const { return height_px_; }
 
     // Releases every cached rasterized caption-button icon (see
@@ -128,6 +131,14 @@ public:
 private:
     void compute_button_rects(int client_w_px, RECT& btn_min, RECT& btn_max,
                               RECT& btn_close) const;
+    void refresh_caption_font_();
+
+    // System caption font (falls back to theme::FontRole::Ui). Size is in
+    // DIPs, as BetterText expects.
+    std::wstring font_family_;
+    float font_size_dip_ = 0.0f;
+    LONG font_weight_ = FW_NORMAL;
+    bool font_dirty_ = true; // forces a text re-insert on the next paint
 
     UINT hovered_ht_ = HTNOWHERE;
     UINT pressed_ht_ = HTNOWHERE;
