@@ -210,7 +210,7 @@ void AvatarEditControl::paint(tk::PaintCtx& ctx, tk::Point world_origin,
         {
             ctx.canvas.draw_text(*error_layout_,
                                  {disc_rect.x, disc_rect.y + diameter_ + kAvatarEditErrorGap},
-                                 tk::Color::rgb(0xcc3333));
+                                 ctx.theme.palette.text_error);
         }
     }
 }

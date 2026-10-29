@@ -183,7 +183,7 @@ void KnockStatusCard::paint_before_children(tk::PaintCtx& ctx)
                                     ? std::string_view("#")
                                     : std::string_view(fallback_name);
         draw_avatar(cv, av_img, av_centre, kAvatarD, disp, pal.accent,
-                    tk::Color{255, 255, 255, 255});
+                    tk::accent_foreground(ctx.theme));
     }
 
     cy += kAvatarD + kGap;

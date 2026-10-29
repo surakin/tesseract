@@ -48,6 +48,13 @@ static constexpr int kBodyFontPtOffset = 2;
 // Returns the body font size in pt: the Windows system font from
 // SPI_GETNONCLIENTMETRICS (which reflects Accessibility → Text size) plus
 // kBodyFontPtOffset. Cached on first call.
+static std::optional<Color> g_link_color;
+
+void set_link_color(std::optional<Color> c)
+{
+    g_link_color = c;
+}
+
 int win32_system_base_pt()
 {
     static int base = []() -> int {
@@ -3091,6 +3098,10 @@ public:
                 // Foreground applied at draw time via SetDrawingEffect, so the
                 // brush can be created from the live render target.
                 color_ranges.push_back({wr.start, wr.end, sp.color});
+            }
+            else if (!sp.url.empty() && g_link_color)
+            {
+                color_ranges.push_back({wr.start, wr.end, *g_link_color});
             }
         }
 

@@ -195,7 +195,7 @@ void GifPopup::paint(tk::PaintCtx& ctx)
             // Cell backing — selected/hovered tint shows through transparent PNGs
             // and fills the letterbox bars around landscape GIFs.
             ctx.canvas.fill_rect(cell, sel ? pal.sidebar_selected
-                                           : hov ? pal.subtle_hover
+                                           : hov ? tk::hot_row_fill(ctx.theme)
                                                  : pal.chrome_bg);
 
             const tk::Image* img =
@@ -223,12 +223,12 @@ void GifPopup::paint(tk::PaintCtx& ctx)
             if (sel)
             {
                 const float t = 2.0f;
-                ctx.canvas.fill_rect({cell.x, cell.y, cell.w, t}, pal.accent);
-                ctx.canvas.fill_rect({cell.x, cell.y + cell.h - t, cell.w, t},
-                                     pal.accent);
-                ctx.canvas.fill_rect({cell.x, cell.y, t, cell.h}, pal.accent);
-                ctx.canvas.fill_rect({cell.x + cell.w - t, cell.y, t, cell.h},
-                                     pal.accent);
+                // High Contrast: the cell fill is Highlight, so use the text colour.
+                const tk::Color edge = ctx.theme.high_contrast ? pal.text_primary : pal.accent;
+                ctx.canvas.fill_rect({cell.x, cell.y, cell.w, t}, edge);
+                ctx.canvas.fill_rect({cell.x, cell.y + cell.h - t, cell.w, t}, edge);
+                ctx.canvas.fill_rect({cell.x, cell.y, t, cell.h}, edge);
+                ctx.canvas.fill_rect({cell.x + cell.w - t, cell.y, t, cell.h}, edge);
             }
         }
     }

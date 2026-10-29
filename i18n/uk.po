@@ -7593,3 +7593,7 @@ msgstr "Показувати різницю часових поясів пору
 
 msgid "{0} ({1} from you): {2}"
 msgstr "{0} ({1} від вас): {2}"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "The theme follows your system's high contrast setting."
+msgstr "Тема відповідає налаштуванню високої контрастності вашої системи."

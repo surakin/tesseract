@@ -2137,6 +2137,28 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
     return blocks;
 }
 
+void flatten_span_colours(std::vector<tk::TextSpan>& spans)
+{
+    for (auto& sp : spans)
+    {
+        if (sp.is_mention || sp.is_image)
+            continue;
+        sp.has_color = false;
+        sp.has_background = false;
+    }
+}
+
+void flatten_block_colours(std::vector<BodyBlock>& blocks)
+{
+    for (auto& b : blocks)
+    {
+        flatten_span_colours(b.spans);
+        for (auto& row : b.table.rows)
+            for (auto& cell : row)
+                flatten_span_colours(cell.spans);
+    }
+}
+
 void neutralize_literal_carriers(std::vector<tk::TextSpan>& spans)
 {
     static constexpr std::string_view kCarrier = "\xEF\xBF\xBC";      // U+FFFC

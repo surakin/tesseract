@@ -144,7 +144,9 @@ public:
     {
         const float uly = bounds_.y + kRoomGeneralFieldH - 1.0f;
         ctx.canvas.fill_rect({bounds_.x, uly, bounds_.w, 1.0f},
-                             ctx.theme.palette.text_secondary.with_alpha(80));
+                             ctx.theme.high_contrast
+                                 ? ctx.theme.palette.text_secondary
+                                 : ctx.theme.palette.text_secondary.with_alpha(80));
     }
 
 private:
@@ -246,7 +248,10 @@ public:
     void paint_before_children(tk::PaintCtx& ctx) override
     {
         if (hovered_ && !room_id_.empty())
+        {
             ctx.canvas.fill_rounded_rect(bounds_, 4.0f, ctx.theme.palette.sidebar_hover);
+            tk::paint_hc_hover_outline(ctx.canvas, ctx.theme, bounds_, 4.0f);
+        }
     }
 
     bool on_pointer_down(tk::Point) override

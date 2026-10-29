@@ -96,7 +96,7 @@ void CallBanner::paint_before_children(tk::PaintCtx& ctx)
     const auto& pal = ctx.theme.palette;
     ctx.canvas.fill_rect(bounds_, pal.accent);
 
-    constexpr tk::Color kWhite{255, 255, 255, 255};
+    const tk::Color kWhite = tk::accent_foreground(ctx.theme);
 
     const bool is_video = (call_intent_ == "video");
     if (is_video)

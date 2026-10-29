@@ -110,7 +110,7 @@ public:
             return;
         }
         const auto& e = owner_.items_[index];
-        const auto& pal = ctx.theme.palette;
+        const auto pal = tk::row_palette(ctx.theme, selected);
 
         if (selected)
         {
@@ -119,6 +119,7 @@ public:
         else if (hovered)
         {
             ctx.canvas.fill_rect(bounds, pal.sidebar_hover);
+            tk::paint_hc_hover_outline(ctx.canvas, ctx.theme, bounds);
         }
 
         const tk::Point av_centre{bounds.x + kRowPad + kRowAvatarD * 0.5f,
@@ -135,7 +136,8 @@ public:
         std::string_view disp =
             e.name.empty() ? std::string_view("#") : std::string_view(e.name);
         draw_avatar(ctx.canvas, img, av_centre, kRowAvatarD, disp, pal.accent,
-                    tk::Color{255, 255, 255, 255});
+                    ctx.theme.high_contrast ? pal.text_on_accent
+                                            : tk::accent_foreground(ctx.theme));
 
         const float text_x = bounds.x + kRowPad + kRowAvatarD + kRowPad;
         const float text_w = bounds.x + bounds.w - kRowPad - text_x;
@@ -169,12 +171,20 @@ public:
             {
                 const float pw = plo->measure().w + kRowPillPadX * 2.0f;
                 const tk::Rect pill{text_x, y, pw, kRowPillH};
-                ctx.canvas.fill_rounded_rect(pill, kRowPillH * 0.5f, bg);
+                ctx.canvas.fill_rounded_rect(pill, kRowPillH * 0.5f,
+                                             ctx.theme.high_contrast
+                                                 ? (selected ? pal.sidebar_selected : pal.bg)
+                                                 : bg);
+                if (ctx.theme.high_contrast)
+                {
+                    ctx.canvas.stroke_rounded_rect(pill, kRowPillH * 0.5f, pal.text_primary, 1.0f);
+                }
                 ctx.canvas.draw_text(
                     *plo,
                     {text_x + kRowPillPadX,
                      y + (kRowPillH - plo->measure().h) * 0.5f},
-                    tk::Color{255, 255, 255, 255});
+                    ctx.theme.high_contrast ? pal.text_primary
+                                            : tk::Color{255, 255, 255, 255});
                 advance = pw + kDirSmallGap;
             }
             const std::string members = tk::trf(

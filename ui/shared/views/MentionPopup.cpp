@@ -14,9 +14,9 @@ void MentionPopup::set_candidates(std::vector<MentionCandidate> c)
 }
 
 void MentionPopup::paint_row(tk::PaintCtx& ctx, const tk::Rect& row,
-                             size_t index, bool /*selected*/, bool /*hovered*/)
+                             size_t index, bool selected, bool /*hovered*/)
 {
-    const auto& pal = ctx.theme.palette;
+    const auto pal = tk::row_palette(ctx.theme, selected);
     const auto& c   = candidates_[index];
 
     // Avatar: the member's image when available, else an initials disc

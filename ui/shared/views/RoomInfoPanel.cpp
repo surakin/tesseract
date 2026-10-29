@@ -467,6 +467,11 @@ void RoomInfoPanelBody::set_invite_visible(bool visible)
 
 void RoomInfoPanelBody::on_theme_changed(const tk::Theme& t)
 {
+    if (t.high_contrast != high_contrast_)
+    {
+        high_contrast_ = t.high_contrast;
+        topic_layout_.reset();
+    }
     // topic_field_ sits directly on this widget's own fill, no separate
     // inset fill behind topic_rect_ — see Widget::background_color()'s doc
     // comment. Must be set here (topic_field_'s direct parent) rather than
@@ -491,7 +496,12 @@ float RoomInfoPanelBody::measure_topic_height_(tk::CanvasFactory& factory, float
     if (!topic_layout_)
     {
         if (!topic_html_.empty())
-            topic_layout_ = factory.build_rich_text(html_to_spans(topic_html_), st);
+        {
+            auto spans = html_to_spans(topic_html_);
+            if (high_contrast_)
+                flatten_span_colours(spans);
+            topic_layout_ = factory.build_rich_text(spans, st);
+        }
         else if (!topic_spans_.empty())
             topic_layout_ = factory.build_rich_text(topic_spans_, st);
         else if (!topic_.empty())
@@ -820,7 +830,7 @@ void RoomInfoPanelBody::paint_before_children(tk::PaintCtx& ctx)
             display_name_.empty() ? std::string_view("?")
                                   : std::string_view(display_name_);
         draw_avatar(cv, av_img, av_centre, kAvatarD, disp, pal.accent,
-                    tk::Color{255, 255, 255, 255});
+                    tk::accent_foreground(ctx.theme));
     }
 
     // Room name (Title, centred, ellipsis)
@@ -889,7 +899,9 @@ void RoomInfoPanelBody::paint_before_children(tk::PaintCtx& ctx)
 
             if (!topic_html_.empty())
             {
-                const auto spans = html_to_spans(topic_html_);
+                auto spans = html_to_spans(topic_html_);
+                if (ctx.theme.high_contrast)
+                    flatten_span_colours(spans);
                 topic_layout_ = ctx.factory.build_rich_text(spans, st);
             }
             else if (!topic_spans_.empty())
@@ -997,6 +1009,7 @@ void RoomInfoPanelBody::paint_before_children(tk::PaintCtx& ctx)
         if (i == hover_member_)
         {
             cv.fill_rect(row, pal.subtle_hover);
+            tk::paint_hc_hover_outline(cv, ctx.theme, row);
         }
 
         // Small avatar (32×32), 6px from left of panel
@@ -1118,7 +1131,10 @@ void RoomInfoPanelBody::paint_before_children(tk::PaintCtx& ctx)
     {
         const tk::Rect media_row_w = to_world(media_row_rect_);
         if (hover_media_)
+        {
             cv.fill_rect(media_row_w, pal.subtle_hover);
+            tk::paint_hc_hover_outline(cv, ctx.theme, media_row_w);
+        }
         if (!media_row_layout_)
         {
             tk::TextStyle st{};
@@ -1144,7 +1160,10 @@ void RoomInfoPanelBody::paint_before_children(tk::PaintCtx& ctx)
     {
         const tk::Rect knock_row_w = to_world(knock_row_rect_);
         if (hover_knock_)
+        {
             cv.fill_rect(knock_row_w, pal.subtle_hover);
+            tk::paint_hc_hover_outline(cv, ctx.theme, knock_row_w);
+        }
         if (!knock_row_layout_)
         {
             tk::TextStyle st{};

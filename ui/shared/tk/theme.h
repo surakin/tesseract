@@ -6,7 +6,9 @@
 
 #include "canvas.h"
 
+#include <algorithm>
 #include <array>
+#include <optional>
 
 namespace tk
 {
@@ -124,6 +126,35 @@ struct Palette
 
     // Tint drawn behind inline code / fenced code-block runs in message bodies.
     Color code_bg;
+
+    // Roles that equal an existing colour in the normal themes but need a
+    // different colour in High Contrast.
+    Color link;           // links and link-style buttons
+    Color text_disabled;  // disabled controls
+    Color selection_text; // glyphs drawn over `selection`
+    Color text_error;     // inline error messages
+    Color notice_bg;      // notice strips (encryption reminder, ...)
+    Color notice_border;
+    Color notice_text;
+    Color warning_bg;     // connection-lost banner
+    Color warning_text;
+
+    // Text and glyphs drawn on a `sidebar_selected` fill (text_primary in the
+    // normal themes; HighlightText in High Contrast).
+    Color selected_text;
+};
+
+// The system colours of a High Contrast theme (Win32 GetSysColor names).
+struct HighContrastColors
+{
+    Color window;
+    Color window_text;
+    Color highlight;
+    Color highlight_text;
+    Color hotlight;
+    Color gray_text;
+    Color btn_face;
+    Color btn_text;
 };
 
 struct Theme
@@ -133,11 +164,76 @@ struct Theme
     // Appended after `palette` (not inserted earlier) so the field stays
     // out of the way of any positional aggregate-init of {mode, palette}.
     AccentTheme accent = AccentTheme::Blue;
+    // True for a theme built by make_high_contrast_theme(). Views branch on
+    // it where colour alone carries meaning (sender colours, syntax colours).
+    bool high_contrast = false;
 
     static const Theme& light();
     static const Theme& dark();
     static const Theme& variant(ThemeMode mode, AccentTheme accent);
 };
+
+// White drawn on the accent colour (initials, call-banner glyphs); the
+// palette's own foreground in High Contrast.
+inline Color accent_foreground(const Theme& t)
+{
+    return t.high_contrast ? t.palette.text_on_accent : Color{255, 255, 255, 255};
+}
+
+// Colour for text/glyphs drawn on a `sidebar_selected` fill: the palette's
+// selected_text in High Contrast, `normal` (today's colour) otherwise.
+inline Color on_selected(const Theme& t, Color normal)
+{
+    return t.high_contrast ? t.palette.selected_text : normal;
+}
+
+// The palette to paint the contents of a row with. In High Contrast a selected
+// row is Highlight-filled, so text and accent colours drawn on it are remapped
+// to the on-selection pair (accent bars, badges and icons invert). Identical to
+// theme.palette otherwise.
+inline Palette row_palette(const Theme& t, bool selected)
+{
+    Palette p = t.palette;
+    if (t.high_contrast && selected)
+    {
+        p.text_primary = p.text_secondary = p.text_muted = p.selected_text;
+        p.accent = p.accent_hover = p.accent_pressed = p.selected_text;
+        p.unread_bg = p.selected_text;
+        p.unread_text = p.sidebar_selected;
+        p.text_on_accent = p.sidebar_selected;
+        p.link = p.selected_text;
+        p.text_disabled = p.selected_text;
+        p.avatar_initials_bg = p.selected_text;
+        p.avatar_initials_text = p.sidebar_selected;
+    }
+    return p;
+}
+
+// Fill for the hot (hovered or keyboard-current) row of a dropdown, picker or
+// menu: subtle_hover normally, the Highlight fill in High Contrast where
+// subtle_hover equals the window background and would be invisible. Draw the
+// row's contents with row_palette(theme, hot) so they stay readable.
+inline Color hot_row_fill(const Theme& t)
+{
+    return t.high_contrast ? t.palette.sidebar_selected : t.palette.subtle_hover;
+}
+
+// High Contrast hover cue for non-dropdown rows, cells and tabs, where the
+// hover wash equals the window background: a 1 DIP outline in `colour` just
+// inside `r` (rounded when radius > 0). No-op outside High Contrast. Pass
+// palette.selected_text as `colour` when the row is also drawn selected.
+inline void paint_hc_hover_outline(Canvas& cv, const Theme& t, Rect r, float radius = 0.0f,
+                                   std::optional<Color> colour = std::nullopt)
+{
+    if (!t.high_contrast)
+        return;
+    const Color c = colour.value_or(t.palette.text_primary);
+    const Rect  in{r.x + 0.5f, r.y + 0.5f, r.w - 1.0f, r.h - 1.0f};
+    if (radius > 0.0f)
+        cv.stroke_rounded_rect(in, std::max(0.0f, radius - 0.5f), c, 1.0f);
+    else
+        cv.stroke_rect(in, c, 1.0f);
+}
 
 // Overlay a raw OS accent colour onto an already-resolved AccentTheme::System
 // theme, in place. `raw_accent` is the colour the platform reports (opaque
@@ -149,5 +245,12 @@ struct Theme
 // gate on AccentTheme::System (see ShellBase::apply_current_theme_()). Not
 // constexpr (runtime input), unlike the rest of this header.
 void apply_system_accent(Theme& theme, Color raw_accent);
+
+// Builds an all-opaque theme from the OS High Contrast colours. mode is Dark
+// when the window colour is dark. Hover and pressed fills stay
+// surface-coloured because text_primary is drawn over them; the toolkit marks
+// those states with outlines or accent bars instead. Selected rows use the
+// native Highlight fill with HighlightText (Palette::selected_text) on top.
+Theme make_high_contrast_theme(const HighContrastColors& hc);
 
 } // namespace tk

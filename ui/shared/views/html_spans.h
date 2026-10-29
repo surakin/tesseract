@@ -132,6 +132,11 @@ struct BodyBlock
 
 std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark = false);
 
+// High Contrast: drop syntax and author colours from every run except mention
+// pills and inline images, so text uses the theme's text colour.
+void flatten_span_colours(std::vector<tk::TextSpan>& spans);
+void flatten_block_colours(std::vector<BodyBlock>& blocks);
+
 // Emoji classification + run segmentation moved to tk/emoji_segmentation.h
 // (pure text utilities, no HTML-parser dependency). Re-exported here so the
 // view-layer callers keep using tesseract::views::* unchanged.

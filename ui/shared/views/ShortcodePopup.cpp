@@ -16,10 +16,10 @@ void ShortcodePopup::set_suggestions(std::vector<ShortcodeSuggestion> s)
 }
 
 void ShortcodePopup::paint_row(tk::PaintCtx& ctx, const tk::Rect& row,
-                               size_t index, bool /*selected*/,
+                               size_t index, bool selected,
                                bool /*hovered*/)
 {
-    const auto& pal = ctx.theme.palette;
+    const auto pal = tk::row_palette(ctx.theme, selected);
     const auto& s   = suggestions_[index];
 
     // 28×28 glyph cell left-aligned with 4px margin

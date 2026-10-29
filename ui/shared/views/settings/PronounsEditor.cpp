@@ -378,7 +378,7 @@ void PronounsEditor::paint_after_children(tk::PaintCtx& ctx)
         if (error_layout_)
         {
             ctx.canvas.draw_text(*error_layout_, {bounds_.x, err_y},
-                                 tk::Color::rgb(0xcc3333));
+                                 ctx.theme.palette.text_error);
         }
     }
 }

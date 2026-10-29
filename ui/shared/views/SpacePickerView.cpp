@@ -263,24 +263,25 @@ void SpacePickerView::paint_before_children(tk::PaintCtx& ctx)
 
 void SpacePickerView::paint_tab_(tk::PaintCtx& ctx, int i, tk::Rect row)
 {
-    const auto& pal = ctx.theme.palette;
     {
         const bool is_home = i == 0;
         const SpacePickerEntry* e =
             is_home ? nullptr : &entries_[static_cast<std::size_t>(i - 1)];
         const bool selected = is_home ? active_.empty() : e->space_id == active_;
         const tk::Rect cell{row.x + 6.0f, row.y + 2.0f, row.w - 12.0f, row.h - 4.0f};
+        const auto pal = tk::row_palette(ctx.theme, selected);
 
         if (selected)
         {
             ctx.canvas.fill_rounded_rect(cell, kTabRadius, pal.sidebar_selected);
             ctx.canvas.fill_rounded_rect(
                 {bounds_.x, row.y + 10.0f, kIndicatorW, row.h - 20.0f},
-                kIndicatorW * 0.5f, pal.accent);
+                kIndicatorW * 0.5f, ctx.theme.palette.accent); // sits outside the cell fill
         }
         else if (hover_ == i)
         {
             ctx.canvas.fill_rounded_rect(cell, kTabRadius, pal.sidebar_hover);
+            tk::paint_hc_hover_outline(ctx.canvas, ctx.theme, cell, kTabRadius);
         }
 
         const tk::Point centre{row.x + row.w * 0.5f, row.y + row.h * 0.5f};

@@ -95,7 +95,7 @@ public:
             const float err_y = bounds_.y +
                 (bounds_.h - owner_->commit_error_layout_->measure().h) * 0.5f;
             cv.draw_text(*owner_->commit_error_layout_, {bounds_.x + kPadX, err_y},
-                         tk::Color::rgb(0xcc3333));
+                         ctx.theme.palette.text_error);
         }
     }
 

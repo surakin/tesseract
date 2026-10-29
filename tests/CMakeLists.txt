@@ -30,6 +30,7 @@ add_executable(tesseract_tests
     cpp/test_tk_canvas.cpp
     cpp/test_tk_color_contrast.cpp
     cpp/test_tk_theme_contrast.cpp
+    cpp/test_tk_theme_high_contrast.cpp
     cpp/test_pill.cpp
     cpp/test_tesseract_wireframe.cpp
     cpp/test_tk_kinetic_scroller.cpp

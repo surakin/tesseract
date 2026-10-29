@@ -29,6 +29,12 @@ Color cb_zone_fill(Button::Variant v, const Theme& th, bool enabled, bool hovere
 {
     if (!enabled)
     {
+        if (th.high_contrast)
+        {
+            return (v == Button::Variant::Primary || v == Button::Variant::Destructive)
+                       ? th.palette.bg
+                       : Color::rgba(0, 0, 0, 0);
+        }
         if (v == Button::Variant::Primary)
             return th.palette.accent.with_alpha(120);
         if (v == Button::Variant::Destructive)
@@ -58,7 +64,7 @@ Color cb_zone_fill(Button::Variant v, const Theme& th, bool enabled, bool hovere
 Color cb_zone_text(Button::Variant v, const Theme& th, bool enabled)
 {
     if (!enabled)
-        return th.palette.text_muted;
+        return th.palette.text_disabled;
     if (v == Button::Variant::Primary || v == Button::Variant::Destructive)
         return th.palette.text_on_accent;
     return th.palette.text_primary;
@@ -120,8 +126,13 @@ public:
             const float ry = bounds_.y + kDropRowH * static_cast<float>(i);
             const Rect row{bounds_.x, ry, bounds_.w, kDropRowH};
 
-            if (i == hovered_)
-                ctx.canvas.fill_rect(row, pal.subtle_hover);
+            const bool hot = i == hovered_;
+            if (hot)
+                ctx.canvas.fill_rect(row, hot_row_fill(ctx.theme));
+            // High Contrast: the hot row is Highlight-filled, so draw on it
+            // with the on-selection colour.
+            const Color text_col =
+                hot && ctx.theme.high_contrast ? pal.selected_text : pal.text_primary;
 
             auto& layout = layouts_[static_cast<std::size_t>(i)];
             if (!layout)
@@ -137,7 +148,7 @@ public:
             {
                 const Size  sz = layout->measure();
                 const float ty = ry + (kDropRowH - sz.h) * 0.5f;
-                ctx.canvas.draw_text(*layout, {row.x + kCBHPad, ty}, pal.text_primary);
+                ctx.canvas.draw_text(*layout, {row.x + kCBHPad, ty}, text_col);
             }
 
             if (opt.value == selected_value_)
@@ -146,7 +157,9 @@ public:
                 const Rect ck{row.x + row.w - kCBHPad - kCheckPx,
                               ry + (kDropRowH - kCheckPx) * 0.5f, kCheckPx, kCheckPx};
                 check_icon_.draw(ctx.canvas, ctx.factory, check_icon_svg(), ck,
-                                 kCheckPx, pal.accent);
+                                 kCheckPx,
+                                 hot && ctx.theme.high_contrast ? pal.selected_text
+                                                                : pal.accent);
             }
         }
     }
@@ -419,12 +432,15 @@ void ComboButton::paint_before_children(PaintCtx& ctx)
         ctx.canvas.fill_rounded_rect(bounds_, kCBBtnRadius, main_fill);
         ctx.canvas.fill_rect(chevron_rect_, chevron_fill);
     }
-    ctx.canvas.stroke_rounded_rect(bounds_, kCBBtnRadius, pal.border);
+    const bool hc = ctx.theme.high_contrast;
+    ctx.canvas.stroke_rounded_rect(bounds_, kCBBtnRadius,
+                                   hc && !enabled_ ? pal.text_disabled : pal.border);
 
     // Divider between the two zones.
+    const Color divider = cb_zone_text(variant_, ctx.theme, enabled_);
     ctx.canvas.draw_line({chevron_rect_.x, bounds_.y + 6.0f},
                          {chevron_rect_.x, bounds_.y + bounds_.h - 6.0f},
-                         cb_zone_text(variant_, ctx.theme, enabled_).with_alpha(60), 1.0f);
+                         hc ? divider : divider.with_alpha(60), 1.0f);
 
     // Main zone label — selected option.
     if (!main_label_layout_)

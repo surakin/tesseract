@@ -7111,3 +7111,7 @@ msgstr "Mostrar la diferencia horaria junto a los nombres"
 
 msgid "{0} ({1} from you): {2}"
 msgstr "{0} ({1} respecto a ti): {2}"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "The theme follows your system's high contrast setting."
+msgstr "El tema sigue la configuración de alto contraste de tu sistema."

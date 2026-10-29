@@ -125,8 +125,11 @@ public:
                 const float ry = bounds_.y + row_h_ * static_cast<float>(i) - scroll_y_;
                 const Rect row{bounds_.x, ry, bounds_.w, row_h_};
 
-                if (i == hovered_)
-                    ctx.canvas.fill_rect(row, pal.subtle_hover);
+                const bool hot = i == hovered_;
+                if (hot)
+                    ctx.canvas.fill_rect(row, hot_row_fill(ctx.theme));
+                const Color text_col =
+                    hot && ctx.theme.high_contrast ? pal.selected_text : pal.text_primary;
 
                 auto& layout = row_layouts_[static_cast<std::size_t>(i)];
                 if (!layout && label_provider)
@@ -143,7 +146,7 @@ public:
                 {
                     const Size sz = layout->measure();
                     const float ty = ry + (row_h_ - sz.h) * 0.5f;
-                    ctx.canvas.draw_text(*layout, {row.x + 8.0f, ty}, pal.text_primary);
+                    ctx.canvas.draw_text(*layout, {row.x + 8.0f, ty}, text_col);
                 }
             }
             // Thin scrollbar thumb while there is more than fits.

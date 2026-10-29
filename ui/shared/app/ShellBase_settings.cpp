@@ -867,6 +867,13 @@ void ShellBase::apply_msc2545_legacy_compat_pref_(tesseract::Client& client)
 
 void ShellBase::apply_current_theme_()
 {
+    if (const auto hc = os_high_contrast_())
+    {
+        last_system_accent_.reset();
+        current_theme_ = tk::make_high_contrast_theme(*hc);
+        apply_theme_ui_(current_theme_);
+        return;
+    }
     auto& s = tesseract::Settings::instance();
     tk::ThemeMode mode =
         s.theme_pref == tesseract::Settings::ThemePreference::Dark
@@ -892,7 +899,8 @@ void ShellBase::apply_current_theme_()
 void ShellBase::on_system_accent_changed_()
 {
     if (tesseract::Settings::instance().theme_accent !=
-        tesseract::Settings::ThemeAccent::System)
+            tesseract::Settings::ThemeAccent::System ||
+        os_high_contrast_())
     {
         return;
     }

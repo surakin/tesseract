@@ -58,9 +58,13 @@ public:
             return;
         }
         const auto& room = owner_.filtered_[index];
+        // High Contrast: hover is invisible (sidebar_hover == window), so the
+        // hovered row takes the Highlight fill like the current one.
+        const bool hot = selected || (hovered && ctx.theme.high_contrast);
+        const auto pal = tk::row_palette(ctx.theme, hot);
 
         // Row background — selection > hover.
-        if (selected)
+        if (hot)
         {
             ctx.canvas.fill_rect(bounds, ctx.theme.palette.sidebar_selected);
         }
@@ -85,8 +89,7 @@ public:
         }
 
         draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, kQuickSwitcherAvatarSize,
-                    room.name, ctx.theme.palette.avatar_initials_bg,
-                    ctx.theme.palette.avatar_initials_text);
+                    room.name, pal.avatar_initials_bg, pal.avatar_initials_text);
 
         // Room name — single line, ellipsised to the row width.
         const float text_x = bounds.x + kQuickSwitcherPadX + kQuickSwitcherAvatarSize + kQuickSwitcherAvatarGap;
@@ -106,7 +109,7 @@ public:
             const tk::Size sz = name_lo->measure();
             ctx.canvas.draw_text(*name_lo,
                                  {text_x, bounds.y + (bounds.h - sz.h) * 0.5f},
-                                 ctx.theme.palette.text_primary);
+                                 pal.text_primary);
         }
     }
 
@@ -119,8 +122,12 @@ public:
             return;
         }
         const auto& user = owner_.user_results_[index];
+        // High Contrast: hover is invisible (sidebar_hover == window), so the
+        // hovered row takes the Highlight fill like the current one.
+        const bool hot = selected || (hovered && ctx.theme.high_contrast);
+        const auto pal = tk::row_palette(ctx.theme, hot);
 
-        if (selected)
+        if (hot)
         {
             ctx.canvas.fill_rect(bounds, ctx.theme.palette.sidebar_selected);
         }
@@ -145,8 +152,7 @@ public:
         const std::string& disc_name =
             user.display_name.empty() ? user.user_id : user.display_name;
         draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, kQuickSwitcherAvatarSize,
-                    disc_name, ctx.theme.palette.avatar_initials_bg,
-                    ctx.theme.palette.avatar_initials_text);
+                    disc_name, pal.avatar_initials_bg, pal.avatar_initials_text);
 
         const float text_x = bounds.x + kQuickSwitcherPadX + kQuickSwitcherAvatarSize + kQuickSwitcherAvatarGap;
         const float text_w = std::max(0.0f, bounds.x + bounds.w - kQuickSwitcherPadX - text_x);
@@ -172,14 +178,12 @@ public:
         float y = bounds.y + (bounds.h - block_h) * 0.5f;
         if (name_lo)
         {
-            ctx.canvas.draw_text(*name_lo, {text_x, y},
-                                 ctx.theme.palette.text_primary);
+            ctx.canvas.draw_text(*name_lo, {text_x, y}, pal.text_primary);
         }
         y += name_h + gap;
         if (id_lo)
         {
-            ctx.canvas.draw_text(*id_lo, {text_x, y},
-                                 ctx.theme.palette.text_muted);
+            ctx.canvas.draw_text(*id_lo, {text_x, y}, pal.text_muted);
         }
     }
 

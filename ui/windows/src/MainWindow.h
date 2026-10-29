@@ -390,6 +390,7 @@ private:
     void apply_fonts_ui_() override;
     tk::ThemeMode os_color_scheme_() const override;
     std::optional<tk::Color> os_accent_color_() const override;
+    std::optional<tk::HighContrastColors> os_high_contrast_() const override;
     void post_to_ui_(std::function<void()> fn) override;
     void post_to_ui_after_(int ms, std::function<void()> fn) override;
     void request_relayout_() override;

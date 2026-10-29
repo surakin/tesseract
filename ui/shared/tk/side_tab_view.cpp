@@ -267,6 +267,8 @@ void SideTabView::paint_before_children(PaintCtx& ctx)
             {
                 ctx.canvas.fill_rounded_rect(btn, kTabRadius, fill);
             }
+            if (i != selected_idx_ && t.hovered)
+                paint_hc_hover_outline(ctx.canvas, ctx.theme, btn, kTabRadius);
 
             // Draw label text.
             ensure_layout_(ctx, i, label_w);
@@ -275,8 +277,9 @@ void SideTabView::paint_before_children(PaintCtx& ctx)
                 Size ts = t.layout->measure();
                 float tx = btn.x + kTabHPad;
                 float ty = btn.y + (btn.h - ts.h) * 0.5f;
-                Color tc =
-                    (i == selected_idx_) ? pal.text_primary : pal.text_secondary;
+                Color tc = (i == selected_idx_)
+                               ? on_selected(ctx.theme, pal.text_primary)
+                               : pal.text_secondary;
                 ctx.canvas.draw_text(*t.layout, {tx, ty}, tc);
             }
         }

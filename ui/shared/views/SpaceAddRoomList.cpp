@@ -175,12 +175,15 @@ public:
         const auto* room = owner_.room_at_(index);
         if (!room)
             return;
-        const auto& pal = ctx.theme.palette;
+        const auto pal = tk::row_palette(ctx.theme, selected);
 
         if (selected)
             ctx.canvas.fill_rect(bounds, pal.sidebar_selected);
         else if (hovered)
+        {
             ctx.canvas.fill_rect(bounds, pal.sidebar_hover);
+            tk::paint_hc_hover_outline(ctx.canvas, ctx.theme, bounds);
+        }
 
         const float avatar_cx =
             bounds.x + tesseract::visual::kSpaceSM + kListRowAvatarSize * 0.5f;

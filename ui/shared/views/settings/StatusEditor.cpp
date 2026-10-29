@@ -254,7 +254,7 @@ void StatusEditor::paint_after_children(tk::PaintCtx& ctx)
     {
         ctx.canvas.draw_text(*error_layout_,
                              {bounds_.x, bounds_.y + kRowH + kErrorGap},
-                             tk::Color::rgb(0xcc3333));
+                             ctx.theme.palette.text_error);
     }
 }
 

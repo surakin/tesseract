@@ -111,6 +111,8 @@ void TabView::paint_before_children(PaintCtx& ctx)
                                              : Color::rgba(0, 0, 0, 0);
             if (wash.a != 0)
                 ctx.canvas.fill_rect(item.bounds, wash);
+            if (is_hovered)
+                paint_hc_hover_outline(ctx.canvas, ctx.theme, item.bounds);
         }
 
         if (!item.layout)

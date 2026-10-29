@@ -42,6 +42,10 @@ void ListPopupBase::paint(tk::PaintCtx& ctx)
 
             bool selected = (i == selected_index_);
             bool hovered  = (i == hovered_index_);
+            // High Contrast: subtle_hover is invisible, so the hovered row
+            // takes the Highlight fill and is painted as selected.
+            if (hovered && ctx.theme.high_contrast)
+                selected = true;
 
             // Background: selected > hovered > normal (normal == pal.bg already).
             if (selected)

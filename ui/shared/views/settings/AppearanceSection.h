@@ -29,12 +29,17 @@ public:
     explicit AppearanceSection(SettingBinder& binder);
     ~AppearanceSection() override;
 
+    // Locks the theme and accent pickers while the OS High Contrast theme
+    // overrides them.
+    void on_theme_changed(const tk::Theme& t) override;
+
 private:
     // Readout text and enabled state of the timeline column controls.
     void refresh_column_controls_();
 
     tk::RadioGroup*  picker_             = nullptr;
     tk::ComboBox*    accent_combo_       = nullptr;
+    tk::Label*       high_contrast_note_ = nullptr;
     tk::CheckButton* group_unread_cb_    = nullptr;
     tk::CheckButton* group_inactive_cb_  = nullptr;
     tk::ComboBox*    period_combo_       = nullptr;

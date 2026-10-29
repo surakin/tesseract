@@ -318,12 +318,18 @@ bool g_has_accent = false;
 AccentColors g_accent{};
 Palette g_active{};
 bool g_active_valid = false;
+bool g_has_override = false;
+Palette g_override{};
 Mode g_active_mode = Mode::Light;
 int g_accent_on_title_bars = -1; // -1 = not read yet
 } // namespace
 
 const Palette& palette()
 {
+    if (g_has_override)
+    {
+        return g_override;
+    }
     Mode m = current_mode();
     if (!g_active_valid || g_active_mode != m)
     {
@@ -339,6 +345,16 @@ const Palette& palette()
         g_active_valid = true;
     }
     return g_active;
+}
+
+void set_palette_override(const Palette* p)
+{
+    g_has_override = p != nullptr;
+    if (p)
+    {
+        g_override = *p;
+    }
+    clear_brush_cache();
 }
 
 void set_accent(const AccentColors& a)

@@ -2612,7 +2612,7 @@ std::unique_ptr<tk::Image> MainWindow::make_image_from_bgra_(
 
 void MainWindow::apply_native_theme_(const tk::Theme& t)
 {
-    tk::qt6::set_link_color(t.palette.accent);
+    tk::qt6::set_link_color(t.palette.link);
 }
 
 void MainWindow::after_theme_applied_(const tk::Theme& t)

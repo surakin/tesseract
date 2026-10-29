@@ -255,6 +255,8 @@ void TabBar::paint_before_children(PaintCtx& ctx)
                    : t.hovered ? pal.sidebar_hover
                                : pal.chrome_bg;
         c.fill_rounded_rect(tab_rect, kRadius, bg);
+        if (!is_active && t.hovered)
+            paint_hc_hover_outline(c, ctx.theme, tab_rect, kRadius);
 
         // Avatar or initials fallback.
         Point av_centre{tx + kPadOuter + kAvatarSz * 0.5f,
@@ -266,7 +268,8 @@ void TabBar::paint_before_children(PaintCtx& ctx)
         else
         {
             c.draw_initials_circle(t.display_name, av_centre, kAvatarSz,
-                                   pal.sidebar_selected, pal.text_primary);
+                                   pal.sidebar_selected,
+                                   on_selected(ctx.theme, pal.text_primary));
         }
 
         // Display name.
@@ -280,7 +283,8 @@ void TabBar::paint_before_children(PaintCtx& ctx)
             Size name_sz = t.layout->measure();
             Point name_origin{tx + kPadOuter + kAvatarSz + kPadInner,
                               bounds_.y + (kHeight - name_sz.h) * 0.5f};
-            c.draw_text(*t.layout, name_origin, pal.text_primary);
+            c.draw_text(*t.layout, name_origin,
+                        is_active ? on_selected(ctx.theme, pal.text_primary) : pal.text_primary);
         }
 
         // × close button.
@@ -290,6 +294,8 @@ void TabBar::paint_before_children(PaintCtx& ctx)
             cr.x = tx + t.width - kPadOuter - kCloseSz;
             Color close_col =
                 t.close_hovered ? pal.text_primary : pal.text_secondary;
+            if (i == active_idx_)
+                close_col = on_selected(ctx.theme, close_col);
             Size x_sz = close_layout_->measure();
             Point x_origin{cr.x + (kCloseSz - x_sz.w) * 0.5f,
                            cr.y + (kCloseSz - x_sz.h) * 0.5f};

@@ -63,6 +63,7 @@ public:
         if (hovered)
         {
             ctx.canvas.fill_rect(bounds, ctx.theme.palette.sidebar_hover);
+            tk::paint_hc_hover_outline(ctx.canvas, ctx.theme, bounds);
         }
 
         const tk::Image* avatar = nullptr;
@@ -658,7 +659,7 @@ void UserProfilePanel::paint(tk::PaintCtx& ctx)
             display_name_.empty() ? std::string_view("?")
                                   : std::string_view(display_name_);
         draw_avatar(cv, av_img, av_centre, kAvatarD, disp, pal.accent,
-                    tk::Color{255, 255, 255, 255});
+                    tk::accent_foreground(ctx.theme));
     }
     avatar_area_->paint(ctx); // hover ring over the avatar
 

@@ -25,7 +25,7 @@ std::string identity_who(const tesseract::IdentityWarning& w)
 IdentityChangeBanner::IdentityChangeBanner()
 {
     auto label = tk::create_widget<tk::Label>(this, "", tk::FontRole::Body);
-    label->set_colour(kBannerLabelText);
+    label->set_tone(tk::Label::Tone::Notice);
     label->set_halign(tk::TextHAlign::Leading);
     label->set_trim(tk::TextTrim::Ellipsis);
     label_ = add_child(std::move(label));
@@ -94,9 +94,9 @@ void IdentityChangeBanner::arrange(tk::LayoutCtx& ctx, tk::Rect b)
 
 void IdentityChangeBanner::paint_before_children(tk::PaintCtx& ctx)
 {
-    ctx.canvas.fill_rect(bounds_, kBannerBg);
+    ctx.canvas.fill_rect(bounds_, ctx.theme.palette.notice_bg);
     ctx.canvas.fill_rect({bounds_.x, bounds_.y + bounds_.h - 1.0f, bounds_.w, 1.0f},
-                         kBannerBorder);
+                         ctx.theme.palette.notice_border);
 }
 
 } // namespace tesseract::views

@@ -72,6 +72,10 @@ COLORREF accent_colorref();
 // Force a specific mode (user preference override). Clears the brush cache.
 void set_mode(Mode);
 
+// Replace the whole palette (High Contrast) until called with nullptr, which
+// restores the light/dark tables. Clears the brush cache.
+void set_palette_override(const Palette*);
+
 // Accent fields of the active palette, overridden by the in-app accent choice.
 // Survives later set_mode() calls.
 struct AccentColors

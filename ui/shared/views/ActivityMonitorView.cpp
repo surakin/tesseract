@@ -196,7 +196,10 @@ void ActivityMonitorView::paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Re
     const auto& e = row.job;
     cv.fill_rect(r, pal.bg);
     if (hovered)
+    {
         cv.fill_rect(r, pal.subtle_hover);
+        tk::paint_hc_hover_outline(cv, ctx.theme, r);
+    }
     cv.fill_rect({r.x, r.bottom() - 1.0f, r.w, 1.0f}, pal.separator);
 
     const tk::Color dot = e.state == tesseract::ActivityState::Running ? pal.success

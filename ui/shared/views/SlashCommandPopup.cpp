@@ -73,7 +73,7 @@ void SlashCommandPopup::paint_hint_row(tk::PaintCtx& ctx, const tk::Rect& row)
 }
 
 void SlashCommandPopup::paint_row(tk::PaintCtx& ctx, const tk::Rect& row,
-                                  size_t index, bool /*selected*/,
+                                  size_t index, bool selected,
                                   bool /*hovered*/)
 {
     if (hint_mode_)
@@ -82,7 +82,7 @@ void SlashCommandPopup::paint_row(tk::PaintCtx& ctx, const tk::Rect& row,
         return;
     }
 
-    const auto& pal = ctx.theme.palette;
+    const auto pal = tk::row_palette(ctx.theme, selected);
     const auto& s   = suggestions_[index];
 
     // Primary text: "/name <args_hint>" — top half of row with 6px left margin

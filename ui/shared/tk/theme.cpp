@@ -89,6 +89,18 @@ constexpr Palette light_palette()
     p.presence_online      = Color::rgb(0x0EAC20); // green
     p.presence_unavailable = Color::rgb(0xEB7107); // amber
     p.presence_offline     = Color::rgb(0xB0B3BA); // muted grey
+
+    // Same as the colour each role used before it had its own field.
+    p.link = p.accent;
+    p.text_disabled = p.text_muted;
+    p.selection_text = p.text_primary;
+    p.selected_text = p.text_primary;
+    p.text_error = Color::rgb(0xCC3333);
+    p.notice_bg = Color::rgb(0xFFF4D6);
+    p.notice_border = Color::rgb(0xE0C97A);
+    p.notice_text = Color::rgb(0x5C4500);
+    p.warning_bg = Color::rgb(0xFFB300);
+    p.warning_text = Color::rgb(0x332600);
     return p;
 }
 
@@ -161,6 +173,18 @@ constexpr Palette dark_palette()
     p.presence_online      = Color::rgb(0x23B064); // green
     p.presence_unavailable = Color::rgb(0xE08C1A); // amber
     p.presence_offline     = Color::rgb(0x606470); // muted grey
+
+    // Same as the colour each role used before it had its own field.
+    p.link = p.accent;
+    p.text_disabled = p.text_muted;
+    p.selection_text = p.text_primary;
+    p.selected_text = p.text_primary;
+    p.text_error = Color::rgb(0xCC3333);
+    p.notice_bg = Color::rgb(0xFFF4D6);
+    p.notice_border = Color::rgb(0xE0C97A);
+    p.notice_text = Color::rgb(0x5C4500);
+    p.warning_bg = Color::rgb(0xFFB300);
+    p.warning_text = Color::rgb(0x332600);
     return p;
 }
 
@@ -258,6 +282,7 @@ constexpr Palette apply_accent(Palette p, ThemeMode mode, const AccentSpec& spec
         p.avatar_initials_text = p.chip_text_me;
         p.selection = p.accent.with_alpha(0x50);
     }
+    p.link = p.accent;
     return p;
 }
 
@@ -367,6 +392,7 @@ void apply_system_accent(Theme& theme, Color raw_accent)
     p.unread_bg = a;
     p.unread_text = p.text_on_accent;
     p.selection = a.with_alpha(0x50);
+    p.link = a;
 
     // Wash fields — Blue's own anchor lightness, OS accent's hue.
     const float hue = extract_hue_or(raw_accent, kBlueHueDeg);
@@ -386,6 +412,72 @@ void apply_system_accent(Theme& theme, Color raw_accent)
     }
     p.avatar_initials_bg   = p.chip_bg_me;
     p.avatar_initials_text = p.chip_text_me;
+}
+
+Theme make_high_contrast_theme(const HighContrastColors& in)
+{
+    auto opaque = [](Color c) { return c.with_alpha(255); };
+    const Color window    = opaque(in.window);
+    const Color text      = opaque(in.window_text);
+    const Color hl        = opaque(in.highlight);
+    const Color hl_text   = opaque(in.highlight_text);
+    const Color hotlight  = opaque(in.hotlight);
+    const Color gray      = opaque(in.gray_text);
+
+    Palette p{};
+    // Surfaces are one flat colour; shape comes from solid borders.
+    p.bg = p.sidebar_bg = p.chrome_bg = p.compose_card_bg = window;
+    p.section_header_bg = p.code_bg = p.bubble_bg = p.bubble_bg_me = window;
+    // Hover and pressed fills stay on the surface colour because text_primary
+    // is drawn over them; selection is the native Highlight/HighlightText pair.
+    p.sidebar_hover = p.section_header_hover = window;
+    p.sidebar_selected = hl;
+    p.selected_text = hl_text;
+    p.subtle_hover = p.subtle_pressed = window;
+
+    p.border = p.separator = p.border_strong = p.popup_border = text;
+
+    p.text_primary = p.text_secondary = p.text_muted = text;
+    p.text_on_accent = hl_text;
+    p.text_disabled = gray;
+    p.link = hotlight;
+    p.text_error = text;
+    p.selection = hl;
+    p.selection_text = hl_text;
+
+    p.accent = p.accent_hover = p.accent_pressed = hl;
+    p.destructive = p.destructive_hover = p.destructive_pressed = hl;
+    p.success = text;
+
+    p.chip_bg = window;
+    p.chip_border = text;
+    p.chip_text = text;
+    p.chip_bg_me = hl;
+    p.chip_border_me = text;
+    p.chip_text_me = hl_text;
+
+    p.unread_bg = hl;
+    p.unread_text = hl_text;
+
+    p.presence_online = hl;
+    p.presence_unavailable = text;
+    p.presence_offline = gray;
+
+    p.avatar_initials_bg = hl;
+    p.avatar_initials_text = hl_text;
+
+    p.notice_bg = window;
+    p.notice_border = text;
+    p.notice_text = text;
+    p.warning_bg = window;
+    p.warning_text = text;
+
+    Theme t{};
+    t.mode = perceived_luma(window) < 0.5f ? ThemeMode::Dark : ThemeMode::Light;
+    t.palette = p;
+    t.accent = AccentTheme::Blue;
+    t.high_contrast = true;
+    return t;
 }
 
 namespace

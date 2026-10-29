@@ -74,6 +74,11 @@ void paint_native_drag_hover_highlight(PaintCtx& ctx, Rect rect)
     if (area.empty())
         return;
     const Color accent = ctx.theme.palette.accent;
+    if (ctx.theme.high_contrast)
+    {
+        ctx.canvas.stroke_rounded_rect(area, kRadius, accent, 2.0f);
+        return;
+    }
     ctx.canvas.fill_rounded_rect(area, kRadius, accent.with_alpha(28));
     ctx.canvas.stroke_rounded_rect(area, kRadius, accent.with_alpha(192), 2.0f);
 }

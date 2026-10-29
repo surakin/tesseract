@@ -422,7 +422,10 @@ void ThreadListView::paint_row(std::size_t index, tk::PaintCtx& ctx,
 
     // Hover highlight.
     if (hovered)
+    {
         cv.fill_rect(r, pal.subtle_hover);
+        tk::paint_hc_hover_outline(cv, ctx.theme, r);
+    }
 
     // Per-row separator at the bottom.
     cv.fill_rect({r.x, r.bottom() - 1.0f, r.w, 1.0f}, pal.separator);

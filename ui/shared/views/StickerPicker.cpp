@@ -134,13 +134,16 @@ void StickerPicker::paint_cell(std::size_t index, tk::PaintCtx& ctx,
 
     if (selected)
     {
+        // High Contrast: subtle_pressed/hover equal the window colour.
         ctx.canvas.fill_rounded_rect(bounds, 8.0f,
-                                     ctx.theme.palette.subtle_pressed);
+                                     ctx.theme.high_contrast
+                                         ? ctx.theme.palette.sidebar_selected
+                                         : ctx.theme.palette.subtle_pressed);
     }
     else if (hovered)
     {
         ctx.canvas.fill_rounded_rect(bounds, 8.0f,
-                                     ctx.theme.palette.subtle_hover);
+                                     tk::hot_row_fill(ctx.theme));
     }
 
     const auto& entry = current_items_[index];

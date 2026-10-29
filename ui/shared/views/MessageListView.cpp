@@ -1957,6 +1957,7 @@ public:
         // Keep row_renderer_ current before any helper (including the
         // virtual-row height math and the shared body helpers) consults it.
         sync_row_renderer_();
+        note_theme_(ctx.theme);
         if (is_typing_index(index))
         {
             return kTypingRowH;
@@ -2050,8 +2051,11 @@ public:
         return raw_h;
     }
 
-    static tk::Color sender_color(const std::string& name, tk::ThemeMode mode)
+    static tk::Color sender_color(const std::string& name, const tk::Theme& theme)
     {
+        if (theme.high_contrast)
+            return theme.palette.text_primary;
+        const tk::ThemeMode mode = theme.mode;
         static constexpr tk::Color kLight[] = {
             tk::Color::rgb(0xC0392B), tk::Color::rgb(0xD35400),
             tk::Color::rgb(0x6E7D00), tk::Color::rgb(0x1E8449),
@@ -2083,6 +2087,7 @@ public:
         // Keep row_renderer_ current before any helper (including the
         // virtual-row system-line painters) consults it.
         sync_row_renderer_();
+        note_theme_(ctx.theme);
         // Everything but a day separator lays out inside the content column.
         if (index >= owner_.messages_.size() ||
             owner_.messages_[index].kind != MessageRowData::Kind::DaySeparator)
@@ -2407,7 +2412,7 @@ public:
             if (rc.sender)
             {
                 ctx.canvas.draw_text(*rc.sender, {sender_x, sender_y},
-                                     sender_color(m.sender, ctx.theme.mode));
+                                     sender_color(m.sender, ctx.theme));
             }
             if (rc.sender && rc.status)
             {
@@ -2416,7 +2421,7 @@ public:
                 const float ex = sender_x + nsz.w + kStatusGap;
                 const float ey = sender_y + (sender_h() - esz.h) * 0.5f;
                 ctx.canvas.draw_text(*rc.status, {ex, ey},
-                                     sender_color(m.sender, ctx.theme.mode));
+                                     sender_color(m.sender, ctx.theme));
                 if (rp.hovered)
                     owner_.hovered_row_geom_.status_emoji =
                         tk::Rect{ex, sender_y, esz.w, sender_h()};
@@ -2792,7 +2797,9 @@ public:
                     else
                     {
                         ctx.canvas.fill_rect(img_dst,
-                                             tk::Color{0xCC, 0xCC, 0xCC});
+                                             ctx.theme.high_contrast
+                                                 ? ctx.theme.palette.text_disabled
+                                                 : tk::Color{0xCC, 0xCC, 0xCC});
                     }
                     if (show_count)
                     {
@@ -3091,7 +3098,8 @@ public:
                     // ⚠
                     auto warn_lo =
                         ctx.factory.build_text("\xE2\x9A\xA0", small_st);
-                    const tk::Color kRed = tk::Color::rgb(0xE53935);
+                    const tk::Color kRed = ctx.theme.high_contrast ? ctx.theme.palette.text_error
+                                                                : tk::Color::rgb(0xE53935);
                     float cur_right = right_edge;
 
                     if (m.pending_recoverable)
@@ -3613,6 +3621,8 @@ public:
         {
             auto spans = irc_prefix_spans_(m, ctx.theme.mode,
                                            irc_prefix_kind_(m));
+            if (ctx.theme.high_contrast)
+                flatten_span_colours(spans);
             tk::TextStyle st{};
             st.role      = tk::FontRole::Body;
             st.monospace = true;
@@ -5808,6 +5818,8 @@ private:
             if (!unresolved && !m.in_reply_to_formatted_body.empty())
             {
                 spans = html_to_spans(m.in_reply_to_formatted_body, dark);
+                if (ctx.theme.high_contrast)
+                    flatten_span_colours(spans);
                 for (auto& sp : spans)
                     for (char& ch : sp.text)
                         if (ch == '\n' || ch == '\r')
@@ -5933,6 +5945,8 @@ private:
                                             bool revealed, bool dark) const
     {
         auto spans = html_to_spans(m.formatted_body, dark);
+        if (hc_)
+            flatten_span_colours(spans);
         if (!revealed)
         {
             for (auto& sp : spans)
@@ -5994,6 +6008,8 @@ private:
                                           bool revealed, bool dark) const
     {
         auto blocks = html_to_blocks(m.formatted_body, dark);
+        if (hc_)
+            flatten_block_colours(blocks);
         auto prep_spans = [&](std::vector<tk::TextSpan>& spans)
         {
             if (!revealed)
@@ -6080,6 +6096,8 @@ private:
                 result.push_back(std::move(s));
             }
         }
+        if (hc_)
+            flatten_span_colours(result);
         return result;
     }
 
@@ -6353,6 +6371,8 @@ private:
                     row_renderer_
                         ? row_renderer_->body_prefix_spans(m, dark)
                         : std::vector<tk::TextSpan>{};
+                if (hc_)
+                    flatten_span_colours(combined);
                 if (!combined.empty() && slot.sections.empty())
                 {
                     std::string pfx_plain;
@@ -6811,7 +6831,21 @@ private:
                                          pal.selection);
             }
             paint_span_backgrounds(cb.spans, *cb.layout, ctx, cox, coy);
-            ctx.canvas.draw_text(*cb.layout, {cox, coy}, color);
+            const bool cell_block_selected =
+                ctx.theme.high_contrast && sel_here && !sel_single &&
+                cb.row >= block_r0 && cb.row <= block_r1 &&
+                cb.col >= block_c0 && cb.col <= block_c1;
+            ctx.canvas.draw_text(*cb.layout, {cox, coy},
+                                 cell_block_selected ? pal.selection_text : color);
+            if (ctx.theme.high_contrast && sel_single && cb.row == s->anchor_row &&
+                cb.col == s->anchor_col)
+            {
+                for (const tk::Rect& r : cb.layout->selection_rects(sel_lo, sel_hi))
+                {
+                    tk::ClipScope clip(ctx.canvas, {r.x + cox, r.y + coy, r.w, r.h});
+                    ctx.canvas.draw_text(*cb.layout, {cox, coy}, pal.selection_text);
+                }
+            }
             paint_span_images(cb.spans, *cb.layout, ctx, cox, coy);
         }
 
@@ -6834,6 +6868,7 @@ private:
         auto draw_with_selection = [&](tk::TextLayout& lay, float ox, float oy,
                                        int plain_len, int base = 0)
         {
+            std::vector<tk::Rect> sel_world;
             if (ord && msg_idx >= 0 &&
                 msg_idx >= ord->lo_idx && msg_idx <= ord->hi_idx)
             {
@@ -6843,11 +6878,27 @@ private:
                 lo_b     = std::clamp(lo_b, 0, plain_len);
                 hi_b     = std::clamp(hi_b, 0, plain_len);
                 if (lo_b < hi_b)
+                {
                     for (const tk::Rect& r : lay.selection_rects(lo_b, hi_b))
-                        ctx.canvas.fill_rect({r.x + ox, r.y + oy, r.w, r.h},
-                                             ctx.theme.palette.selection);
+                    {
+                        const tk::Rect wr{r.x + ox, r.y + oy, r.w, r.h};
+                        ctx.canvas.fill_rect(wr, ctx.theme.palette.selection);
+                        sel_world.push_back(wr);
+                    }
+                }
             }
             ctx.canvas.draw_text(lay, {ox, oy}, color);
+            // High Contrast: the selection fill is opaque, so the selected
+            // glyphs are redrawn in the selection text colour.
+            if (ctx.theme.high_contrast)
+            {
+                for (const tk::Rect& wr : sel_world)
+                {
+                    tk::ClipScope clip(ctx.canvas, wr);
+                    ctx.canvas.draw_text(lay, {ox, oy},
+                                         ctx.theme.palette.selection_text);
+                }
+            }
         };
 
         // ── Multi-section path (block structure: headings, lists, etc.) ───────
@@ -7206,7 +7257,9 @@ private:
         const float icon_y = dst.y + (dst.h - kFileIconSize) * 0.5f;
         const tk::Rect icon_rect{dst.x + kFileIconPadL, icon_y, kFileIconSize,
                                  kFileIconSize};
-        ctx.canvas.fill_rounded_rect(icon_rect, 6.0f, icon.color);
+        ctx.canvas.fill_rounded_rect(icon_rect, 6.0f,
+                                     ctx.theme.high_contrast ? ctx.theme.palette.accent
+                                                             : icon.color);
 
         // Extension label centred inside the icon box.
         tk::TextStyle ls{};
@@ -7219,7 +7272,7 @@ private:
             // UiSemibold ~11 pt; approximate cap-height ~13 px at 96 dpi.
             const float label_y = icon_y + (kFileIconSize - 13.0f) * 0.5f;
             ctx.canvas.draw_text(*label_lo, {icon_rect.x, label_y},
-                                 tk::Color{255, 255, 255, 255});
+                                 tk::accent_foreground(ctx.theme));
         }
 
         // Filename + size shifted right of the icon box.
@@ -7513,6 +7566,17 @@ private:
     friend class BubbleRowRenderer;
     friend class IrcRowRenderer;
     mutable std::unique_ptr<MessageRowRenderer> row_renderer_;
+    // High Contrast flag of the last theme seen. Cached body layouts bake in
+    // syntax colours, so a change drops them.
+    mutable bool hc_ = false;
+    void note_theme_(const tk::Theme& t) const
+    {
+        if (t.high_contrast != hc_)
+        {
+            hc_ = t.high_contrast;
+            owner_.link_cache_.clear();
+        }
+    }
     mutable tesseract::Settings::MessageLayout row_renderer_mode_ =
         tesseract::Settings::MessageLayout::Classic;
     void sync_row_renderer_() const

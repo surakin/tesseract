@@ -5375,3 +5375,7 @@ msgstr "Vis tidssoneforskjell ved siden av navn"
 
 msgid "{0} ({1} from you): {2}"
 msgstr "{0} ({1} fra deg): {2}"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "The theme follows your system's high contrast setting."
+msgstr "Temaet følger systemets innstilling for høy kontrast."

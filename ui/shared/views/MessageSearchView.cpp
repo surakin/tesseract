@@ -100,12 +100,15 @@ public:
         if (index >= owner_.results_.size())
             return;
         const auto& hit = owner_.results_[index];
-        const auto& pal = ctx.theme.palette;
+        const auto pal = tk::row_palette(ctx.theme, selected);
 
         if (selected)
             ctx.canvas.fill_rect(bounds, pal.sidebar_selected);
         else if (hovered)
+        {
             ctx.canvas.fill_rect(bounds, pal.sidebar_hover);
+            tk::paint_hc_hover_outline(ctx.canvas, ctx.theme, bounds);
+        }
 
         const float text_x = bounds.x + kMessageSearchPadX;
         const float full_w = std::max(0.0f, bounds.w - 2 * kMessageSearchPadX);

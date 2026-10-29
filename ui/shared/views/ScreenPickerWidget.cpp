@@ -27,6 +27,25 @@ constexpr tk::Color kTileBdN   { 70,  70,  70, 255};
 constexpr tk::Color kTileBdH   { 90, 130, 200, 255};
 constexpr tk::Color kTextTitle {220, 220, 220, 255};
 constexpr tk::Color kTextLabel {200, 200, 200, 255};
+
+// The dialog is always dark; High Contrast uses the theme palette instead.
+struct PickerColours
+{
+    tk::Color backdrop, card_bg, card_bd, tile_norm, tile_hov, tile_bd_n, tile_bd_h,
+        text_title, text_label;
+};
+
+PickerColours picker_colours(const tk::Theme& theme)
+{
+    if (!theme.high_contrast)
+    {
+        return {kBackdrop, kCardBg, kCardBd, kTileNorm, kTileHov,
+                kTileBdN,  kTileBdH, kTextTitle, kTextLabel};
+    }
+    const auto& p = theme.palette;
+    return {p.bg,     p.chrome_bg, p.border,       p.bg,           p.bg,
+            p.border, p.accent,    p.text_primary, p.text_primary};
+}
 } // namespace
 
 ScreenPickerWidget::ScreenPickerWidget(std::vector<tk::ScreenSource> sources)
@@ -146,12 +165,13 @@ void ScreenPickerWidget::paint_before_children(tk::PaintCtx& ctx)
 
     step_kinetic();
 
-    ctx.canvas.fill_rect(b, kBackdrop);
+    const PickerColours col = picker_colours(ctx.theme);
+    ctx.canvas.fill_rect(b, col.backdrop);
 
     const tk::Rect card{b.x + kPad, b.y + kPad,
                         b.w - kPad * 2.0f, b.h - kPad * 2.0f};
-    ctx.canvas.fill_rect(card, kCardBg);
-    ctx.canvas.stroke_rect(card, kCardBd, 1.0f);
+    ctx.canvas.fill_rect(card, col.card_bg);
+    ctx.canvas.stroke_rect(card, col.card_bd, 1.0f);
 
     {
         tk::TextStyle ts{};
@@ -161,7 +181,7 @@ void ScreenPickerWidget::paint_before_children(tk::PaintCtx& ctx)
         {
             const tk::Size sz = layout->measure();
             const float ty = header_rect_.y + (header_rect_.h - sz.h) * 0.5f;
-            ctx.canvas.draw_text(*layout, {header_rect_.x, ty}, kTextTitle);
+            ctx.canvas.draw_text(*layout, {header_rect_.x, ty}, col.text_title);
         }
     }
 
@@ -191,7 +211,7 @@ void ScreenPickerWidget::paint_before_children(tk::PaintCtx& ctx)
 
             const bool hov = (static_cast<int>(i) == hovered_idx_);
 
-            ctx.canvas.fill_rect(r, hov ? kTileHov : kTileNorm);
+            ctx.canvas.fill_rect(r, hov ? col.tile_hov : col.tile_norm);
 
             TileThumb& thumb = thumbs_[i];
             if (thumb.w > 0 && thumb.h > 0)
@@ -214,7 +234,8 @@ void ScreenPickerWidget::paint_before_children(tk::PaintCtx& ctx)
                 }
             }
 
-            ctx.canvas.stroke_rect(r, hov ? kTileBdH : kTileBdN, 1.5f);
+            ctx.canvas.stroke_rect(r, hov ? col.tile_bd_h : col.tile_bd_n,
+                                   ctx.theme.high_contrast && hov ? 3.0f : 1.5f);
 
             const std::string& label = sources_[i].is_window
                 ? sources_[i].display_name
@@ -227,7 +248,14 @@ void ScreenPickerWidget::paint_before_children(tk::PaintCtx& ctx)
             if (lbl)
             {
                 const tk::Size sz = lbl->measure();
-                ctx.canvas.draw_text(*lbl, {r.x + 8.0f, r.y + r.h - sz.h - 8.0f}, kTextLabel);
+                const tk::Point lp{r.x + 8.0f, r.y + r.h - sz.h - 8.0f};
+                if (ctx.theme.high_contrast)
+                {
+                    // The label sits over the thumbnail: give it a solid plate.
+                    ctx.canvas.fill_rect({lp.x - 4.0f, lp.y - 2.0f, sz.w + 8.0f, sz.h + 4.0f},
+                                         ctx.theme.palette.bg);
+                }
+                ctx.canvas.draw_text(*lbl, lp, col.text_label);
             }
         }
     }

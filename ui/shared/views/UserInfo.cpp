@@ -219,6 +219,8 @@ void UserInfo::arrange(tk::LayoutCtx&, tk::Rect bounds)
 void UserInfo::paint(tk::PaintCtx& ctx)
 {
     const auto& theme = ctx.theme;
+    // Contents of the active-account row sit on the selection fill.
+    const auto row_pal = tk::row_palette(theme, active_indicator_);
 
     // Row backdrop. The active-account row (AccountPicker only) gets the
     // same treatment RoomListView gives the active room — a tinted fill plus
@@ -239,7 +241,7 @@ void UserInfo::paint(tk::PaintCtx& ctx)
         if (active_indicator_)
         {
             tk::ClipScope clip(ctx.canvas, r, kHoverRadius);
-            ctx.canvas.fill_rect({r.x, r.y, kActiveBarW, r.h}, theme.palette.accent);
+            ctx.canvas.fill_rect({r.x, r.y, kActiveBarW, r.h}, row_pal.accent);
         }
     }
 
@@ -280,8 +282,8 @@ void UserInfo::paint(tk::PaintCtx& ctx)
         }
     }
     draw_avatar(ctx.canvas, img, avatar_centre, shown_avatar_(), name_source,
-                theme.palette.avatar_initials_bg,
-                theme.palette.avatar_initials_text);
+                row_pal.avatar_initials_bg,
+                row_pal.avatar_initials_text);
 
     // -------- Notification dot (avatar corner) --------
     // Ring first (matches the row's current backdrop so the dot "punches
@@ -438,7 +440,7 @@ void UserInfo::paint(tk::PaintCtx& ctx)
     if (name_layout_)
     {
         ctx.canvas.draw_text(*name_layout_, {text_x, col_top},
-                             theme.palette.text_primary);
+                             row_pal.text_primary);
     }
     else if (display_name_.empty() && !user_id_.empty())
     {
@@ -455,7 +457,7 @@ void UserInfo::paint(tk::PaintCtx& ctx)
         // member-layout draws above guard their results, this local did not.
         if (lay)
             ctx.canvas.draw_text(*lay, {text_x, col_top},
-                                 theme.palette.text_primary);
+                                 row_pal.text_primary);
     }
 
     const float uid_y = col_top + name_sz.h + kUserInfoLineGap;
@@ -477,7 +479,7 @@ void UserInfo::paint(tk::PaintCtx& ctx)
         {
             const float y = status_y + (status_line_h - status_emoji_sz.h) * 0.5f;
             ctx.canvas.draw_text(*status_emoji_layout_, {x, y},
-                                 theme.palette.text_secondary);
+                                 row_pal.text_secondary);
             x += status_emoji_sz.w + kStatusEmojiGap;
         }
         if (status_layout_)
@@ -486,8 +488,8 @@ void UserInfo::paint(tk::PaintCtx& ctx)
             // Placeholder reads as disabled text (text_muted); a real status
             // gets the slightly more present text_secondary.
             ctx.canvas.draw_text(*status_layout_, {x, y},
-                                 status_is_placeholder ? theme.palette.text_muted
-                                                       : theme.palette.text_secondary);
+                                 status_is_placeholder ? row_pal.text_muted
+                                                       : row_pal.text_secondary);
         }
         // Hit target: the whole text column from the status line down to the
         // bottom of the row, so a click on that line (or the padding just

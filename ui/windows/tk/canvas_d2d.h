@@ -21,6 +21,7 @@
 #include <windows.h>
 
 #include <memory>
+#include <optional>
 #include <span>
 #include <vector>
 #include <cstdint>
@@ -322,6 +323,11 @@ bool decode_animation_windowed(
 // Uses the real system DPI so HiDPI displays don't double-count the scale.
 // Cached on first call; the system font does not change at runtime.
 int win32_system_base_pt();
+
+// High Contrast: draw hyperlink runs that carry no explicit colour in `c`
+// (palette.link). Pass nullopt to draw them in the surrounding text colour.
+// Applies to layouts built afterwards.
+void set_link_color(std::optional<Color> c);
 
 struct RealLineMetrics
 {

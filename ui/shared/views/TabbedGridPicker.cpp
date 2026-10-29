@@ -178,6 +178,7 @@ public:
             else if (i == hovered_idx_)
             {
                 ctx.canvas.fill_rect(tab, ctx.theme.palette.subtle_hover);
+                tk::paint_hc_hover_outline(ctx.canvas, ctx.theme, tab);
             }
             if (i == nav_index_ && i != active)
             {

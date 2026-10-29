@@ -7544,3 +7544,7 @@ msgstr ""
 
 msgid "{0} ({1} from you): {2}"
 msgstr ""
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "The theme follows your system's high contrast setting."
+msgstr ""

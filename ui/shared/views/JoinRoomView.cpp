@@ -540,7 +540,7 @@ void JoinRoomView::paint(tk::PaintCtx& ctx)
                                         ? std::string_view("#")
                                         : std::string_view(preview_.name);
             draw_avatar(ctx.canvas, av_img, av_centre, kJoinRoomAvatarSize, disp,
-                        pal.accent, tk::Color{255, 255, 255, 255});
+                        pal.accent, tk::accent_foreground(ctx.theme));
         }
 
         // Info column to the right of the avatar.
@@ -576,12 +576,18 @@ void JoinRoomView::paint(tk::PaintCtx& ctx)
             {
                 float pw = lo->measure().w + kPillPadX * 2.0f;
                 tk::Rect pill{info_x, info_y, pw, kPillH};
-                ctx.canvas.fill_rounded_rect(pill, kPillH * 0.5f, bg);
+                ctx.canvas.fill_rounded_rect(pill, kPillH * 0.5f,
+                                             ctx.theme.high_contrast ? pal.bg : bg);
+                if (ctx.theme.high_contrast)
+                {
+                    ctx.canvas.stroke_rounded_rect(pill, kPillH * 0.5f, pal.border, 1.0f);
+                }
                 ctx.canvas.draw_text(
                     *lo,
                     {info_x + kPillPadX,
                      info_y + (kPillH - lo->measure().h) * 0.5f},
-                    tk::Color{255, 255, 255, 255});
+                    ctx.theme.high_contrast ? pal.text_primary
+                                            : tk::Color{255, 255, 255, 255});
                 info_y += kPillH + kSmallGap;
             }
         }

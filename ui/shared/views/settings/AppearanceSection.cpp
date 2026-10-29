@@ -105,6 +105,15 @@ AppearanceSection::AppearanceSection(SettingBinder& binder)
     }
 
     {
+        auto note = tk::create_widget<tk::Label>(
+            this, tk::tr("The theme follows your system's high contrast setting."),
+            tk::FontRole::Small);
+        note->set_wrap(true);
+        note->set_visible(false);
+        high_contrast_note_ = group->add_widget(std::move(note));
+    }
+
+    {
         using ML = tesseract::Settings::MessageLayout;
         const auto& s = tesseract::Settings::instance();
         auto* layout_group = add_group(tk::tr("Layout"));
@@ -398,5 +407,25 @@ void AppearanceSection::refresh_column_controls_()
 }
 
 AppearanceSection::~AppearanceSection() = default;
+
+void AppearanceSection::on_theme_changed(const tk::Theme& t)
+{
+    const bool locked = t.high_contrast;
+    if (picker_)
+    {
+        for (auto& radio : picker_->children())
+        {
+            radio->set_enabled(!locked);
+        }
+    }
+    if (accent_combo_)
+    {
+        accent_combo_->set_enabled(!locked);
+    }
+    if (high_contrast_note_)
+    {
+        high_contrast_note_->set_visible(locked);
+    }
+}
 
 } // namespace tesseract::views

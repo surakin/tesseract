@@ -98,7 +98,7 @@ void RadioButton::paint(PaintCtx& ctx)
             *label_layout_,
             {bounds_.x + kRbSize + kRbGap,
              bounds_.y + (bounds_.h - label_size_.h) * 0.5f},
-            enabled_ ? pal.text_primary : pal.text_muted);
+            enabled_ ? pal.text_primary : pal.text_disabled);
     }
 }
 

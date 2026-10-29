@@ -250,6 +250,7 @@ private:
     // Cached text layouts
     tk::CachedTextLayout name_layout_;
     tk::CachedTextLayout topic_layout_;
+    bool high_contrast_ = false; // topic syntax colours are dropped when set
 
     // Encrypted / history-visibility / language / bridged badges; wraps
     // onto extra rows. Rebuilt by update_badges_() whenever its inputs change.

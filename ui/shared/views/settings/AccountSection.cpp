@@ -347,7 +347,8 @@ void AccountSection::Content::paint(tk::PaintCtx& ctx)
     {
         const float uly = col_top + kAccountSectionNameH + 2.0f;
         ctx.canvas.fill_rect({text_x, uly, text_w, 1.0f},
-                             pal.text_secondary.with_alpha(80));
+                             ctx.theme.high_contrast ? pal.text_secondary
+                                                     : pal.text_secondary.with_alpha(80));
 
         // name_field_ paints itself here rather than through the normal
         // paint_children() traversal (this is a full paint() override, same
@@ -405,7 +406,7 @@ void AccountSection::Content::paint(tk::PaintCtx& ctx)
         }
         ctx.canvas.draw_text(*name_error_layout_,
                              {text_x, col_top + kAccountSectionNameH + kAccountSectionLineGap + kIdH + kAccountSectionErrorGap},
-                             tk::Color::rgb(0xcc3333));
+                             ctx.theme.palette.text_error);
     }
 
     if (!uid_layout_ && !user_id_.empty())
@@ -867,7 +868,8 @@ void AccountSection::ExtendedFields::paint_after_children(tk::PaintCtx& ctx)
         {
             const float uly = ry + row_h - 1.0f;
             ctx.canvas.fill_rect({field_x, uly, field_w, 1.0f},
-                                 pal.text_secondary.with_alpha(80));
+                                 ctx.theme.high_contrast ? pal.text_secondary
+                                                         : pal.text_secondary.with_alpha(80));
         }
 
         // Value text (only when not editable, or when busy)
@@ -923,7 +925,7 @@ void AccountSection::ExtendedFields::paint_after_children(tk::PaintCtx& ctx)
             {
                 ctx.canvas.draw_text(*error_layout_[i],
                                      {field_x, ry + row_h + kAccountSectionErrorGap},
-                                     tk::Color::rgb(0xcc3333));
+                                     ctx.theme.palette.text_error);
             }
         }
     }

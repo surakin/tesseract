@@ -73,7 +73,11 @@ void Label::paint(PaintCtx& ctx)
     {
         return;
     }
-    Color c = colour_.value_or(ctx.theme.palette.text_primary);
+    const auto& pal = ctx.theme.palette;
+    const Color tone_colour = tone_ == Tone::Error    ? pal.text_error
+                              : tone_ == Tone::Notice ? pal.notice_text
+                                                      : pal.text_primary;
+    Color c = colour_.value_or(tone_colour);
     ctx.canvas.draw_text(*cached_, {bounds_.x, bounds_.y}, c);
 }
 
@@ -132,6 +136,13 @@ Color button_fill(Button::Variant v, const Theme& th, bool enabled,
 {
     if (!enabled)
     {
+        if (th.high_contrast)
+        {
+            // An outlined button; the outline is painted in Button::paint.
+            return (v == Button::Variant::Primary || v == Button::Variant::Destructive)
+                       ? th.palette.bg
+                       : Color::rgba(0, 0, 0, 0);
+        }
         if (v == Button::Variant::Primary)
             return th.palette.accent.with_alpha(120);
         if (v == Button::Variant::Destructive)
@@ -190,7 +201,7 @@ Color button_text(Button::Variant v, const Theme& th, bool enabled)
 {
     if (!enabled)
     {
-        return th.palette.text_muted;
+        return th.palette.text_disabled;
     }
     if (v == Button::Variant::Primary || v == Button::Variant::Destructive)
     {
@@ -198,7 +209,7 @@ Color button_text(Button::Variant v, const Theme& th, bool enabled)
     }
     if (v == Button::Variant::Link)
     {
-        return th.palette.accent;
+        return th.palette.link;
     }
     return th.palette.text_primary;
 }
@@ -274,6 +285,23 @@ void Button::paint(PaintCtx& ctx)
     }
     ctx.canvas.fill_rounded_rect(bounds_, corner_radius_.value_or(kControlsBtnRadius), fill);
 
+    if (ctx.theme.high_contrast)
+    {
+        // High Contrast has no tinted hover fills, so state is shown by outline.
+        const bool filled = variant_ == Variant::Primary || variant_ == Variant::Destructive;
+        if (!enabled_ && filled)
+        {
+            ctx.canvas.stroke_rounded_rect(bounds_, corner_radius_.value_or(kControlsBtnRadius),
+                                           ctx.theme.palette.text_disabled, 1.0f);
+        }
+        else if (enabled_ && (pressed() || hovered()) &&
+                 (variant_ == Variant::Subtle || variant_ == Variant::Icon))
+        {
+            ctx.canvas.stroke_rounded_rect(bounds_, corner_radius_.value_or(kControlsBtnRadius),
+                                           ctx.theme.palette.accent, pressed() ? 3.0f : 2.0f);
+        }
+    }
+
     if (!paints_content())
     {
         return;
@@ -309,7 +337,8 @@ void Button::paint(PaintCtx& ctx)
         return;
     }
     Color text_color = button_text(variant_, ctx.theme, enabled_);
-    if (variant_ == Variant::Link && enabled_ && (pressed() || hovered()))
+    if (variant_ == Variant::Link && enabled_ && (pressed() || hovered()) &&
+        !ctx.theme.high_contrast)
         text_color = pressed() ? ctx.theme.palette.accent_pressed : ctx.theme.palette.accent_hover;
     const bool leading_icon = icon_leading_ && !icon_svg_.empty();
     // Centre the whole icon + gap + label group, so a leading-icon button
@@ -385,10 +414,13 @@ void ToggleButton::paint(PaintCtx& ctx)
         ctx.canvas.fill_rounded_rect(bounds_, kControlsBtnRadius,
                                      ctx.theme.palette.sidebar_selected);
     }
-    set_icon_color_override(checked_
-                                ? std::optional<Color>(checked_tint_.value_or(
-                                      ctx.theme.palette.accent))
-                                : unchecked_tint_);
+    // High Contrast: the selected fill is Highlight, so the accent tint would
+    // vanish; use the on-selection colour.
+    set_icon_color_override(
+        checked_ ? std::optional<Color>(ctx.theme.high_contrast
+                                            ? ctx.theme.palette.selected_text
+                                            : checked_tint_.value_or(ctx.theme.palette.accent))
+                 : unchecked_tint_);
     Button::paint(ctx);
 }
 
@@ -461,7 +493,7 @@ void SwitchButton::paint(PaintCtx& ctx)
     {
         float ly = bounds_.y + (bounds_.h - cached_size_.h) * 0.5f;
         ctx.canvas.draw_text(*cached_, {bounds_.x, ly},
-                             enabled_ ? pal.text_primary : pal.text_muted);
+                             enabled_ ? pal.text_primary : pal.text_disabled);
     }
 
     // Switch track + knob — right-aligned.
@@ -738,7 +770,7 @@ void CheckButton::paint(PaintCtx& ctx)
         float lx = bounds_.x + kCbBoxSize + kCbGap;
         float ly = bounds_.y + (bounds_.h - label_size_.h) * 0.5f;
         ctx.canvas.draw_text(*label_layout_, {lx, ly},
-                             enabled_ ? pal.text_primary : pal.text_muted);
+                             enabled_ ? pal.text_primary : pal.text_disabled);
     }
 }
 

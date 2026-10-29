@@ -779,6 +779,8 @@ void RoomMediaView::paint_grid_row_(std::size_t index, tk::PaintCtx& ctx,
     // MediaStrip — a row-level hover tint (not per-cell; see MediaGridList's
     // doc comment on the simplified click/press model).
     cv.fill_rect(bounds, hovered ? pal.subtle_hover : pal.bg);
+    if (hovered)
+        tk::paint_hc_hover_outline(cv, ctx.theme, bounds);
     for (std::size_t i = 0; i < row.items.size(); ++i)
     {
         const float cx = bounds.x + kPadX +

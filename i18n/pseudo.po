@@ -7422,3 +7422,7 @@ msgstr "[Shöw tímézöñé dïffèrèñcé ñéxt tö ñàmés xxxxxxxxxx]"
 
 msgid "{0} ({1} from you): {2}"
 msgstr "[{0} ({1} frö̀m yöù): {2}xxx]"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "The theme follows your system's high contrast setting."
+msgstr "[Thé thémé föllöws yöùr systém's hïgh çöñtràst séttïñg.xxxxxxxxxx]"

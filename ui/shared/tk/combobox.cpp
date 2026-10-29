@@ -89,8 +89,13 @@ public:
             const float ry = bounds_.y + kDropRowH * static_cast<float>(i);
             const Rect row{bounds_.x, ry, bounds_.w, kDropRowH};
 
-            if (i == hovered_)
-                ctx.canvas.fill_rect(row, pal.subtle_hover);
+            const bool hot = i == hovered_;
+            if (hot)
+                ctx.canvas.fill_rect(row, hot_row_fill(ctx.theme));
+            // High Contrast: the hot row is Highlight-filled, so draw on it
+            // with the on-selection colour.
+            const Color text_col =
+                hot && ctx.theme.high_contrast ? pal.selected_text : pal.text_primary;
 
             auto& layout = layouts_[static_cast<std::size_t>(i)];
             if (!layout)
@@ -106,7 +111,7 @@ public:
             {
                 const Size  sz = layout->measure();
                 const float ty = ry + (kDropRowH - sz.h) * 0.5f;
-                ctx.canvas.draw_text(*layout, {row.x + kHPad, ty}, pal.text_primary);
+                ctx.canvas.draw_text(*layout, {row.x + kHPad, ty}, text_col);
             }
 
             if (opt.value == selected_value_)
@@ -115,7 +120,9 @@ public:
                 const Rect ck{row.x + row.w - kHPad - kCheckPx,
                               ry + (kDropRowH - kCheckPx) * 0.5f, kCheckPx, kCheckPx};
                 check_icon_.draw(ctx.canvas, ctx.factory, check_icon_svg(), ck,
-                                 kCheckPx, pal.accent);
+                                 kCheckPx,
+                                 hot && ctx.theme.high_contrast ? pal.selected_text
+                                                                : pal.accent);
             }
         }
     }

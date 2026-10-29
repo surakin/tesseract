@@ -49,7 +49,7 @@ RoomPermissionsSection::RoomPermissionsSection()
     auto lockout_warning = tk::create_widget<tk::Label>(
         this, tk::tr("This change would prevent you from editing permissions again."),
         tk::FontRole::Body);
-    lockout_warning->set_colour(tk::Color::rgb(0xcc3333));
+    lockout_warning->set_tone(tk::Label::Tone::Error);
     lockout_warning_ = add_widget(std::move(lockout_warning));
     lockout_warning_->set_visible(false);
 
@@ -62,7 +62,7 @@ RoomPermissionsSection::RoomPermissionsSection()
         tk::tr("No one else in this room would be able to edit permissions "
                "if you did this."),
         tk::FontRole::Body);
-    other_admin_warning->set_colour(tk::Color::rgb(0xcc3333));
+    other_admin_warning->set_tone(tk::Label::Tone::Error);
     other_admin_warning_ = add_widget(std::move(other_admin_warning));
     other_admin_warning_->set_visible(false);
 

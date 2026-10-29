@@ -19,6 +19,7 @@
 #include "app/ScreenshotFixture.h"
 #endif
 #include "tk/audio_playback.h"
+#include "tk/canvas_d2d.h"
 #include "tk/i18n.h"
 #include "app/jxl_decode.h"
 #include "tk/image_sniff.h"
@@ -505,7 +506,10 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
                     SelectObject(hdc, is_link && link_font ? link_font
                                                            : small_font);
                     SetTextColor(hdc,
-                                 is_link ? pal.accent : pal.text_secondary);
+                                 !is_link ? pal.text_secondary
+                                 : theme::high_contrast()
+                                     ? GetSysColor(COLOR_HOTLIGHT)
+                                     : pal.accent);
                     SIZE sz{};
                     GetTextExtentPoint32W(hdc, run.c_str(),
                                           static_cast<int>(run.size()), &sz);
@@ -667,6 +671,23 @@ std::optional<tk::Color> MainWindow::os_accent_color_() const
     return cr_to_tk(win32::theme::accent_colorref());
 }
 
+std::optional<tk::HighContrastColors> MainWindow::os_high_contrast_() const
+{
+    if (!win32::theme::high_contrast())
+    {
+        return std::nullopt;
+    }
+    return tk::HighContrastColors{
+        cr_to_tk(GetSysColor(COLOR_WINDOW)),
+        cr_to_tk(GetSysColor(COLOR_WINDOWTEXT)),
+        cr_to_tk(GetSysColor(COLOR_HIGHLIGHT)),
+        cr_to_tk(GetSysColor(COLOR_HIGHLIGHTTEXT)),
+        cr_to_tk(GetSysColor(COLOR_HOTLIGHT)),
+        cr_to_tk(GetSysColor(COLOR_GRAYTEXT)),
+        cr_to_tk(GetSysColor(COLOR_BTNFACE)),
+        cr_to_tk(GetSysColor(COLOR_BTNTEXT))};
+}
+
 void MainWindow::apply_fonts_ui_()
 {
     // Drop the GDI fonts built from the old config, then hand the rebuilt ones
@@ -689,11 +710,49 @@ void MainWindow::apply_native_theme_(const tk::Theme& t)
                               cref(t.palette.accent_hover),
                               cref(t.palette.accent_pressed),
                               cref(t.palette.text_on_accent)});
+    if (t.high_contrast)
+    {
+        const auto& p = t.palette;
+        const win32::theme::Palette pal{
+            cref(p.bg),
+            cref(p.sidebar_bg),
+            cref(p.sidebar_selected),
+            cref(p.sidebar_hover),
+            cref(p.chrome_bg),
+            cref(p.compose_card_bg),
+            cref(p.border),
+            cref(p.separator),
+            cref(p.text_primary),
+            cref(p.text_secondary),
+            cref(p.text_muted),
+            cref(p.text_on_accent),
+            cref(p.accent),
+            cref(p.accent_hover),
+            cref(p.accent_pressed),
+            cref(p.subtle_hover),
+            cref(p.subtle_pressed),
+            cref(p.chip_bg),
+            cref(p.chip_bg_me),
+            cref(p.chip_border),
+            cref(p.chip_border_me),
+            cref(p.chip_text),
+            cref(p.chip_text_me),
+            cref(p.unread_bg),
+            cref(p.unread_text)};
+        win32::theme::set_palette_override(&pal);
+    }
+    else
+    {
+        win32::theme::set_palette_override(nullptr);
+    }
+    tk::d2d::set_link_color(t.high_contrast ? std::optional<tk::Color>(t.palette.link)
+                                            : std::nullopt);
     win32::theme::apply_window_attributes(hwnd_);
     InvalidateRect(hwnd_, nullptr, TRUE);
     if (hStatus_)
     {
         InvalidateRect(hStatus_, nullptr, TRUE);
+        on_inflight_ui_(); // the dot colours follow the theme in High Contrast
     }
 }
 
@@ -1144,8 +1203,10 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
     case WM_SYSCOLORCHANGE:
         // High Contrast scheme edits change the system colors the title bar
         // paints with.
+        theme::refresh_high_contrast();
         theme::apply_window_attributes(hwnd);
         self->title_bar_.invalidate_strip(hwnd);
+        self->apply_current_theme_();
         return 0;
 
     case WM_SETTINGCHANGE:
@@ -1155,6 +1216,7 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             theme::refresh_high_contrast();
             theme::apply_window_attributes(hwnd);
             self->title_bar_.invalidate_strip(hwnd);
+            self->apply_current_theme_();
             return 0;
         }
         if (wParam == SPI_SETNONCLIENTMETRICS)

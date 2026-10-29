@@ -51,6 +51,19 @@ public:
         colour_ = c;
         return *this;
     }
+    // A theme-resolved colour used while no explicit colour is set, so the
+    // label follows theme changes (including High Contrast).
+    enum class Tone
+    {
+        Normal,
+        Error,  // palette.text_error
+        Notice, // palette.notice_text
+    };
+    Label& set_tone(Tone t)
+    {
+        tone_ = t;
+        return *this;
+    }
     Label& set_halign(TextHAlign a)
     {
         halign_ = a;
@@ -102,7 +115,8 @@ private:
 
     std::string text_;
     FontRole role_;
-    std::optional<Color> colour_; // null = theme.text_primary
+    std::optional<Color> colour_; // null = by tone_
+    Tone tone_ = Tone::Normal;
     TextHAlign halign_ = TextHAlign::Leading;
     bool wrap_ = false;
     TextTrim trim_ = TextTrim::None;

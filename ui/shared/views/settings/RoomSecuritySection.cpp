@@ -26,7 +26,7 @@ RoomSecuritySection::RoomSecuritySection()
 
     auto enc_warning = tk::create_widget<tk::Label>(
         this, tk::tr("Once enabled, encryption cannot be turned off."), tk::FontRole::Body);
-    enc_warning->set_colour(tk::Color::rgb(0xcc3333));
+    enc_warning->set_tone(tk::Label::Tone::Error);
     encryption_warning_ = enc_group->add_widget(std::move(enc_warning));
     encryption_warning_->set_visible(false);
 

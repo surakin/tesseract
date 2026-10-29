@@ -30,6 +30,7 @@ public:
     {
         items_ = items;
         icon_cache_.clear();
+        icon_tint_.assign(items_.size(), tk::Color{});
         icon_cache_.resize(items_.size()); // null entries; rebuilt lazily in paint()
         hovered_index_ = -1;
         pressed_index_ = -1;
@@ -111,13 +112,19 @@ public:
                 continue;
             }
 
-            if (i == hovered_index_)
-                ctx.canvas.fill_rect(row, pal.subtle_hover);
+            const bool hot = i == hovered_index_;
+            if (hot)
+                ctx.canvas.fill_rect(row, tk::hot_row_fill(ctx.theme));
 
+            // High Contrast: the hot row is Highlight-filled, so everything on
+            // it (including destructive and dimmed items) uses selected_text.
             const tk::Color text_col =
-                !item.enabled       ? pal.text_secondary // dimmed
-                : item.destructive  ? pal.destructive
-                                     : pal.text_primary;
+                hot && ctx.theme.high_contrast ? pal.selected_text
+                : !item.enabled                ? pal.text_secondary // dimmed
+                : item.destructive             ? pal.destructive
+                                               : pal.text_primary;
+            const tk::Color glyph_col =
+                hot && ctx.theme.high_contrast ? pal.selected_text : pal.text_secondary;
 
             // Icon (left-aligned, vertically centred). Prefer an SVG icon tinted to
             // the row colour; fall back to the Unicode glyph.
@@ -125,11 +132,17 @@ public:
             if (!item.svg_icon.empty())
             {
                 auto& cached = icon_cache_[std::size_t(i)];
+                auto& tint   = icon_tint_[std::size_t(i)];
+                if (cached && !(tint == text_col))
+                    cached.reset(); // hot-row colour differs from the cached tint
                 if (!cached)
+                {
+                    tint = text_col;
                     cached = tk::rasterize_svg(
                         ctx.factory, item.svg_icon,
                         std::max(1, int(std::lround(kMenuIconPx * scale))),
                         text_col);
+                }
                 if (cached)
                     ctx.canvas.draw_image(
                         *cached,
@@ -143,8 +156,7 @@ public:
                 if (gl)
                 {
                     float gy = row.y + (row.h - gl->ascent()) * 0.5f;
-                    ctx.canvas.draw_text(*gl, {row.x + kGlyphX, gy},
-                                         pal.text_secondary);
+                    ctx.canvas.draw_text(*gl, {row.x + kGlyphX, gy}, glyph_col);
                 }
                 label_x = row.x + kTextX;
             }
@@ -286,6 +298,7 @@ private:
     // Per-item rasterized SVG icons (Item::svg_icon), tinted to the row colour.
     // Rebuilt when items change (set_items) or the canvas DPI scale changes.
     std::vector<std::unique_ptr<tk::Image>> icon_cache_;
+    std::vector<tk::Color> icon_tint_; // tint each icon_cache_ slot was rasterized with
     float icon_scale_ = -1.0f;
 };
 

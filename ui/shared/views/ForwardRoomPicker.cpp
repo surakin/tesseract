@@ -90,7 +90,10 @@ public:
         if (checked)
             ctx.canvas.fill_rect(bounds, ctx.theme.palette.sidebar_selected);
         else if (hovered)
+        {
             ctx.canvas.fill_rect(bounds, ctx.theme.palette.sidebar_hover);
+            tk::paint_hc_hover_outline(ctx.canvas, ctx.theme, bounds);
+        }
 
         const float avatar_cx = bounds.x + kForwardRoomPickerPadX + kForwardRoomPickerAvatarSize * 0.5f;
         const float avatar_cy = bounds.y + bounds.h * 0.5f;
@@ -123,15 +126,22 @@ public:
             ctx.canvas.draw_text(
                 *name_lo,
                 {text_x, bounds.y + (bounds.h - sz.h) * 0.5f},
-                ctx.theme.palette.text_primary);
+                checked ? tk::on_selected(ctx.theme, ctx.theme.palette.text_primary)
+                        : ctx.theme.palette.text_primary);
         }
 
+        // High Contrast: the checked row is Highlight-filled, so invert the
+        // accent check disc.
+        const bool hc_sel = checked && ctx.theme.high_contrast;
         paint_check_circle(ctx.canvas, ctx.factory, check_icon_, kCheckSvg,
                            {bounds.x + bounds.w - kCheckPadR - kCheckSize * 0.5f,
                             bounds.y + bounds.h * 0.5f},
-                           checked, ctx.theme.palette.accent,
-                           ctx.theme.palette.text_on_accent,
-                           ctx.theme.palette.popup_border);
+                           checked,
+                           hc_sel ? ctx.theme.palette.selected_text : ctx.theme.palette.accent,
+                           hc_sel ? ctx.theme.palette.sidebar_selected
+                                  : ctx.theme.palette.text_on_accent,
+                           hc_sel ? ctx.theme.palette.selected_text
+                                  : ctx.theme.palette.popup_border);
     }
 
 private:

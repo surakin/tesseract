@@ -18,6 +18,15 @@ namespace tesseract::views
 
 namespace
 {
+// Topic spans for painting: syntax colours are dropped in High Contrast.
+std::vector<tk::TextSpan> themed_spans(std::vector<tk::TextSpan> spans,
+                                       const tk::Theme& theme)
+{
+    if (theme.high_contrast)
+        flatten_span_colours(spans);
+    return spans;
+}
+
 
 constexpr float kRoomHeaderPadX = 16.0f;
 constexpr float kRoomHeaderAvatarSize = 40.0f;
@@ -442,7 +451,7 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
                 ts.trim = tk::TextTrim::Ellipsis;
                 ts.max_width = topic_rect_.w;
                 topic_layout_ =
-                    ctx.factory.build_rich_text(topic_display_spans_, ts);
+                    ctx.factory.build_rich_text(themed_spans(topic_display_spans_, ctx.theme), ts);
                 if (topic_multiline_)
                 {
                     topic_truncated_ = true;
@@ -454,7 +463,7 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
                         tk::TextStyle ts_nat{};
                         ts_nat.role = tk::FontRole::SidebarPreview;
                         auto nat = ctx.factory.build_rich_text(
-                            topic_display_spans_, ts_nat);
+                            themed_spans(topic_display_spans_, ctx.theme), ts_nat);
                         topic_natural_w_ = nat ? nat->measure().w : 0.0f;
                     }
                     topic_truncated_ = topic_natural_w_ > topic_rect_.w;
@@ -617,7 +626,7 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
             ts.trim = tk::TextTrim::Ellipsis;
             ts.max_width = text_w;
             topic_layout_ =
-                ctx.factory.build_rich_text(topic_display_spans_, ts);
+                ctx.factory.build_rich_text(themed_spans(topic_display_spans_, ctx.theme), ts);
 
             if (topic_multiline_)
             {
@@ -630,7 +639,7 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
                     tk::TextStyle ts_nat{};
                     ts_nat.role = tk::FontRole::SidebarPreview;
                     auto nat =
-                        ctx.factory.build_rich_text(topic_display_spans_,
+                        ctx.factory.build_rich_text(themed_spans(topic_display_spans_, ctx.theme),
                                                     ts_nat);
                     topic_natural_w_ = nat ? nat->measure().w : 0.0f;
                 }

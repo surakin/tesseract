@@ -194,14 +194,18 @@ public:
         const auto* entry = owner_.entry_at_(index);
         if (!entry)
             return;
-        const auto& pal = ctx.theme.palette;
+        const auto pal = tk::row_palette(ctx.theme, selected);
 
         if (selected)
             ctx.canvas.fill_rounded_rect(bounds, tesseract::visual::kRadiusSM,
                                          pal.sidebar_selected);
         else if (hovered)
+        {
             ctx.canvas.fill_rounded_rect(bounds, tesseract::visual::kRadiusSM,
                                          pal.sidebar_hover);
+            tk::paint_hc_hover_outline(ctx.canvas, ctx.theme, bounds,
+                                       tesseract::visual::kRadiusSM);
+        }
 
         const tesseract::RoomInfo& info = entry->info;
         const bool loading = !entry->joined && info.name.empty();

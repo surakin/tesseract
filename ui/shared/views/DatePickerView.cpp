@@ -305,7 +305,7 @@ void DatePickerView::paint_overlay(tk::PaintCtx& ctx)
             }
             else if (is_hovered && cell.enabled)
             {
-                c.fill_rounded_rect(cr, kCellCircleD * 0.5f, pal.subtle_hover);
+                c.fill_rounded_rect(cr, kCellCircleD * 0.5f, tk::hot_row_fill(ctx.theme));
             }
 
             // Day number text
@@ -316,6 +316,9 @@ void DatePickerView::paint_overlay(tk::PaintCtx& ctx)
                     text_col = pal.text_on_accent;
                 else if (!cell.enabled || !cell.in_month)
                     text_col = pal.text_muted;
+                else if (is_hovered && ctx.theme.high_contrast &&
+                         !cell.is_today)
+                    text_col = pal.selected_text; // on the Highlight hover fill
                 else
                     text_col = pal.text_primary;
 

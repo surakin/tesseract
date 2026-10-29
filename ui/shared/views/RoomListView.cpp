@@ -501,6 +501,8 @@ private:
                              hovered
                                  ? ctx.theme.palette.section_header_hover
                                  : ctx.theme.palette.section_header_bg);
+        if (hovered)
+            tk::paint_hc_hover_outline(ctx.canvas, ctx.theme, bounds);
 
         // Build the title string. Invitations and Inactive sections include counts.
         std::string title_str;
@@ -702,7 +704,7 @@ private:
                 ctx.theme.palette.sidebar_selected, ctx.theme.palette.accent,
                 kActiveTintAlpha / 255.0f);
             ctx.canvas.fill_rounded_rect(highlight, tesseract::visual::kRadiusSM,
-                                         ctx.theme.palette.accent);
+                                         tk::on_selected(ctx.theme, ctx.theme.palette.accent));
             const tk::Rect punch{highlight.x + kActiveBarW, highlight.y,
                                  highlight.w - kActiveBarW, highlight.h};
             ctx.canvas.fill_rounded_rect(punch, tesseract::visual::kRadiusSM,
@@ -722,8 +724,15 @@ private:
                     static_cast<std::uint8_t>(fade * 255.0f));
                 ctx.canvas.fill_rounded_rect(highlight, tesseract::visual::kRadiusSM,
                                              fill);
+                tk::paint_hc_hover_outline(ctx.canvas, ctx.theme, highlight,
+                                           tesseract::visual::kRadiusSM);
             }
         }
+
+        // Contents of a selected row sit on the selection fill; in High
+        // Contrast that is Highlight, so text/badges/icons use the inverse.
+        const auto pal = tk::row_palette(ctx.theme, selected);
+        const bool hc_sel = selected && ctx.theme.high_contrast;
 
         // Avatar circle (left-aligned, vertically centred).
         float avatar_cx = bounds.x + kRoomListPadX + owner_.avatar_size_() * 0.5f;
@@ -742,8 +751,8 @@ private:
         }
 
         draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, owner_.avatar_size_(),
-                    room.name, ctx.theme.palette.avatar_initials_bg,
-                    ctx.theme.palette.avatar_initials_text);
+                    room.name, pal.avatar_initials_bg,
+                    pal.avatar_initials_text);
 
         // Presence dot — bottom-right of avatar, DM rooms only.
         if (!room.dm_counterpart_user_id.empty() && owner_.presence_provider_)
@@ -753,11 +762,11 @@ private:
             bool show_dot = true;
             if (ps == tesseract::PresenceState::Online)
             {
-                dot_color = ctx.theme.palette.presence_online;
+                dot_color = hc_sel ? pal.selected_text : pal.presence_online;
             }
             else if (ps == tesseract::PresenceState::Unavailable)
             {
-                dot_color = ctx.theme.palette.presence_unavailable;
+                dot_color = hc_sel ? pal.selected_text : pal.presence_unavailable;
             }
             else
             {
@@ -770,9 +779,9 @@ private:
                 const float outer_d   = kDotD + kRing * 2.0f;
                 const float dot_cx    = avatar_cx + owner_.avatar_size_() * 0.5f;
                 const float dot_cy    = avatar_cy + owner_.avatar_size_() * 0.5f;
-                const tk::Color ring_col = selected ? ctx.theme.palette.sidebar_selected
-                                         : hovered  ? ctx.theme.palette.sidebar_hover
-                                                    : ctx.theme.palette.sidebar_bg;
+                const tk::Color ring_col = selected ? pal.sidebar_selected
+                                         : hovered  ? pal.sidebar_hover
+                                                    : pal.sidebar_bg;
                 ctx.canvas.fill_rounded_rect(
                     {dot_cx - outer_d * 0.5f, dot_cy - outer_d * 0.5f,
                      outer_d, outer_d},
@@ -780,6 +789,15 @@ private:
                 ctx.canvas.fill_rounded_rect(
                     {dot_cx - kDotD * 0.5f, dot_cy - kDotD * 0.5f, kDotD, kDotD},
                     kDotD * 0.5f, dot_color);
+                // High Contrast, selected row: both states are the same colour
+                // on Highlight, so show "away" as a ring.
+                if (hc_sel && ps == tesseract::PresenceState::Unavailable)
+                {
+                    constexpr float kHole = 4.0f;
+                    ctx.canvas.fill_rounded_rect(
+                        {dot_cx - kHole * 0.5f, dot_cy - kHole * 0.5f, kHole, kHole},
+                        kHole * 0.5f, ring_col);
+                }
             }
         }
 
@@ -944,7 +962,7 @@ private:
                 (name_band.h - cache.name_layout->measure().h) * 0.5f;
             tk::ClipScope clip(ctx.canvas, name_band);
             ctx.canvas.draw_text(*cache.name_layout, {text_x, name_y},
-                                 ctx.theme.palette.text_primary);
+                                 pal.text_primary);
         }
 
         if (has_preview)
@@ -987,7 +1005,7 @@ private:
                 const float prev_y = baseline_y - cache.preview_layout->ascent();
                 tk::ClipScope clip(ctx.canvas, preview_area);
                 ctx.canvas.draw_text(*cache.preview_layout, {text_x, prev_y},
-                                     ctx.theme.palette.text_secondary);
+                                     pal.text_secondary);
             }
 
             if (thumb)
@@ -1016,11 +1034,11 @@ private:
                           bounds.y + (bounds.h - badge_h()) * 0.5f,
                           pill_w, badge_h()};
             const bool      is_mention = room.highlight_count > 0;
-            const tk::Color pill_bg    = is_mention ? ctx.theme.palette.accent
-                                                    : ctx.theme.palette.unread_bg;
+            const tk::Color pill_bg    = is_mention ? pal.accent
+                                                    : pal.unread_bg;
             const tk::Color pill_text  = is_mention
-                                             ? ctx.theme.palette.text_on_accent
-                                             : ctx.theme.palette.unread_text;
+                                             ? pal.text_on_accent
+                                             : pal.unread_text;
             ctx.canvas.fill_rounded_rect(pill, (badge_h() * 0.5f), pill_bg);
             ctx.canvas.draw_text(*cache.badge_layout,
                                  {pill.x + (pill.w - badge_sz.w) * 0.5f,
@@ -1035,7 +1053,7 @@ private:
                          bounds.y + (bounds.h - kDotSize) * 0.5f,
                          kDotSize, kDotSize};
             ctx.canvas.fill_rounded_rect(dot, kDotSize * 0.5f,
-                                         ctx.theme.palette.unread_bg);
+                                         pal.unread_bg);
         }
 
         if (room.has_active_call)
@@ -1045,7 +1063,7 @@ private:
                               kCallIconPx, kCallIconPx};
             owner_.call_icon_.draw(ctx.canvas, ctx.factory, kPhoneSvg,
                                    icon_box, kCallIconPx,
-                                   ctx.theme.palette.accent);
+                                   pal.accent);
         }
     }
 
@@ -1083,6 +1101,8 @@ private:
                     hl, tesseract::visual::kRadiusSM,
                     pal.sidebar_hover.with_alpha(
                         static_cast<std::uint8_t>(fade * 255.0f)));
+                tk::paint_hc_hover_outline(ctx.canvas, ctx.theme, hl,
+                                           tesseract::visual::kRadiusSM);
             }
         }
 
@@ -1185,6 +1205,8 @@ private:
     void paint_invite(const tesseract::InviteInfo& inv, tk::PaintCtx& ctx,
                       tk::Rect bounds, bool selected, bool hovered)
     {
+        const auto pal = tk::row_palette(ctx.theme, selected);
+
         // Row background — same treatment as room rows.
         if (selected || hovered)
         {
@@ -1196,6 +1218,9 @@ private:
                 bounds.w - 2.0f * tesseract::visual::kSpaceXS,
                 bounds.h};
             ctx.canvas.fill_rounded_rect(highlight, tesseract::visual::kRadiusSM, fill);
+            if (!selected)
+                tk::paint_hc_hover_outline(ctx.canvas, ctx.theme, highlight,
+                                           tesseract::visual::kRadiusSM);
             if (selected)
             {
                 // Selection here is otherwise color-fill-only, at a
@@ -1204,7 +1229,7 @@ private:
                 tk::ClipScope clip(ctx.canvas, highlight, tesseract::visual::kRadiusSM);
                 ctx.canvas.fill_rect(
                     {highlight.x, highlight.y, kActiveBarW, highlight.h},
-                    ctx.theme.palette.accent);
+                    pal.accent);
             }
         }
 
@@ -1231,8 +1256,8 @@ private:
         }
 
         draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, owner_.avatar_size_(),
-                    initials_name, ctx.theme.palette.avatar_initials_bg,
-                    ctx.theme.palette.avatar_initials_text);
+                    initials_name, pal.avatar_initials_bg,
+                    pal.avatar_initials_text);
 
         // Text column geometry (no badge reserved).
         float text_x = bounds.x + kRoomListPadX + owner_.avatar_size_() + kRoomListAvatarGap;
@@ -1293,7 +1318,7 @@ private:
                 (name_band.h - cache.name_layout->measure().h) * 0.5f;
             tk::ClipScope clip(ctx.canvas, name_band);
             ctx.canvas.draw_text(*cache.name_layout, {text_x, name_y},
-                                 ctx.theme.palette.text_primary);
+                                 pal.text_primary);
         }
         if (cache.preview_layout && !owner_.compact_)
         {
@@ -1301,13 +1326,15 @@ private:
                 bounds.y + bounds.h * 0.5f +
                 (bounds.h * 0.5f - cache.preview_layout->measure().h) * 0.5f;
             ctx.canvas.draw_text(*cache.preview_layout, {text_x, prev_y},
-                                 ctx.theme.palette.text_secondary);
+                                 pal.text_secondary);
         }
     }
 
     void paint_knock_row(const tesseract::KnockedRoomInfo& k, tk::PaintCtx& ctx,
                          tk::Rect bounds, bool selected, bool hovered)
     {
+        const auto pal = tk::row_palette(ctx.theme, selected);
+
         // Row background — same treatment as invite/room rows.
         if (selected || hovered)
         {
@@ -1319,12 +1346,15 @@ private:
                 bounds.w - 2.0f * tesseract::visual::kSpaceXS,
                 bounds.h};
             ctx.canvas.fill_rounded_rect(highlight, tesseract::visual::kRadiusSM, fill);
+            if (!selected)
+                tk::paint_hc_hover_outline(ctx.canvas, ctx.theme, highlight,
+                                           tesseract::visual::kRadiusSM);
             if (selected)
             {
                 tk::ClipScope clip(ctx.canvas, highlight, tesseract::visual::kRadiusSM);
                 ctx.canvas.fill_rect(
                     {highlight.x, highlight.y, kActiveBarW, highlight.h},
-                    ctx.theme.palette.accent);
+                    pal.accent);
             }
         }
 
@@ -1341,8 +1371,8 @@ private:
         }
 
         draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, owner_.avatar_size_(),
-                    initials_name, ctx.theme.palette.avatar_initials_bg,
-                    ctx.theme.palette.avatar_initials_text);
+                    initials_name, pal.avatar_initials_bg,
+                    pal.avatar_initials_text);
 
         float text_x = bounds.x + kRoomListPadX + owner_.avatar_size_() + kRoomListAvatarGap;
         float text_w = bounds.w - (text_x - bounds.x) - kRoomListPadX;
@@ -1390,7 +1420,7 @@ private:
                 (name_band.h - cache.name_layout->measure().h) * 0.5f;
             tk::ClipScope clip(ctx.canvas, name_band);
             ctx.canvas.draw_text(*cache.name_layout, {text_x, name_y},
-                                 ctx.theme.palette.text_primary);
+                                 pal.text_primary);
         }
         if (cache.preview_layout && !owner_.compact_)
         {
@@ -1398,7 +1428,7 @@ private:
                 bounds.y + bounds.h * 0.5f +
                 (bounds.h * 0.5f - cache.preview_layout->measure().h) * 0.5f;
             ctx.canvas.draw_text(*cache.preview_layout, {text_x, prev_y},
-                                 ctx.theme.palette.text_secondary);
+                                 pal.text_secondary);
         }
     }
 
@@ -1406,7 +1436,7 @@ private:
                              tk::PaintCtx& ctx, tk::Rect bounds,
                              bool selected, bool hovered)
     {
-        const auto& pal = ctx.theme.palette;
+        const auto pal = tk::row_palette(ctx.theme, selected);
 
         if (selected || hovered)
         {
@@ -1418,6 +1448,9 @@ private:
             ctx.canvas.fill_rounded_rect(
                 highlight, tesseract::visual::kRadiusSM,
                 selected ? pal.sidebar_selected : pal.sidebar_hover);
+            if (!selected)
+                tk::paint_hc_hover_outline(ctx.canvas, ctx.theme, highlight,
+                                           tesseract::visual::kRadiusSM);
             if (selected)
             {
                 tk::ClipScope clip(ctx.canvas, highlight, tesseract::visual::kRadiusSM);
@@ -1454,7 +1487,7 @@ private:
         if (text_w < 0) text_w = 0;
 
         // Name + members/join-rule on two lines, muted to signal unjoined.
-        constexpr std::uint8_t kAlpha = 153; // ~60%
+        const std::uint8_t kAlpha = ctx.theme.high_contrast ? 255 : 153; // ~60%; no dimming in High Contrast
 
         const std::string display = loading ? tk::tr("Loading\xe2\x80\xa6") : s.name;
         std::string meta;

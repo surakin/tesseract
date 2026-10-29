@@ -88,7 +88,8 @@ void paint_room_chips(tk::PaintCtx& ctx, tk::Rect strip,
         {
             ctx.canvas.draw_text(*lo,
                                  {chip.x, chip_y + style.avatar_size + kLabelGap},
-                                 pal.text_primary);
+                                 highlighted ? tk::on_selected(ctx.theme, pal.text_primary)
+                                             : pal.text_primary);
         }
 
         out_chips.push_back({chip, room.id});

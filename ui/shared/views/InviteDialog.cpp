@@ -117,7 +117,10 @@ public:
         if (row.state == RowState::Selected)
             ctx.canvas.fill_rect(bounds, pal.sidebar_selected);
         else if (enabled && (hovered || selected))
+        {
             ctx.canvas.fill_rect(bounds, pal.sidebar_hover);
+            tk::paint_hc_hover_outline(ctx.canvas, ctx.theme, bounds);
+        }
 
         const std::string& name = row.user.display_name.empty()
                                       ? row.user.user_id
@@ -161,7 +164,12 @@ public:
         const float text_x =
             bounds.x + kInvitePadX + kInviteAvatar + kInviteAvatarGap;
         const float text_w = std::max(0.0f, bounds.x + bounds.w - text_x - right_w);
-        const tk::Color name_color = enabled ? pal.text_primary : pal.text_muted;
+        const bool sel_row = row.state == RowState::Selected;
+        const tk::Color name_color =
+            sel_row ? tk::on_selected(ctx.theme, pal.text_primary)
+                    : (enabled ? pal.text_primary : pal.text_muted);
+        const tk::Color id_color =
+            sel_row ? tk::on_selected(ctx.theme, pal.text_muted) : pal.text_muted;
 
         tk::TextStyle ns{};
         ns.role      = tk::FontRole::SidebarName;
@@ -184,7 +192,7 @@ public:
             ctx.canvas.draw_text(*name_lo, {text_x, ty}, name_color);
         ty += name_h;
         if (id_lo)
-            ctx.canvas.draw_text(*id_lo, {text_x, ty}, pal.text_muted);
+            ctx.canvas.draw_text(*id_lo, {text_x, ty}, id_color);
 
         const float cy = bounds.y + bounds.h * 0.5f;
         if (status_lo)
@@ -197,11 +205,14 @@ public:
         }
         else
         {
+            // High Contrast: a selected row is Highlight-filled, so invert the disc.
+            const bool hc_sel = sel_row && ctx.theme.high_contrast;
             paint_check_circle(
                 ctx.canvas, ctx.factory, check_icon_, kCheckSvg,
                 {bounds.x + bounds.w - kInviteCheckPadR - kCheckCircleSize * 0.5f, cy},
-                row.state == RowState::Selected, pal.accent, pal.text_on_accent,
-                pal.popup_border);
+                sel_row, hc_sel ? pal.selected_text : pal.accent,
+                hc_sel ? pal.sidebar_selected : pal.text_on_accent,
+                hc_sel ? pal.selected_text : pal.popup_border);
         }
     }
 

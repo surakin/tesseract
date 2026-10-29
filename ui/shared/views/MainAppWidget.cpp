@@ -125,6 +125,7 @@ public:
             ctx.canvas.fill_rounded_rect(
                 r, kHoverRadius,
                 header_pressed_ ? pal.subtle_pressed : pal.subtle_hover);
+            tk::paint_hc_hover_outline(ctx.canvas, ctx.theme, r, kHoverRadius);
         }
 
         if (name_lbl_)
@@ -388,8 +389,8 @@ public:
 
     void paint(tk::PaintCtx& ctx) override
     {
-        constexpr tk::Color kBg{0xFF, 0xB3, 0x00, 0xFF};
-        constexpr tk::Color kFg{0x33, 0x26, 0x00, 0xFF};
+        const tk::Color kBg = ctx.theme.palette.warning_bg;
+        const tk::Color kFg = ctx.theme.palette.warning_text;
         ctx.canvas.fill_rect(bounds_, kBg);
         if (!layout_)
         {

@@ -50,7 +50,8 @@ and in-progress work, as a single backlog ordered by priority/urgency.
   nothing has been driven with a real screen reader yet (Orca on Qt6 first,
   then GTK4, Narrator/NVDA, VoiceOver). Phase 5's keyboard-only audit is
   done (2026-10-04) bar a live keyboard-only walkthrough per platform; the
-  high-contrast theme and reduce-motion still need their own plan.
+  high-contrast theme is done on Windows (other shells still return no
+  `os_high_contrast_()`); reduce-motion still needs its own plan.
 - **Qt6: multi-line native text areas still paint on screen.** `NavLineEdit`
   now paints only while captured via `render()`, because `WA_DontShowOnScreen`
   does nothing for a child widget; `QtNativeTextArea` (composer and other

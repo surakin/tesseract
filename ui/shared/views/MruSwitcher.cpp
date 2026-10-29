@@ -163,7 +163,8 @@ void MruSwitcher::paint(tk::PaintCtx& ctx)
     style.highlight_index = selected_;
     style.highlight_fill = ctx.theme.palette.sidebar_selected;
     style.highlight_border = true;
-    style.highlight_border_color = ctx.theme.palette.accent;
+    style.highlight_border_color =
+        tk::on_selected(ctx.theme, ctx.theme.palette.accent);
 
     chip_areas_.paint(ctx); // hover/press fill, behind the chips
     paint_room_chips(ctx, card_rect_, rooms_, avatar_provider_,

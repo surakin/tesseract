@@ -1810,6 +1810,14 @@ protected:
         return std::nullopt;
     }
 
+    // Returns the OS High Contrast colours while that mode is on, else
+    // nullopt. When set, apply_current_theme_() uses them instead of the
+    // theme and accent settings. Called on the UI thread only.
+    virtual std::optional<tk::HighContrastColors> os_high_contrast_() const
+    {
+        return std::nullopt;
+    }
+
     // Apply a theme to the whole window: the OS chrome (apply_native_theme_),
     // every surface (the shell's own through for_each_shell_surface_, and the
     // settings, login, composer-popup, pop-out and call windows owned here),
@@ -4115,6 +4123,13 @@ protected:
     tk::Color inflight_dot_color_() const
     {
         const std::uint32_t total = inflight_total_();
+        if (current_theme_.high_contrast)
+        {
+            const auto& pal = current_theme_.palette;
+            if (total <= 1u) return pal.presence_online;
+            if (total <= 10u) return pal.presence_unavailable;
+            return pal.destructive;
+        }
         if (total <= 1u) return tk::Color::rgb(0x40BF4D); // green
         if (total <= 10u) return tk::Color::rgb(0xF2B21A); // amber
         return tk::Color::rgb(0xE03838);                   // red

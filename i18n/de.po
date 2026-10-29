@@ -7011,3 +7011,7 @@ msgstr "Zeitzonenunterschied neben Namen anzeigen"
 
 msgid "{0} ({1} from you): {2}"
 msgstr "{0} ({1} von dir): {2}"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "The theme follows your system's high contrast setting."
+msgstr "Das Design folgt der Einstellung für hohen Kontrast deines Systems."
