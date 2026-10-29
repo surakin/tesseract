@@ -529,9 +529,11 @@ pub async fn schedule_delayed_msc3401_leave(
     }
 }
 
-/// Send an MSC4140 update action for a delayed event. Tries the current
-/// endpoint (`.../{delay_id}/{action}`) and falls back to the older one
-/// (action in the body) when the homeserver doesn't know the former.
+/// Send an MSC4140 update action for a delayed event. Tries the authenticated
+/// endpoint (action in the body, the one matrix-sdk's own widget driver uses)
+/// and falls back to `.../{delay_id}/{action}` when the homeserver doesn't know
+/// it. ruma sends the latter without an access token, which homeservers that
+/// authenticate delayed-event management reject with `M_MISSING_TOKEN`.
 async fn update_delayed_event(
     client: &matrix_sdk::Client,
     delay_id: &str,
@@ -542,12 +544,12 @@ async fn update_delayed_event(
         error::ErrorKind,
     };
 
-    let v2 = unstable_v2::Request::new(delay_id.to_owned(), action.clone());
-    match client.send(v2).await {
+    let v1 = unstable_v1::Request::new(delay_id.to_owned(), action.clone());
+    match client.send(v1).await {
         Ok(_) => Ok(()),
         Err(e) if matches!(e.client_api_error_kind(), Some(ErrorKind::Unrecognized)) => {
-            let v1 = unstable_v1::Request::new(delay_id.to_owned(), action);
-            client.send(v1).await.map(|_| ()).map_err(Into::into)
+            let v2 = unstable_v2::Request::new(delay_id.to_owned(), action);
+            client.send(v2).await.map(|_| ()).map_err(Into::into)
         }
         Err(e) => Err(e.into()),
     }
