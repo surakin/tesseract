@@ -252,11 +252,26 @@ fn apply_pending_for(
 }
 
 /// Which SFU each live call member publishes on (`(user_id, device_id)` ->
-/// JWT service URL), kept current by the session's member reconciler.
+/// JWT service URL), kept current by the session's member reconciler. It also
+/// carries the call's "over" flag, which every connection's sink checks.
 #[derive(Clone, Default)]
-pub struct MemberTransports(Arc<parking_lot::Mutex<HashMap<(String, String), String>>>, IdentityMap);
+pub struct MemberTransports(
+    Arc<parking_lot::Mutex<HashMap<(String, String), String>>>,
+    IdentityMap,
+    Arc<AtomicBool>,
+);
 
 impl MemberTransports {
+    /// The call is over: its connections may still be closing, but nothing
+    /// they receive reaches the UI any more (a newer call is on screen by then).
+    pub fn end(&self) {
+        self.2.store(true, Ordering::SeqCst);
+    }
+
+    fn is_ended(&self) -> bool {
+        self.2.load(Ordering::SeqCst)
+    }
+
     pub fn replace(&self, map: HashMap<(String, String), String>) {
         *self.0.lock() = map;
     }
@@ -315,7 +330,8 @@ impl FilteredSink {
     }
 
     fn ok(&self, participant_id: &str) -> bool {
-        participant_id == self.local_identity || self.members.allows(&self.sfu_url, participant_id)
+        !self.members.is_ended()
+            && (participant_id == self.local_identity || self.members.allows(&self.sfu_url, participant_id))
     }
 }
 
@@ -473,78 +489,91 @@ impl LiveKitRoom {
         let (room, events) = Room::connect(server_url, jwt, room_options).await?;
         let room = Arc::new(room);
 
-        // Local audio track via platform hardware ADM.
-        // PlatformAudio gives libwebrtc's AEC3 access to the speaker-output
-        // reference, enabling echo cancellation. AudioProcessingOptions::default()
-        // enables AEC, NS, and AGC. Capture is handled entirely by the platform
-        // ADM â€” no manual PCM injection needed.
-        let platform_audio =
-            PlatformAudio::new().map_err(|e| anyhow::anyhow!("PlatformAudio init failed: {e}"))?;
-        platform_audio
-            .configure_audio_processing(AudioProcessingOptions::default())
-            .map_err(|e| anyhow::anyhow!("PlatformAudio configure failed: {e}"))?;
-        // Disable the platform ADM's PLAYOUT side (recording stays enabled above,
-        // for the mic track). PlatformAudio::new() turns playout on by default,
-        // which on Linux auto-selects a native-PipeWire-backed device (the
-        // shipped libwebrtc was built with rtc_use_pipewire=true) purely to give
-        // AEC3 a speaker-output reference. That native PipeWire client collides
-        // with the separate pipewiresrc-based screen-share pipeline in
-        // screen_capture_portal.cpp, silently stalling screen-share negotiation
-        // whenever a call is active. Disabling it here routes playout through
-        // webrtc-sys's SyntheticAudioDevice instead, which keeps pumping AEC3 a
-        // correct render reference (via periodic NeedMorePlayData calls) without
-        // opening any real playback device. Remote audio is unaffected: it's
-        // already rendered separately by our own NativeAudioStream sink (see
-        // RtcEventSink::on_audio_frame below, -> tk::AudioPlayback), so the
-        // platform ADM's own playout was never used for anything but this AEC3
-        // reference in the first place.
-        livekit::rtc_engine::lk_runtime::LkRuntime::instance()
-            .pc_factory()
-            .set_adm_playout_enabled(false);
-        let local_audio = LocalAudioTrack::create_audio_track("mic", platform_audio.rtc_source());
-        // dtx=false: always send audio packets even during silence.
-        // red=false: send plain Opus instead of RED; some SFUs fail to forward
-        //   RED audio to subscribers when the subscriber's codec is Opus-only.
-        // source=Microphone: required by SFUs that use source to classify tracks
-        //   before deciding whether to forward to subscribers.
-        let audio_opts_pub = TrackPublishOptions {
-            dtx: false,
-            red: false,
-            simulcast: false,
-            source: TrackSource::Microphone,
-            ..Default::default()
-        };
-        let audio_publication = room
-            .local_participant()
-            .publish_track(LocalTrack::Audio(local_audio), audio_opts_pub)
-            .await?;
+        // Whatever fails from here on closes the connection again: a half-set-up
+        // call must not stay in the SFU's room.
+        let published: anyhow::Result<_> = async {
+            // Local audio track via platform hardware ADM.
+            // PlatformAudio gives libwebrtc's AEC3 access to the speaker-output
+            // reference, enabling echo cancellation. AudioProcessingOptions::default()
+            // enables AEC, NS, and AGC. Capture is handled entirely by the platform
+            // ADM â€” no manual PCM injection needed.
+            let platform_audio =
+                PlatformAudio::new().map_err(|e| anyhow::anyhow!("PlatformAudio init failed: {e}"))?;
+            platform_audio
+                .configure_audio_processing(AudioProcessingOptions::default())
+                .map_err(|e| anyhow::anyhow!("PlatformAudio configure failed: {e}"))?;
+            // Disable the platform ADM's PLAYOUT side (recording stays enabled above,
+            // for the mic track). PlatformAudio::new() turns playout on by default,
+            // which on Linux auto-selects a native-PipeWire-backed device (the
+            // shipped libwebrtc was built with rtc_use_pipewire=true) purely to give
+            // AEC3 a speaker-output reference. That native PipeWire client collides
+            // with the separate pipewiresrc-based screen-share pipeline in
+            // screen_capture_portal.cpp, silently stalling screen-share negotiation
+            // whenever a call is active. Disabling it here routes playout through
+            // webrtc-sys's SyntheticAudioDevice instead, which keeps pumping AEC3 a
+            // correct render reference (via periodic NeedMorePlayData calls) without
+            // opening any real playback device. Remote audio is unaffected: it's
+            // already rendered separately by our own NativeAudioStream sink (see
+            // RtcEventSink::on_audio_frame below, -> tk::AudioPlayback), so the
+            // platform ADM's own playout was never used for anything but this AEC3
+            // reference in the first place.
+            livekit::rtc_engine::lk_runtime::LkRuntime::instance()
+                .pc_factory()
+                .set_adm_playout_enabled(false);
+            let local_audio = LocalAudioTrack::create_audio_track("mic", platform_audio.rtc_source());
+            // dtx=false: always send audio packets even during silence.
+            // red=false: send plain Opus instead of RED; some SFUs fail to forward
+            //   RED audio to subscribers when the subscriber's codec is Opus-only.
+            // source=Microphone: required by SFUs that use source to classify tracks
+            //   before deciding whether to forward to subscribers.
+            let audio_opts_pub = TrackPublishOptions {
+                dtx: false,
+                red: false,
+                simulcast: false,
+                source: TrackSource::Microphone,
+                ..Default::default()
+            };
+            let audio_publication = room
+                .local_participant()
+                .publish_track(LocalTrack::Audio(local_audio), audio_opts_pub)
+                .await?;
 
-        // Local video track (camera frames injected by Layer 3)
-        let video_source = NativeVideoSource::new(
-            livekit::webrtc::video_source::VideoResolution {
-                width: 640,
-                height: 480,
-            },
-            false,
-        );
-        let local_video = LocalVideoTrack::create_video_track(
-            "camera",
-            RtcVideoSource::Native(video_source.clone()),
-        );
-        // Published muted (the AddTrack request carries track.is_muted()):
-        // see `video_unmute_pending`.
-        local_video.mute();
-        // simulcast=false: single VP8 layer.
-        // source=Camera: signals to the SFU what kind of track this is.
-        let video_opts_pub = TrackPublishOptions {
-            simulcast: false,
-            source: TrackSource::Camera,
-            ..Default::default()
+            // Local video track (camera frames injected by Layer 3)
+            let video_source = NativeVideoSource::new(
+                livekit::webrtc::video_source::VideoResolution {
+                    width: 640,
+                    height: 480,
+                },
+                false,
+            );
+            let local_video = LocalVideoTrack::create_video_track(
+                "camera",
+                RtcVideoSource::Native(video_source.clone()),
+            );
+            // Published muted (the AddTrack request carries track.is_muted()):
+            // see `video_unmute_pending`.
+            local_video.mute();
+            // simulcast=false: single VP8 layer.
+            // source=Camera: signals to the SFU what kind of track this is.
+            let video_opts_pub = TrackPublishOptions {
+                simulcast: false,
+                source: TrackSource::Camera,
+                ..Default::default()
+            };
+            let video_publication = room
+                .local_participant()
+                .publish_track(LocalTrack::Video(local_video), video_opts_pub)
+                .await?;
+            Ok((platform_audio, video_source, audio_publication, video_publication))
+        }
+        .await;
+        let (platform_audio, video_source, audio_publication, video_publication) = match published {
+            Ok(parts) => parts,
+            Err(e) => {
+                let _ = room.close().await;
+                return Err(e);
+            }
         };
-        let video_publication = room
-            .local_participant()
-            .publish_track(LocalTrack::Video(local_video), video_opts_pub)
-            .await?;
 
         // Emit local participant immediately so the call overlay populates even
         // when no remote participants have joined yet.
@@ -720,6 +749,19 @@ impl LiveKitRoom {
     /// unambiguous signal (RoomEvent::TrackUnpublished on their side) that the
     /// track is gone.
     pub fn stop_screen_share(&self) {
+        self.unpublish_screen_share();
+        // Explicit symmetric update — don't rely solely on a TrackMuted/
+        // TrackUnpublished event round-trip to clear is_screen_sharing for
+        // the local participant's own tile.
+        if let Some(ref s) = self.sink {
+            s.on_participant_updated(
+                self.session_id,
+                local_participant_info(&self.room.local_participant()),
+            );
+        }
+    }
+
+    fn unpublish_screen_share(&self) {
         let pub_ = self
             .screen_publication
             .lock()
@@ -736,14 +778,20 @@ impl LiveKitRoom {
                 }
             });
         }
-        // Explicit symmetric update — don't rely solely on a TrackMuted/
-        // TrackUnpublished event round-trip to clear is_screen_sharing for
-        // the local participant's own tile.
-        if let Some(ref s) = self.sink {
-            s.on_participant_updated(
-                self.session_id,
-                local_participant_info(&self.room.local_participant()),
-            );
+    }
+
+    /// Stop sending anything of ours: the mic, the camera and the screen share.
+    /// Cheap and idempotent; the hang-up runs it before anything that can wait
+    /// on the network, so media stops at once however slow the leave is. Needs
+    /// a tokio runtime context (the mutes and the unpublish spawn).
+    pub fn stop_local_media(&self) {
+        self.set_audio_muted(true);
+        self.set_video_muted(true);
+        self.unpublish_screen_share();
+        // Releases the microphone itself (and its privacy indicator); the
+        // published audio track is already muted.
+        if let Err(e) = self.platform_audio.stop_recording() {
+            warn!("rtc: could not stop the microphone: {e}");
         }
     }
 
@@ -1929,6 +1977,28 @@ mod helper_tests {
             *rec.0.lock().unwrap(),
             vec!["joined:@me:x:D", "ended:bye", "invite:!r:x"]
         );
+    }
+
+    #[test]
+    fn nothing_reaches_the_ui_once_the_call_is_over_but_its_end_still_does() {
+        let rec = Arc::new(Recorder::default());
+        let members = MemberTransports::default();
+        let sink = FilteredSink::wrap(
+            Some(rec.clone() as Arc<dyn RtcEventSink>),
+            "sfu",
+            &members,
+            "@me:x:D".into(),
+        )
+        .unwrap();
+        sink.on_audio_frame(1, "@me:x:D", &[0], 48000, 1);
+        members.end();
+        sink.on_audio_frame(1, "@me:x:D", &[0], 48000, 1);
+        sink.on_video_frame(1, "@b:x:D", 1, 1, vec![]);
+        sink.on_screen_frame(1, "@me:x:D", 1, 1, vec![]);
+        sink.on_participant_left(1, "@b:x:D");
+        assert!(!sink.accepts_participant("@me:x:D"));
+        sink.on_session_ended(1, "bye");
+        assert_eq!(*rec.0.lock().unwrap(), vec!["audio:@me:x:D", "ended:bye"]);
     }
 }
 

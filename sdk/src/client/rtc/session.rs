@@ -96,6 +96,15 @@ pub struct RtcSession {
 }
 
 impl RtcSession {
+    /// The synchronous, cheap first step of a hang-up: nothing of ours is sent
+    /// after this (mic, camera and screen share stop, nothing announces us any
+    /// more) and nothing the call receives reaches the UI. Needs a tokio
+    /// runtime context. The network-bound teardown is `end_call`.
+    pub fn stop_now(&self) {
+        self.announced.shutdown();
+        self.sfus.stop_media();
+    }
+
     pub fn mute_audio(&self, muted: bool) {
         self.sfus.primary.set_audio_muted(muted);
     }
@@ -393,6 +402,139 @@ async fn send_legacy_leave(signals: &dyn Signals, member_id: &str) -> bool {
     false
 }
 
+/// What a call has connected to the SFUs: what a hang-up has to switch off.
+#[async_trait::async_trait]
+trait Connection: Send + Sync {
+    /// Stop sending anything (mic, camera, screen share) and stop passing
+    /// received media to the UI. Cheap and idempotent; needs a runtime context.
+    fn stop_media(&self);
+    /// Close the connections (bounded; a few seconds at most).
+    async fn disconnect(&self);
+}
+
+#[async_trait::async_trait]
+impl Connection for SfuSet {
+    fn stop_media(&self) {
+        SfuSet::stop_media(self);
+    }
+
+    async fn disconnect(&self) {
+        self.disconnect_all().await;
+    }
+}
+
+#[async_trait::async_trait]
+impl Connection for LiveKitRoom {
+    fn stop_media(&self) {
+        self.stop_local_media();
+    }
+
+    async fn disconnect(&self) {
+        LiveKitRoom::disconnect(self).await;
+    }
+}
+
+fn check_not_cancelled(cancelled: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<()> {
+    if cancelled() {
+        anyhow::bail!("the call was cancelled");
+    }
+    Ok(())
+}
+
+/// The connection of a setup that has not connected (yet).
+struct NoConnection;
+
+#[async_trait::async_trait]
+impl Connection for NoConnection {
+    fn stop_media(&self) {}
+
+    async fn disconnect(&self) {}
+}
+
+/// Take a call down. Everything that announces us stops, the media stops
+/// (synchronously, before any network wait), and then the memberships are taken
+/// back while the connections close, at the same time: a slow or offline
+/// homeserver never keeps the mic published. Returns whether the withdrawal was
+/// delivered within `limit`; the rest is finished by whoever withdraws next.
+async fn hang_up(
+    announced: &Announced,
+    connection: &dyn Connection,
+    code: LeaveCode,
+    why: Option<&str>,
+    limit: Duration,
+) -> bool {
+    announced.shutdown();
+    connection.stop_media();
+    let withdraw = async { tokio::time::timeout(limit, announced.withdraw(code, why)).await.is_ok() };
+    let (delivered, ()) = tokio::join!(withdraw, connection.disconnect());
+    delivered
+}
+
+/// How long the cleanup of a failed or abandoned setup waits for the
+/// memberships to be taken back.
+const SETUP_CLEANUP_LIMIT: Duration = Duration::from_secs(30);
+
+/// Takes a setup that does not finish back out: dropped without `defuse`
+/// (an early return, a panic, or the setup being cancelled by its deadline), it
+/// stops the media, closes the connection and withdraws what was announced.
+struct SetupGuard {
+    announced: Arc<Announced>,
+    connection: Arc<dyn Connection>,
+    armed: bool,
+}
+
+impl SetupGuard {
+    fn new(announced: Arc<Announced>) -> Self {
+        Self {
+            announced,
+            connection: Arc::new(NoConnection),
+            armed: true,
+        }
+    }
+
+    /// The setup connected: a failure from here on closes the connection too.
+    fn connected(&mut self, connection: Arc<dyn Connection>) {
+        self.connection = connection;
+    }
+
+    /// The setup succeeded; the session owns the cleanup from now on.
+    fn defuse(mut self) {
+        self.armed = false;
+    }
+
+    /// The setup failed on a path that can wait for its cleanup.
+    async fn fail(mut self, code: LeaveCode, why: &str) {
+        self.armed = false;
+        hang_up(&self.announced, &*self.connection, code, Some(why), SETUP_CLEANUP_LIMIT).await;
+    }
+}
+
+impl Drop for SetupGuard {
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+        self.announced.shutdown();
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let _enter = runtime.enter();
+        self.connection.stop_media();
+        let announced = Arc::clone(&self.announced);
+        let connection = Arc::clone(&self.connection);
+        runtime.spawn(async move {
+            hang_up(
+                &announced,
+                &*connection,
+                LeaveCode::TransportError,
+                Some("the call could not be set up"),
+                SETUP_CLEANUP_LIMIT,
+            )
+            .await;
+        });
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -405,6 +547,11 @@ async fn send_legacy_leave(signals: &dyn Signals, member_id: &str) -> bool {
 /// (`multi_sfu`) → LiveKit connection on our SFU → E2EE key broadcast, then
 /// spawns the background tasks that keep the call in step with the room's
 /// other members (subscribing to their SFUs, key distribution, heartbeat).
+///
+/// `cancelled` says the call was hung up or replaced meanwhile: the setup then
+/// stops at its next step and takes back what it did. Every way out of this
+/// function after the first announcement (an error, a panic, the caller
+/// dropping the future at a deadline) takes the call back down.
 pub async fn start_call(
     client: &matrix_sdk::Client,
     http: &reqwest::Client,
@@ -412,6 +559,7 @@ pub async fn start_call(
     slot_id: &str,
     audio_only: bool,
     session_id: u64,
+    cancelled: &(dyn Fn() -> bool + Send + Sync),
 ) -> anyhow::Result<RtcSession> {
     use matrix_sdk::ruma::{
         events::{call::member::CallMemberEventContent, room::member::SyncRoomMemberEvent, SyncStateEvent},
@@ -516,6 +664,7 @@ pub async fn start_call(
     )
     .await?;
     info!("rtc: focus discovery done at {:?}", t_start.elapsed());
+    check_not_cancelled(cancelled)?;
     // Now that the SFU's WebSocket URL is known, a member that names only that
     // URL as its transport can be recognised as being on our SFU.
     local_focus.sfu_url = Some(lk_transport.server_url.clone());
@@ -590,6 +739,8 @@ pub async fn start_call(
         room: room.clone(),
         user_id: user_id.clone(),
     })));
+    let mut guard = SetupGuard::new(Arc::clone(&announced));
+    check_not_cancelled(cancelled)?;
     if let Some(ref pid) = preflight_identity {
         info!("rtc: pre-flight signaling with identity={pid}");
         if signaling::should_open_call_slot(
@@ -613,9 +764,7 @@ pub async fn start_call(
         )
         .await
         {
-            announced
-                .withdraw(LeaveCode::TransportError, Some("could not announce the call"))
-                .await;
+            guard.fail(LeaveCode::TransportError, "could not announce the call").await;
             return Err(e);
         }
     }
@@ -623,6 +772,7 @@ pub async fn start_call(
     // MSC4143: open the room's m.call slot for clients that read it, or fix one
     // that does not fit the room (see `plan_slot`). Best effort: the legacy
     // events above are what this call runs on.
+    let mut slot_written_at = None;
     let slot_usable = {
         let (state, slot_key) = read_slot_state_keyed(&room).await;
         match plan_slot(
@@ -635,6 +785,7 @@ pub async fn start_call(
             SlotPlan::Write => match open_mrtc_slot(&room, slot_key).await {
                 Ok(()) => {
                     info!("rtc: wrote the m.rtc.slot ({state:?} before)");
+                    slot_written_at = Some(Instant::now());
                     true
                 }
                 Err(e) => {
@@ -723,6 +874,11 @@ pub async fn start_call(
     }
 
     // ── Connect to our SFU ────────────────────────────────────────────────
+    // A hang-up during the announcements above must not connect the mic.
+    if cancelled() {
+        guard.fail(LeaveCode::Leave, "the call was cancelled").await;
+        anyhow::bail!("the call was cancelled");
+    }
     let sink = super::sink_for_client(&client);
     // A lost connection to our SFU ends the call for good (the UI is told by
     // the connection itself): take back what it announced and stop the tasks
@@ -748,12 +904,16 @@ pub async fn start_call(
     {
         Ok(lk) => Arc::new(lk),
         Err(e) => {
-            announced
-                .withdraw(LeaveCode::TransportError, Some("could not connect to the SFU"))
-                .await;
+            guard.fail(LeaveCode::TransportError, "could not connect to the SFU").await;
             return Err(e);
         }
     };
+    // From here the mic is published: every way out closes the connection.
+    guard.connected(Arc::clone(&lk) as Arc<dyn Connection>);
+    if cancelled() {
+        guard.fail(LeaveCode::Leave, "the call was cancelled").await;
+        anyhow::bail!("the call was cancelled");
+    }
     info!("rtc: livekit connect done at {:?}", t_start.elapsed());
     let lk_identity = lk.local_identity().to_owned();
     info!("rtc: lk connected, identity={lk_identity} (preflight={preflight_identity:?})");
@@ -801,9 +961,7 @@ pub async fn start_call(
         }
         .await;
         if let Err(e) = resent {
-            announced
-                .withdraw(LeaveCode::TransportError, Some("could not update the call membership"))
-                .await;
+            guard.fail(LeaveCode::TransportError, "could not update the call membership").await;
             return Err(e);
         }
         // The membership under the wrong identity would otherwise stay as a ghost.
@@ -831,6 +989,7 @@ pub async fn start_call(
     ));
     // Keys that arrived while connecting only sit in the shared store.
     *sfus_holder.lock() = Some(Arc::clone(&sfus));
+    guard.connected(Arc::clone(&sfus) as Arc<dyn Connection>);
     sfus.apply_all_keys();
 
     // ── Our frame key ─────────────────────────────────────────────────────
@@ -932,6 +1091,7 @@ pub async fn start_call(
         mrtc.clone(),
         Arc::clone(&announced),
         session_id,
+        slot_written_at,
     ))
     .abort_handle();
     announced.register_reconcile(reconcile_task);
@@ -945,6 +1105,7 @@ pub async fn start_call(
         "rtc: session {session_id} started in {room_id}/{slot_id} after {:?}",
         t_start.elapsed()
     );
+    guard.defuse();
     Ok(RtcSession {
         id: session_id,
         room_id: room_id.to_owned(),
@@ -972,6 +1133,10 @@ fn primary_ended(announced: &Arc<Announced>, holder: &Arc<PLMutex<Option<Arc<Sfu
     }
     warn!("rtc: lost the connection to our SFU; taking back the call's announcements");
     announced.shutdown();
+    // The call is over: nothing the other connections still deliver reaches the UI.
+    if let Some(set) = holder.lock().as_ref() {
+        set.end_events();
+    }
     let announced = Arc::clone(announced);
     let holder = Arc::clone(holder);
     tokio::spawn(async move {
@@ -1000,28 +1165,31 @@ fn membership_event_matters(
 /// stops blocking the caller. The session's drop finishes what is left.
 const END_CALL_WITHDRAW_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Gracefully leave the call: send disconnect events, tear down LiveKit, abort tasks.
-/// The caller drops the session right after, which finishes any withdrawal
-/// that did not get out within [`END_CALL_WITHDRAW_TIMEOUT`] (offline).
+/// Gracefully leave the call: stop the media, close LiveKit and send the leave
+/// events at the same time (a slow homeserver never keeps the mic published),
+/// abort tasks. The caller drops the session right after, which finishes any
+/// withdrawal that did not get out within [`END_CALL_WITHDRAW_TIMEOUT`] (offline).
 pub async fn end_call(session: &RtcSession) {
     let t0 = Instant::now();
     // Every task that could announce us again stops before the leaves go out.
     // The leave below is delivered even when this aborts the reconcile task in
-    // the middle of its own: whichever did not get out is sent here.
-    session.announced.shutdown();
+    // the middle of its own: whichever did not get out is sent here. It runs
+    // next to the SFU disconnect, which `hang_up` starts only after the call is
+    // closed, so a hang-up is not reported as a lost connection.
     // Legacy leave (state key must match the join: the LiveKit identity, not
     // the Matrix device id), its delayed fallback, the sticky leave and the ring.
-    let withdrawn = tokio::time::timeout(
+    let delivered = hang_up(
+        &session.announced,
+        &*session.sfus,
+        LeaveCode::Leave,
+        None,
         END_CALL_WITHDRAW_TIMEOUT,
-        session.announced.withdraw(LeaveCode::Leave, None),
     )
     .await;
-    if withdrawn.is_err() {
+    if !delivered {
         warn!("rtc: taking back the call's announcements is taking long; finishing in the background");
     }
-    info!("rtc: leave event sent after {:?}", t0.elapsed());
-    session.sfus.disconnect_all().await;
-    info!("rtc: livekit disconnected after {:?}", t0.elapsed());
+    info!("rtc: left the call after {:?}", t0.elapsed());
 }
 
 /// The event-content checks for a frame-key to-device event (MSC4143).
@@ -1740,6 +1908,7 @@ async fn reconcile_loop(
     mrtc: Option<Arc<MrtcMembership>>,
     announced: Arc<Announced>,
     session_id: u64,
+    slot_written_at: Option<Instant>,
 ) {
     let mut interval = tokio::time::interval(RECONCILE_INTERVAL);
     interval.tick().await;
@@ -1747,6 +1916,9 @@ async fn reconcile_loop(
     // A new key that waits for its first delivery round before it is used.
     let mut gate = ActivationGate::default();
     let mut slot_watch = SlotWatch::default();
+    if let Some(at) = slot_written_at {
+        slot_watch.wrote_slot(at);
+    }
     loop {
         if !first {
             let key_deadline = e2ee
@@ -1789,6 +1961,7 @@ async fn reconcile_loop(
             // Nothing may announce us again. This loop is left running: it is
             // the caller and returns below.
             announced.close();
+            sfus.stop_media();
             // The UI leaves the call and the media stops first, so neither waits
             // for the network; the leaves below may take a while offline. The
             // reason goes out before the disconnect, whose own end event would say less.
@@ -1801,12 +1974,16 @@ async fn reconcile_loop(
                 .await;
             return;
         }
-        if let Some(m) = mrtc.as_ref().filter(|m| !m.has_left()) {
+        // A leave the watch asked for that did not go out is asked for again on
+        // every pass (`has_left` is set by the attempt, not by the delivery).
+        if let Some(m) = mrtc.as_ref().filter(|m| !m.has_left() || slot_watch.leave_due()) {
             let slot = read_slot_state(&room).await;
             if let Some((code, why)) =
                 slot_watch.observe(&slot, m.encrypted_at_join(), room.encryption_state().is_encrypted(), Instant::now())
             {
-                m.leave(code, Some(why)).await;
+                if m.leave(code, Some(why)).await {
+                    slot_watch.delivered();
+                }
             }
         }
         let stamp = member_transports.identities().stamp();
@@ -2828,5 +3005,156 @@ mod announced_tests {
         let late_reconcile = tokio::spawn(std::future::pending::<()>());
         a.register_reconcile(late_reconcile.abort_handle());
         assert!(late_reconcile.await.unwrap_err().is_cancelled());
+    }
+
+    /// Records when the media stopped and the connection closed.
+    struct FakeConnection {
+        log: Log,
+        announced: Arc<Announced>,
+        started: tokio::time::Instant,
+    }
+
+    #[async_trait::async_trait]
+    impl Connection for FakeConnection {
+        fn stop_media(&self) {
+            self.log.lock().unwrap().push(format!(
+                "stop-media (call closed: {}, after {:?})",
+                self.announced.is_closed(),
+                self.started.elapsed()
+            ));
+        }
+
+        async fn disconnect(&self) {
+            self.log
+                .lock()
+                .unwrap()
+                .push(format!("disconnect after {:?}", self.started.elapsed()));
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_hang_up_stops_the_media_and_closes_the_sfus_without_waiting_for_the_homeserver() {
+        let (a, log, signals) = fake(0, 0);
+        let a = Arc::new(a);
+        a.joined_legacy("id1");
+        // The homeserver never answers the leave.
+        signals.hang_first_legacy.store(true, Ordering::SeqCst);
+        let conn = FakeConnection {
+            log: log.clone(),
+            announced: Arc::clone(&a),
+            started: tokio::time::Instant::now(),
+        };
+        let delivered = hang_up(&a, &conn, LeaveCode::Leave, None, END_CALL_WITHDRAW_TIMEOUT).await;
+        assert!(!delivered, "the withdrawal was cut short");
+        assert_eq!(
+            entries(&log),
+            [
+                "stop-media (call closed: true, after 0ns)",
+                "legacy-leave id1 (hung)",
+                "disconnect after 0ns",
+            ],
+            "media off first, then the leave and the disconnect together, none waiting for the other"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_hang_up_with_a_working_homeserver_delivers_everything() {
+        let (a, log, _) = fake(0, 0);
+        let a = Arc::new(a);
+        a.joined_legacy("id1");
+        let conn = FakeConnection {
+            log: log.clone(),
+            announced: Arc::clone(&a),
+            started: tokio::time::Instant::now(),
+        };
+        assert!(hang_up(&a, &conn, LeaveCode::Leave, None, END_CALL_WITHDRAW_TIMEOUT).await);
+        let e = entries(&log);
+        assert_eq!(e[0], "stop-media (call closed: true, after 0ns)");
+        assert!(e.contains(&"legacy-leave id1".to_owned()) && e.contains(&"disconnect after 0ns".to_owned()));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_setup_that_is_abandoned_takes_its_connection_and_announcements_back() {
+        let (a, log, _) = fake(0, 0);
+        let a = Arc::new(a);
+        a.joined_legacy("id1");
+        let mut guard = SetupGuard::new(Arc::clone(&a));
+        guard.connected(Arc::new(FakeConnection {
+            log: log.clone(),
+            announced: Arc::clone(&a),
+            started: tokio::time::Instant::now(),
+        }));
+        // An early return, a panic or the setup's deadline all end like this.
+        drop(guard);
+        assert_eq!(
+            entries(&log),
+            ["stop-media (call closed: true, after 0ns)"],
+            "the media stops before the guard's drop returns"
+        );
+        tokio::time::sleep(Duration::from_millis(1)).await;
+        let e = entries(&log);
+        assert!(e.contains(&"legacy-leave id1".to_owned()), "{e:?}");
+        assert!(e.contains(&"disconnect after 0ns".to_owned()), "{e:?}");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_setup_that_succeeded_is_left_alone_by_its_guard() {
+        let (a, log, _) = fake(0, 0);
+        let a = Arc::new(a);
+        a.joined_legacy("id1");
+        let mut guard = SetupGuard::new(Arc::clone(&a));
+        guard.connected(Arc::new(FakeConnection {
+            log: log.clone(),
+            announced: Arc::clone(&a),
+            started: tokio::time::Instant::now(),
+        }));
+        guard.defuse();
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        assert!(entries(&log).is_empty());
+        assert!(!a.is_closed());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_failed_setup_is_cleaned_up_before_its_error_is_returned() {
+        let (a, log, _) = fake(0, 0);
+        let a = Arc::new(a);
+        a.joined_legacy("id1");
+        let mut guard = SetupGuard::new(Arc::clone(&a));
+        guard.connected(Arc::new(FakeConnection {
+            log: log.clone(),
+            announced: Arc::clone(&a),
+            started: tokio::time::Instant::now(),
+        }));
+        guard.fail(LeaveCode::TransportError, "could not update the call membership").await;
+        let e = entries(&log);
+        assert!(e.contains(&"disconnect after 0ns".to_owned()) && e.contains(&"legacy-leave id1".to_owned()));
+        // And nothing is repeated by a second cleanup.
+        let before = e.len();
+        a.withdraw(LeaveCode::Leave, None).await;
+        assert_eq!(entries(&log).len(), before);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_setup_cut_off_by_its_deadline_is_cleaned_up_by_the_guard() {
+        let (a, log, _) = fake(0, 0);
+        let a = Arc::new(a);
+        a.joined_legacy("id1");
+        let (announced, log2) = (Arc::clone(&a), log.clone());
+        let setup = async move {
+            let mut guard = SetupGuard::new(Arc::clone(&announced));
+            guard.connected(Arc::new(FakeConnection {
+                log: log2,
+                announced: Arc::clone(&announced),
+                started: tokio::time::Instant::now(),
+            }));
+            std::future::pending::<()>().await;
+            guard.defuse();
+        };
+        assert!(tokio::time::timeout(Duration::from_secs(75), setup).await.is_err());
+        tokio::time::sleep(Duration::from_millis(1)).await;
+        let e = entries(&log);
+        assert!(e.iter().any(|l| l.starts_with("stop-media")), "{e:?}");
+        assert!(e.contains(&"legacy-leave id1".to_owned()), "{e:?}");
+        assert!(e.iter().any(|l| l.starts_with("disconnect")), "{e:?}");
     }
 }

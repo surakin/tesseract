@@ -384,23 +384,28 @@ void ShellBase::refresh_call_banner_(views::RoomView* rv, const std::string& roo
 }
 
 void ShellBase::handle_rtc_video_frame_ui_(
-    std::uint64_t /*session_id*/,
+    std::uint64_t session_id,
     const std::string& participant_id,
     std::uint32_t width,
     std::uint32_t height,
     std::shared_ptr<std::vector<std::uint8_t>> bgra)
 {
+    // A frame of the previous call (its room is still closing) belongs in none of this call's tiles.
+    if (!is_current_call_event_(session_id))
+        return;
     if (auto* ov = active_call_overlay_())
         ov->on_video_frame(participant_id, width, height, std::move(bgra));
 }
 
 void ShellBase::handle_rtc_screen_frame_ui_(
-    std::uint64_t /*session_id*/,
+    std::uint64_t session_id,
     const std::string& participant_id,
     std::uint32_t width,
     std::uint32_t height,
     std::shared_ptr<std::vector<std::uint8_t>> bgra)
 {
+    if (!is_current_call_event_(session_id))
+        return;
     if (auto* ov = active_call_overlay_())
         ov->on_screen_frame(participant_id + ":screen", width, height, std::move(bgra));
 }
@@ -627,11 +632,14 @@ void ShellBase::deliver_notification_(const std::string& user_id,
     }
 }
 
-void ShellBase::push_call_audio_bgnd_(const std::int16_t* samples,
+void ShellBase::push_call_audio_bgnd_(std::uint64_t session_id,
+                                       const std::int16_t* samples,
                                        std::size_t sample_count,
                                        std::uint32_t sample_rate,
                                        std::uint32_t num_channels)
 {
+    if (session_id == 0 || session_id != call_audio_session_id_.load())
+        return;
     std::lock_guard<std::mutex> lock(call_audio_mutex_);
     if (call_audio_output_)
         call_audio_output_->push_frame(samples, sample_count, sample_rate, num_channels);
@@ -738,6 +746,7 @@ void ShellBase::start_call(const std::string& room_id, const std::string& slot_i
     call_session_ = std::make_unique<CallSession>(client_, room_id, slot_id,
                                                   result.session_id);
     call_account_ = active_account_;
+    call_audio_session_id_.store(result.session_id);
     call_audio_output_ = make_call_audio_output_();
     if (start_audio_muted)
         call_session_->mute_audio(true);
@@ -955,6 +964,7 @@ void ShellBase::end_call(bool wait_for_leave)
     // cancel() stops capture without firing on_stopped (which would try to send a voice msg).
     if (capture_ && capture_->is_recording())
         capture_->cancel();
+    call_audio_session_id_.store(0);
     {
         // Release the playback stream now: the session-ended event returns early
         // once call_session_ is reset, so it would hold the device until the next call.
@@ -1069,6 +1079,7 @@ void ShellBase::handle_rtc_session_ended_ui_(std::uint64_t session_id,
     }
     if (capture_ && capture_->is_recording())
         capture_->cancel();
+    call_audio_session_id_.store(0);
     call_session_.reset();
     if (call_window_)
     {

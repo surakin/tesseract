@@ -298,6 +298,19 @@ impl SfuSet {
         .await
     }
 
+    /// The call is over: nothing any connection still receives reaches the UI.
+    pub fn end_events(&self) {
+        self.ctx.members.end();
+    }
+
+    /// Stop sending anything of ours (mic, camera, screen share) and receiving
+    /// into the UI, at once and without waiting for the network. Needs a tokio
+    /// runtime context.
+    pub fn stop_media(&self) {
+        self.end_events();
+        self.primary.stop_local_media();
+    }
+
     /// Leave every SFU, concurrently, without waiting longer than a few
     /// seconds (this runs on the runtime, in a hang-up's teardown or when the
     /// connection to our SFU is lost).

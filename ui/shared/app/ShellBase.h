@@ -3765,7 +3765,11 @@ protected:
     // Thread-safe entry point for incoming PCM audio from the worker thread.
     // AudioPlayback::push_frame() is documented thread-safe; the mutex protects
     // the call_audio_output_ pointer itself from concurrent reset on teardown.
-    void push_call_audio_bgnd_(const std::int16_t* samples,
+    // Audio of any session but the current call's is dropped: the previous
+    // call's room stays connected for a few seconds after a hang-up and must
+    // not play into the call that replaced it.
+    void push_call_audio_bgnd_(std::uint64_t session_id,
+                                const std::int16_t* samples,
                                 std::size_t sample_count,
                                 std::uint32_t sample_rate,
                                 std::uint32_t num_channels);
@@ -3847,6 +3851,10 @@ protected:
     // push_call_audio_bgnd_() and reset on the UI thread at call teardown.
     std::mutex                                  call_audio_mutex_;
     std::unique_ptr<tk::AudioPlayback>          call_audio_output_;
+    // The session id of the call whose audio may be played (0: none). Set when
+    // the call's session is created and cleared when it ends; read by the
+    // audio worker thread, so atomic.
+    std::atomic<std::uint64_t>                  call_audio_session_id_{0};
     std::unique_ptr<CallWindowBase>             call_window_;
     CallOverlayState                            call_overlay_state_;
     // True iff Tesseract (not the user) forced Floating mode because the

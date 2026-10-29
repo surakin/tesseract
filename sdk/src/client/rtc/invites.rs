@@ -409,20 +409,33 @@ pub async fn send_decline(room: &matrix_sdk::Room, invite_event_id: &str) -> any
 /// homeserver's rate limit all at once, and arrive in no particular order.
 pub struct DeclineQueue<T> {
     items: std::collections::VecDeque<T>,
-    worker_running: bool,
+    /// The running worker's lease; it is alive as long as the worker task is.
+    worker: Option<std::sync::Weak<()>>,
 }
+
+/// Held by the worker task for as long as it exists. The task can end without
+/// draining the queue (its runtime was dropped with the client that started it,
+/// or it panicked); the lease then dies with it and the next decline starts a
+/// new worker instead of waiting for one that is gone.
+pub type WorkerLease = std::sync::Arc<()>;
 
 impl<T> Default for DeclineQueue<T> {
     fn default() -> Self {
-        Self { items: Default::default(), worker_running: false }
+        Self { items: Default::default(), worker: None }
     }
 }
 
 impl<T> DeclineQueue<T> {
-    /// Queue `item`. True if the caller must start the worker (none is running).
-    pub fn push(&mut self, item: T) -> bool {
+    /// Queue `item`. Returns a lease if the caller must start the worker (none
+    /// is alive): the worker keeps it until it ends.
+    pub fn push(&mut self, item: T) -> Option<WorkerLease> {
         self.items.push_back(item);
-        !std::mem::replace(&mut self.worker_running, true)
+        if self.worker.as_ref().is_some_and(|w| w.strong_count() > 0) {
+            return None;
+        }
+        let lease = WorkerLease::new(());
+        self.worker = Some(std::sync::Arc::downgrade(&lease));
+        Some(lease)
     }
 
     /// The next item, or `None` once the queue is empty, which also ends the
@@ -430,7 +443,7 @@ impl<T> DeclineQueue<T> {
     pub fn pop(&mut self) -> Option<T> {
         let next = self.items.pop_front();
         if next.is_none() {
-            self.worker_running = false;
+            self.worker = None;
         }
         next
     }
@@ -475,14 +488,16 @@ fn decline_queue() -> &'static std::sync::Mutex<DeclineQueue<DeclineJob>> {
 /// and sent in order, one at a time, each retried once. Spawns the sending
 /// worker on the current tokio runtime when none is running.
 pub fn queue_decline(client: matrix_sdk::Client, room_id: matrix_sdk::ruma::OwnedRoomId, invite_event_id: String) {
-    let start_worker = decline_queue()
+    let lease = decline_queue()
         .lock()
         .unwrap_or_else(|p| p.into_inner())
         .push(DeclineJob { client, room_id, invite_event_id });
-    if !start_worker {
+    let Some(lease) = lease else {
         return;
-    }
-    tokio::spawn(async {
+    };
+    tokio::spawn(async move {
+        // Dropped when the task ends, however it ends.
+        let _lease = lease;
         static LAST_WARN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         loop {
             let Some(job) = decline_queue().lock().unwrap_or_else(|p| p.into_inner()).pop() else {
@@ -844,12 +859,45 @@ mod tests {
     #[test]
     fn declines_go_out_in_order_by_a_single_worker() {
         let mut q = DeclineQueue::default();
-        assert!(q.push("$inv"), "the first push starts the worker");
-        assert!(!q.push("$ring"), "a running worker takes the rest");
+        let lease = q.push("$inv");
+        assert!(lease.is_some(), "the first push starts the worker");
+        assert!(q.push("$ring").is_none(), "a running worker takes the rest");
         assert_eq!(q.pop(), Some("$inv"));
         assert_eq!(q.pop(), Some("$ring"));
         assert_eq!(q.pop(), None, "drained: the worker ends");
-        assert!(q.push("$later"), "so the next decline starts a new one");
+        assert!(q.push("$later").is_some(), "so the next decline starts a new one");
+    }
+
+    #[test]
+    fn a_worker_that_died_with_its_runtime_is_replaced_by_the_next_decline() {
+        let mut q = DeclineQueue::default();
+        let lease = q.push("$a").expect("first push starts the worker");
+        assert!(q.push("$b").is_none());
+        // The worker's task is gone before it drained the queue.
+        drop(lease);
+        let lease = q.push("$c");
+        assert!(lease.is_some(), "a new worker is started, not waited for");
+        // Nothing was lost, and the new worker takes it all in order.
+        assert_eq!(
+            [q.pop(), q.pop(), q.pop(), q.pop()],
+            [Some("$a"), Some("$b"), Some("$c"), None]
+        );
+    }
+
+    #[test]
+    fn a_worker_task_that_panics_or_is_cancelled_gives_up_its_lease() {
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let mut q = DeclineQueue::default();
+        let lease = q.push(1).unwrap();
+        let task = rt.spawn(async move {
+            let _lease = lease;
+            std::future::pending::<()>().await;
+        });
+        assert!(q.push(2).is_none(), "alive while its task runs");
+        // The runtime goes away with the client that started the worker.
+        drop(task);
+        drop(rt);
+        assert!(q.push(3).is_some());
     }
 
     #[tokio::test]

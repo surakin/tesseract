@@ -59,6 +59,9 @@ struct CallShell : tesseract::test::TestShellBase
     std::vector<std::string> status;
 
     using ShellBase::call_account_;
+    using ShellBase::call_audio_output_;
+    using ShellBase::call_audio_session_id_;
+    using ShellBase::push_call_audio_bgnd_;
     using ShellBase::call_auto_floated_;
     using ShellBase::call_banner_rosters_;
     using ShellBase::call_invite_decline_targets_;
@@ -106,6 +109,18 @@ struct CallShell : tesseract::test::TestShellBase
     {
         return pending_call_invites_.count(CallInviteKey{account, room});
     }
+};
+
+// Counts the frames the shell lets through to the speaker.
+struct CountingPlayback : tk::AudioPlayback
+{
+    explicit CountingPlayback(std::shared_ptr<int> n) : frames(std::move(n)) {}
+    void push_frame(const std::int16_t*, std::size_t, std::uint32_t,
+                    std::uint32_t) override
+    {
+        ++*frames;
+    }
+    std::shared_ptr<int> frames;
 };
 
 tesseract::RtcParticipantInfo shell_calls_participant(const std::string& id)
@@ -322,6 +337,50 @@ TEST_CASE("a session end with no session is a no-op", "[shell][calls]")
     CHECK_NOTHROW(s.handle_rtc_session_ended_ui_(1, "hangup"));
     CHECK_NOTHROW(s.handle_rtc_video_frame_ui_(
         1, "p", 1, 1, std::make_shared<std::vector<std::uint8_t>>(4)));
+}
+
+TEST_CASE("only the current call's audio is played", "[shell][calls]")
+{
+    tesseract::Client c; // outlives the shell (its CallSession hangs up on it)
+    CallShell s;
+    shell_calls_install_session(s, c, "!r:x", 7);
+    auto frames = std::make_shared<int>(0);
+    s.call_audio_output_ = std::make_unique<CountingPlayback>(frames);
+    s.call_audio_session_id_.store(7);
+    const std::int16_t pcm[4] = {1, 2, 3, 4};
+
+    s.push_call_audio_bgnd_(7, pcm, 4, 48000, 1);
+    CHECK(*frames == 1);
+    // The previous call's room is still closing: its audio is not played into this call.
+    s.push_call_audio_bgnd_(6, pcm, 4, 48000, 1);
+    s.push_call_audio_bgnd_(0, pcm, 4, 48000, 1);
+    CHECK(*frames == 1);
+}
+
+TEST_CASE("no audio is played once the call has ended", "[shell][calls]")
+{
+    tesseract::Client c;
+    const std::int16_t pcm[2] = {1, 2};
+    SECTION("hung up")
+    {
+        CallShell s;
+        shell_calls_install_session(s, c, "!r:x", 7);
+        auto frames = std::make_shared<int>(0);
+        s.call_audio_output_ = std::make_unique<CountingPlayback>(frames);
+        s.call_audio_session_id_.store(7);
+        s.end_call();
+        CHECK(s.call_audio_session_id_.load() == 0);
+        s.push_call_audio_bgnd_(7, pcm, 2, 48000, 1);
+        CHECK(*frames == 0);
+    }
+    SECTION("ended by the SDK")
+    {
+        CallShell s;
+        shell_calls_install_session(s, c, "!r:x", 7);
+        s.call_audio_session_id_.store(7);
+        s.handle_rtc_session_ended_ui_(7, "hangup");
+        CHECK(s.call_audio_session_id_.load() == 0);
+    }
 }
 
 TEST_CASE("end_call tears the session down and resets overlay state",

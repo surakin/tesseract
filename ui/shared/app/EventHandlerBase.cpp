@@ -1216,8 +1216,8 @@ void EventHandlerBase::on_call_audio_frame(std::uint64_t session_id,
     // Call it directly on this worker thread — no post_to_ui_() overhead.
     // The mutex in push_call_audio_bgnd_() ensures the output object is not
     // destroyed while we are inside push_frame().
-    shell()->push_call_audio_bgnd_(samples, sample_count, sample_rate, num_channels);
-    (void)session_id;
+    // The shell drops frames of any session but the current call's.
+    shell()->push_call_audio_bgnd_(session_id, samples, sample_count, sample_rate, num_channels);
 }
 
 } // namespace tesseract

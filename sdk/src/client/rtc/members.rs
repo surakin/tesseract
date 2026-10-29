@@ -171,9 +171,9 @@ pub enum SenderLookup {
 }
 
 /// Whether the sender counts. An `Unknown` lookup repeats the verdict of the
-/// last pass (`previous`), so a request that failed once does not turn a joined
-/// member into a leaver; without one it is as unknown as `check` treats a
-/// sender the room does not know.
+/// last pass (`previous`, only if recent enough: see [`verdict_max_age`]), so a
+/// request that failed once does not turn a joined member into a leaver; without
+/// one it is as unknown as `check` treats a sender the room does not know.
 pub fn judge_sender(lookup: &SenderLookup, previous: Option<bool>, check: JoinCheck) -> bool {
     match lookup {
         SenderLookup::Known(m) => sender_counts(m.as_ref(), check),
@@ -191,24 +191,56 @@ pub fn lasting_verdict(lookup: &SenderLookup, check: JoinCheck) -> Option<bool> 
     }
 }
 
-/// The last verdict per (room, sender), bounded.
+/// How long a verdict is reused when the room cannot be asked, for the cheap
+/// display read.
+pub const VERDICT_TTL: std::time::Duration = std::time::Duration::from_secs(300);
+/// The same for a read that decides who receives a media key: a member who
+/// left must not keep receiving keys because one lookup failed, so only a
+/// verdict this fresh stands in for the room's answer.
+pub const KEY_VERDICT_TTL: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// How old a remembered verdict may be to stand in for a failed lookup.
+pub fn verdict_max_age(check: JoinCheck) -> std::time::Duration {
+    match check {
+        JoinCheck::Cached => VERDICT_TTL,
+        JoinCheck::Strict | JoinCheck::KnownJoined => KEY_VERDICT_TTL,
+    }
+}
+
+/// The last verdict per (account, room, sender) and when it was given, bounded.
+/// The account is part of the key: two signed-in accounts see the same room
+/// through different memberships.
 #[derive(Default)]
 pub struct VerdictCache {
-    map: std::collections::HashMap<(String, String), bool>,
+    map: std::collections::HashMap<(String, String, String), (bool, std::time::Instant)>,
 }
 
 impl VerdictCache {
     const CAP: usize = 2048;
 
-    pub fn get(&self, room: &str, sender: &str) -> Option<bool> {
-        self.map.get(&(room.to_owned(), sender.to_owned())).copied()
+    /// The verdict if it is no older than `max_age` at `now`.
+    pub fn get(
+        &self,
+        account: &str,
+        room: &str,
+        sender: &str,
+        now: std::time::Instant,
+        max_age: std::time::Duration,
+    ) -> Option<bool> {
+        let (verdict, at) = self.map.get(&(account.to_owned(), room.to_owned(), sender.to_owned()))?;
+        (now.saturating_duration_since(*at) <= max_age).then_some(*verdict)
     }
 
-    pub fn set(&mut self, room: &str, sender: &str, verdict: bool) {
+    pub fn set(&mut self, account: &str, room: &str, sender: &str, verdict: bool, now: std::time::Instant) {
         if self.map.len() >= Self::CAP {
-            self.map.clear();
+            // Expired entries go first; a full cache of fresh ones starts over.
+            self.map.retain(|_, (_, at)| now.saturating_duration_since(*at) <= VERDICT_TTL);
+            if self.map.len() >= Self::CAP {
+                self.map.clear();
+            }
         }
-        self.map.insert((room.to_owned(), sender.to_owned()), verdict);
+        self.map
+            .insert((account.to_owned(), room.to_owned(), sender.to_owned()), (verdict, now));
     }
 }
 
@@ -259,6 +291,8 @@ pub async fn senders_to_keep(
     let mut keep: HashSet<String> = HashSet::new();
     let mut seen: HashSet<String> = HashSet::new();
     let room_id = room.room_id().to_string();
+    let account = room.client().user_id().map(|u| u.to_string()).unwrap_or_default();
+    let max_age = verdict_max_age(check);
     let mut fetch_ok = true;
     for sender in senders {
         if !seen.insert(sender.clone()) {
@@ -266,10 +300,22 @@ pub async fn senders_to_keep(
         }
         let Ok(user) = UserId::parse(&sender) else { continue };
         let lookup = lookup_sender(room, &user, check, &mut fetch_ok).await;
-        let previous = verdicts().lock().unwrap_or_else(|p| p.into_inner()).get(&room_id, &sender);
+        let previous = verdicts().lock().unwrap_or_else(|p| p.into_inner()).get(
+            &account,
+            &room_id,
+            &sender,
+            std::time::Instant::now(),
+            max_age,
+        );
         let counts = judge_sender(&lookup, previous, check);
         if let Some(verdict) = lasting_verdict(&lookup, check) {
-            verdicts().lock().unwrap_or_else(|p| p.into_inner()).set(&room_id, &sender, verdict);
+            verdicts().lock().unwrap_or_else(|p| p.into_inner()).set(
+                &account,
+                &room_id,
+                &sender,
+                verdict,
+                std::time::Instant::now(),
+            );
         }
         if counts {
             keep.insert(sender);
@@ -519,7 +565,10 @@ pub fn transport_map(
 }
 
 /// Members whose user is not in `ignored`: an ignored user's call does not
-/// show up in the "call in progress" banner.
+/// show up in the "call in progress" banner. This is display only: an ignored
+/// user who is a joined member of a call we are in still receives our media
+/// key (they are in the call, and the call's media must stay decryptable), by
+/// design; the key recipients are never filtered through this.
 pub fn without_ignored(members: Vec<CallMember>, ignored: &HashSet<String>) -> Vec<CallMember> {
     if ignored.is_empty() {
         return members;
@@ -1477,17 +1526,50 @@ mod tests {
     }
 
     #[test]
-    fn the_verdict_cache_is_per_room_and_bounded() {
+    fn the_verdict_cache_is_per_account_and_room_and_bounded() {
+        let t0 = std::time::Instant::now();
+        let day = std::time::Duration::from_secs(86_400);
         let mut c = VerdictCache::default();
-        c.set("!r1:x", "@a:x", true);
-        c.set("!r2:x", "@a:x", false);
-        assert_eq!(c.get("!r1:x", "@a:x"), Some(true));
-        assert_eq!(c.get("!r2:x", "@a:x"), Some(false));
-        assert_eq!(c.get("!r1:x", "@b:x"), None);
+        c.set("@me:x", "!r1:x", "@a:x", true, t0);
+        c.set("@me:x", "!r2:x", "@a:x", false, t0);
+        c.set("@other:x", "!r1:x", "@a:x", false, t0);
+        assert_eq!(c.get("@me:x", "!r1:x", "@a:x", t0, day), Some(true));
+        assert_eq!(c.get("@me:x", "!r2:x", "@a:x", t0, day), Some(false));
+        assert_eq!(c.get("@other:x", "!r1:x", "@a:x", t0, day), Some(false), "another account's verdict");
+        assert_eq!(c.get("@third:x", "!r1:x", "@a:x", t0, day), None);
+        assert_eq!(c.get("@me:x", "!r1:x", "@b:x", t0, day), None);
         for i in 0..(VerdictCache::CAP * 2) {
-            c.set("!r:x", &format!("@u{i}:x"), true);
+            c.set("@me:x", "!r:x", &format!("@u{i}:x"), true, t0);
         }
         assert!(c.map.len() <= VerdictCache::CAP);
+    }
+
+    #[test]
+    fn an_old_verdict_does_not_stand_in_for_a_failed_lookup() {
+        use std::time::Duration;
+        let t0 = std::time::Instant::now();
+        let mut c = VerdictCache::default();
+        c.set("@me:x", "!r:x", "@a:x", true, t0);
+        let later = |secs| t0 + Duration::from_secs(secs);
+        // Key recipients: only a verdict from the last minute counts.
+        for check in [JoinCheck::Strict, JoinCheck::KnownJoined] {
+            let age = verdict_max_age(check);
+            assert_eq!(age, KEY_VERDICT_TTL);
+            assert_eq!(c.get("@me:x", "!r:x", "@a:x", later(59), age), Some(true));
+            assert_eq!(c.get("@me:x", "!r:x", "@a:x", later(61), age), None, "a member who left meanwhile");
+            assert!(!judge_sender(&SenderLookup::Unknown, None, check), "so the failed lookup fails closed");
+        }
+        // The display read keeps the member for five minutes.
+        let age = verdict_max_age(JoinCheck::Cached);
+        assert_eq!(c.get("@me:x", "!r:x", "@a:x", later(299), age), Some(true));
+        assert_eq!(c.get("@me:x", "!r:x", "@a:x", later(301), age), None);
+        // A full cache drops what has expired before it drops what is fresh.
+        let mut full = VerdictCache::default();
+        for i in 0..VerdictCache::CAP {
+            full.set("@me:x", "!r:x", &format!("@old{i}:x"), true, t0);
+        }
+        full.set("@me:x", "!r:x", "@new:x", true, later(1_000));
+        assert_eq!(full.map.len(), 1);
     }
 
     #[test]

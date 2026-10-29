@@ -56,6 +56,20 @@ pub(crate) async fn wait_for(teardown: Option<JoinHandle<()>>) {
 /// How long a blocking hang-up waits for a call that is still being set up.
 const STARTING_WAIT: Duration = Duration::from_secs(15);
 
+/// How long the next call, a blocking hang-up and the client's drop wait for
+/// the teardown of the call before. After this the next call goes ahead (a late
+/// leave of the old one may then still land; the old one's media is long off).
+const TEARDOWN_WAIT: Duration = Duration::from_secs(10);
+
+/// How long the previous, still active call may take to end before a new call
+/// starts regardless (its own bounds are 5 s for the leave and 3 s for the SFUs).
+const OLD_CALL_WAIT: Duration = Duration::from_secs(12);
+
+/// The longest a call may take to set up. A step that hangs (a connection that
+/// never completes) ends the call with an error instead of leaving the UI
+/// "joining" and the next start waiting behind it.
+const SETUP_DEADLINE: Duration = Duration::from_secs(75);
+
 /// Prefix of the `on_rtc_session_ended` reason of a call that could not be set
 /// up; the rest is the message to show.
 pub(crate) const START_FAILED: &str = "start_failed:";
@@ -133,6 +147,12 @@ impl<S: CallMedia> CallState<S> {
         }
     }
 
+    /// Whether setup `id` is the call being set up: false once it was hung up
+    /// or replaced, which is the setup's cue to stop and take back what it did.
+    pub(crate) fn is_setting_up(&self, id: u64) -> bool {
+        matches!(self, Self::Starting(s) if s.id == id)
+    }
+
     /// Leave a setup still running (the client is going away).
     pub(crate) fn take_starting(&mut self) -> Option<JoinHandle<()>> {
         match self {
@@ -206,10 +226,27 @@ impl<S: CallMedia> CallState<S> {
     }
 }
 
-/// The setup of a call: whatever is still going down is gone first (a pending
-/// hang-up, then the call that was active), then `start` runs. Two calls of one
-/// account announce the same legacy member, so a late leave of the old one
-/// would erase the new one's.
+/// Whatever is still going down is gone: a pending hang-up, then the call that
+/// was active. Each wait is bounded, so a teardown that hangs delays the next
+/// call by seconds, never for good.
+async fn finish_previous<S, End, EndFut>(pending: Option<JoinHandle<()>>, old: Option<Box<S>>, end: End)
+where
+    End: FnOnce(Box<S>) -> EndFut,
+    EndFut: Future<Output = ()>,
+{
+    if tokio::time::timeout(TEARDOWN_WAIT, wait_for(pending)).await.is_err() {
+        tracing::warn!("rtc: the previous call's teardown is still running; going ahead");
+    }
+    if let Some(old) = old {
+        if tokio::time::timeout(OLD_CALL_WAIT, end(old)).await.is_err() {
+            tracing::warn!("rtc: the previous call is slow to end; going ahead");
+        }
+    }
+}
+
+/// The setup of a call: whatever is still going down is gone first, then
+/// `start` runs. Two calls of one account announce the same legacy member, so a
+/// late leave of the old one would erase the new one's.
 async fn start_after_teardown<S, T, End, EndFut, Start, StartFut>(
     pending: Option<JoinHandle<()>>,
     old: Option<Box<S>>,
@@ -222,22 +259,48 @@ where
     Start: FnOnce() -> StartFut,
     StartFut: Future<Output = T>,
 {
-    wait_for(pending).await;
-    if let Some(old) = old {
-        end(old).await;
-    }
+    finish_previous(pending, old, end).await;
     start().await
 }
 
+/// Run a call's setup, but not longer than `limit`. A setup that is given up
+/// is dropped where it stands; what it had announced or connected is taken
+/// back by its own guard.
+async fn within_deadline<T>(
+    limit: Duration,
+    setup: impl Future<Output = anyhow::Result<T>>,
+) -> anyhow::Result<T> {
+    match tokio::time::timeout(limit, setup).await {
+        Ok(outcome) => outcome,
+        Err(_) => anyhow::bail!("setting up the call took too long"),
+    }
+}
+
+/// Wait up to `limit` for a setup to return; true when that gave up. The
+/// handle stays with the caller, which may hand it on.
+async fn setup_gave_up(setup: &mut Option<JoinHandle<()>>, limit: Duration) -> bool {
+    match setup.as_mut() {
+        Some(handle) => tokio::time::timeout(limit, handle).await.is_err(),
+        None => false,
+    }
+}
+
 /// A setup failed: if it is still the current call, it is over and the UI is
-/// told why.
-fn report_start_failure(state: &SharedCall, sink: Option<&dyn RtcEventSink>, id: u64, why: &str) {
+/// told why. `sink` is asked at this moment, so an account whose sink was
+/// registered after the call started still hears of it.
+fn report_start_failure(
+    state: &SharedCall,
+    sink: impl FnOnce() -> Option<Arc<dyn RtcEventSink>>,
+    id: u64,
+    why: &str,
+) {
     if !state.lock().fail(id) {
         return;
     }
     tracing::warn!("rtc: starting call {id} failed: {why}");
-    if let Some(sink) = sink {
-        sink.on_session_ended(id, &format!("{START_FAILED}{why}"));
+    match sink() {
+        Some(sink) => sink.on_session_ended(id, &format!("{START_FAILED}{why}")),
+        None => tracing::warn!("rtc: no event sink to tell that call {id} failed; the UI will not hear of it"),
     }
 }
 
@@ -274,6 +337,11 @@ impl ClientFfi {
         // new session is stored (see `start_after_teardown`). A setup still
         // running is cancelled: it takes its own session down when it comes up.
         let (previous, stale_setup) = self.rtc_call.lock().begin(session_id).retire();
+        if let Some(old) = &previous {
+            // The call being replaced stops sending now, not when its turn comes.
+            let _enter = self.rt.enter();
+            old.stop_now();
+        }
         if stale_setup.is_some() {
             self.rtc_teardown
                 .spawn(&handle, async move { wait_for(stale_setup).await });
@@ -281,8 +349,12 @@ impl ClientFfi {
         // A hang-up that did not wait for its teardown (`rtc_end_call`) is still
         // running: the same rule.
         let pending = self.rtc_teardown.take();
+        // The thread takes these; if it cannot be started they are still here.
+        let leftovers = Arc::new(Mutex::new(Some((pending, previous))));
+        let thread_leftovers = Arc::clone(&leftovers);
         let state = Arc::clone(&self.rtc_call);
         let sink = crate::client::rtc::sink_for_client(&client);
+        let sink_client = client.clone();
         let (finished_tx, finished_rx) = tokio::sync::oneshot::channel::<()>();
         let worker_handle = handle.clone();
         // block_on() drives the future on the *calling* thread (the Win32
@@ -296,43 +368,64 @@ impl ClientFfi {
             .spawn(move || {
                 // Dropped when the thread ends, however it ends.
                 let _finished = finished_tx;
+                let (pending, previous) = thread_leftovers.lock().take().unwrap_or_default();
+                // The UI is told at the moment of the failure, to the sink registered then.
+                let failure_sink =
+                    move || crate::client::rtc::sink_for_client(&sink_client).or_else(|| sink.clone());
                 let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     worker_handle.block_on(async {
-                    let outcome = start_after_teardown(
-                        pending,
-                        previous,
-                        |old| async move {
-                            crate::client::rtc::session::end_call(&old).await;
-                            drop(old);
-                        },
-                        || {
-                            crate::client::rtc::session::start_call(
-                                &client, &http, &room_id, &slot_id, audio_only, session_id,
-                            )
-                        },
-                    )
-                    .await;
-                    match outcome {
-                        Ok(session) => {
-                            let rejected = state.lock().install(session_id, session);
-                            if let Err(session) = rejected {
-                                // Hung up (or replaced) while it connected.
-                                crate::client::rtc::session::end_call(&session).await;
-                                drop(session);
+                        let cancelled = {
+                            let state = Arc::clone(&state);
+                            move || !state.lock().is_setting_up(session_id)
+                        };
+                        let outcome = start_after_teardown(
+                            pending,
+                            previous,
+                            |old| async move {
+                                crate::client::rtc::session::end_call(&old).await;
+                                drop(old);
+                            },
+                            || {
+                                within_deadline(
+                                    SETUP_DEADLINE,
+                                    crate::client::rtc::session::start_call(
+                                        &client, &http, &room_id, &slot_id, audio_only, session_id, &cancelled,
+                                    ),
+                                )
+                            },
+                        )
+                        .await;
+                        match outcome {
+                            Ok(session) => {
+                                let rejected = state.lock().install(session_id, session);
+                                if let Err(session) = rejected {
+                                    // Hung up (or replaced) while it connected.
+                                    crate::client::rtc::session::end_call(&session).await;
+                                    drop(session);
+                                }
                             }
+                            Err(e) => report_start_failure(&state, &failure_sink, session_id, &e.to_string()),
                         }
-                        Err(e) => report_start_failure(&state, sink.as_deref(), session_id, &e.to_string()),
-                    }
                     })
                 }));
                 if ran.is_err() {
                     // A panic in the setup is a failed call, not a crash of the client.
-                    report_start_failure(&state, sink.as_deref(), session_id, "starting the call failed unexpectedly");
+                    report_start_failure(&state, &failure_sink, session_id, "starting the call failed unexpectedly");
                 }
             });
         if let Err(e) = spawned {
             let why = format!("could not start the call thread: {e}");
             self.rtc_call.lock().fail(session_id);
+            // The old call and the hang-up before it still have to end.
+            if let Some((pending, previous)) = leftovers.lock().take() {
+                self.rtc_teardown.spawn(&handle, async move {
+                    finish_previous(pending, previous, |old| async move {
+                        crate::client::rtc::session::end_call(&old).await;
+                        drop(old);
+                    })
+                    .await;
+                });
+            }
             return start_refused(why);
         }
         let done = handle.spawn(async move {
@@ -347,14 +440,18 @@ impl ClientFfi {
     }
 
     /// Gracefully leave the active call without waiting for it: the call is
-    /// taken now (it is over for every other `rtc_*` method) and its leave
-    /// events and SFU disconnect finish on the runtime. A call still being set
-    /// up is cancelled and takes itself down once it is up. The next
-    /// `rtc_start_call` waits for either.
+    /// taken now (it is over for every other `rtc_*` method), its mic, camera
+    /// and screen share stop at once, and its leave events and SFU disconnect
+    /// finish on the runtime. A call still being set up is cancelled and takes
+    /// itself down at its next step. The next `rtc_start_call` waits for either.
     pub fn rtc_end_call(&mut self) {
         let (session, setup) = self.rtc_call.lock().take().retire();
         let handle = self.rt.handle().clone();
         if let Some(session) = session {
+            {
+                let _enter = self.rt.enter();
+                session.stop_now();
+            }
             self.rtc_teardown.spawn(&handle, async move {
                 crate::client::rtc::session::end_call(&session).await;
                 drop(session);
@@ -368,18 +465,30 @@ impl ClientFfi {
     /// and the SFU connections are closed (bounded, a few seconds). For callers
     /// that tear the client or the runtime down right after.
     pub fn rtc_end_call_wait(&mut self) {
-        let pending = self.rtc_teardown.take();
-        let (session, setup) = self.rtc_call.lock().take().retire();
-        self.rt.block_on(async move {
-            wait_for(pending).await;
-            if setup.is_some() && tokio::time::timeout(STARTING_WAIT, wait_for(setup)).await.is_err() {
+        let (session, mut setup) = self.rtc_call.lock().take().retire();
+        let handle = self.rt.handle().clone();
+        if let Some(session) = &session {
+            let _enter = self.rt.enter();
+            session.stop_now();
+        }
+        let teardown = &mut self.rtc_teardown;
+        let setup_left = self.rt.block_on(async {
+            teardown.finish(TEARDOWN_WAIT).await;
+            let gave_up = setup_gave_up(&mut setup, STARTING_WAIT).await;
+            if gave_up {
                 tracing::warn!("rtc: a call being set up is not done yet; not waiting");
             }
             if let Some(session) = session {
                 crate::client::rtc::session::end_call(&session).await;
                 drop(session);
             }
+            gave_up
         });
+        if setup_left {
+            // It stops at its next step (the call is no longer its own); the
+            // client's drop gives it a moment to, before the runtime goes.
+            self.rtc_teardown.spawn(&handle, async move { wait_for(setup).await });
+        }
     }
 
     /// Returns true iff the current user may join a MatrixRTC call in this room:
@@ -738,9 +847,76 @@ mod teardown_tests {
         }
         let state: SharedCall = Default::default();
         state.lock().begin(9);
-        let sink = Sink::default();
-        report_start_failure(&state, Some(&sink), 9, "room not found");
-        report_start_failure(&state, Some(&sink), 9, "again");
+        let sink = Arc::new(Sink::default());
+        let (first, second) = (sink.clone(), sink.clone());
+        report_start_failure(&state, || Some(first as Arc<dyn RtcEventSink>), 9, "room not found");
+        report_start_failure(&state, || Some(second as Arc<dyn RtcEventSink>), 9, "again");
         assert_eq!(*sink.0.lock().unwrap(), vec![(9, "start_failed:room not found".to_owned())]);
+    }
+
+    #[test]
+    fn a_failed_start_is_over_even_when_nobody_is_listening_and_asks_for_the_sink_only_then() {
+        let state: SharedCall = Default::default();
+        state.lock().begin(4);
+        // A hung-up setup failing is not news: the sink is not even looked up.
+        report_start_failure(&state, || panic!("no lookup for a stale failure"), 3, "stale");
+        assert!(state.lock().is_setting_up(4));
+        // No sink at the moment of the failure: the call is still over.
+        report_start_failure(&state, || None, 4, "no sink");
+        assert!(!state.lock().is_setting_up(4));
+        assert!(state.lock().session().is_none());
+    }
+
+    #[test]
+    fn a_setup_knows_when_it_has_been_hung_up_or_replaced() {
+        let mut state = CallState::<Fake>::default();
+        assert!(!state.is_setting_up(1));
+        state.begin(1);
+        assert!(state.is_setting_up(1));
+        state.begin(2);
+        assert!(!state.is_setting_up(1), "replaced");
+        let _ = state.take();
+        assert!(!state.is_setting_up(2), "hung up");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_setup_that_hangs_is_given_up_at_its_deadline() {
+        let t0 = tokio::time::Instant::now();
+        let hung = within_deadline(SETUP_DEADLINE, std::future::pending::<anyhow::Result<u8>>()).await;
+        assert!(hung.is_err());
+        assert_eq!(t0.elapsed(), SETUP_DEADLINE);
+        // A setup in time, with either outcome, passes through.
+        assert_eq!(within_deadline(SETUP_DEADLINE, async { Ok(5u8) }).await.unwrap(), 5);
+        let failed = within_deadline(SETUP_DEADLINE, async { anyhow::bail!("no sfu") as anyhow::Result<u8> }).await;
+        assert_eq!(failed.unwrap_err().to_string(), "no sfu");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_start_does_not_wait_for_ever_for_a_teardown_that_hangs() {
+        let t0 = tokio::time::Instant::now();
+        let stuck = tokio::spawn(std::future::pending::<()>());
+        let out = start_after_teardown(
+            Some(stuck),
+            Some(Box::new(Fake::default())),
+            |_old| std::future::pending::<()>(),
+            || async { 1 },
+        )
+        .await;
+        assert_eq!(out, 1);
+        assert_eq!(t0.elapsed(), TEARDOWN_WAIT + OLD_CALL_WAIT, "each wait is bounded");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_blocking_hang_up_stops_waiting_for_a_setup_and_keeps_its_handle() {
+        let mut none = None;
+        assert!(!setup_gave_up(&mut none, STARTING_WAIT).await);
+        let mut slow = Some(tokio::spawn(async {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+        }));
+        assert!(setup_gave_up(&mut slow, STARTING_WAIT).await, "15 s is not enough");
+        // Still ours to hand on, and it does finish.
+        wait_for(slow).await;
+        let mut quick = Some(tokio::spawn(async {}));
+        assert!(!setup_gave_up(&mut quick, STARTING_WAIT).await);
     }
 }

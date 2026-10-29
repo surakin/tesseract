@@ -14,12 +14,12 @@ Tagged releases summarize all changes since the previous tag.
 - feat(login): a per-user `provisioning.json` can preset the homeserver and username, and a Matrix ID typed or provisioned prefills the sign-in page. Linux release build, ctest 3762/3762
 - feat(windows): the whole app follows Windows High Contrast themes, overriding the in-app theme and accent while it is on. Windows release build + ctest 3732/3732; user-verified live
 - fix(windows): the custom title bar follows High Contrast themes and uses the system caption font. Windows release build; user-verified live
-- fix(calls): hanging up no longer freezes the window while the call is left. Linux release build, ctest 3801/3801
-- fix(calls): a call that ends, fails or is dropped no longer leaves you listed as a participant for other people. Linux release build, ctest 3801/3801
-- fix(calls): people who leave or are removed stop receiving the call's media keys, and keys that fail to send are retried. Linux release build, ctest 3801/3801
-- fix(calls): several callers can ring at once, and ignored users no longer ring or appear in the call banner. Linux release build, ctest 3801/3801
-- fix(calls): a room whose call slot predates encryption is repaired when a call starts, and a closed slot is no longer reopened. Linux release build, ctest 3801/3801
-- build(sdk): a test fails if a `std::string`-carrying cxx type returns to the Rust bridge, where it crashed with the newer WebRTC. Linux release build, ctest 3801/3801
+- fix(calls): hanging up no longer freezes the window while the call is left. Linux release build, ctest 3803/3803
+- fix(calls): a call that ends, fails or is dropped no longer leaves you listed as a participant for other people. Linux release build, ctest 3803/3803
+- fix(calls): people who leave or are removed stop receiving the call's media keys, and keys that fail to send are retried. Linux release build, ctest 3803/3803
+- fix(calls): several callers can ring at once, and ignored users no longer ring or appear in the call banner. Linux release build, ctest 3803/3803
+- fix(calls): a room whose call slot predates encryption is repaired when a call starts, and a closed slot is no longer reopened. Linux release build, ctest 3803/3803
+- build(sdk): a test fails if a `std::string`-carrying cxx type returns to the Rust bridge, where it crashed with the newer WebRTC. Linux release build, ctest 3803/3803
 - fix(calls): calls use the latest LiveKit and WebRTC, which stop trusting the disclosed eMudhra certificates and fix several reconnect bugs. Linux release build (Qt6 + GTK4), ctest 3750/3750
 - fix(calls): Join in the call lobby releases the lobby's camera before the call opens its own, so the call no longer finds the camera busy and starts with video off. Qt6 build, ctest 3504/3504
 - fix(calls): call members written by newer Element clients (no `livekit_alias` in their preferred focus, which ruma's typed model rejects as an empty membership) are read from the raw event instead, so they appear in the call banner, get frame keys and have theirs applied, and ring. cargo 1309/1310 (unrelated `uppercase_http_scheme_is_kept` fails), ctest 3500/3500, user-verified with Element on a phone

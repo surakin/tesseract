@@ -380,18 +380,48 @@ pub fn leave_reason_now(
 /// [`SlotWatch::MISSES_TO_LEAVE`] reads that span [`SlotWatch::MISS_PERIOD`].
 /// A slot that is there but cannot be read (a shape we do not know, or a read
 /// that failed) is not evidence either way: it is logged and ignored.
+///
+/// A slot we wrote ourselves ([`Self::wrote_slot`]) is not judged for
+/// [`SlotWatch::WRITE_GRACE`]: its echo can reach the store later than that
+/// of the passes which ask, and would read as missing. A leave it asked for
+/// stays asked for until [`Self::delivered`], so one that failed is sent again.
 #[derive(Default)]
 pub struct SlotWatch {
     /// When the slot first read as missing, in the current run of misses.
     first_miss: Option<Instant>,
     misses: u32,
+    /// The slot is not judged before this.
+    grace_until: Option<Instant>,
+    /// The leave asked for and not yet delivered.
+    due: Option<(LeaveCode, &'static str)>,
 }
 
 impl SlotWatch {
     pub const MISSES_TO_LEAVE: u32 = 2;
     pub const MISS_PERIOD: Duration = Duration::from_secs(15);
+    /// How long after we wrote or replaced the slot it is left unjudged.
+    pub const WRITE_GRACE: Duration = Duration::from_secs(60);
 
-    /// Feed the slot as read this pass, at `now`; returns why to leave now, if so.
+    /// We wrote (or replaced) the slot at `now`.
+    pub fn wrote_slot(&mut self, now: Instant) {
+        self.grace_until = Some(now + Self::WRITE_GRACE);
+        self.first_miss = None;
+        self.misses = 0;
+    }
+
+    /// Whether a leave was asked for and is not delivered yet.
+    pub fn leave_due(&self) -> bool {
+        self.due.is_some()
+    }
+
+    /// The leave that was asked for went out.
+    pub fn delivered(&mut self) {
+        self.due = None;
+    }
+
+    /// Feed the slot as read this pass, at `now`; returns why to leave now, if
+    /// so. Once it has said to leave it says so again on every pass, until
+    /// [`Self::delivered`].
     pub fn observe(
         &mut self,
         state: &SlotState,
@@ -399,26 +429,37 @@ impl SlotWatch {
         encrypted_now: bool,
         now: Instant,
     ) -> Option<(LeaveCode, &'static str)> {
+        if self.due.is_some() {
+            return self.due;
+        }
+        let judged = self.grace_until.is_none_or(|g| now >= g);
         let slot = match state {
             SlotState::Present(slot) => {
                 self.first_miss = None;
                 self.misses = 0;
-                Some(slot)
+                judged.then_some(slot)
             }
             SlotState::Unreadable => {
                 warn!("rtc: the room's call slot cannot be read; staying in the call");
+                None
+            }
+            SlotState::Absent if !judged => {
+                self.first_miss = None;
+                self.misses = 0;
                 None
             }
             SlotState::Absent => {
                 let since = *self.first_miss.get_or_insert(now);
                 self.misses += 1;
                 if self.misses >= Self::MISSES_TO_LEAVE && now.saturating_duration_since(since) >= Self::MISS_PERIOD {
-                    return Some((LeaveCode::SlotClosed, "the slot was removed"));
+                    self.due = Some((LeaveCode::SlotClosed, "the slot was removed"));
+                    return self.due;
                 }
                 None
             }
         };
-        leave_reason_now(slot, encrypted_at_join, encrypted_now)
+        self.due = leave_reason_now(slot, encrypted_at_join, encrypted_now);
+        self.due
     }
 }
 
@@ -701,6 +742,51 @@ mod tests {
             w.observe(&SlotState::Unreadable, false, true, t0),
             Some((LeaveCode::SlotClosed, "the room became encrypted"))
         );
+    }
+
+    #[test]
+    fn a_slot_we_just_wrote_is_not_judged_while_its_echo_may_be_on_the_way() {
+        let t0 = Instant::now();
+        let closed = SlotState::Present(SlotContent { status: SlotStatus::Closed, application: None, encryption: None });
+        let mut w = SlotWatch::default();
+        w.wrote_slot(t0);
+        // Reads that still show the old (missing) state over 50 s do not count...
+        for n in [1, 10, 20, 30, 50] {
+            assert_eq!(w.observe(&SlotState::Absent, true, true, secs(t0, n)), None, "{n} s");
+        }
+        assert_eq!(w.observe(&closed, true, true, secs(t0, 55)), None);
+        // ...and the grace leaves no half-counted misses behind: the run starts afterwards.
+        assert_eq!(w.observe(&SlotState::Absent, true, true, secs(t0, 61)), None, "first miss after the grace");
+        assert_eq!(w.observe(&SlotState::Absent, true, true, secs(t0, 70)), None);
+        assert_eq!(
+            w.observe(&SlotState::Absent, true, true, secs(t0, 77)),
+            Some((LeaveCode::SlotClosed, "the slot was removed"))
+        );
+        // The room turning encrypted is not about the slot we wrote.
+        let mut w = SlotWatch::default();
+        w.wrote_slot(t0);
+        assert_eq!(
+            w.observe(&SlotState::Absent, false, true, secs(t0, 1)),
+            Some((LeaveCode::SlotClosed, "the room became encrypted"))
+        );
+    }
+
+    #[test]
+    fn a_leave_that_failed_is_asked_for_again_until_it_is_delivered() {
+        let t0 = Instant::now();
+        let closed = SlotState::Present(SlotContent { status: SlotStatus::Closed, application: None, encryption: None });
+        let mut w = SlotWatch::default();
+        assert!(!w.leave_due());
+        let ask = w.observe(&closed, true, true, t0);
+        assert_eq!(ask, Some((LeaveCode::SlotClosed, "the slot was closed")));
+        assert!(w.leave_due());
+        // The send failed; the next passes ask again, whatever the slot says by then.
+        let open = SlotState::Present(slot_for(true));
+        assert_eq!(w.observe(&open, true, true, secs(t0, 30)), ask);
+        assert_eq!(w.observe(&SlotState::Unreadable, true, true, secs(t0, 60)), ask);
+        w.delivered();
+        assert!(!w.leave_due());
+        assert_eq!(w.observe(&open, true, true, secs(t0, 90)), None);
     }
 
     // ── MrtcMembership with a recording sink ────────────────────────────────
