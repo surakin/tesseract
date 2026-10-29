@@ -93,6 +93,7 @@ impl ClientFfi {
             &handler,
             &client,
             &self.rt,
+            self.in_flight_ctx(),
             TimelineChannel::Thread(root_str),
             Arc::clone(&cancelled),
             self.search_index_ctx(),
@@ -105,9 +106,11 @@ impl ClientFfi {
         // immediately from the server. Results arrive as VectorDiff events in
         // the streaming task above and are forwarded to C++ via on_thread_inserted.
         let tl_for_paginate = Arc::clone(&timeline);
+        let in_flight_paginate = self.in_flight_ctx();
         let paginate_abort = self
             .rt
             .spawn(async move {
+                let _in_flight = in_flight_paginate.guard("thread-paginate");
                 let _ = tl_for_paginate.paginate_backwards(50).await;
             })
             .abort_handle();
@@ -206,6 +209,7 @@ impl ClientFfi {
                 reached_end: false,
             };
         };
+        let _in_flight = self.in_flight_guard("thread-paginate");
         match self
             .rt
             .block_on(async move { tl.paginate_backwards(count).await })
@@ -812,6 +816,7 @@ impl ClientFfi {
         // overflows the smaller stack (same class of crash as the timeline
         // subscribe fix in 789eb2b).
         let svc_for_spawn = std::sync::Arc::clone(&svc);
+        let _in_flight = self.in_flight_guard("thread-list-paginate");
         let join = self.rt.spawn(async move { svc_for_spawn.paginate().await });
         match self.rt.block_on(join) {
             Ok(Ok(())) => {

@@ -1622,7 +1622,9 @@ impl ClientFfi {
         let reply_event_id = reply_event_id.to_owned();
         let thread_root = thread_root.to_owned();
 
+        let in_flight = self.in_flight_ctx();
         self.rt.spawn(async move {
+            let _in_flight = in_flight.guard("upload/image");
             let (_, room) = match require_room(&client, &room_id_str) {
                 Ok(v) => v,
                 Err(e) => {
@@ -1800,7 +1802,9 @@ impl ClientFfi {
         let reply_event_id = reply_event_id.to_owned();
         let thread_root = thread_root.to_owned();
 
+        let in_flight = self.in_flight_ctx();
         self.rt.spawn(async move {
+            let _in_flight = in_flight.guard("upload/file");
             let (_, room) = match require_room(&client, &room_id_str) {
                 Ok(v) => v,
                 Err(e) => {
@@ -1910,7 +1914,9 @@ impl ClientFfi {
         let reply_event_id = reply_event_id.to_owned();
         let thread_root = thread_root.to_owned();
 
+        let in_flight = self.in_flight_ctx();
         self.rt.spawn(async move {
+            let _in_flight = in_flight.guard("upload/audio");
             let (_, room) = match require_room(&client, &room_id_str) {
                 Ok(v) => v,
                 Err(e) => {
@@ -2037,7 +2043,9 @@ impl ClientFfi {
         let reply_event_id = reply_event_id.to_owned();
         let thread_root = thread_root.to_owned();
 
+        let in_flight = self.in_flight_ctx();
         self.rt.spawn(async move {
+            let _in_flight = in_flight.guard("upload/video");
             let (_, room) = match require_room(&client, &room_id_str) {
                 Ok(v) => v,
                 Err(e) => {
@@ -2475,7 +2483,9 @@ impl ClientFfi {
         let reply_event_id = reply_event_id.to_owned();
         let thread_root = thread_root.to_owned();
 
+        let in_flight = self.in_flight_ctx();
         self.rt.spawn(async move {
+            let _in_flight = in_flight.guard("upload/voice");
             if pcm.is_empty() {
                 deliver(false, "empty PCM");
                 return;
@@ -2591,6 +2601,7 @@ impl ClientFfi {
     /// its `Timeline` handle to invoke `toggle_reaction`.
     #[cfg(not(test))]
     pub fn send_reaction(&self, room_id: &str, event_id: &str, key: &str) -> OpResult {
+        let _in_flight = self.in_flight_guard("reaction");
         if self.client.is_none() {
             return err("not logged in");
         }
@@ -2637,6 +2648,7 @@ impl ClientFfi {
         key: &str,
         shortcode: &str,
     ) -> OpResult {
+        let _in_flight = self.in_flight_guard("reaction");
         if self.client.is_none() {
             return err("not logged in");
         }
@@ -3124,6 +3136,7 @@ impl ClientFfi {
     /// as `OpResult { ok: false, message: ... }`.
     #[cfg(not(test))]
     pub fn redact_event(&self, room_id: &str, event_id: &str, reason: &str) -> OpResult {
+        let _in_flight = self.in_flight_guard("redact");
         if self.client.is_none() {
             return err("not logged in");
         }
@@ -3170,6 +3183,7 @@ impl ClientFfi {
     /// Room moderators are not notified — that is server-side policy.
     #[cfg(not(test))]
     pub fn report_event(&self, room_id: &str, event_id: &str, reason: &str) -> OpResult {
+        let _in_flight = self.in_flight_guard("report");
         let Some(client) = self.client.as_ref() else {
             return err("not logged in");
         };
@@ -3251,6 +3265,7 @@ impl ClientFfi {
         formatted_body: &str,
         url_previews_json: &str,
     ) -> OpResult {
+        let _in_flight = self.in_flight_guard("edit");
         use matrix_sdk::room::edit::EditedContent;
 
         let Some(client) = self.client.clone() else {
@@ -3306,6 +3321,7 @@ impl ClientFfi {
     /// require `subscribe_room`.
     #[cfg(not(test))]
     pub fn send_caption_edit(&self, room_id: &str, event_id: &str, new_caption: &str) -> OpResult {
+        let _in_flight = self.in_flight_guard("edit");
         use matrix_sdk::room::edit::EditedContent;
 
         let Some(client) = self.client.clone() else {
@@ -3377,6 +3393,7 @@ impl ClientFfi {
         info_json: &str,
         reply_event_id: &str,
     ) -> OpResult {
+        let _in_flight = self.in_flight_guard("sticker");
         use matrix_sdk::ruma::events::relation::{InReplyTo, Reply};
         use matrix_sdk::ruma::events::room::message::Relation;
         use matrix_sdk::ruma::events::sticker::{StickerEventContent, StickerMediaSource};
@@ -3445,6 +3462,7 @@ impl ClientFfi {
         info_json: &str,
         reply_event_id: &str,
     ) -> OpResult {
+        let _in_flight = self.in_flight_guard("sticker");
         use matrix_sdk::ruma::events::relation::Thread;
         use matrix_sdk::ruma::events::room::message::Relation;
         use matrix_sdk::ruma::events::sticker::StickerEventContent;

@@ -19,7 +19,9 @@ const MAX_PENDING_FLOWS_PER_USER: usize = 3;
 use matrix_sdk::SessionChange;
 use matrix_sdk_ui::sync_service::SyncService;
 
-const PRESENCE_POLL_CONCURRENCY: usize = 4;
+/// Concurrent `GET /presence/{user}/status` requests per poll pass.
+const PRESENCE_POLL_CONCURRENCY: usize = 16;
+
 
 impl ClientFfi {
     /// Spawn a long-lived sync task and record its abort handle so
@@ -561,6 +563,7 @@ impl ClientFfi {
             let room_state_cache_rw = Arc::clone(&self.room_state_cache);
             let mut call_member_rx = call_member_rx;
 
+            let in_flight_rw = self.in_flight_ctx();
             self.spawn_tracked("room-list-cache-fill", async move {
                 use matrix_sdk::RoomState;
 
@@ -631,7 +634,7 @@ impl ClientFfi {
                 > = std::collections::HashMap::new();
                 let active_rooms_snapshot = active_rooms.lock().clone();
                 let legacy_compat = msc2545_legacy_compat.load(std::sync::atomic::Ordering::Relaxed);
-                let pks = rebuild_image_packs(&client_clone, &mut http_pack_cache, &active_rooms_snapshot, &app_cache_db_rw, &room_state_cache_rw, legacy_compat).await;
+                let pks = { let _in_flight = in_flight_rw.guard("image-packs"); rebuild_image_packs(&client_clone, &mut http_pack_cache, &active_rooms_snapshot, &app_cache_db_rw, &room_state_cache_rw, legacy_compat).await };
                 { let mut g = packs_cache.lock(); *g = pks; }
                 { let guard = h.lock(); guard.on_image_packs_updated(); }
 
@@ -867,7 +870,7 @@ impl ClientFfi {
                                 // a polling timer and out of the event
                                 // handler machinery.
                                 let legacy_compat = msc2545_legacy_compat.load(std::sync::atomic::Ordering::Relaxed);
-                                let pks = rebuild_image_packs(&client_clone, &mut http_pack_cache, &active_rooms_snapshot, &app_cache_db_rw, &room_state_cache_rw, legacy_compat).await;
+                                let pks = { let _in_flight = in_flight_rw.guard("image-packs"); rebuild_image_packs(&client_clone, &mut http_pack_cache, &active_rooms_snapshot, &app_cache_db_rw, &room_state_cache_rw, legacy_compat).await };
                                 let mut g = packs_cache.lock();
                                 use std::sync::atomic::Ordering;
                                 use crate::image_packs::PackSource;
@@ -1281,6 +1284,9 @@ impl ClientFfi {
         if let Some(h) = self.backfill_task.lock().take() {
             h.abort();
         }
+        if let Some(h) = self.uncached_backfill_task.lock().take() {
+            h.abort();
+        }
         if let Some(h) = self.presence_now_task.lock().take() {
             h.abort();
         }
@@ -1478,7 +1484,9 @@ impl ClientFfi {
                 if let Ok(rid) = room_id.parse() {
                     super::invalidate_room_state_cache(&self.room_state_cache, &rid);
                 }
+                let in_flight = self.in_flight_ctx();
                 self.rt.spawn(async move {
+                    let _in_flight = in_flight.guard("room-packs");
                     let discovered = super::refresh_room_packs(
                         &client,
                         &app_cache_db,
@@ -1503,13 +1511,16 @@ impl ClientFfi {
                     // visit" cadence as image packs — see `bot_commands`
                     // field's doc comment in mod.rs.
                     if let Ok(rid) = room_id.parse::<matrix_sdk::ruma::OwnedRoomId>() {
-                        let commands = super::fetch_room_bot_commands(
-                            &client,
-                            &room_state_cache,
-                            &rid,
-                            &room_id,
-                        )
-                        .await;
+                        let commands = {
+                            let _in_flight = in_flight.guard("bot-commands");
+                            super::fetch_room_bot_commands(
+                                &client,
+                                &room_state_cache,
+                                &rid,
+                                &room_id,
+                            )
+                            .await
+                        };
                         {
                             let mut g = bot_commands.lock();
                             g.insert(rid, commands);

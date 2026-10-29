@@ -689,6 +689,8 @@ impl ClientFfi {
         let mutual_rooms_slot = self.mutual_rooms_mode.clone();
         let preview_url_slot = self.homeserver_preview_url_enabled.clone();
 
+        #[cfg(not(test))]
+        let _in_flight = self.in_flight_guard("server-info");
         self.rt.block_on(build_server_info(
             client,
             http,
@@ -717,8 +719,10 @@ impl ClientFfi {
         let invite_reason_slot = self.supports_invite_reason.clone();
         let mutual_rooms_slot = self.mutual_rooms_mode.clone();
         let preview_url_slot = self.homeserver_preview_url_enabled.clone();
+        let in_flight = self.in_flight_ctx();
 
         self.rt.spawn(async move {
+            let _in_flight = in_flight.guard("server-info");
             let info = build_server_info(
                 client,
                 http,

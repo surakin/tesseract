@@ -138,6 +138,13 @@ option(TESSERACT_ENABLE_SILENT_RECOVERY_SETUP
 # Experimental — off by default while the feature is staged. See the usage
 # site below (near TESSERACT_ENABLE_LEGACY_LOGIN's corrosion_set_features
 # call) for what turning it on actually wires up.
+# Debugging aid: per-request timing log (see sdk/src/request_log.rs). Compiled in
+# only when ON; it still does nothing until the app is launched with
+# TESSERACT_REQUEST_LOG=1 (or a file path) in its environment.
+option(TESSERACT_ENABLE_REQUEST_LOG
+    "Compile in the homeserver request timing log (activated at run time by TESSERACT_REQUEST_LOG)"
+    OFF)
+
 option(TESSERACT_ENABLE_CRASH_HANDLER
     "Enable the optional local crash handler (writes a stack trace to disk if the app crashes; still opt-in per-user via Settings once built)"
     OFF)
@@ -745,6 +752,11 @@ if(TESSERACT_ENABLE_SERVER_BROWSER)
     # declaration is unconditional).
     add_compile_definitions(TESSERACT_SERVER_BROWSER_ENABLED)
     list(APPEND _tesseract_cargo_features server_browser)
+endif()
+
+if(TESSERACT_ENABLE_REQUEST_LOG)
+    message(STATUS "tesseract: request timing log compiled in")
+    list(APPEND _tesseract_cargo_features request_log)
 endif()
 
 if(TESSERACT_ENABLE_SILENT_RECOVERY_SETUP)

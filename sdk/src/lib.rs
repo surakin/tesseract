@@ -28,6 +28,13 @@ mod oauth;
 #[cfg(feature = "legacy_login")]
 mod password_login;
 mod recent_emoji;
+#[cfg(feature = "request_log")]
+mod request_log;
+// Without the feature the call sites stay, as no-ops.
+#[cfg(not(feature = "request_log"))]
+mod request_log {
+    pub(crate) fn note(_msg: impl AsRef<str>) {}
+}
 mod text_utils;
 mod upsert_media_store;
 mod url_preview;

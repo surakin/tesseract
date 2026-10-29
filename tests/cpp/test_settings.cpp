@@ -678,6 +678,8 @@ TEST_CASE("Settings round-trip: room section collapsed", "[settings]")
     s.room_section_rooms_collapsed     = true;
     s.room_section_spaces_collapsed    = true;
     s.room_section_inactive_collapsed  = false; // default is true, flip it
+    s.room_section_call_rooms_collapsed = true;
+    s.room_section_knocks_collapsed     = true;
 
     s.save_to_disk(dir);
 
@@ -688,6 +690,8 @@ TEST_CASE("Settings round-trip: room section collapsed", "[settings]")
     s.room_section_rooms_collapsed     = false;
     s.room_section_spaces_collapsed    = false;
     s.room_section_inactive_collapsed  = true;
+    s.room_section_call_rooms_collapsed = false;
+    s.room_section_knocks_collapsed     = false;
 
     s.load_from_disk(dir);
 
@@ -697,6 +701,8 @@ TEST_CASE("Settings round-trip: room section collapsed", "[settings]")
     CHECK(s.room_section_rooms_collapsed     == true);
     CHECK(s.room_section_spaces_collapsed    == true);
     CHECK(s.room_section_inactive_collapsed  == false);
+    CHECK(s.room_section_call_rooms_collapsed == true);
+    CHECK(s.room_section_knocks_collapsed     == true);
 
     fs::remove_all(dir);
 }

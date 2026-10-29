@@ -2843,6 +2843,11 @@ pub mod ffi {
         /// running. Also called automatically from `stop_sync` and `Drop`.
         fn stop_background_backfill(self: &ClientFfi);
 
+        /// Cancel only the visible-rooms backfill (`start_background_backfill`),
+        /// leaving the all-rooms pass (`start_background_backfill_all_uncached`)
+        /// running. Used when the visible set changes.
+        fn stop_visible_backfill(self: &ClientFfi);
+
         /// Like `start_background_backfill` but auto-selects every joined
         /// room whose timestamp is absent from the in-memory backfill cache
         /// and whose SDK event cache has no `latest_event_timestamp`. Called

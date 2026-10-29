@@ -195,6 +195,8 @@ void Settings::load_from_disk(const std::filesystem::path& config_dir)
     room_section_inactive_collapsed        = j.value("room_section_inactive_collapsed",        true);
     room_section_unread_collapsed = j.value("room_section_unread_collapsed", false);
     room_section_space_unjoined_collapsed  = j.value("room_section_space_unjoined_collapsed",  false);
+    room_section_call_rooms_collapsed      = j.value("room_section_call_rooms_collapsed",      false);
+    room_section_knocks_collapsed          = j.value("room_section_knocks_collapsed",          false);
 
     sidebar_width     = j.value("sidebar_width",     0);
     sidebar_collapsed = j.value("sidebar_collapsed", false);
@@ -462,6 +464,8 @@ void Settings::save_to_disk(const std::filesystem::path& config_dir) const
         {"room_section_inactive_collapsed",        room_section_inactive_collapsed},
         {"room_section_unread_collapsed", room_section_unread_collapsed},
         {"room_section_space_unjoined_collapsed",  room_section_space_unjoined_collapsed},
+        {"room_section_call_rooms_collapsed",      room_section_call_rooms_collapsed},
+        {"room_section_knocks_collapsed",          room_section_knocks_collapsed},
         {"sidebar_width",     sidebar_width},
         {"sidebar_collapsed", sidebar_collapsed},
         {"audio_input_device_id",  audio_input_device_id},

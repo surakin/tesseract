@@ -127,6 +127,7 @@ TEST_CASE("sessionless Client: fire-and-forget calls are harmless no-ops",
     CHECK_NOTHROW(c.stop_room_export(1));
     CHECK_NOTHROW(c.clear_room_export_checkpoint(kRoom));
     CHECK_NOTHROW(c.stop_background_backfill());
+    CHECK_NOTHROW(c.stop_visible_backfill());
     CHECK_NOTHROW(c.stop_unread_prefetch());
     CHECK_NOTHROW(c.send_typing_notice(kRoom, true));
     CHECK_NOTHROW(c.recent_emoji_bump("x"));

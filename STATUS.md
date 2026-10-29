@@ -1,6 +1,29 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-10-29**. 3762 C++ + 1182 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-10-29**. 3772 C++ + 1182 Rust tests.
+
+> **Request log and tunable warm-up limits (2026-10-29).**
+> Build with `-DTESSERACT_ENABLE_REQUEST_LOG=ON` (off by default), then launch
+> with `TESSERACT_REQUEST_LOG=1` (or a file path) to log every
+> homeserver request (matrix-sdk's `send` spans: method, normalised endpoint,
+> status, duration, requests in flight, sizes) to `request_timings.log`, with a
+> per-endpoint summary (count, total/avg/max ms, requests per second, peak in
+> flight) every 10 s. Warm-up concurrency is much higher than before (warm
+> timelines 16, bridge checks 16, timestamp fetches 32, image packs 16,
+> presence 16). Warming starts after the first room-list sync response, since
+> waiting for the whole list cost minutes on a large account. The bridge check
+> now covers every room, visible first. Linux release build, ctest 3773/3773.
+
+> **Faster first sync after sign-in (2026-10-29).**
+> Background warming (bridge-status check, inactive-room backfill, unread and
+> favourite prefetch) starts once the room list reaches `Running` (its first
+> sync response) instead of competing with it, and runs at higher
+> concurrency. The bridge check covers every room, visible first, and a request
+> made mid-check is queued. The inactive-room backfill fetches each room's
+> newest message timestamp directly (one `/messages` limit 1 with a message-type
+> filter, 32 at a time; sync can't supply it for rooms whose newest event is
+> encrypted, a reaction or state) and retries failed rooms. Image-pack fetches
+> run 16 at a time. Linux release build, ctest 3773/3773.
 
 > **Provisioned username and sign-in hint (2026-10-29).**
 > A per-user `provisioning.json` in the config folder (`%APPDATA%\Tesseract\`

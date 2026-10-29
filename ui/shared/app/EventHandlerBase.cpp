@@ -628,6 +628,7 @@ void EventHandlerBase::on_room_list_state(RoomListState state)
             shell->on_inflight_ui_();
             if (s == RoomListState::Running)
             {
+                shell->handle_room_list_running_ui_();
                 shell->begin_server_info_fetch_();
                 if (shell->offline_)
                 {

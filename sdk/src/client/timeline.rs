@@ -844,6 +844,7 @@ impl ClientFfi {
         handler: &Arc<Mutex<SendHandler>>,
         client: &Client,
         rt: &tokio::runtime::Runtime,
+        in_flight: super::InFlightCtx,
         channel: TimelineChannel,
         cancelled: Arc<AtomicBool>,
         index: Option<super::search::SearchIndexCtx>,
@@ -1055,6 +1056,7 @@ impl ClientFfi {
         let tl_for_members = Arc::clone(timeline);
         let fetch_abort = rt
             .spawn(async move {
+                let _in_flight = in_flight.guard("members");
                 tl_for_members.fetch_members().await;
                 let _ = members_done_tx.send(()).await;
             })
@@ -1111,6 +1113,7 @@ impl ClientFfi {
                         &handler,
                         &client,
                         &self.rt,
+                        self.in_flight_ctx(),
                         TimelineChannel::Room,
                         Arc::clone(&new_cancelled),
                         self.search_index_ctx(),
@@ -1197,6 +1200,7 @@ impl ClientFfi {
             &handler,
             &client,
             &self.rt,
+            self.in_flight_ctx(),
             TimelineChannel::Room,
             Arc::clone(&cancelled),
             self.search_index_ctx(),
@@ -1234,6 +1238,7 @@ impl ClientFfi {
         // room still shows whatever the sliding-sync response seeded it with;
         // the user can scroll up to paginate on demand.
         let low_power = Arc::clone(&self.low_power_mode);
+        let in_flight_warm = self.in_flight_ctx();
         let warm_check = self.rt.spawn(async move {
             if low_power.load(Ordering::Relaxed) {
                 return;
@@ -1253,6 +1258,7 @@ impl ClientFfi {
                 {
                     break;
                 }
+                let _in_flight = in_flight_warm.guard("timeline/warm");
                 match tl.paginate_backwards(50).await {
                     Ok(true) => break, // reached the start of the room
                     Ok(false) => {}
@@ -1899,6 +1905,7 @@ impl ClientFfi {
             &handler,
             &client,
             &self.rt,
+            self.in_flight_ctx(),
             TimelineChannel::Room,
             Arc::clone(&cancelled),
             self.search_index_ctx(),

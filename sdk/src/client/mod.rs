@@ -194,6 +194,57 @@ impl Drop for InFlightGuard {
     }
 }
 
+/// Cloneable handle that mints [`InFlightGuard`]s from inside spawned tasks
+/// and free functions that cannot borrow the `ClientFfi`.
+#[cfg(not(test))]
+#[derive(Clone)]
+pub(crate) struct InFlightCtx {
+    counter: Arc<std::sync::atomic::AtomicU32>,
+    handler: Option<Arc<Mutex<SendHandler>>>,
+    #[cfg(debug_assertions)]
+    urls: Arc<Mutex<Vec<String>>>,
+}
+
+#[cfg(not(test))]
+impl InFlightCtx {
+    /// Count one in-flight operation until the returned guard drops. `label`
+    /// is only shown by the debug-build tooltip.
+    pub(crate) fn guard(&self, label: impl Into<String>) -> InFlightGuard {
+        let label = label.into();
+        #[cfg(not(debug_assertions))]
+        let _ = &label;
+        InFlightGuard::new(
+            &self.counter,
+            &self.handler,
+            #[cfg(debug_assertions)]
+            &self.urls,
+            #[cfg(debug_assertions)]
+            label,
+        )
+    }
+}
+
+#[cfg(not(test))]
+impl ClientFfi {
+    pub(super) fn in_flight_ctx(&self) -> InFlightCtx {
+        InFlightCtx {
+            counter: Arc::clone(&self.in_flight),
+            handler: self.handler.clone(),
+            #[cfg(debug_assertions)]
+            urls: Arc::clone(&self.in_flight_urls),
+        }
+    }
+
+    pub(super) fn in_flight_guard(&self, label: impl Into<String>) -> InFlightGuard {
+        self.in_flight_ctx().guard(label)
+    }
+}
+
+/// Concurrent timeline warm-ups (`/messages` pagination) shared by the
+/// visible-rooms backfill and the unread/favourite prefetch.
+#[cfg(not(test))]
+const WARM_CONCURRENCY: usize = 16;
+
 /// AIMD upper bound for interactive media downloads (avatars + thumbnails),
 /// applied per origin (see `media_gate_registry`) — the gate for a given
 /// homeserver starts here and walks downward under stall pressure, recovering
@@ -689,6 +740,18 @@ pub struct ClientFfi {
     /// `Mutex`-wrapped for the same `&self` reason as `backfill_task`.
     #[cfg(not(test))]
     pub(super) bridge_check_task: parking_lot::Mutex<Option<tokio::task::AbortHandle>>,
+    /// Orchestrator of the all-rooms (inactive-grouping) timestamp backfill.
+    /// Separate from `backfill_task` so the visible-rooms backfill's
+    /// stop-and-restart on every scroll never aborts it, and it never blocks
+    /// that one through the shared idempotency guard.
+    #[cfg(not(test))]
+    pub(super) uncached_backfill_task: parking_lot::Mutex<Option<tokio::task::AbortHandle>>,
+
+    /// Newest room set requested while a bridge check was running; the
+    /// running task picks it up when its pass finishes.
+    #[cfg(not(test))]
+    pub(super) pending_bridge_check:
+        std::sync::Arc<parking_lot::Mutex<Option<Vec<matrix_sdk::ruma::OwnedRoomId>>>>,
     /// One-shot unread-prefetch orchestrator handle. Kept separate from
     /// `backfill_task` so the inactive-grouping backfill and the unread
     /// prefetch never abort one another (they share neither handle nor
@@ -1076,6 +1139,10 @@ impl Drop for ClientFfi {
             h.abort();
         }
         #[cfg(not(test))]
+        if let Some(h) = self.uncached_backfill_task.lock().take() {
+            h.abort();
+        }
+        #[cfg(not(test))]
         if let Some(h) = self.bridge_check_task.lock().take() {
             h.abort();
         }
@@ -1308,6 +1375,32 @@ impl ClientFfi {
         } else {
             std::env::var("RUST_LOG").unwrap_or_else(|_| level_filter(level))
         };
+        #[cfg(feature = "request_log")]
+        {
+            use tracing_subscriber::filter::{LevelFilter, Targets};
+            use tracing_subscriber::prelude::*;
+            // The matrix-sdk request spans are switched off for the text log
+            // (`matrix_sdk::http_client=off`) but still feed the request
+            // timing log, which has its own filter and is only installed
+            // when TESSERACT_REQUEST_LOG is set.
+            let log_dir = default_data_dir()
+                .parent()
+                .map(std::path::Path::to_path_buf)
+                .unwrap_or_else(default_data_dir);
+            let request_layer = crate::request_log::init(&log_dir).map(|l| {
+                l.with_filter(
+                    Targets::new().with_target(crate::request_log::SPAN_TARGET, LevelFilter::INFO),
+                )
+            });
+            let _ = tracing_subscriber::registry()
+                .with(
+                    tracing_subscriber::fmt::layer()
+                        .with_filter(tracing_subscriber::EnvFilter::new(filter_str)),
+                )
+                .with(request_layer)
+                .try_init();
+        }
+        #[cfg(not(feature = "request_log"))]
         let _ = tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::new(filter_str))
             .try_init();
@@ -1343,11 +1436,15 @@ impl ClientFfi {
             #[cfg(not(test))]
             bridge_check_task: parking_lot::Mutex::new(None),
             #[cfg(not(test))]
+            uncached_backfill_task: parking_lot::Mutex::new(None),
+            #[cfg(not(test))]
+            pending_bridge_check: std::sync::Arc::new(parking_lot::Mutex::new(None)),
+            #[cfg(not(test))]
             prefetch_task: parking_lot::Mutex::new(None),
             #[cfg(not(test))]
             pending_prefetch: Arc::new(parking_lot::Mutex::new(None)),
             #[cfg(not(test))]
-            warm_semaphore: Arc::new(tokio::sync::Semaphore::new(3)),
+            warm_semaphore: Arc::new(tokio::sync::Semaphore::new(WARM_CONCURRENCY)),
             #[cfg(not(test))]
             crypto_reset_handle: None,
             #[cfg(not(test))]
@@ -2226,20 +2323,39 @@ pub(super) async fn rebuild_image_packs(
     // named packs use distinct non-empty ones. The shared room_state_cache
     // memoizes the network fetch per room until set_active_room invalidates
     // it on a genuine new visit, so this doesn't hit the network on every
-    // periodic rebuild pass.
+    // periodic rebuild pass. Bounded-concurrent (`buffered` keeps the
+    // result order, so the pack list stays deterministic): this runs inside
+    // the room-list watcher, so serial round trips would stall its updates.
+    use futures_util::StreamExt;
+    const PACK_FETCH_CONCURRENCY: usize = 16;
+    // Futures are collected into a Vec first: a `filter_map` closure
+    // returning an async block trips a higher-ranked-lifetime error once
+    // this future has to be `Send` inside `spawn_tracked`.
+    let mut active_futs = Vec::new();
     for room_id_str in &active_set {
         let Ok(room_id) = room_id_str.parse::<OwnedRoomId>() else {
             continue;
         };
-        let discovered = discover_and_parse_room_packs(
-            client,
-            room_state_cache,
-            &room_id,
-            room_id_str,
-            &subscribed_set,
-            legacy_compat,
-        )
-        .await;
+        let subscribed_set = &subscribed_set;
+        active_futs.push(async move {
+            let discovered = discover_and_parse_room_packs(
+                client,
+                room_state_cache,
+                &room_id,
+                room_id_str,
+                subscribed_set,
+                legacy_compat,
+            )
+            .await;
+            (room_id_str.clone(), discovered)
+        });
+    }
+    let active_results: Vec<(String, Vec<crate::image_packs::ImagePack>)> =
+        futures_util::stream::iter(active_futs)
+            .buffered(PACK_FETCH_CONCURRENCY)
+            .collect()
+            .await;
+    for (room_id_str, discovered) in active_results {
         {
             let db = app_cache_db.lock();
             if let Some(conn) = db.as_ref() {
@@ -2247,7 +2363,7 @@ pub(super) async fn rebuild_image_packs(
                     .duration_since(std::time::UNIX_EPOCH)
                     .map(|d| d.as_secs() as i64)
                     .unwrap_or(0);
-                backfill::replace_known_room_packs(conn, room_id_str, &discovered, checked_at);
+                backfill::replace_known_room_packs(conn, &room_id_str, &discovered, checked_at);
             }
         }
         packs.extend(discovered);
@@ -2256,7 +2372,10 @@ pub(super) async fn rebuild_image_packs(
     // -- Subscribed rooms not also active (already fully covered above) --
     // Exact (room_id, state_key) from account data — a single-key fetch is
     // correct here since the state_key is already known precisely, no
-    // discovery needed.
+    // discovery needed. Each future gets a private one-entry copy of the
+    // fetch cache (the shared map is `&mut`); new entries merge back after.
+    type PackCache = std::collections::HashMap<(OwnedRoomId, String), Option<Value>>;
+    let mut subscribed_futs = Vec::new();
     for (room_id_str, state_key) in &subscribed_set {
         if active_set.contains(room_id_str) {
             continue;
@@ -2264,15 +2383,32 @@ pub(super) async fn rebuild_image_packs(
         let Ok(room_id) = room_id_str.parse::<OwnedRoomId>() else {
             continue;
         };
-        let fetched = fetch_room_pack(
-            client,
-            http_cache,
-            &room_id,
-            room_id_str,
-            state_key,
-            legacy_compat,
-        )
-        .await;
+        let key = (room_id.clone(), state_key.clone());
+        let mut local: PackCache = PackCache::new();
+        if let Some(v) = http_cache.get(&key) {
+            local.insert(key, v.clone());
+        }
+        subscribed_futs.push(async move {
+            let fetched = fetch_room_pack(
+                client,
+                &mut local,
+                &room_id,
+                room_id_str,
+                state_key,
+                legacy_compat,
+            )
+            .await;
+            (room_id_str.clone(), state_key.clone(), fetched, local)
+        });
+    }
+    let subscribed_results: Vec<(String, String, Option<crate::image_packs::ImagePack>, PackCache)> =
+        futures_util::stream::iter(subscribed_futs)
+            .buffered(PACK_FETCH_CONCURRENCY)
+            .collect()
+            .await;
+    for (room_id_str, state_key, fetched, local) in subscribed_results {
+        http_cache.extend(local);
+        let (room_id_str, state_key) = (room_id_str.as_str(), state_key.as_str());
 
         // Keep the persisted "Known Packs" cache in sync with what we just
         // learned: found a pack -> upsert (also covers display_name

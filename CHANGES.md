@@ -5,6 +5,12 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- perf(sync): background work after sign-in or a cache clear starts after the first room-list response and runs at higher concurrency. Linux release build, ctest 3773/3773
+- fix(ui): every room's last activity comes from its newest message and is retried on failure, so inactive rooms are grouped correctly. Linux release build, ctest 3773/3773
+- fix(ui): the status-bar activity dot also covers sends, edits, reactions, thread loading, GIFs and server info. Linux release build, ctest 3773/3773
+- fix(ui): the Call Rooms and Knocks sections keep their collapsed state, and collapsing a section in a space no longer changes the root's. Linux release build, ctest 3773/3773
+- fix(ui): closing Settings while caches are clearing no longer crashes. Linux release build, ctest 3773/3773
+- feat(debug): a build option, `TESSERACT_ENABLE_REQUEST_LOG`, adds an opt-in log of homeserver request timings. Linux release build, ctest 3773/3773
 - feat(login): a per-user `provisioning.json` can preset the homeserver and username, and a Matrix ID typed or provisioned prefills the sign-in page. Linux release build, ctest 3762/3762
 - feat(windows): the whole app follows Windows High Contrast themes, overriding the in-app theme and accent while it is on. Windows release build + ctest 3732/3732; user-verified live
 - fix(windows): the custom title bar follows High Contrast themes and uses the system caption font. Windows release build; user-verified live
@@ -15,7 +21,7 @@ Tagged releases summarize all changes since the previous tag.
 - build(macos): screenshot mode captures a 1440×900 window, a Mac App Store screenshot size. macOS release build
 - fix(macos): text no longer draws upside down after other drawing leaves CoreText's text matrix flipped. macOS release build
 - fix(ui): screenshot mode no longer crashes when a voice message is on screen. macOS release build
-- build(macos): the macOS build no longer prints the duplicate `-lSystem` linker warning or the null-reference test warning. Linux release build, ctest
+- build(macos): the macOS build no longer prints the duplicate `-lSystem` linker warning or the null-reference test warning. Linux release build, ctest 3772/3772
 - ci: a nightly workflow builds only the Rust SDK for every build type to keep the Rust cache warm, and failed builds no longer save a cache. YAML parse only
 - feat(ui): messages from other people can be reported to your homeserver's administrators from the message menu, with an optional reason. Linux release build, ctest 3751/3751
 - fix(settings): signing out a device on an account-portal (MAS) server now opens the portal page instead of failing with 404. Linux release build, cargo test

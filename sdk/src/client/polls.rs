@@ -169,6 +169,7 @@ impl ClientFfi {
             None => return err("poll not found in any subscribed timeline"),
         };
         let content = make(event_id);
+        let _in_flight = self.in_flight_guard(format!("poll/{room_id}"));
         match self.block_on_cancellable(async move { tl.send(content).await }) {
             Some(Ok(_)) => ok(""),
             Some(Err(e)) => err(e.to_string()),

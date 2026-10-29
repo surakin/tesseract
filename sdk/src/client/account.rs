@@ -607,6 +607,7 @@ impl ClientFfi {
         let ad_lock = Arc::clone(&self.account_data_lock);
         let order = Arc::clone(&self.prefs_saves);
         let seq = order.next();
+        let _in_flight = self.in_flight_guard("save-prefs");
         self.rt.block_on(async move {
             let et = GlobalAccountDataEventType::from("im.gnomos.tesseract");
             // The lock and the newest check are inside the timeout, so waiting

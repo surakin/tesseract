@@ -203,107 +203,7 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
     refresh_pinned_for_current_room_();
     retry_pending_launch_room_();
 
-    // Every background-warming dispatch below shares the single-thread
-    // mut_pool_ with subscribe_room() (queued moments ago inside
-    // on_rooms_updated_(), if this tick just restored the last-active room —
-    // see try_restore_tab_session_ / start_room_subscription_). Skip them all
-    // while a restore is still pending: push_rooms_ can fire several times
-    // before the previously-active room actually shows up in the room list
-    // (sliding sync delivers it incrementally), and each earlier tick would
-    // otherwise queue backfill/bridge-check/prefetch work for every other
-    // visible room ahead of the eventual subscribe_room() call on that same
-    // FIFO thread — the restored room would sit behind a growing backlog of
-    // warming work for rooms the user isn't even looking at yet. Once
-    // pending_restore_rooms_ is empty (restored, or there was nothing to
-    // restore), these resume normally on every subsequent tick.
-    //
-    // Bounded by restore_gate_ticks_: the previously-active room can
-    // legitimately never reappear (left/kicked from another device since
-    // last session), which would otherwise gate this warming work for the
-    // rest of the session. Give up after kRestoreGateMaxTicks ticks and let
-    // it resume regardless.
-    bool restore_pending = !pending_restore_rooms_.empty();
-    if (restore_pending)
-    {
-        if (++restore_gate_ticks_ >= kRestoreGateMaxTicks)
-            restore_pending = false;
-    }
-
-    // When inactive grouping is enabled, ensure every room (not just the
-    // visible slice) has its last_activity_ts populated so the inactive
-    // section can classify all rooms correctly. Idempotent: Rust skips rooms
-    // already in backfill_ts and returns immediately if a task is running.
-    // Dispatched off the UI thread regardless: start_background_backfill_all_
-    // uncached is SH_FFI (see client.cpp), so it never blocks the UI thread,
-    // but the call itself still does real work worth keeping off it.
-    if (client_ && !restore_pending && !low_power_active() &&
-        tesseract::Settings::instance().group_inactive_rooms)
-    {
-        auto sess = active_account_;
-        run_async_mut_("backfill-uncached-rooms", [sess]() {
-            if (sess && sess->client)
-                sess->client->start_background_backfill_all_uncached();
-        });
-    }
-
-    // Check bridge status (MSC2346) for visible rooms. Fires only when the
-    // room-id set changes (fingerprint guard). The Rust side skips rooms
-    // already cached in SQLite and is idempotent while a check is in flight.
-    if (client_ && !restore_pending && !low_power_active() && !rooms_.empty())
-    {
-        std::size_t fp = 0;
-        std::vector<std::string> ids;
-        ids.reserve(rooms_.size());
-        for (const auto& r : rooms_)
-        {
-            fp ^= std::hash<std::string>{}(r.id);
-            ids.push_back(r.id);
-        }
-        if (fp != bridge_check_fingerprint_)
-        {
-            bridge_check_fingerprint_ = fp;
-            auto sess = active_account_;
-            run_async_mut_("bridge-status-check", [sess, ids = std::move(ids)]() mutable {
-                if (sess && sess->client)
-                    sess->client->start_bridge_status_check(ids);
-            });
-        }
-    }
-
-    // Proactively warm the event cache for favorite and (if enabled)
-    // quiet-unread rooms so opening them is instant. Favorites are always
-    // included — they're an explicit user action, not a heuristic like
-    // "unread" — so this still runs with the setting off; only the unread
-    // half of the selection is gated by it. push_rooms_ fires on every sync
-    // tick, so we gate the FFI call on a fingerprint of the selected set — it
-    // only fires when that set changes (new favorite/unread room, or new
-    // messages in an already-prefetched one). The Rust side skips live
-    // timelines and is idempotent while a prefetch is in flight.
-    if (client_ && !restore_pending && !low_power_active())
-    {
-        auto sel = compute_unread_prefetch_set(
-            rooms_, current_room_id_, kUnreadPrefetchCap,
-            tesseract::Settings::instance().prefetch_unread_rooms);
-        if (sel.fingerprint != unread_prefetch_fingerprint_)
-        {
-            unread_prefetch_fingerprint_ = sel.fingerprint;
-            if (!sel.ids.empty())
-            {
-                // Capture the owning session (not `this`/`client_`): the worker
-                // runs on mut_pool_ where a concurrent account switch/logout can
-                // reassign or free the raw client_ pointer. Holding `sess` keeps
-                // the Client alive for the call — same pattern as subscribe_room.
-                auto sess = active_account_;
-                run_async_mut_(
-                    "unread-prefetch",
-                    [sess, ids = std::move(sel.ids)]() mutable
-                    {
-                        if (sess && sess->client)
-                            sess->client->start_unread_prefetch(ids);
-                    });
-            }
-        }
-    }
+    start_background_warming_();
 
     // One-time encryption setup check — raises the overlay on the first
     // eligible sync tick after login (Disabled → Fresh, Incomplete → Recover).
@@ -1570,9 +1470,157 @@ void ShellBase::handle_upload_progress_ui_(std::uint64_t request_id,
     on_upload_progress_ui_(request_id, current_bytes, total_bytes);
 }
 
+// Warm caches for rooms the user hasn't opened: inactive-room timestamps,
+// bridge status of visible rooms, and unread/favourite timelines. Called on
+// every room-list push and once when the room list finishes loading.
+void ShellBase::start_background_warming_()
+{
+    // Every background-warming dispatch below shares the single-thread
+    // mut_pool_ with subscribe_room() (queued moments ago inside
+    // on_rooms_updated_(), if this tick just restored the last-active room —
+    // see try_restore_tab_session_ / start_room_subscription_). Skip them all
+    // while a restore is still pending: push_rooms_ can fire several times
+    // before the previously-active room actually shows up in the room list
+    // (sliding sync delivers it incrementally), and each earlier tick would
+    // otherwise queue backfill/bridge-check/prefetch work for every other
+    // visible room ahead of the eventual subscribe_room() call on that same
+    // FIFO thread — the restored room would sit behind a growing backlog of
+    // warming work for rooms the user isn't even looking at yet. Once
+    // pending_restore_rooms_ is empty (restored, or there was nothing to
+    // restore), these resume normally on every subsequent tick.
+    //
+    // Bounded by restore_gate_ticks_: the previously-active room can
+    // legitimately never reappear (left/kicked from another device since
+    // last session), which would otherwise gate this warming work for the
+    // rest of the session. Give up after kRestoreGateMaxTicks ticks and let
+    // it resume regardless.
+    // Also wait for the all-rooms list to finish growing: until then these
+    // requests (full room state per room, /messages per room) share the
+    // connection with the 100-rooms-per-request room-list sync and slow it.
+    // handle_room_list_running_ui_ re-runs this once the room list is running.
+    if (!warmup_allowed_())
+        return;
+    bool restore_pending = !pending_restore_rooms_.empty();
+    if (restore_pending)
+    {
+        if (++restore_gate_ticks_ >= kRestoreGateMaxTicks)
+            restore_pending = false;
+    }
+
+    // When inactive grouping is enabled, ensure every room (not just the
+    // visible slice) has its last_activity_ts populated so the inactive
+    // section can classify all rooms correctly. Idempotent: Rust skips rooms
+    // already in backfill_ts and returns immediately if a task is running.
+    // Dispatched off the UI thread regardless: start_background_backfill_all_
+    // uncached is SH_FFI (see client.cpp), so it never blocks the UI thread,
+    // but the call itself still does real work worth keeping off it.
+    if (client_ && !restore_pending && !low_power_active() &&
+        tesseract::Settings::instance().group_inactive_rooms)
+    {
+        auto sess = active_account_;
+        run_async_mut_("backfill-uncached-rooms", [sess]() {
+            if (sess && sess->client)
+                sess->client->start_background_backfill_all_uncached();
+        });
+    }
+
+    // Check bridge status (MSC2346) for visible rooms. Fires only when the
+    // room-id set changes (fingerprint guard). The Rust side skips rooms
+    // already cached in SQLite and is idempotent while a check is in flight.
+    // Every room, visible ones first (see start_bridge_check_).
+    if (client_ && !restore_pending && !low_power_active() && !rooms_.empty())
+        start_bridge_check_();
+
+    // Proactively warm the event cache for favorite and (if enabled)
+    // quiet-unread rooms so opening them is instant. Favorites are always
+    // included — they're an explicit user action, not a heuristic like
+    // "unread" — so this still runs with the setting off; only the unread
+    // half of the selection is gated by it. push_rooms_ fires on every sync
+    // tick, so we gate the FFI call on a fingerprint of the selected set — it
+    // only fires when that set changes (new favorite/unread room, or new
+    // messages in an already-prefetched one). The Rust side skips live
+    // timelines and is idempotent while a prefetch is in flight.
+    if (client_ && !restore_pending && !low_power_active())
+    {
+        auto sel = compute_unread_prefetch_set(
+            rooms_, current_room_id_, kUnreadPrefetchCap,
+            tesseract::Settings::instance().prefetch_unread_rooms);
+        if (sel.fingerprint != unread_prefetch_fingerprint_)
+        {
+            unread_prefetch_fingerprint_ = sel.fingerprint;
+            if (!sel.ids.empty())
+            {
+                // Capture the owning session (not `this`/`client_`): the worker
+                // runs on mut_pool_ where a concurrent account switch/logout can
+                // reassign or free the raw client_ pointer. Holding `sess` keeps
+                // the Client alive for the call — same pattern as subscribe_room.
+                auto sess = active_account_;
+                run_async_mut_(
+                    "unread-prefetch",
+                    [sess, ids = std::move(sel.ids)]() mutable
+                    {
+                        if (sess && sess->client)
+                            sess->client->start_unread_prefetch(ids);
+                    });
+            }
+        }
+    }
+}
+
+// Bridge status (MSC2346) for every room, the rows currently visible first so
+// they resolve first (the Rust side works through the list in order and
+// skips rooms already cached). Fires only when the id set or the visible
+// prefix changes (fingerprint guard); a request made while a check is running
+// is queued, so a scroll mid-check is not lost.
+void ShellBase::start_bridge_check_()
+{
+    if (!client_ || !warmup_allowed_())
+        return;
+    std::vector<std::string> ids;
+    if (main_app_ && main_app_->room_list_view())
+        ids = main_app_->room_list_view()->visible_room_ids();
+    std::unordered_set<std::string> seen(ids.begin(), ids.end());
+    for (const auto& r : rooms_)
+    {
+        if (seen.insert(r.id).second)
+            ids.push_back(r.id);
+    }
+    if (ids.empty())
+        return;
+    std::size_t fp = 0;
+    for (const auto& id : ids)
+        fp = fp * 1315423911u + std::hash<std::string>{}(id);
+    if (fp == bridge_check_fingerprint_)
+        return;
+    bridge_check_fingerprint_ = fp;
+    auto sess = active_account_;
+    run_async_mut_("bridge-status-check", [sess, ids = std::move(ids)]() mutable {
+        if (sess && sess->client)
+            sess->client->start_bridge_status_check(ids);
+    });
+}
+
+void ShellBase::handle_room_list_running_ui_()
+{
+    if (event_account_.empty())
+        return;
+    // Running is re-entered after a reconnect; only the first time this sync
+    // session releases the held-back warming.
+    if (!room_list_running_accounts_.insert(event_account_).second)
+        return;
+    if (!active_account_ || active_account_->user_id != event_account_)
+        return; // the account switch re-runs warming for the incoming account
+    // Warming was held back until now: let it fire for the room list.
+    unread_prefetch_fingerprint_ = 0;
+    bridge_check_fingerprint_    = 0;
+    start_background_warming_();
+}
+
 void ShellBase::push_room_list_state_(RoomListState state)
 {
     last_room_list_state_ = state;
+    if (state == RoomListState::Init && !event_account_.empty())
+        room_list_running_accounts_.erase(event_account_);
     // client_ (the active account's alias) may still be null here during
     // startup: bridge construction + start_sync now run on a worker thread
     // ahead of switch_active_account_impl_, so a fast-restoring account's

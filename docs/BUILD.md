@@ -289,6 +289,14 @@ sets recovery up by itself, keeps the key in the OS secure storage until the
 user saves it, reminds them to save it, and unlocks a re-signed-in device with
 the stored key.
 
+`-DTESSERACT_ENABLE_REQUEST_LOG=ON` (default `OFF`) compiles in a debugging
+aid, the homeserver request timing log (the Rust `request_log` Cargo feature,
+which the option drives). It stays inert until the app is launched with
+`TESSERACT_REQUEST_LOG=1` (writes `request_timings.log` beside the account
+stores) or `TESSERACT_REQUEST_LOG=<file>`: one line per request (time, method,
+endpoint, status, duration, requests in flight, sizes) and a per-endpoint
+summary every 10 s.
+
 `-DTESSERACT_ENABLE_SERVER_BROWSER=OFF` (default `ON`) removes the login view's
 "Find a server" browser, the community homeserver list it fetches, and the
 `Client::load_server_list` API (and the Rust `server_browser` Cargo feature,

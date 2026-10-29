@@ -2749,6 +2749,7 @@ impl ClientFfi {
         let Some(client) = self.client.as_ref() else {
             return err("not logged in");
         };
+        let _in_flight = self.in_flight_guard("reset-room-avatar");
         let account_avatar = match self.rt.block_on(client.account().get_avatar_url()) {
             Ok(a) => a,
             Err(e) => return err(e.to_string()),

@@ -1655,3 +1655,16 @@ void ShellBase::on_tray_available_ui_(bool available)
 }
 
 } // namespace tesseract
+
+namespace tesseract
+{
+void ShellBase::show_cache_sizes_(uint64_t local, uint64_t sdk, uint64_t memory,
+                                  uint64_t mem_hits, uint64_t mem_misses,
+                                  uint64_t disk_hits, uint64_t disk_misses)
+{
+    if (stats_settings_view_)
+        stats_settings_view_->set_cache_sizes(local, sdk, memory, mem_hits,
+                                              mem_misses, disk_hits,
+                                              disk_misses);
+}
+} // namespace tesseract

@@ -248,6 +248,7 @@ mod net {
             if direct_http.is_none() && !homeserver_ok {
                 return String::new();
             }
+            let _in_flight = self.in_flight_guard("url-preview");
             let previews: Vec<UrlPreview> = self
                 .block_on_cancellable(async move {
                     let tasks = urls.into_iter().map(|url| {

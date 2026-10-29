@@ -219,6 +219,7 @@ struct HandlerShell : tesseract::test::TestShellBase
     using ShellBase::in_room_search_pending_;
     using ShellBase::last_inflight_;
     using ShellBase::offline_;
+    using ShellBase::room_list_running_accounts_;
     using ShellBase::thread_search_pending_;
 };
 
@@ -357,6 +358,19 @@ TEST_CASE("RoomListState::Running while offline brings the shell back online",
     CHECK(f.shell.log == std::vector<std::string>{"online"});
     CHECK(f.shell.room_list_ui == 2);
     CHECK(f.shell.inflight_ui == 2);
+}
+
+TEST_CASE("room list Running opens the warm-up gate for that account until Init",
+          "[event_handler_base]")
+{
+    EhbFx f;
+    CHECK(f.shell.room_list_running_accounts_.empty());
+    f.h.on_room_list_state(tesseract::RoomListState::SettingUp);
+    CHECK(f.shell.room_list_running_accounts_.empty());
+    f.h.on_room_list_state(tesseract::RoomListState::Running);
+    CHECK(f.shell.room_list_running_accounts_.count("@me:x") == 1);
+    f.h.on_room_list_state(tesseract::RoomListState::Init);
+    CHECK(f.shell.room_list_running_accounts_.empty());
 }
 
 TEST_CASE("inflight count drives the spinner tick and the UI refresh",

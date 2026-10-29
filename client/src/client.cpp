@@ -894,6 +894,12 @@ void Client::stop_background_backfill()
     impl_->ffi->stop_background_backfill();
 }
 
+void Client::stop_visible_backfill()
+{
+    SH_FFI;
+    impl_->ffi->stop_visible_backfill();
+}
+
 Result
 Client::start_bridge_status_check(const std::vector<std::string>& room_ids)
 {

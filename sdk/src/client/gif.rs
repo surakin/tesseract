@@ -365,7 +365,9 @@ impl ClientFfi {
         let provider = KlipyProvider::new(api_key.to_owned(), customer_id);
         let url = provider.search_url(query, limit);
         let http = self.http_client.clone();
+        let in_flight = self.in_flight_ctx();
         self.rt.spawn(async move {
+            let _in_flight = in_flight.guard("gif-search");
             let result = async {
                 let resp = http.get(&url).send().await.map_err(|e| e.to_string())?;
                 if !resp.status().is_success() {
@@ -399,6 +401,7 @@ impl ClientFfi {
         reply_event_id: &str,
         thread_root: &str,
     ) -> OpResult {
+        let _in_flight = self.in_flight_guard("gif-send");
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
@@ -537,8 +540,10 @@ impl ClientFfi {
         let reply = reply_event_id.to_owned();
         let thread = thread_root.to_owned();
         let stop_rx = self.stop_rx.clone();
+        let in_flight = self.in_flight_ctx();
 
         self.rt.spawn(async move {
+            let _in_flight = in_flight.guard("gif-send");
             // Fetch image and preview in parallel.
             let stop2 = stop_rx.clone();
             let (image_bytes, preview_bytes) = tokio::join!(

@@ -640,6 +640,10 @@ public:
     /// on stop_sync / destruction). No-op if none is running.
     void stop_background_backfill();
 
+    /// Cancel only the visible-rooms backfill; the all-rooms pass keeps
+    /// running. Use when the visible set changes.
+    void stop_visible_backfill();
+
     /// For each room_id with no cached entry in the bridge_status SQLite table,
     /// fetch GET /rooms/{id}/state and persist the uk.half-shot.bridge result.
     /// Fires on_rooms_updated if any newly discovered bridged room changes what

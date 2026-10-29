@@ -605,6 +605,7 @@ struct WiringShell : tesseract::test::TestShellBase
     using ShellBase::restart_mark_read_timer_;
     using ShellBase::room_view_;
     using ShellBase::server_info_;
+    using ShellBase::show_cache_sizes_;
     using ShellBase::stats_settings_view_;
     using ShellBase::per_account_rooms_;
     using ShellBase::client_;
@@ -789,11 +790,14 @@ TEST_CASE("wiring: persisted section collapsed state is restored by section "
     st.room_section_spaces_collapsed = true;
     st.room_section_inactive_collapsed = false;
     st.room_section_space_unjoined_collapsed = false;
+    st.room_section_call_rooms_collapsed = true;
+    st.room_section_knocks_collapsed = true;
     WiringFixture f;
     const auto c = f.app->room_list_view()->collapsed_state();
     CHECK(c[RoomListView::kSecSpaces]);
     CHECK_FALSE(c[RoomListView::kSecInactive]);
-    CHECK_FALSE(c[RoomListView::kSecCallRooms]);
+    CHECK(c[RoomListView::kSecCallRooms]);
+    CHECK(c[RoomListView::kSecKnocks]);
     CHECK_FALSE(c[RoomListView::kSecSpaceUnjoined]);
 }
 
@@ -816,6 +820,43 @@ TEST_CASE("wiring: leading sections restore their collapsed flags",
     CHECK_FALSE(c[RoomListView::kSecRooms]);
 }
 
+TEST_CASE("wiring: a section toggled inside a space does not overwrite the "
+          "root's saved state",
+          "[shell][wiring]")
+{
+    WiringFixture f;
+    auto& st = tesseract::Settings::instance();
+    auto& rl = *f.app->room_list_view();
+    f.s.space_stack_ = {"!space:x"};
+    rl.on_section_toggled(RoomListView::kSecCallRooms, true);
+    rl.on_section_toggled(RoomListView::kSecRooms, true);
+    CHECK_FALSE(st.room_section_call_rooms_collapsed);
+    CHECK_FALSE(st.room_section_rooms_collapsed);
+    // Back at the root, toggles persist again.
+    f.s.space_stack_.clear();
+    rl.on_section_toggled(RoomListView::kSecCallRooms, true);
+    CHECK(st.room_section_call_rooms_collapsed);
+}
+
+TEST_CASE("wiring: cache sizes arriving after Settings was closed are dropped",
+          "[shell][wiring]")
+{
+    WiringFixture f;
+    // Settings is not open (or was just closed): nothing to update, no crash.
+    f.s.stats_settings_view_ = nullptr;
+    CHECK_NOTHROW(f.s.show_cache_sizes_(1, 2, 3, 4, 5, 6, 7));
+
+    StubHost host;
+    auto sv = tk::create_root_widget<tesseract::views::SettingsView>(&host);
+    f.s.stats_settings_view_ = sv.get();
+    CHECK_NOTHROW(f.s.show_cache_sizes_(1, 2, 3, 4, 5, 6, 7));
+    // Closing clears the pointer before the view goes away; a late callback
+    // must then be a no-op rather than touch the destroyed view.
+    f.s.stats_settings_view_ = nullptr;
+    sv.reset();
+    CHECK_NOTHROW(f.s.show_cache_sizes_(1, 2, 3, 4, 5, 6, 7));
+}
+
 TEST_CASE("wiring: toggling a section persists it to Settings by name",
           "[shell][wiring]")
 {
@@ -830,6 +871,8 @@ TEST_CASE("wiring: toggling a section persists it to Settings by name",
     rl.on_section_toggled(RoomListView::kSecSpaces, true);
     rl.on_section_toggled(RoomListView::kSecInactive, false);
     rl.on_section_toggled(RoomListView::kSecSpaceUnjoined, true);
+    rl.on_section_toggled(RoomListView::kSecCallRooms, true);
+    rl.on_section_toggled(RoomListView::kSecKnocks, true);
     CHECK(st.room_section_invites_collapsed);
     CHECK(st.room_section_unread_collapsed);
     CHECK(st.room_section_favorites_collapsed);
@@ -838,6 +881,8 @@ TEST_CASE("wiring: toggling a section persists it to Settings by name",
     CHECK(st.room_section_spaces_collapsed);
     CHECK_FALSE(st.room_section_inactive_collapsed);
     CHECK(st.room_section_space_unjoined_collapsed);
+    CHECK(st.room_section_call_rooms_collapsed);
+    CHECK(st.room_section_knocks_collapsed);
     // An unknown section index is ignored.
     CHECK_NOTHROW(rl.on_section_toggled(99, true));
 }
@@ -2465,12 +2510,22 @@ TEST_CASE("wiring: avatar-changed result updates the shell and active account",
     s.active_account_ = sess;
 
     s.wire_settings_controller_common_(view.get(), &ctrl);
+    s.stats_settings_view_ = view.get(); // the open settings view
     REQUIRE(ctrl.on_avatar_changed != nullptr);
     const int before = host.relayout_count;
     ctrl.on_avatar_changed("mxc://x/new");
     CHECK(s.my_avatar_url_ == "mxc://x/new");
     CHECK(sess->avatar_url == "mxc://x/new");
     CHECK(host.relayout_count > before);
+
+    // The upload can finish after Settings was closed: the shell and account
+    // still update, and the (gone) view is not touched.
+    s.stats_settings_view_ = nullptr;
+    const int after_open = host.relayout_count;
+    ctrl.on_avatar_changed("mxc://x/later");
+    CHECK(s.my_avatar_url_ == "mxc://x/later");
+    CHECK(sess->avatar_url == "mxc://x/later");
+    CHECK(host.relayout_count == after_open);
 }
 
 // ── wire_voice_capture_ ─────────────────────────────────────────────────────

@@ -21,6 +21,12 @@ legacy_login = []
 # need `--features server_browser` to build/test it.
 server_browser = []
 
+# Per-request timing log (sdk/src/request_log.rs): when the app is launched with
+# TESSERACT_REQUEST_LOG set it writes every homeserver request's duration plus
+# a periodic per-endpoint summary. Off by default; enabled by
+# TESSERACT_ENABLE_REQUEST_LOG (root CMakeLists.txt) or `--features request_log`.
+request_log = []
+
 # Optional local crash handler: a Rust panic hook (sdk/src/crash_reporter.rs)
 # that complements the native signal/SEH handler on the C++ side
 # (client/src/crash_handler.cpp). Off by default — staged behind

@@ -75,6 +75,9 @@ struct RaShell : tesseract::test::TestShellBase
     using ShellBase::active_account_;
     using ShellBase::block_invite_async_;
     using ShellBase::bridge_check_fingerprint_;
+    using ShellBase::event_account_;
+    using ShellBase::handle_room_list_running_ui_;
+    using ShellBase::room_list_running_accounts_;
     using ShellBase::client_;
     using ShellBase::confirm_leave_room_;
     using ShellBase::create_room_command_;
@@ -218,6 +221,7 @@ TEST_CASE("push_rooms_ warms bridge status and unread rooms once per room set",
           "[shell][rooms]")
 {
     RaFx f;
+    f.s.room_list_running_accounts_.insert("@me:x");
     auto fav = ra_room("!fav");
     fav.is_favorite = true;
     f.s.push_rooms_("@me:x", {fav, ra_room("!b")});
@@ -238,6 +242,7 @@ TEST_CASE("push_rooms_ holds back warming while a layout restore is pending",
           "[shell][rooms]")
 {
     RaFx f;
+    f.s.room_list_running_accounts_.insert("@me:x");
     f.s.pending_restore_rooms_ = {"!saved"};
     f.s.push_rooms_("@me:x", {ra_room("!a")});
     CHECK(f.s.restore_gate_ticks_ == 1);
@@ -247,6 +252,28 @@ TEST_CASE("push_rooms_ holds back warming while a layout restore is pending",
     for (int i = 0; i < RaShell::kRestoreGateMaxTicks; ++i)
         f.s.push_rooms_("@me:x", {ra_room("!a")});
     CHECK(f.s.bridge_check_fingerprint_ != 0);
+}
+
+TEST_CASE("push_rooms_ holds back warming until the room list is running",
+          "[shell][rooms]")
+{
+    RaFx f;
+    auto fav = ra_room("!fav");
+    fav.is_favorite = true;
+    f.s.push_rooms_("@me:x", {fav, ra_room("!b")});
+    CHECK(f.s.bridge_check_fingerprint_ == 0);
+    CHECK(f.s.unread_prefetch_fingerprint_ == 0);
+
+    // Another account's Running leaves the gate shut.
+    f.s.event_account_ = "@other:x";
+    f.s.handle_room_list_running_ui_();
+    CHECK(f.s.bridge_check_fingerprint_ == 0);
+
+    // The active account's Running opens it and warms the held-back list.
+    f.s.event_account_ = "@me:x";
+    f.s.handle_room_list_running_ui_();
+    CHECK(f.s.bridge_check_fingerprint_ != 0);
+    CHECK(f.s.unread_prefetch_fingerprint_ != 0);
 }
 
 TEST_CASE("push_rooms_ replays a matrix link that arrived before login",

@@ -405,6 +405,8 @@ public:
     bool room_section_inactive_collapsed        = true;
     bool room_section_unread_collapsed          = false;
     bool room_section_space_unjoined_collapsed  = false;
+    bool room_section_call_rooms_collapsed      = false;
+    bool room_section_knocks_collapsed          = false;
 
     // User-chosen width of the room-list sidebar, in logical px. 0 = unset →
     // fall back to visual::kSidebarWidth. When sidebar_collapsed is true the

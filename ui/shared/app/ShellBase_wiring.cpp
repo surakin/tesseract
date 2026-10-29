@@ -509,10 +509,11 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
                           {
                               if (sess && sess->client)
                               {
-                                  sess->client->stop_background_backfill();
+                                  sess->client->stop_visible_backfill();
                                   sess->client->start_background_backfill(ids);
                               }
                           });
+                          start_bridge_check_();
                       });
         };
     }
@@ -783,12 +784,19 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
         init[views::RoomListView::kSecSpaces]        = s.room_section_spaces_collapsed;
         init[views::RoomListView::kSecInactive]      = s.room_section_inactive_collapsed;
         init[views::RoomListView::kSecSpaceUnjoined] = s.room_section_space_unjoined_collapsed;
+        init[views::RoomListView::kSecCallRooms]     = s.room_section_call_rooms_collapsed;
+        init[views::RoomListView::kSecKnocks]        = s.room_section_knocks_collapsed;
         for (int sec = 0; sec < views::RoomListView::kNumSections; ++sec)
             app->room_list_view()->set_section_collapsed(sec, init[sec]);
     }
     app->room_list_view()->on_section_toggled =
-        [](int section, bool collapsed)
+        [this](int section, bool collapsed)
     {
+        // Inside a space the sections show that space's rooms, and their state
+        // is not persisted: only the root list's state is, so a toggle made in
+        // a space must not overwrite it.
+        if (!space_stack_.empty())
+            return;
         auto& s = tesseract::Settings::instance();
         switch (section)
         {
@@ -808,6 +816,10 @@ void ShellBase::wire_main_app_widget_(views::MainAppWidget* app)
             s.room_section_inactive_collapsed       = collapsed; break;
         case views::RoomListView::kSecSpaceUnjoined:
             s.room_section_space_unjoined_collapsed = collapsed; break;
+        case views::RoomListView::kSecCallRooms:
+            s.room_section_call_rooms_collapsed     = collapsed; break;
+        case views::RoomListView::kSecKnocks:
+            s.room_section_knocks_collapsed         = collapsed; break;
         default: break;
         }
         s.save_to_disk(tesseract::config_dir());
@@ -1376,15 +1388,15 @@ void ShellBase::wire_settings_view_(views::SettingsView* view)
     view->on_open_activity_monitor = [this] { open_activity_monitor_(); };
     view->on_restart_requested = [this] { restart_app_(); };
     view->on_about_tab_shown = [this] { refresh_cache_sizes_poll_(); };
-    view->on_clear_caches = [this, view]
+    view->on_clear_caches = [this]
     {
-        clear_all_caches_([view](uint64_t local, uint64_t sdk, uint64_t memory,
+        // The clear finishes long after the click, and Settings may have been
+        // closed meanwhile, so the view is looked up when the sizes arrive
+        // instead of being captured.
+        clear_all_caches_([this](uint64_t local, uint64_t sdk, uint64_t memory,
                                  uint64_t mh, uint64_t mm, uint64_t dh,
                                  uint64_t dm)
-        {
-            if (view)
-                view->set_cache_sizes(local, sdk, memory, mh, mm, dh, dm);
-        });
+        { show_cache_sizes_(local, sdk, memory, mh, mm, dh, dm); });
     };
 }
 
@@ -1410,13 +1422,17 @@ void ShellBase::wire_settings_controller_common_(
         handle_profile_field_change_(key, value_json);
     };
 
-    ctrl->on_avatar_changed = [this, view](std::string mxc)
+    ctrl->on_avatar_changed = [this](std::string mxc)
     {
         my_avatar_url_ = mxc;
         if (active_account_)
             active_account_->avatar_url = my_avatar_url_;
-        view->set_avatar_url(mxc);
-        view->request_relayout();
+        // The upload can finish after Settings was closed.
+        if (stats_settings_view_)
+        {
+            stats_settings_view_->set_avatar_url(mxc);
+            stats_settings_view_->request_relayout();
+        }
         refresh_user_strip_();
     };
 }

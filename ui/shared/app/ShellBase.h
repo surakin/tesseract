@@ -1176,9 +1176,23 @@ protected:
     // reset to 0 on account switch so the incoming account re-fires.
     std::size_t unread_prefetch_fingerprint_  = 0;
     std::size_t bridge_check_fingerprint_     = 0;
+    // Accounts whose room list has reached RoomListState::Running this sync
+    // session, i.e. delivered its first sync response. Background warming
+    // (bridge check, inactive-room backfill, unread prefetch) waits for the
+    // active account to be in here, so it does not start before there is a
+    // room list to work on. Cleared on RoomListState::Init (sync restart).
+    std::unordered_set<std::string> room_list_running_accounts_;
+    bool warmup_allowed_() const
+    {
+        return active_account_ &&
+               room_list_running_accounts_.count(active_account_->user_id) != 0;
+    }
+    void handle_room_list_running_ui_();
+    void start_background_warming_();
+    void start_bridge_check_();
     // Max unread rooms to one-shot prefetch per reconcile; the rest (lower
     // last_activity_ts) are dropped — this resize *is* the LRU eviction.
-    static constexpr std::size_t kUnreadPrefetchCap = 20;
+    static constexpr std::size_t kUnreadPrefetchCap = 100;
     // The current user-mode needle (query with the leading '@' stripped), so an
     // async profile-resolve can re-emit results against the latest query.
     std::string last_user_query_;
@@ -4627,6 +4641,11 @@ protected:
     // it never shadows a shell's own `settings_view_` member). Set by
     // configure_new_settings_view_, cleared by teardown_settings_view_.
     tesseract::views::SettingsView* stats_settings_view_ = nullptr;
+    // Hand cache sizes to the open settings view, if any. For callbacks that
+    // run after the user may have closed Settings.
+    void show_cache_sizes_(uint64_t local, uint64_t sdk, uint64_t memory,
+                           uint64_t mem_hits, uint64_t mem_misses,
+                           uint64_t disk_hits, uint64_t disk_misses);
 
     // The settings page's surface, owned here and created on first use through
     // create_settings_surface_ui_(). stats_settings_view_ is its widget tree
