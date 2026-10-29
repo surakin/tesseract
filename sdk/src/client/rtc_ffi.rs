@@ -71,28 +71,27 @@ impl ClientFfi {
         }
     }
 
-    /// Returns true iff the current user may send every state event needed
-    /// to join a MatrixRTC call in this room — `org.matrix.msc3401.call.member`
-    /// (Element's "Join Element Call calls"). Reads cached m.room.power_levels
-    /// — no network round-trip. Returns false on any uncertainty (not logged
-    /// in, room unknown, PL unreadable).
+    /// Returns true iff the current user may join a MatrixRTC call in this room:
+    /// the legacy `org.matrix.msc3401.call.member` state event (the sticky
+    /// MatrixRTC events degrade to a legacy-only call). Reads cached
+    /// m.room.power_levels — no network round-trip. Returns false on any
+    /// uncertainty (not logged in, room unknown, PL unreadable).
     pub fn can_join_call_in_room(&self, room_id: &str) -> bool {
-        self.can_send_call_state(room_id, &["org.matrix.msc3401.call.member"])
+        self.call_permission(room_id, crate::client::rtc::mrtc_membership::may_join_call)
     }
 
     /// Returns true iff the current user may start a call in this room: join
-    /// permission plus `org.matrix.msc3401.call` (Element's "Start Element
-    /// Call calls"). Same cached read and fail-closed behaviour as
-    /// `can_join_call_in_room`.
+    /// permission plus the legacy `org.matrix.msc3401.call` event. Same cached
+    /// read and fail-closed behaviour as `can_join_call_in_room`.
     pub fn can_start_call_in_room(&self, room_id: &str) -> bool {
-        self.can_send_call_state(
-            room_id,
-            &["org.matrix.msc3401.call", "org.matrix.msc3401.call.member"],
-        )
+        self.call_permission(room_id, crate::client::rtc::mrtc_membership::may_start_call)
     }
 
-    fn can_send_call_state(&self, room_id: &str, event_types: &[&str]) -> bool {
-        use matrix_sdk::ruma::events::StateEventType;
+    fn call_permission(
+        &self,
+        room_id: &str,
+        check: fn(&matrix_sdk::ruma::events::room::power_levels::RoomPowerLevels, &matrix_sdk::ruma::UserId) -> bool,
+    ) -> bool {
         use matrix_sdk::ruma::OwnedRoomId;
 
         let Some(client) = self.client.as_ref() else {
@@ -109,9 +108,7 @@ impl ClientFfi {
         };
 
         match self.rt.block_on(room.power_levels()) {
-            Ok(pl) => event_types
-                .iter()
-                .all(|t| pl.user_can_send_state(user_id, StateEventType::from(*t))),
+            Ok(pl) => check(&pl, user_id),
             Err(_) => false,
         }
     }
@@ -199,7 +196,8 @@ impl ClientFfi {
     }
 
     /// Decline an incoming MatrixRTC invite (`m.rtc.decline` referencing the
-    /// invite event). Fire and forget; failures are logged.
+    /// invite event). Fire and forget: queued behind earlier declines, sent in
+    /// order, each retried once; failures are logged (rate-limited).
     pub fn rtc_decline_invite_async(&self, room_id: &str, invite_event_id: &str) {
         let Some(client) = self.client.clone() else {
             return;
@@ -210,14 +208,7 @@ impl ClientFfi {
         if invite_event_id.is_empty() {
             return;
         }
-        let invite_event_id = invite_event_id.to_owned();
-        self.rt.spawn(async move {
-            let Some(room) = client.get_room(&room_id) else {
-                return;
-            };
-            if let Err(e) = crate::client::rtc::invites::send_decline(&room, &invite_event_id).await {
-                tracing::warn!("rtc: declining {invite_event_id} failed: {e}");
-            }
-        });
+        let _enter = self.rt.enter();
+        crate::client::rtc::invites::queue_decline(client, room_id, invite_event_id.to_owned());
     }
 }

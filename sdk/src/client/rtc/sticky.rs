@@ -9,7 +9,7 @@ use std::collections::HashSet;
 
 use matrix_sdk_base::sticky::StickyEvent;
 use matrix_sdk::{
-    ruma::{OwnedRoomId, UInt},
+    ruma::{api::error::ErrorKind, events::ignored_user_list::IgnoredUserListEventContent, OwnedRoomId, UInt},
     Client, Room,
 };
 use serde_json::Value;
@@ -111,10 +111,52 @@ pub fn live_entries(room: &Room) -> Vec<StickyEntry> {
         .collect()
 }
 
+/// Whether `room` has any call member (sticky or legacy), by the local store
+/// alone; cheap enough to ask of every room.
+pub async fn room_has_call_members(room: &Room) -> bool {
+    !live_entries(room).is_empty()
+        || !super::members::read_call_members(room, None, super::members::JoinCheck::Cached).await.is_empty()
+}
+
+/// The homeserver definitely did not take a sticky event (it does not support
+/// MSC4354, or refused the request as unrecognised or forbidden), so nothing
+/// was stored. Any other failure may have landed.
+#[derive(Debug)]
+pub struct StickyUnsupported(pub String);
+
+impl std::fmt::Display for StickyUnsupported {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for StickyUnsupported {}
+
+/// Whether an error from a send is a definite "not accepted" from the server.
+pub fn is_sticky_unsupported(e: &anyhow::Error) -> bool {
+    e.downcast_ref::<StickyUnsupported>().is_some()
+}
+
+/// Whether a homeserver error kind means the sticky request was refused outright.
+fn refuses_sticky(kind: Option<&ErrorKind>) -> bool {
+    matches!(kind, Some(ErrorKind::Unrecognized | ErrorKind::Forbidden))
+}
+
+/// The user ids the account ignores, read from the local store (no request).
+pub async fn ignored_users(client: &Client) -> HashSet<String> {
+    match client.account().account_data::<IgnoredUserListEventContent>().await {
+        Ok(Some(raw)) => raw
+            .deserialize()
+            .map(|c| c.ignored_users.keys().map(|u| u.to_string()).collect())
+            .unwrap_or_default(),
+        _ => HashSet::new(),
+    }
+}
+
 /// Send a sticky message-like event: encrypted in encrypted rooms, with the
 /// given sticky duration (clamped to 1 ms ..= 1 h). Fails when the homeserver
 /// does not support sticky events, since it would then send an ordinary event
-/// that nobody treats as membership.
+/// that nobody treats as membership; that failure is a [`StickyUnsupported`].
 pub async fn send_sticky(
     room: &Room,
     event_type: &str,
@@ -122,14 +164,21 @@ pub async fn send_sticky(
     duration: std::time::Duration,
 ) -> anyhow::Result<matrix_sdk::ruma::OwnedEventId> {
     if !room.client().supports_sticky_events().await.unwrap_or(false) {
-        anyhow::bail!("the homeserver does not support sticky events");
+        return Err(StickyUnsupported("the homeserver does not support sticky events".to_owned()).into());
     }
     let duration = clamp_sticky(duration);
     let sent = room
         .send_raw(event_type, content)
         .with_sticky_duration(duration)
         .await
-        .map_err(|e| anyhow::anyhow!("send sticky {event_type}: {e}"))?;
+        .map_err(|e| {
+            let msg = format!("send sticky {event_type}: {e}");
+            if refuses_sticky(e.client_api_error_kind()) {
+                anyhow::Error::new(StickyUnsupported(msg))
+            } else {
+                anyhow::anyhow!(msg)
+            }
+        })?;
     Ok(sent.response.event_id)
 }
 
@@ -148,10 +197,22 @@ pub async fn watch_invites(client: Client) {
         if !watched.insert(room.room_id().to_owned()) {
             return;
         }
+        let mut ignores = client.subscribe_to_ignore_user_list_changes();
         tasks.spawn(async move {
+            use futures_util::StreamExt;
             let mut rx = room.sticky_events().subscribe();
             super::invites::notify_active(&room).await;
-            while rx.recv().await.is_ok() || !rx.is_closed() {
+            loop {
+                tokio::select! {
+                    got = rx.recv() => {
+                        if got.is_err() && rx.is_closed() {
+                            break;
+                        }
+                    }
+                    // Invites from a newly ignored user stop ringing, and a
+                    // newly unignored one's start.
+                    Some(_) = ignores.next() => {}
+                }
                 super::invites::notify_active(&room).await;
             }
         });
@@ -241,6 +302,20 @@ mod tests {
             was_encrypted: false, sender_device: None, content: json!({}),
         };
         assert_eq!(e.end_ms(), MAX_STICKY_MS);
+    }
+
+    #[test]
+    fn only_a_definite_refusal_counts_as_sticky_unsupported() {
+        let refused = anyhow::Error::new(StickyUnsupported("no".into()));
+        assert!(is_sticky_unsupported(&refused));
+        // Context added on the way up does not hide it.
+        assert!(is_sticky_unsupported(&refused.context("decline")));
+        // A timeout or a server error may have stored the event: not a refusal.
+        assert!(!is_sticky_unsupported(&anyhow::anyhow!("send sticky x: timed out")));
+        assert!(refuses_sticky(Some(&ErrorKind::Unrecognized)));
+        assert!(refuses_sticky(Some(&ErrorKind::Forbidden)));
+        assert!(!refuses_sticky(Some(&ErrorKind::Unknown)));
+        assert!(!refuses_sticky(None), "no homeserver answer at all");
     }
 
     #[test]

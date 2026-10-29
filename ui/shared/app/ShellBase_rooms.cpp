@@ -91,6 +91,8 @@ void ShellBase::push_rooms_(std::string user_id, std::vector<RoomInfo> rooms)
         apply_bridge_overrides_(rooms, sess->bridge_not_bridged_overrides);
     }
     per_account_rooms_[user_id] = rooms;
+    // Invites of a room the account has left or forgotten can never be answered.
+    drop_call_invites_of_missing_rooms_(user_id, rooms);
     // A room list means sync is delivering again: the next sync error starts
     // the restart backoff over.
     sync_error_restarts_.erase(user_id);

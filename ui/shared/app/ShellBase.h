@@ -3868,16 +3868,46 @@ protected:
         std::unordered_map<std::string, std::string> avatar_urls; // user id -> mxc
     };
     std::unordered_map<std::string, CallBannerRoster> call_banner_rosters_;
-    // An unanswered MatrixRTC invite per room: shown as a Decline button on the
-    // call banner until it expires, is declined, or the user joins the call.
+    // The unanswered call invites per (account, room): shown as a Decline button
+    // on the call banner until they expire, are declined, or the user joins the
+    // call. The account is part of the key because two accounts can share a
+    // room (the same room id), and each has its own invites. A DM call is
+    // signalled twice (a legacy ring under slot "call#default" and a MatrixRTC
+    // invite), so a room keeps every active invite by event id and a
+    // cancellation removes only its own.
     struct PendingCallInvite
     {
         std::string event_id;
+        std::string slot_id;
         std::string caller;
         std::chrono::steady_clock::time_point expires;
     };
-    std::unordered_map<std::string, PendingCallInvite> pending_call_invites_;
+    using CallInviteKey = std::pair<std::string, std::string>; // account, room
+    std::map<CallInviteKey, std::vector<PendingCallInvite>> pending_call_invites_;
+    // Most invites kept across every room and account; when more arrive the
+    // soonest to run out is dropped, so a flood cannot grow the table.
+    static constexpr std::size_t kMaxPendingCallInvites = 32;
     void decline_pending_call_invite_(const std::string& room_id);
+    // The event ids a Decline answers: every given invite, MatrixRTC ones first.
+    static std::vector<std::string> call_invite_decline_targets_(
+        const std::vector<PendingCallInvite>& invites);
+    // The users the call banner lists for a room: its call members, or else
+    // the callers of its pending invites.
+    static std::vector<std::string> call_banner_ids_(const RoomInfo* room,
+                                                     const std::vector<PendingCallInvite>& invites);
+    // The invites the banner stands for: those whose caller it lists. Only
+    // these show Decline and are answered by it.
+    static std::vector<PendingCallInvite> call_invites_shown_by_banner_(
+        const std::vector<std::string>& banner_ids,
+        const std::vector<PendingCallInvite>& invites);
+    // Drop expired invites everywhere, then the soonest-to-expire ones beyond
+    // kMaxPendingCallInvites (never `keep_event_id`).
+    void trim_pending_call_invites_(const std::string& keep_event_id);
+    // Forget an account's invites (it signed out or was removed).
+    void drop_call_invites_of_account_(const std::string& uid);
+    // Forget the invites (and banner rosters) of rooms the account no longer has.
+    void drop_call_invites_of_missing_rooms_(const std::string& uid,
+                                             const std::vector<RoomInfo>& rooms);
     // Display names and avatar URLs of the active call room's members for the
     // call overlay's per-participant providers, which run on every paint.
     // Rebuilt at most once per kCallOverlayRosterMaxAge, or when the call's

@@ -9,6 +9,14 @@ use super::model::{DeclineContent, InviteContent, MemberContent, DECLINE_TYPE, I
 
 /// No invite lives longer than this, whatever it claims (MSC4075).
 pub const MAX_INVITE_LIFETIME_MS: u64 = 120_000;
+/// How far an event of ours may predate the invite it answers: the two are
+/// stamped by different homeservers, whose clocks need not agree to the ms.
+const CLOCK_SKEW_MS: u64 = 5_000;
+/// The most callers announced for one room at a time. Callers likely to be
+/// genuine (the DM peer, someone already in the call, someone allowed to notify
+/// the room) take the places first, the earliest first within each group, so a
+/// crowd of early senders cannot push a real caller out.
+pub const MAX_ACTIVE_INVITES: usize = 8;
 
 /// What the caller knows that the sticky entries do not.
 pub struct InviteContext<'a> {
@@ -24,6 +32,14 @@ pub struct InviteContext<'a> {
     pub slot_open: &'a dyn Fn(&str) -> bool,
     /// Whether this sender may trigger a room notification (`@room` mention).
     pub can_notify_room: &'a dyn Fn(&str) -> bool,
+    /// Whether we ignore this user: their invites never ring.
+    pub sender_ignored: &'a dyn Fn(&str) -> bool,
+    /// When (ms since the epoch) this invite event was first seen here, if it
+    /// was. An invite never counts as older than that, nor as newer than its
+    /// stamp: a future-dated `origin_server_ts` cannot make it ring longer.
+    pub first_seen: &'a dyn Fn(&str) -> Option<u64>,
+    /// Whether this user is the other party of a direct chat the room is.
+    pub is_dm_peer: &'a dyn Fn(&str) -> bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -34,17 +50,43 @@ pub struct ActiveInvite {
     pub remaining_ms: u64,
 }
 
+/// Slot ids compare ASCII case-insensitively, as everywhere else in the call
+/// code: the reference implementation writes `m.call#ROOM` where the MSC says
+/// `m.call#room`, and the docs leave the case unspecified.
+fn same_slot(a: &str, b: &str) -> bool {
+    a.eq_ignore_ascii_case(b)
+}
+
 /// The invites among `entries` (one room's sticky map) that are active for us.
+///
+/// Each distinct caller rings on its own: for every `(slot, sender)` only the
+/// newest live invite counts, so one member's invite cannot hide the real
+/// caller's. The result is ordered earliest first and capped at
+/// [`MAX_ACTIVE_INVITES`], keeping likely-genuine callers over the rest.
+///
+/// An invite lasts from the instant its homeserver stamped it, or from when we
+/// first saw it if that is earlier (a stamp in the future must not extend it),
+/// for the shorter of its `lifetime` (at most two minutes) and the time it stays
+/// sticky. The caller's own `sender_ts` is not used: it is the caller's clock,
+/// and one running a minute behind ours would otherwise never ring.
 pub fn active_invites(entries: &[StickyEntry], ctx: &InviteContext, now_ms: u64) -> Vec<ActiveInvite> {
     let mine = |e: &&StickyEntry| e.sender == ctx.me;
     let usable = |e: &&StickyEntry| !ctx.room_encrypted || e.was_encrypted;
-    let my_members: Vec<(&StickyEntry, MemberContent)> = entries
-        .iter()
-        .filter(usable)
-        .filter(|e| e.event_type == MEMBER_TYPE)
-        .filter(mine)
-        .filter_map(|e| Some((e, serde_json::from_value(e.content.clone()).ok()?)))
+    let member_entries = || {
+        entries
+            .iter()
+            .filter(usable)
+            .filter(|e| e.event_type == MEMBER_TYPE)
+            .filter_map(|e| Some((e, serde_json::from_value::<MemberContent>(e.content.clone()).ok()?)))
+    };
+    let my_members: Vec<(&StickyEntry, MemberContent)> = member_entries().filter(|(e, _)| mine(e)).collect();
+    // Who is in a call right now, and in which slot: such a sender is a likely
+    // genuine caller.
+    let in_call: Vec<(&str, String)> = member_entries()
+        .filter(|(e, c)| c.is_join() && e.end_ms() > now_ms && !e.is_withdrawal())
+        .map(|(e, c)| (e.sender.as_str(), c.slot_id))
         .collect();
+    // Declines from anyone else never matter here: only our own answer ends a ring.
     let my_declines: Vec<String> = entries
         .iter()
         .filter(usable)
@@ -54,9 +96,14 @@ pub fn active_invites(entries: &[StickyEntry], ctx: &InviteContext, now_ms: u64)
         .map(|d| d.relates_to.event_id)
         .collect();
 
-    let mut out: Vec<(u64, ActiveInvite)> = Vec::new();
+    // The newest live invite per (slot, sender).
+    let mut newest: Vec<Candidate> = Vec::new();
     for e in entries.iter().filter(usable).filter(|e| e.event_type == INVITE_TYPE) {
-        if e.is_withdrawal() || e.sender == ctx.me || !(ctx.sender_in_room)(&e.sender) {
+        if e.is_withdrawal()
+            || e.sender == ctx.me
+            || (ctx.sender_ignored)(&e.sender)
+            || !(ctx.sender_in_room)(&e.sender)
+        {
             continue;
         }
         let Ok(inv) = serde_json::from_value::<InviteContent>(e.content.clone()) else { continue };
@@ -68,41 +115,68 @@ pub fn active_invites(entries: &[StickyEntry], ctx: &InviteContext, now_ms: u64)
         if !targeted || !(ctx.slot_open)(&inv.slot_id) {
             continue;
         }
-        let base = inv.sender_ts.min(e.start_ms);
-        let expiry = base.saturating_add(inv.lifetime.min(MAX_INVITE_LIFETIME_MS));
+        let start = (ctx.first_seen)(&e.event_id).map_or(e.start_ms, |seen| seen.min(e.start_ms));
+        let expiry = start.saturating_add(inv.lifetime.min(MAX_INVITE_LIFETIME_MS)).min(e.end_ms());
         if expiry <= now_ms {
             continue;
         }
+        // Answered by a join of ours that is not older than the invite (give or
+        // take the two homeservers' clocks; a join left over from an earlier
+        // session must not silence a new ring), by a leave of ours strictly
+        // newer than it (hanging up and being rung again within seconds is a new
+        // ring), or by a decline of exactly this invite.
         let acted = my_members.iter().any(|(m, c)| {
-            c.slot_id == inv.slot_id && (c.is_join() || m.start_ms >= e.start_ms)
-        }) || my_declines.iter().any(|id| *id == e.event_id);
+            same_slot(&c.slot_id, &inv.slot_id)
+                && if c.is_join() {
+                    m.start_ms.saturating_add(CLOCK_SKEW_MS) >= start
+                } else {
+                    m.start_ms > start
+                }
+        }) || my_declines.contains(&e.event_id);
         if acted {
             continue;
         }
-        out.push((
-            e.start_ms,
-            ActiveInvite {
+        let likely_genuine = (ctx.is_dm_peer)(&e.sender)
+            || (ctx.can_notify_room)(&e.sender)
+            || in_call.iter().any(|(u, slot)| *u == e.sender && same_slot(slot, &inv.slot_id));
+        let candidate = Candidate {
+            start,
+            likely_genuine,
+            invite: ActiveInvite {
                 event_id: e.event_id.clone(),
                 sender: e.sender.clone(),
                 slot_id: inv.slot_id,
                 remaining_ms: expiry - now_ms,
             },
-        ));
-    }
-    // One ring per slot: the earliest invite wins.
-    out.sort_by(|a, b| (a.0, &a.1.event_id).cmp(&(b.0, &b.1.event_id)));
-    let mut seen_slots: Vec<String> = Vec::new();
-    out.into_iter()
-        .filter(|(_, i)| {
-            if seen_slots.contains(&i.slot_id) {
-                false
-            } else {
-                seen_slots.push(i.slot_id.clone());
-                true
+        };
+        match newest
+            .iter_mut()
+            .find(|c| c.invite.sender == candidate.invite.sender && same_slot(&c.invite.slot_id, &candidate.invite.slot_id))
+        {
+            Some(held) => {
+                if (candidate.start, &candidate.invite.event_id) > (held.start, &held.invite.event_id) {
+                    *held = candidate;
+                }
             }
-        })
-        .map(|(_, i)| i)
-        .collect()
+            None => newest.push(candidate),
+        }
+    }
+    newest.sort_by(|a, b| (a.start, &a.invite.event_id).cmp(&(b.start, &b.invite.event_id)));
+    if newest.len() > MAX_ACTIVE_INVITES {
+        // Likely-genuine callers first (stable: still earliest first inside each
+        // group), then back to earliest first.
+        newest.sort_by_key(|c| !c.likely_genuine);
+        newest.truncate(MAX_ACTIVE_INVITES);
+        newest.sort_by(|a, b| (a.start, &a.invite.event_id).cmp(&(b.start, &b.invite.event_id)));
+    }
+    newest.into_iter().map(|c| c.invite).collect()
+}
+
+/// An active invite with what ranks it.
+struct Candidate {
+    start: u64,
+    likely_genuine: bool,
+    invite: ActiveInvite,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -113,37 +187,101 @@ pub enum InviteChange {
     Cancel { event_id: String },
 }
 
-/// What to tell the UI given the invite announced earlier for this room and
-/// the invites active now (already one per slot). Returns the changes and the
-/// event id to remember as announced.
-pub fn diff_invites(announced: Option<&str>, active: &[ActiveInvite]) -> (Vec<InviteChange>, Option<String>) {
-    let now_active = active.first();
-    let mut changes = Vec::new();
-    if let Some(old) = announced {
-        if now_active.map(|a| a.event_id.as_str()) == Some(old) {
-            return (changes, Some(old.to_owned()));
-        }
-        changes.push(InviteChange::Cancel { event_id: old.to_owned() });
-    }
-    match now_active {
-        Some(a) => {
-            changes.push(InviteChange::Announce(a.clone()));
-            (changes, Some(a.event_id.clone()))
-        }
-        None => (changes, None),
-    }
+/// What to tell the UI given the invites announced earlier for this room and
+/// the invites active now. Returns the changes (cancellations first) and the
+/// event ids to remember as announced.
+pub fn diff_invites(announced: &[String], active: &[ActiveInvite]) -> (Vec<InviteChange>, Vec<String>) {
+    let mut changes: Vec<InviteChange> = announced
+        .iter()
+        .filter(|old| !active.iter().any(|a| a.event_id == **old))
+        .map(|old| InviteChange::Cancel { event_id: old.clone() })
+        .collect();
+    changes.extend(
+        active
+            .iter()
+            .filter(|a| !announced.contains(&a.event_id))
+            .map(|a| InviteChange::Announce(a.clone())),
+    );
+    (changes, active.iter().map(|a| a.event_id.clone()).collect())
 }
 
-/// The invite last announced per account and room.
-fn announced_store() -> &'static std::sync::Mutex<std::collections::HashMap<(String, String), String>> {
-    static STORE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<(String, String), String>>> =
-        std::sync::OnceLock::new();
+/// Event ids of the invites last announced, per account and room.
+type AnnouncedInvites = std::collections::HashMap<(String, String), Vec<String>>;
+
+fn announced_store() -> &'static std::sync::Mutex<AnnouncedInvites> {
+    static STORE: std::sync::OnceLock<std::sync::Mutex<AnnouncedInvites>> = std::sync::OnceLock::new();
     STORE.get_or_init(Default::default)
 }
 
-/// Keep the UI's idea of the room's ringing invite in step with the sticky
-/// map: announce a new active invite, cancel one that went away. The UI treats
-/// `on_invitation` with a zero lifetime and an event id as a cancellation.
+/// When each invite event still in a room's sticky map was first seen (ms since
+/// the epoch), per account and room.
+type FirstSeenTimes = std::collections::HashMap<(String, String), std::collections::HashMap<String, u64>>;
+
+fn first_seen_store() -> &'static std::sync::Mutex<FirstSeenTimes> {
+    static STORE: std::sync::OnceLock<std::sync::Mutex<FirstSeenTimes>> = std::sync::OnceLock::new();
+    STORE.get_or_init(Default::default)
+}
+
+/// Note `now` as the first sight of every id in `live` not seen before and
+/// forget ids that are no longer live. Returns the times for the live ids.
+pub fn note_first_seen(
+    seen: &mut std::collections::HashMap<String, u64>,
+    live: &[&str],
+    now: u64,
+) -> std::collections::HashMap<String, u64> {
+    seen.retain(|id, _| live.contains(&id.as_str()));
+    for id in live {
+        seen.entry((*id).to_owned()).or_insert(now);
+    }
+    seen.clone()
+}
+
+/// The event ids of invites already announced to the UI, from either of the two
+/// handlers that can see one (the sticky-map watcher and the plain
+/// `rtc.notification` event handler): the same event must show up once, under
+/// the MatrixRTC slot id the sticky-map watcher knows it by. Bounded, oldest
+/// forgotten first.
+#[derive(Default)]
+pub struct AnnouncedIds {
+    order: std::collections::VecDeque<String>,
+}
+
+impl AnnouncedIds {
+    const CAP: usize = 256;
+
+    /// Remember `id`. True if it was not remembered before.
+    pub fn claim(&mut self, id: &str) -> bool {
+        if self.order.iter().any(|i| i == id) {
+            return false;
+        }
+        if self.order.len() >= Self::CAP {
+            self.order.pop_front();
+        }
+        self.order.push_back(id.to_owned());
+        true
+    }
+}
+
+fn announced_ids() -> &'static std::sync::Mutex<AnnouncedIds> {
+    static IDS: std::sync::OnceLock<std::sync::Mutex<AnnouncedIds>> = std::sync::OnceLock::new();
+    IDS.get_or_init(Default::default)
+}
+
+/// Whether the plain-event ring handler should announce this event: only if
+/// no handler announced it before and the sticky map does not hold it (the
+/// sticky-map watcher announces those, with their real slot id). Marks it
+/// announced when it returns true.
+pub fn claim_legacy_ring(room: &matrix_sdk::Room, event_id: &str) -> bool {
+    if super::sticky::live_entries(room).iter().any(|e| e.event_type == INVITE_TYPE && e.event_id == event_id) {
+        return false;
+    }
+    announced_ids().lock().unwrap_or_else(|p| p.into_inner()).claim(event_id)
+}
+
+/// Keep the UI's idea of the room's ringing invites in step with the sticky
+/// map: announce each newly active invite, cancel each that went away. The UI
+/// treats `on_invitation` with a zero lifetime and an event id as the
+/// cancellation of that one invite.
 pub async fn notify_active(room: &matrix_sdk::Room) {
     use super::slots::read_slot;
     use super::sticky::{live_entries, now_ms};
@@ -151,16 +289,25 @@ pub async fn notify_active(room: &matrix_sdk::Room) {
     let client = room.client();
     let Some(me) = client.user_id().map(|u| u.to_string()) else { return };
     let key = (me.clone(), room.room_id().to_string());
-    let previous = announced_store().lock().unwrap_or_else(|p| p.into_inner()).get(&key).cloned();
+    let previous = announced_store().lock().unwrap_or_else(|p| p.into_inner()).get(&key).cloned().unwrap_or_default();
     let entries = live_entries(room);
     // Most rooms never have an invite: leave before any state lookup.
-    if previous.is_none() && !entries.iter().any(|e| e.event_type == INVITE_TYPE) {
+    if previous.is_empty() && !entries.iter().any(|e| e.event_type == INVITE_TYPE) {
         return;
     }
     if super::signaling::is_call_room(room).await {
         return;
     }
     let now = now_ms();
+    let first_seen = {
+        let live: Vec<&str> = entries.iter().filter(|e| e.event_type == INVITE_TYPE).map(|e| e.event_id.as_str()).collect();
+        let mut store = first_seen_store().lock().unwrap_or_else(|p| p.into_inner());
+        let times = note_first_seen(store.entry(key.clone()).or_default(), &live, now);
+        if times.is_empty() {
+            store.remove(&key);
+        }
+        times
+    };
     let slot = read_slot(room).await;
     let slot_is_open = slot.as_ref().is_some_and(|s| s.is_open());
     let mut senders_in_room: Vec<String> = Vec::new();
@@ -184,26 +331,38 @@ pub async fn notify_active(room: &matrix_sdk::Room) {
             }
         }
     }
+    let ignored = super::sticky::ignored_users(&client).await;
+    let dm_peers: Vec<String> = if room.is_direct().await.unwrap_or(false) {
+        room.direct_targets().iter().map(|t| t.to_string()).collect()
+    } else {
+        Vec::new()
+    };
     let ctx = InviteContext {
         me: &me,
         room_encrypted: room.encryption_state().is_encrypted(),
         sender_in_room: &|s| senders_in_room.iter().any(|u| u == s),
         slot_open: &|id| slot_is_open && id.eq_ignore_ascii_case(super::model::CALL_SLOT_ID),
         can_notify_room: &|s| may_notify_room.iter().any(|u| u == s),
+        sender_ignored: &|s| ignored.contains(s),
+        first_seen: &|id| first_seen.get(id).copied(),
+        is_dm_peer: &|s| dm_peers.iter().any(|u| u == s),
     };
-    let (changes, announced) = diff_invites(previous.as_deref(), &active_invites(&entries, &ctx, now));
+    let (changes, announced) = diff_invites(&previous, &active_invites(&entries, &ctx, now));
     {
         let mut store = announced_store().lock().unwrap_or_else(|p| p.into_inner());
-        match announced {
-            Some(id) => store.insert(key, id),
-            None => store.remove(&key),
-        };
+        if announced.is_empty() {
+            store.remove(&key);
+        } else {
+            store.insert(key, announced);
+        }
     }
     let Some(sink) = super::sink_for_client(&client) else { return };
     let room_id = room.room_id().as_str();
     for change in changes {
         match change {
             InviteChange::Announce(inv) => {
+                // The plain-event handler must not announce it again under its own slot label.
+                announced_ids().lock().unwrap_or_else(|p| p.into_inner()).claim(&inv.event_id);
                 sink.on_invitation(room_id, &inv.slot_id, &inv.sender, "", inv.remaining_ms, &inv.event_id)
             }
             InviteChange::Cancel { event_id } => sink.on_invitation(room_id, "", "", "", 0, &event_id),
@@ -221,8 +380,10 @@ pub fn decline_body(invite_event_id: &str) -> Value {
 }
 
 /// Decline an invite: sticky (so it survives a gappy sync) and encrypted in
-/// encrypted rooms; on a homeserver without sticky events a plain event, which
-/// matrix-js-sdk still counts on devices that receive it live.
+/// encrypted rooms; on a homeserver that cannot take sticky events a plain
+/// event, which matrix-js-sdk still counts on devices that receive it live.
+/// Only a definite refusal falls back: any other failure may have stored the
+/// sticky decline, and a second one would be a duplicate.
 pub async fn send_decline(room: &matrix_sdk::Room, invite_event_id: &str) -> anyhow::Result<()> {
     let body = decline_body(invite_event_id);
     let sticky = super::sticky::send_sticky(
@@ -232,13 +393,113 @@ pub async fn send_decline(room: &matrix_sdk::Room, invite_event_id: &str) -> any
         super::mrtc_membership::INVITE_STICKY_DURATION,
     )
     .await;
-    if sticky.is_ok() {
-        return Ok(());
+    match sticky {
+        Ok(_) => return Ok(()),
+        Err(e) if !super::sticky::is_sticky_unsupported(&e) => return Err(e),
+        Err(_) => {}
     }
     room.send_raw(DECLINE_TYPE, body)
         .await
         .map_err(|e| anyhow::anyhow!("send decline: {e}"))?;
     Ok(())
+}
+
+/// Declines waiting to be sent, oldest first, sent one at a time by a single
+/// worker: a burst of them (one per invite of a banner) would otherwise hit the
+/// homeserver's rate limit all at once, and arrive in no particular order.
+pub struct DeclineQueue<T> {
+    items: std::collections::VecDeque<T>,
+    worker_running: bool,
+}
+
+impl<T> Default for DeclineQueue<T> {
+    fn default() -> Self {
+        Self { items: Default::default(), worker_running: false }
+    }
+}
+
+impl<T> DeclineQueue<T> {
+    /// Queue `item`. True if the caller must start the worker (none is running).
+    pub fn push(&mut self, item: T) -> bool {
+        self.items.push_back(item);
+        !std::mem::replace(&mut self.worker_running, true)
+    }
+
+    /// The next item, or `None` once the queue is empty, which also ends the
+    /// worker: the next [`push`](Self::push) asks for a new one.
+    pub fn pop(&mut self) -> Option<T> {
+        let next = self.items.pop_front();
+        if next.is_none() {
+            self.worker_running = false;
+        }
+        next
+    }
+}
+
+/// Run `attempt`; if it fails, wait `delay` and run it once more.
+pub async fn with_one_retry<T, F, Fut>(mut attempt: F, delay: std::time::Duration) -> anyhow::Result<T>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<T>>,
+{
+    match attempt().await {
+        Ok(v) => Ok(v),
+        Err(_) => {
+            tokio::time::sleep(delay).await;
+            attempt().await
+        }
+    }
+}
+
+/// Whether a failure may be logged now, given when one last was (ms since the
+/// epoch; 0 for never): at most one warning per [`DECLINE_WARN_EVERY_MS`].
+pub fn warn_due(last_ms: u64, now_ms: u64) -> bool {
+    last_ms == 0 || now_ms.saturating_sub(last_ms) >= DECLINE_WARN_EVERY_MS
+}
+
+const DECLINE_WARN_EVERY_MS: u64 = 30_000;
+const DECLINE_RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(2);
+
+struct DeclineJob {
+    client: matrix_sdk::Client,
+    room_id: matrix_sdk::ruma::OwnedRoomId,
+    invite_event_id: String,
+}
+
+fn decline_queue() -> &'static std::sync::Mutex<DeclineQueue<DeclineJob>> {
+    static QUEUE: std::sync::OnceLock<std::sync::Mutex<DeclineQueue<DeclineJob>>> = std::sync::OnceLock::new();
+    QUEUE.get_or_init(Default::default)
+}
+
+/// Decline `invite_event_id` in the background: queued behind earlier declines
+/// and sent in order, one at a time, each retried once. Spawns the sending
+/// worker on the current tokio runtime when none is running.
+pub fn queue_decline(client: matrix_sdk::Client, room_id: matrix_sdk::ruma::OwnedRoomId, invite_event_id: String) {
+    let start_worker = decline_queue()
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .push(DeclineJob { client, room_id, invite_event_id });
+    if !start_worker {
+        return;
+    }
+    tokio::spawn(async {
+        static LAST_WARN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        loop {
+            let Some(job) = decline_queue().lock().unwrap_or_else(|p| p.into_inner()).pop() else {
+                return;
+            };
+            let Some(room) = job.client.get_room(&job.room_id) else { continue };
+            let sent = with_one_retry(|| send_decline(&room, &job.invite_event_id), DECLINE_RETRY_DELAY).await;
+            if let Err(e) = sent {
+                let now = super::sticky::now_ms();
+                let last = LAST_WARN.load(std::sync::atomic::Ordering::Relaxed);
+                if warn_due(last, now) {
+                    LAST_WARN.store(now, std::sync::atomic::Ordering::Relaxed);
+                    tracing::warn!("rtc: declining {} failed: {e}", job.invite_event_id);
+                }
+            }
+        }
+    });
 }
 
 #[cfg(test)]
@@ -286,7 +547,11 @@ mod tests {
     }
 
     fn ctx() -> InviteContext<'static> {
-        InviteContext { me: ME, room_encrypted: false, slot_open: &|_| true, can_notify_room: &|_| false, sender_in_room: &|_| true }
+        InviteContext {
+            me: ME, room_encrypted: false, slot_open: &|_| true, can_notify_room: &|_| false,
+            sender_in_room: &|_| true, sender_ignored: &|_| false,
+            first_seen: &|_| None, is_dm_peer: &|_| false,
+        }
     }
 
     fn active(entries: &[StickyEntry], ctx: &InviteContext) -> Vec<ActiveInvite> {
@@ -351,24 +616,196 @@ mod tests {
     }
 
     #[test]
-    fn lifetime_is_capped_at_two_minutes_and_measured_from_the_earlier_time() {
-        // Claims a 10 minute lifetime, 110 s ago: capped to 120 s total.
+    fn lifetime_is_capped_at_two_minutes_and_by_the_sticky_duration() {
+        // Claims a 10 minute lifetime, 110 s ago, and stays sticky 5 minutes: capped to 120 s.
         let mut c = good_content(NOW - 110_000);
         c["lifetime"] = json!(600_000);
-        let inv = invite("$i", "@a:x", c, NOW - 110_000);
+        let mut inv = invite("$i", "@a:x", c, NOW - 110_000);
+        inv.duration_ms = 300_000;
         assert_eq!(active(&[inv], &ctx())[0].remaining_ms, 10_000);
-        // A sender_ts in the future cannot extend it: start (receipt) wins.
-        let future = invite("$j", "@a:x", good_content(NOW + 1_000_000), NOW - 1000);
-        assert_eq!(active(&[future], &ctx())[0].remaining_ms, 89_000);
+        // Sticky for only 30 s: it cannot ring after the SDK dropped it.
+        let mut short = invite("$j", "@a:x", good_content(NOW - 1000), NOW - 1000);
+        short.duration_ms = 30_000;
+        assert_eq!(active(&[short], &ctx())[0].remaining_ms, 29_000);
     }
 
     #[test]
-    fn duplicate_invites_from_two_senders_coalesce() {
+    fn the_callers_clock_does_not_decide_whether_it_rings() {
+        // Sent a few minutes "ago" by the caller's slow clock; the homeserver
+        // stamped it a second ago.
+        let slow = invite("$i", "@a:x", good_content(NOW - 600_000), NOW - 1000);
+        assert_eq!(active(&[slow], &ctx())[0].remaining_ms, 89_000);
+        // A sender_ts in the future cannot extend it either.
+        let fast = invite("$j", "@a:x", good_content(NOW + 1_000_000), NOW - 1000);
+        assert_eq!(active(&[fast], &ctx())[0].remaining_ms, 89_000);
+    }
+
+    #[test]
+    fn every_caller_rings_and_only_the_newest_invite_per_caller_counts() {
         let a = invite("$a", "@a:x", good_content(NOW - 2000), NOW - 2000);
         let b = invite("$b", "@b:x", good_content(NOW - 1000), NOW - 1000);
-        let got = active(&[a, b], &ctx());
+        let got = active(&[b.clone(), a.clone()], &ctx());
+        assert_eq!(got.iter().map(|i| i.event_id.as_str()).collect::<Vec<_>>(), vec!["$a", "$b"], "earliest first");
+        // The same caller under two spellings of the slot id: the newer wins.
+        let mut upper = invite("$a2", "@a:x", good_content(NOW - 500), NOW - 500);
+        upper.content["slot_id"] = json!("m.call#ROOM");
+        upper.sticky_key = "m.call#ROOM".into();
+        let got = active(&[a, upper, b], &ctx());
+        assert_eq!(got.iter().map(|i| i.event_id.as_str()).collect::<Vec<_>>(), vec!["$b", "$a2"]);
+    }
+
+    #[test]
+    fn a_member_cannot_hide_the_real_caller_with_an_earlier_invite() {
+        // A bystander invites us first; the DM peer's invite still rings.
+        let spam = invite("$spam", "@spam:x", good_content(NOW - 60_000), NOW - 60_000);
+        let real = invite("$real", "@peer:x", good_content(NOW - 1000), NOW - 1000);
+        let got = active(&[spam, real], &ctx());
+        assert!(got.iter().any(|i| i.event_id == "$real"));
+    }
+
+    #[test]
+    fn the_number_of_announced_callers_is_capped_keeping_the_earliest() {
+        let many: Vec<StickyEntry> = (0..MAX_ACTIVE_INVITES as u64 + 4)
+            .map(|n| invite(&format!("$i{n}"), &format!("@u{n}:x"), good_content(NOW - 50_000 + n), NOW - 50_000 + n))
+            .collect();
+        let got = active(&many, &ctx());
+        assert_eq!(got.len(), MAX_ACTIVE_INVITES);
+        assert_eq!(got[0].event_id, "$i0");
+        assert_eq!(got[MAX_ACTIVE_INVITES - 1].event_id, format!("$i{}", MAX_ACTIVE_INVITES - 1));
+    }
+
+    #[test]
+    fn invites_from_ignored_users_never_ring() {
+        let a = invite("$a", "@ignored:x", good_content(NOW - 1000), NOW - 1000);
+        let b = invite("$b", "@fine:x", good_content(NOW - 1000), NOW - 1000);
+        let ignoring = InviteContext { sender_ignored: &|s| s == "@ignored:x", ..ctx() };
+        let got = active(&[a, b], &ignoring);
+        assert_eq!(got.iter().map(|i| i.event_id.as_str()).collect::<Vec<_>>(), vec!["$b"]);
+    }
+
+    #[test]
+    fn a_join_left_over_from_an_earlier_session_does_not_silence_a_new_invite() {
+        let inv = invite("$i", "@a:x", good_content(NOW - 1000), NOW - 1000);
+        // Our join from a session that crashed three minutes ago is still sticky.
+        let stale = member(ME, true, NOW - 180_000);
+        assert_eq!(active(&[inv.clone(), stale], &ctx()).len(), 1);
+        // A join just after the invite answers it, even if the two homeservers'
+        // clocks differ by a couple of seconds.
+        assert!(active(&[inv.clone(), member(ME, true, NOW - 3000)], &ctx()).is_empty());
+        assert!(active(&[inv, member(ME, true, NOW - 500)], &ctx()).is_empty());
+    }
+
+    #[test]
+    fn a_future_dated_invite_rings_for_its_lifetime_from_first_sight_not_until_the_sticky_end() {
+        // Stamped ten minutes ahead, sticky for the full hour.
+        let mut inv = invite("$i", "@a:x", good_content(NOW), NOW + 600_000);
+        inv.duration_ms = 3_600_000;
+        let seen_now = InviteContext { first_seen: &|_| Some(NOW - 1000), ..ctx() };
+        let got = active(&[inv.clone()], &seen_now);
         assert_eq!(got.len(), 1);
-        assert_eq!(got[0].event_id, "$a", "the earliest wins");
+        assert_eq!(got[0].remaining_ms, 89_000, "90 s from first sight");
+        // Once that has passed it is gone, instead of ringing for up to an hour.
+        let later = InviteContext { first_seen: &|_| Some(NOW - 130_000), ..ctx() };
+        assert!(active(&[inv.clone()], &later).is_empty());
+        // It does not silence an answer-check either: a join of ours right
+        // after first sight answers it, an older one does not.
+        let joined = member(ME, true, NOW - 500);
+        assert!(active(&[inv.clone(), joined], &seen_now).is_empty());
+        let stale = member(ME, true, NOW - 180_000);
+        assert_eq!(active(&[inv, stale], &seen_now).len(), 1);
+    }
+
+    #[test]
+    fn first_sight_never_makes_an_old_invite_newer() {
+        // Stamped 60 s ago; we only noticed it a moment ago: the stamp rules.
+        let inv = invite("$i", "@a:x", good_content(NOW - 60_000), NOW - 60_000);
+        let seen = InviteContext { first_seen: &|_| Some(NOW - 1000), ..ctx() };
+        assert_eq!(active(&[inv], &seen)[0].remaining_ms, 30_000);
+    }
+
+    #[test]
+    fn first_sight_times_are_kept_per_live_event_only() {
+        let mut seen = std::collections::HashMap::new();
+        let t = note_first_seen(&mut seen, &["$a"], 100);
+        assert_eq!(t.get("$a"), Some(&100));
+        let t = note_first_seen(&mut seen, &["$a", "$b"], 200);
+        assert_eq!((t.get("$a"), t.get("$b")), (Some(&100), Some(&200)), "the first sight sticks");
+        let t = note_first_seen(&mut seen, &["$b"], 300);
+        assert!(!t.contains_key("$a"), "forgotten once no longer live");
+        assert_eq!(t.get("$b"), Some(&200));
+    }
+
+    #[test]
+    fn a_leave_of_ours_just_after_the_invite_does_not_silence_a_new_one() {
+        // We hung up at T, the caller invites again 3 s later: a leave inside
+        // the clock-skew slack is older than the invite, so the ring shows.
+        let inv = invite("$i", "@a:x", good_content(NOW - 1000), NOW - 1000);
+        assert_eq!(active(&[inv.clone(), member(ME, false, NOW - 4000)], &ctx()).len(), 1);
+        assert_eq!(active(&[inv.clone(), member(ME, false, NOW - 1000)], &ctx()).len(), 1, "same ms is not newer");
+        // A leave strictly after the invite still answers it.
+        assert!(active(&[inv.clone(), member(ME, false, NOW - 999)], &ctx()).is_empty());
+        // A join inside the slack still answers (clocks of two homeservers).
+        assert!(active(&[inv, member(ME, true, NOW - 4000)], &ctx()).is_empty());
+    }
+
+    #[test]
+    fn a_late_honest_caller_is_not_crowded_out_by_early_senders() {
+        let mut many: Vec<StickyEntry> = (0..MAX_ACTIVE_INVITES as u64 + 4)
+            .map(|n| invite(&format!("$s{n}"), &format!("@spam{n}:x"), good_content(NOW - 50_000 + n), NOW - 50_000 + n))
+            .collect();
+        many.push(invite("$peer", "@peer:x", good_content(NOW - 1000), NOW - 1000));
+        // The DM peer ranks first.
+        let dm = InviteContext { is_dm_peer: &|s| s == "@peer:x", ..ctx() };
+        let got = active(&many, &dm);
+        assert_eq!(got.len(), MAX_ACTIVE_INVITES);
+        assert!(got.iter().any(|i| i.event_id == "$peer"));
+        assert_eq!(got.last().unwrap().event_id, "$peer", "still ordered earliest first");
+        assert_eq!(got[0].event_id, "$s0");
+        // Without a rank the late sender is capped out, as before.
+        assert!(!active(&many, &ctx()).iter().any(|i| i.event_id == "$peer"));
+        // Someone who may notify the room ranks too.
+        let notify = InviteContext { can_notify_room: &|s| s == "@peer:x", ..ctx() };
+        assert!(active(&many, &notify).iter().any(|i| i.event_id == "$peer"));
+        // So does a sender already in the call.
+        many.push(member("@peer:x", true, NOW - 2000));
+        assert!(active(&many, &ctx()).iter().any(|i| i.event_id == "$peer"));
+    }
+
+    #[test]
+    fn a_member_who_left_or_expired_does_not_rank_as_in_the_call() {
+        let mut many: Vec<StickyEntry> = (0..MAX_ACTIVE_INVITES as u64 + 2)
+            .map(|n| invite(&format!("$s{n}"), &format!("@spam{n}:x"), good_content(NOW - 50_000 + n), NOW - 50_000 + n))
+            .collect();
+        many.push(invite("$late", "@late:x", good_content(NOW - 1000), NOW - 1000));
+        many.push(member("@late:x", false, NOW - 2000));
+        assert!(!active(&many, &ctx()).iter().any(|i| i.event_id == "$late"));
+    }
+
+    #[test]
+    fn an_event_is_announced_once_across_both_handlers() {
+        let mut ids = AnnouncedIds::default();
+        assert!(ids.claim("$1"));
+        assert!(!ids.claim("$1"), "the second handler to see it stays quiet");
+        assert!(ids.claim("$2"));
+    }
+
+    #[test]
+    fn the_announced_set_is_bounded_forgetting_the_oldest() {
+        let mut ids = AnnouncedIds::default();
+        for n in 0..AnnouncedIds::CAP + 10 {
+            assert!(ids.claim(&format!("${n}")));
+        }
+        assert!(ids.order.len() <= AnnouncedIds::CAP);
+        assert!(ids.claim("$0"), "the oldest was forgotten");
+        assert!(!ids.claim(&format!("${}", AnnouncedIds::CAP + 9)), "a recent one is still known");
+    }
+
+    #[test]
+    fn slot_ids_are_compared_ignoring_ascii_case() {
+        let mut inv = invite("$i", "@a:x", good_content(NOW - 1000), NOW - 1000);
+        inv.content["slot_id"] = json!("m.call#ROOM");
+        // Our join is under the other spelling of the same slot.
+        assert!(active(&[inv, member(ME, true, NOW - 500)], &ctx()).is_empty());
     }
 
     #[test]
@@ -405,6 +842,54 @@ mod tests {
     }
 
     #[test]
+    fn declines_go_out_in_order_by_a_single_worker() {
+        let mut q = DeclineQueue::default();
+        assert!(q.push("$inv"), "the first push starts the worker");
+        assert!(!q.push("$ring"), "a running worker takes the rest");
+        assert_eq!(q.pop(), Some("$inv"));
+        assert_eq!(q.pop(), Some("$ring"));
+        assert_eq!(q.pop(), None, "drained: the worker ends");
+        assert!(q.push("$later"), "so the next decline starts a new one");
+    }
+
+    #[tokio::test]
+    async fn a_failed_decline_is_tried_once_more() {
+        let calls = std::sync::atomic::AtomicU32::new(0);
+        let flaky = || async {
+            if calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                Err(anyhow::anyhow!("timed out"))
+            } else {
+                Ok(())
+            }
+        };
+        assert!(with_one_retry(flaky, std::time::Duration::ZERO).await.is_ok());
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+
+        let calls = std::sync::atomic::AtomicU32::new(0);
+        let broken = || async {
+            calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Err::<(), _>(anyhow::anyhow!("still down"))
+        };
+        assert!(with_one_retry(broken, std::time::Duration::ZERO).await.is_err());
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2, "never a third try");
+
+        let calls = std::sync::atomic::AtomicU32::new(0);
+        let fine = || async {
+            calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        };
+        assert!(with_one_retry(fine, std::time::Duration::ZERO).await.is_ok());
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn decline_failures_are_warned_about_at_most_every_half_minute() {
+        assert!(warn_due(0, 1_000), "never warned before");
+        assert!(!warn_due(1_000, 20_000));
+        assert!(warn_due(1_000, 31_000));
+    }
+
+    #[test]
     fn decline_body_matches_msc() {
         assert_eq!(
             decline_body("$1"),
@@ -422,32 +907,46 @@ mod tests {
         ActiveInvite { event_id: id.into(), sender: "@a:x".into(), slot_id: "m.call#room".into(), remaining_ms: 1000 }
     }
 
+    fn ids(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| (*s).to_owned()).collect()
+    }
+
     #[test]
     fn a_new_invite_is_announced_once() {
-        let (changes, state) = diff_invites(None, &[act("$1")]);
+        let (changes, state) = diff_invites(&[], &[act("$1")]);
         assert_eq!(changes, vec![InviteChange::Announce(act("$1"))]);
-        assert_eq!(state.as_deref(), Some("$1"));
-        let (again, state) = diff_invites(state.as_deref(), &[act("$1")]);
+        assert_eq!(state, ids(&["$1"]));
+        let (again, state) = diff_invites(&state, &[act("$1")]);
         assert!(again.is_empty(), "no repeat while it stays active");
-        assert_eq!(state.as_deref(), Some("$1"));
+        assert_eq!(state, ids(&["$1"]));
     }
 
     #[test]
     fn a_withdrawn_or_answered_invite_is_cancelled() {
-        let (changes, state) = diff_invites(Some("$1"), &[]);
+        let (changes, state) = diff_invites(&ids(&["$1"]), &[]);
         assert_eq!(changes, vec![InviteChange::Cancel { event_id: "$1".into() }]);
-        assert_eq!(state, None);
-        let (nothing, _) = diff_invites(None, &[]);
+        assert!(state.is_empty());
+        let (nothing, _) = diff_invites(&[], &[]);
         assert!(nothing.is_empty());
     }
 
     #[test]
     fn a_replacing_invite_cancels_the_old_one_first() {
-        let (changes, state) = diff_invites(Some("$1"), &[act("$2")]);
+        let (changes, state) = diff_invites(&ids(&["$1"]), &[act("$2")]);
         assert_eq!(
             changes,
             vec![InviteChange::Cancel { event_id: "$1".into() }, InviteChange::Announce(act("$2"))]
         );
-        assert_eq!(state.as_deref(), Some("$2"));
+        assert_eq!(state, ids(&["$2"]));
+    }
+
+    #[test]
+    fn several_callers_are_tracked_and_cancelled_one_by_one() {
+        let (changes, state) = diff_invites(&[], &[act("$1"), act("$2")]);
+        assert_eq!(changes, vec![InviteChange::Announce(act("$1")), InviteChange::Announce(act("$2"))]);
+        // One of them goes away; the other is neither re-announced nor cancelled.
+        let (changes, state) = diff_invites(&state, &[act("$2")]);
+        assert_eq!(changes, vec![InviteChange::Cancel { event_id: "$1".into() }]);
+        assert_eq!(state, ids(&["$2"]));
     }
 }

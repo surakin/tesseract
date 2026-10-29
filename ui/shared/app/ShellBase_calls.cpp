@@ -1,6 +1,7 @@
 #include "app/ShellBase.h"
 #include "views/MainAppWidget.h"
 #include <algorithm>
+#include <unordered_set>
 #ifndef _WIN32
 #include <fcntl.h>
 #endif
@@ -8,8 +9,41 @@
 namespace tesseract
 {
 
+namespace
+{
+// The slot label the legacy ring (a plain MSC4075 notification) arrives under;
+// MatrixRTC invites carry their real slot id.
+constexpr const char* kLegacyRingSlot = "call#default";
+} // namespace
+
+std::vector<std::string> ShellBase::call_invite_decline_targets_(
+    const std::vector<PendingCallInvite>& invites)
+{
+    // A DM call is signalled twice: a legacy ring and a MatrixRTC invite, two
+    // events the caller's clients may each be waiting on. Declining answers
+    // every one of them (MatrixRTC invites first), so neither keeps ringing the
+    // caller or leaves us half-declined. An `m.rtc.decline` is a plain reference
+    // to the notification event (MSC4310), so a legacy ring takes it too.
+    std::vector<std::string> targets;
+    for (const bool legacy : {false, true})
+    {
+        for (const auto& inv : invites)
+        {
+            if (inv.event_id.empty() || (inv.slot_id == kLegacyRingSlot) != legacy)
+            {
+                continue;
+            }
+            if (std::find(targets.begin(), targets.end(), inv.event_id) == targets.end())
+            {
+                targets.push_back(inv.event_id);
+            }
+        }
+    }
+    return targets;
+}
+
 void ShellBase::handle_rtc_invitation_ui_(std::string room_id,
-                                           std::string /*slot_id*/,
+                                           std::string slot_id,
                                            std::string caller_user_id,
                                            std::string /*call_intent*/,
                                            std::uint64_t lifetime_ms,
@@ -18,25 +52,53 @@ void ShellBase::handle_rtc_invitation_ui_(std::string room_id,
     // The banner follows the room's call state (RoomInfo::call_members), which
     // the same sync tick updates. An invite with an event id and a lifetime
     // also gets a Decline button until it runs out; the same event id with a
-    // zero lifetime cancels it.
+    // zero lifetime cancels that one invite. A room can hold several at once
+    // (the legacy ring and the MatrixRTC invite of one DM call, or invites from
+    // different callers), and the Decline button stays while any remains.
+    // Invites belong to the account the event came in on, which need not be the
+    // active one.
+    const CallInviteKey key{event_account_.empty() ? my_user_id_ : event_account_, room_id};
     if (!notification_event_id.empty() && lifetime_ms == 0)
     {
         // An invite we showed is no longer active (withdrawn by the caller,
         // answered on another device, or its slot closed).
-        auto it = pending_call_invites_.find(room_id);
-        if (it != pending_call_invites_.end() && it->second.event_id == notification_event_id)
+        auto it = pending_call_invites_.find(key);
+        if (it != pending_call_invites_.end())
         {
-            pending_call_invites_.erase(it);
-            refresh_call_banners_();
+            auto& list = it->second;
+            const auto removed = std::remove_if(
+                list.begin(), list.end(),
+                [&](const PendingCallInvite& i) { return i.event_id == notification_event_id; });
+            if (removed != list.end())
+            {
+                list.erase(removed, list.end());
+                if (list.empty())
+                {
+                    pending_call_invites_.erase(it);
+                }
+                refresh_call_banners_();
+            }
         }
         return;
     }
     if (!notification_event_id.empty() && lifetime_ms > 0)
     {
         const auto life = std::chrono::milliseconds(lifetime_ms);
-        pending_call_invites_[room_id] = {std::move(notification_event_id),
-                                          std::move(caller_user_id),
-                                          std::chrono::steady_clock::now() + life};
+        PendingCallInvite inv{notification_event_id, std::move(slot_id), std::move(caller_user_id),
+                              std::chrono::steady_clock::now() + life};
+        auto& list = pending_call_invites_[key];
+        const auto same = std::find_if(list.begin(), list.end(),
+                                       [&](const PendingCallInvite& i)
+                                       { return i.event_id == inv.event_id; });
+        if (same != list.end())
+        {
+            *same = std::move(inv);
+        }
+        else
+        {
+            list.push_back(std::move(inv));
+        }
+        trim_pending_call_invites_(notification_event_id);
         // Take the Decline button away when the invite runs out.
         post_to_ui_after_(static_cast<int>(std::min<std::uint64_t>(lifetime_ms, 130000)) + 250,
                           guarded([this] { refresh_call_banners_(); }));
@@ -44,15 +106,162 @@ void ShellBase::handle_rtc_invitation_ui_(std::string room_id,
     refresh_call_banners_();
 }
 
+void ShellBase::trim_pending_call_invites_(const std::string& keep_event_id)
+{
+    const auto now = std::chrono::steady_clock::now();
+    std::size_t total = 0;
+    for (auto it = pending_call_invites_.begin(); it != pending_call_invites_.end();)
+    {
+        auto& list = it->second;
+        list.erase(std::remove_if(list.begin(), list.end(),
+                                  [&](const PendingCallInvite& i) { return i.expires <= now; }),
+                   list.end());
+        if (list.empty())
+        {
+            it = pending_call_invites_.erase(it);
+            continue;
+        }
+        total += list.size();
+        ++it;
+    }
+    while (total > kMaxPendingCallInvites)
+    {
+        auto victim_list = pending_call_invites_.end();
+        std::size_t victim_index = 0;
+        for (auto it = pending_call_invites_.begin(); it != pending_call_invites_.end(); ++it)
+        {
+            for (std::size_t i = 0; i < it->second.size(); ++i)
+            {
+                if (it->second[i].event_id == keep_event_id)
+                {
+                    continue;
+                }
+                if (victim_list == pending_call_invites_.end() ||
+                    it->second[i].expires < victim_list->second[victim_index].expires)
+                {
+                    victim_list = it;
+                    victim_index = i;
+                }
+            }
+        }
+        if (victim_list == pending_call_invites_.end())
+        {
+            break;
+        }
+        victim_list->second.erase(victim_list->second.begin() +
+                                  static_cast<std::ptrdiff_t>(victim_index));
+        if (victim_list->second.empty())
+        {
+            pending_call_invites_.erase(victim_list);
+        }
+        --total;
+    }
+}
+
+void ShellBase::drop_call_invites_of_account_(const std::string& uid)
+{
+    for (auto it = pending_call_invites_.begin(); it != pending_call_invites_.end();)
+    {
+        it = it->first.first == uid ? pending_call_invites_.erase(it) : std::next(it);
+    }
+    // The rosters are the active account's, rebuilt on demand.
+    call_banner_rosters_.clear();
+}
+
+void ShellBase::drop_call_invites_of_missing_rooms_(const std::string& uid,
+                                                     const std::vector<RoomInfo>& rooms)
+{
+    std::unordered_set<std::string> known;
+    known.reserve(rooms.size());
+    for (const auto& r : rooms)
+    {
+        known.insert(r.id);
+    }
+    for (auto it = pending_call_invites_.begin(); it != pending_call_invites_.end();)
+    {
+        it = (it->first.first == uid && known.count(it->first.second) == 0)
+                 ? pending_call_invites_.erase(it)
+                 : std::next(it);
+    }
+    if (uid == my_user_id_)
+    {
+        for (auto it = call_banner_rosters_.begin(); it != call_banner_rosters_.end();)
+        {
+            it = known.count(it->first) == 0 ? call_banner_rosters_.erase(it) : std::next(it);
+        }
+    }
+}
+
+std::vector<std::string> ShellBase::call_banner_ids_(const RoomInfo* room,
+                                                      const std::vector<PendingCallInvite>& invites)
+{
+    // The caller's own membership may not be in the room state yet, so an
+    // invite alone is enough to show the banner (with the callers as its members).
+    std::vector<std::string> ids = room ? room->call_members : std::vector<std::string>{};
+    if (ids.empty())
+    {
+        for (const auto& i : invites)
+        {
+            if (std::find(ids.begin(), ids.end(), i.caller) == ids.end())
+            {
+                ids.push_back(i.caller);
+            }
+        }
+    }
+    return ids;
+}
+
+std::vector<ShellBase::PendingCallInvite> ShellBase::call_invites_shown_by_banner_(
+    const std::vector<std::string>& banner_ids, const std::vector<PendingCallInvite>& invites)
+{
+    std::vector<PendingCallInvite> shown;
+    for (const auto& i : invites)
+    {
+        if (std::find(banner_ids.begin(), banner_ids.end(), i.caller) != banner_ids.end())
+        {
+            shown.push_back(i);
+        }
+    }
+    return shown;
+}
+
 void ShellBase::decline_pending_call_invite_(const std::string& room_id)
 {
-    auto it = pending_call_invites_.find(room_id);
+    auto it = pending_call_invites_.find({my_user_id_, room_id});
     if (it == pending_call_invites_.end())
+    {
         return;
-    const std::string event_id = it->second.event_id;
-    pending_call_invites_.erase(it);
+    }
+    // Decline what the banner showed the user, and only that: an invite from a
+    // caller the banner does not list was never seen as part of this call, so
+    // the click is not an answer to it. The declines go out one at a time, in
+    // order, off the UI thread, and a failed one is retried by the SDK layer.
+    auto& list = it->second;
+    const auto shown = call_invites_shown_by_banner_(call_banner_ids_(room_by_id_(room_id), list), list);
+    if (shown.empty())
+    {
+        return;
+    }
+    const auto targets = call_invite_decline_targets_(shown);
+    list.erase(std::remove_if(list.begin(), list.end(),
+                              [&](const PendingCallInvite& i)
+                              {
+                                  return std::any_of(shown.begin(), shown.end(),
+                                                     [&](const PendingCallInvite& s)
+                                                     { return s.event_id == i.event_id; });
+                              }),
+               list.end());
+    if (list.empty())
+    {
+        pending_call_invites_.erase(it);
+    }
     if (client_)
-        client_->decline_call_invite_async(room_id, event_id);
+    {
+        for (const auto& event_id : targets)
+        {
+            client_->decline_call_invite_async(room_id, event_id);
+        }
+    }
     refresh_call_banners_();
 }
 
@@ -73,20 +282,32 @@ void ShellBase::refresh_call_banner_(views::RoomView* rv, const std::string& roo
     const bool joined_here = call_session_ && call_session_->room_id() == room_id;
 
     // A pending invite ends when it expires or when we join the call.
-    auto inv = pending_call_invites_.find(room_id);
-    if (inv != pending_call_invites_.end() &&
-        (joined_here || inv->second.expires <= std::chrono::steady_clock::now()))
+    auto inv = pending_call_invites_.find({my_user_id_, room_id});
+    if (inv != pending_call_invites_.end())
     {
-        pending_call_invites_.erase(inv);
-        inv = pending_call_invites_.end();
+        auto& list = inv->second;
+        if (joined_here)
+        {
+            list.clear();
+        }
+        else
+        {
+            const auto now = std::chrono::steady_clock::now();
+            list.erase(std::remove_if(list.begin(), list.end(),
+                                      [&](const PendingCallInvite& i) { return i.expires <= now; }),
+                       list.end());
+        }
+        if (list.empty())
+        {
+            pending_call_invites_.erase(inv);
+            inv = pending_call_invites_.end();
+        }
     }
-    const bool invited = inv != pending_call_invites_.end();
-
-    // The caller's own membership may not be in the room state yet, so an
-    // invite alone is enough to show the banner (with the caller as its member).
-    std::vector<std::string> call_ids = r ? r->call_members : std::vector<std::string>{};
-    if (call_ids.empty() && invited)
-        call_ids.push_back(inv->second.caller);
+    static const std::vector<PendingCallInvite> kNoInvites;
+    const auto& pending = inv != pending_call_invites_.end() ? inv->second : kNoInvites;
+    const std::vector<std::string> call_ids = call_banner_ids_(r, pending);
+    // Decline is offered for the invites whose caller the banner lists.
+    const bool invited = !call_invites_shown_by_banner_(call_ids, pending).empty();
 
     if (!r || !server_info_.supports_calls || bridged || joined_here || call_ids.empty())
     {

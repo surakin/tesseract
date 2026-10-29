@@ -25,6 +25,28 @@ pub fn livekit_participant_identity(sender: &str, member_id: &str) -> String {
     derive(sender, member_id)
 }
 
+/// What a connected LiveKit identity looks like next to the member we published.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IdentityShape {
+    /// The hash of our user and member id: what MatrixRTC peers compute.
+    Hashed,
+    /// `{user_id}:{device_id}`, what older JWT services issue; peers parse it.
+    Legacy,
+    /// Neither: peers cannot tie the connection to our member event.
+    Unexpected,
+}
+
+/// Classify the identity the SFU gave us against the id we published.
+pub fn classify_identity(identity: &str, user_id: &str, device_id: &str, member_id: &str) -> IdentityShape {
+    if identity == livekit_participant_identity(user_id, member_id) {
+        IdentityShape::Hashed
+    } else if identity == format!("{user_id}:{device_id}") {
+        IdentityShape::Legacy
+    } else {
+        IdentityShape::Unexpected
+    }
+}
+
 /// LiveKit identity -> `(user_id, device_id)` for members whose identity is
 /// hashed (MSC4195) and so cannot be parsed. Shared by every connection of a
 /// call and refreshed by the member reconciler.
@@ -74,6 +96,17 @@ mod tests {
         let a = livekit_participant_identity("@a:x", "m1");
         assert_ne!(a, livekit_participant_identity("@b:x", "m1"));
         assert_ne!(a, livekit_participant_identity("@a:x", "m2"));
+    }
+
+    #[test]
+    fn the_connected_identity_is_checked_against_the_published_member_id() {
+        let hashed = livekit_participant_identity("@a:x", "mid");
+        assert_eq!(classify_identity(&hashed, "@a:x", "D", "mid"), IdentityShape::Hashed);
+        assert_eq!(classify_identity("@a:x:D", "@a:x", "D", "mid"), IdentityShape::Legacy);
+        // The hash of a different id (the token was requested under another one).
+        let other = livekit_participant_identity("@a:x", "other");
+        assert_eq!(classify_identity(&other, "@a:x", "D", "mid"), IdentityShape::Unexpected);
+        assert_eq!(classify_identity("", "@a:x", "D", "mid"), IdentityShape::Unexpected);
     }
 
     #[test]

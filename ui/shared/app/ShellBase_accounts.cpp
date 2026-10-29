@@ -530,6 +530,9 @@ void ShellBase::clear_messages_()
 // same empty timeline, the new account's identity, rooms and tabs.
 void ShellBase::refresh_account_ui_after_switch_()
 {
+    // The call banner rosters (names and avatars of a room's call members) were
+    // built for the outgoing account's view of its rooms.
+    call_banner_rosters_.clear();
     clear_messages_();
     if (room_view_)
         room_view_->set_client(client_);
@@ -1581,6 +1584,7 @@ void ShellBase::forget_account_(const std::string& uid)
 {
     per_account_rooms_.erase(uid);
     per_account_invites_.erase(uid);
+    drop_call_invites_of_account_(uid);
     account_manager_.clear_dedicated(uid);
     account_manager_.mark_draining(uid);
     account_manager_.remove_account(uid);

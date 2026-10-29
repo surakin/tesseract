@@ -954,6 +954,23 @@ impl ClientFfi {
             });
         }
 
+        // The call banner leaves out ignored users, so a change to the ignore
+        // list refreshes the rooms that have a call in them.
+        {
+            let tx = call_member_tx.clone();
+            let client_clone = client.clone();
+            self.spawn_tracked("ignore-list-call-refresh", async move {
+                let mut changes = client_clone.subscribe_to_ignore_user_list_changes();
+                while changes.next().await.is_some() {
+                    for room in client_clone.joined_rooms() {
+                        if super::rtc::sticky::room_has_call_members(&room).await {
+                            let _ = tx.send(room.room_id().to_owned());
+                        }
+                    }
+                }
+            });
+        }
+
         // Propagate m.call.member state changes into the room-info watcher.
         // matrix-sdk does not emit a RoomInfoNotableUpdate for call-member
         // state events, so without this handler the room list would never

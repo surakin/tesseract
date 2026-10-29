@@ -60,6 +60,7 @@ struct CallShell : tesseract::test::TestShellBase
 
     using ShellBase::call_auto_floated_;
     using ShellBase::call_banner_rosters_;
+    using ShellBase::call_invite_decline_targets_;
     using ShellBase::call_overlay_state_;
     using ShellBase::call_session_;
     using ShellBase::client_;
@@ -77,12 +78,32 @@ struct CallShell : tesseract::test::TestShellBase
     using ShellBase::mark_room_index_dirty_;
     using ShellBase::my_user_id_;
     using ShellBase::overlay_mode_from_settings_;
+    using ShellBase::PendingCallInvite;
     using ShellBase::pending_call_invites_;
     using ShellBase::refresh_call_banners_;
     using ShellBase::room_view_;
     using ShellBase::rooms_;
     using ShellBase::server_info_;
     using ShellBase::start_call;
+    using ShellBase::CallInviteKey;
+    using ShellBase::EventAccountScope;
+    using ShellBase::call_banner_ids_;
+    using ShellBase::call_invites_shown_by_banner_;
+    using ShellBase::drop_call_invites_of_account_;
+    using ShellBase::drop_call_invites_of_missing_rooms_;
+    using ShellBase::kMaxPendingCallInvites;
+    using ShellBase::push_rooms_;
+    using ShellBase::trim_pending_call_invites_;
+
+    // The active account's invites for one room (creating the entry).
+    std::vector<PendingCallInvite>& invites(const std::string& room)
+    {
+        return pending_call_invites_[CallInviteKey{my_user_id_, room}];
+    }
+    std::size_t invite_entries_of(const std::string& account, const std::string& room) const
+    {
+        return pending_call_invites_.count(CallInviteKey{account, room});
+    }
 };
 
 tesseract::RtcParticipantInfo shell_calls_participant(const std::string& id)
@@ -344,7 +365,7 @@ TEST_CASE("declining clears the pending invite and the Decline button",
 {
     BannerFixture f;
     f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "video", 60000, "$inv");
-    REQUIRE(f.s.pending_call_invites_.count("!call:x") == 1);
+    REQUIRE(f.s.invite_entries_of("", "!call:x") == 1);
     f.s.decline_pending_call_invite_("!call:x");
     CHECK(f.s.pending_call_invites_.empty());
     CHECK_FALSE(f.app->room_view()->call_banner_decline_visible());
@@ -364,6 +385,97 @@ TEST_CASE("a withdrawn invite removes the Decline button", "[shell][calls][banne
     CHECK_FALSE(f.app->room_view()->call_banner_decline_visible());
     CHECK(f.s.pending_call_invites_.empty());
     CHECK(f.app->room_view()->call_banner_visible());
+}
+
+TEST_CASE("a DM call's legacy ring and MatrixRTC invite are tracked separately",
+          "[shell][calls][banner]")
+{
+    BannerFixture f;
+    // One DM call, two signals: the legacy ring ($ring) and the sticky invite ($inv).
+    f.s.handle_rtc_invitation_ui_("!call:x", "call#default", "@alice:x", "video", 60000, "$ring");
+    f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "video", 60000, "$inv");
+    REQUIRE(f.s.invites("!call:x").size() == 2);
+
+    // Withdrawing the MatrixRTC invite must not clear the banner of the ring...
+    f.s.handle_rtc_invitation_ui_("!call:x", "", "", "", 0, "$inv");
+    CHECK(f.app->room_view()->call_banner_decline_visible());
+    REQUIRE(f.s.invites("!call:x").size() == 1);
+    CHECK(f.s.invites("!call:x")[0].event_id == "$ring");
+
+    // ...and the ring's own cancellation finishes the job.
+    f.s.handle_rtc_invitation_ui_("!call:x", "", "", "", 0, "$ring");
+    CHECK_FALSE(f.app->room_view()->call_banner_decline_visible());
+    CHECK(f.s.pending_call_invites_.empty());
+}
+
+TEST_CASE("cancelling the legacy ring leaves the MatrixRTC invite pending",
+          "[shell][calls][banner]")
+{
+    BannerFixture f;
+    f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "video", 60000, "$inv");
+    f.s.handle_rtc_invitation_ui_("!call:x", "call#default", "@alice:x", "video", 60000, "$ring");
+    f.s.handle_rtc_invitation_ui_("!call:x", "", "", "", 0, "$ring");
+    CHECK(f.app->room_view()->call_banner_decline_visible());
+    REQUIRE(f.s.invites("!call:x").size() == 1);
+    CHECK(f.s.invites("!call:x")[0].event_id == "$inv");
+}
+
+TEST_CASE("announcing an invite again refreshes it instead of adding a second",
+          "[shell][calls][banner]")
+{
+    BannerFixture f;
+    f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "video", 1000, "$inv");
+    f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "video", 60000, "$inv");
+    REQUIRE(f.s.invites("!call:x").size() == 1);
+    CHECK(f.s.invites("!call:x")[0].expires >
+          std::chrono::steady_clock::now() + std::chrono::seconds(30));
+}
+
+TEST_CASE("an expired invite leaves the other pending one alone", "[shell][calls][banner]")
+{
+    BannerFixture f;
+    f.s.handle_rtc_invitation_ui_("!call:x", "call#default", "@alice:x", "video", 60000, "$ring");
+    f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "video", 60000, "$inv");
+    f.s.invites("!call:x")[0].expires =
+        std::chrono::steady_clock::now() - std::chrono::seconds(1);
+    f.s.refresh_call_banners_();
+    REQUIRE(f.s.invites("!call:x").size() == 1);
+    CHECK(f.s.invites("!call:x")[0].event_id == "$inv");
+    CHECK(f.app->room_view()->call_banner_decline_visible());
+}
+
+TEST_CASE("the banner lists every caller with a pending invite", "[shell][calls][banner]")
+{
+    BannerFixture f;
+    f.s.rooms_[0].call_members.clear();
+    f.s.mark_room_index_dirty_();
+    f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "audio", 60000, "$a");
+    f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@bob:x", "audio", 60000, "$b");
+    f.s.handle_rtc_invitation_ui_("!call:x", "call#default", "@alice:x", "audio", 60000, "$a2");
+    REQUIRE(f.s.call_banner_rosters_.count("!call:x") == 1);
+    CHECK(f.s.call_banner_rosters_["!call:x"].ids ==
+          std::vector<std::string>{"@alice:x", "@bob:x"});
+}
+
+TEST_CASE("declining answers the MatrixRTC invite first and the legacy ring too",
+          "[shell][calls][banner]")
+{
+    using Pending = CallShell::PendingCallInvite;
+    const auto later = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    const std::vector<Pending> both{{"$ring", "call#default", "@alice:x", later},
+                                    {"$inv", "m.call#room", "@alice:x", later}};
+    CHECK(CallShell::call_invite_decline_targets_(both) ==
+          std::vector<std::string>{"$inv", "$ring"});
+    // A ring with no MatrixRTC invite beside it is still an m.rtc.notification
+    // event a decline can reference.
+    CHECK(CallShell::call_invite_decline_targets_({both[0]}) ==
+          std::vector<std::string>{"$ring"});
+    // Nothing without an id; the same id never twice.
+    const std::vector<Pending> odd{{"", "m.call#room", "@a:x", later},
+                                   {"$x", "m.call#room", "@a:x", later},
+                                   {"$x", "m.call#room", "@b:x", later}};
+    CHECK(CallShell::call_invite_decline_targets_(odd) == std::vector<std::string>{"$x"});
+    CHECK(CallShell::call_invite_decline_targets_({}).empty());
 }
 
 TEST_CASE("a call member event without an event id leaves invites alone", "[shell][calls][banner]")
@@ -402,7 +514,7 @@ TEST_CASE("an expired invite no longer offers Decline", "[shell][calls][banner]"
 {
     BannerFixture f;
     f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "video", 60000, "$inv");
-    f.s.pending_call_invites_["!call:x"].expires =
+    f.s.invites("!call:x").front().expires =
         std::chrono::steady_clock::now() - std::chrono::seconds(1);
     f.s.refresh_call_banners_();
     CHECK_FALSE(f.app->room_view()->call_banner_decline_visible());
@@ -472,4 +584,128 @@ TEST_CASE("the banner is hidden in the room the user is already calling from",
         std::make_unique<CallSession>(&f.client, "!call:x", "slot");
     f.s.refresh_call_banners_();
     CHECK_FALSE(f.app->room_view()->call_banner_visible());
+}
+
+TEST_CASE("Decline answers only the invites whose caller the banner lists",
+          "[shell][calls][banner]")
+{
+    BannerFixture f; // the room's call has @alice:x in it
+    f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "video", 60000, "$alice");
+    f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@bob:x", "video", 60000, "$bob");
+    REQUIRE(f.app->room_view()->call_banner_decline_visible());
+    f.s.decline_pending_call_invite_("!call:x");
+    // Bob's invite was never part of the banner the user clicked in.
+    REQUIRE(f.s.invites("!call:x").size() == 1);
+    CHECK(f.s.invites("!call:x")[0].event_id == "$bob");
+    CHECK_FALSE(f.app->room_view()->call_banner_decline_visible());
+}
+
+TEST_CASE("an invite from a caller the banner does not list offers no Decline",
+          "[shell][calls][banner]")
+{
+    BannerFixture f;
+    f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@bob:x", "video", 60000, "$bob");
+    CHECK_FALSE(f.app->room_view()->call_banner_decline_visible());
+    f.s.decline_pending_call_invite_("!call:x");
+    CHECK(f.s.invites("!call:x").size() == 1);
+}
+
+TEST_CASE("with no call members the banner lists every inviting caller",
+          "[shell][calls][banner]")
+{
+    using Pending = CallShell::PendingCallInvite;
+    const auto later = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    const std::vector<Pending> both{{"$a", "m.call#room", "@alice:x", later},
+                                    {"$b", "m.call#room", "@bob:x", later},
+                                    {"$a2", "call#default", "@alice:x", later}};
+    const auto ids = CallShell::call_banner_ids_(nullptr, both);
+    CHECK(ids == std::vector<std::string>{"@alice:x", "@bob:x"});
+    CHECK(CallShell::call_invites_shown_by_banner_(ids, both).size() == 3);
+    tesseract::RoomInfo r;
+    r.call_members = {"@carol:x"};
+    CHECK(CallShell::call_banner_ids_(&r, both) == std::vector<std::string>{"@carol:x"});
+    CHECK(CallShell::call_invites_shown_by_banner_({"@carol:x"}, both).empty());
+}
+
+TEST_CASE("two accounts in one room keep separate invites", "[shell][calls][banner]")
+{
+    BannerFixture f;
+    f.s.my_user_id_ = "@me:x";
+    f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "video", 60000, "$mine");
+    {
+        CallShell::EventAccountScope other(f.s, "@other:x");
+        f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "video", 60000, "$theirs");
+    }
+    CHECK(f.s.invite_entries_of("@me:x", "!call:x") == 1);
+    CHECK(f.s.invite_entries_of("@other:x", "!call:x") == 1);
+    // Declining as the active account leaves the other account's invite alone.
+    f.s.decline_pending_call_invite_("!call:x");
+    CHECK(f.s.invite_entries_of("@me:x", "!call:x") == 0);
+    CHECK(f.s.invite_entries_of("@other:x", "!call:x") == 1);
+    // A cancellation of the other account's invite does not touch ours either.
+    f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "video", 60000, "$mine");
+    {
+        CallShell::EventAccountScope other(f.s, "@other:x");
+        f.s.handle_rtc_invitation_ui_("!call:x", "", "", "", 0, "$mine");
+    }
+    CHECK(f.s.invite_entries_of("@me:x", "!call:x") == 1);
+}
+
+TEST_CASE("signing an account out forgets its invites and the banner rosters",
+          "[shell][calls][banner]")
+{
+    BannerFixture f;
+    f.s.my_user_id_ = "@me:x";
+    f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "video", 60000, "$mine");
+    {
+        CallShell::EventAccountScope other(f.s, "@other:x");
+        f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "video", 60000, "$theirs");
+    }
+    REQUIRE(f.s.call_banner_rosters_.count("!call:x") == 1);
+    f.s.drop_call_invites_of_account_("@other:x");
+    CHECK(f.s.invite_entries_of("@other:x", "!call:x") == 0);
+    CHECK(f.s.invite_entries_of("@me:x", "!call:x") == 1);
+    CHECK(f.s.call_banner_rosters_.empty());
+}
+
+TEST_CASE("invites of a room the account no longer has are dropped",
+          "[shell][calls][banner]")
+{
+    BannerFixture f;
+    f.s.my_user_id_ = "@me:x";
+    f.s.handle_rtc_invitation_ui_("!call:x", "m.call#room", "@alice:x", "video", 60000, "$a");
+    f.s.handle_rtc_invitation_ui_("!kept:x", "m.call#room", "@alice:x", "video", 60000, "$b");
+    REQUIRE(f.s.call_banner_rosters_.count("!call:x") == 1);
+    tesseract::RoomInfo kept;
+    kept.id = "!kept:x";
+    // Another account's room list changes nothing for ours.
+    f.s.drop_call_invites_of_missing_rooms_("@other:x", {});
+    CHECK(f.s.invite_entries_of("@me:x", "!call:x") == 1);
+    f.s.drop_call_invites_of_missing_rooms_("@me:x", {kept});
+    CHECK(f.s.invite_entries_of("@me:x", "!call:x") == 0);
+    CHECK(f.s.invite_entries_of("@me:x", "!kept:x") == 1);
+    CHECK(f.s.call_banner_rosters_.count("!call:x") == 0);
+}
+
+TEST_CASE("pending invites are capped across rooms, dropping the soonest to expire",
+          "[shell][calls][banner]")
+{
+    CallShell s;
+    const std::size_t cap = CallShell::kMaxPendingCallInvites;
+    const std::size_t sent = cap + 8;
+    for (std::size_t n = 0; n < sent; ++n)
+    {
+        // Each later invite lives a little longer than the one before.
+        s.handle_rtc_invitation_ui_("!room" + std::to_string(n) + ":x", "m.call#room",
+                                    "@c" + std::to_string(n) + ":x", "video",
+                                    60000 + n * 1000, "$i" + std::to_string(n));
+    }
+    std::size_t total = 0;
+    for (const auto& [key, list] : s.pending_call_invites_)
+    {
+        total += list.size();
+    }
+    CHECK(total == cap);
+    CHECK(s.invite_entries_of("", "!room0:x") == 0);
+    CHECK(s.invite_entries_of("", "!room" + std::to_string(sent - 1) + ":x") == 1);
 }

@@ -3463,6 +3463,19 @@ pub(super) async fn build_room_info_unfiltered(
         // Every live legacy membership, ours included, read from the raw
         // events (ruma's typed model drops those of newer clients).
         let all = rtc::members::read_call_members(room, None, rtc::members::JoinCheck::Cached).await;
+        // Users the account ignores do not make a call show up. Read from the
+        // store only when the room has a call member to judge.
+        let mrtc = match (own_user, own_device) {
+            (Some(u), Some(d)) => rtc::slots::read_mrtc_members(room, u, d, rtc::members::JoinCheck::Cached).await,
+            _ => Vec::new(),
+        };
+        let ignored = if all.is_empty() && mrtc.is_empty() {
+            std::collections::HashSet::new()
+        } else {
+            rtc::sticky::ignored_users(client).await
+        };
+        let all = rtc::members::without_ignored(all, &ignored);
+        let mrtc = rtc::members::without_ignored(mrtc, &ignored);
         let mut active = !all.is_empty();
         let others: Vec<rtc::members::CallMember> = all
             .into_iter()
@@ -3473,12 +3486,9 @@ pub(super) async fn build_room_info_unfiltered(
             .collect();
         let mut participants = rtc::slots::participants_from_members(&others);
         // Sticky MatrixRTC members (only those seen in timelines / history).
-        if let (Some(u), Some(d)) = (own_user, own_device) {
-            let mrtc = rtc::slots::read_mrtc_members(room, u, d, rtc::members::JoinCheck::Cached).await;
-            if !mrtc.is_empty() {
-                active = true;
-                participants.extend(rtc::slots::participants_from_members(&mrtc));
-            }
+        if !mrtc.is_empty() {
+            active = true;
+            participants.extend(rtc::slots::participants_from_members(&mrtc));
         }
         let (members, intent) = rtc::members::summarize_participants(participants);
         (active, members, intent)

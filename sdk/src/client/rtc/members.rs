@@ -41,6 +41,42 @@ impl LkFocus {
     }
 }
 
+/// Whether `url` can be the base of a JWT service we may call: an http(s) URL
+/// with a host. An empty or malformed one (a member that published only an SFU
+/// `url`, or garbage) is never an SFU to subscribe to.
+pub fn usable_service_url(url: &str) -> bool {
+    reqwest::Url::parse(url.trim())
+        .map(|u| matches!(u.scheme(), "http" | "https") && u.host_str().is_some())
+        .unwrap_or(false)
+}
+
+/// An SFU URL reduced to what names the server: whether it is TLS (`wss` and
+/// `https` are the same endpoint), the lowercased host, the port (the scheme's
+/// default when omitted) and the path without trailing slashes. Query and
+/// fragment are dropped. `None` for anything that is not a ws/wss/http/https URL
+/// with a host.
+fn sfu_url_identity(url: &str) -> Option<(bool, String, u16, String)> {
+    let u = reqwest::Url::parse(url.trim()).ok()?;
+    let tls = match u.scheme() {
+        "wss" | "https" => true,
+        "ws" | "http" => false,
+        _ => return None,
+    };
+    let host = u.host_str()?.trim_end_matches('.').to_ascii_lowercase();
+    let port = u.port().unwrap_or(if tls { 443 } else { 80 });
+    Some((tls, host, port, u.path().trim_end_matches('/').to_owned()))
+}
+
+/// Whether two SFU URLs name the same server, however each is spelled
+/// (`wss://sfu.x.org`, `wss://SFU.x.org:443/`, `https://sfu.x.org` ...). A URL
+/// that cannot be read matches nothing, not even itself.
+pub fn same_sfu_url(a: &str, b: &str) -> bool {
+    match (sfu_url_identity(a), sfu_url_identity(b)) {
+        (Some(x), Some(y)) => x == y,
+        _ => false,
+    }
+}
+
 /// Which membership format a call member was read from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MemberSource {
@@ -92,15 +128,21 @@ pub enum JoinCheck {
     /// first if it is not loaded yet; for who may receive a media key.
     Strict,
     /// Local store only, no request: a sender the store does not know is kept
-    /// and one known not to be joined is dropped; cheap enough for the room list.
+    /// and one known not to be joined is dropped; cheap enough for the room
+    /// list. For display only: never to decide who receives a media key.
     Cached,
+    /// Local store only, no request, and a sender the store does not know (or
+    /// cannot read) is dropped: only a sender known to be joined counts. For
+    /// deciding who receives a media key when the member list could not be
+    /// fetched in time.
+    KnownJoined,
 }
 
 /// Whether a sender with this membership (`None`: not in the store) counts.
 pub fn sender_counts(membership: Option<&MembershipState>, check: JoinCheck) -> bool {
     match (membership, check) {
         (Some(m), _) => *m == MembershipState::Join,
-        (None, JoinCheck::Strict) => false,
+        (None, JoinCheck::Strict | JoinCheck::KnownJoined) => false,
         (None, JoinCheck::Cached) => true,
     }
 }
@@ -179,7 +221,7 @@ async fn lookup_sender(
 ) -> SenderLookup {
     let membership = |m: Option<matrix_sdk::room::RoomMember>| m.map(|m| m.membership().clone());
     match check {
-        JoinCheck::Cached => match room.get_member_no_sync(sender).await {
+        JoinCheck::Cached | JoinCheck::KnownJoined => match room.get_member_no_sync(sender).await {
             Ok(m) => SenderLookup::Known(membership(m)),
             Err(_) => SenderLookup::Unknown,
         },
@@ -306,7 +348,7 @@ fn oldest_transport(
     let mut best: Option<(MilliSecondsSinceUnixEpoch, &str, &LkFocus)> =
         own.map(|(ts, f)| (ts, "", f));
     for m in members {
-        let Some(first) = m.foci_preferred.first() else {
+        let Some(first) = m.foci_preferred.iter().find(|f| usable_service_url(&f.service_url)) else {
             continue;
         };
         let cand = (m.joined_at, m.state_key.as_str(), first);
@@ -318,14 +360,29 @@ fn oldest_transport(
 }
 
 /// The SFU a member publishes its media on, or `None` if its selection method
-/// is unknown or it advertises no LiveKit focus.
+/// is unknown or it advertises no LiveKit focus we can use: one with a JWT
+/// service URL, or one naming the SFU WebSocket we are connected to ourselves.
 pub fn transport_of(
     member: &CallMember,
     members: &[CallMember],
     own: Option<(MilliSecondsSinceUnixEpoch, &LkFocus)>,
 ) -> Option<LkFocus> {
     match member.focus_selection.as_str() {
-        SELECTION_MULTI_SFU => member.foci_preferred.first().cloned(),
+        SELECTION_MULTI_SFU => member
+            .foci_preferred
+            .iter()
+            .find(|f| usable_service_url(&f.service_url))
+            .cloned()
+            .or_else(|| {
+                // A transport with only an SFU URL is on our SFU if that is ours.
+                let (_, local) = own?;
+                let ours = local.sfu_url.as_deref()?;
+                member
+                    .foci_preferred
+                    .iter()
+                    .any(|f| f.sfu_url.as_deref().is_some_and(|u| same_sfu_url(u, ours)))
+                    .then(|| local.clone())
+            }),
         SELECTION_OLDEST => oldest_transport(members, own),
         _ => None,
     }
@@ -342,20 +399,41 @@ pub fn desired_sfus(
         .iter()
         .filter_map(|m| transport_of(m, members, own))
         .map(|f| f.service_url)
-        .filter(|u| u != local_service_url)
+        .filter(|u| u != local_service_url && usable_service_url(u))
         .collect()
 }
 
 /// Which SFU each live member publishes on, keyed by `(user_id, device_id)`.
-/// Members whose transport can't be determined are left out.
+/// Members whose transport can't be determined are left out and so are not
+/// held to any SFU, except a MatrixRTC member that did publish transports none
+/// of which we can use: it maps to the empty string, which matches no SFU, so
+/// no audio or video is attributed to it anywhere.
 pub fn transport_map(
     members: &[CallMember],
     own: Option<(MilliSecondsSinceUnixEpoch, &LkFocus)>,
 ) -> std::collections::HashMap<(String, String), String> {
     members
         .iter()
-        .filter_map(|m| Some((m.key(), transport_of(m, members, own)?.service_url)))
+        .filter_map(|m| match transport_of(m, members, own) {
+            Some(f) => Some((m.key(), f.service_url)),
+            None if m.source == MemberSource::MatrixRtc
+                && m.focus_selection == SELECTION_MULTI_SFU
+                && !m.foci_preferred.is_empty() =>
+            {
+                Some((m.key(), String::new()))
+            }
+            None => None,
+        })
         .collect()
+}
+
+/// Members whose user is not in `ignored`: an ignored user's call does not
+/// show up in the "call in progress" banner.
+pub fn without_ignored(members: Vec<CallMember>, ignored: &HashSet<String>) -> Vec<CallMember> {
+    if ignored.is_empty() {
+        return members;
+    }
+    members.into_iter().filter(|m| !ignored.contains(&m.user_id)).collect()
 }
 
 /// One user with a live call membership, for the "call in progress" banner.
@@ -769,6 +847,128 @@ mod tests {
         );
     }
 
+    fn rtc_member(user: &str, device: &str, foci: Vec<LkFocus>) -> CallMember {
+        CallMember {
+            user_id: user.into(), device_id: device.into(), state_key: String::new(), joined_at: ts(1),
+            focus_selection: SELECTION_MULTI_SFU.into(), foci_preferred: foci, member_id: format!("m-{device}"),
+            source: MemberSource::MatrixRtc, intent: None, capabilities: None,
+        }
+    }
+
+    fn focus(service: &str, sfu: Option<&str>) -> LkFocus {
+        LkFocus { service_url: service.into(), alias: String::new(), sfu_url: sfu.map(str::to_owned), server_name: None }
+    }
+
+    #[test]
+    fn service_urls_must_be_usable_http_urls() {
+        assert!(usable_service_url("https://jwt.a.org"));
+        assert!(usable_service_url("http://localhost:8080/sfu"));
+        for bad in ["", "   ", "jwt.a.org", "wss://sfu.a.org", "https://", "not a url"] {
+            assert!(!usable_service_url(bad), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn a_url_only_transport_is_never_an_sfu_to_subscribe_to() {
+        let m = rtc_member("@b:b.org", "D", vec![focus("", Some("wss://sfu.b.org"))]);
+        assert!(transport_of(&m, &[m.clone()], None).is_none());
+        assert!(desired_sfus(&[m.clone()], None, "https://sfu.a.org").is_empty(), "no empty entry");
+        // A usable second transport is picked instead of the useless first.
+        let both = rtc_member("@b:b.org", "D", vec![focus("", Some("wss://x")), focus("https://sfu.b.org", None)]);
+        assert_eq!(desired_sfus(&[both], None, "https://sfu.a.org").len(), 1);
+        // Garbage in the service URL is skipped as well.
+        let junk = rtc_member("@b:b.org", "D", vec![focus("not a url", None)]);
+        assert!(desired_sfus(&[junk], None, "https://sfu.a.org").is_empty());
+    }
+
+    #[test]
+    fn a_url_only_transport_naming_our_own_sfu_is_on_our_sfu() {
+        let own = focus("https://sfu.a.org", Some("wss://sfu.a.org"));
+        let mine = rtc_member("@b:b.org", "D", vec![focus("", Some("wss://sfu.a.org"))]);
+        let elsewhere = rtc_member("@c:b.org", "E", vec![focus("", Some("wss://sfu.c.org"))]);
+        let all = vec![mine.clone(), elsewhere.clone()];
+        assert_eq!(transport_of(&mine, &all, Some((ts(1), &own))).unwrap().service_url, "https://sfu.a.org");
+        assert!(transport_of(&elsewhere, &all, Some((ts(1), &own))).is_none());
+        assert!(desired_sfus(&all, Some((ts(1), &own)), "https://sfu.a.org").is_empty());
+    }
+
+    #[test]
+    fn equivalent_spellings_of_an_sfu_url_match() {
+        let base = "wss://sfu.a.org";
+        for same in [
+            "wss://sfu.a.org",
+            "wss://sfu.a.org/",
+            "WSS://SFU.A.ORG",
+            "wss://sfu.a.org:443",
+            "wss://sfu.a.org:443/",
+            "https://sfu.a.org",
+            "https://sfu.a.org:443/",
+            " wss://sfu.a.org ",
+            "wss://sfu.a.org/?token=x",
+        ] {
+            assert!(same_sfu_url(base, same), "{same:?}");
+            assert!(same_sfu_url(same, base), "{same:?}");
+        }
+        assert!(same_sfu_url("ws://sfu.a.org", "http://sfu.a.org:80/"));
+        assert!(same_sfu_url("wss://sfu.a.org/livekit/sfu", "https://sfu.a.org/livekit/sfu/"));
+    }
+
+    #[test]
+    fn a_different_server_never_matches() {
+        let base = "wss://sfu.a.org";
+        for other in [
+            "wss://sfu.b.org",
+            "wss://sfu.a.org.evil.org",
+            "wss://sfu.a.org:7881",
+            "ws://sfu.a.org",
+            "http://sfu.a.org",
+            "wss://sfu.a.org/livekit",
+            "",
+            "not a url",
+            "ftp://sfu.a.org",
+        ] {
+            assert!(!same_sfu_url(base, other), "{other:?}");
+        }
+        assert!(!same_sfu_url("", ""), "an unreadable URL matches nothing");
+    }
+
+    #[test]
+    fn a_url_only_transport_matches_our_sfu_in_any_spelling() {
+        let own = focus("https://jwt.a.org", Some("wss://sfu.a.org"));
+        for spelled in ["wss://sfu.a.org/", "wss://SFU.a.org:443", "https://sfu.a.org"] {
+            let m = rtc_member("@b:b.org", "D", vec![focus("", Some(spelled))]);
+            assert_eq!(
+                transport_of(&m, &[m.clone()], Some((ts(1), &own))).map(|f| f.service_url),
+                Some("https://jwt.a.org".to_owned()),
+                "{spelled:?}"
+            );
+        }
+        let other = rtc_member("@c:b.org", "E", vec![focus("", Some("wss://sfu.c.org"))]);
+        assert!(transport_of(&other, &[other.clone()], Some((ts(1), &own))).is_none());
+    }
+
+    #[test]
+    fn a_member_we_cannot_place_is_attributed_to_no_sfu() {
+        let own = focus("https://sfu.a.org", Some("wss://sfu.a.org"));
+        let useless = rtc_member("@c:b.org", "E", vec![focus("", Some("wss://sfu.c.org"))]);
+        let none_published = rtc_member("@d:b.org", "F", Vec::new());
+        let ok = rtc_member("@b:b.org", "D", vec![focus("https://sfu.b.org", None)]);
+        let map = transport_map(&[useless.clone(), none_published.clone(), ok.clone()], Some((ts(1), &own)));
+        assert_eq!(map[&useless.key()], "", "matches no SFU, so nothing is attributed");
+        assert_eq!(map[&ok.key()], "https://sfu.b.org");
+        assert!(!map.contains_key(&none_published.key()), "no transports at all: left out as before");
+    }
+
+    #[test]
+    fn ignored_users_are_dropped_from_member_lists() {
+        let a = rtc_member("@a:x", "D", Vec::new());
+        let b = rtc_member("@b:x", "D", Vec::new());
+        let ignored: HashSet<String> = ["@a:x".to_owned()].into();
+        let left = without_ignored(vec![a.clone(), b.clone()], &ignored);
+        assert_eq!(left.iter().map(|m| m.user_id.as_str()).collect::<Vec<_>>(), vec!["@b:x"]);
+        assert_eq!(without_ignored(vec![a, b], &HashSet::new()).len(), 2);
+    }
+
     #[test]
     fn transport_map_lists_each_members_sfu() {
         let mut all = one(
@@ -1010,6 +1210,25 @@ mod tests {
     #[test]
     fn the_cached_check_keeps_senders_the_store_does_not_know() {
         assert!(sender_counts(None, JoinCheck::Cached));
+    }
+
+    #[test]
+    fn the_known_joined_check_drops_senders_the_store_does_not_know() {
+        let joined = Some(MembershipState::Join);
+        assert!(sender_counts(joined.as_ref(), JoinCheck::KnownJoined));
+        for gone in [MembershipState::Leave, MembershipState::Ban, MembershipState::Invite] {
+            assert!(!sender_counts(Some(&gone), JoinCheck::KnownJoined), "{gone:?}");
+        }
+        assert!(!sender_counts(None, JoinCheck::KnownJoined), "missing from the store: no key");
+        // A failed lookup with no earlier verdict is not joined either...
+        assert!(!judge_sender(&SenderLookup::Unknown, None, JoinCheck::KnownJoined));
+        assert!(!judge_sender(&SenderLookup::Known(None), None, JoinCheck::KnownJoined));
+        // ...but still repeats a verdict the room gave earlier.
+        assert!(judge_sender(&SenderLookup::Unknown, Some(true), JoinCheck::KnownJoined));
+        assert!(!judge_sender(&SenderLookup::Unknown, Some(false), JoinCheck::KnownJoined));
+        // What the store does not know is never remembered as a verdict.
+        assert_eq!(lasting_verdict(&SenderLookup::Known(None), JoinCheck::KnownJoined), None);
+        assert_eq!(lasting_verdict(&SenderLookup::Unknown, JoinCheck::KnownJoined), None);
     }
 
     #[test]

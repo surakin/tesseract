@@ -10,7 +10,8 @@ use matrix_sdk::{
 };
 
 use super::members::{
-    read_live_members, senders_to_keep, CallMember, JoinCheck, LkFocus, MemberSource, Participant, SELECTION_MULTI_SFU,
+    read_live_members, senders_to_keep, usable_service_url, CallMember, JoinCheck, LkFocus, MemberSource, Participant,
+    SELECTION_MULTI_SFU,
 };
 use super::model::{
     transport_is_livekit, MemberContent, SlotContent, CALL_SLOT_ID, MEMBER_TYPE, SLOT_TYPE,
@@ -50,6 +51,23 @@ pub fn member_is_joined(
     }
 }
 
+/// The device an `m.rtc.member` came from. `member.device_id` is only the
+/// sender's claim; the device that actually sent the (encrypted) event is
+/// known when decryption attributed one, so that one wins and a different claim
+/// is ignored. A claim can be checked only on an encrypted event whose sender
+/// device is known; otherwise it is kept, and with no claim the sender device
+/// stands in.
+pub fn member_device(claimed: Option<&str>, sender_device: Option<&str>) -> Option<String> {
+    match (sender_device, claimed) {
+        (Some(actual), Some(claimed)) if actual != claimed => {
+            tracing::debug!("rtc: member event claims device {claimed} but was sent from {actual}; using {actual}");
+            Some(actual.to_owned())
+        }
+        (Some(actual), _) => Some(actual.to_owned()),
+        (None, claimed) => claimed.map(str::to_owned),
+    }
+}
+
 /// A [`CallMember`] from a joined `m.rtc.member` entry; `None` when the user
 /// or device cannot be established.
 pub fn call_member_from(e: &StickyEntry) -> Option<CallMember> {
@@ -57,7 +75,10 @@ pub fn call_member_from(e: &StickyEntry) -> Option<CallMember> {
     if m.member.user_id.as_deref().is_some_and(|u| u != e.sender) {
         return None;
     }
-    let device_id = m.member.device_id.clone().or_else(|| e.sender_device.clone())?;
+    let device_id = member_device(m.member.device_id.as_deref(), e.sender_device.as_deref())?;
+    // A transport that names only the SFU `url` is kept with an empty service
+    // URL: it cannot be subscribed to, but the member is not attributed to any
+    // other SFU either (see `transport_map`).
     let foci_preferred: Vec<LkFocus> = m
         .transports
         .iter()
@@ -118,7 +139,8 @@ pub fn merge_members(legacy: Vec<CallMember>, mrtc: Vec<CallMember>) -> Vec<Call
     let mut out: Vec<CallMember> = Vec::with_capacity(legacy.len() + mrtc.len());
     for mut m in mrtc {
         if let Some(l) = legacy.iter().find(|l| l.key() == m.key()) {
-            if m.foci_preferred.is_empty() {
+            // Also when its transports name no JWT service we can reach (an SFU URL only).
+            if !m.foci_preferred.iter().any(|f| usable_service_url(&f.service_url)) {
                 m.foci_preferred = l.foci_preferred.clone();
             }
         }
@@ -154,8 +176,8 @@ pub fn stale_own_members(
         if !m.is_join() || m.member.id == current_member_id {
             continue;
         }
-        let device = m.member.device_id.as_deref().or(e.sender_device.as_deref());
-        if device != Some(own_device) || out.iter().any(|(_, id)| *id == m.member.id) {
+        let device = member_device(m.member.device_id.as_deref(), e.sender_device.as_deref());
+        if device.as_deref() != Some(own_device) || out.iter().any(|(_, id)| *id == m.member.id) {
             continue;
         }
         out.push((m.slot_id.clone(), m.member.id.clone()));
@@ -188,23 +210,82 @@ pub fn live_mrtc_members(
     dedupe_by_device(members)
 }
 
-/// The room's `m.call` slot, if it has one.
-pub async fn read_slot(room: &Room) -> Option<SlotContent> {
-    use matrix_sdk::deserialized_responses::RawAnySyncOrStrippedState;
-    for key in SLOT_KEYS {
-        let Ok(Some(raw)) = room.get_state_event(StateEventType::from(SLOT_TYPE), key).await else {
-            continue;
-        };
-        let json = match &raw {
-            RawAnySyncOrStrippedState::Sync(r) => r.json().get().to_owned(),
-            RawAnySyncOrStrippedState::Stripped(r) => r.json().get().to_owned(),
-        };
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(&json) else { continue };
-        if let Some(c) = v.get("content").and_then(|c| serde_json::from_value(c.clone()).ok()) {
-            return Some(c);
+/// What the room's `m.call` slot state looks like.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SlotState {
+    /// No slot event under any of the slot's state keys.
+    Absent,
+    /// An event is there but is not a slot we can read: emptied content (how a
+    /// state event is cleared), or a shape we do not know.
+    Unreadable,
+    /// A slot, open or closed.
+    Present(SlotContent),
+}
+
+/// The slot state from the full JSON of the room's slot events, each with the
+/// state key it lives under. The first readable slot wins; unreadable events
+/// only count when no key holds a readable one. Also returns the state key a
+/// replacement belongs under: the readable slot's own key, else [`CALL_SLOT_ID`].
+pub fn slot_state_of(events: &[(&'static str, serde_json::Value)]) -> (SlotState, &'static str) {
+    let mut unreadable = false;
+    for (key, v) in events {
+        match v.get("content").and_then(|c| serde_json::from_value::<SlotContent>(c.clone()).ok()) {
+            Some(c) => return (SlotState::Present(c), key),
+            None => unreadable = true,
         }
     }
-    None
+    if unreadable {
+        (SlotState::Unreadable, CALL_SLOT_ID)
+    } else {
+        (SlotState::Absent, CALL_SLOT_ID)
+    }
+}
+
+/// What one state key's store read tells the slot state: nothing for a key with
+/// no event, the event's JSON otherwise. An event that is not JSON, and a read
+/// that failed, are as unreadable as one with odd content: a transient store
+/// error must not make a closed slot look missing (and so be reopened).
+pub fn slot_event_of_read<E>(read: Result<Option<String>, E>) -> Option<serde_json::Value> {
+    match read {
+        Ok(None) => None,
+        Ok(Some(json)) => Some(serde_json::from_str(&json).unwrap_or(serde_json::Value::Null)),
+        Err(_) => Some(serde_json::Value::Null),
+    }
+}
+
+/// The room's `m.call` slot state and the state key it lives under, telling a
+/// missing slot from one that is there but cleared or unreadable.
+pub async fn read_slot_state_keyed(room: &Room) -> (SlotState, &'static str) {
+    use matrix_sdk::deserialized_responses::RawAnySyncOrStrippedState;
+    let mut events: Vec<(&'static str, serde_json::Value)> = Vec::new();
+    for key in SLOT_KEYS {
+        let read = room
+            .get_state_event(StateEventType::from(SLOT_TYPE), key)
+            .await
+            .map(|found| {
+                found.map(|raw| match &raw {
+                    RawAnySyncOrStrippedState::Sync(r) => r.json().get().to_owned(),
+                    RawAnySyncOrStrippedState::Stripped(r) => r.json().get().to_owned(),
+                })
+            });
+        if let Some(event) = slot_event_of_read(read) {
+            events.push((key, event));
+        }
+    }
+    slot_state_of(&events)
+}
+
+/// The room's `m.call` slot state; see [`read_slot_state_keyed`].
+pub async fn read_slot_state(room: &Room) -> SlotState {
+    read_slot_state_keyed(room).await.0
+}
+
+/// The room's `m.call` slot, if it has a readable one.
+pub async fn read_slot(room: &Room) -> Option<SlotContent> {
+    match read_slot_state(room).await {
+        SlotState::Present(c) => Some(c),
+        SlotState::Absent | SlotState::Unreadable => None,
+    }
 }
 
 /// The live MatrixRTC (sticky) members of `room`, excluding our own device,
@@ -241,8 +322,9 @@ pub async fn read_all_live_members(room: &Room, own_user: &UserId, own_device: &
     read_all_live_members_checked(room, own_user, own_device, JoinCheck::Strict).await
 }
 
-/// [`read_all_live_members`] with the sender check of your choice; `Cached`
-/// never asks the homeserver.
+/// [`read_all_live_members`] with the sender check of your choice; `Cached` and
+/// `KnownJoined` never ask the homeserver. Anything that decides who receives a
+/// media key must use `Strict` or `KnownJoined`, never `Cached`.
 pub async fn read_all_live_members_checked(
     room: &Room,
     own_user: &UserId,
@@ -250,6 +332,12 @@ pub async fn read_all_live_members_checked(
     check: JoinCheck,
 ) -> Vec<CallMember> {
     let legacy = read_live_members(room, own_user, own_device, check).await;
+    if !legacy.is_empty() && room.encryption_state().is_encrypted() {
+        // Legacy membership is a state event, which is never encrypted: those
+        // members count in an encrypted room by the old protocol's rules (only
+        // the sticky MatrixRTC ones must have arrived encrypted).
+        tracing::debug!("rtc: {} cleartext legacy call member(s) accepted in an encrypted room", legacy.len());
+    }
     let mrtc = read_mrtc_members(room, own_user, own_device, check).await;
     merge_members(legacy, mrtc)
 }
@@ -344,7 +432,7 @@ mod tests {
             start_ms: start,
             duration_ms: dur,
             was_encrypted: encrypted,
-            sender_device: Some("SENDERDEV".into()),
+            sender_device: None,
             content,
         }
     }
@@ -427,8 +515,122 @@ mod tests {
 
     #[test]
     fn device_falls_back_to_the_decrypting_device() {
-        let e = entry("@a:x", join_content("@a:x", None), true, NOW - 1000, 3_600_000);
+        let mut e = entry("@a:x", join_content("@a:x", None), true, NOW - 1000, 3_600_000);
+        e.sender_device = Some("SENDERDEV".into());
         assert_eq!(call_member_from(&e).unwrap().device_id, "SENDERDEV");
+    }
+
+    #[test]
+    fn the_sending_device_beats_a_different_claimed_one() {
+        // An encrypted event from device REAL claiming to be device D.
+        let mut e = entry("@a:x", join_content("@a:x", Some("D")), true, NOW - 1000, 3_600_000);
+        e.sender_device = Some("REAL".into());
+        assert_eq!(call_member_from(&e).unwrap().device_id, "REAL");
+        // A claim that agrees is simply kept.
+        e.sender_device = Some("D".into());
+        assert_eq!(call_member_from(&e).unwrap().device_id, "D");
+    }
+
+    #[test]
+    fn an_uncheckable_claim_is_kept() {
+        // Cleartext (or an unattributed sender device): nothing to compare with.
+        let e = entry("@a:x", join_content("@a:x", Some("D")), false, NOW - 1000, 3_600_000);
+        assert_eq!(call_member_from(&e).unwrap().device_id, "D");
+        assert_eq!(member_device(Some("D"), None).as_deref(), Some("D"));
+        assert_eq!(member_device(None, Some("S")).as_deref(), Some("S"));
+        assert_eq!(member_device(None, None), None);
+    }
+
+    #[test]
+    fn our_own_stale_join_is_matched_by_the_sending_device_not_the_claim() {
+        // A join claiming to be another device but sent from this one is ours.
+        let mut e = entry("@me:x", join_content("@me:x", Some("OTHER")), true, NOW - 1_000, 300_000);
+        e.sender_device = Some("D".into());
+        assert_eq!(stale_own_members(&[e], "@me:x", "D", "current", NOW).len(), 1);
+    }
+
+    #[test]
+    fn a_transport_with_only_an_sfu_url_has_no_service_url() {
+        let mut c = join_content("@a:x", Some("D"));
+        c["transports"]["published"][0] = json!({"type": "livekit", "url": "wss://sfu.a.org"});
+        let m = call_member_from(&entry("@a:x", c, true, NOW - 1000, 3_600_000)).unwrap();
+        assert_eq!(m.foci_preferred.len(), 1);
+        assert_eq!(m.foci_preferred[0].service_url, "");
+        assert_eq!(m.foci_preferred[0].sfu_url.as_deref(), Some("wss://sfu.a.org"));
+    }
+
+    #[test]
+    fn a_member_with_an_unusable_transport_borrows_the_legacy_focus() {
+        let mut c = join_content("@a:x", Some("D"));
+        c["transports"]["published"][0] = json!({"type": "livekit", "url": "wss://sfu.a.org"});
+        let mrtc = call_member_from(&entry("@a:x", c, true, NOW - 1000, 3_600_000)).unwrap();
+        let legacy = CallMember {
+            user_id: "@a:x".into(), device_id: "D".into(), state_key: "_@a:x_D_m.call".into(),
+            joined_at: MilliSecondsSinceUnixEpoch::now(), focus_selection: "multi_sfu".into(),
+            foci_preferred: vec![LkFocus {
+                service_url: "https://jwt.a.org".into(), alias: "!r".into(), sfu_url: None, server_name: None,
+            }],
+            member_id: "@a:x:D".into(), source: MemberSource::Legacy, intent: None, capabilities: None,
+        };
+        let merged = merge_members(vec![legacy], vec![mrtc]);
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].source, MemberSource::MatrixRtc);
+        assert_eq!(merged[0].foci_preferred[0].service_url, "https://jwt.a.org");
+    }
+
+    // ── The slot state ──────────────────────────────────────────────────────
+
+    /// The slot events of the test, all under the default state key.
+    fn state_of(events: &[serde_json::Value]) -> SlotState {
+        let keyed: Vec<(&'static str, serde_json::Value)> = events.iter().map(|v| (SLOT_KEYS[0], v.clone())).collect();
+        slot_state_of(&keyed).0
+    }
+
+    #[test]
+    fn a_missing_slot_is_absent_and_a_cleared_one_is_not() {
+        assert_eq!(state_of(&[]), SlotState::Absent);
+        let open = json!({"type": "org.matrix.msc4143.rtc.slot", "content": {"status": "open", "application": {"type": "m.call"}}});
+        let cleared = json!({"type": "org.matrix.msc4143.rtc.slot", "content": {}});
+        assert!(matches!(state_of(&[open.clone()]), SlotState::Present(s) if s.is_open()));
+        assert_eq!(state_of(&[cleared.clone()]), SlotState::Unreadable);
+        assert_eq!(state_of(&[serde_json::Value::Null]), SlotState::Unreadable);
+        // A readable slot under the other state key beats an unreadable one.
+        assert!(matches!(state_of(&[cleared, open]), SlotState::Present(_)));
+    }
+
+    #[test]
+    fn a_closed_slot_is_present_not_absent() {
+        let closed = json!({"content": {"status": "closed"}});
+        assert!(matches!(state_of(&[closed]), SlotState::Present(s) if !s.is_open()));
+    }
+
+    #[test]
+    fn a_replacement_goes_under_the_state_key_the_slot_lives_under() {
+        let open = json!({"content": {"status": "open", "application": {"type": "m.call"}}});
+        let (state, key) = slot_state_of(&[("m.call#ROOM", open.clone())]);
+        assert!(matches!(state, SlotState::Present(_)));
+        assert_eq!(key, "m.call#ROOM", "not a second slot under m.call#room");
+        let (_, key) = slot_state_of(&[("m.call#room", open)]);
+        assert_eq!(key, "m.call#room");
+        // Nothing readable: a new slot takes the MSC's key.
+        assert_eq!(slot_state_of(&[]).1, CALL_SLOT_ID);
+        assert_eq!(slot_state_of(&[("m.call#ROOM", json!({"content": {}}))]).1, CALL_SLOT_ID);
+    }
+
+    #[test]
+    fn a_failed_store_read_is_unreadable_not_absent() {
+        // No event under the key: nothing to report.
+        assert_eq!(slot_event_of_read::<()>(Ok(None)), None);
+        // A store error is as unreadable as a cleared event: it must never
+        // look like a missing slot, which a call would then write.
+        let failed = slot_event_of_read(Err(()));
+        assert_eq!(failed, Some(serde_json::Value::Null));
+        assert_eq!(state_of(&[failed.unwrap()]), SlotState::Unreadable);
+        // Not even JSON: unreadable too.
+        assert_eq!(slot_event_of_read::<()>(Ok(Some("not json".into()))), Some(serde_json::Value::Null));
+        // A good event passes through.
+        let ev = slot_event_of_read::<()>(Ok(Some(r#"{"content":{"status":"closed"}}"#.into()))).unwrap();
+        assert!(matches!(state_of(&[ev]), SlotState::Present(s) if !s.is_open()));
     }
 
     #[test]

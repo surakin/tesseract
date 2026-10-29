@@ -2,11 +2,18 @@
 //! sticky `m.rtc.member` (and DM `m.rtc.invite`) events a call sends next to
 //! the legacy `org.matrix.msc3401.call.member` one.
 
-use matrix_sdk::{ruma::events::StateEventType, Room};
+use matrix_sdk::{
+    ruma::{
+        events::{room::power_levels::RoomPowerLevels, StateEventType},
+        UserId,
+    },
+    Room,
+};
 
 use super::model::{
     AppRef, EncryptionRef, SlotContent, SlotStatus, CALL_SLOT_ID, INVITE_TYPE, MEMBER_TYPE, SLOT_TYPE,
 };
+use super::slots::SlotState;
 use super::sticky::send_sticky;
 use base64ct::{Base64UrlUnpadded, Encoding};
 use rand::RngCore;
@@ -365,10 +372,55 @@ pub fn leave_reason_now(
     None
 }
 
-/// Open the slot only when the room has none and we may send the state event.
-/// An existing slot, open or deliberately closed, is left alone.
-pub fn should_open_slot(existing: Option<&SlotContent>, can_send_slot: bool) -> bool {
-    existing.is_none() && can_send_slot
+/// What starting a call does about the room's `m.call` slot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SlotPlan {
+    /// The slot is open and fits the room: use it.
+    Use,
+    /// Write a fresh open slot that fits the room.
+    Write,
+    /// Leave the slot alone: the call goes on without MatrixRTC membership.
+    Skip,
+}
+
+/// Decide what to do about the slot, given what the room has.
+///
+/// - No slot: write one if we may.
+/// - An open slot that disagrees with the room's encryption (it was opened
+///   before the room became encrypted): no member can be joined in it, so
+///   replace it if we may, but only when nobody else is in the call: others
+///   mid-call run on the legacy events, and swapping the slot under them would
+///   have us write a sticky member next to a call they cannot see it in.
+/// - A closed slot, or one that is there but cleared or unreadable: leave it.
+///   Closing or clearing the slot is how a room says calls are off (or the
+///   event is a shape we do not know and must not overwrite), and starting a
+///   call is not consent to undo that.
+pub fn plan_slot(state: &SlotState, room_encrypted: bool, can_send_slot: bool, others_present: bool) -> SlotPlan {
+    match state {
+        SlotState::Absent if can_send_slot => SlotPlan::Write,
+        SlotState::Present(s) if s.is_open() && slot_matches_room(s, room_encrypted) => SlotPlan::Use,
+        SlotState::Present(s) if s.is_open() && can_send_slot && !others_present => SlotPlan::Write,
+        SlotState::Absent | SlotState::Unreadable | SlotState::Present(_) => SlotPlan::Skip,
+    }
+}
+
+/// The legacy state events a call runs on (MSC3401).
+const LEGACY_CALL_TYPE: &str = "org.matrix.msc3401.call";
+const LEGACY_MEMBER_TYPE: &str = "org.matrix.msc3401.call.member";
+
+/// Whether the power levels let `user` join a call: the legacy `call.member`
+/// state event the call runs on. The sticky `m.rtc.member` is not part of this
+/// gate: where the room forbids it the session degrades to a legacy-only call
+/// (see `should_write_member_events`).
+pub fn may_join_call(pl: &RoomPowerLevels, user: &UserId) -> bool {
+    pl.user_can_send_state(user, StateEventType::from(LEGACY_MEMBER_TYPE))
+}
+
+/// Whether the power levels let `user` start a call: join permission plus the
+/// legacy `call` state event. `m.rtc.slot` is not part of this gate either: a
+/// session that may not write it runs legacy-only (see `plan_slot`).
+pub fn may_start_call(pl: &RoomPowerLevels, user: &UserId) -> bool {
+    may_join_call(pl, user) && pl.user_can_send_state(user, StateEventType::from(LEGACY_CALL_TYPE))
 }
 
 /// Whether the power levels let us send the slot state event.
@@ -382,12 +434,14 @@ pub async fn can_send_slot(room: &Room) -> bool {
     }
 }
 
-/// Send the open `m.rtc.slot` (state key `m.call#room`).
-pub async fn open_slot(room: &Room) -> anyhow::Result<()> {
+/// Send the open `m.rtc.slot` under `state_key`: `m.call#room` for a new slot,
+/// or the key a mismatched slot being replaced lives under (the reference
+/// implementation writes `m.call#ROOM`), so that no second slot appears.
+pub async fn open_slot(room: &Room, state_key: &str) -> anyhow::Result<()> {
     let encrypted = room.encryption_state().is_encrypted();
     let content = serde_json::to_value(slot_for(encrypted))?;
     let raw = serde_json::value::to_raw_value(&content)?;
-    room.send_state_event_raw(SLOT_TYPE, CALL_SLOT_ID, raw).await?;
+    room.send_state_event_raw(SLOT_TYPE, state_key, raw).await?;
     Ok(())
 }
 
@@ -858,10 +912,41 @@ mod tests {
     }
 
     #[test]
-    fn open_slot_only_when_missing_and_permitted() {
-        assert!(should_open_slot(None, true));
-        assert!(!should_open_slot(None, false), "no permission to send the state event");
-        assert!(!should_open_slot(Some(&slot_for(true)), true), "already open");
+    fn a_missing_slot_is_opened_when_permitted() {
+        assert_eq!(plan_slot(&SlotState::Absent, true, true, false), SlotPlan::Write);
+        assert_eq!(plan_slot(&SlotState::Absent, false, false, false), SlotPlan::Skip, "no permission to send the state event");
+        assert_eq!(plan_slot(&SlotState::Present(slot_for(true)), true, true, false), SlotPlan::Use, "already open");
+        assert_eq!(plan_slot(&SlotState::Present(slot_for(false)), false, false, false), SlotPlan::Use);
+    }
+
+    #[test]
+    fn a_slot_opened_before_the_room_was_encrypted_is_replaced() {
+        let old = SlotState::Present(slot_for(false));
+        assert_eq!(plan_slot(&old, true, true, false), SlotPlan::Write);
+        assert_eq!(plan_slot(&old, true, false, false), SlotPlan::Skip, "cannot fix it without permission");
+        // The other way round (an encrypted slot in a plain room) is just as wrong.
+        assert_eq!(plan_slot(&SlotState::Present(slot_for(true)), false, true, false), SlotPlan::Write);
+    }
+
+    #[test]
+    fn others_in_the_call_do_not_stop_a_missing_slot_being_written_but_do_stop_a_replacement() {
+        // Writing an absent slot is fine with others around (their calls run
+        // on the legacy events; the slot just was never opened).
+        assert_eq!(plan_slot(&SlotState::Absent, true, true, true), SlotPlan::Write);
+        assert_eq!(plan_slot(&SlotState::Absent, true, false, true), SlotPlan::Skip);
+        // Replacing an open slot that does not fit the room is left to a
+        // joiner who is alone.
+        let old = SlotState::Present(slot_for(false));
+        assert_eq!(plan_slot(&old, true, true, false), SlotPlan::Write);
+        assert_eq!(plan_slot(&old, true, true, true), SlotPlan::Skip, "others are mid-call");
+        // A slot that fits is used whoever is present.
+        assert_eq!(plan_slot(&SlotState::Present(slot_for(true)), true, true, true), SlotPlan::Use);
+    }
+
+    #[test]
+    fn a_cleared_or_unreadable_slot_is_left_alone() {
+        assert_eq!(plan_slot(&SlotState::Unreadable, true, true, false), SlotPlan::Skip);
+        assert_eq!(plan_slot(&SlotState::Unreadable, false, true, false), SlotPlan::Skip);
     }
 
     #[test]
@@ -871,6 +956,58 @@ mod tests {
             application: Some(AppRef { kind: "m.call".into() }),
             encryption: None,
         };
-        assert!(!should_open_slot(Some(&closed), true), "closing is an admin decision");
+        assert_eq!(plan_slot(&SlotState::Present(closed), false, true, false), SlotPlan::Skip, "closing is an admin decision");
+        // Open status without an application object counts as closed (MSC4143).
+        let no_app = SlotContent { status: SlotStatus::Open, application: None, encryption: None };
+        assert_eq!(plan_slot(&SlotState::Present(no_app), false, true, false), SlotPlan::Skip);
+    }
+
+    // ── Who may start or join a call ────────────────────────────────────────
+
+    fn levels_for(events: serde_json::Value, my_level: i64) -> (RoomPowerLevels, matrix_sdk::ruma::OwnedUserId) {
+        use matrix_sdk::ruma::{events::room::power_levels::RoomPowerLevelsSource, room_version_rules::AuthorizationRules};
+        let me: matrix_sdk::ruma::OwnedUserId = "@u:x".parse().unwrap();
+        let content: matrix_sdk::ruma::events::room::power_levels::RoomPowerLevelsEventContent =
+            serde_json::from_value(serde_json::json!({
+                "users": { "@u:x": my_level }, "users_default": 0, "events": events,
+                "events_default": 0, "state_default": 50,
+            }))
+            .unwrap();
+        let pl = RoomPowerLevels::new(
+            RoomPowerLevelsSource::Original(content),
+            &AuthorizationRules::V1,
+            Vec::<matrix_sdk::ruma::OwnedUserId>::new(),
+        );
+        (pl, me)
+    }
+
+    #[test]
+    fn the_legacy_events_decide_when_the_room_sets_no_matrixrtc_levels() {
+        let (pl, me) = levels_for(serde_json::json!({}), 50);
+        assert!(may_start_call(&pl, &me) && may_join_call(&pl, &me));
+        let (pl, me) = levels_for(serde_json::json!({}), 10);
+        assert!(!may_start_call(&pl, &me) && !may_join_call(&pl, &me), "state_default is 50");
+        let (pl, me) = levels_for(serde_json::json!({LEGACY_MEMBER_TYPE: 0}), 0);
+        assert!(may_join_call(&pl, &me));
+        assert!(!may_start_call(&pl, &me), "starting also needs the legacy call event");
+    }
+
+    #[test]
+    fn matrixrtc_levels_do_not_block_a_legacy_call() {
+        let legacy_open = serde_json::json!({LEGACY_CALL_TYPE: 0, LEGACY_MEMBER_TYPE: 0});
+        let with = |extra: serde_json::Value| {
+            let mut e = legacy_open.clone();
+            e.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+            e
+        };
+        // The slot or the sticky member needs more than we have: the call
+        // still starts and joins, legacy-only.
+        let (pl, me) = levels_for(with(serde_json::json!({SLOT_TYPE: 50})), 0);
+        assert!(may_join_call(&pl, &me) && may_start_call(&pl, &me));
+        let (pl, me) = levels_for(with(serde_json::json!({MEMBER_TYPE: 50})), 0);
+        assert!(may_join_call(&pl, &me) && may_start_call(&pl, &me));
+        // The legacy levels still decide.
+        let (pl, me) = levels_for(serde_json::json!({LEGACY_MEMBER_TYPE: 50, LEGACY_CALL_TYPE: 0}), 0);
+        assert!(!may_join_call(&pl, &me) && !may_start_call(&pl, &me));
     }
 }

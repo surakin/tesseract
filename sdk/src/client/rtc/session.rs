@@ -22,11 +22,14 @@ use super::{
     members::{desired_sfus, transport_map, JoinCheck, LkFocus},
     mrtc_membership::{
         can_send_member_event, can_send_slot, encryption_flipped_mid_call, leave_reason_now,
-        new_member_id as new_mrtc_member_id, open_slot as open_mrtc_slot, send_invite,
-        should_open_slot, should_write_member_events, slot_matches_room, withdraw_invite,
-        JoinParams, LeaveCode, MrtcMembership,
+        new_member_id as new_mrtc_member_id, open_slot as open_mrtc_slot, plan_slot, send_invite,
+        should_write_member_events, withdraw_invite, JoinParams, LeaveCode, MrtcMembership, SlotPlan,
     },
-    slots::{hashed_identities, read_all_live_members, read_all_live_members_checked, read_slot, stale_own_members},
+    slots::{
+        hashed_identities, read_all_live_members, read_all_live_members_checked, read_slot, read_slot_state_keyed,
+        stale_own_members,
+    },
+    identity::{classify_identity, IdentityShape},
     sfu_set::{SfuContext, SfuSet},
     signaling::{
         self, send_msc3401_call_open, send_msc3401_member_join, send_msc3401_member_leave,
@@ -56,23 +59,6 @@ const GATE_RECHECK_COALESCE: Duration = Duration::from_millis(250);
 
 fn next_session_id() -> u64 {
     SESSION_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
-}
-
-/// Generate a UUID v4 string using OS-level randomness.
-fn new_member_id() -> String {
-    use rand::RngCore;
-    let mut b = [0u8; 16];
-    rand::thread_rng().fill_bytes(&mut b);
-    b[6] = (b[6] & 0x0f) | 0x40; // version 4
-    b[8] = (b[8] & 0x3f) | 0x80; // variant 10xx
-    format!(
-        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-        b[0], b[1], b[2], b[3],
-        b[4], b[5],
-        b[6], b[7],
-        b[8], b[9],
-        b[10], b[11], b[12], b[13], b[14], b[15]
-    )
 }
 
 /// An active MatrixRTC call session. Drop ends the session (aborts background
@@ -432,7 +418,11 @@ pub async fn start_call(
 
     let t_start = Instant::now();
     let session_id = next_session_id();
-    let member_id = new_member_id();
+    // One id for this join: the /get_token request, the sticky `m.rtc.member`
+    // and the key events all name it, so that the LiveKit identity the JWT
+    // service derives from it (MSC4195: a hash of our user and this id) is the
+    // one our peers compute from our member event.
+    let member_id = new_mrtc_member_id();
     let join_ts = MilliSecondsSinceUnixEpoch::now();
 
     let room_oid: matrix_sdk::ruma::OwnedRoomId = room_id.parse().context("invalid room_id")?;
@@ -468,7 +458,10 @@ pub async fn start_call(
         Ok(members) => members,
         Err(_) => {
             warn!("rtc: the room's member list is slow to load; starting with the members already known");
-            read_all_live_members_checked(&room, uid, &own_device, JoinCheck::Cached).await
+            // These members are the first media key's recipients, so a sender the
+            // store does not know is left out until the reconcile loop's full read
+            // confirms it.
+            read_all_live_members_checked(&room, uid, &own_device, JoinCheck::KnownJoined).await
         }
     };
     info!(
@@ -483,7 +476,7 @@ pub async fn start_call(
     // Which SFU each member publishes on; lets the LiveKit layer ignore
     // participants that are not real publishers on the SFU they appear on.
     let member_transports = MemberTransports::default();
-    let local_focus = LkFocus {
+    let mut local_focus = LkFocus {
         service_url: local_service_url.clone(),
         alias: lk_alias.clone(),
         sfu_url: None,
@@ -511,6 +504,10 @@ pub async fn start_call(
     )
     .await?;
     info!("rtc: focus discovery done at {:?}", t_start.elapsed());
+    // Now that the SFU's WebSocket URL is known, a member that names only that
+    // URL as its transport can be recognised as being on our SFU.
+    local_focus.sfu_url = Some(lk_transport.server_url.clone());
+    member_transports.replace(transport_map(&initial_members, Some((join_ts, &local_focus))));
 
     // ── E2EE negotiation ────────────────────────────────────────────────────
     // Only enable frame encryption when the Matrix room is encrypted.
@@ -611,20 +608,28 @@ pub async fn start_call(
         }
     }
 
-    // MSC4143: open the room's m.call slot for clients that read it. Best
-    // effort: the legacy events above are what this call runs on.
+    // MSC4143: open the room's m.call slot for clients that read it, or fix one
+    // that does not fit the room (see `plan_slot`). Best effort: the legacy
+    // events above are what this call runs on.
     let slot_usable = {
-        let existing = read_slot(&room).await;
-        let mut usable = existing.as_ref().is_some_and(|s| slot_matches_room(s, use_e2ee));
-        if initial_members.is_empty()
-            && should_open_slot(existing.as_ref(), can_send_slot(&room).await)
-        {
-            match open_mrtc_slot(&room).await {
-                Ok(()) => usable = true,
-                Err(e) => warn!("rtc: could not open the m.rtc.slot (non-fatal): {e}"),
+        let (state, slot_key) = read_slot_state_keyed(&room).await;
+        match plan_slot(&state, use_e2ee, can_send_slot(&room).await, !initial_members.is_empty()) {
+            SlotPlan::Use => true,
+            SlotPlan::Write => match open_mrtc_slot(&room, slot_key).await {
+                Ok(()) => {
+                    info!("rtc: wrote the m.rtc.slot ({state:?} before)");
+                    true
+                }
+                Err(e) => {
+                    warn!("rtc: could not write the m.rtc.slot (non-fatal): {e}");
+                    false
+                }
+            },
+            SlotPlan::Skip => {
+                info!("rtc: leaving the room's m.rtc.slot alone ({state:?}); this call is legacy-only");
+                false
             }
         }
-        usable
     };
 
     // MatrixRTC membership next to the legacy one, like Element Call's
@@ -639,7 +644,7 @@ pub async fn start_call(
         let membership = Arc::new(MrtcMembership::new(
             room.clone(),
             JoinParams {
-                member_id: new_mrtc_member_id(),
+                member_id: member_id.clone(),
                 user_id: user_id.clone(),
                 device_id: device_id.clone(),
                 sfu_url: lk_transport.server_url.clone(),
@@ -751,6 +756,17 @@ pub async fn start_call(
     info!("rtc: livekit connect done at {:?}", t_start.elapsed());
     let lk_identity = lk.local_identity().to_owned();
     info!("rtc: lk connected, identity={lk_identity} (preflight={preflight_identity:?})");
+    // Peers find our tracks by the identity they derive from our member event.
+    match classify_identity(&lk_identity, &user_id, &device_id, &member_id) {
+        IdentityShape::Hashed => info!("rtc: LiveKit identity is the MSC4195 hash of our member id"),
+        IdentityShape::Legacy => {
+            info!("rtc: LiveKit identity is the legacy user:device form (older JWT service)");
+        }
+        IdentityShape::Unexpected => warn!(
+            "rtc: LiveKit identity {lk_identity} is neither the hash of our member id ({member_id}) nor \
+             user:device; MatrixRTC peers may not match our tracks to our member event"
+        ),
+    }
 
     // ── Correct signaling if the actual identity differs from preflight ───
     // Normally they match. A mismatch would indicate a JWT service change or
@@ -1932,6 +1948,11 @@ pub fn register_rtc_notification_handler(
                 // TODO MSC4075: send m.call.ring.ack once caller device_id is available
                 // (the stable notification event does not carry caller device_id)
 
+                // The same event may also be a sticky invite the sticky-map
+                // watcher announces under its real slot: announce it only once.
+                if !super::invites::claim_legacy_ring(&room, &notification_event_id) {
+                    return;
+                }
                 if let Some(sink) = super::sink_for_client(&client) {
                     sink.on_invitation(
                         &room_id,
@@ -1988,6 +2009,11 @@ pub fn register_rtc_notification_handler(
                 let sender = orig.sender.to_string();
                 let room_id = room.room_id().to_string();
 
+                // The same event may also be a sticky invite the sticky-map
+                // watcher announces under its real slot: announce it only once.
+                if !super::invites::claim_legacy_ring(&room, &notification_event_id) {
+                    return;
+                }
                 if let Some(sink) = super::sink_for_client(&client) {
                     sink.on_invitation(
                         &room_id,
@@ -2470,35 +2496,6 @@ mod sender_membership_tests {
 #[cfg(test)]
 mod id_tests {
     use super::*;
-
-    #[test]
-    fn member_id_is_a_v4_uuid() {
-        for _ in 0..50 {
-            let id = new_member_id();
-            let parts: Vec<&str> = id.split('-').collect();
-            assert_eq!(
-                parts.iter().map(|p| p.len()).collect::<Vec<_>>(),
-                vec![8, 4, 4, 4, 12],
-                "{id}"
-            );
-            assert!(
-                id.chars().all(|c| c == '-' || c.is_ascii_hexdigit()),
-                "{id}"
-            );
-            assert!(id.chars().all(|c| !c.is_ascii_uppercase()), "{id}");
-            assert!(parts[2].starts_with('4'), "version nibble: {id}");
-            assert!(
-                matches!(parts[3].chars().next(), Some('8' | '9' | 'a' | 'b')),
-                "variant nibble: {id}"
-            );
-        }
-    }
-
-    #[test]
-    fn member_ids_are_unique() {
-        let ids: std::collections::HashSet<String> = (0..200).map(|_| new_member_id()).collect();
-        assert_eq!(ids.len(), 200);
-    }
 
     #[test]
     fn session_ids_strictly_increase() {
