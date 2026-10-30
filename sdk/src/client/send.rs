@@ -3640,7 +3640,7 @@ impl ClientFfi {
                     .unwrap_or_else(|| event_id.as_str().into());
                 let (event_type, content) = match envelope["type"].as_str() {
                     Some("m.room.message" | "m.sticker") => {
-                        let ctx = forward_fallback_ctx(&client, &source_room, &envelope).await;
+                        let ctx = forward_fallback_ctx(&source_room, &envelope).await;
                         crate::msc::msc4553::build_forward(&envelope, &ctx)?
                     }
                     _ => forwardable_content(&envelope)?,
@@ -4267,11 +4267,15 @@ mod gallery_strip_tests {
 
 /// The fallback names and links for forwarding `envelope`, resolved for the
 /// message the forward points at: the original's when `envelope` is itself a
-/// forward. The sender's name comes from the member store (no network), else
-/// it is the user ID.
+/// forward. The sender's name comes from the source room's member store (no
+/// network), else it is the user ID.
+///
+/// Only the source room is consulted. A received forward's origin room ID is
+/// whatever its sender wrote, so looking that room up would let a crafted
+/// forward pull names and `via` servers out of any room we're in and into the
+/// room we forward to.
 #[cfg(not(test))]
 async fn forward_fallback_ctx(
-    client: &matrix_sdk::Client,
     source_room: &matrix_sdk::Room,
     envelope: &serde_json::Value,
 ) -> crate::msc::msc4553::FallbackCtx {
@@ -4279,10 +4283,7 @@ async fn forward_fallback_ctx(
 
     let origin = crate::msc::msc4553::origin_of(envelope);
     let origin_room_id = origin.room_id.and_then(|r| r.parse::<OwnedRoomId>().ok());
-    // The room the original lives in, when we're in it; else the room being
-    // forwarded from, which may still know the sender.
-    let origin_room = origin_room_id.as_ref().and_then(|r| client.get_room(r));
-    let lookup_room = origin_room.as_ref().unwrap_or(source_room);
+    let origin_is_source = origin_room_id.as_deref() == Some(source_room.room_id());
 
     let sender = origin
         .sender
@@ -4290,7 +4291,7 @@ async fn forward_fallback_ctx(
         .and_then(|s| s.parse::<OwnedUserId>().ok());
     let sender_label = match (&sender, &origin.sender) {
         (Some(uid), _) => {
-            let name = match lookup_room.get_member_no_sync(uid).await {
+            let name = match source_room.get_member_no_sync(uid).await {
                 Ok(Some(member)) => member.display_name().map(str::to_owned),
                 _ => None,
             };
@@ -4303,9 +4304,15 @@ async fn forward_fallback_ctx(
     let event_id = origin.event_id.and_then(|e| e.parse::<OwnedEventId>().ok());
     let event_permalink = match (origin_room_id, event_id) {
         (Some(room_id), Some(event_id)) => {
-            let routed = match &origin_room {
-                Some(room) => room.matrix_to_event_permalink(event_id.clone()).await.ok(),
-                None => None,
+            // `via` servers only for the room being forwarded from; any other
+            // origin gets a plain link.
+            let routed = if origin_is_source {
+                source_room
+                    .matrix_to_event_permalink(event_id.clone())
+                    .await
+                    .ok()
+            } else {
+                None
             };
             Some(routed.unwrap_or_else(|| room_id.matrix_to_event_uri(event_id)))
         }
