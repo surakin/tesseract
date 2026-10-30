@@ -76,7 +76,7 @@ jobs:
           "OPUS_STATIC=1" >> $env:GITHUB_ENV
 
       - name: Configure (Release)
-        run: cmake --preset windows-release "-DPython3_EXECUTABLE=${{ steps.python.outputs.python-path }}" "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
+        run: cmake --preset windows-release "-DPython3_EXECUTABLE=${{ steps.python.outputs.python-path }}" "-DTESSERACT_GITHUB_REPO=${{ github.repository }}" -DTESSERACT_BUILD_TESTS=OFF
 
       - name: Build the Rust SDK only
         run: cmake --build build/windows-release --target cargo-build_tesseract_sdk_ffi
@@ -144,7 +144,7 @@ jobs:
           shared-key: macos-${{ matrix.arch }}-xcode-26.4.1
 
       - name: Configure (Release, ${{ matrix.arch }})
-        run: cmake --preset macos-appkit-${{ matrix.arch }}-release "-DCMAKE_OSX_SYSROOT=$SDKROOT" "-DCMAKE_EXE_LINKER_FLAGS=-L$SDKROOT/usr/lib" "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
+        run: cmake --preset macos-appkit-${{ matrix.arch }}-release "-DCMAKE_OSX_SYSROOT=$SDKROOT" "-DCMAKE_EXE_LINKER_FLAGS=-L$SDKROOT/usr/lib" "-DTESSERACT_GITHUB_REPO=${{ github.repository }}" -DTESSERACT_BUILD_TESTS=OFF
 
       - name: Build the Rust SDK only
         run: cmake --build build/macos-appkit-${{ matrix.arch }}-release --target cargo-build_tesseract_sdk_ffi
@@ -189,7 +189,7 @@ jobs:
           shared-key: macos-appstore-xcode-26.4.1
 
       - name: Configure (Mac App Store, universal)
-        run: cmake --preset macos-appkit-appstore "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
+        run: cmake --preset macos-appkit-appstore "-DTESSERACT_GITHUB_REPO=${{ github.repository }}" -DTESSERACT_BUILD_TESTS=OFF
 
       - name: Build the Rust SDK only
         run: cmake --build build/macos-appkit-appstore --target cargo-build_tesseract_sdk_ffi
@@ -242,7 +242,7 @@ jobs:
           workspaces: . -> build/linux-release/cargo/build
 
       - name: Configure (Release)
-        run: cmake --preset linux-release -DTESSERACT_UI=linux "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
+        run: cmake --preset linux-release -DTESSERACT_UI=linux "-DTESSERACT_GITHUB_REPO=${{ github.repository }}" -DTESSERACT_BUILD_TESTS=OFF
 
       - name: Build the Rust SDK only
         run: cmake --build build/linux-release --target cargo-build_tesseract_sdk_ffi

@@ -517,6 +517,7 @@ jobs:
         run: |
           cmake --preset macos-appkit-appstore \
             "-DTESSERACT_GITHUB_REPO=${{ github.repository }}" \
+            -DTESSERACT_BUILD_TESTS=OFF \
             "-DTESSERACT_MAC_APPSTORE_APP_IDENTITY=${{ vars.TESSERACT_MAC_APPSTORE_APP_IDENTITY }}" \
             "-DTESSERACT_MAC_APPSTORE_INSTALLER_IDENTITY=${{ vars.TESSERACT_MAC_APPSTORE_INSTALLER_IDENTITY }}" \
             "-DTESSERACT_MAC_TEAM_ID=${{ vars.TESSERACT_MAC_TEAM_ID }}" \

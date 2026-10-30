@@ -103,7 +103,7 @@ jobs:
         # Force CMake to use the same Python interpreter we installed
         # resvg-py into; otherwise FindPython3 picks the newest version
         # available on the runner (3.14) regardless of PATH.
-        run: cmake --preset windows-release "-DPython3_EXECUTABLE=${{ steps.python.outputs.python-path }}" "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
+        run: cmake --preset windows-release "-DPython3_EXECUTABLE=${{ steps.python.outputs.python-path }}" "-DTESSERACT_GITHUB_REPO=${{ github.repository }}" -DTESSERACT_BUILD_TESTS=OFF
 
       - name: Build
         run: cmake --build build/windows-release
@@ -189,7 +189,7 @@ jobs:
           shared-key: macos-${{ matrix.arch }}-xcode-26.4.1
 
       - name: Configure (Release, ${{ matrix.arch }})
-        run: cmake --preset macos-appkit-${{ matrix.arch }}-release "-DCMAKE_OSX_SYSROOT=$SDKROOT" "-DCMAKE_EXE_LINKER_FLAGS=-L$SDKROOT/usr/lib" "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
+        run: cmake --preset macos-appkit-${{ matrix.arch }}-release "-DCMAKE_OSX_SYSROOT=$SDKROOT" "-DCMAKE_EXE_LINKER_FLAGS=-L$SDKROOT/usr/lib" "-DTESSERACT_GITHUB_REPO=${{ github.repository }}" -DTESSERACT_BUILD_TESTS=OFF
 
       - name: Build
         run: cmake --build build/macos-appkit-${{ matrix.arch }}-release
@@ -250,13 +250,9 @@ jobs:
         with:
           workspaces: . -> build/linux-release/cargo/build
 
-      # Tests stay on. Under TESSERACT_UI=linux the test target picks the Qt6
-      # TestSurface (tests/CMakeLists.txt maps "linux" to "qt6"), so the GTK
-      # test surface — which cannot compile, as it includes cairo.h without
-      # tests/CMakeLists.txt ever running pkg_check_modules for it — is not
-      # compiled at all. That pre-existing gap needs no workaround here.
+      # Tests are built and run only by test.yml.
       - name: Configure (Release)
-        run: cmake --preset linux-release -DTESSERACT_UI=linux "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
+        run: cmake --preset linux-release -DTESSERACT_UI=linux "-DTESSERACT_GITHUB_REPO=${{ github.repository }}" -DTESSERACT_BUILD_TESTS=OFF
 
       - name: Build
         run: cmake --build build/linux-release
