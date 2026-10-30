@@ -3571,9 +3571,10 @@ impl ClientFfi {
     }
 
     /// Forward `event_id` from `source_room_id` to `target_room_id`.
-    /// Fetches the event (decrypting if the source room is E2EE), strips
-    /// `m.relates_to` so the copy lands as a free-standing new event, then
-    /// sends it to the target room. Works for all message-like event types.
+    /// Fetches the event (decrypting if the source room is E2EE) and sends it
+    /// to the target room as a free-standing new event. Messages and stickers
+    /// are sent as MSC4553 forwards (attribution plus a text fallback); polls
+    /// are sent as a plain copy.
     /// Non-blocking: result delivered via on_forward_done / on_forward_failed.
     #[cfg(not(test))]
     pub fn forward_event(
@@ -3626,9 +3627,24 @@ impl ClientFfi {
                     .await
                     .map_err(|e| e.to_string())?;
                 let json_str = tl_event.raw().json().get();
-                let envelope: serde_json::Value =
+                let mut envelope: serde_json::Value =
                     serde_json::from_str(json_str).map_err(|e| e.to_string())?;
-                let (event_type, content) = forwardable_content(&envelope)?;
+                // The forward points back at the original, so it needs both ids.
+                envelope["room_id"] = envelope
+                    .get("room_id")
+                    .cloned()
+                    .unwrap_or_else(|| source_room_id.as_str().into());
+                envelope["event_id"] = envelope
+                    .get("event_id")
+                    .cloned()
+                    .unwrap_or_else(|| event_id.as_str().into());
+                let (event_type, content) = match envelope["type"].as_str() {
+                    Some("m.room.message" | "m.sticker") => {
+                        let ctx = forward_fallback_ctx(&client, &source_room, &envelope).await;
+                        crate::msc::msc4553::build_forward(&envelope, &ctx)?
+                    }
+                    _ => forwardable_content(&envelope)?,
+                };
                 target_room
                     .send_raw(&event_type, content)
                     .await
@@ -4249,11 +4265,65 @@ mod gallery_strip_tests {
     }
 }
 
-/// What `forward_event` sends for a source event: its type and content.
+/// The fallback names and links for forwarding `envelope`, resolved for the
+/// message the forward points at: the original's when `envelope` is itself a
+/// forward. The sender's name comes from the member store (no network), else
+/// it is the user ID.
+#[cfg(not(test))]
+async fn forward_fallback_ctx(
+    client: &matrix_sdk::Client,
+    source_room: &matrix_sdk::Room,
+    envelope: &serde_json::Value,
+) -> crate::msc::msc4553::FallbackCtx {
+    use matrix_sdk::ruma::{OwnedEventId, OwnedRoomId, OwnedUserId};
+
+    let origin = crate::msc::msc4553::origin_of(envelope);
+    let origin_room_id = origin.room_id.and_then(|r| r.parse::<OwnedRoomId>().ok());
+    // The room the original lives in, when we're in it; else the room being
+    // forwarded from, which may still know the sender.
+    let origin_room = origin_room_id.as_ref().and_then(|r| client.get_room(r));
+    let lookup_room = origin_room.as_ref().unwrap_or(source_room);
+
+    let sender = origin
+        .sender
+        .as_deref()
+        .and_then(|s| s.parse::<OwnedUserId>().ok());
+    let sender_label = match (&sender, &origin.sender) {
+        (Some(uid), _) => {
+            let name = match lookup_room.get_member_no_sync(uid).await {
+                Ok(Some(member)) => member.display_name().map(str::to_owned),
+                _ => None,
+            };
+            Some(name.unwrap_or_else(|| uid.to_string()))
+        }
+        (None, raw) => raw.clone(),
+    };
+    let sender_label = sender_label.map(|n| crate::text_utils::strip_bidi_overrides(&n));
+
+    let event_id = origin.event_id.and_then(|e| e.parse::<OwnedEventId>().ok());
+    let event_permalink = match (origin_room_id, event_id) {
+        (Some(room_id), Some(event_id)) => {
+            let routed = match &origin_room {
+                Some(room) => room.matrix_to_event_permalink(event_id.clone()).await.ok(),
+                None => None,
+            };
+            Some(routed.unwrap_or_else(|| room_id.matrix_to_event_uri(event_id)))
+        }
+        _ => None,
+    };
+    crate::msc::msc4553::FallbackCtx {
+        sender_label,
+        sender_permalink: sender.map(|u| u.matrix_to_uri().to_string()),
+        event_permalink: event_permalink.map(|u| u.to_string()),
+    }
+}
+
+/// What `forward_event` sends for a source event that is not a message or
+/// sticker (those go through `msc4553::build_forward`): its type and content.
 ///
-/// Only messages, stickers and polls are forwarded. An edited message sends
+/// In practice that is polls, which are copied plainly. An edited poll sends
 /// the newest edit's `m.new_content` (the bundled edit under
-/// `unsigned.m.relations.m.replace`), not the original text. `m.mentions` is
+/// `unsigned.m.relations.m.replace`), not the original. `m.mentions` is
 /// dropped so the forward doesn't ping the original recipients again. An
 /// undecrypted `m.room.encrypted` event is refused rather than forwarded as
 /// ciphertext.
@@ -4271,28 +4341,7 @@ fn forwardable_content(
         other => return Err(format!("{other} events can't be forwarded")),
     }
 
-    let own = &envelope["content"];
-    // The server bundles the edit, so it is used only when it names the
-    // original's own sender: a replacement by anyone else is not an edit, and
-    // forwarding it would send someone else's words as the original's.
-    let replace = &envelope["unsigned"]["m.relations"]["m.replace"];
-    let same_sender = matches!(
-        (replace["sender"].as_str(), envelope["sender"].as_str()),
-        (Some(a), Some(b)) if a == b
-    );
-    let bundled_edit = if same_sender {
-        &replace["content"]["m.new_content"]
-    } else {
-        &serde_json::Value::Null
-    };
-    let own_is_edit = own["m.relates_to"]["rel_type"].as_str() == Some("m.replace");
-    let mut content = if bundled_edit.is_object() {
-        bundled_edit.clone()
-    } else if own_is_edit && own["m.new_content"].is_object() {
-        own["m.new_content"].clone()
-    } else {
-        own.clone()
-    };
+    let mut content = crate::event_json::latest_content(envelope);
     if let Some(obj) = content.as_object_mut() {
         obj.remove("m.relates_to");
         obj.remove("m.mentions");

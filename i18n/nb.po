@@ -5379,3 +5379,27 @@ msgstr "{0} ({1} fra deg): {2}"
 #: ui/shared/views/settings/AppearanceSection.cpp
 msgid "The theme follows your system's high contrast setting."
 msgstr "Temaet følger systemets innstilling for høy kontrast."
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Forwarded from {0}"
+msgstr "Videresendt fra {0}"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Forwarded message"
+msgstr "Videresendt melding"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "forwarded from {0}"
+msgstr "videresendt fra {0}"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "forwarded message"
+msgstr "videresendt melding"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "View original message"
+msgstr "Vis opprinnelig melding"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Sender"
+msgstr "Avsender"

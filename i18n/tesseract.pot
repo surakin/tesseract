@@ -7548,3 +7548,27 @@ msgstr ""
 #: ui/shared/views/settings/AppearanceSection.cpp
 msgid "The theme follows your system's high contrast setting."
 msgstr ""
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Forwarded from {0}"
+msgstr ""
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Forwarded message"
+msgstr ""
+
+#: ui/shared/views/MessageListView.cpp
+msgid "forwarded from {0}"
+msgstr ""
+
+#: ui/shared/views/MessageListView.cpp
+msgid "forwarded message"
+msgstr ""
+
+#: ui/shared/views/MessageListView.cpp
+msgid "View original message"
+msgstr ""
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Sender"
+msgstr ""

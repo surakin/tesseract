@@ -5,6 +5,7 @@
 
 use super::labels::{membership_labels, ExportLabel, Labels};
 use crate::ffi::TimelineEvent;
+use crate::text_utils::html_escape;
 
 /// Export-run-level metadata, independent of any single event.
 pub(super) struct ExportMeta {
@@ -206,20 +207,6 @@ fn url_encode_path(s: &str) -> String {
                 out.push(char::from(b))
             }
             _ => out.push_str(&format!("%{b:02X}")),
-        }
-    }
-    out
-}
-
-fn html_escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            _ => out.push(c),
         }
     }
     out

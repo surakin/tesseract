@@ -19,7 +19,8 @@ std::vector<MessageAction> build_message_actions(const MessageActionInputs& in)
     if (!in.redacted && in.thread_button_visible && in.can_thread)
         out.push_back({MessageActionId::ReplyInThread, tk::tr("Reply in thread"),
                        kThreadSvg, false, true});
-    if (in.is_own && in.editable_kind)
+    // Receivers ignore edits of a forward (MSC4553), so don't offer one.
+    if (in.is_own && in.editable_kind && !in.forwarded)
         out.push_back({MessageActionId::Edit, tk::tr("Edit"), kEditSvg, false, true});
 
     if (!reactable)

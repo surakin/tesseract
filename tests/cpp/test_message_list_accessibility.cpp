@@ -239,6 +239,87 @@ TEST_CASE("visible messages expose their links and the reply jump as actions",
     CHECK(invoke_default_action(*jump)); // original is loaded: scrolls to it
 }
 
+TEST_CASE("a forwarded row's name says who it was forwarded from, and its "
+         "subtree offers View original message only when the origin is known",
+         "[message_list][accessibility]")
+{
+    auto surface = TestSurface::create(500, 600);
+    const auto stage = [&](MessageListView& v, MessageRowData row)
+    {
+        v.set_messages({std::move(row)}, false);
+        LayoutCtx lc{surface->factory(), Theme::light()};
+        v.measure(lc, {500, 600});
+        v.arrange(lc, {0, 0, 500, 600});
+    };
+    const auto row_name = [](const AccessNode& tree)
+    {
+        const AccessNode* list = find_role_msg(tree, Role::List);
+        REQUIRE(list != nullptr);
+        for (const auto& ch : list->children)
+            if (ch.role == Role::ListItem)
+                return ch.name;
+        return std::string{};
+    };
+
+    SECTION("named sender with a link to the origin")
+    {
+        MessageListView v;
+        auto row = text_row("$f", "Bob", "hello");
+        row.forwarded = true;
+        row.forwarded_sender = "@alice:x";
+        row.forwarded_sender_name = "Alice";
+        row.forwarded_room_id = "!r:x";
+        row.forwarded_event_id = "$orig";
+        stage(v, row);
+        std::string got_room, got_event;
+        v.on_forward_origin_clicked = [&](const std::string& r, const std::string& e)
+        {
+            got_room = r;
+            got_event = e;
+        };
+
+        AccessNode tree = build_access_tree(&v);
+        CHECK(row_name(tree).find("forwarded from Alice") != std::string::npos);
+        const AccessNode* view = access_test::find_named(tree, "View original message");
+        REQUIRE(view != nullptr);
+        CHECK(invoke_default_action(*view));
+        CHECK(got_room == "!r:x");
+        CHECK(got_event == "$orig");
+    }
+
+    SECTION("falls back to the mxid when no display name is known")
+    {
+        MessageListView v;
+        auto row = text_row("$f", "Bob", "hello");
+        row.forwarded = true;
+        row.forwarded_sender = "@alice:x";
+        stage(v, row);
+        AccessNode tree = build_access_tree(&v);
+        CHECK(row_name(tree).find("forwarded from @alice:x") != std::string::npos);
+    }
+
+    SECTION("no sender reads as a forwarded message; no ids means no action")
+    {
+        MessageListView v;
+        auto row = text_row("$f", "Bob", "hello");
+        row.forwarded = true;
+        stage(v, row);
+        v.on_forward_origin_clicked = [](const std::string&, const std::string&) {};
+        AccessNode tree = build_access_tree(&v);
+        CHECK(row_name(tree).find("forwarded message") != std::string::npos);
+        CHECK(access_test::find_named(tree, "View original message") == nullptr);
+    }
+
+    SECTION("an ordinary row is not announced as forwarded")
+    {
+        MessageListView v;
+        stage(v, text_row("$f", "Bob", "hello"));
+        AccessNode tree = build_access_tree(&v);
+        CHECK(row_name(tree).find("forwarded") == std::string::npos);
+        CHECK(access_test::find_named(tree, "View original message") == nullptr);
+    }
+}
+
 TEST_CASE("a row's accessible name includes the sender status only when the setting is on",
          "[message_list][accessibility]")
 {

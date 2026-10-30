@@ -1768,6 +1768,17 @@ async fn watch_session_changes(
     }
 }
 
+/// The trimmed body of the content a forward (MSC4553) carries; `None` for any
+/// other message.
+fn forwarded_notification_body(raw_event_json: &str) -> Option<String> {
+    use crate::msc::msc4553;
+    if !msc4553::might_be_forward(raw_event_json) {
+        return None;
+    }
+    let event: serde_json::Value = serde_json::from_str(raw_event_json).ok()?;
+    msc4553::display_body(&event["content"], "m.room.message").map(|b| b.trim().to_owned())
+}
+
 /// Notification-handler body for `m.room.message` events. Lifted out of the
 /// `add_event_handler` closure; the closure clones the captured state per
 /// invocation and forwards it here along with the event/room.
@@ -1796,6 +1807,9 @@ async fn handle_message_notification(
         MessageType::Gallery(g) => g.body.trim().to_owned(),
         _ => return,
     };
+    // A forward (MSC4553) notifies with the content it carries, not the
+    // "Forwarded from ..." fallback of its top-level body.
+    let body = forwarded_notification_body(&raw_event_json).unwrap_or(body);
     if body.is_empty() {
         return;
     }

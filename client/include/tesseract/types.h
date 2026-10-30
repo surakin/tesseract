@@ -246,6 +246,18 @@ struct Event
     /// True when the body/caption has been superseded by an m.replace edit.
     /// Set for any event kind that supports edits (text bodies and media captions).
     bool is_edited = false;
+    /// MSC4553 forwarded message. When set, the body, media and kind describe
+    /// the forwarded (original) content, never an edit of it, and `is_edited`
+    /// is false. The ids are empty when the forward gives none (or an invalid
+    /// one); `forwarded_sender_name` is empty unless this room's member cache
+    /// knows the sender, so the UI falls back to `forwarded_sender`.
+    bool forwarded = false;
+    std::string forwarded_sender;
+    std::string forwarded_sender_name;
+    std::string forwarded_room_id;
+    std::string forwarded_event_id;
+    /// Original `origin_server_ts` in Unix milliseconds; 0 when absent.
+    std::int64_t forwarded_origin_ts = 0;
     /// MSC3440 threads. Non-empty when this event is an in-thread reply.
     std::string thread_root_id;
     /// True when this event roots a thread.

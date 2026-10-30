@@ -2702,6 +2702,24 @@ pub(super) fn strip_plain_reply_fallback(body: &str) -> &str {
     }
 }
 
+/// The event a room-list preview describes. A forward (MSC4553) previews the
+/// content it carries, not its "Forwarded from ..." fallback text.
+fn preview_event(
+    raw: &matrix_sdk::ruma::serde::Raw<matrix_sdk::ruma::events::AnySyncTimelineEvent>,
+) -> Option<matrix_sdk::ruma::events::AnySyncTimelineEvent> {
+    let json = raw.json().get();
+    if crate::msc::msc4553::might_be_forward(json) {
+        let shown = serde_json::from_str::<serde_json::Value>(json)
+            .ok()
+            .and_then(|v| crate::msc::msc4553::display_event(&v))
+            .and_then(|v| serde_json::from_value(v).ok());
+        if shown.is_some() {
+            return shown;
+        }
+    }
+    raw.deserialize().ok()
+}
+
 fn latest_event_preview(value: &matrix_sdk::latest_events::LatestEventValue) -> LatestPreview {
     use matrix_sdk::latest_events::LatestEventValue;
     use matrix_sdk::ruma::events::{
@@ -2736,7 +2754,7 @@ fn latest_event_preview(value: &matrix_sdk::latest_events::LatestEventValue) -> 
 
     match value {
         LatestEventValue::Remote(timeline_event) => {
-            let Some(event) = timeline_event.raw().deserialize().ok() else {
+            let Some(event) = preview_event(timeline_event.raw()) else {
                 return LatestPreview::default();
             };
             match event {
@@ -2901,13 +2919,34 @@ fn poll_permalink_preview(question: &str) -> String {
     }
 }
 
+/// The message type a local echo of a forward (MSC4553) carries, so the
+/// preview shows the forwarded content instead of the "Forwarded from ..."
+/// fallback. `None` for any other message.
+fn forwarded_local_msgtype(
+    content: &matrix_sdk::store::SerializableEventContent,
+) -> Option<matrix_sdk::ruma::events::room::message::MessageType> {
+    use crate::msc::msc4553;
+    use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
+    let json = content.raw().0.json().get();
+    if !msc4553::might_be_forward(json) {
+        return None;
+    }
+    let value: serde_json::Value = serde_json::from_str(json).ok()?;
+    let shown = msc4553::parse(&value, "m.room.message")?.content?;
+    serde_json::from_value::<RoomMessageEventContent>(msc4553::without_relations(shown))
+        .ok()
+        .map(|c| c.msgtype)
+}
+
 fn extract_local_preview(content: &matrix_sdk::store::SerializableEventContent) -> LatestPreview {
     use matrix_sdk::ruma::events::{room::message::MessageType, AnyMessageLikeEventContent};
     let Some(c) = content.deserialize().ok() else {
         return LatestPreview::default();
     };
     let msgtype = match c {
-        AnyMessageLikeEventContent::RoomMessage(c) => c.msgtype,
+        AnyMessageLikeEventContent::RoomMessage(c) => {
+            forwarded_local_msgtype(content).unwrap_or(c.msgtype)
+        }
         // Your own poll while it is still sending (mirrors latest_event_preview).
         AnyMessageLikeEventContent::UnstablePollStart(
             matrix_sdk::ruma::events::poll::unstable_start::UnstablePollStartEventContent::New(c),
@@ -6228,5 +6267,84 @@ mod html_preview_tests {
             strip_plain_reply_fallback("> some quote\n\nmy comment"),
             "> some quote\n\nmy comment"
         );
+    }
+}
+
+#[cfg(test)]
+mod forward_preview_tests {
+    use super::{forwarded_local_msgtype, preview_event};
+    use matrix_sdk::ruma::events::room::message::MessageType;
+    use matrix_sdk::ruma::events::{
+        AnyMessageLikeEventContent, AnySyncMessageLikeEvent, AnySyncTimelineEvent,
+    };
+    use matrix_sdk::ruma::serde::Raw;
+    use matrix_sdk::store::SerializableEventContent;
+    use serde_json::{json, Value};
+
+    const KEY: &str = "org.matrix.msc4553.forwarded";
+
+    fn forward_content() -> Value {
+        json!({
+            "msgtype": "m.text",
+            "body": "Forwarded from Bob - view original message: https://matrix.to/#/x\nhello",
+            KEY: { "content": { "msgtype": "m.emote", "body": "waves",
+                                "m.relates_to": { "rel_type": "m.replace", "event_id": "$x" } },
+                   "sender": "@bob:other.org" }
+        })
+    }
+
+    fn body_of(event: AnySyncTimelineEvent) -> (String, bool) {
+        let AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::RoomMessage(ev)) = event
+        else {
+            panic!("not a message");
+        };
+        let orig = ev.as_original().unwrap();
+        (
+            orig.content.body().to_owned(),
+            orig.content.relates_to.is_some(),
+        )
+    }
+
+    #[test]
+    fn a_forward_previews_the_forwarded_content() {
+        let raw = Raw::<AnySyncTimelineEvent>::from_json_string(
+            json!({ "type": "m.room.message", "event_id": "$e", "sender": "@alice:x",
+                    "origin_server_ts": 1, "content": forward_content() })
+            .to_string(),
+        )
+        .unwrap();
+        let (body, has_relation) = body_of(preview_event(&raw).unwrap());
+        assert_eq!(body, "waves");
+        assert!(!has_relation);
+    }
+
+    #[test]
+    fn an_ordinary_message_previews_as_before() {
+        let raw = Raw::<AnySyncTimelineEvent>::from_json_string(
+            json!({ "type": "m.room.message", "event_id": "$e", "sender": "@alice:x",
+                    "origin_server_ts": 1, "content": { "msgtype": "m.text", "body": "hi" } })
+            .to_string(),
+        )
+        .unwrap();
+        assert_eq!(body_of(preview_event(&raw).unwrap()).0, "hi");
+    }
+
+    #[test]
+    fn a_local_forward_uses_the_forwarded_message_type() {
+        let raw =
+            Raw::<AnyMessageLikeEventContent>::from_json_string(forward_content().to_string())
+                .unwrap();
+        let local = SerializableEventContent::from_raw(raw, "m.room.message".to_owned());
+        let Some(MessageType::Emote(e)) = forwarded_local_msgtype(&local) else {
+            panic!("expected the forwarded emote");
+        };
+        assert_eq!(e.body, "waves");
+
+        let plain = Raw::<AnyMessageLikeEventContent>::from_json_string(
+            json!({ "msgtype": "m.text", "body": "hi" }).to_string(),
+        )
+        .unwrap();
+        let local = SerializableEventContent::from_raw(plain, "m.room.message".to_owned());
+        assert!(forwarded_local_msgtype(&local).is_none());
     }
 }

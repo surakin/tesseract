@@ -1290,37 +1290,40 @@ void ShellBase::open_matrix_link(const std::string& uri)
     }
 
     case Kind::Event:
-    {
-        auto it = std::find_if(rooms_.begin(), rooms_.end(),
-                               [&](const RoomInfo& r) { return r.id == link.primary; });
-        if (it != rooms_.end())
-        {
-            // Navigate (sets current_room_id_ synchronously), then jump to the
-            // event via the deferred-scroll + focused-subscription path so it
-            // works even when the target isn't in the loaded window.
-            tab_navigate_room(link.primary);
-            if (!link.event_id.empty())
-            {
-                if (room_view_ && room_view_->message_list())
-                    room_view_->message_list()->set_highlighted_event(
-                        link.event_id);
-                try_scroll_to_room_event_(link.event_id);
-            }
-        }
-        else
-        {
-            // Not listed: either an upgraded room we're still in (opened in
-            // place), or one we haven't joined (the Join dialog, with the target
-            // event remembered so the post-join hook jumps to it).
-            open_room_version_(link.primary, link.via, link.event_id,
-                               /*join_if_missing=*/false);
-        }
+        open_room_event_(link.primary, link.event_id, link.via);
         break;
-    }
 
     default:
         // Not a matrix link — ignore.
         break;
+    }
+}
+
+void ShellBase::open_room_event_(const std::string& room_id,
+                                 const std::string& event_id,
+                                 const std::vector<std::string>& via)
+{
+    auto it = std::find_if(rooms_.begin(), rooms_.end(),
+                           [&](const RoomInfo& r) { return r.id == room_id; });
+    if (it != rooms_.end())
+    {
+        // Navigate (sets current_room_id_ synchronously), then jump to the
+        // event via the deferred-scroll + focused-subscription path so it
+        // works even when the target isn't in the loaded window.
+        tab_navigate_room(room_id);
+        if (!event_id.empty())
+        {
+            if (room_view_ && room_view_->message_list())
+                room_view_->message_list()->set_highlighted_event(event_id);
+            try_scroll_to_room_event_(event_id);
+        }
+    }
+    else
+    {
+        // Not listed: either an upgraded room we're still in (opened in
+        // place), or one we haven't joined (the Join dialog, with the target
+        // event remembered so the post-join hook jumps to it).
+        open_room_version_(room_id, via, event_id, /*join_if_missing=*/false);
     }
 }
 

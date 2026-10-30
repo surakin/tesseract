@@ -13,6 +13,7 @@ mod bot_commands;
 mod client;
 #[cfg(feature = "crash_handler")]
 mod crash_reporter;
+mod event_json;
 mod highlight;
 mod html_sanitize;
 mod image_packs;
@@ -22,6 +23,7 @@ mod markdown;
 mod matrix_uri;
 mod media_preview;
 mod media_type_check;
+mod msc;
 mod net_guard;
 mod net_proxy;
 mod oauth;
@@ -363,6 +365,12 @@ pub mod ffi {
         pub room_name_old: String,
         pub replacement_room_id: String,
         pub gallery_items: Vec<GalleryItemFfi>,
+        pub forwarded: bool,
+        pub forwarded_sender: String,
+        pub forwarded_sender_name: String,
+        pub forwarded_room_id: String,
+        pub forwarded_event_id: String,
+        pub forwarded_origin_ts: i64,
     }
 
     #[derive(Debug, PartialEq, Default)]

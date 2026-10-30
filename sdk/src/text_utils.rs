@@ -11,6 +11,21 @@ pub fn strip_bidi_overrides(s: &str) -> String {
         .collect()
 }
 
+/// Escape `&`, `<`, `>` and `"` so `s` can sit in HTML text or a quoted attribute.
+pub(crate) fn html_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
 /// Find all linkable URIs in `text` and return their byte-offset spans.
 ///
 /// Covers two classes:

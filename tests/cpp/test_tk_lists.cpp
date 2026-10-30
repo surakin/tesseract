@@ -942,6 +942,38 @@ TEST_CASE("MessageListView::edit_last_own picks the newest own editable "
         CHECK(got_is_caption);
     }
 
+    SECTION("skips an own forwarded message and edits the older one")
+    {
+        MessageListView view;
+        MessageRowData fwd = mk("$f", "forwarded text", true);
+        fwd.forwarded = true;
+        view.set_messages({mk("$a", "my first", true), fwd});
+        std::string got_id;
+        view.on_edit_requested =
+            [&](const std::string& id, const std::string&, bool)
+        {
+            got_id = id;
+        };
+        CHECK(view.edit_last_own());
+        CHECK(got_id == "$a");
+    }
+
+    SECTION("returns false when the only own message is a forward")
+    {
+        MessageListView view;
+        MessageRowData fwd = mk("$f", "forwarded text", true);
+        fwd.forwarded = true;
+        view.set_messages({fwd});
+        bool fired = false;
+        view.on_edit_requested =
+            [&](const std::string&, const std::string&, bool)
+        {
+            fired = true;
+        };
+        CHECK_FALSE(view.edit_last_own());
+        CHECK_FALSE(fired);
+    }
+
     SECTION("returns false when there is no editable own message")
     {
         MessageListView view;

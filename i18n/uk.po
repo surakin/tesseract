@@ -7597,3 +7597,27 @@ msgstr "{0} ({1} від вас): {2}"
 #: ui/shared/views/settings/AppearanceSection.cpp
 msgid "The theme follows your system's high contrast setting."
 msgstr "Тема відповідає налаштуванню високої контрастності вашої системи."
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Forwarded from {0}"
+msgstr "Переслано від {0}"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Forwarded message"
+msgstr "Переслане повідомлення"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "forwarded from {0}"
+msgstr "переслано від {0}"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "forwarded message"
+msgstr "переслане повідомлення"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "View original message"
+msgstr "Переглянути початкове повідомлення"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Sender"
+msgstr "Відправник"

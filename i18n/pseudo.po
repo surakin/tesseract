@@ -7426,3 +7426,27 @@ msgstr "[{0} ({1} frö̀m yöù): {2}xxx]"
 #: ui/shared/views/settings/AppearanceSection.cpp
 msgid "The theme follows your system's high contrast setting."
 msgstr "[Thé thémé föllöws yöùr systém's hïgh çöñtràst séttïñg.xxxxxxxxxx]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Forwarded from {0}"
+msgstr "[Förwàrdéd fröm {0}xxx]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Forwarded message"
+msgstr "[Förwàrdéd méssàgéxxx]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "forwarded from {0}"
+msgstr "[förwàrdéd fröm {0}xxx]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "forwarded message"
+msgstr "[förwàrdéd méssàgéxxx]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "View original message"
+msgstr "[Vïéw örïgïñàl méssàgéxxxx]"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Sender"
+msgstr "[Séñdérx]"

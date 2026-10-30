@@ -7015,3 +7015,27 @@ msgstr "{0} ({1} von dir): {2}"
 #: ui/shared/views/settings/AppearanceSection.cpp
 msgid "The theme follows your system's high contrast setting."
 msgstr "Das Design folgt der Einstellung für hohen Kontrast deines Systems."
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Forwarded from {0}"
+msgstr "Weitergeleitet von {0}"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Forwarded message"
+msgstr "Weitergeleitete Nachricht"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "forwarded from {0}"
+msgstr "weitergeleitet von {0}"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "forwarded message"
+msgstr "weitergeleitete Nachricht"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "View original message"
+msgstr "Originalnachricht anzeigen"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Sender"
+msgstr "Absender"

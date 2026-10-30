@@ -498,6 +498,11 @@ MessageRowData make_row_data(const tesseract::Event& ev,
                                                     ev.in_reply_to_image_encrypted_json);
     }
     row.is_edited = ev.is_edited;
+    row.forwarded = ev.forwarded;
+    row.forwarded_sender = ev.forwarded_sender;
+    row.forwarded_sender_name = ev.forwarded_sender_name;
+    row.forwarded_room_id = ev.forwarded_room_id;
+    row.forwarded_event_id = ev.forwarded_event_id;
 
     row.thread_root_id = ev.thread_root_id;
     row.is_thread_root = ev.is_thread_root;
@@ -945,6 +950,11 @@ constexpr float kQuoteImageBlockH = kQuoteBlockH * 2.0f; // quote block for imag
 constexpr float kQuoteAccentW = 3.0f; // left accent stripe width
 constexpr float kQuotePadX = 8.0f;
 constexpr float kQuoteGapAfter = 4.0f; // gap between quote and body
+// "Forwarded from …" attribution line (MSC4553) — painted above the reply
+// context and body of a forwarded message.
+constexpr float kForwardIconPx = 12.0f;   // forward glyph, drawn in text_muted
+constexpr float kForwardIconGap = 4.0f;   // glyph -> label
+constexpr float kForwardGapAfter = 4.0f;  // gap between the line and what follows
 // Reply hover button ("↩") — right-aligned in the chip strip.
 constexpr float kReplyBtnW = 28.0f;
 constexpr float kReplyBtnPadX = 8.0f;
@@ -1484,6 +1494,28 @@ static bool is_editable_kind(MessageRowData::Kind k)
            k == Kind::Video;
 }
 
+// Name an emote row ("* Alice waves") attributes the action to. A forwarded
+// (MSC4553) emote is the *original* author's, never the forwarder's; the
+// generic label stands in when the forward names nobody.
+static std::string emote_author_name(const MessageRowData& m)
+{
+    if (m.forwarded)
+    {
+        const std::string& who = m.forwarded_author();
+        return who.empty() ? tk::tr("Sender") : who;
+    }
+    return m.sender_name.empty() ? m.sender : m.sender_name;
+}
+
+// Identity the IRC layout colours an emote's nick by.
+static const std::string& emote_author_id(const MessageRowData& m)
+{
+    if (m.forwarded)
+        return m.forwarded_sender.empty() ? m.forwarded_sender_name
+                                          : m.forwarded_sender;
+    return m.sender;
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Row layout strategy. A real message row's measure + paint is delegated to
 // one of two implementations (ClassicRowRenderer / BubbleRowRenderer,
@@ -1576,6 +1608,16 @@ public:
     {
         return false;
     }
+
+    // Forward attribution — "Forwarded from …" above a forwarded (MSC4553)
+    // row, before the reply context. Defaults (defined after the Adapter) draw
+    // the glyph + muted label; IRC overrides with a plain scrollback line.
+    virtual float measure_forward_context(const MessageRowData& m,
+                                          tk::LayoutCtx&, float col_w,
+                                          const Adapter&) const;
+    virtual float paint_forward_context(const MessageRowData& m, tk::PaintCtx&,
+                                        float x, float y, float col_w,
+                                        const Adapter&) const;
 
     // Reply context — the message this row is a reply to.
     virtual float measure_reply_context(const MessageRowData& m, tk::LayoutCtx&,
@@ -1861,7 +1903,7 @@ public:
         {
             return false;
         }
-        if (curr.has_reply())
+        if (curr.has_reply() || curr.forwarded)
         {
             return false;
         }
@@ -3336,6 +3378,8 @@ public:
         nat = std::max(nat, owner_.previews_.stack_width(m, w));
         if (m.has_reply())
             nat = std::max(nat, msgbubble::kQuoteMinW);
+        if (m.forwarded)
+            nat = std::max(nat, forward_natural_width_(m, ctx, w));
         // No lower bound: the bubble hugs its content (see msgbubble::layout).
         return std::min(nat, w);
     }
@@ -3791,6 +3835,11 @@ public:
                                  ? tk::tr("in reply")
                                  : tk::trf(tk::tr("replying to {0}"),
                                            {m.in_reply_to_sender_name}));
+        if (m.forwarded)
+            extras.push_back(m.forwarded_author().empty()
+                                 ? tk::tr("forwarded message")
+                                 : tk::trf(tk::tr("forwarded from {0}"),
+                                           {m.forwarded_author()}));
         if (m.is_edited)
             extras.push_back(tk::tr("edited"));
         if (m.timestamp_ms != 0)
@@ -3908,6 +3957,16 @@ public:
         if (m.has_reply())
             out.push_back(action_node_(tk::tr("Jump to replied message"),
                                        [v, ev] { return v->jump_to_reply_original_(ev); }));
+        if (m.has_forward_link() && owner_.on_forward_origin_clicked)
+            out.push_back(action_node_(
+                tk::tr("View original message"),
+                [v, rid = m.forwarded_room_id, eid = m.forwarded_event_id]
+                {
+                    if (!v->on_forward_origin_clicked)
+                        return false;
+                    v->on_forward_origin_clicked(rid, eid);
+                    return true;
+                }));
 
         if (m.kind == Kind::Text || m.kind == Kind::Notice || m.kind == Kind::Emote)
         {
@@ -4981,7 +5040,9 @@ private:
     {
         // The renderer owns how a reply's context is shown (framed card vs
         // mIRC scrollback line) and its height.
+        // The forward attribution (MSC4553) sits above the reply context.
         float quote_h =
+            row_renderer_->measure_forward_context(m, ctx, col_w, *this) +
             row_renderer_->measure_reply_context(m, ctx, col_w, *this);
         switch (m.kind)
         {
@@ -5223,6 +5284,8 @@ private:
     float paint_body_block(const MessageRowData& m, tk::PaintCtx& ctx, float x,
                            float y, float col_w) const
     {
+        if (m.forwarded)
+            y = row_renderer_->paint_forward_context(m, ctx, x, y, col_w, *this);
         if (m.has_reply())
             y = row_renderer_->paint_reply_context(m, ctx, x, y, col_w, *this);
         switch (m.kind)
@@ -5703,6 +5766,111 @@ private:
             break;
         }
         return y;
+    }
+
+    // ── Forward attribution (MSC4553) ───────────────────────────────────
+    // "Forwarded from Alice" (display name, else mxid), or the nameless form
+    // when the forward carried no sender. Always about the *original* author,
+    // never the forwarder.
+    static std::string forward_label_(const MessageRowData& m)
+    {
+        const std::string& who = m.forwarded_author();
+        return who.empty() ? tk::tr("Forwarded message")
+                           : tk::trf(tk::tr("Forwarded from {0}"), {who});
+    }
+
+    // Classic/Bubble line: glyph + one muted Small label, ellipsized to
+    // `col_w`. A negative `col_w` asks for the unconstrained label.
+    std::unique_ptr<tk::TextLayout>
+    forward_layout_(const MessageRowData& m, tk::CanvasFactory& f,
+                    float col_w) const
+    {
+        tk::TextStyle st{};
+        st.role = tk::FontRole::Small;
+        st.trim = tk::TextTrim::Ellipsis;
+        st.max_width = col_w < 0.0f ? -1.0f
+                                    : std::max(0.0f, col_w - kForwardIconPx -
+                                                         kForwardIconGap);
+        return f.build_text(forward_label_(m), st);
+    }
+
+    // Height of the line plus the gap that follows it.
+    float forward_line_height_(const MessageRowData& m, tk::LayoutCtx& ctx,
+                               float col_w) const
+    {
+        auto lo = forward_layout_(m, ctx.factory, col_w);
+        return std::max(lo ? lo->measure().h : 0.0f, kForwardIconPx) +
+               kForwardGapAfter;
+    }
+
+    // Width the line wants when it has all the room it needs (bubble hugging).
+    float forward_natural_width_(const MessageRowData& m, tk::LayoutCtx& ctx,
+                                 float w) const
+    {
+        if (!m.forwarded)
+            return 0.0f;
+        auto lo = forward_layout_(m, ctx.factory, -1.0f);
+        return std::min(w, kForwardIconPx + kForwardIconGap +
+                               (lo ? lo->measure().w : 0.0f));
+    }
+
+    // Registers the clickable rect of a forwarded row's attribution when the
+    // forward names its origin (on_forward_origin_clicked jumps there).
+    void record_forward_geom_(const MessageRowData& m, tk::Rect r) const
+    {
+        if (m.has_forward_link() && owner_.on_forward_origin_clicked)
+            owner_.forward_line_geom_[m.event_id] = r;
+    }
+
+    // Paints the line at (x, y); returns the y directly below it, gap included.
+    float paint_forward_line_(const MessageRowData& m, tk::PaintCtx& ctx,
+                              float x, float y, float col_w) const
+    {
+        if (!m.forwarded)
+            return y;
+        auto lo = forward_layout_(m, ctx.factory, col_w);
+        const float text_h = lo ? lo->measure().h : 0.0f;
+        const float text_w = lo ? lo->measure().w : 0.0f;
+        const float h = std::max(text_h, kForwardIconPx);
+        const tk::Color col = ctx.theme.palette.text_muted;
+        ic_forward_.draw(ctx.canvas, ctx.factory, kForwardSvg,
+                         {x, y + (h - kForwardIconPx) * 0.5f, kForwardIconPx,
+                          kForwardIconPx},
+                         kForwardIconPx, col);
+        if (lo)
+            ctx.canvas.draw_text(
+                *lo, {x + kForwardIconPx + kForwardIconGap, y + (h - text_h) * 0.5f},
+                col);
+        record_forward_geom_(
+            m, {x, y,
+                std::min(col_w, kForwardIconPx + kForwardIconGap + text_w), h});
+        return y + h + kForwardGapAfter;
+    }
+
+    // IRC: a plain dim scrollback line ("-> Forwarded from Alice") in the
+    // monospace body face, wrapped flush-left like the reply context line.
+    static std::string irc_forward_text_(const MessageRowData& m)
+    {
+        return "-> " + forward_label_(m);
+    }
+
+    float irc_forward_height_(const MessageRowData& m, tk::LayoutCtx& ctx,
+                              float col_w) const
+    {
+        auto lo = ctx.factory.build_text(irc_forward_text_(m), body_style(col_w));
+        return (lo ? lo->measure().h : 0.0f) + msgirc::kIrcPrefixGap;
+    }
+
+    float paint_irc_forward_(const MessageRowData& m, tk::PaintCtx& ctx, float x,
+                             float y, float col_w) const
+    {
+        auto lo = ctx.factory.build_text(irc_forward_text_(m), body_style(col_w));
+        const float h = lo ? lo->measure().h : 0.0f;
+        if (lo)
+            ctx.canvas.draw_text(*lo, {x, y}, ctx.theme.palette.text_muted);
+        record_forward_geom_(
+            m, {x, y, lo ? std::min(col_w, lo->measure().w) : col_w, h});
+        return y + h + msgirc::kIrcPrefixGap;
     }
 
     // Paint the reply quote block (left accent stripe + sender + snippet/image).
@@ -7550,6 +7718,7 @@ private:
     mutable tk::IconCache ic_video_placeholder_;
     mutable tk::IconCache ic_call_phone_, ic_call_video_;
     mutable tk::IconCache ic_add_reaction_;
+    mutable tk::IconCache ic_forward_;
 
     MessageListView& owner_;
 
@@ -7601,11 +7770,24 @@ inline std::vector<tk::TextSpan>
 MessageRowRenderer::emote_spans(const MessageRowData& m, bool revealed,
                                 bool dark, const Adapter& ad) const
 {
-    std::string prefix =
-        "* " + (m.sender_name.empty() ? m.sender : m.sender_name) + " ";
+    std::string prefix = "* " + emote_author_name(m) + " ";
     return ad.assemble_emote_spans_(m, revealed, dark, std::move(prefix),
                                     /*italic=*/true, /*force_color=*/false,
                                     tk::Color{});
+}
+
+inline float MessageRowRenderer::measure_forward_context(
+    const MessageRowData& m, tk::LayoutCtx& ctx, float col_w,
+    const Adapter& ad) const
+{
+    return m.forwarded ? ad.forward_line_height_(m, ctx, col_w) : 0.0f;
+}
+
+inline float MessageRowRenderer::paint_forward_context(
+    const MessageRowData& m, tk::PaintCtx& ctx, float x, float y, float col_w,
+    const Adapter& ad) const
+{
+    return ad.paint_forward_line_(m, ctx, x, y, col_w);
 }
 
 inline float
@@ -7689,10 +7871,13 @@ public:
                 const Adapter& ad) const override
     {
         const tk::Color col = msgirc::nick_color(
-            m.sender, dark ? tk::ThemeMode::Dark : tk::ThemeMode::Light);
+            emote_author_id(m),
+            dark ? tk::ThemeMode::Dark : tk::ThemeMode::Light);
         return ad.assemble_emote_spans_(
             m, revealed, dark,
-            Adapter::irc_prefix_plain_(m, msgirc::PrefixKind::Action),
+            msgirc::line_prefix(format_hhmm(m.timestamp_ms),
+                                emote_author_name(m),
+                                msgirc::PrefixKind::Action),
             /*italic=*/false, /*force_color=*/true, col);
     }
 
@@ -7745,6 +7930,19 @@ public:
             y += kPinnedEventH;
         }
         return true;
+    }
+
+    float measure_forward_context(const MessageRowData& m, tk::LayoutCtx& ctx,
+                                  float col_w,
+                                  const Adapter& ad) const override
+    {
+        return m.forwarded ? ad.irc_forward_height_(m, ctx, col_w) : 0.0f;
+    }
+    float paint_forward_context(const MessageRowData& m, tk::PaintCtx& ctx,
+                                float x, float y, float col_w,
+                                const Adapter& ad) const override
+    {
+        return m.forwarded ? ad.paint_irc_forward_(m, ctx, x, y, col_w) : y;
     }
 
     float measure_reply_context(const MessageRowData& m, tk::LayoutCtx& ctx,
@@ -8361,7 +8559,8 @@ bool MessageListView::edit_last_own()
     for (auto it = messages_.rbegin(); it != messages_.rend(); ++it)
     {
         const MessageRowData& m = *it;
-        if (m.is_own && is_editable_kind(m.kind) &&
+        // A forward can't be edited (MSC4553): receivers ignore the edit.
+        if (m.is_own && is_editable_kind(m.kind) && !m.forwarded &&
             m.pending_state == MessageRowData::PendingState::None &&
             !m.event_id.empty())
         {
@@ -9940,6 +10139,18 @@ bool MessageListView::on_pointer_move(tk::Point local)
                 }
             }
         }
+        // "Forwarded from …" attribution: clicking opens the original.
+        if (new_link_url.empty())
+        {
+            for (const auto& [eid, rect] : forward_line_geom_)
+            {
+                if (rect_contains(rect, world))
+                {
+                    new_link_url = "forward://";
+                    break;
+                }
+            }
+        }
         // Selectable body text: a press here starts a drag-selection (same
         // predicate on_pointer_down uses), so report the text sentinel and
         // let the shell show an I-beam. Keep it while a selection drag is in
@@ -10558,6 +10769,7 @@ void MessageListView::clear_hit_geometry_()
     media_.clear_geometry();
     map_panner_.clear_geometry();
     quote_block_geom_.clear();
+    forward_line_geom_.clear();
     previews_.clear_geometry();
     polls_.clear_geometry();
     chip_hit_rects_.clear();
@@ -10873,6 +11085,7 @@ MessageListView::actions_for_row_(const MessageRowData& m) const
     in.utd = m.kind == Kind::Utd;
     in.poll = m.kind == Kind::Poll;
     in.editable_kind = is_editable_kind(m.kind);
+    in.forwarded = m.forwarded;
     in.is_own = m.is_own;
     in.pending = m.pending_state != MessageRowData::PendingState::None;
     in.can_thread = m.is_thread_root || m.thread_root_id.empty();
@@ -10919,6 +11132,8 @@ bool MessageListView::invoke_message_action(
     const MessageRowData* rowp =
         idx >= 0 ? &messages_[static_cast<std::size_t>(idx)] : nullptr;
     if ((id == Id::Reply || id == Id::Edit) && !rowp)
+        return false;
+    if (id == Id::Edit && rowp->forwarded)
         return false;
     switch (id)
     {
@@ -11231,6 +11446,20 @@ bool MessageListView::on_pointer_down(tk::Point local)
             {
                 press_quote_ = true;
                 press_quote_event_id_ = eid;
+                return true;
+            }
+        }
+    }
+
+    // Forward-attribution hit-test — lets the user open the original message.
+    {
+        tk::Point world{local.x + bounds().x, local.y + bounds().y};
+        for (const auto& [eid, rect] : forward_line_geom_)
+        {
+            if (rect_contains(rect, world))
+            {
+                press_forward_ = true;
+                press_forward_event_id_ = eid;
                 return true;
             }
         }
@@ -11948,6 +12177,28 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
         press_quote_event_id_.clear();
         if (fire)
             jump_to_reply_original_(ev);
+        return;
+    }
+
+    if (press_forward_)
+    {
+        const bool fire = inside_self && !press_forward_event_id_.empty();
+        std::string ev = std::move(press_forward_event_id_);
+        press_forward_ = false;
+        press_forward_event_id_.clear();
+        if (fire && on_forward_origin_clicked)
+        {
+            const int idx = message_index_of(ev);
+            if (idx >= 0 &&
+                messages_[static_cast<std::size_t>(idx)].has_forward_link())
+            {
+                const MessageRowData& row = messages_[static_cast<std::size_t>(idx)];
+                // Copies: the callback may rebuild the list under us.
+                const std::string rid = row.forwarded_room_id;
+                const std::string eid = row.forwarded_event_id;
+                on_forward_origin_clicked(rid, eid);
+            }
+        }
         return;
     }
 

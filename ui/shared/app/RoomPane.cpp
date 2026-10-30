@@ -1126,6 +1126,11 @@ void RoomPane::wire_room_view_()
             sess->client->subscribe_room_at(rid, eid);
         });
     };
+    rv->on_forward_origin_clicked =
+        [this](const std::string& room_id, const std::string& event_id)
+    {
+        shell_->open_room_event_(room_id, event_id, {});
+    };
     rv->on_jump_to_unread = [this](const std::string& fully_read_event_id)
     {
         jump_to_unread_(fully_read_event_id);

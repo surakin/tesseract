@@ -42,6 +42,12 @@ tesseract_ffi::TimelineEvent make_ffi_event(const std::string& msg_type)
     ev.in_reply_to_image_url = "mxc://server/img";
     ev.in_reply_to_image_encrypted_json = R"({"enc":"json"})";
     ev.is_edited            = true;
+    ev.forwarded            = true;
+    ev.forwarded_sender     = "@orig:other";
+    ev.forwarded_sender_name = "Orig";
+    ev.forwarded_room_id    = "!origroom:other";
+    ev.forwarded_event_id   = "$orig";
+    ev.forwarded_origin_ts  = 1690000000000LL;
     ev.thread_root_id       = "$root";
     ev.is_thread_root       = true;
     ev.thread_reply_count   = 7;
@@ -403,6 +409,14 @@ TEST_CASE("assign_base copies every shared base field", "[ffi][assign_base]")
     CHECK(ev->in_reply_to_image_url == "mxc://server/img");
     CHECK(ev->in_reply_to_image_encrypted_json == R"({"enc":"json"})");
     CHECK(ev->is_edited);
+
+    // MSC4553 forward attribution.
+    CHECK(ev->forwarded);
+    CHECK(ev->forwarded_sender == "@orig:other");
+    CHECK(ev->forwarded_sender_name == "Orig");
+    CHECK(ev->forwarded_room_id == "!origroom:other");
+    CHECK(ev->forwarded_event_id == "$orig");
+    CHECK(ev->forwarded_origin_ts == 1690000000000LL);
 
     // Thread fields — the regression guard that would have caught any
     // future drop of these when assign_base evolves.

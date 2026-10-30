@@ -20,6 +20,7 @@ Change proposals where the homeserver advertises support for them:
 - [MSC3765](https://github.com/matrix-org/matrix-spec-proposals/pull/3765) — rich (HTML) room topics
 - [MSC3952](https://github.com/matrix-org/matrix-spec-proposals/pull/3952) — intentional mentions
 - [MSC2530](https://github.com/matrix-org/matrix-spec-proposals/pull/2530) — media captions
+- [MSC4553](https://github.com/matrix-org/matrix-spec-proposals/pull/4553) — forwarded messages: forwards say who wrote the original and link back to it, with a "Forwarded from" text fallback for other clients; forwards can't be edited *(experimental: uses the unstable `org.matrix.msc4553.forwarded` key)*
 - [MSC4095](https://github.com/matrix-org/matrix-spec-proposals/pull/4095) — sender-bundled URL previews, shown directly (including in encrypted rooms), with a homeserver-generated preview as the fallback
 - [MSC4452](https://github.com/matrix-org/matrix-spec-proposals/pull/4452) — the `m.preview_url` capability: when the homeserver turns link previews off, Settings says so and Tesseract stops asking it for previews
 - [MSC2448](https://github.com/matrix-org/matrix-spec-proposals/pull/2448) — BlurHash media placeholders

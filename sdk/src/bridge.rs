@@ -802,6 +802,21 @@ pub mod ffi {
         /// "m.gallery" only (MSC4274): ordered gallery items. Empty for all
         /// other msg_types.
         gallery_items: Vec<GalleryItemFfi>,
+        // ----- MSC4553 forwarded messages -----
+        /// True when the event carries an MSC4553 `forwarded` object. All
+        /// other fields then describe the forwarded (original) content, never
+        /// an edit of it, and `is_edited` is false.
+        forwarded: bool,
+        /// Matrix ID of the original sender; empty when the forward gives none.
+        forwarded_sender: String,
+        /// Display name of the original sender when the current room's member
+        /// cache has it (no network); empty otherwise, the UI shows the ID.
+        forwarded_sender_name: String,
+        /// Room and event the content was forwarded from; empty when absent.
+        forwarded_room_id: String,
+        forwarded_event_id: String,
+        /// Original `origin_server_ts` in Unix milliseconds; 0 when absent.
+        forwarded_origin_ts: i64,
     }
 
     /// Outcome of an asynchronous SDK operation.

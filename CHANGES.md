@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- feat(messages): forwarded messages show who wrote the original and link back to it (MSC4553). Linux build, ctest 3813/3813; user-verified Windows
 - perf(sync): background work after sign-in or a cache clear starts after the first room-list response and runs at higher concurrency. Linux release build, ctest 3773/3773
 - fix(ui): every room's last activity comes from its newest message and is retried on failure, so inactive rooms are grouped correctly. Linux release build, ctest 3773/3773
 - fix(ui): the status-bar activity dot also covers sends, edits, reactions, thread loading, GIFs and server info. Linux release build, ctest 3773/3773

@@ -599,6 +599,10 @@ public:
     std::function<void(std::uint64_t ts_ms)> on_date_jump;
     std::function<void()> on_date_picker_opened;
     std::function<void(std::string original_event_id)> on_scroll_to_original;
+    // A forwarded message's "Forwarded from …" attribution was clicked
+    // (main timeline and thread panel): open that event, possibly in another room.
+    std::function<void(std::string room_id, std::string event_id)>
+        on_forward_origin_clicked;
     // The timeline's "Jump to first unread" found the divider outside the
     // loaded window; `fully_read_event_id` is the room's m.fully_read event.
     std::function<void(std::string fully_read_event_id)> on_jump_to_unread;

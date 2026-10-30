@@ -60,6 +60,23 @@ TEST_CASE("message actions: own editable message lists pill actions first",
     CHECK(a[4].destructive);
 }
 
+TEST_CASE("message actions: own forwarded message gets no Edit but keeps the rest",
+          "[message_actions]")
+{
+    MessageActionInputs in;
+    in.is_own = true;
+    in.editable_kind = true;
+    in.forwarded = true;
+    const auto a = build_message_actions(in);
+    CHECK_FALSE(has(a, MessageActionId::Edit));
+    CHECK(has(a, MessageActionId::Reply));
+    CHECK(has(a, MessageActionId::Forward));
+    CHECK(has(a, MessageActionId::Delete));
+
+    in.forwarded = false;
+    CHECK(has(build_message_actions(in), MessageActionId::Edit));
+}
+
 TEST_CASE("message actions: pinned message offers Unpin", "[message_actions]")
 {
     MessageActionInputs in;

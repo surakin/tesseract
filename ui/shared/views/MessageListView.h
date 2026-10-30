@@ -229,6 +229,28 @@ struct MessageRowData
         return has_reply() && bool(in_reply_to_image_source);
     }
 
+    // MSC4553 forwarded message. `body`/`formatted_body`/kind already hold the
+    // original content; `sender` is still the forwarder. The origin fields may
+    // be empty (the forward carried no metadata).
+    bool forwarded = false;
+    std::string forwarded_sender;      // mxid of the original author
+    std::string forwarded_sender_name; // display name, when known
+    std::string forwarded_room_id;
+    std::string forwarded_event_id;
+    // Name to show for the original author: display name, else mxid, else
+    // empty (unknown).
+    const std::string& forwarded_author() const
+    {
+        return forwarded_sender_name.empty() ? forwarded_sender
+                                             : forwarded_sender_name;
+    }
+    // True when the attribution can jump to the original event.
+    bool has_forward_link() const
+    {
+        return forwarded && !forwarded_room_id.empty() &&
+               !forwarded_event_id.empty();
+    }
+
     // Set when the message has been superseded by an m.replace edit.
     bool is_edited = false;
 
@@ -812,6 +834,12 @@ public:
     // in the current message list (host should back-paginate + scroll).
     std::function<void(const std::string& original_event_id)>
         on_scroll_to_original;
+
+    // Fires when the user clicks the "Forwarded from …" attribution of a
+    // forwarded message (MSC4553) that carries its origin room and event id.
+    // The host navigates there (possibly into another room).
+    std::function<void(const std::string& room_id, const std::string& event_id)>
+        on_forward_origin_clicked;
 
     // Edit affordance — fires when the user clicks the "✏" edit button on a
     // hover row they own (Text, or a media kind with a caption). `is_caption`
@@ -1462,6 +1490,15 @@ public:
         return ll ? ll->origin.x : -1.0f;
     }
 
+    // World-space rect of the "Forwarded from …" attribution last painted for
+    // `event_id`; recorded only for a forward with an origin link while
+    // on_forward_origin_clicked is set. Empty rect otherwise.
+    tk::Rect forward_line_rect_for_test(const std::string& event_id) const
+    {
+        const auto it = forward_line_geom_.find(event_id);
+        return it == forward_line_geom_.end() ? tk::Rect{} : it->second;
+    }
+
     // Width the sender-name layout for row `index` was last built to fit
     // (ellipsise) within. -1 when no sender name is cached for that row.
     float sender_name_max_w_for_test(std::size_t index) const;
@@ -1835,6 +1872,13 @@ private:
     // Per-frame quote-block rects in world coordinates, keyed by event_id.
     // Cleared at the top of each paint pass (same pattern as voice_card_geom_).
     mutable std::unordered_map<std::string, tk::Rect> quote_block_geom_;
+
+    // "Forwarded from …" attribution press state (MSC4553). Rects are keyed by
+    // the forwarded row's event_id and recorded only for rows with an origin
+    // link; cleared with the other hit geometry.
+    bool press_forward_ = false;
+    std::string press_forward_event_id_;
+    mutable std::unordered_map<std::string, tk::Rect> forward_line_geom_;
 
     // URL preview cards: provider, per-paint card geometry, and the card paint
     // live in `previews_`. The view forwards set_preview_provider() here and

@@ -1432,3 +1432,245 @@ TEST_CASE("sender status emoji is not drawn in the IRC layout or when empty",
     CHECK(status_rect_for(ML::Irc, true, "🌴").w == 0.0f);
     CHECK(status_rect_for(ML::Classic, true, "").w == 0.0f);
 }
+
+// ── forwarded messages (MSC4553) ────────────────────────────────────────
+
+namespace
+{
+// A forward from Bob of Carol's message, with a link to the original.
+MessageRowData make_forward(const std::string& id, const std::string& body,
+                            const std::string& original_author = "Carol")
+{
+    MessageRowData r = make_rich(id, body);
+    r.sender = "@bob:example.org";
+    r.sender_name = "Bob";
+    r.forwarded = true;
+    r.forwarded_sender = "@carol:example.org";
+    r.forwarded_sender_name = original_author;
+    r.forwarded_room_id = "!orig:example.org";
+    r.forwarded_event_id = "$orig";
+    return r;
+}
+
+float content_height_in(tesseract::Settings::MessageLayout layout,
+                        const MessageRowData& row)
+{
+    LayoutGuard g{layout};
+    TkMessageListLayoutCacheStage st;
+    MessageListView v;
+    v.on_display_prefs_changed();
+    v.set_messages({row}, false);
+    st.run(v, {0, 0, 600, 400});
+    return v.content_height();
+}
+} // namespace
+
+TEST_CASE("a forwarded row is taller than the same row unforwarded in every layout",
+          "[message_list][layout_cache][forward]")
+{
+    using ML = tesseract::Settings::MessageLayout;
+    for (ML layout : {ML::Classic, ML::Bubbles, ML::Irc})
+    {
+        MessageRowData plain = make_forward("$a", "hello world");
+        plain.forwarded = false;
+        const float base = content_height_in(layout, plain);
+
+        CHECK(content_height_in(layout, make_forward("$a", "hello world")) > base);
+
+        // No known author: the nameless "Forwarded message" line still shows.
+        MessageRowData anon = make_forward("$a", "hello world");
+        anon.forwarded_sender.clear();
+        anon.forwarded_sender_name.clear();
+        CHECK(content_height_in(layout, anon) > base);
+    }
+}
+
+TEST_CASE("a forwarded media row also gains the attribution line",
+          "[message_list][layout_cache][forward]")
+{
+    using ML = tesseract::Settings::MessageLayout;
+    for (ML layout : {ML::Classic, ML::Bubbles, ML::Irc})
+    {
+        MessageRowData img;
+        img.kind = MessageRowData::Kind::Image;
+        img.event_id = "$i";
+        img.sender = "@bob:example.org";
+        img.sender_name = "Bob";
+        img.source = tesseract::MediaSource::plain("mxc://example.org/pic");
+        img.media_w = 400;
+        img.media_h = 300;
+        MessageRowData fwd = img;
+        fwd.forwarded = true;
+        fwd.forwarded_sender_name = "Carol";
+        CHECK(content_height_in(layout, fwd) > content_height_in(layout, img));
+    }
+}
+
+TEST_CASE("a bubble is at least as wide as the forward attribution",
+          "[message_list][layout_cache][forward][bubble]")
+{
+    using ML = tesseract::Settings::MessageLayout;
+    auto own_forward = [](const std::string& id)
+    {
+        MessageRowData r =
+            make_forward(id, "ok", "A Rather Long Display Name Indeed");
+        r.sender = "@me:example.org";
+        r.sender_name = "Me";
+        r.is_own = true;
+        return r;
+    };
+    auto run = [&](ML layout, const MessageRowData& row, tk::Rect* rect,
+                   float* origin_x)
+    {
+        LayoutGuard g{layout};
+        TkMessageListLayoutCacheStage st;
+        MessageListView v;
+        v.on_display_prefs_changed();
+        v.on_forward_origin_clicked = [](const std::string&, const std::string&) {};
+        v.set_messages({row}, false);
+        st.run(v, {0, 0, 600, 400});
+        *rect = v.forward_line_rect_for_test(row.event_id);
+        *origin_x = v.body_origin_x_for_test(row.event_id);
+    };
+
+    tk::Rect classic_rect, bubble_rect;
+    float classic_x = 0.0f, bubble_x = 0.0f, plain_x = 0.0f;
+    tk::Rect unused;
+    run(ML::Classic, own_forward("$a"), &classic_rect, &classic_x);
+    run(ML::Bubbles, own_forward("$a"), &bubble_rect, &bubble_x);
+    MessageRowData plain = own_forward("$a");
+    plain.forwarded = false;
+    run(ML::Bubbles, plain, &unused, &plain_x);
+
+    REQUIRE(classic_rect.w > 0.0f);
+    // Not ellipsized: the bubble hugged the attribution, not the short "ok".
+    CHECK(bubble_rect.w == Catch::Approx(classic_rect.w));
+    // A right-anchored bubble that grew to fit the line starts further left.
+    CHECK(bubble_x < plain_x);
+}
+
+TEST_CASE("clicking the forward attribution reports the origin room and event",
+          "[message_list][layout_cache][forward]")
+{
+    using ML = tesseract::Settings::MessageLayout;
+    for (ML layout : {ML::Classic, ML::Bubbles, ML::Irc})
+    {
+        LayoutGuard g{layout};
+        TkMessageListLayoutCacheStage st;
+        MessageListView v;
+        v.on_display_prefs_changed();
+        std::string room, event, hovered;
+        v.on_forward_origin_clicked = [&](const std::string& r, const std::string& e)
+        {
+            room = r;
+            event = e;
+        };
+        v.on_link_hovered = [&](const std::string& u) { hovered = u; };
+        v.set_messages({make_forward("$a", "hello world")}, false);
+        st.run(v, {0, 0, 600, 400});
+
+        const tk::Rect line = v.forward_line_rect_for_test("$a");
+        REQUIRE(line.w > 0.0f);
+        REQUIRE(line.h > 0.0f);
+        const tk::Point at{line.x + line.w * 0.5f, line.y + line.h * 0.5f};
+
+        const tk::Rect rr = v.row_world_rect(0);
+        v.on_pointer_move({rr.x + rr.w * 0.5f, rr.y + rr.h * 0.5f});
+        st.run(v, {0, 0, 600, 400});
+        v.on_pointer_move(at);
+        CHECK(hovered == "forward://");
+
+        REQUIRE(v.on_pointer_down(at));
+        v.on_pointer_up(at, true);
+        CHECK(room == "!orig:example.org");
+        CHECK(event == "$orig");
+    }
+}
+
+TEST_CASE("a forward without origin ids has no clickable attribution",
+          "[message_list][layout_cache][forward]")
+{
+    TkMessageListLayoutCacheStage st;
+    MessageListView v;
+    bool fired = false;
+    v.on_forward_origin_clicked = [&](const std::string&, const std::string&)
+    { fired = true; };
+    MessageRowData row = make_forward("$a", "hello world");
+    row.forwarded_event_id.clear();
+    v.set_messages({row}, false);
+    st.run(v, {0, 0, 600, 400});
+    CHECK(v.forward_line_rect_for_test("$a").w == 0.0f);
+    CHECK_FALSE(fired);
+}
+
+TEST_CASE("a forwarded emote names the original sender, never the forwarder",
+          "[message_list][layout_cache][forward]")
+{
+    using ML = tesseract::Settings::MessageLayout;
+    auto emote_texts = [](ML layout, const MessageRowData& row)
+    {
+        LayoutGuard g{layout};
+        TkMessageListLayoutCacheStage st;
+        MessageListView v;
+        v.on_display_prefs_changed();
+        v.set_messages({row}, false);
+        st.run(v, {0, 0, 600, 400});
+        std::vector<std::string> out;
+        for (const auto& s : st.cf.shapes)
+            out.push_back(s.second);
+        return out;
+    };
+    auto any_with = [](const std::vector<std::string>& v, const std::string& a,
+                       const std::string& b)
+    {
+        for (const auto& s : v)
+            if (s.find(a) != std::string::npos && s.find(b) != std::string::npos)
+                return true;
+        return false;
+    };
+
+    for (ML layout : {ML::Classic, ML::Bubbles, ML::Irc})
+    {
+        MessageRowData row = make_forward("$e", "waves");
+        row.kind = MessageRowData::Kind::Emote;
+        row.formatted_body.clear();
+
+        auto texts = emote_texts(layout, row);
+        CHECK(any_with(texts, "Carol", "waves"));
+        CHECK_FALSE(any_with(texts, "Bob", "waves"));
+
+        // The mxid stands in for an unknown display name.
+        row.forwarded_sender_name.clear();
+        texts = emote_texts(layout, row);
+        CHECK(any_with(texts, "@carol:example.org", "waves"));
+
+        // No sender at all: a generic label, still not the forwarder.
+        row.forwarded_sender.clear();
+        texts = emote_texts(layout, row);
+        CHECK(any_with(texts, "Sender", "waves"));
+        CHECK_FALSE(any_with(texts, "Bob", "waves"));
+    }
+}
+
+TEST_CASE("a forwarded row does not continue the previous sender's group",
+          "[message_list][layout_cache][forward]")
+{
+    LayoutGuard g{tesseract::Settings::MessageLayout::Classic};
+    auto height_of = [](MessageRowData second)
+    {
+        TkMessageListLayoutCacheStage st;
+        MessageListView v;
+        v.on_display_prefs_changed();
+        MessageRowData first = make_rich("$1", "first");
+        first.sender = second.sender;
+        first.sender_name = second.sender_name;
+        v.set_messages({first, second}, false);
+        st.run(v, {0, 0, 600, 400});
+        return v.content_height();
+    };
+    MessageRowData plain = make_forward("$2", "second");
+    plain.forwarded = false;
+    // As a continuation the plain row drops its header; the forward keeps it
+    // (plus the attribution line), so it must be strictly taller.
+    CHECK(height_of(make_forward("$2", "second")) > height_of(plain));
+}

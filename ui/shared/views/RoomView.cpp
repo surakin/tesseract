@@ -580,6 +580,11 @@ void RoomView::wire_message_list_callbacks_(MessageListView* ml)
     {
         if (on_scroll_to_original) on_scroll_to_original(original_event_id);
     };
+    ml->on_forward_origin_clicked =
+        [this](const std::string& room_id, const std::string& event_id)
+    {
+        if (on_forward_origin_clicked) on_forward_origin_clicked(room_id, event_id);
+    };
     ml->on_sender_clicked =
         [this](std::string uid, std::string name, std::string av)
     {

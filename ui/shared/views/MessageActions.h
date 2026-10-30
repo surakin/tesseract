@@ -43,6 +43,7 @@ struct MessageActionInputs
     bool utd = false;
     bool poll = false;
     bool editable_kind = false;
+    bool forwarded = false;         // MSC4553 forward: shows the original's content
     bool is_own = false;
     bool pending = false;           // local echo not yet confirmed
     bool can_thread = false;        // is a thread root or not yet in a thread

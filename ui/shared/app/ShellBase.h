@@ -346,6 +346,14 @@ public:
     // replayed once the first rooms-update arrives.
     void open_matrix_link(const std::string& uri);
 
+    // Jump to `event_id` in `room_id` (a permalink's target, or a forwarded
+    // message's origin): a listed room is navigated to with the event
+    // highlighted; otherwise the room is opened in place (upgraded rooms) or
+    // offered in the Join dialog using `via`, with the event remembered.
+    void open_room_event_(const std::string& room_id,
+                          const std::string& event_id,
+                          const std::vector<std::string>& via);
+
     // ── Debounce ──────────────────────────────────────────────────────────────
     // Independent debounce channels. Each slot tracks its own generation so
     // concurrent debounced actions don't cancel one another.

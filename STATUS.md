@@ -1,6 +1,18 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-10-29**. 3772 C++ + 1182 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-10-30**. 3813 C++ + 1564 Rust tests.
+
+> **Forwarded messages, MSC4553 (2026-10-30).**
+> A forward carries the original message, its author, room and event in
+> `org.matrix.msc4553.forwarded`, plus a "Forwarded from … - view original
+> message" text fallback for other clients. Received forwards show a
+> "Forwarded from X" line (Classic, Bubbles and IRC) that jumps to the original,
+> render the original's content, credit a forwarded emote to its author, and
+> can't be edited (edits to them are ignored). Room-list previews,
+> notifications, reply quotes and thread previews show the forwarded text
+> (quotes and thread previews only when the forward is in the local event
+> cache). Polls are forwarded as plain copies. Linux build, ctest 3813/3813,
+> cargo 1564; user-verified Windows.
 
 > **Request log and tunable warm-up limits (2026-10-29).**
 > Build with `-DTESSERACT_ENABLE_REQUEST_LOG=ON` (off by default), then launch
