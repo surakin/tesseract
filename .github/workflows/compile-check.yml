@@ -203,6 +203,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up clang (webrtc-sys needs clang 21 or later)
+        uses: ./.github/actions/setup-clang
+
       # TESSERACT_UI=linux builds both shells from one build dir, so the GTK4
       # and Qt6 backends share this single job (and one Rust/SDK build) rather
       # than each getting a runner of their own.

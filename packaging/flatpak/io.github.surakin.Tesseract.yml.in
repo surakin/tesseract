@@ -2,6 +2,12 @@ app-id: io.github.surakin.Tesseract
 runtime: org.kde.Platform
 runtime-version: '6.11'
 sdk: org.kde.Sdk
+# webrtc-sys (livekit) builds its C++ with clang against libwebrtc's hermetic
+# libc++ and refuses a clang older than 21. The SDK extension is on the same
+# 25.08 branch org.kde.Sdk//6.11 declares for org.freedesktop.Sdk.Extension.*;
+# the tesseract module puts its bin directory on PATH.
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.llvm21
 # org.kde.Platform is Flathub's shared Qt6 base image, not a KDE Frameworks
 # dependency — Tesseract uses only plain Qt6 Widgets/Multimedia/DBus/
 # Concurrent/Network (see ui/linux-qt/CMakeLists.txt's find_package(Qt6 ...
@@ -71,12 +77,14 @@ modules:
   - name: tesseract
     buildsystem: cmake-ninja
     build-options:
-      append-path: /app/bin        # vendored rust-toolchain module installs here
+      # /app/bin: the vendored rust-toolchain module installs here.
+      # /usr/lib/sdk/llvm21/bin: clang 21 for webrtc-sys (see sdk-extensions).
+      append-path: /app/bin:/usr/lib/sdk/llvm21/bin
       env:
         CARGO_HOME: /run/build/tesseract/cargo
         CARGO_NET_OFFLINE: 'true'
         # webrtc-sys-build's build.rs (pulled in via livekit, pinned
-        # webrtc-sys=0.3.39 in sdk/Cargo.toml) downloads a prebuilt libwebrtc
+        # webrtc-sys=0.3.51 in sdk/Cargo.toml) downloads a prebuilt libwebrtc
         # archive over HTTP unless this points at an already-extracted copy.
         # Forwarded into Cargo's build-script environment by the
         # corrosion_set_env_vars() addition in the root CMakeLists.txt.
@@ -112,13 +120,13 @@ modules:
 
       # --- Prebuilt libwebrtc (see LK_CUSTOM_WEBRTC above) ---
       # Tag confirmed from webrtc-sys-build's WEBRTC_TAG constant; must move
-      # in lockstep with sdk/Cargo.toml's `webrtc-sys = "=0.3.39"` pin.
+      # in lockstep with sdk/Cargo.toml's `webrtc-sys = "=0.3.51"` pin.
       # Default strip-components: 1 drops the archive's top-level
       # linux-x64-release/ directory, landing lib/ and include/ directly at
       # the destination — exactly what LK_CUSTOM_WEBRTC expects.
       - type: archive
-        url: https://github.com/livekit/rust-sdks/releases/download/webrtc-51ef663/webrtc-linux-x64-release.zip
-        sha256: dce9d9414cd8e2cc9a471c054481851b257ad2a879112ce5be56369b4fefdaed
+        url: https://github.com/livekit/rust-sdks/releases/download/webrtc-a545de4/webrtc-linux-x64-release.zip
+        sha256: 2ece73b9a72a2cacd73d0c62ac3a414e202f37885c3c8f49dddb43c1443ac0bd
         dest: _webrtc-prebuilt
 
       # --- Vendored Rust crates (offline cargo build) ---

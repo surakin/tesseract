@@ -763,6 +763,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up clang (webrtc-sys needs clang 21 or later)
+        uses: ./.github/actions/setup-clang
+
       - name: Install build dependencies
         run: |
           sudo apt-get update -q
@@ -939,7 +942,8 @@ jobs:
           flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
           for attempt in 1 2 3 4 5; do
             flatpak install --user -y flathub \
-              org.kde.Platform//6.11 org.kde.Sdk//6.11 && exit 0
+              org.kde.Platform//6.11 org.kde.Sdk//6.11 \
+              org.freedesktop.Sdk.Extension.llvm21//25.08 && exit 0
             echo "::warning::runtime install failed (attempt ${attempt}/5)"
             sleep $((attempt * 20))
           done

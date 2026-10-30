@@ -21,6 +21,7 @@ Tagged releases summarize all changes since the previous tag.
 - fix(calls): a room whose call slot predates encryption is repaired when a call starts, and a closed slot is no longer reopened. Linux release build, ctest 3803/3803
 - build(sdk): a test fails if a `std::string`-carrying cxx type returns to the Rust bridge, where it crashed with the newer WebRTC. Linux release build, ctest 3803/3803
 - fix(calls): your call's Join no longer disappears for other people a few seconds after you start it. Linux release build
+- build(ci): Linux CI and Flatpak builds install clang 21, which the newer WebRTC requires. YAML parsed only, not run on CI
 - fix(calls): calls use the latest LiveKit and WebRTC, which stop trusting the disclosed eMudhra certificates and fix several reconnect bugs. Linux release build (Qt6 + GTK4), ctest 3750/3750
 - fix(calls): Join in the call lobby releases the lobby's camera before the call opens its own, so the call no longer finds the camera busy and starts with video off. Qt6 build, ctest 3504/3504
 - fix(calls): call members written by newer Element clients (no `livekit_alias` in their preferred focus, which ruma's typed model rejects as an empty membership) are read from the raw event instead, so they appear in the call banner, get frame keys and have theirs applied, and ring. cargo 1309/1310 (unrelated `uppercase_http_scheme_is_kept` fails), ctest 3500/3500, user-verified with Element on a phone

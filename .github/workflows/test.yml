@@ -26,6 +26,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up clang (webrtc-sys needs clang 21 or later)
+        uses: ./.github/actions/setup-clang
+
       # webrtc-sys (livekit) takes glib/gobject/gio headers from pkg-config
       # (all in libglib2.0-dev); audiopus_sys needs the system opus; gettext
       # provides xgettext for i18n/check_i18n.py.
@@ -83,6 +86,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up clang (webrtc-sys needs clang 21 or later)
+        uses: ./.github/actions/setup-clang
 
       # The same build dependencies as the Linux job in compile-check.yml,
       # which is the reference for this list.

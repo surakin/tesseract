@@ -36,7 +36,8 @@ jobs:
           flatpak remote-add --user --if-not-exists flathub \
             https://flathub.org/repo/flathub.flatpakrepo
           flatpak install --user -y flathub \
-            org.kde.Platform//6.11 org.kde.Sdk//6.11
+            org.kde.Platform//6.11 org.kde.Sdk//6.11 \
+            org.freedesktop.Sdk.Extension.llvm21//25.08
 
       - name: Validate AppStream metadata
         run: |
@@ -70,6 +71,15 @@ jobs:
           yq '.modules[] | select(.name == "tesseract") | .sources[0]' "$M"
           echo "--- source count (must stay 7) ---"
           yq '.modules[] | select(.name == "tesseract") | .sources | length' "$M"
+
+      - name: Regenerate cargo-sources.json from this checkout's Cargo.lock
+        # The committed copy is only refreshed at release time; building it
+        # as-is would fail offline on any crate bumped since.
+        run: |
+          curl -sL -o /tmp/flatpak-cargo-generator.py \
+            https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/1fc32195e3e60fe5c97f0af646dec7a99df5962b/cargo/flatpak-cargo-generator.py
+          pip install aiohttp tomlkit
+          python3 /tmp/flatpak-cargo-generator.py Cargo.lock -o packaging/flatpak/cargo-sources.json
 
       - name: Cache flatpak-builder state
         uses: actions/cache@v4

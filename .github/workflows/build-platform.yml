@@ -799,6 +799,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up clang (webrtc-sys needs clang 21 or later)
+        uses: ./.github/actions/setup-clang
+
       - name: Install build dependencies
         run: |
           sudo apt-get update -q
@@ -978,7 +981,8 @@ jobs:
           sudo apt-get install -y flatpak flatpak-builder appstream desktop-file-utils
           flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
           flatpak install --user -y flathub \
-            org.kde.Platform//6.11 org.kde.Sdk//6.11
+            org.kde.Platform//6.11 org.kde.Sdk//6.11 \
+            org.freedesktop.Sdk.Extension.llvm21//25.08
 
       - name: Regenerate the manifest from this commit's project version
         # io.github.surakin.Tesseract.yml is normally CMake-generated from

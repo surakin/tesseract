@@ -203,6 +203,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up clang (webrtc-sys needs clang 21 or later)
+        uses: ./.github/actions/setup-clang
+
       - name: Install build dependencies
         run: |
           sudo apt-get update -q
@@ -305,6 +308,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up clang (webrtc-sys needs clang 21 or later)
+        uses: ./.github/actions/setup-clang
+
       - name: Install build dependencies
         run: |
           sudo apt-get update -q
@@ -351,6 +357,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up clang (webrtc-sys needs clang 21 or later)
+        uses: ./.github/actions/setup-clang
 
       - name: Install build dependencies
         run: |
