@@ -7041,3 +7041,15 @@ msgstr "Voir le message d'origine"
 #: ui/shared/views/MessageListView.cpp
 msgid "Sender"
 msgstr "Expéditeur"
+
+msgid "Expand"
+msgstr "Développer"
+
+msgid "Collapse"
+msgstr "Réduire"
+
+msgid "Expand code block"
+msgstr "Développer le bloc de code"
+
+msgid "Collapse code block"
+msgstr "Réduire le bloc de code"

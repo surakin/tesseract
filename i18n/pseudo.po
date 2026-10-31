@@ -7450,3 +7450,15 @@ msgstr "[Vïéw örïgïñàl méssàgéxxxx]"
 #: ui/shared/views/MessageListView.cpp
 msgid "Sender"
 msgstr "[Séñdérx]"
+
+msgid "Expand"
+msgstr "[Expàndxx]"
+
+msgid "Collapse"
+msgstr "[Cöllàpséxx]"
+
+msgid "Expand code block"
+msgstr "[Expànd cödé blöckxx]"
+
+msgid "Collapse code block"
+msgstr "[Cöllàpsé cödé blöckxx]"

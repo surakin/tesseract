@@ -58,6 +58,16 @@ struct SectionLayout
     // "• " / "1. " / "> " prefix), so selection offsets are message-global.
     int plain_base = 0;
 
+    // Long code blocks (> kCodeCollapseMinLines lines): index of this block
+    // within the message, or -1 when the section is not collapsible. The
+    // layout is always shaped in full; while `collapsed` only the first
+    // `clip_h` of it is painted. `height` already includes the panel padding
+    // and the Expand/Collapse button row; `toggle_btn` is relative to `origin`.
+    int      code_block = -1;
+    bool     collapsed  = false;
+    float    clip_h     = 0.0f;
+    tk::Rect toggle_btn{};
+
     // Table sections only (kind == BodyBlock::Kind::Table). col_x/col_w and
     // row_y/row_h are the outer cell rectangles relative to `origin`; the
     // 1px borders sit in the gaps between and around them.

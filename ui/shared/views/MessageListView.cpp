@@ -116,6 +116,76 @@ static std::pair<int, int> table_row_col_at(const SectionLayout& sec,
             std::clamp(col, 0, std::max(0, nc - 1))};
 }
 
+// Long code blocks: more than kCodeCollapseMinLines lines collapse to their
+// first kCodeCollapsedLines with an Expand / Collapse button below the panel.
+constexpr int   kCodeCollapseMinLines = 15;
+constexpr int   kCodeCollapsedLines   = 10;
+constexpr float kCodePanelPad         =  4.0f; // code_bg panel overhang, top/bottom
+constexpr float kCodeToggleGap        =  4.0f; // panel bottom to button top
+constexpr float kCodeTogglePadX       = 12.0f;
+constexpr float kCodeTogglePadY       =  4.0f;
+
+// True when every span of a (non-empty) block is fenced-code text.
+static bool is_code_block_spans(const std::vector<tk::TextSpan>& spans)
+{
+    if (spans.empty())
+        return false;
+    for (const auto& sp : spans)
+        if (!sp.code_block)
+            return false;
+    return true;
+}
+
+// For a shaped code block with more than kCodeCollapseMinLines VISUAL (wrapped)
+// lines, the y of the top of line kCodeCollapsedLines + 1, i.e. the height of
+// the collapsed head; -1 when the block is short.
+static float code_collapse_clip_h(const std::vector<tk::TextSpan>& spans,
+                                  tk::TextLayout& layout)
+{
+    int len = 0;
+    for (const auto& sp : spans)
+        len += static_cast<int>(sp.text.size());
+    std::vector<float> tops;
+    for (const tk::Rect& r : layout.selection_rects(0, len))
+        tops.push_back(r.y);
+    std::sort(tops.begin(), tops.end());
+    std::vector<float> lines;
+    for (float t : tops)
+        if (lines.empty() || t - lines.back() > 1.0f)
+            lines.push_back(t);
+    if (static_cast<int>(lines.size()) <= kCodeCollapseMinLines)
+        return -1.0f;
+    return lines[static_cast<std::size_t>(kCodeCollapsedLines)];
+}
+
+// Height of a section's selectable/hit-testable text: a collapsed code block
+// only exposes its visible head, and a code block's `height` also covers the
+// Expand / Collapse button row.
+static float section_text_h(const SectionLayout& sec)
+{
+    if (sec.code_block < 0)
+        return sec.height;
+    return sec.collapsed ? sec.clip_h : sec.layout->measure().h;
+}
+
+// The Expand / Collapse button under the pointer, if any (needs the
+// paint-stamped section origins).
+static const SectionLayout* code_toggle_at(const LinkLayout& le,
+                                           tk::Point world)
+{
+    for (const auto& sec : le.sections)
+    {
+        if (sec.code_block < 0)
+            continue;
+        const tk::Rect r{sec.origin.x + sec.toggle_btn.x,
+                         sec.origin.y + sec.toggle_btn.y, sec.toggle_btn.w,
+                         sec.toggle_btn.h};
+        if (rect_contains(r, world))
+            return &sec;
+    }
+    return nullptr;
+}
+
 // Section-aware hit-testing: check sections first, fall back to flat layout.
 static std::string link_at_world(const LinkLayout& le, tk::Point world)
 {
@@ -136,7 +206,7 @@ static std::string link_at_world(const LinkLayout& le, tk::Point world)
             }
             if (!sec.layout) continue;
             tk::Point ll{world.x - sec.origin.x, world.y - sec.origin.y};
-            if (ll.y < 0.0f || ll.y >= sec.height) continue;
+            if (ll.y < 0.0f || ll.y >= section_text_h(sec)) continue;
             std::string url = sec.layout->link_at(ll);
             if (!url.empty()) return url;
         }
@@ -280,7 +350,7 @@ static int char_at_world(const LinkLayout& le, tk::Point world)
             // walkers. `sec.layout` is null for a table, so this skips it.
             if (!sec.layout) continue;
             tk::Point ll{world.x - sec.origin.x, world.y - sec.origin.y};
-            if (ll.y < 0.0f || ll.y >= sec.height) continue;
+            if (ll.y < 0.0f || ll.y >= section_text_h(sec)) continue;
             int idx = sec.layout->char_index_at(ll);
             // Section-local → message-global (an offset into le.plain), so
             // the selection knows which section it's in.
@@ -317,7 +387,7 @@ static bool text_at_world(const LinkLayout& le, tk::Point world)
         {
             if (!sec.layout) continue;
             tk::Point ll{world.x - sec.origin.x, world.y - sec.origin.y};
-            if (ll.y < 0.0f || ll.y >= sec.height) continue;
+            if (ll.y < 0.0f || ll.y >= section_text_h(sec)) continue;
             if (over_text_line(*sec.layout, ll)) return true;
         }
         return false;
@@ -3954,6 +4024,18 @@ public:
                                            return true;
                                        }));
         }
+        if (const LinkLayout* cle = owner_.link_cache_.peek(ev))
+            for (const SectionLayout& sec : cle->sections)
+                if (sec.code_block >= 0)
+                    out.push_back(action_node_(
+                        sec.collapsed ? tk::tr("Expand code block")
+                                      : tk::tr("Collapse code block"),
+                        [v, ev, blk = sec.code_block]
+                        {
+                            v->code_blocks_.toggle(ev, blk);
+                            v->invalidate_data();
+                            return true;
+                        }));
         if (m.has_reply())
             out.push_back(action_node_(tk::tr("Jump to replied message"),
                                        [v, ev] { return v->jump_to_reply_original_(ev); }));
@@ -6283,6 +6365,9 @@ private:
             row_renderer_ ? row_renderer_->body_prefix_key(m) : std::string{};
         if (!pfx.empty())
             key = tk::hash_combine(key, std::hash<std::string>{}(pfx));
+        // Expanding / collapsing a long code block re-lays out that message.
+        if (const std::size_t cs = owner_.code_blocks_.state_hash(m.event_id))
+            key = tk::hash_combine(key, cs);
         return key;
     }
 
@@ -6339,6 +6424,18 @@ private:
                     else if (blocks.size() == 1 &&
                              blocks[0].kind != BodyBlock::Kind::Paragraph)
                         has_structure = true;
+                    // A collapsible code block needs its own section (for the
+                    // clip and the button), even in a code-only message. Whether
+                    // it is long depends on wrapping, so shape it at body width.
+                    if (!has_structure && blocks.size() == 1 &&
+                        is_code_block_spans(blocks[0].spans))
+                    {
+                        auto probe = f.build_rich_text(blocks[0].spans,
+                                                       body_style(w));
+                        if (probe &&
+                            code_collapse_clip_h(blocks[0].spans, *probe) > 0.0f)
+                            has_structure = true;
+                    }
 
                     // m.body's plain-text fallback can't see MSC2545 custom
                     // emoticons (they're TextSpan::is_image leaves in the
@@ -6354,6 +6451,7 @@ private:
                     {
                         float y_off = 0.0f;
                         std::string plain_all;
+                        int code_idx = 0;
                         for (auto& b : blocks)
                         {
                             if (b.kind == BodyBlock::Kind::Table)
@@ -6410,6 +6508,36 @@ private:
                             if (b.kind == BodyBlock::Kind::Heading &&
                                 b.level <= 2)
                                 sh += kHeadingRuleGap + 1.0f;
+                            if (is_code_block_spans(b.spans))
+                            {
+                                const int cidx = code_idx++;
+                                const float clip = code_collapse_clip_h(
+                                    b.spans, *sec.layout);
+                                if (clip > 0.0f && clip < sh - 1.0f)
+                                {
+                                    sec.code_block = cidx;
+                                    sec.collapsed =
+                                        !owner_.code_blocks_.is_expanded(
+                                            m.event_id, cidx);
+                                    sec.clip_h = clip;
+                                    tk::TextStyle ts{};
+                                    ts.role = tk::FontRole::UiSemibold;
+                                    auto lbl = f.build_text(
+                                        sec.collapsed ? tk::tr("Expand")
+                                                      : tk::tr("Collapse"),
+                                        ts);
+                                    const tk::Size ls =
+                                        lbl ? lbl->measure() : tk::Size{40, 14};
+                                    const float vis = sec.collapsed ? clip : sh;
+                                    const float bw =
+                                        ls.w + 2.0f * kCodeTogglePadX;
+                                    sec.toggle_btn = {
+                                        std::max(0.0f, (avw - bw) * 0.5f),
+                                        vis + kCodePanelPad + kCodeToggleGap,
+                                        bw, ls.h + 2.0f * kCodeTogglePadY};
+                                    sh = sec.toggle_btn.y + sec.toggle_btn.h;
+                                }
+                            }
                             sec.height = sh;
                             y_off += sh + kSectionGap;
 
@@ -6615,8 +6743,10 @@ private:
     void paint_span_backgrounds(const std::vector<tk::TextSpan>& spans,
                                 tk::TextLayout& layout,
                                 tk::PaintCtx& ctx,
-                                float ox, float oy) const
+                                float ox, float oy,
+                                float code_clip_h = -1.0f) const
     {
+        // code_clip_h >= 0: a collapsed code block, panel ends at that y.
         int boff = 0;
         for (std::size_t si = 0; si < spans.size();)
         {
@@ -6656,6 +6786,8 @@ private:
                     float y1 = std::max(u.y + u.h, r.y + r.h);
                     u        = {x0, y0, x1 - x0, y1 - y0};
                 }
+                if (any && code_clip_h >= 0.0f && u.y + u.h > code_clip_h)
+                    u.h = std::max(0.0f, code_clip_h - u.y);
                 if (any)
                 {
                     tk::Rect panel{u.x + ox - 6.0f, u.y + oy - 4.0f,
@@ -7094,7 +7226,10 @@ private:
                 const float sh = sec.layout->measure().h;
 
                 // Span backgrounds.
-                paint_span_backgrounds(sec.spans, *sec.layout, ctx, ox, oy);
+                const bool collapsed_code =
+                    sec.code_block >= 0 && sec.collapsed;
+                paint_span_backgrounds(sec.spans, *sec.layout, ctx, ox, oy,
+                                       collapsed_code ? sec.clip_h : -1.0f);
 
                 // Block decoration (behind text).
                 switch (sec.kind)
@@ -7146,11 +7281,53 @@ private:
                     break;
                 }
 
-                draw_with_selection(
-                    *sec.layout, ox, oy,
-                    static_cast<int>(spans_to_plain(sec.spans).size()),
-                    sec.plain_base);
-                paint_span_images(sec.spans, *sec.layout, ctx, ox, oy);
+                {
+                    // A collapsed code block paints only its first lines.
+                    std::optional<tk::ClipScope> head_clip;
+                    if (collapsed_code)
+                        head_clip.emplace(
+                            ctx.canvas,
+                            tk::Rect{ox - 8.0f, oy - kCodePanelPad,
+                                     w - sec.x_offset + 16.0f,
+                                     sec.clip_h + kCodePanelPad});
+                    draw_with_selection(
+                        *sec.layout, ox, oy,
+                        static_cast<int>(spans_to_plain(sec.spans).size()),
+                        sec.plain_base);
+                    paint_span_images(sec.spans, *sec.layout, ctx, ox, oy);
+                }
+                if (sec.code_block >= 0)
+                {
+                    tk::TextStyle ts{};
+                    ts.role = tk::FontRole::UiSemibold;
+                    auto lbl = ctx.factory.build_text(
+                        sec.collapsed ? tk::tr("Expand") : tk::tr("Collapse"),
+                        ts);
+                    const tk::Rect br{ox + sec.toggle_btn.x,
+                                      oy + sec.toggle_btn.y, sec.toggle_btn.w,
+                                      sec.toggle_btn.h};
+                    const bool hov =
+                        owner_.hover_code_toggle_block_ == sec.code_block &&
+                        owner_.hover_code_toggle_eid_ == m.event_id;
+                    ctx.canvas.fill_rounded_rect(
+                        br, br.h * 0.5f,
+                        hov ? ctx.theme.palette.subtle_pressed
+                            : ctx.theme.palette.subtle_hover);
+                    ctx.canvas.stroke_rounded_rect(
+                        br, br.h * 0.5f,
+                        hov ? ctx.theme.palette.accent
+                            : ctx.theme.palette.border,
+                        hov ? 1.5f : 1.0f);
+                    if (lbl)
+                    {
+                        const tk::Size ls = lbl->measure();
+                        ctx.canvas.draw_text(
+                            *lbl,
+                            {br.x + (br.w - ls.w) * 0.5f,
+                             br.y + (br.h - ls.h) * 0.5f},
+                            ctx.theme.palette.text_secondary);
+                    }
+                }
 
                 // Post-text decoration: horizontal rule below h1/h2.
                 if (sec.kind == BodyBlock::Kind::Heading && sec.level <= 2)
@@ -8445,6 +8622,7 @@ void MessageListView::set_messages(std::vector<MessageRowData> msgs,
 
     video_playlist_.clear();
     spoilers_.clear();
+    code_blocks_.clear();
     membership_groups_.clear();
     // NB: do NOT clear link_cache_ here. It is the content-addressed body-text
     // layout cache (keyed by {width, theme, revealed, hash_body}), so retaining
@@ -10065,6 +10243,8 @@ bool MessageListView::on_pointer_move(tk::Point local)
     // Also fires a synthetic token when hovering a map tile area so the
     // shell switches to the pointing-hand cursor there too.
     std::string new_link_url;
+    std::string new_code_eid;
+    int new_code_block = -1;
     {
         tk::Point world{local.x + bounds().x, local.y + bounds().y};
         std::size_t hrow = hovered_row_geom_.row_index;
@@ -10092,6 +10272,12 @@ bool MessageListView::on_pointer_move(tk::Point local)
                 if (!lurl.empty())
                 {
                     new_link_url = std::move(lurl);
+                }
+                else if (const SectionLayout* cs = code_toggle_at(*le, world))
+                {
+                    new_link_url = "codetoggle://";
+                    new_code_eid = m.event_id;
+                    new_code_block = cs->code_block;
                 }
             }
         }
@@ -10167,6 +10353,14 @@ bool MessageListView::on_pointer_move(tk::Point local)
             if (over_text)
                 new_link_url = std::string{kTextHoverToken};
         }
+    }
+    if (new_code_eid != hover_code_toggle_eid_ ||
+        new_code_block != hover_code_toggle_block_)
+    {
+        hover_code_toggle_eid_ = new_code_eid;
+        hover_code_toggle_block_ = new_code_block;
+        if (request_repaint_)
+            request_repaint_();
     }
     if (new_link_url != hover_link_url_)
     {
@@ -10396,6 +10590,13 @@ void MessageListView::on_pointer_leave()
     hover_target_ = HoverTarget::None;
     hover_chip_idx_ = -1;
     hovered_media_event_id_.clear();
+    if (hover_code_toggle_block_ >= 0)
+    {
+        hover_code_toggle_eid_.clear();
+        hover_code_toggle_block_ = -1;
+        if (request_repaint_)
+            request_repaint_();
+    }
     map_panner_.hide_tooltip();
     if (action_tooltip_ != ActionTooltip::None)
     {
@@ -11675,6 +11876,23 @@ bool MessageListView::on_pointer_down(tk::Point local)
                 return true;
             }
 
+            // Expand / Collapse button under a long code block.
+            if (m.kind == MessageRowData::Kind::Text ||
+                m.kind == MessageRowData::Kind::Notice ||
+                m.kind == MessageRowData::Kind::Emote)
+            {
+                const tk::Point cw{local.x + bounds().x, local.y + bounds().y};
+                const LinkLayout* cle = link_cache_.peek(m.event_id);
+                if (const SectionLayout* cs =
+                        cle ? code_toggle_at(*cle, cw) : nullptr)
+                {
+                    press_code_toggle_ = true;
+                    press_code_toggle_eid_ = m.event_id;
+                    press_code_toggle_block_ = cs->code_block;
+                    return true;
+                }
+            }
+
             // Text selection anchor: single/double/triple click on text bodies.
             if (m.kind == MessageRowData::Kind::Text ||
                 m.kind == MessageRowData::Kind::Notice ||
@@ -11877,6 +12095,21 @@ void MessageListView::on_pointer_up(tk::Point local, bool inside_self)
         if (fire)
         {
             spoilers_.reveal(eid);
+            invalidate_data();
+        }
+        return;
+    }
+    if (press_code_toggle_)
+    {
+        const bool fire = inside_self && !press_code_toggle_eid_.empty();
+        std::string eid = std::move(press_code_toggle_eid_);
+        const int block = press_code_toggle_block_;
+        press_code_toggle_ = false;
+        press_code_toggle_eid_.clear();
+        press_code_toggle_block_ = -1;
+        if (fire)
+        {
+            code_blocks_.toggle(eid, block);
             invalidate_data();
         }
         return;

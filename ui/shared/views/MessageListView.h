@@ -24,6 +24,7 @@
 #include "views/MessageActions.h"
 #include "views/ReadReceiptTracker.h"
 #include "views/RoomSwitchGateKeeper.h"
+#include "views/CodeBlockExpander.h"
 #include "views/SpoilerRevealer.h"
 #include "views/TimelineMediaController.h"
 #include "views/PollCardDisplay.h"
@@ -1918,6 +1919,15 @@ private:
     SpoilerRevealer spoilers_;
     bool press_spoiler_ = false;
     std::string press_spoiler_eid_;
+
+    // Long code blocks: per-message expanded state plus the press FSM for the
+    // Expand / Collapse button under a collapsed-capable block.
+    CodeBlockExpander code_blocks_;
+    bool press_code_toggle_ = false;
+    std::string press_code_toggle_eid_;
+    int press_code_toggle_block_ = -1;
+    std::string hover_code_toggle_eid_; // hovered Expand/Collapse button
+    int hover_code_toggle_block_ = -1;
 
     // Membership-group (join/leave/etc.) expand/collapse state. The expanded
     // set lives in MembershipGroupExpander, keyed by the event_id of the

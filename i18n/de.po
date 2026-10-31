@@ -7039,3 +7039,15 @@ msgstr "Originalnachricht anzeigen"
 #: ui/shared/views/MessageListView.cpp
 msgid "Sender"
 msgstr "Absender"
+
+msgid "Expand"
+msgstr "Erweitern"
+
+msgid "Collapse"
+msgstr "Einklappen"
+
+msgid "Expand code block"
+msgstr "Codeblock erweitern"
+
+msgid "Collapse code block"
+msgstr "Codeblock einklappen"

@@ -7139,3 +7139,15 @@ msgstr "Ver mensaje original"
 #: ui/shared/views/MessageListView.cpp
 msgid "Sender"
 msgstr "Remitente"
+
+msgid "Expand"
+msgstr "Expandir"
+
+msgid "Collapse"
+msgstr "Contraer"
+
+msgid "Expand code block"
+msgstr "Expandir bloque de código"
+
+msgid "Collapse code block"
+msgstr "Contraer bloque de código"

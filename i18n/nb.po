@@ -5403,3 +5403,15 @@ msgstr "Vis opprinnelig melding"
 #: ui/shared/views/MessageListView.cpp
 msgid "Sender"
 msgstr "Avsender"
+
+msgid "Expand"
+msgstr "Utvid"
+
+msgid "Collapse"
+msgstr "Skjul"
+
+msgid "Expand code block"
+msgstr "Utvid kodeblokk"
+
+msgid "Collapse code block"
+msgstr "Skjul kodeblokk"
