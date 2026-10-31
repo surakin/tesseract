@@ -1373,6 +1373,11 @@ void MainWindow::on_portal_setting_changed_(GDBusConnection*, const char*,
         g_variant_unref(value);
 }
 
+void MainWindow::apply_native_theme_(const tk::Theme& t)
+{
+    tk::cairo_pango::set_link_color(t.palette.link);
+}
+
 void MainWindow::after_theme_applied_(const tk::Theme& t)
 {
     refresh_low_power_icon_(); // re-tint the status-bar glyph

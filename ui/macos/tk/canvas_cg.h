@@ -182,4 +182,9 @@ struct RealLineMetrics
 // or above — the baseline).
 RealLineMetrics real_line_metrics(FontRole role);
 
+// Colour for plain hyperlink runs in rich text (links are also underlined).
+// Baked into a layout when it is built, so call before the views rebuild
+// their text on a theme change.
+void set_link_color(Color c);
+
 } // namespace tk::cg

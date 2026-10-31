@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -78,6 +79,10 @@ struct CFRetained
 // kCTStrikethroughStyleAttributeName is not in the 10.15 SDK and CoreText
 // doesn't render strikethrough itself anyway. We tag spans with this private
 // key and draw the line manually after CTFrameDraw.
+// Theme link colour (see set_link_color); unset until the shell applies a
+// theme, in which case links keep the surrounding text colour.
+static std::optional<Color> g_link_color;
+
 static CFStringRef tk_strikethrough_key()
 {
     static auto* k = CFSTR("TKStrikethrough");
@@ -140,6 +145,92 @@ void draw_line_runs(CGContextRef ctx, CTLineRef line, CGPoint origin,
             set_fill(ctx, default_c);
         }
         CTRunDraw(run, ctx, CFRangeMake(0, 0));
+    }
+}
+
+// Draw the underline and strikethrough of one CTLine's runs. CoreText draws
+// neither here: CTRunDraw() (see draw_line_runs) skips underlines, and
+// strikethrough is our private tk_strikethrough_key(). Underlines use the
+// run font's own position and thickness and the run's colour, so a link's
+// underline matches its text. Called in the same flipped CoreText space as
+// draw_line_runs, with the line's baseline at `origin`.
+void draw_line_decorations(CGContextRef ctx, CTLineRef line, CGPoint origin,
+                           Color default_c)
+{
+    CFArrayRef runs = CTLineGetGlyphRuns(line);
+    CFIndex nr = CFArrayGetCount(runs);
+    for (CFIndex ri = 0; ri < nr; ++ri)
+    {
+        CTRunRef run = static_cast<CTRunRef>(CFArrayGetValueAtIndex(runs, ri));
+        CFDictionaryRef attrs = CTRunGetAttributes(run);
+        if (!attrs)
+        {
+            continue;
+        }
+
+        CFTypeRef strike = CFDictionaryGetValue(attrs, tk_strikethrough_key());
+        const bool has_strike = strike && strike != kCFBooleanFalse;
+        int underline_style = kCTUnderlineStyleNone;
+        if (auto num = static_cast<CFNumberRef>(
+                CFDictionaryGetValue(attrs, kCTUnderlineStyleAttributeName)))
+        {
+            CFNumberGetValue(num, kCFNumberIntType, &underline_style);
+        }
+        const bool has_underline = underline_style != kCTUnderlineStyleNone;
+        if (!has_strike && !has_underline)
+        {
+            continue;
+        }
+
+        CGFloat asc = 0;
+        CGFloat run_w = CTRunGetTypographicBounds(run, CFRangeMake(0, 0), &asc,
+                                                  nullptr, nullptr);
+        CFIndex loc = CTRunGetStringRange(run).location;
+        CGFloat x0 =
+            origin.x + CTLineGetOffsetForStringIndex(line, loc, nullptr);
+        CGFloat x1 = x0 + run_w;
+
+        if (has_strike)
+        {
+            set_stroke(ctx, default_c);
+            CGContextSetLineWidth(ctx, 1.0f);
+            CGFloat y = origin.y + asc * 0.4f;
+            CGContextBeginPath(ctx);
+            CGContextMoveToPoint(ctx, x0, y);
+            CGContextAddLineToPoint(ctx, x1, y);
+            CGContextStrokePath(ctx);
+        }
+
+        if (has_underline)
+        {
+            // The font's underline position is the offset of the line's
+            // centre from the baseline (negative: below it).
+            CGFloat pos = -1.0f;
+            CGFloat thickness = 1.0f;
+            if (auto font = static_cast<CTFontRef>(
+                    CFDictionaryGetValue(attrs, kCTFontAttributeName)))
+            {
+                pos = CTFontGetUnderlinePosition(font);
+                thickness = std::max<CGFloat>(
+                    CTFontGetUnderlineThickness(font), 1.0f);
+            }
+            auto color = static_cast<CGColorRef>(const_cast<void*>(
+                CFDictionaryGetValue(attrs, kCTForegroundColorAttributeName)));
+            if (color)
+            {
+                CGContextSetStrokeColorWithColor(ctx, color);
+            }
+            else
+            {
+                set_stroke(ctx, default_c);
+            }
+            CGContextSetLineWidth(ctx, thickness);
+            CGFloat y = origin.y + pos;
+            CGContextBeginPath(ctx);
+            CGContextMoveToPoint(ctx, x0, y);
+            CGContextAddLineToPoint(ctx, x1, y);
+            CGContextStrokePath(ctx);
+        }
     }
 }
 
@@ -746,62 +837,11 @@ public:
                     CTLineRef line = static_cast<CTLineRef>(
                         CFArrayGetValueAtIndex(lines, li));
                     draw_line_runs(ctx, line, origins[li], c);
+                    draw_line_decorations(ctx, line, origins[li], c);
                 }
             }
         }
-        draw_strikethrough(ctx, c);
         CGContextRestoreGState(ctx);
-    }
-
-    // Draw strikethrough lines for any runs tagged with tk_strikethrough_key().
-    // Called inside the flipped coordinate transform already set up by draw().
-    void draw_strikethrough(CGContextRef ctx, Color c) const
-    {
-        CFArrayRef lines = CTFrameGetLines(frame_);
-        CFIndex n = CFArrayGetCount(lines);
-        if (n == 0)
-        {
-            return;
-        }
-        std::vector<CGPoint> origins(static_cast<std::size_t>(n));
-        CTFrameGetLineOrigins(frame_, CFRangeMake(0, n), origins.data());
-
-        set_stroke(ctx, c);
-        CGContextSetLineWidth(ctx, 1.0f);
-
-        for (CFIndex li = 0; li < n; ++li)
-        {
-            CTLineRef line =
-                static_cast<CTLineRef>(CFArrayGetValueAtIndex(lines, li));
-            CFArrayRef runs = CTLineGetGlyphRuns(line);
-            CFIndex nr = CFArrayGetCount(runs);
-            for (CFIndex ri = 0; ri < nr; ++ri)
-            {
-                CTRunRef run =
-                    static_cast<CTRunRef>(CFArrayGetValueAtIndex(runs, ri));
-                CFDictionaryRef attrs = CTRunGetAttributes(run);
-                CFTypeRef flag =
-                    CFDictionaryGetValue(attrs, tk_strikethrough_key());
-                if (!flag || flag == kCFBooleanFalse)
-                {
-                    continue;
-                }
-
-                CGFloat asc = 0;
-                CGFloat runW = CTRunGetTypographicBounds(
-                    run, CFRangeMake(0, 0), &asc, nullptr, nullptr);
-                CFIndex loc = CTRunGetStringRange(run).location;
-                CGFloat runX =
-                    CTLineGetOffsetForStringIndex(line, loc, nullptr);
-                CGFloat strikeY = origins[li].y + asc * 0.4f;
-
-                CGContextBeginPath(ctx);
-                CGContextMoveToPoint(ctx, origins[li].x + runX, strikeY);
-                CGContextAddLineToPoint(ctx, origins[li].x + runX + runW,
-                                        strikeY);
-                CGContextStrokePath(ctx);
-            }
-        }
     }
 
     int char_index_at(tk::Point local) const override
@@ -1013,6 +1053,7 @@ private:
         CGContextScaleCTM(ctx, 1, -1);
         set_fill(ctx, c);
         draw_line_runs(ctx, elided_line_, CGPointMake(0, 0), c);
+        draw_line_decorations(ctx, elided_line_, CGPointMake(0, 0), c);
         CGContextRestoreGState(ctx);
     }
 
@@ -1740,15 +1781,30 @@ public:
             CFTypeRef st_flag =
                 span.strikethrough ? kCFBooleanTrue : kCFBooleanFalse;
 
-            // Syntax-highlighted runs carry an explicit foreground color;
-            // everything else inherits the context color set by draw_text().
+            // Mention pills keep their url for hit-testing but are drawn
+            // without the link underline and colour (the pill background is
+            // drawn by the view).
+            const bool is_link = !span.url.empty() && !span.is_mention;
+
+            // Syntax-highlighted runs carry an explicit foreground color, and
+            // links take the theme's link colour; everything else inherits
+            // the context color set by draw_text().
             CFTypeRef               fg_key = kCTForegroundColorFromContextAttributeName;
             CFTypeRef               fg_val = kCFBooleanTrue;
             CFRetained<CGColorRef>  fg_color;
+            std::optional<Color>    run_color;
             if (span.has_color)
             {
-                CGFloat comps[4] = {span.color.r / 255.0, span.color.g / 255.0,
-                                    span.color.b / 255.0, span.color.a / 255.0};
+                run_color = span.color;
+            }
+            else if (is_link)
+            {
+                run_color = g_link_color;
+            }
+            if (run_color)
+            {
+                CGFloat comps[4] = {run_color->r / 255.0, run_color->g / 255.0,
+                                    run_color->b / 255.0, run_color->a / 255.0};
                 fg_color = CFRetained<CGColorRef>{
                     CGColorCreate(rgb_cs.get(), comps)};
                 if (fg_color.get())
@@ -1758,15 +1814,22 @@ public:
                 }
             }
 
+            static const int kUnderlineSingle = kCTUnderlineStyleSingle;
+            static CFNumberRef underline_single = CFNumberCreate(
+                kCFAllocatorDefault, kCFNumberIntType, &kUnderlineSingle);
+
             CFTypeRef keys[] = {
                 kCTFontAttributeName,
                 kCTParagraphStyleAttributeName,
                 fg_key,
                 tk_strikethrough_key(),
+                kCTUnderlineStyleAttributeName,
             };
-            CFTypeRef vals[] = {span_font.get(), para.get(), fg_val, st_flag};
+            CFTypeRef vals[] = {span_font.get(), para.get(), fg_val, st_flag,
+                                underline_single};
             CFRetained<CFDictionaryRef> attrs{
-                CFDictionaryCreate(kCFAllocatorDefault, keys, vals, 4,
+                CFDictionaryCreate(kCFAllocatorDefault, keys, vals,
+                                   is_link ? 5 : 4,
                                    &kCFTypeDictionaryKeyCallBacks,
                                    &kCFTypeDictionaryValueCallBacks)};
             CFRetained<CFAttributedStringRef> aspan{CFAttributedStringCreate(
@@ -2464,6 +2527,11 @@ RealLineMetrics real_line_metrics(FontRole role)
     out.ascent = static_cast<float>(CTFontGetAscent(font.get()));
     out.descent = static_cast<float>(CTFontGetDescent(font.get()));
     return out;
+}
+
+void set_link_color(Color c)
+{
+    g_link_color = c;
 }
 
 } // namespace tk::cg

@@ -745,8 +745,7 @@ void MainWindow::apply_native_theme_(const tk::Theme& t)
     {
         win32::theme::set_palette_override(nullptr);
     }
-    tk::d2d::set_link_color(t.high_contrast ? std::optional<tk::Color>(t.palette.link)
-                                            : std::nullopt);
+    tk::d2d::set_link_color(t.palette.link);
     win32::theme::apply_window_attributes(hwnd_);
     InvalidateRect(hwnd_, nullptr, TRUE);
     if (hStatus_)

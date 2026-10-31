@@ -240,6 +240,7 @@ private:
     {
         navigate_to_room(room_id);
     }
+    void apply_native_theme_(const tk::Theme& t) override;
     void after_theme_applied_(const tk::Theme& t) override;
     void for_each_shell_surface_(
         const std::function<void(tk::SurfaceBase&)>& fn) override;

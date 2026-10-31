@@ -1160,6 +1160,11 @@ std::optional<tk::Color> MainWindow::os_accent_color_() const
 }
 
 
+void MainWindow::apply_native_theme_(const tk::Theme& t)
+{
+    tk::cg::set_link_color(t.palette.link);
+}
+
 void MainWindow::after_theme_applied_(const tk::Theme& t)
 {
     setting_own_appearance_ = true;

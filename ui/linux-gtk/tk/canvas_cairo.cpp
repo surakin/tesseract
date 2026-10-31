@@ -30,6 +30,10 @@ namespace tk::cairo_pango
 namespace
 {
 
+// Theme link colour (see set_link_color), as a Pango "#RRGGBB" string. The
+// default stands in until the shell applies a theme.
+std::string g_link_color = "#2563EB";
+
 // Query the GTK theme body font once at first call (family and size won't
 // change while the process runs). Returns the system font family name and pt.
 struct SystemFont { std::string family; int pt; };
@@ -1351,8 +1355,8 @@ public:
                 // and the pill background is drawn by the view).
                 if (!sp.is_mention)
                 {
-                    t = "<span underline=\"single\" foreground=\"#2563EB\">" + t +
-                        "</span>";
+                    t = "<span underline=\"single\" foreground=\"" +
+                        g_link_color + "\">" + t + "</span>";
                 }
                 url_ranges.push_back(
                     {byte_offset,
@@ -1672,6 +1676,18 @@ std::unique_ptr<Image> make_image(cairo_surface_t* surface)
 NativeImageHandle to_native_image(const Image& img)
 {
     return static_cast<const CairoImage&>(img).surface();
+}
+
+void set_link_color(Color c)
+{
+    static const char* kHex = "0123456789ABCDEF";
+    std::string col = "#";
+    for (std::uint8_t v : {c.r, c.g, c.b})
+    {
+        col += kHex[v >> 4];
+        col += kHex[v & 0x0F];
+    }
+    g_link_color = std::move(col);
 }
 
 } // namespace tk::cairo_pango
