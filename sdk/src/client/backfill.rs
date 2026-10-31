@@ -601,22 +601,13 @@ impl ClientFfi {
 
         let handle = self.rt.spawn(async move {
             let _job = super::activity::begin("bridge-status-check", "Backfill", super::activity::JobKind::OneShot);
-            use matrix_sdk::ruma::api::client::state::get_state_events::v3 as state_api;
-
             let mut uncached = uncached;
             loop {
                 // Fetch all rooms in parallel — room state is independent,
                 // no ordering needed.
                 #[allow(clippy::type_complexity)]
-                let mut joinset: tokio::task::JoinSet<
-                    Option<(
-                        matrix_sdk::ruma::OwnedRoomId,
-                        bool,
-                        Option<String>,
-                        Option<String>,
-                        crate::ffi::BridgeCapabilities,
-                    )>,
-                > = tokio::task::JoinSet::new();
+                let mut joinset: tokio::task::JoinSet<Option<(matrix_sdk::ruma::OwnedRoomId, BridgeStatus)>> =
+                    tokio::task::JoinSet::new();
                 // Full room state can be tens of megabytes per room, so only a few
                 // lookups run at once.
                 let permits = Arc::new(tokio::sync::Semaphore::new(BRIDGE_CHECK_CONCURRENCY));
@@ -641,67 +632,18 @@ impl ClientFfi {
                         let Ok(_permit) = permits.acquire().await else {
                             return None;
                         };
-                        // A failed lookup is not an answer: returning None keeps it out of
-                        // the table, so the next check asks again instead of recording
-                        // "not bridged" for a room whose state was never read.
-                        let room_state = match client.send(state_api::Request::new(room_id.clone())).await {
-                            Ok(resp) => resp.room_state,
-                            Err(e) => {
-                                tracing::warn!("bridge status lookup for {room_id} failed (not recorded): {e}");
-                                return None;
-                            }
-                        };
-                        let find_event = |event_type: &str| {
-                            room_state.iter().find(|raw| {
-                                raw.get_field::<String>("type").ok().flatten().as_deref()
-                                    == Some(event_type)
-                            })
-                        };
-                        let bridge_event = find_event("uk.half-shot.bridge");
-                        let bridged = bridge_event.is_some();
-                        let bridge_content = bridge_event.and_then(|raw| {
-                            raw.get_field::<serde_json::Value>("content").ok().flatten()
-                        });
-                        let (network_name, network_avatar_url) = bridge_content
-                            .as_ref()
-                            .map(super::parse_bridge_network_info)
-                            .unwrap_or((None, None));
-                        let capabilities = find_event("com.beeper.room_features")
-                            .and_then(|raw| {
-                                raw.get_field::<serde_json::Value>("content").ok().flatten()
-                            })
-                            .map(|c| super::parse_bridge_capabilities(&c))
-                            .unwrap_or_default();
-                        Some((room_id, bridged, network_name, network_avatar_url, capabilities))
+                        let status = fetch_bridge_status(&client, &room_id).await?;
+                        Some((room_id, status))
                     });
                 }
 
                 let mut any_bridged = false;
                 while let Some(joined) = joinset.join_next().await {
-                    let Ok(Some((room_id, bridged, network_name, network_avatar_url, capabilities))) =
-                        joined
-                    else {
+                    let Ok(Some((room_id, status))) = joined else {
                         continue;
                     };
-                    {
-                        let guard = db_conn.lock();
-                        if let Some(conn) = guard.as_ref() {
-                            let _ = conn.execute(
-                                "INSERT OR REPLACE INTO bridge_status \
-                                 (room_id, is_bridged, network_name, network_avatar_url, cap_threads, checked_at) \
-                                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                                rusqlite::params![
-                                    room_id.as_str(),
-                                    bridged as i32,
-                                    network_name,
-                                    network_avatar_url,
-                                    capabilities.threads as i32,
-                                    unix_now_secs()
-                                ],
-                            );
-                        }
-                    }
-                    if bridged {
+                    store_bridge_status(&db_conn, &room_id, &status);
+                    if status.bridged {
                         any_bridged = true;
                     }
                 }
@@ -992,6 +934,123 @@ async fn newest_event_timestamp_ms(client: &Client, room_id: &OwnedRoomId) -> an
     let mut any = MessagesOptions::backward();
     any.limit = matrix_sdk::ruma::uint!(1);
     Ok(newest(room.messages(any).await?).unwrap_or(0))
+}
+
+/// What a room's state says about bridging, as recorded in `bridge_status`.
+#[cfg(not(test))]
+struct BridgeStatus {
+    bridged: bool,
+    network_name: Option<String>,
+    network_avatar_url: Option<String>,
+    capabilities: crate::ffi::BridgeCapabilities,
+}
+
+/// Read `uk.half-shot.bridge` and `com.beeper.room_features` from the room's
+/// full state on the server. A failed lookup is not an answer: returning None
+/// keeps it out of the table, so the next check asks again instead of
+/// recording "not bridged" for a room whose state was never read.
+#[cfg(not(test))]
+async fn fetch_bridge_status(
+    client: &matrix_sdk::Client,
+    room_id: &OwnedRoomId,
+) -> Option<BridgeStatus> {
+    use matrix_sdk::ruma::api::client::state::get_state_events::v3 as state_api;
+    let room_state = match client.send(state_api::Request::new(room_id.clone())).await {
+        Ok(resp) => resp.room_state,
+        Err(e) => {
+            tracing::warn!("bridge status lookup for {room_id} failed (not recorded): {e}");
+            return None;
+        }
+    };
+    let find_event = |event_type: &str| {
+        room_state.iter().find(|raw| {
+            raw.get_field::<String>("type").ok().flatten().as_deref() == Some(event_type)
+        })
+    };
+    let bridge_event = find_event("uk.half-shot.bridge");
+    let bridged = bridge_event.is_some();
+    let bridge_content =
+        bridge_event.and_then(|raw| raw.get_field::<serde_json::Value>("content").ok().flatten());
+    let (network_name, network_avatar_url) = bridge_content
+        .as_ref()
+        .map(super::parse_bridge_network_info)
+        .unwrap_or((None, None));
+    let capabilities = find_event("com.beeper.room_features")
+        .and_then(|raw| raw.get_field::<serde_json::Value>("content").ok().flatten())
+        .map(|c| super::parse_bridge_capabilities(&c))
+        .unwrap_or_default();
+    Some(BridgeStatus {
+        bridged,
+        network_name,
+        network_avatar_url,
+        capabilities,
+    })
+}
+
+/// Record a fetched bridge status in the `bridge_status` table.
+#[cfg(not(test))]
+fn store_bridge_status(
+    db: &parking_lot::Mutex<Option<rusqlite::Connection>>,
+    room_id: &matrix_sdk::ruma::RoomId,
+    s: &BridgeStatus,
+) {
+    let guard = db.lock();
+    if let Some(conn) = guard.as_ref() {
+        let _ = conn.execute(
+            "INSERT OR REPLACE INTO bridge_status \
+             (room_id, is_bridged, network_name, network_avatar_url, cap_threads, checked_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![
+                room_id.as_str(),
+                s.bridged as i32,
+                s.network_name,
+                s.network_avatar_url,
+                s.capabilities.threads as i32,
+                unix_now_secs()
+            ],
+        );
+    }
+}
+
+/// Whether `room` is bridged to another network, for deciding how to send into
+/// it. Local state first, then the cached `bridge_status` row, then a server
+/// lookup (which is stored). A failed lookup counts as not bridged.
+#[cfg(not(test))]
+pub(super) async fn room_is_bridged(
+    client: &matrix_sdk::Client,
+    room: &matrix_sdk::Room,
+    db: &parking_lot::Mutex<Option<rusqlite::Connection>>,
+) -> bool {
+    use matrix_sdk::ruma::events::StateEventType;
+    let local = room
+        .get_state_events(StateEventType::from("uk.half-shot.bridge"))
+        .await
+        .unwrap_or_default();
+    if !local.is_empty() {
+        return true;
+    }
+    let cached = {
+        let guard = db.lock();
+        guard.as_ref().and_then(|conn| {
+            conn.query_row(
+                "SELECT is_bridged FROM bridge_status WHERE room_id = ?1",
+                rusqlite::params![room.room_id().as_str()],
+                |row| row.get::<_, i32>(0),
+            )
+            .ok()
+        })
+    };
+    if let Some(bridged) = cached {
+        return bridged != 0;
+    }
+    let room_id = room.room_id().to_owned();
+    match fetch_bridge_status(client, &room_id).await {
+        Some(status) => {
+            store_bridge_status(db, &room_id, &status);
+            status.bridged
+        }
+        None => false,
+    }
 }
 
 /// The subset of `ids` with no usable `bridge_status` row. A recorded answer

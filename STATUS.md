@@ -1,11 +1,12 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-10-30**. 3813 C++ + 1564 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-10-31**. 3813 C++ + 1572 Rust tests.
 
 > **Forwarded messages, MSC4553 (2026-10-30).**
 > A forward carries the original message, its author, room and event in
 > `org.matrix.msc4553.forwarded`, plus a "Forwarded from … - view original
-> message" text fallback for other clients. Received forwards show a
+> message" text fallback for other clients, left out in bridged rooms so the
+> bridge relays the original message. Received forwards show a
 > "Forwarded from X" line (Classic, Bubbles and IRC) that jumps to the original,
 > render the original's content, credit a forwarded emote to its author, and
 > can't be edited (edits to them are ignored). Room-list previews,

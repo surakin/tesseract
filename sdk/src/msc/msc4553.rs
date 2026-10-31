@@ -5,8 +5,10 @@
 //! `org.matrix.msc4553.forwarded` object: a copy of the original `content`
 //! plus optional `sender`, `room_id`, `event_id` and `origin_server_ts`. The
 //! top-level content holds a plain/HTML "Forwarded from ..." fallback for
-//! clients that don't know the MSC. Famedly's `com.famedly.app.forwarded` is
-//! read as the same thing but never sent (it lacks `content`).
+//! clients that don't know the MSC; it is left out for bridged rooms, where
+//! the bridge would relay it as message text. Famedly's
+//! `com.famedly.app.forwarded` is read as the same thing but never sent (it
+//! lacks `content`).
 //!
 //! Pure functions over `serde_json::Value`: no client or room access. The
 //! caller supplies the display name and permalinks in a [`FallbackCtx`].
@@ -148,13 +150,20 @@ pub(crate) fn origin_of(envelope: &Value) -> Origin {
 /// fetched, already decrypted, carrying `room_id` and `event_id`).
 ///
 /// A forward of a forward copies the existing `forwarded` object unchanged, so
-/// it keeps pointing at the original; `ctx` must then describe that original
-/// (see [`origin_of`]). Otherwise the object is built from the newest
+/// it keeps pointing at the original; `fallback` must then describe that
+/// original (see [`origin_of`]). Otherwise the object is built from the newest
 /// same-sender edit of the event, with only the forwarded keys and the reply
 /// fallback removed.
+///
+/// `fallback` `None` leaves the text fallback out, so the top level is just the
+/// original content (an emote stays `m.emote`, media keep their own body and
+/// file name) and only the `forwarded` object carries the attribution. Used for
+/// bridged rooms: bridges ignore the `forwarded` object and relay the top-level
+/// text, which would show the other network a "Forwarded from ..." header with
+/// a `matrix.to` link.
 pub(crate) fn build_forward(
     envelope: &Value,
-    ctx: &FallbackCtx,
+    fallback: Option<&FallbackCtx>,
 ) -> Result<(String, Value), String> {
     let event_type = match envelope["type"].as_str() {
         Some(t @ ("m.room.message" | "m.sticker")) => t,
@@ -187,7 +196,10 @@ pub(crate) fn build_forward(
     ] {
         top.remove(key);
     }
-    let has_html_fallback = apply_fallback(&mut top, event_type, &src, ctx);
+    let has_html_fallback = match fallback {
+        Some(ctx) => apply_fallback(&mut top, event_type, &src, ctx),
+        None => false,
+    };
     top.insert("m.mentions".into(), json!({}));
     top.insert(UNSTABLE_KEY.into(), forwarded);
 
@@ -432,7 +444,12 @@ mod tests {
     }
 
     fn forward(env: &Value, ctx: &FallbackCtx) -> (String, Value) {
-        build_forward(env, ctx).unwrap()
+        build_forward(env, Some(ctx)).unwrap()
+    }
+
+    /// A forward with no text fallback, as sent into a bridged room.
+    fn forward_bare(env: &Value) -> (String, Value) {
+        build_forward(env, None).unwrap()
     }
 
     // ---- parse ----
@@ -795,6 +812,169 @@ mod tests {
         assert_eq!(c["file"]["key"]["k"], "abc");
     }
 
+    // ---- build_forward: no text fallback (bridged rooms) ----
+
+    #[test]
+    fn bare_text_keeps_the_original_top_level() {
+        let env = envelope(
+            "m.room.message",
+            json!({ "msgtype": "m.notice", "body": "hi *you*", "format": HTML_FORMAT,
+                    "formatted_body": "hi <em>you</em>" }),
+        );
+        let (ty, c) = forward_bare(&env);
+        assert_eq!(ty, "m.room.message");
+        assert_eq!(c["msgtype"], "m.notice");
+        assert_eq!(c["body"], "hi *you*");
+        assert_eq!(c["format"], HTML_FORMAT);
+        assert_eq!(c["formatted_body"], "hi <em>you</em>");
+        assert_eq!(c["m.mentions"], json!({}));
+        assert_eq!(
+            c[UNSTABLE_KEY],
+            json!({
+                "content": { "msgtype": "m.notice", "body": "hi *you*", "format": HTML_FORMAT,
+                             "formatted_body": "hi <em>you</em>" },
+                "sender": ALICE,
+                "room_id": ROOM,
+                "event_id": "$e1",
+                "origin_server_ts": 1_700_000_000_000_i64,
+            })
+        );
+        assert!(!c.to_string().contains("Forwarded"));
+        assert!(!c.to_string().contains("matrix.to"));
+    }
+
+    #[test]
+    fn bare_plain_text_gets_no_html() {
+        let env = envelope(
+            "m.room.message",
+            json!({ "msgtype": "m.text", "body": "Hello" }),
+        );
+        let (_, c) = forward_bare(&env);
+        assert_eq!(c["body"], "Hello");
+        assert!(c.get("format").is_none());
+        assert!(c.get("formatted_body").is_none());
+    }
+
+    #[test]
+    fn bare_emote_stays_an_emote() {
+        let env = envelope(
+            "m.room.message",
+            json!({ "msgtype": "m.emote", "body": "waves" }),
+        );
+        let (_, c) = forward_bare(&env);
+        assert_eq!(c["msgtype"], "m.emote");
+        assert_eq!(c["body"], "waves");
+        assert!(c.get("formatted_body").is_none());
+        assert_eq!(c[UNSTABLE_KEY]["content"]["msgtype"], "m.emote");
+    }
+
+    #[test]
+    fn bare_media_keeps_its_body_and_file_name() {
+        // A caption, with the file name in `filename`.
+        let env = envelope(
+            "m.room.message",
+            json!({ "msgtype": "m.image", "body": "look at this", "filename": "cat.png",
+                    "file": { "url": "mxc://x/y", "key": { "k": "abc" } } }),
+        );
+        let (_, c) = forward_bare(&env);
+        assert_eq!(c["msgtype"], "m.image");
+        assert_eq!(c["body"], "look at this");
+        assert_eq!(c["filename"], "cat.png");
+        assert_eq!(c["file"]["key"]["k"], "abc");
+        assert!(c.get("format").is_none());
+        assert!(c.get("formatted_body").is_none());
+
+        // No caption, and no `filename`: none is added.
+        let env = envelope(
+            "m.room.message",
+            json!({ "msgtype": "m.file", "body": "report.pdf", "url": "mxc://x/y" }),
+        );
+        let (_, c) = forward_bare(&env);
+        assert_eq!(c["body"], "report.pdf");
+        assert!(c.get("filename").is_none());
+        assert!(c.get("format").is_none());
+        assert!(c.get("formatted_body").is_none());
+        assert_eq!(c["url"], "mxc://x/y");
+    }
+
+    #[test]
+    fn bare_sticker_is_the_original() {
+        let env = envelope(
+            "m.sticker",
+            json!({ "body": "Waving", "url": "mxc://x/y", "info": { "w": 100 } }),
+        );
+        let (ty, c) = forward_bare(&env);
+        assert_eq!(ty, "m.sticker");
+        assert_eq!(c["body"], "Waving");
+        assert_eq!(c["url"], "mxc://x/y");
+        assert!(c.get("format").is_none());
+        assert_eq!(c["m.mentions"], json!({}));
+        assert_eq!(c[UNSTABLE_KEY]["content"]["url"], "mxc://x/y");
+    }
+
+    #[test]
+    fn bare_forward_of_a_forward_uses_the_inner_content() {
+        let object = json!({
+            "content": { "msgtype": "m.text", "body": "orig", "x.custom": 1 },
+            "sender": "@bob:other.org",
+            "room_id": "!other:other.org",
+            "event_id": "$orig",
+            "origin_server_ts": 42
+        });
+        let env = envelope(
+            "m.room.message",
+            json!({ "msgtype": "m.text",
+                    "body": "Forwarded from Bob - view original message: https://matrix.to/#/!other:other.org/$orig\norig",
+                    "format": HTML_FORMAT,
+                    "formatted_body": "<strong>Forwarded from Bob</strong><br><blockquote>orig</blockquote>",
+                    UNSTABLE_KEY: object }),
+        );
+        let (_, c) = forward_bare(&env);
+        // The top level is the original, not the previous forwarder's fallback.
+        assert_eq!(c["body"], "orig");
+        assert_eq!(c["x.custom"], 1);
+        assert!(c.get("format").is_none());
+        assert!(c.get("formatted_body").is_none());
+        assert_eq!(c[UNSTABLE_KEY], object);
+    }
+
+    #[test]
+    fn bare_reply_has_its_fallback_and_relation_removed() {
+        let env = envelope(
+            "m.room.message",
+            json!({
+                "msgtype": "m.text",
+                "body": "> <@bob:x> earlier\n\nmy answer",
+                "format": HTML_FORMAT,
+                "formatted_body": "<mx-reply><blockquote>earlier</blockquote></mx-reply>my answer",
+                "m.relates_to": { "m.in_reply_to": { "event_id": "$prev" } }
+            }),
+        );
+        let (_, c) = forward_bare(&env);
+        assert_eq!(c["body"], "my answer");
+        assert_eq!(c["formatted_body"], "my answer");
+        assert!(c.get("m.relates_to").is_none());
+        assert_eq!(c[UNSTABLE_KEY]["content"]["body"], "my answer");
+    }
+
+    #[test]
+    fn bare_oversized_content_errors() {
+        // No HTML fallback to drop: too large is an error straight away.
+        let env = envelope(
+            "m.room.message",
+            json!({ "msgtype": "m.text", "body": "a".repeat(35_000) }),
+        );
+        assert_eq!(
+            build_forward(&env, None).unwrap_err(),
+            "this message is too large to forward"
+        );
+        let env = envelope(
+            "m.room.message",
+            json!({ "msgtype": "m.text", "body": "a".repeat(25_000) }),
+        );
+        assert!(build_forward(&env, None).is_ok());
+    }
+
     // ---- sticker and other types ----
 
     #[test]
@@ -833,11 +1013,11 @@ mod tests {
     #[test]
     fn unsupported_types_are_refused() {
         let enc = json!({ "type": "m.room.encrypted", "content": {} });
-        assert!(build_forward(&enc, &ctx()).is_err());
+        assert!(build_forward(&enc, Some(&ctx())).is_err());
         let poll = json!({ "type": "m.poll.start", "content": {} });
-        assert!(build_forward(&poll, &ctx()).is_err());
+        assert!(build_forward(&poll, Some(&ctx())).is_err());
         let bad = envelope("m.room.message", json!({ "body": "no msgtype" }));
-        assert!(build_forward(&bad, &ctx()).is_err());
+        assert!(build_forward(&bad, Some(&ctx())).is_err());
     }
 
     // ---- forwards of forwards ----
@@ -1040,7 +1220,7 @@ mod tests {
             json!({ "msgtype": "m.text", "body": text }),
         );
         assert_eq!(
-            build_forward(&env, &ctx()).unwrap_err(),
+            build_forward(&env, Some(&ctx())).unwrap_err(),
             "this message is too large to forward"
         );
     }

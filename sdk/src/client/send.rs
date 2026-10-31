@@ -3573,8 +3573,8 @@ impl ClientFfi {
     /// Forward `event_id` from `source_room_id` to `target_room_id`.
     /// Fetches the event (decrypting if the source room is E2EE) and sends it
     /// to the target room as a free-standing new event. Messages and stickers
-    /// are sent as MSC4553 forwards (attribution plus a text fallback); polls
-    /// are sent as a plain copy.
+    /// are sent as MSC4553 forwards (attribution plus, unless the target room
+    /// is bridged, a text fallback); polls are sent as a plain copy.
     /// Non-blocking: result delivered via on_forward_done / on_forward_failed.
     #[cfg(not(test))]
     pub fn forward_event(
@@ -3600,6 +3600,7 @@ impl ClientFfi {
         let in_flight_urls = Arc::clone(&self.in_flight_urls);
         let handler_for_guard = self.handler.clone();
         let handler = self.handler.clone();
+        let app_cache_db = Arc::clone(&self.app_cache_db);
 
         self.rt.spawn(async move {
             let _guard = super::InFlightGuard::new(
@@ -3640,8 +3641,17 @@ impl ClientFfi {
                     .unwrap_or_else(|| event_id.as_str().into());
                 let (event_type, content) = match envelope["type"].as_str() {
                     Some("m.room.message" | "m.sticker") => {
-                        let ctx = forward_fallback_ctx(&source_room, &envelope).await;
-                        crate::msc::msc4553::build_forward(&envelope, &ctx)?
+                        // Bridges relay the top-level text to the other network, so a
+                        // bridged room gets the forward without the text fallback.
+                        let bridged =
+                            super::backfill::room_is_bridged(&client, &target_room, &app_cache_db)
+                                .await;
+                        let ctx = if bridged {
+                            None
+                        } else {
+                            Some(forward_fallback_ctx(&source_room, &envelope).await)
+                        };
+                        crate::msc::msc4553::build_forward(&envelope, ctx.as_ref())?
                     }
                     _ => forwardable_content(&envelope)?,
                 };
