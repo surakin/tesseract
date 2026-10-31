@@ -5,6 +5,7 @@
 #include <tesseract/client.h>
 
 using tesseract::views::autolink_plain_to_spans;
+using tesseract::views::first_preview_url;
 using tesseract::views::BodyBlock;
 using tesseract::views::html_to_blocks;
 using tesseract::views::html_to_spans;
@@ -1842,4 +1843,61 @@ TEST_CASE("autolink: URLs in <a> and <code> keep their existing treatment",
 
     auto c = html_to_spans("<code>https://example.org</code>", false);
     CHECK_FALSE(any_link(c));
+}
+
+TEST_CASE("first_preview_url: an autolinked bare URL is previewed",
+          "[html_spans][url_preview]")
+{
+    CHECK(first_preview_url(
+              "see <a href=\"https://example.org/\">example.org</a>",
+              "see example.org") == "https://example.org/");
+    CHECK(first_preview_url(
+              "<a href=\"https://e.org/?a=1&amp;b=2\">"
+              "https://e.org/?a=1&amp;b=2</a>",
+              "https://e.org/?a=1&b=2") == "https://e.org/?a=1&b=2");
+    CHECK(first_preview_url("", "go to https://example.org now") ==
+          "https://example.org");
+}
+
+TEST_CASE("first_preview_url: an embedded link is not previewed",
+          "[html_spans][url_preview]")
+{
+    CHECK(first_preview_url(
+              "read <a href=\"https://example.org\">the docs</a>",
+              "read [the docs](https://example.org)")
+              .empty());
+    // Another client's plain fallback that spells the URL out.
+    CHECK(first_preview_url(
+              "read <a href=\"https://example.org\">the docs</a>",
+              "read the docs (https://example.org)")
+              .empty());
+}
+
+TEST_CASE("first_preview_url: a bare URL next to an embedded link wins",
+          "[html_spans][url_preview]")
+{
+    CHECK(first_preview_url(
+              "<a href=\"https://a.example\">docs</a> and "
+              "<a href=\"https://b.example\">https://b.example</a>",
+              "[docs](https://a.example) and https://b.example") ==
+          "https://b.example");
+    // A formatted_body that left the bare URL unlinked falls back to the body.
+    CHECK(first_preview_url(
+              "<a href=\"https://a.example\">docs</a> and https://b.example",
+              "[docs](https://a.example) and https://b.example") ==
+          "https://b.example");
+}
+
+TEST_CASE("first_preview_url: code and matrix.to links are not previewed",
+          "[html_spans][url_preview]")
+{
+    CHECK(first_preview_url(
+              "<code><a href=\"https://e.org\">https://e.org</a></code>",
+              "`https://e.org`")
+              .empty());
+    CHECK(first_preview_url(
+              "<a href=\"https://matrix.to/#/!r:s\">"
+              "https://matrix.to/#/!r:s</a>",
+              "https://matrix.to/#/!r:s")
+              .empty());
 }

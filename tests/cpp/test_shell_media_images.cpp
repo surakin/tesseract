@@ -964,7 +964,8 @@ TEST_CASE("event media: text links request a homeserver preview",
     auto h = std::make_unique<tesseract::Event>();
     h->event_id = "$h";
     h->type = tesseract::EventType::Text;
-    h->formatted_body = "<a href=\"https://example.org/x\">x</a>";
+    h->formatted_body =
+        "<a href=\"https://example.org/x\">https://example.org/x</a>";
     f.s.ensure_row_media_(*h, false);
     CHECK(f.s.url_preview_in_flight_.count("https://example.org/x") == 1);
 }
@@ -1094,7 +1095,8 @@ TEST_CASE("row media: kinds mirror the event path", "[shell][media_images][row]"
     MessageRowData html;
     html.kind = K::Notice;
     html.event_id = "$h";
-    html.formatted_body = "<a href=\"https://example.net/y\">y</a>";
+    html.formatted_body =
+        "<a href=\"https://example.net/y\">https://example.net/y</a>";
     f.s.ensure_row_media_(html, false);
     CHECK(f.s.url_preview_in_flight_.count("https://example.net/y") == 1);
 

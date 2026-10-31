@@ -40,10 +40,17 @@ pub(super) const MAX_PREVIEWS_PER_MESSAGE: usize = 3;
 /// each `matched_url` is a substring of the body (receivers drop previews
 /// whose `matched_url` isn't), de-duplicated, capped at
 /// `MAX_PREVIEWS_PER_MESSAGE`. `matrix.to` permalinks are skipped — they're
-/// rendered as pills, never as preview cards.
+/// rendered as pills, never as preview cards. A URL inside an embedded
+/// Markdown link (`[text](url)`) is skipped too: the author hid it behind
+/// text, so it was not meant to be previewed.
 pub(super) fn preview_candidate_urls(body: &str) -> Vec<String> {
+    let embedded = crate::markdown::embedded_link_ranges(body);
     let mut out: Vec<String> = Vec::new();
     for span in crate::text_utils::find_preview_url_spans(body) {
+        let (start, end) = (span.start, span.end);
+        if embedded.iter().any(|r| start >= r.start && end <= r.end) {
+            continue;
+        }
         let s = span.url.as_str();
         let Ok(parsed) = url::Url::parse(s) else {
             continue;
@@ -499,6 +506,24 @@ mod tests {
                     https://matrix.to/#/@alice:example.org";
         assert!(preview_candidate_urls(body).is_empty());
         assert!(preview_candidate_urls("no links here").is_empty());
+    }
+
+    #[test]
+    fn candidate_urls_skip_embedded_markdown_links() {
+        assert!(preview_candidate_urls("[a](https://www.google.com)").is_empty());
+        assert!(preview_candidate_urls("see [the **docs**](https://e.org/x \"t\")").is_empty());
+        assert_eq!(
+            preview_candidate_urls("[docs](https://a.example) and https://a.example"),
+            vec!["https://a.example"]
+        );
+        assert_eq!(
+            preview_candidate_urls("<https://a.example>"),
+            vec!["https://a.example"]
+        );
+        assert_eq!(
+            preview_candidate_urls("[https://b.example](https://b.example)"),
+            vec!["https://b.example"]
+        );
     }
 
     #[test]

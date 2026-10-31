@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(messages): links whose text differs from the URL, like Markdown `[text](url)`, no longer get a preview card. macOS release build, ctest 3801/3801, cargo 1572/1572
 - feat(messages): long code blocks show their first lines with an Expand button. macOS release build, ctest 3797/3797
 - fix(messages): forwards into bridged rooms leave out the "Forwarded from" text, so the other network sees the original message. Linux build, ctest 3813/3813
 - feat(messages): forwarded messages show who wrote the original and link back to it (MSC4553). Linux build, ctest 3813/3813; user-verified Windows

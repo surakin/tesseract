@@ -30,15 +30,12 @@ namespace tesseract::views
 std::vector<tk::TextSpan> html_to_spans(std::string_view html,
                                         bool             dark = false);
 
-// Return the first http(s) URL found in an HTML formatted_body (the href
-// of the first <a> tag whose href starts with http:// or https://).
-// Returns empty when none is found.
-std::string first_url_from_html(std::string_view html);
-
-// Return the first http(s) URL found in a plain-text body by scanning for
-// "https://" or "http://" prefixes. Strips trailing prose punctuation.
-// Returns empty when none is found.
-std::string first_url_from_plain(std::string_view text);
+// Return the URL a message's preview card should show: the first bare
+// http(s) URL in the HTML `formatted_body` (a link whose visible text is the
+// URL itself), else the first in the plain `body`. Embedded links whose text
+// differs (Markdown `[text](url)`), matrix.to permalinks and URLs in code get
+// no preview. Either argument may be empty; returns empty when none is found.
+std::string first_preview_url(std::string_view html, std::string_view body);
 
 // Convert a plain-text body into TextSpans, turning bare http(s):// URLs
 // (at a word boundary) into hyperlink spans — the `url` field is set and

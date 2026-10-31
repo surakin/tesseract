@@ -825,14 +825,7 @@ MessageRowData make_row_data(const tesseract::Event& ev,
     if (row.kind == Kind::Text || row.kind == Kind::Notice ||
         row.kind == Kind::Emote || row.kind == Kind::Unhandled)
     {
-        if (!row.formatted_body.empty())
-        {
-            row.first_url = first_url_from_html(row.formatted_body);
-        }
-        if (row.first_url.empty() && !row.body.empty())
-        {
-            row.first_url = first_url_from_plain(row.body);
-        }
+        row.first_url = first_preview_url(row.formatted_body, row.body);
     }
 
     return row;

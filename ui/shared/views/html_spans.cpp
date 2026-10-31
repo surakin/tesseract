@@ -1205,16 +1205,57 @@ static bool is_matrix_to_url(const std::string& url)
            url.rfind("http://matrix.to", 0) == 0;
 }
 
-std::string first_url_from_html(std::string_view html)
+// Decode every HTML entity in `s` (attribute values reach us undecoded).
+static std::string decode_entities(std::string_view s)
 {
-    // Walk the HTML looking for the first <a href="http(s)://..."> tag that
-    // is not a matrix.to permalink and is not nested inside <pre>/<code> (a
-    // URL shown as code was not meant as a link to preview). Tesseract's own
-    // Markdown renderer never emits an <a> inside code, but a formatted_body
-    // from another client legally could.
+    std::string out;
+    const char* p = s.data();
+    const char* end = p + s.size();
+    while (p < end)
+    {
+        if (*p == '&')
+            decode_entity(p, end, out);
+        else
+            out += *p++;
+    }
+    return out;
+}
+
+// Compare form of a URL for "is the link text the URL itself": no scheme, no
+// trailing slash, surrounding whitespace trimmed.
+static std::string_view url_compare_form(std::string_view s)
+{
+    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front())))
+        s.remove_prefix(1);
+    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back())))
+        s.remove_suffix(1);
+    for (std::string_view scheme : {"https://", "http://"})
+    {
+        if (s.substr(0, scheme.size()) == scheme)
+        {
+            s.remove_prefix(scheme.size());
+            break;
+        }
+    }
+    while (!s.empty() && s.back() == '/')
+        s.remove_suffix(1);
+    return s;
+}
+
+// Walk the HTML for the first <a href="http(s)://..."> whose visible text is
+// the URL itself (an autolinked bare URL), skipping matrix.to permalinks and
+// links inside <pre>/<code> (a URL shown as code was not meant as a link to
+// preview; Tesseract's own renderer never emits one, another client could).
+// The href of every link with other text (Markdown `[text](url)`) is added to
+// `embedded`: the author chose to hide that URL, so it gets no preview.
+static std::string first_bare_url_from_html(std::string_view html,
+                                            std::vector<std::string>& embedded)
+{
     const char* p = html.data();
     const char* end = p + html.size();
     int code_depth = 0;
+    std::string href;  // href of the <a> being read; empty outside one
+    std::string text;  // its visible text so far
     while (p < end)
     {
         if (*p == '<')
@@ -1233,25 +1274,57 @@ std::string first_url_from_html(std::string_view html)
                 }
                 continue;
             }
-            if (code_depth == 0 && !tag.href.empty() && !is_matrix_to_url(tag.href))
+            if (tag.name != "a")
+                continue;
+            if (!tag.closing)
             {
-                return tag.href;
+                href.clear();
+                text.clear();
+                if (code_depth == 0 && !tag.href.empty() &&
+                    !is_matrix_to_url(tag.href))
+                    href = decode_entities(tag.href);
             }
+            else if (!href.empty())
+            {
+                if (url_compare_form(text) == url_compare_form(href))
+                    return href;
+                embedded.push_back(std::move(href));
+                href.clear();
+            }
+        }
+        else if (!href.empty() && *p == '&')
+        {
+            decode_entity(p, end, text);
         }
         else
         {
+            if (!href.empty())
+                text += *p;
             ++p;
         }
     }
     return {};
 }
 
-std::string first_url_from_plain(std::string_view text)
+std::string first_preview_url(std::string_view html, std::string_view body)
 {
-    for (const auto& s : tesseract::find_preview_url_spans(text))
+    std::vector<std::string> embedded;
+    if (!html.empty())
     {
-        if (!is_matrix_to_url(s.url))
-            return s.url;
+        std::string url = first_bare_url_from_html(html, embedded);
+        if (!url.empty())
+            return url;
+    }
+    // The plain body still carries embedded links' URLs (`[text](url)`, or a
+    // `text (url)` fallback), so those are skipped here too.
+    for (const auto& s : tesseract::find_preview_url_spans(body))
+    {
+        if (is_matrix_to_url(s.url))
+            continue;
+        if (std::find(embedded.begin(), embedded.end(), s.url) !=
+            embedded.end())
+            continue;
+        return s.url;
     }
     return {};
 }

@@ -253,6 +253,48 @@ pub fn markdown_inline_to_html(text: &str) -> String {
     render_inline(text)
 }
 
+/// How a URL compares for "is the link text the URL itself": no scheme, no
+/// trailing slash, surrounding whitespace trimmed.
+fn url_compare_form(s: &str) -> &str {
+    let s = s.trim();
+    let s = s
+        .strip_prefix("https://")
+        .or_else(|| s.strip_prefix("http://"))
+        .unwrap_or(s);
+    s.trim_end_matches('/')
+}
+
+/// Byte ranges of `text` covered by embedded Markdown links: a link whose
+/// visible text is not its URL (`[docs](https://…)`). An autolink
+/// (`<https://…>`) or `[https://…](https://…)` is not embedded. Parsed on the
+/// raw text (no `preprocess`) so the ranges index `text` itself.
+pub(crate) fn embedded_link_ranges(text: &str) -> Vec<std::ops::Range<usize>> {
+    let mut out = Vec::new();
+    // (destination, visible text, source range) of the link being read
+    let mut current: Option<(String, String, std::ops::Range<usize>)> = None;
+    for (event, range) in Parser::new_ext(text, OPTIONS).into_offset_iter() {
+        match event {
+            Event::Start(Tag::Link { dest_url, .. }) => {
+                current = Some((dest_url.into_string(), String::new(), range));
+            }
+            Event::Text(t) | Event::Code(t) => {
+                if let Some((_, visible, _)) = current.as_mut() {
+                    visible.push_str(&t);
+                }
+            }
+            Event::End(TagEnd::Link) => {
+                if let Some((dest, visible, range)) = current.take() {
+                    if url_compare_form(&visible) != url_compare_form(&dest) {
+                        out.push(range);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

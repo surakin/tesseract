@@ -1562,15 +1562,8 @@ void ShellBase::ensure_row_media_(const Event& ev, bool fetch_avatars)
         }
         else
         {
-            std::string url;
-            if (!ev.formatted_body.empty())
-            {
-                url = views::first_url_from_html(ev.formatted_body);
-            }
-            if (url.empty() && !ev.body.empty())
-            {
-                url = views::first_url_from_plain(ev.body);
-            }
+            std::string url =
+                views::first_preview_url(ev.formatted_body, ev.body);
             if (!url.empty())
             {
                 ensure_url_preview_(url);
@@ -1747,11 +1740,8 @@ void ShellBase::ensure_row_media_(const views::MessageRowData& row,
         }
         else
         {
-            std::string url;
-            if (!row.formatted_body.empty())
-                url = views::first_url_from_html(row.formatted_body);
-            if (url.empty() && !row.body.empty())
-                url = views::first_url_from_plain(row.body);
+            std::string url =
+                views::first_preview_url(row.formatted_body, row.body);
             if (!url.empty())
                 ensure_url_preview_(url);
         }
