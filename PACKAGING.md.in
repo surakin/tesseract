@@ -69,7 +69,9 @@ The installer lands at
   preference) is a localpart or full Matrix ID; it prefills the password form
   and is sent as a login hint to Matrix Authentication Service. A Matrix ID
   typed into the homeserver field is sent as the hint too, and wins over the
-  provisioned one. Setting either value hides "Find a server".
+  provisioned one. Setting either value hides "Find a server". See
+  [docs/PROVISIONING.md](docs/PROVISIONING.md) for every source and an MDM
+  profile example.
 
 ### Code signing (optional)
 
