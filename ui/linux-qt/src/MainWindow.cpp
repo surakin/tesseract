@@ -375,7 +375,8 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
     }
 
 
-    // Right-click: user-strip actions (lower-left corner) or sticker save (chat).
+    // Right-click: user-strip actions (lower-left corner). The chat area has its
+    // own tk popup menu.
     mainAppSurface_->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(
         mainAppSurface_, &QWidget::customContextMenuRequested, this,
@@ -394,56 +395,6 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
                 onUserStripContextMenu(mainAppSurface_->mapToGlobal(pos));
                 return;
             }
-            if (!main_app_ || main_app_->room_view()->is_overlay_open())
-            {
-                return;
-            }
-            auto hit =
-                main_app_->room_view()->message_list()->sticker_hit_at(tk::Point{
-                    static_cast<float>(pos.x()), static_cast<float>(pos.y())});
-            if (!hit)
-            {
-                return;
-            }
-            const auto mxc_url = hit->source ? hit->source->mxc_url() : std::string{};
-            const auto body = hit->body;
-            const auto info_json = hit->info_json;
-            const bool already_saved =
-                client_ && client_->user_pack_has_sticker(mxc_url, info_json);
-            auto* menu = new QMenu(this);
-            menu->setAttribute(Qt::WA_DeleteOnClose);
-            menu->setStyleSheet(tk::qt6::build_menu_qss(current_theme_));
-            QAction* add =
-                menu->addAction(already_saved ? QString::fromStdString(tk::tr("Already in Saved Stickers"))
-                                              : QString::fromStdString(tk::tr("Add to Saved Stickers")));
-            add->setEnabled(!already_saved);
-            if (!already_saved)
-            {
-                connect(add, &QAction::triggered, this,
-                        [this, mxc_url, body, info_json]
-                        {
-                            if (!client_)
-                                return;
-                            // The save is a network and account-data write, so it
-                            // runs on the mutable pool; the status line is set back
-                            // on the UI thread.
-                            // The session is held so a switch or sign-out mid-save
-                            // cannot free the client under the worker.
-                            auto sess = active_account_;
-                            if (!sess || !sess->client)
-                                return;
-                            run_async_mut_(
-                                [this, sess, mxc_url, body, info_json]()
-                                {
-                                    auto res = sess->client->save_sticker_to_user_pack(
-                                        body, body, mxc_url, info_json);
-                                    if (res.ok)
-                                        return;
-                                    show_status_message_(res.message, 6000);
-                                });
-                        });
-            }
-            menu->popup(mainAppSurface_->mapToGlobal(pos));
         });
 
     refresh_sync_status_(); // "Not logged in" until a session restores

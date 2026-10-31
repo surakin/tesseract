@@ -1825,41 +1825,6 @@ void MainWindow::on_create(HWND hwnd)
                         return;
                     }
                 }
-                if (!room_view_ || !client_ || room_view_->is_overlay_open())
-                {
-                    return;
-                }
-                auto hit = room_view_->message_list()->sticker_hit_at(p);
-                if (!hit)
-                {
-                    return;
-                }
-                const std::string mxc = hit->source ? hit->source->mxc_url() : std::string{};
-                const std::string body = hit->body;
-                const std::string info = hit->info_json;
-                const bool already_saved =
-                    client_->user_pack_has_sticker(mxc, info);
-                HMENU menu = CreatePopupMenu();
-                AppendMenuW(menu, MF_STRING | (already_saved ? MF_GRAYED : 0),
-                            1,
-                            utf8_to_wstr(already_saved
-                                             ? tk::tr("Already in Saved Stickers")
-                                             : tk::tr("Add to Saved Stickers"))
-                                .c_str());
-                POINT sp{dip_to_phys(p.x), dip_to_phys(p.y)};
-                ClientToScreen(main_app_surface_->hwnd(), &sp);
-                int cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON,
-                                         sp.x, sp.y, 0, hwnd_, nullptr);
-                DestroyMenu(menu);
-                if (cmd == 1)
-                {
-                    auto res = client_->save_sticker_to_user_pack(body, body,
-                                                                  mxc, info);
-                    if (!res.ok)
-                    {
-                        show_status_message_(res.message, 6000);
-                    }
-                }
             });
 
         // ── Native overlays ──────────────────────────────────────────────────

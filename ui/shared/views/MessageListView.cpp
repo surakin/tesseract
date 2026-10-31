@@ -10186,6 +10186,18 @@ bool MessageListView::on_pointer_move(tk::Point local)
     if (!over_active_pill)
         tk::ListView::on_pointer_move(local);
 
+    if (!pill_menu_event_id_.empty())
+    {
+        const int row = hovered_row_index();
+        if (row >= 0 && row < static_cast<int>(messages_.size()) &&
+            messages_[static_cast<std::size_t>(row)].event_id != pill_menu_event_id_)
+        {
+            pill_menu_event_id_.clear();
+            if (on_pill_menu_row_left)
+                on_pill_menu_row_left();
+        }
+    }
+
     // Map pan: apply drag delta while a pan is active.
     if (map_panner_.panning() && map_panner_.active_row() < messages_.size())
     {
@@ -11288,6 +11300,10 @@ MessageListView::actions_for_row_(const MessageRowData& m) const
     in.can_pin = can_pin_;
     in.is_pinned = pinned_event_ids_.count(m.event_id) != 0;
     in.developer_mode = tesseract::Settings::instance().developer_mode;
+    in.saveable_sticker =
+        m.kind == Kind::Sticker && m.source && on_save_sticker_requested &&
+        !(is_sticker_saved &&
+          is_sticker_saved(m.source->mxc_url(), m.sticker_info_json));
     return tesseract::views::build_message_actions(in);
 }
 
@@ -11313,6 +11329,9 @@ bool MessageListView::open_actions_menu_(int idx, tk::Rect anchor, bool full,
     if (req.actions.empty() && !copy_sel && !copy_link)
         return false;
     on_actions_menu_requested(req);
+    // The pill's "more" menu belongs to its row; a right-click menu stays.
+    if (!full && hover_locked_)
+        pill_menu_event_id_ = m.event_id;
     return true;
 }
 
@@ -11351,6 +11370,12 @@ bool MessageListView::invoke_message_action(
             return false;
         on_edit_requested(event_id, rowp->body,
                           rowp->kind != MessageRowData::Kind::Text);
+        return true;
+    case Id::SaveSticker:
+        if (!on_save_sticker_requested || !rowp || !rowp->source)
+            return false;
+        on_save_sticker_requested(rowp->source->mxc_url(), rowp->body,
+                                  rowp->sticker_info_json);
         return true;
     default:
         if (!on_overflow_action_requested)

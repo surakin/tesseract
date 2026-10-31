@@ -697,6 +697,9 @@ public:
     void copy_source_to_clipboard_(std::string source_json);
     // Look up event_id's raw JSON and place it on the clipboard.
     void copy_event_source_to_clipboard_(std::string event_id);
+    // Adds a sticker to the user's Saved Stickers pack (off the UI thread).
+    void save_sticker_(const std::string& mxc_url, const std::string& body,
+                       const std::string& info_json);
 
     // Trigger fetch of a full-res image into the shared tk_images_ cache.
     void ensure_viewer_image_(const std::string& url);

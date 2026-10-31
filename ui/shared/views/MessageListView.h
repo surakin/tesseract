@@ -868,6 +868,17 @@ public:
     };
     std::function<void(const MessageMenuRequest&)> on_actions_menu_requested;
 
+    // Save a sticker row to the user's Saved Stickers pack (the "Add to Saved
+    // Stickers" action). Hosts route this to Client::save_sticker_to_user_pack.
+    std::function<void(const std::string& mxc_url, const std::string& body,
+                       const std::string& info_json)>
+        on_save_sticker_requested;
+    // True when the sticker is already in the Saved Stickers pack, so the
+    // action is not offered. Unset means "not saved".
+    std::function<bool(const std::string& mxc_url,
+                       const std::string& info_json)>
+        is_sticker_saved;
+
     // Overflow actions (forward, delete, pin/unpin, copy event source) are
     // carried out by the host; the pill actions are handled by the callbacks
     // above.
@@ -1401,7 +1412,15 @@ public:
 
     // When true, on_pointer_leave() is suppressed so the hover-action pill
     // stays visible while an associated popup is open over this widget.
-    void set_hover_locked(bool v) { hover_locked_ = v; }
+    void set_hover_locked(bool v)
+    {
+        hover_locked_ = v;
+        if (!v)
+            pill_menu_event_id_.clear();
+    }
+    // Fired when the pointer moves onto a different message than the one whose
+    // pill "more" menu is open; the host closes that menu.
+    std::function<void()> on_pill_menu_row_left;
 
     // Paint a coloured 2px outline around the row whose event_id matches.
     // Pass the empty string to clear the highlight.
@@ -1834,6 +1853,8 @@ private:
     std::string press_more_event_id_;
 
     bool hover_locked_ = false;
+    // Row whose pill "more" menu is open (empty when none).
+    std::string pill_menu_event_id_;
 
     // Thread button press state.
     bool press_thread_btn_ = false;

@@ -32,8 +32,7 @@ class Host;
 
 // Stylesheet for a plain native QMenu (right-click context menus that are
 // not routed through the shared PopupSurfaceHandle mechanism, e.g. the
-// message "Copy" menu, the sticker "Add to Saved Stickers" menu, and the
-// user-info panel context menu) so they follow the app's selected theme
+// message "Copy" menu and the user-info panel context menu) so they follow the app's selected theme
 // instead of falling back to the OS/native Qt style default.
 QString build_menu_qss(const Theme& t);
 

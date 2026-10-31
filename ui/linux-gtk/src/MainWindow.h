@@ -136,14 +136,10 @@ private:
                     std::vector<tesseract::RoomInfo> rooms);
     void push_room_list_state(tesseract::RoomListState state);
     static void on_login_clicked(GtkButton*, gpointer user_data);
-    void build_sticker_context_menu();
 
 private:
     static void on_msg_right_click_(GtkGestureClick* gesture, int n_press,
                                     double x, double y, gpointer user_data);
-    static void on_sticker_save_activate_(GSimpleAction* action,
-                                          GVariant* parameter,
-                                          gpointer user_data);
     static void on_copy_action_(GSimpleAction* action, GVariant* parameter,
                                 gpointer user_data);
     void open_settings_();
@@ -387,16 +383,9 @@ private:
     DecodedImage decode_inline_fallback_(const std::vector<std::uint8_t>& bytes,
                                          int max_w, int max_h) override;
 
-    GtkWidget* sticker_ctx_menu_ = nullptr;
-    GSimpleActionGroup* sticker_ctx_actions_ = nullptr;
-    std::string ctx_sticker_event_id_;
-
     GtkWidget* copy_ctx_menu_ = nullptr;
     GSimpleActionGroup* copy_ctx_actions_ = nullptr;
     void build_copy_context_menu_();
-    std::string ctx_sticker_mxc_url_;
-    std::string ctx_sticker_body_;
-    std::string ctx_sticker_info_json_;
     GtkWidget* status_bar_ = nullptr;
     GtkWidget* status_row_ = nullptr; // status_bar_ + inflight dot; hidden in full-screen
     GtkWidget* inflight_dot_ = nullptr;

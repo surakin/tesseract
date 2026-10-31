@@ -556,6 +556,15 @@ public:
     // when Settings::developer_mode is on. Hosts route this to
     // Client::get_event_source() + a clipboard write.
     std::function<void(std::string event_id)> on_copy_event_source_requested;
+    // "Add to Saved Stickers" on a sticker row; hosts route this to
+    // Client::save_sticker_to_user_pack. is_sticker_saved hides the action
+    // for stickers already in the pack.
+    std::function<void(const std::string& mxc_url, const std::string& body,
+                       const std::string& info_json)>
+        on_save_sticker_requested;
+    std::function<bool(const std::string& mxc_url,
+                       const std::string& info_json)>
+        is_sticker_saved;
     // `source_mxc` is the mxc:// URI for MSC4027 custom-image reactions,
     // empty for plain Unicode. Hosts route empty → `Client::send_reaction`,
     // non-empty → `Client::send_reaction_custom`.

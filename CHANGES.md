@@ -5,6 +5,8 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(messages): "Add to Saved Stickers" is an item in the message action menu instead of a second right-click menu. Linux build, ctest 3820/3821 (uk.po catalog check fails already)
+- fix(messages): the hover pill's "more" menu closes when the pointer moves onto another message. Linux build, ctest 3820/3821 (uk.po catalog check fails already)
 - fix(ui): links are underlined in the theme's link colour on every platform. macOS release build, ctest 3801/3801; user-verified macOS, GTK and Windows not built
 - fix(messages): links whose text differs from the URL, like Markdown `[text](url)`, no longer get a preview card. macOS release build, ctest 3801/3801, cargo 1572/1572
 - feat(messages): long code blocks show their first lines with an Expand button. macOS release build, ctest 3797/3797

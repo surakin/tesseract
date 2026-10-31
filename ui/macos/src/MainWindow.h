@@ -420,7 +420,7 @@ private:
     void show_message_dialog_(std::string title, std::string text,
                               bool is_error) override;
 
-    // Right-click on the main surface: user-strip menu or sticker context menu.
+    // Right-click on the main surface: user-strip menu.
     void handle_main_right_click(tk::Point p);
     // Settings surface.
     void hide_settings_surface();
@@ -433,9 +433,6 @@ private:
     void on_backing_scale_changed_();
     // Coalescing debounce for the Spotlight reindex.
     void schedule_spotlight_reindex_();
-    // Sticker context menu (right-click on a sticker in the message list).
-    void show_sticker_context_menu_(NSPoint screenPt);
-    void save_context_sticker_();
     // Login view. Built on first need (ShellBase::ensure_login_view_ through
     // create_login_surface_ui_, called from begin_login/begin_add_account/
     // logout_active_account_ui) and torn down once no longer needed
@@ -503,12 +500,6 @@ private:
         int w, int h, const std::uint8_t* bgra) override;
     bool make_image_from_bgra_on_worker_() const override { return true; }
 
-    // Right-click context menu sticker state.
-    std::string ctx_sticker_mxc_url_;
-    std::string ctx_sticker_body_;
-    std::string ctx_sticker_info_json_;
-    // Click target for the sticker menu item (NSMenuItem does not retain it).
-    _TkMenuAction* sticker_save_action_ = nil;
 
     // Settings surface — full-window sibling of the main app view and the login
     // view. The view itself is borrowed from the surface's root and tracked by

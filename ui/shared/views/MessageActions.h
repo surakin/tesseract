@@ -23,6 +23,7 @@ enum class MessageActionId
     Delete,
     Report,
     CopyEventSource,
+    SaveSticker,
 };
 
 struct MessageAction
@@ -52,6 +53,7 @@ struct MessageActionInputs
     bool can_pin = false;
     bool is_pinned = false;
     bool developer_mode = false;
+    bool saveable_sticker = false;  // a sticker not yet in the Saved Stickers pack
 };
 
 // Pill actions first (display order), then overflow actions.

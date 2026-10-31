@@ -1045,6 +1045,17 @@ void RoomPane::wire_room_view_()
     {
         copy_event_source_to_clipboard_(event_id);
     };
+    rv->on_save_sticker_requested =
+        [this](const std::string& mxc, const std::string& body,
+               const std::string& info)
+    {
+        save_sticker_(mxc, body, info);
+    };
+    rv->is_sticker_saved = [this](const std::string& mxc, const std::string& info)
+    {
+        auto* c = pane_client_();
+        return c && c->user_pack_has_sticker(mxc, info);
+    };
     rv->on_reaction_toggled =
         [this](const std::string& event_id, const std::string& key,
                const std::string& source_mxc)
@@ -3008,6 +3019,25 @@ void RoomPane::copy_event_source_to_clipboard_(std::string event_id)
     }
     deps_.host->set_clipboard_text(json);
     deps_.host->show_toast(tk::tr("Copied to clipboard"));
+}
+
+void RoomPane::save_sticker_(const std::string& mxc_url, const std::string& body,
+                             const std::string& info_json)
+{
+    auto sess = session_();
+    if (mxc_url.empty() || !sess || !sess->client)
+        return;
+    // A network and account-data write, so it runs on the mutable pool; the
+    // session is held so a switch or sign-out mid-save can't free the client.
+    run_async_mut_(
+        [this, sess, mxc_url, body, info_json]()
+        {
+            auto res = sess->client->save_sticker_to_user_pack(body, body, mxc_url,
+                                                               info_json);
+            if (!res.ok)
+                post_to_ui_([shell = shell_, msg = res.message]
+                            { shell->show_status_message_(msg, 6000); });
+        });
 }
 
 void RoomPane::toggle_reaction_(const std::string& event_id,

@@ -42,6 +42,9 @@ std::vector<MessageAction> build_message_actions(const MessageActionInputs& in)
         out.push_back({in.is_pinned ? MessageActionId::Unpin : MessageActionId::Pin,
                        in.is_pinned ? tk::tr("Unpin message") : tk::tr("Pin message"),
                        kPinSvg});
+    if (in.saveable_sticker)
+        out.push_back({MessageActionId::SaveSticker,
+                       tk::tr("Add to Saved Stickers"), kStickerSvg});
     if (in.developer_mode)
         out.push_back({MessageActionId::CopyEventSource,
                        tk::tr("Copy event source"), kCopySvg});

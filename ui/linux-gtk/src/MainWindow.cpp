@@ -699,7 +699,7 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager,
         main_app_surface_->set_root(std::move(main_app_owner));
     }
 
-    // Right-click on the chat area: hit-test sticker rects.
+    // Right-click on the chat area: the user-strip menu (message menus are tk popups).
     {
         GtkGesture* gesture = gtk_gesture_click_new();
         gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(gesture),
@@ -3458,31 +3458,6 @@ std::unique_ptr<tk::Image> MainWindow::make_image_from_bgra_(
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// Sticker context menu — right-click on a sticker row offers
-// "Add to Saved Stickers" (suppressed for stickers already saved).
-// ---------------------------------------------------------------------------
-
-void MainWindow::build_sticker_context_menu()
-{
-    GMenu* menu = g_menu_new();
-    g_menu_append(menu, tk::tr("Add to Saved Stickers").c_str(), "sticker.save");
-
-    sticker_ctx_menu_ = gtk_popover_menu_new_from_model(G_MENU_MODEL(menu));
-    gtk_popover_set_has_arrow(GTK_POPOVER(sticker_ctx_menu_), FALSE);
-    gtk_widget_set_parent(sticker_ctx_menu_, main_app_surface_->widget());
-    g_object_unref(menu);
-
-    sticker_ctx_actions_ = g_simple_action_group_new();
-    GSimpleAction* save = g_simple_action_new("save", nullptr);
-    g_signal_connect(save, "activate", G_CALLBACK(on_sticker_save_activate_),
-                     this);
-    g_action_map_add_action(G_ACTION_MAP(sticker_ctx_actions_), G_ACTION(save));
-    g_object_unref(save);
-    gtk_widget_insert_action_group(main_app_surface_->widget(), "sticker",
-                                   G_ACTION_GROUP(sticker_ctx_actions_));
-}
-
-// ---------------------------------------------------------------------------
 // Copy context menu — right-click on a text selection offers "Copy".
 // ---------------------------------------------------------------------------
 
@@ -3540,63 +3515,6 @@ void MainWindow::on_msg_right_click_(GtkGestureClick* gesture, int /*n_press*/,
             return;
         }
     }
-
-    if (!self->room_view_ || self->room_view_->is_overlay_open())
-    {
-        return;
-    }
-    // Lazy-built, like the sibling copy-selection menu (on_show_copy_menu /
-    // build_copy_context_menu_ above) — build_sticker_context_menu() was
-    // never actually being called anywhere, so this had always fallen
-    // through here and no-op'd on every right-click on a sticker.
-    if (!self->sticker_ctx_menu_)
-    {
-        self->build_sticker_context_menu();
-    }
-    if (!self->sticker_ctx_menu_)
-    {
-        return;
-    }
-
-    auto hit = self->room_view_->message_list()->sticker_hit_at(
-        tk::Point{static_cast<float>(x), static_cast<float>(y)});
-    if (!hit)
-    {
-        return;
-    }
-
-    // Claim the gesture so the underlying surface doesn't also process it
-    // (e.g. as a drag-start or text-selection event).
-    gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
-
-    // Capture sticker fields for the action handler. The hit_at result
-    // points into MessageListView's per-frame sticker_geom_ map and would
-    // dangle by the time the action fires.
-    self->ctx_sticker_event_id_ = hit->event_id;
-    self->ctx_sticker_mxc_url_ = hit->source ? hit->source->mxc_url() : std::string{};
-    self->ctx_sticker_body_ = hit->body;
-    self->ctx_sticker_info_json_ = hit->info_json;
-
-    // Disable the action when the sticker is already saved so the menu item
-    // renders grayed-out rather than the menu being suppressed entirely.
-    {
-        const bool already_saved =
-            self->client_->user_pack_has_sticker(self->ctx_sticker_mxc_url_,
-                                                 hit->info_json);
-        GAction* act = g_action_map_lookup_action(
-            G_ACTION_MAP(self->sticker_ctx_actions_), "save");
-        if (act)
-        {
-            g_simple_action_set_enabled(G_SIMPLE_ACTION(act), !already_saved);
-        }
-    }
-
-    GdkRectangle r{.x = static_cast<int>(x),
-                   .y = static_cast<int>(y),
-                   .width = 1,
-                   .height = 1};
-    gtk_popover_set_pointing_to(GTK_POPOVER(self->sticker_ctx_menu_), &r);
-    gtk_popover_popup(GTK_POPOVER(self->sticker_ctx_menu_));
 }
 
 // A registry chord as a GTK trigger; null for keys not bound here.
@@ -3689,33 +3607,6 @@ void MainWindow::on_window_key_released_(GtkEventControllerKey*, guint keyval,
         }
     }
 }
-
-void MainWindow::on_sticker_save_activate_(GSimpleAction* /*action*/,
-                                           GVariant* /*parameter*/,
-                                           gpointer user_data)
-{
-    auto* self = static_cast<MainWindow*>(user_data);
-    if (self->ctx_sticker_mxc_url_.empty())
-    {
-        return;
-    }
-    auto res = self->client_->save_sticker_to_user_pack(
-        self->ctx_sticker_body_, self->ctx_sticker_body_,
-        self->ctx_sticker_mxc_url_, self->ctx_sticker_info_json_);
-    if (!res.ok)
-    {
-        self->show_status_message_(res.message, 6000);
-    }
-    self->ctx_sticker_event_id_.clear();
-    self->ctx_sticker_mxc_url_.clear();
-    self->ctx_sticker_body_.clear();
-    self->ctx_sticker_info_json_.clear();
-    if (self->sticker_ctx_menu_)
-    {
-        gtk_popover_popdown(GTK_POPOVER(self->sticker_ctx_menu_));
-    }
-}
-
 
 // ---------------------------------------------------------------------------
 // Multi-account management
