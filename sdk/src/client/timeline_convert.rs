@@ -1245,6 +1245,28 @@ async fn forwarded_sender_name(room: &Room, fwd: &msc4553::Forwarded) -> String 
     }
 }
 
+/// The HTML of a media caption, run through `sanitize`. Empty when there is no
+/// caption (MSC2530: without a different `filename`, `body` is the file name)
+/// or the caption has no HTML. The typed HTML is sanitized before `sanitize`
+/// sees it, as a local echo's caption reaches the UI as given.
+fn caption_html(
+    formatted: Option<&matrix_sdk::ruma::events::room::message::FormattedBody>,
+    filename: Option<&str>,
+    body: &str,
+    sanitize: &dyn Fn(String) -> String,
+) -> String {
+    use matrix_sdk::ruma::events::room::message::MessageFormat;
+    if filename.is_none_or(|f| f == body) {
+        return String::new();
+    }
+    match formatted {
+        Some(f) if matches!(f.format, MessageFormat::Html) && !f.body.is_empty() => sanitize(
+            crate::html_sanitize::sanitize_formatted_body(&f.body, false),
+        ),
+        _ => String::new(),
+    }
+}
+
 /// The per-msgtype FFI fields of a message: each arm sets only what differs
 /// from the zeroed base, and the caller layers the sender, reaction, reply,
 /// thread and pending fields on top. Shared by the ordinary path (the
@@ -1306,6 +1328,12 @@ fn message_type_fields(
             let img_filename = i.filename.clone().unwrap_or_default();
             TimelineEvent {
                 body: i.body.clone(),
+                formatted_body: caption_html(
+                    i.formatted.as_ref(),
+                    i.filename.as_deref(),
+                    &i.body,
+                    sanitize,
+                ),
                 msg_type: "m.image".to_owned(),
                 source_url: src_url,
                 source_encrypted_json: src_enc,
@@ -1339,6 +1367,12 @@ fn message_type_fields(
                 .unwrap_or(0u64);
             TimelineEvent {
                 body: f.body.clone(),
+                formatted_body: caption_html(
+                    f.formatted.as_ref(),
+                    f.filename.as_deref(),
+                    &f.body,
+                    sanitize,
+                ),
                 msg_type: "m.file".to_owned(),
                 file_url,
                 file_encrypted_json: file_enc,
@@ -1442,6 +1476,12 @@ fn message_type_fields(
             let video_hide_controls = mau("fi.mau.hide_controls") || video_gif;
             TimelineEvent {
                 body: v.body.clone(),
+                formatted_body: caption_html(
+                    v.formatted.as_ref(),
+                    v.filename.as_deref(),
+                    &v.body,
+                    sanitize,
+                ),
                 msg_type: "m.video".to_owned(),
                 source_url: src_url,
                 source_encrypted_json: src_enc,
@@ -3518,5 +3558,69 @@ mod forward_tests {
             json!({ "msgtype": "m.emote", "body": "Forwarded from Bob" })
         )));
         assert!(!may_be_forward_fallback(&image_msgtype()));
+    }
+}
+
+#[cfg(test)]
+mod media_caption_tests {
+    use super::message_type_fields;
+    use crate::ffi::TimelineEvent;
+    use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
+    use serde_json::{json, Value};
+
+    fn fields(content: Value) -> TimelineEvent {
+        let content: RoomMessageEventContent = serde_json::from_value(content).unwrap();
+        message_type_fields(&content.msgtype, &|html| html, None).unwrap()
+    }
+
+    #[test]
+    fn a_formatted_caption_reaches_the_ui() {
+        for msgtype in ["m.image", "m.file", "m.video"] {
+            let f = fields(json!({
+                "msgtype": msgtype, "body": "see *this*", "filename": "cat.png",
+                "url": "mxc://x/y", "format": "org.matrix.custom.html",
+                "formatted_body": "see <em>this</em>"
+            }));
+            assert_eq!(f.body, "see *this*", "{msgtype}");
+            assert_eq!(f.formatted_body, "see <em>this</em>", "{msgtype}");
+        }
+    }
+
+    #[test]
+    fn caption_html_is_sanitised() {
+        let f = fields(json!({
+            "msgtype": "m.image", "body": "hi", "filename": "cat.png", "url": "mxc://x/y",
+            "format": "org.matrix.custom.html",
+            "formatted_body": "<b>hi</b><img src=\"https://evil.example/x.png\"><script>x()</script>"
+        }));
+        let html = &f.formatted_body;
+        assert!(html.contains("<b>hi</b>"), "{html}");
+        assert!(!html.contains("evil.example"), "{html}");
+        assert!(!html.contains("<script"), "{html}");
+    }
+
+    #[test]
+    fn a_file_name_body_gets_no_html() {
+        // No `filename`: `body` is the file name, not a caption.
+        let f = fields(json!({
+            "msgtype": "m.image", "body": "cat.png", "url": "mxc://x/y",
+            "format": "org.matrix.custom.html", "formatted_body": "<b>cat.png</b>"
+        }));
+        assert_eq!(f.formatted_body, "");
+        // `filename` equal to `body`: the same.
+        let f = fields(json!({
+            "msgtype": "m.file", "body": "a.pdf", "filename": "a.pdf", "url": "mxc://x/y",
+            "format": "org.matrix.custom.html", "formatted_body": "<b>a.pdf</b>"
+        }));
+        assert_eq!(f.formatted_body, "");
+    }
+
+    #[test]
+    fn a_plain_caption_gets_no_html() {
+        let f = fields(json!({
+            "msgtype": "m.video", "body": "clip", "filename": "v.mp4", "url": "mxc://x/y"
+        }));
+        assert_eq!(f.body, "clip");
+        assert_eq!(f.formatted_body, "");
     }
 }
