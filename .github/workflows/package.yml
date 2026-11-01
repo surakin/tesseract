@@ -1020,8 +1020,8 @@ jobs:
       - name: Download sources (retried)
         run: |
           for attempt in 1 2 3 4 5; do
-            if flatpak-builder --user --download-only \
-                 packaging/flatpak/io.github.surakin.Tesseract.yml build-dir; then
+            if flatpak-builder --user --download-only build-dir \
+                 packaging/flatpak/io.github.surakin.Tesseract.yml; then
               exit 0
             fi
             echo "::warning::source download failed (attempt ${attempt}/5)"
