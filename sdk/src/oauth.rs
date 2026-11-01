@@ -320,10 +320,12 @@ pub(crate) async fn build_configured_client(
         // per-thread linked chunks (which our focused thread Timeline
         // subscribes to) when threading support is enabled. Without this,
         // the open thread panel never sees new replies arriving via sync.
-        // `with_subscriptions` opts in to MSC4306 thread subscriptions (a
-        // no-op unless the homeserver advertises `org.matrix.msc4306`).
+        // `with_subscriptions` stays off: Synapse omits empty maps from the
+        // MSC4308 catch-up response, ruma requires them (no `serde(default)`),
+        // and matrix-sdk's catch-up task retries the failed page in a tight
+        // loop. Re-enable once ruma accepts omitted maps.
         .with_threading_support(ThreadingSupport::Enabled {
-            with_subscriptions: true,
+            with_subscriptions: false,
         })
         .build()
         .await
