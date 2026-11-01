@@ -5,6 +5,8 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(calls): the call window follows the light or dark theme instead of always being black. Linux build, ctest 3825/3825; user-verified Qt6
+
 ## v0.9.6 — 2026-11-01
 
 ### Summary

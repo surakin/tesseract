@@ -27,14 +27,12 @@ constexpr float kCallOverlayBtnGap = 16.0f;
 constexpr float kExpandSz = 28.0f;
 constexpr float kExpandMargin = 4.0f;
 constexpr float kDragHeaderH = 32.0f;
+// Buttons drawn over video tiles need their own backdrop: the themed icon colour
+// is unreadable on arbitrary video content.
+constexpr tk::Color kVideoScrim{0, 0, 0, 150};
+constexpr tk::Color kVideoScrimIcon{255, 255, 255, 255};
 constexpr float kPinnedFrac = 0.70f; // long-axis fraction for the pinned tile
 
-constexpr tk::Color kOverlayBg{0, 0, 0, 220};
-constexpr tk::Color kCtrlBg{0, 0, 0, 180};
-constexpr tk::Color kHeaderBg{0, 0, 0, 160};
-constexpr tk::Color kCallOverlayWhite{255, 255, 255, 255};
-constexpr tk::Color kCallOverlayWhiteSoft{255, 255, 255, 200};
-constexpr tk::Color kCallOverlayMutedRed{220, 60, 60, 255};
 } // namespace
 
 // ── Constructor / destructor ───────────────────────────────────────────────
@@ -127,7 +125,6 @@ CallOverlayWidget::CallOverlayWidget()
         tk::create_widget<tk::Button>(this, "", std::function<void()>{}, tk::Button::Variant::Icon);
     hangup_btn_ = add_child(std::move(hang));
     hangup_btn_->set_icon(kPhoneOffSvg, kCallOverlayBtnIconPx);
-    hangup_btn_->set_icon_color_override(kCallOverlayMutedRed);
     hangup_btn_->set_accessible_name(tk::tr("Leave call"));
     hangup_btn_->set_on_click(
         [this]
@@ -910,12 +907,12 @@ void CallOverlayWidget::paint(tk::PaintCtx& ctx)
     }
 
     // Background.
-    ctx.canvas.fill_rect(bounds_, kOverlayBg);
+    ctx.canvas.fill_rect(bounds_, ctx.theme.palette.bg);
 
     // Drag header (Floating mode only).
     if (mode_ == Mode::Floating && drag_header_rect_.h > 0.0f)
     {
-        ctx.canvas.fill_rect(drag_header_rect_, kHeaderBg);
+        ctx.canvas.fill_rect(drag_header_rect_, ctx.theme.palette.chrome_bg);
     }
 
     // ── Participant tiles ──────────────────────────────────────────────────
@@ -960,24 +957,25 @@ void CallOverlayWidget::paint(tk::PaintCtx& ctx)
             const tk::Size sz = cached_duration_layout_->measure();
             const float tx = duration_rect_.x + (duration_rect_.w - sz.w) * 0.5f;
             const float ty = duration_rect_.y + (duration_rect_.h - sz.h) * 0.5f;
-            ctx.canvas.draw_text(*cached_duration_layout_, {tx, ty}, kCallOverlayWhiteSoft);
+            ctx.canvas.draw_text(*cached_duration_layout_, {tx, ty},
+                                 ctx.theme.palette.text_secondary);
         }
     }
 
     // ── Controls bar ───────────────────────────────────────────────────────
-    ctx.canvas.fill_rect(controls_rect_, kCtrlBg);
+    ctx.canvas.fill_rect(controls_rect_, ctx.theme.palette.chrome_bg);
 
     if (mute_btn_)
     {
         if (audio_muted_)
         {
             mute_btn_->set_icon(kMicOffSvg, kCallOverlayBtnIconPx);
-            mute_btn_->set_icon_color_override(kCallOverlayMutedRed);
+            mute_btn_->set_icon_color_override(ctx.theme.palette.destructive);
         }
         else
         {
             mute_btn_->set_icon(kMicSvg, kCallOverlayBtnIconPx);
-            mute_btn_->set_icon_color_override(kCallOverlayWhite);
+            mute_btn_->set_icon_color_override(std::nullopt);
         }
         mute_btn_->set_accessible_name(audio_muted_ ? tk::tr("Unmute microphone")
                                                     : tk::tr("Mute microphone"));
@@ -989,12 +987,12 @@ void CallOverlayWidget::paint(tk::PaintCtx& ctx)
         if (video_muted_)
         {
             video_btn_->set_icon(kVideoOffSvg, kCallOverlayBtnIconPx);
-            video_btn_->set_icon_color_override(kCallOverlayMutedRed);
+            video_btn_->set_icon_color_override(ctx.theme.palette.destructive);
         }
         else
         {
             video_btn_->set_icon(kVideoSvg, kCallOverlayBtnIconPx);
-            video_btn_->set_icon_color_override(kCallOverlayWhite);
+            video_btn_->set_icon_color_override(std::nullopt);
         }
         video_btn_->set_accessible_name(video_muted_ ? tk::tr("Turn camera on")
                                                      : tk::tr("Turn camera off"));
@@ -1004,8 +1002,8 @@ void CallOverlayWidget::paint(tk::PaintCtx& ctx)
     if (screen_btn_)
     {
         screen_btn_->set_icon(kMonitorSvg, kCallOverlayBtnIconPx);
-        screen_btn_->set_icon_color_override(screen_sharing_ ? kCallOverlayMutedRed
-                                                             : kCallOverlayWhite);
+        screen_btn_->set_icon_color_override(screen_sharing_ ? ctx.theme.palette.destructive
+                                                             : std::optional<tk::Color>{});
         screen_btn_->set_accessible_name(screen_sharing_ ? tk::tr("Stop sharing screen")
                                                          : tk::tr("Share screen"));
         screen_btn_->paint(ctx);
@@ -1013,6 +1011,7 @@ void CallOverlayWidget::paint(tk::PaintCtx& ctx)
 
     if (hangup_btn_)
     {
+        hangup_btn_->set_icon_color_override(ctx.theme.palette.destructive);
         hangup_btn_->paint(ctx);
     }
 
@@ -1027,7 +1026,8 @@ void CallOverlayWidget::paint(tk::PaintCtx& ctx)
         {
             expand_btn_->set_icon(kMinimizeSvg, kExpandSz - 8.0f);
         }
-        expand_btn_->set_icon_color_override(kCallOverlayWhite);
+        ctx.canvas.fill_rounded_rect(expand_btn_->bounds(), kExpandSz * 0.5f, kVideoScrim);
+        expand_btn_->set_icon_color_override(kVideoScrimIcon);
         expand_btn_->set_accessible_name(mode_ == Mode::Docked ? tk::tr("Expand call")
                                                                : tk::tr("Collapse call"));
         expand_btn_->paint(ctx);
@@ -1046,7 +1046,8 @@ void CallOverlayWidget::paint(tk::PaintCtx& ctx)
         {
             pip_btn_->set_icon(kPipSvg, kExpandSz - 8.0f);
         }
-        pip_btn_->set_icon_color_override(kCallOverlayWhite);
+        ctx.canvas.fill_rounded_rect(pip_btn_->bounds(), kExpandSz * 0.5f, kVideoScrim);
+        pip_btn_->set_icon_color_override(kVideoScrimIcon);
         pip_btn_->set_accessible_name(mode_ == Mode::Popout ? tk::tr("Dock call")
                                                             : tk::tr("Pop out call"));
         pip_btn_->paint(ctx);
