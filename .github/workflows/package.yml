@@ -783,6 +783,7 @@ jobs:
             libxtst-dev \
             rpm \
             patchelf \
+            librsvg2-bin \
             gstreamer1.0-plugins-base \
             gstreamer1.0-plugins-good \
             gstreamer1.0-libav \
@@ -869,6 +870,14 @@ jobs:
           wget -q https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gstreamer/master/linuxdeploy-plugin-gstreamer.sh
           chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-qt-x86_64.AppImage linuxdeploy-plugin-gstreamer.sh
     
+      # The current appimagetool refuses an AppDir whose icon is only an SVG:
+      # it wants a PNG named after the desktop file's Icon= at the top level.
+      - name: Add a PNG icon for appimagetool
+        run: |
+          rsvg-convert -w 256 -h 256 \
+            AppDir/usr/share/icons/hicolor/scalable/apps/tesseract-matrix.svg \
+            -o AppDir/tesseract-matrix.png
+
       - name: Build AppImage
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
