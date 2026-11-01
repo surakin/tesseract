@@ -7621,3 +7621,15 @@ msgstr "Переглянути початкове повідомлення"
 #: ui/shared/views/MessageListView.cpp
 msgid "Sender"
 msgstr "Відправник"
+
+msgid "Expand"
+msgstr "Розгорнути"
+
+msgid "Collapse"
+msgstr "Згорнути"
+
+msgid "Expand code block"
+msgstr "Розгорнути блок коду"
+
+msgid "Collapse code block"
+msgstr "Згорнути блок коду"
