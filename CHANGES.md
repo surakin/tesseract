@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- style: all C++ and Objective-C++ code is now formatted to the style guide, with no change in behaviour. Linux build, ctest 3824/3825 (uk.po catalog check fails already)
 - build: a ctest and a CI step now check C++ formatting against `.clang-format`; it fails until the C++ reformat lands. Linux, ctest cxx_format_check
 - build: a ctest now fails when the Rust code isn't formatted with `cargo fmt`, after a one-time reformat of the crate. Linux, cargo check, ctest rust_fmt_check
 - fix(sync): Tesseract no longer floods Synapse with thread-subscription requests; thread follow/unfollow is off until upstream is fixed. Linux build; user-verified
