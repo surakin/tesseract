@@ -23,7 +23,7 @@ Build and test on your own platform only. You don't need the other three to subm
 2. **Respect the layers.** `tk` ← `platform` ← `views` ← `app`: a layer may include lower ones, never higher ones. The `layering_check` test enforces it. New OS services go in `ui/shared/platform/`, not `tk/` or a shell.
 3. **The Matrix protocol is the SDK's job.** Don't reimplement flows, and don't patch the SDK. If matrix-sdk lacks something, wait for it. The exception is event-content MSCs, which may be handled as raw JSON in `sdk/src/msc/<mscNNNN>.rs`.
 4. **Keep UI parity.** The app should look and behave the same on every platform. Shared views make this nearly automatic, so avoid per-platform visual tweaks.
-5. **Follow [STYLE.md](../STYLE.md).** In short, for C++: Allman braces, always brace control-flow bodies, `snake_case` functions, `PascalCase` types, trailing `_` on members. Objective-C methods are `camelCase`. Rust uses standard idiomatic style: match the surrounding code, and don't run `cargo fmt` over the whole `sdk/` crate, which would reformat unrelated code.
+5. **Follow [STYLE.md](../STYLE.md).** In short, for C++: Allman braces, always brace control-flow bodies, `snake_case` functions, `PascalCase` types, trailing `_` on members. Objective-C methods are `camelCase`. Rust: run `cargo fmt` before committing; the `rust_fmt_check` ctest fails on unformatted code.
 6. **Real widgets, not painted ones.** Use `tk::Button` / `tk::CheckButton` children instead of painting controls by hand. A clickable region should use the toolkit's hover feature.
 
 ## Recipes

@@ -581,3 +581,15 @@ if(Python3_Interpreter_FOUND)
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/check_bridge_strings.py
                 ${CMAKE_SOURCE_DIR}/sdk/src/bridge.rs)
 endif()
+
+# The Rust crate stays rustfmt-formatted (STYLE.md); run `cargo fmt` to fix.
+find_program(CARGO_FOR_TESTS cargo)
+if(CARGO_FOR_TESTS)
+    execute_process(COMMAND ${CARGO_FOR_TESTS} fmt --version
+        RESULT_VARIABLE _rustfmt_rc OUTPUT_QUIET ERROR_QUIET)
+    if(_rustfmt_rc EQUAL 0)
+        add_test(NAME rust_fmt_check
+            COMMAND ${CARGO_FOR_TESTS} fmt --check -p tesseract-sdk-ffi
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+    endif()
+endif()

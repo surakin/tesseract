@@ -5,6 +5,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- build: a ctest now fails when the Rust code isn't formatted with `cargo fmt`, after a one-time reformat of the crate. Linux, cargo check, ctest rust_fmt_check
 - fix(sync): Tesseract no longer floods Synapse with thread-subscription requests; thread follow/unfollow is off until upstream is fixed. Linux build; user-verified
 - fix(messages): developer mode offers "Copy event source" on undecryptable and deleted messages too. Not built
 - fix(messages): "Add to Saved Stickers" is an item in the message action menu instead of a second right-click menu. Linux build, ctest 3820/3821 (uk.po catalog check fails already)

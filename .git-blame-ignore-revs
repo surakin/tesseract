@@ -1,0 +1,6 @@
+# Mechanical reformatting commits for `git blame` to skip.
+# Use with: git config blame.ignoreRevsFile .git-blame-ignore-revs
+# (GitHub's blame view picks this file up automatically.)
+
+# style(sdk): format the Rust crate with cargo fmt
+17e3d7e206e148ca96bd8912561ac6a2534e0f7f
