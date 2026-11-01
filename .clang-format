@@ -4,7 +4,7 @@
 # ObjC block mirrors the Cpp block). Both enforce the rules clang-format CAN:
 #   - Universal Rules §1: Allman braces (BreakBeforeBraces: Allman)
 #   - Universal Rules §2: always brace control-flow bodies (InsertBraces)
-#   - 4-space indent, ~80 col, T* pointer, non-indented namespaces
+#   - 4-space indent, 100 col, T* pointer, non-indented namespaces
 #     (matches the existing codebase per STYLE.md "match surrounding code")
 #
 # STYLE.md rules clang-format CANNOT enforce (left to review / clang-tidy):
@@ -20,7 +20,7 @@ BasedOnStyle: LLVM
 IndentWidth: 4
 TabWidth: 4
 UseTab: Never
-ColumnLimit: 80
+ColumnLimit: 100
 
 # STYLE.md §1 — opening brace always on its own line (C++/ObjC).
 BreakBeforeBraces: Allman
@@ -58,7 +58,7 @@ BasedOnStyle: LLVM
 IndentWidth: 4
 TabWidth: 4
 UseTab: Never
-ColumnLimit: 80
+ColumnLimit: 100
 
 # STYLE.md §1 — opening brace always on its own line (C++/ObjC).
 BreakBeforeBraces: Allman
