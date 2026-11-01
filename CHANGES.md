@@ -5,6 +5,8 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+- fix(a11y): Tesseract no longer crashes on Linux (Qt6) while the window lays out text fields. Linux build; user-verified
+
 ## v0.9.6 — 2026-11-01
 
 ### Summary

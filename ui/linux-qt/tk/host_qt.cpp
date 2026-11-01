@@ -3181,10 +3181,12 @@ Surface::Surface(const Theme& theme, QWidget* parent, bool transparent)
     // Host::dispatch_file_drop), so every Surface accepts drops
     // unconditionally rather than only once a handler was registered.
     setAcceptDrops(true);
+    register_accessible_surface(this);
 }
 
 Surface::~Surface()
 {
+    unregister_accessible_surface(this);
     if (host_)
     {
         host_->detach_surface();

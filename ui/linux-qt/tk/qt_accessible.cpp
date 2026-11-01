@@ -1079,20 +1079,26 @@ AccessBridge* bridge_for(Surface* surface)
     return bridge;
 }
 
+// Live Surfaces, keyed by their QObject address. GUI thread only.
+std::unordered_set<const QObject*>& live_surfaces()
+{
+    static std::unordered_set<const QObject*> surfaces;
+    return surfaces;
+}
+
 QAccessibleInterface* factory(const QString&, QObject* object)
 {
     // Surface has no Q_OBJECT (it never needed its own signals/slots), so
-    // it has no metaObject()/className() of its own — Qt's factory
-    // dispatch would call us with classname == "QWidget" (its nearest
-    // Q_OBJECT ancestor) for every plain QWidget in the app, not just
-    // Surface instances. dynamic_cast works regardless of Q_OBJECT (RTTI
-    // only needs a polymorphic type, which QWidget already is), so use it
-    // directly instead of trying to match on classname.
-    if (auto* surface = dynamic_cast<Surface*>(object))
+    // Qt's factory dispatch calls us with classname == "QWidget" for every
+    // plain QWidget in the app, not just Surface instances. Identify ours by
+    // address instead of dynamic_cast: Qt queries objects while they are
+    // still being constructed or destroyed, where RTTI on them can crash.
+    if (!object || !live_surfaces().count(object))
     {
-        return new SurfaceAccessible(surface, bridge_for(surface));
+        return nullptr;
     }
-    return nullptr;
+    auto* surface = static_cast<Surface*>(static_cast<QWidget*>(object));
+    return new SurfaceAccessible(surface, bridge_for(surface));
 }
 
 } // namespace
@@ -1100,6 +1106,16 @@ QAccessibleInterface* factory(const QString&, QObject* object)
 void install_accessible_factory()
 {
     QAccessible::installFactory(factory);
+}
+
+void register_accessible_surface(Surface* surface)
+{
+    live_surfaces().insert(static_cast<QWidget*>(surface));
+}
+
+void unregister_accessible_surface(Surface* surface)
+{
+    live_surfaces().erase(static_cast<QWidget*>(surface));
 }
 
 void announce(Surface* surface, const std::string& text, bool assertive)
