@@ -63,6 +63,8 @@ Never mention public GitHub issues (this repo's or upstream's) in commit message
 
 See [STYLE.md](STYLE.md) for formatting and naming conventions that apply across all C++ and Rust code in this repo.
 
+**Formatting is mechanical and enforced.** C/C++/ObjC follows `.clang-format` (clang-format at the major in `tests/clang-format-version`), Rust follows `cargo fmt`. A Claude Code hook (`.claude/hooks/format-edited-file.sh`) formats every file you Edit/Write; the `.githooks/pre-commit` hook, the `cxx_format_check`/`rust_fmt_check` ctests and the "Code style" CI workflow reject anything unformatted. Never commit with either check failing, and never hand-format against them. Every implementation prompt you give a subagent must say: format changed files with clang-format / cargo fmt before reporting.
+
 ## Workflow
 
 Model split: Opus does the planning (exploration, design, writing the implementation plan); Sonnet does the implementing (executing the plan, writing code and tests). When dispatching implementation subagents, pass `model: "sonnet"`.

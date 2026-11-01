@@ -17,6 +17,14 @@ cargo test -p tesseract-sdk-ffi          # Rust only, no C++ toolchain needed
 
 Build and test on your own platform only. You don't need the other three to submit a change, but say which ones you could not build.
 
+Formatting is checked automatically, so install the pre-commit hook once. It refuses a commit whose staged C++ or Rust isn't formatted:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+It needs clang-format at the version in `tests/clang-format-version` (`pip install clang-format==<that version>` if your system has another) and `rustfmt`. Fix what it reports with `git clang-format` or `clang-format -i <files>`, and `cargo fmt`.
+
 ## Ground rules
 
 1. **Put code in `ui/shared/`.** Platform shells (`ui/windows`, `ui/macos`, `ui/linux-qt`, `ui/linux-gtk`) hold only what is truly platform-specific: windows, menus, OS calls, thin wiring. If you write the same logic in two shells, it belongs in `ui/shared/`.
