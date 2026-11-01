@@ -17,7 +17,7 @@ class AccountManager;
 //
 // Single instance per process, exactly like MacOSTrayIcon/MacNowPlaying —
 // constructed only after claim_search_provider_owner() succeeds (see
-// MainWindowController.mm).
+// MainWindow.mm).
 class MacSpotlightSearch final
 {
 public:
@@ -35,7 +35,7 @@ public:
     // Spotlight, deleting anything indexed by a previous call that's no
     // longer present. Cheap enough to call after any room-list/roster
     // change; callers should still debounce rapid-fire changes (see
-    // MainWindowController's -_scheduleSpotlightReindex).
+    // MainWindow::schedule_spotlight_reindex_).
     void reindex();
 
 private:

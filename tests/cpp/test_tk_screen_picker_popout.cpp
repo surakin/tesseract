@@ -18,9 +18,13 @@ std::vector<tk::ScreenSource> sp_sources(int n_screens, int n_windows)
 {
     std::vector<tk::ScreenSource> v;
     for (int i = 0; i < n_screens; ++i)
+    {
         v.push_back({"screen-" + std::to_string(i), "Display " + std::to_string(i), false});
+    }
     for (int i = 0; i < n_windows; ++i)
+    {
         v.push_back({"win-" + std::to_string(i), "Window " + std::to_string(i), true});
+    }
     return v;
 }
 
@@ -32,7 +36,10 @@ struct SpStage : vt::Stage
         picker = tk::create_root_widget<ScreenPickerWidget>(&host, std::move(src));
         mount(*picker, {0, 0, 800, 600});
     }
-    void run() { relayout_paint(*picker, {0, 0, 800, 600}); }
+    void run()
+    {
+        relayout_paint(*picker, {0, 0, 800, 600});
+    }
 };
 
 } // namespace
@@ -44,19 +51,23 @@ TEST_CASE("ScreenPickerWidget exposes screens and windows as keyboard targets",
     CHECK(s.picker->access_modal());
     auto names = vt::all_names(*s.picker);
     auto has = [&](const std::string& n)
-    { return std::find(names.begin(), names.end(), n) != names.end(); };
+    {
+        return std::find(names.begin(), names.end(), n) != names.end();
+    };
     CHECK(has("Screen 1"));
     CHECK(has("Screen 2"));
     CHECK(has("Window 0"));
     CHECK(has("Cancel"));
 }
 
-TEST_CASE("ScreenPickerWidget clicking a tile selects its source once",
-          "[tk][view][screen_picker]")
+TEST_CASE("ScreenPickerWidget clicking a tile selects its source once", "[tk][view][screen_picker]")
 {
     SpStage s(sp_sources(2, 0));
     std::vector<std::string> chosen;
-    s.picker->on_source_selected = [&](std::string id) { chosen.push_back(id); };
+    s.picker->on_source_selected = [&](std::string id)
+    {
+        chosen.push_back(id);
+    };
 
     // Tiles are 220x140, centred in a 800px-wide view: find the second tile.
     s.host.dispatch_pointer_move({20, 20}); // no-op region
@@ -78,12 +89,14 @@ TEST_CASE("ScreenPickerWidget clicking a tile selects its source once",
     CHECK(chosen.size() == 1);
 }
 
-TEST_CASE("ScreenPickerWidget Cancel fires on_cancelled once",
-          "[tk][view][screen_picker]")
+TEST_CASE("ScreenPickerWidget Cancel fires on_cancelled once", "[tk][view][screen_picker]")
 {
     SpStage s(sp_sources(1, 0));
     int cancelled = 0;
-    s.picker->on_cancelled = [&] { ++cancelled; };
+    s.picker->on_cancelled = [&]
+    {
+        ++cancelled;
+    };
     REQUIRE(vt::press(*s.picker, "Cancel"));
     CHECK(cancelled == 1);
     vt::press(*s.picker, "Cancel");
@@ -95,7 +108,10 @@ TEST_CASE("ScreenPickerWidget keyboard activation of a tile selects it",
 {
     SpStage s(sp_sources(1, 1));
     std::string chosen;
-    s.picker->on_source_selected = [&](std::string id) { chosen = id; };
+    s.picker->on_source_selected = [&](std::string id)
+    {
+        chosen = id;
+    };
     REQUIRE(vt::press(*s.picker, "Window 0"));
     CHECK(chosen == "win-0");
 }
@@ -125,8 +141,7 @@ TEST_CASE("ScreenPickerWidget thumbnails, wheel scrolling and an empty list",
 
 // ── PopoutRoomWidget ──────────────────────────────────────────────────────
 
-TEST_CASE("PopoutRoomWidget owns the room view and overlays",
-          "[tk][view][popout]")
+TEST_CASE("PopoutRoomWidget owns the room view and overlays", "[tk][view][popout]")
 {
     vt::Stage s;
     auto w = tk::create_root_widget<PopoutRoomWidget>(&s.host);
@@ -138,8 +153,7 @@ TEST_CASE("PopoutRoomWidget owns the room view and overlays",
     CHECK(w->room_media_view() == w->room_view()->room_media_view());
 }
 
-TEST_CASE("PopoutRoomWidget show/hide viewers toggle visibility",
-          "[tk][view][popout]")
+TEST_CASE("PopoutRoomWidget show/hide viewers toggle visibility", "[tk][view][popout]")
 {
     vt::Stage s;
     auto w = tk::create_root_widget<PopoutRoomWidget>(&s.host);
@@ -157,7 +171,10 @@ TEST_CASE("PopoutRoomWidget hides the compose rect while a modal is open and "
     vt::Stage s;
     auto w = tk::create_root_widget<PopoutRoomWidget>(&s.host);
     int layout_changes = 0;
-    w->on_layout_changed = [&] { ++layout_changes; };
+    w->on_layout_changed = [&]
+    {
+        ++layout_changes;
+    };
     s.mount(*w, {0, 0, 800, 600});
 
     // No modal: the rect equals the room view's own.

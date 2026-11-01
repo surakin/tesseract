@@ -22,45 +22,56 @@ namespace tesseract::views
 namespace
 {
 
-constexpr float kRowPadX     = 12.0f;
-constexpr float kRowPadY     = 10.0f;
-constexpr float kRowMinH     = 64.0f;
-constexpr float kDevicesSectionChipPadX    = 8.0f;
-constexpr float kChipH       = 18.0f;
-constexpr float kChipGap     = 6.0f;
-constexpr float kDevicesSectionLineGap     = 4.0f;
-constexpr float kDevicesSectionErrorGap    = 4.0f;
-constexpr float kButtonGap   = 8.0f;
-constexpr float kRowRadius   = tesseract::visual::kRadiusSM;
+constexpr float kRowPadX = 12.0f;
+constexpr float kRowPadY = 10.0f;
+constexpr float kRowMinH = 64.0f;
+constexpr float kDevicesSectionChipPadX = 8.0f;
+constexpr float kChipH = 18.0f;
+constexpr float kChipGap = 6.0f;
+constexpr float kDevicesSectionLineGap = 4.0f;
+constexpr float kDevicesSectionErrorGap = 4.0f;
+constexpr float kButtonGap = 8.0f;
+constexpr float kRowRadius = tesseract::visual::kRadiusSM;
 
 std::string format_relative_ts(std::uint64_t ts_ms)
 {
     if (ts_ms == 0)
+    {
         return tk::tr("never");
+    }
 
     using namespace std::chrono;
-    const auto now =
-        duration_cast<milliseconds>(system_clock::now().time_since_epoch())
-            .count();
+    const auto now = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     if (static_cast<std::int64_t>(ts_ms) > now + 60'000)
+    {
         return tk::tr("in the future"); // clock skew
+    }
 
-    const auto delta_ms = (now > static_cast<std::int64_t>(ts_ms))
-                              ? (now - static_cast<std::int64_t>(ts_ms))
-                              : 0;
+    const auto delta_ms =
+        (now > static_cast<std::int64_t>(ts_ms)) ? (now - static_cast<std::int64_t>(ts_ms)) : 0;
     const auto secs = delta_ms / 1000;
     if (secs < 60)
+    {
         return tk::tr("just now");
+    }
     // Same short units as the Activity Monitor ("5m", "3h", "2d").
     std::string span;
     if (secs < 3600)
+    {
         span = tk::trf(tk::tr("{0}m"), {std::to_string(secs / 60)});
+    }
     else if (secs < 86400)
+    {
         span = tk::trf(tk::tr("{0}h"), {std::to_string(secs / 3600)});
+    }
     else if (secs < 86400 * 30)
+    {
         span = tk::trf(tk::tr("{0}d"), {std::to_string(secs / 86400)});
+    }
     else
+    {
         span = tk::trf(tk::tr("{0}mo"), {std::to_string(secs / (86400 * 30))});
+    }
     return tk::trf(tk::tr("{0} ago"), {span});
 }
 
@@ -86,13 +97,17 @@ std::string url_destination_host(const std::string& url)
 {
     const auto scheme_end = url.find("://");
     if (scheme_end == std::string::npos)
+    {
         return {};
+    }
     const std::size_t start = scheme_end + 3;
-    const std::size_t end   = url.find_first_of("/?#", start);
-    std::string authority   = url.substr(start, end == std::string::npos ? std::string::npos
-                                                                          : end - start);
+    const std::size_t end = url.find_first_of("/?#", start);
+    std::string authority =
+        url.substr(start, end == std::string::npos ? std::string::npos : end - start);
     if (const auto at = authority.rfind('@'); at != std::string::npos)
+    {
         authority.erase(0, at + 1);
+    }
     return authority;
 }
 
@@ -105,12 +120,14 @@ std::string url_destination_host(const std::string& url)
 class DevicesSection::DeviceRow : public tk::Widget
 {
 public:
-    DeviceRow(tesseract::Client::Device device,
-              std::function<void(std::string)> on_delete,
+    DeviceRow(tesseract::Client::Device device, std::function<void(std::string)> on_delete,
               std::function<void(std::string, std::string)> on_confirm,
               std::function<void(std::string)> on_cancel);
 
-    const std::string& device_id() const { return device_.id; }
+    const std::string& device_id() const
+    {
+        return device_.id;
+    }
 
     void set_busy(bool busy);
     void set_error(std::string err);
@@ -124,22 +141,22 @@ public:
     // Accessibility: a named Group so a screen reader hears the device name +
     // verification + last-seen (all canvas-painted) before tabbing into the
     // row's action buttons.
-    tk::Role access_role() const override { return tk::Role::Group; }
+    tk::Role access_role() const override
+    {
+        return tk::Role::Group;
+    }
     std::string access_name() const override
     {
-        std::string n = device_.display_name.empty() ? tk::tr("(no name)")
-                                                     : device_.display_name;
+        std::string n = device_.display_name.empty() ? tk::tr("(no name)") : device_.display_name;
         if (device_.is_current)
         {
             n = tk::trf(tk::tr("{0}, {1}"), {n, tk::tr("This device")});
         }
-        if (device_.verification ==
-            tesseract::Client::DeviceVerification::Verified)
+        if (device_.verification == tesseract::Client::DeviceVerification::Verified)
         {
             n = tk::trf(tk::tr("{0}, {1}"), {n, tk::tr("Confirmed")});
         }
-        else if (device_.verification ==
-                 tesseract::Client::DeviceVerification::Unverified)
+        else if (device_.verification == tesseract::Client::DeviceVerification::Unverified)
         {
             n = tk::trf(tk::tr("{0}, {1}"), {n, tk::tr("Unconfirmed")});
         }
@@ -158,15 +175,15 @@ private:
     std::string uia_fallback_url_;
     std::string uia_session_;
 
-    std::function<void(std::string)>                       on_delete_;
-    std::function<void(std::string, std::string)>          on_confirm_;
-    std::function<void(std::string)>                       on_cancel_;
+    std::function<void(std::string)> on_delete_;
+    std::function<void(std::string, std::string)> on_confirm_;
+    std::function<void(std::string)> on_cancel_;
 
     // Borrowed pointers; ownership lives with this widget's child slots.
     tk::Button* signout_btn_ = nullptr;
-    tk::Button* open_btn_    = nullptr;
+    tk::Button* open_btn_ = nullptr;
     tk::Button* confirm_btn_ = nullptr;
-    tk::Button* cancel_btn_  = nullptr;
+    tk::Button* cancel_btn_ = nullptr;
 
     // Cached text layouts. Rebuilt when content or width changes.
     tk::CachedTextLayout name_layout_;
@@ -179,15 +196,12 @@ private:
     float cached_w_ = -1;
 };
 
-DevicesSection::DeviceRow::DeviceRow(
-    tesseract::Client::Device device,
-    std::function<void(std::string)> on_delete,
-    std::function<void(std::string, std::string)> on_confirm,
-    std::function<void(std::string)> on_cancel)
-    : device_(std::move(device))
-    , on_delete_(std::move(on_delete))
-    , on_confirm_(std::move(on_confirm))
-    , on_cancel_(std::move(on_cancel))
+DevicesSection::DeviceRow::DeviceRow(tesseract::Client::Device device,
+                                     std::function<void(std::string)> on_delete,
+                                     std::function<void(std::string, std::string)> on_confirm,
+                                     std::function<void(std::string)> on_cancel)
+    : device_(std::move(device)), on_delete_(std::move(on_delete)),
+      on_confirm_(std::move(on_confirm)), on_cancel_(std::move(on_cancel))
 {
     rebuild_buttons_();
 }
@@ -198,59 +212,71 @@ void DevicesSection::DeviceRow::rebuild_buttons_()
     // runs on state transitions (Sign out → UIA, UIA → normal).
     clear_children();
     signout_btn_ = nullptr;
-    open_btn_    = nullptr;
+    open_btn_ = nullptr;
     confirm_btn_ = nullptr;
-    cancel_btn_  = nullptr;
+    cancel_btn_ = nullptr;
 
     if (uia_)
     {
         // The page is on the homeserver's own host and asks for credentials, so
         // the destination is named on the button before the user opens it.
-        const std::string url  = uia_fallback_url_;
+        const std::string url = uia_fallback_url_;
         const std::string host = url_destination_host(url);
         const std::string open_label = host.empty()
-            ? tk::tr("Open in browser")
-            : tk::trf(tk::tr("Open in browser ({0})"), {host});
-        auto open = tk::create_widget<tk::Button>(
-            this, open_label, std::function<void()>{}, tk::Button::Variant::Subtle);
-        open->set_on_click([url]
-        {
-            tesseract::Client::open_in_browser(url);
-        });
+                                           ? tk::tr("Open in browser")
+                                           : tk::trf(tk::tr("Open in browser ({0})"), {host});
+        auto open = tk::create_widget<tk::Button>(this, open_label, std::function<void()>{},
+                                                  tk::Button::Variant::Subtle);
+        open->set_on_click(
+            [url]
+            {
+                tesseract::Client::open_in_browser(url);
+            });
         open_btn_ = add_child(std::move(open));
 
-        auto confirm = tk::create_widget<tk::Button>(
-            this, tk::tr("I've confirmed"), std::function<void()>{},
-            tk::Button::Variant::Destructive);
-        confirm->set_on_click([this]
-        {
-            if (on_confirm_)
-                on_confirm_(device_.id, uia_session_);
-        });
+        auto confirm =
+            tk::create_widget<tk::Button>(this, tk::tr("I've confirmed"), std::function<void()>{},
+                                          tk::Button::Variant::Destructive);
+        confirm->set_on_click(
+            [this]
+            {
+                if (on_confirm_)
+                {
+                    on_confirm_(device_.id, uia_session_);
+                }
+            });
         confirm_btn_ = add_child(std::move(confirm));
 
-        auto cancel = tk::create_widget<tk::Button>(
-            this, tk::tr("Cancel"), std::function<void()>{}, tk::Button::Variant::Subtle);
+        auto cancel = tk::create_widget<tk::Button>(this, tk::tr("Cancel"), std::function<void()>{},
+                                                    tk::Button::Variant::Subtle);
         const std::string id_for_cancel = device_.id;
         auto on_cancel = on_cancel_;
-        cancel->set_on_click([on_cancel, id_for_cancel]
-        {
-            if (on_cancel)
-                on_cancel(id_for_cancel);
-        });
+        cancel->set_on_click(
+            [on_cancel, id_for_cancel]
+            {
+                if (on_cancel)
+                {
+                    on_cancel(id_for_cancel);
+                }
+            });
         cancel_btn_ = add_child(std::move(cancel));
     }
     else if (!device_.is_current)
     {
         auto signout = tk::create_widget<tk::Button>(
-            this, tk::tr("Sign out"), std::function<void()>{},
-            tk::Button::Variant::Destructive);
-        signout->set_on_click([this]
-        {
-            if (busy_) return;
-            if (on_delete_)
-                on_delete_(device_.id);
-        });
+            this, tk::tr("Sign out"), std::function<void()>{}, tk::Button::Variant::Destructive);
+        signout->set_on_click(
+            [this]
+            {
+                if (busy_)
+                {
+                    return;
+                }
+                if (on_delete_)
+                {
+                    on_delete_(device_.id);
+                }
+            });
         signout->set_enabled(!busy_);
         signout_btn_ = add_child(std::move(signout));
     }
@@ -270,10 +296,15 @@ void DevicesSection::DeviceRow::invalidate_text_()
 
 void DevicesSection::DeviceRow::set_busy(bool busy)
 {
-    if (busy_ == busy) return;
+    if (busy_ == busy)
+    {
+        return;
+    }
     busy_ = busy;
     if (signout_btn_)
+    {
         signout_btn_->set_enabled(!busy_);
+    }
     busy_layout_.reset();
 }
 
@@ -283,12 +314,11 @@ void DevicesSection::DeviceRow::set_error(std::string err)
     error_layout_.reset();
 }
 
-void DevicesSection::DeviceRow::enter_uia(std::string fallback_url,
-                                          std::string session)
+void DevicesSection::DeviceRow::enter_uia(std::string fallback_url, std::string session)
 {
     uia_fallback_url_ = std::move(fallback_url);
-    uia_session_      = std::move(session);
-    uia_              = true;
+    uia_session_ = std::move(session);
+    uia_ = true;
     error_.clear();
     invalidate_text_();
     rebuild_buttons_();
@@ -296,7 +326,10 @@ void DevicesSection::DeviceRow::enter_uia(std::string fallback_url,
 
 void DevicesSection::DeviceRow::clear_uia()
 {
-    if (!uia_) return;
+    if (!uia_)
+    {
+        return;
+    }
     uia_ = false;
     uia_fallback_url_.clear();
     uia_session_.clear();
@@ -331,9 +364,7 @@ void DevicesSection::DeviceRow::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         tk::TextStyle name_st;
         name_st.role = tk::FontRole::Title;
         name_layout_ = ctx.factory.build_text(
-            device_.display_name.empty() ? tk::tr("(no name)")
-                                         : device_.display_name,
-            name_st);
+            device_.display_name.empty() ? tk::tr("(no name)") : device_.display_name, name_st);
     }
     if (!sub_layout_)
     {
@@ -347,10 +378,13 @@ void DevicesSection::DeviceRow::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         chip_st.role = tk::FontRole::UiSemibold;
         std::string verif_label = tk::tr("Unknown");
         if (device_.verification == tesseract::Client::DeviceVerification::Verified)
+        {
             verif_label = tk::tr("Confirmed");
-        else if (device_.verification ==
-                 tesseract::Client::DeviceVerification::Unverified)
+        }
+        else if (device_.verification == tesseract::Client::DeviceVerification::Unverified)
+        {
             verif_label = tk::tr("Unconfirmed");
+        }
         verif_layout_ = ctx.factory.build_text(verif_label, chip_st);
     }
     if (device_.is_current && !this_dev_layout_)
@@ -363,10 +397,10 @@ void DevicesSection::DeviceRow::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     {
         tk::TextStyle hint_st;
         hint_st.role = tk::FontRole::Small;
-        uia_hint_layout_ = ctx.factory.build_text(
-            tk::tr("Complete sign-out in the browser, then click \"I've "
-                   "confirmed\"."),
-            hint_st);
+        uia_hint_layout_ =
+            ctx.factory.build_text(tk::tr("Complete sign-out in the browser, then click \"I've "
+                                          "confirmed\"."),
+                                   hint_st);
     }
     if (!error_.empty() && !error_layout_)
     {
@@ -382,8 +416,12 @@ void DevicesSection::DeviceRow::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     }
 
     // Arrange buttons along the right edge at the row's vertical centre.
-    auto place_button = [&](tk::Button* btn, float right_x, float& used) {
-        if (!btn) return;
+    auto place_button = [&](tk::Button* btn, float right_x, float& used)
+    {
+        if (!btn)
+        {
+            return;
+        }
         tk::Size sz = btn->measure(ctx, {bounds.w, kRowMinH});
         const float w = sz.w;
         const float h = std::min(sz.h, kRowMinH - 2.0f * 4.0f);
@@ -407,8 +445,8 @@ void DevicesSection::DeviceRow::paint_before_children(tk::PaintCtx& ctx)
     // Subtle row card.
     ctx.canvas.fill_rounded_rect(bounds_, kRowRadius, pal.compose_card_bg);
 
-    const float left  = bounds_.x + kRowPadX;
-    float       y     = bounds_.y + kRowPadY;
+    const float left = bounds_.x + kRowPadX;
+    float y = bounds_.y + kRowPadY;
     const float right = bounds_.x + bounds_.w - kRowPadX;
 
     // First line: name + chips.
@@ -424,13 +462,12 @@ void DevicesSection::DeviceRow::paint_before_children(tk::PaintCtx& ctx)
         if (this_dev_layout_)
         {
             tk::Size cs = this_dev_layout_->measure();
-            const tk::Rect chip = {chip_x, chip_y, cs.w + 2.0f * kDevicesSectionChipPadX,
-                                   kChipH};
+            const tk::Rect chip = {chip_x, chip_y, cs.w + 2.0f * kDevicesSectionChipPadX, kChipH};
             ctx.canvas.fill_rounded_rect(chip, kChipH * 0.5f, pal.accent);
-            ctx.canvas.draw_text(*this_dev_layout_,
-                                 {chip_x + kDevicesSectionChipPadX,
-                                  chip_y + (kChipH - cs.h) * 0.5f},
-                                 pal.text_on_accent);
+            ctx.canvas.draw_text(
+                *this_dev_layout_,
+                {chip_x + kDevicesSectionChipPadX, chip_y + (kChipH - cs.h) * 0.5f},
+                pal.text_on_accent);
             chip_x += chip.w + kChipGap;
         }
 
@@ -438,18 +475,15 @@ void DevicesSection::DeviceRow::paint_before_children(tk::PaintCtx& ctx)
         if (verif_layout_)
         {
             tk::Size cs = verif_layout_->measure();
-            const tk::Rect chip = {chip_x, chip_y, cs.w + 2.0f * kDevicesSectionChipPadX,
-                                   kChipH};
+            const tk::Rect chip = {chip_x, chip_y, cs.w + 2.0f * kDevicesSectionChipPadX, kChipH};
             tk::Color bg = pal.chip_bg;
             tk::Color fg = pal.chip_text;
-            if (device_.verification ==
-                tesseract::Client::DeviceVerification::Verified)
+            if (device_.verification == tesseract::Client::DeviceVerification::Verified)
             {
                 bg = pal.accent;
                 fg = pal.text_on_accent;
             }
-            else if (device_.verification ==
-                     tesseract::Client::DeviceVerification::Unverified)
+            else if (device_.verification == tesseract::Client::DeviceVerification::Unverified)
             {
                 bg = pal.destructive;
                 fg = pal.text_on_accent;
@@ -459,10 +493,9 @@ void DevicesSection::DeviceRow::paint_before_children(tk::PaintCtx& ctx)
             if (chip.x + chip.w <= max_right)
             {
                 ctx.canvas.fill_rounded_rect(chip, kChipH * 0.5f, bg);
-                ctx.canvas.draw_text(*verif_layout_,
-                                     {chip_x + kDevicesSectionChipPadX,
-                                      chip_y + (kChipH - cs.h) * 0.5f},
-                                     fg);
+                ctx.canvas.draw_text(
+                    *verif_layout_,
+                    {chip_x + kDevicesSectionChipPadX, chip_y + (kChipH - cs.h) * 0.5f}, fg);
             }
         }
 
@@ -504,14 +537,20 @@ DevicesSection::~DevicesSection() = default;
 
 void DevicesSection::set_loading(bool loading)
 {
-    if (loading_ == loading) return;
+    if (loading_ == loading)
+    {
+        return;
+    }
     loading_ = loading;
     rebuild_();
 }
 
 void DevicesSection::set_current_device_id(std::string id)
 {
-    if (current_device_id_ == id) return;
+    if (current_device_id_ == id)
+    {
+        return;
+    }
     current_device_id_ = std::move(id);
     // Update is_current on the cached devices so the list re-renders correctly
     // when set_current_device_id arrives before/after set_devices.
@@ -528,7 +567,9 @@ void DevicesSection::set_devices(std::vector<tesseract::Client::Device> devices)
     if (!current_device_id_.empty())
     {
         for (auto& d : devices_)
+        {
             d.is_current = (d.id == current_device_id_);
+        }
     }
     loading_ = false;
     rebuild_();
@@ -537,32 +578,46 @@ void DevicesSection::set_devices(std::vector<tesseract::Client::Device> devices)
 void DevicesSection::set_device_busy(const std::string& device_id, bool busy)
 {
     for (auto* row : rows_)
+    {
         if (row && row->device_id() == device_id)
+        {
             row->set_busy(busy);
+        }
+    }
 }
 
-void DevicesSection::set_device_error(const std::string& device_id,
-                                       std::string error)
+void DevicesSection::set_device_error(const std::string& device_id, std::string error)
 {
     for (auto* row : rows_)
+    {
         if (row && row->device_id() == device_id)
+        {
             row->set_error(std::move(error));
+        }
+    }
 }
 
-void DevicesSection::enter_uia_state(const std::string& device_id,
-                                      std::string fallback_url,
-                                      std::string session)
+void DevicesSection::enter_uia_state(const std::string& device_id, std::string fallback_url,
+                                     std::string session)
 {
     for (auto* row : rows_)
+    {
         if (row && row->device_id() == device_id)
+        {
             row->enter_uia(std::move(fallback_url), std::move(session));
+        }
+    }
 }
 
 void DevicesSection::clear_uia_state(const std::string& device_id)
 {
     for (auto* row : rows_)
+    {
         if (row && row->device_id() == device_id)
+        {
             row->clear_uia();
+        }
+    }
 }
 
 void DevicesSection::rebuild_()
@@ -572,7 +627,7 @@ void DevicesSection::rebuild_()
     group_->clear_children();
     rows_.clear();
     loading_label_ = nullptr;
-    empty_label_   = nullptr;
+    empty_label_ = nullptr;
 
     if (loading_)
     {
@@ -595,17 +650,23 @@ void DevicesSection::rebuild_()
             [this](std::string id)
             {
                 if (on_delete_requested)
+                {
                     on_delete_requested(std::move(id));
+                }
             },
             [this](std::string id, std::string session)
             {
                 if (on_uia_confirmed)
+                {
                     on_uia_confirmed(std::move(id), std::move(session));
+                }
             },
             [this](std::string id)
             {
                 if (on_uia_cancelled)
+                {
                     on_uia_cancelled(std::move(id));
+                }
             });
         rows_.push_back(group_->add_widget(std::move(row)));
     }

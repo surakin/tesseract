@@ -1,0 +1,76 @@
+#!/bin/bash
+# Refuses a commit whose staged C/C++/ObjC or Rust files are not formatted
+# (STYLE.md). Checks the staged content, not the working tree.
+#
+# Install once:  git config core.hooksPath .githooks
+#   (or, keeping .git/hooks: ln -s ../../.githooks/pre-commit .git/hooks/pre-commit)
+# Bypass (rarely): git commit --no-verify
+#
+# Portable bash: runs under macOS's bash 3.2 and Git for Windows' bash, so no
+# `set -u` (bash < 4.4 treats an empty "${array[@]}" as unbound).
+root=$(git rev-parse --show-toplevel) || exit 1
+cd "$root" || exit 1
+
+cxx=()
+rs=()
+while IFS= read -r f; do
+    case "$f" in
+        third_party/* | build/* | build-*/*) continue ;;
+    esac
+    case "$f" in
+        *.c | *.cc | *.cpp | *.cxx | *.h | *.hh | *.hpp | *.mm | *.m) cxx+=("$f") ;;
+        sdk/*.rs) rs+=("$f") ;;
+    esac
+done < <(git diff --cached --name-only --diff-filter=ACMR)
+
+bad_cxx=()
+if [ ${#cxx[@]} -gt 0 ]; then
+    want=$(cut -d. -f1 tests/clang-format-version)
+    have=$(clang-format --version 2>/dev/null | sed -n 's/.*version \([0-9]*\)\..*/\1/p')
+    if [ -z "$have" ]; then
+        echo "pre-commit: clang-format not found, C++ formatting not checked (CI will)." >&2
+    elif [ "$have" != "$want" ]; then
+        echo "pre-commit: clang-format $have installed but $want is pinned, C++ formatting not checked." >&2
+        echo "            pip install clang-format==$(cat tests/clang-format-version)" >&2
+    else
+        for f in "${cxx[@]}"; do
+            # clang-format prints nothing for files listed in .clang-format-ignore
+            if [ -s "$f" ] && [ -z "$(clang-format --style=file "$f" 2>/dev/null | head -c1)" ]; then
+                continue
+            fi
+            if ! git show ":$f" | clang-format --style=file --assume-filename="$f" \
+                    --dry-run --Werror >/dev/null 2>&1; then
+                bad_cxx+=("$f")
+            fi
+        done
+    fi
+fi
+
+bad_rs=()
+if [ ${#rs[@]} -gt 0 ]; then
+    if ! command -v rustfmt >/dev/null; then
+        echo "pre-commit: rustfmt not found, Rust formatting not checked (CI will)." >&2
+    else
+        edition=$(sed -n 's/^edition *= *"\([0-9]*\)".*/\1/p' sdk/Cargo.toml | head -1)
+        for f in "${rs[@]}"; do
+            # `rustfmt --check` exits 0 on stdin even when it reports a diff,
+            # so compare its output with the staged file instead.
+            if ! cmp -s <(git show ":$f") \
+                    <(git show ":$f" | rustfmt --edition "${edition:-2021}" --emit stdout 2>/dev/null); then
+                bad_rs+=("$f")
+            fi
+        done
+    fi
+fi
+
+if [ ${#bad_cxx[@]} -eq 0 ] && [ ${#bad_rs[@]} -eq 0 ]; then
+    exit 0
+fi
+echo "pre-commit: these staged files are not formatted:" >&2
+for f in "${bad_cxx[@]}" "${bad_rs[@]}"; do
+    echo "    $f" >&2
+done
+[ ${#bad_cxx[@]} -gt 0 ] && echo "  C++:  clang-format -i ${bad_cxx[*]}" >&2
+[ ${#bad_rs[@]} -gt 0 ] && echo "  Rust: cargo fmt -p tesseract-sdk-ffi" >&2
+echo "  then git add the files and commit again." >&2
+exit 1

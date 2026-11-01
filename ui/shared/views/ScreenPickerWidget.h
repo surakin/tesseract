@@ -4,7 +4,7 @@
 #include "tk/canvas.h"
 #include "tk/controls.h"
 #include "tk/scrollable_base.h"
-#include "tk/screen_capture.h"
+#include "platform/screen_capture.h"
 
 #include <cstdint>
 #include <functional>
@@ -32,47 +32,56 @@ public:
     std::function<void()> on_cancelled;
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint_before_children(tk::PaintCtx&) override;
-    bool     on_pointer_down(tk::Point local) override;
-    void     on_pointer_drag(tk::Point local) override;
-    void     on_pointer_up(tk::Point local, bool inside_self) override;
-    bool     on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint_before_children(tk::PaintCtx&) override;
+    bool on_pointer_down(tk::Point local) override;
+    void on_pointer_drag(tk::Point local) override;
+    void on_pointer_up(tk::Point local, bool inside_self) override;
+    bool on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
 
     // Store a captured thumbnail for sources_[index]; the tk::Image itself is
     // created lazily in paint() (needs a CanvasFactory, unavailable here).
-    void set_thumbnail(std::size_t index, std::vector<std::uint8_t> rgba,
-                       std::uint32_t w, std::uint32_t h);
+    void set_thumbnail(std::size_t index, std::vector<std::uint8_t> rgba, std::uint32_t w,
+                       std::uint32_t h);
 
     // Weak liveness token for the background thumbnail-capture worker: since
     // thumbnails arrive asynchronously and this widget can be destroyed
     // (selection or cancel) before they all finish, callers must check
     // alive_token().lock() before touching this widget from a posted task.
-    std::weak_ptr<bool> alive_token() const { return weak_flag(); }
+    std::weak_ptr<bool> alive_token() const
+    {
+        return weak_flag();
+    }
 
     // Mounted only while picking, and eats every click — a true modal, so
     // Tab/Shift-Tab stays inside it (Host::advance_focus_).
-    bool access_modal() const override { return visible(); }
+    bool access_modal() const override
+    {
+        return visible();
+    }
 
 private:
     struct TileThumb
     {
-        std::vector<std::uint8_t>  rgba;
-        std::uint32_t              w = 0, h = 0;
+        std::vector<std::uint8_t> rgba;
+        std::uint32_t w = 0, h = 0;
         std::unique_ptr<tk::Image> image; // lazily built in paint()
     };
 
-    float content_height() const override { return content_h_; }
+    float content_height() const override
+    {
+        return content_h_;
+    }
 
     std::vector<tk::ScreenSource> sources_;
-    std::vector<TileThumb>        thumbs_; // parallel to sources_
-    tk::CanvasFactory*            image_factory_ = nullptr;
-    float                         content_h_ = 0.0f;
-    int                           hovered_idx_ = -1;
+    std::vector<TileThumb> thumbs_; // parallel to sources_
+    tk::CanvasFactory* image_factory_ = nullptr;
+    float content_h_ = 0.0f;
+    int hovered_idx_ = -1;
     // Tile clicked on pointer-down; the actual selection fires on pointer-up
     // (see on_pointer_up) so pointer-down can claim capture by returning true
     // without immediately destroying this widget from inside dispatch.
-    int                           pressed_tile_idx_ = -1;
+    int pressed_tile_idx_ = -1;
 
     tk::Button* cancel_btn_ = nullptr;
     // One keyboard stand-in per tile (placed in paint, scroll applied).
@@ -80,8 +89,8 @@ private:
 
     // Cached tile rects for hit-testing (set in arrange).
     std::vector<tk::Rect> tile_rects_;
-    tk::Rect              header_rect_{};
-    tk::Rect              grid_rect_{};
+    tk::Rect header_rect_{};
+    tk::Rect grid_rect_{};
 };
 
 } // namespace tesseract::views

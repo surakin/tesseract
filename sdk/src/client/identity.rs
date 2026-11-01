@@ -23,7 +23,8 @@ use std::sync::Arc;
 static EXCLUDE_INSECURE_DEVICES: AtomicBool = AtomicBool::new(false);
 
 /// Set the process-wide MSC4153 mode. Called by the C++ layer at launch (from
-/// the persisted setting) before any client is built.
+/// the persisted setting) and before each in-place client reload; only
+/// clients built afterwards see the new value.
 pub fn set_exclude_insecure_devices(enabled: bool) {
     EXCLUDE_INSECURE_DEVICES.store(enabled, Ordering::Relaxed);
 }
@@ -32,17 +33,36 @@ pub(crate) fn exclude_insecure_devices() -> bool {
     EXCLUDE_INSECURE_DEVICES.load(Ordering::Relaxed)
 }
 
+static BLOCK_SENDS_ON_UNVERIFIED_DEVICES: AtomicBool = AtomicBool::new(true);
+
+/// Set whether a send is refused when a verified member's identity changed or
+/// they have a device their owner did not cross-sign. Same lifecycle as
+/// [`set_exclude_insecure_devices`]: read when a client is built.
+pub fn set_block_sends_on_unverified_devices(enabled: bool) {
+    BLOCK_SENDS_ON_UNVERIFIED_DEVICES.store(enabled, Ordering::Relaxed);
+}
+
+pub(crate) fn block_sends_on_unverified_devices() -> bool {
+    BLOCK_SENDS_ON_UNVERIFIED_DEVICES.load(Ordering::Relaxed)
+}
+
 /// Who receives room keys (and other Olm-encrypted to-device payloads).
 /// `IdentityBasedStrategy` shares only with devices their owner cross-signed
 /// and refuses to send while a verified user's identity has changed.
-pub(crate) fn room_key_recipient_strategy(exclude_insecure: bool) -> CollectStrategy {
+pub(crate) fn room_key_recipient_strategy(
+    exclude_insecure: bool,
+    block_sends: bool,
+) -> CollectStrategy {
     if exclude_insecure {
         CollectStrategy::IdentityBasedStrategy
-    } else {
-        // Default: every device of a member gets the key, but a send is refused
-        // when a verified member's identity has changed, rather than sending on
-        // past a warning the user may not read (Element X's default).
+    } else if block_sends {
+        // Every device of a member gets the key, but a send is refused when a
+        // verified member's identity has changed or they have an unsigned
+        // device, rather than sending on past a warning the user may not read
+        // (Element X's default).
         CollectStrategy::ErrorOnVerifiedUserProblem
+    } else {
+        CollectStrategy::AllDevices
     }
 }
 
@@ -269,11 +289,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_mode_refuses_sends_past_a_verified_identity_change() {
+    fn default_mode_refuses_sends_past_a_verified_user_problem() {
         // Every device still gets the key, but a verified member's identity
-        // change fails the send instead of being sent past.
+        // change or unsigned device fails the send instead of being sent past.
         assert!(matches!(
-            room_key_recipient_strategy(false),
+            room_key_recipient_strategy(false, true),
             CollectStrategy::ErrorOnVerifiedUserProblem
         ));
         assert!(matches!(
@@ -283,11 +303,22 @@ mod tests {
     }
 
     #[test]
-    fn strict_mode_follows_msc4153() {
+    fn blocking_off_shares_with_all_devices() {
         assert!(matches!(
-            room_key_recipient_strategy(true),
-            CollectStrategy::IdentityBasedStrategy
+            room_key_recipient_strategy(false, false),
+            CollectStrategy::AllDevices
         ));
+    }
+
+    #[test]
+    fn strict_mode_follows_msc4153() {
+        // Strict mode wins over the block setting, whichever way it is set.
+        for block in [true, false] {
+            assert!(matches!(
+                room_key_recipient_strategy(true, block),
+                CollectStrategy::IdentityBasedStrategy
+            ));
+        }
         assert!(matches!(
             decryption_settings(true).sender_device_trust_requirement,
             TrustRequirement::CrossSignedOrLegacy
@@ -307,5 +338,14 @@ mod tests {
         assert!(exclude_insecure_devices());
         set_exclude_insecure_devices(false);
         assert!(!exclude_insecure_devices());
+    }
+
+    #[test]
+    fn block_flag_defaults_on_and_round_trips() {
+        assert!(block_sends_on_unverified_devices());
+        set_block_sends_on_unverified_devices(false);
+        assert!(!block_sends_on_unverified_devices());
+        set_block_sends_on_unverified_devices(true);
+        assert!(block_sends_on_unverified_devices());
     }
 }

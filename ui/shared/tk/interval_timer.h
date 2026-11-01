@@ -19,10 +19,8 @@ class IntervalTimer
 public:
     using OneShot = std::function<void(int ms, std::function<void()>)>;
 
-    IntervalTimer(OneShot schedule, int interval_ms,
-                  std::function<void()> on_tick)
-        : schedule_(std::move(schedule)), interval_ms_(interval_ms),
-          on_tick_(std::move(on_tick))
+    IntervalTimer(OneShot schedule, int interval_ms, std::function<void()> on_tick)
+        : schedule_(std::move(schedule)), interval_ms_(interval_ms), on_tick_(std::move(on_tick))
     {
     }
 

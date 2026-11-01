@@ -42,21 +42,143 @@ pub struct MediaTypeCheck {
 }
 
 const EXEC_EXTS: &[&str] = &[
-    "exe", "com", "scr", "bat", "cmd", "msi", "msp", "mst", "lnk", "url", "pif", "cpl", "dll",
-    "sys", "ocx", "ps1", "ps1xml", "psm1", "psd1", "vbs", "vbe", "vb", "js", "jse", "wsf", "wsh",
-    "hta", "msc", "reg", "inf", "scf", "chm", "jar", "jnlp", "appx", "msix", "gadget", "sh",
-    "bash", "zsh", "fish", "csh", "ksh", "command", "run", "bin", "elf", "appimage", "desktop",
-    "deb", "rpm", "app", "pkg", "dmg", "workflow", "action", "scpt", "applescript", "terminal",
-    "py", "pyw", "pl", "rb", "php", "settingcontent-ms",
+    "exe",
+    "com",
+    "scr",
+    "bat",
+    "cmd",
+    "msi",
+    "msp",
+    "mst",
+    "lnk",
+    "url",
+    "pif",
+    "cpl",
+    "dll",
+    "sys",
+    "ocx",
+    "ps1",
+    "ps1xml",
+    "psm1",
+    "psd1",
+    "vbs",
+    "vbe",
+    "vb",
+    "js",
+    "jse",
+    "wsf",
+    "wsh",
+    "hta",
+    "msc",
+    "reg",
+    "inf",
+    "scf",
+    "chm",
+    "jar",
+    "jnlp",
+    "appx",
+    "msix",
+    "gadget",
+    "sh",
+    "bash",
+    "zsh",
+    "fish",
+    "csh",
+    "ksh",
+    "command",
+    "run",
+    "bin",
+    "elf",
+    "appimage",
+    "desktop",
+    "deb",
+    "rpm",
+    "app",
+    "pkg",
+    "dmg",
+    "workflow",
+    "action",
+    "scpt",
+    "applescript",
+    "terminal",
+    "py",
+    "pyw",
+    "pl",
+    "rb",
+    "php",
+    "settingcontent-ms",
     // Documents the OS opens with scripting enabled.
-    "html", "htm", "xhtml", "xht", "mht", "mhtml", "shtml", "svg", "svgz", "xml", "xsl",
-    "xslt", "docm", "dotm", "xlsm", "xltm", "xlam", "pptm", "potm", "ppam", "ppsm", "sldm",
-    "xll", "iqy", "slk", "application", "appref-ms", "diagcab", "library-ms", "search-ms",
-    "theme", "themepack", "wsc", "sct", "ps2", "ps2xml", "msh", "msh1", "msh2", "mshxml",
-    "webloc", "inetloc", "fileloc", "tool", "ade", "adp", "mda", "mdb", "ws", "vbscript",
+    "html",
+    "htm",
+    "xhtml",
+    "xht",
+    "mht",
+    "mhtml",
+    "shtml",
+    "svg",
+    "svgz",
+    "xml",
+    "xsl",
+    "xslt",
+    "docm",
+    "dotm",
+    "xlsm",
+    "xltm",
+    "xlam",
+    "pptm",
+    "potm",
+    "ppam",
+    "ppsm",
+    "sldm",
+    "xll",
+    "iqy",
+    "slk",
+    "application",
+    "appref-ms",
+    "diagcab",
+    "library-ms",
+    "search-ms",
+    "theme",
+    "themepack",
+    "wsc",
+    "sct",
+    "ps2",
+    "ps2xml",
+    "msh",
+    "msh1",
+    "msh2",
+    "mshxml",
+    "webloc",
+    "inetloc",
+    "fileloc",
+    "tool",
+    "ade",
+    "adp",
+    "mda",
+    "mdb",
+    "ws",
+    "vbscript",
     // Types the OS mounts, installs or configures when opened.
-    "rdp", "mobileconfig", "iso", "img", "vhd", "vhdx", "cab", "one", "onetoc2", "crx", "xpi",
-    "flatpakref", "flatpakrepo", "ovpn", "ics", "eml", "torrent", "website", "hlp", "pyc",
+    "rdp",
+    "mobileconfig",
+    "iso",
+    "img",
+    "vhd",
+    "vhdx",
+    "cab",
+    "one",
+    "onetoc2",
+    "crx",
+    "xpi",
+    "flatpakref",
+    "flatpakrepo",
+    "ovpn",
+    "ics",
+    "eml",
+    "torrent",
+    "website",
+    "hlp",
+    "pyc",
     "kdelnk",
 ];
 
@@ -112,7 +234,13 @@ const EXEC_MIMES: &[&str] = &[
 /// Mime groups whose members are interchangeable containers for this check
 /// (an `.ogg` sent as `audio/ogg` or `video/ogg`, an `.m4a` sent as `audio/mp4`...).
 const FAMILIES: &[&[&str]] = &[
-    &["audio/ogg", "video/ogg", "application/ogg", "audio/opus", "audio/vorbis"],
+    &[
+        "audio/ogg",
+        "video/ogg",
+        "application/ogg",
+        "audio/opus",
+        "audio/vorbis",
+    ],
     &[
         "video/mp4",
         "audio/mp4",
@@ -122,7 +250,12 @@ const FAMILIES: &[&[&str]] = &[
         "video/x-m4v",
         "audio/aac",
     ],
-    &["video/webm", "audio/webm", "video/x-matroska", "audio/x-matroska"],
+    &[
+        "video/webm",
+        "audio/webm",
+        "video/x-matroska",
+        "audio/x-matroska",
+    ],
     &["audio/mpeg", "audio/mp3"],
     &["audio/wav", "audio/x-wav", "audio/vnd.wave", "audio/wave"],
     &["image/tiff", "image/tif"],
@@ -164,7 +297,12 @@ fn fold_alias(m: &str) -> &str {
 
 /// `type/subtype`, lower-case, without parameters, with common aliases folded.
 pub fn normalize_mime(raw: &str) -> String {
-    let base = raw.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
+    let base = raw
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
     fold_alias(&base).to_owned()
 }
 
@@ -196,12 +334,25 @@ pub fn sanitize_filename(raw: &str) -> String {
     let mut s: String = leaf
         .chars()
         .filter(|c| !c.is_control() && !is_bidi_control(*c))
-        .map(|c| if matches!(c, '<' | '>' | ':' | '"' | '|' | '?' | '*') { '_' } else { c })
+        .map(|c| {
+            if matches!(c, '<' | '>' | ':' | '"' | '|' | '?' | '*') {
+                '_'
+            } else {
+                c
+            }
+        })
         .collect();
-    s = s.trim_matches(|c: char| c == '.' || c.is_whitespace()).to_owned();
+    s = s
+        .trim_matches(|c: char| c == '.' || c.is_whitespace())
+        .to_owned();
 
     // Windows reserved device names are reserved with any extension.
-    let stem_upper = s.split('.').next().unwrap_or("").trim().to_ascii_uppercase();
+    let stem_upper = s
+        .split('.')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_uppercase();
     let reserved = matches!(stem_upper.as_str(), "CON" | "PRN" | "AUX" | "NUL")
         || (stem_upper.len() == 4
             && (stem_upper.starts_with("COM") || stem_upper.starts_with("LPT"))
@@ -214,7 +365,8 @@ pub fn sanitize_filename(raw: &str) -> String {
     if s.len() > MAX_NAME_BYTES {
         let (stem, ext) = split_ext(&s);
         let keep_ext = if ext.len() <= 16 { ext } else { "" };
-        let budget = MAX_NAME_BYTES.saturating_sub(keep_ext.len() + usize::from(!keep_ext.is_empty()));
+        let budget =
+            MAX_NAME_BYTES.saturating_sub(keep_ext.len() + usize::from(!keep_ext.is_empty()));
         let mut cut = budget.min(stem.len());
         while !stem.is_char_boundary(cut) {
             cut -= 1;
@@ -301,12 +453,18 @@ fn sniff(head: &[u8]) -> (String, bool) {
         if head.len() >= 0x40 {
             let off = u32::from_le_bytes([head[0x3C], head[0x3D], head[0x3E], head[0x3F]]) as usize;
             if head.get(off..off + 4) == Some(b"PE\0\0") {
-                return ("application/vnd.microsoft.portable-executable".to_owned(), true);
+                return (
+                    "application/vnd.microsoft.portable-executable".to_owned(),
+                    true,
+                );
             }
             // The header may point past the bytes we were given; a binary
             // header (NULs in the DOS stub area) still counts.
             if off >= head.len() && head[2..0x40].contains(&0) {
-                return ("application/vnd.microsoft.portable-executable".to_owned(), true);
+                return (
+                    "application/vnd.microsoft.portable-executable".to_owned(),
+                    true,
+                );
             }
         }
         // Not a real PE: infer would still call any "MZ" file an .exe.
@@ -338,8 +496,8 @@ fn sniff(head: &[u8]) -> (String, bool) {
     }
     match infer::get(head) {
         Some(t) => {
-            let exec = t.matcher_type() == infer::MatcherType::App
-                || EXEC_MIMES.contains(&t.mime_type());
+            let exec =
+                t.matcher_type() == infer::MatcherType::App || EXEC_MIMES.contains(&t.mime_type());
             (t.mime_type().to_owned(), exec)
         }
         None => (String::new(), false),
@@ -424,7 +582,8 @@ pub fn check(filename: &str, declared_mime: &str, head: &[u8]) -> MediaTypeCheck
             .collect()
     };
     let ext_matches = |mime: &str| {
-        ext_mimes.iter().any(|m| equivalent(m, mime)) || (is_zip_based(mime, "") && is_zip_based("", &ext))
+        ext_mimes.iter().any(|m| equivalent(m, mime))
+            || (is_zip_based(mime, "") && is_zip_based("", &ext))
     };
 
     // Content vs the other two claims. An unrecognised format never warns.
@@ -473,7 +632,8 @@ fn is_safe_media(mime: &str) -> bool {
 mod tests {
     use super::*;
 
-    const PNG: &[u8] = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR\0\0\0\x01\0\0\0\x01\x08\x06\0\0\0\x1f\x15\xc4\x89";
+    const PNG: &[u8] =
+        b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR\0\0\0\x01\0\0\0\x01\x08\x06\0\0\0\x1f\x15\xc4\x89";
     const JPEG: &[u8] = b"\xff\xd8\xff\xe0\0\x10JFIF\0\x01\x01\0\0\x01\0\x01\0\0\xff\xdb";
     // Minimal DOS stub whose e_lfanew (0x40) points at a "PE\0\0" signature.
     const PE_HEADER: [u8; 0x48] = {
@@ -497,7 +657,10 @@ mod tests {
     #[test]
     fn jpg_alias_and_params_are_normalised() {
         assert_eq!(check("a.jpg", "image/jpg", JPEG).verdict, Verdict::Ok);
-        assert_eq!(check("a.JPEG", "IMAGE/JPEG; charset=x", JPEG).verdict, Verdict::Ok);
+        assert_eq!(
+            check("a.JPEG", "IMAGE/JPEG; charset=x", JPEG).verdict,
+            Verdict::Ok
+        );
     }
 
     #[test]
@@ -548,13 +711,22 @@ mod tests {
 
     #[test]
     fn unrecognised_content_trusts_the_claims() {
-        assert_eq!(check("notes.txt", "text/plain", b"hello world\n").verdict, Verdict::Ok);
-        assert_eq!(check("data.csv", "text/csv", b"a,b\n1,2\n").verdict, Verdict::NotMedia);
+        assert_eq!(
+            check("notes.txt", "text/plain", b"hello world\n").verdict,
+            Verdict::Ok
+        );
+        assert_eq!(
+            check("data.csv", "text/csv", b"a,b\n1,2\n").verdict,
+            Verdict::NotMedia
+        );
     }
 
     #[test]
     fn generic_declared_mime_defers_to_extension_and_content() {
-        assert_eq!(check("cat.png", "application/octet-stream", PNG).verdict, Verdict::Ok);
+        assert_eq!(
+            check("cat.png", "application/octet-stream", PNG).verdict,
+            Verdict::Ok
+        );
         assert_eq!(check("cat.png", "", JPEG).verdict, Verdict::ContentMismatch);
         assert_eq!(check("x.unknownext", "", b"abc").verdict, Verdict::NotMedia);
     }
@@ -572,7 +744,10 @@ mod tests {
         let zip = b"PK\x03\x04\x14\0\0\0\x08\0";
         let docx = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
         assert_eq!(check("r.docx", docx, zip).verdict, Verdict::NotMedia);
-        assert_eq!(check("r.zip", "application/zip", zip).verdict, Verdict::NotMedia);
+        assert_eq!(
+            check("r.zip", "application/zip", zip).verdict,
+            Verdict::NotMedia
+        );
     }
 
     #[test]
@@ -588,7 +763,11 @@ mod tests {
             ("a.desktop", "application/x-desktop", b"[Desktop Entry]"),
             ("a.lnk", "", b"\x4c\0\0\0\x01\x14\x02\0"),
         ] {
-            assert_eq!(check(name, mime, head).verdict, Verdict::Executable, "{name}");
+            assert_eq!(
+                check(name, mime, head).verdict,
+                Verdict::Executable,
+                "{name}"
+            );
         }
     }
 
@@ -597,7 +776,11 @@ mod tests {
         // Declared type and contents are a perfect PNG, but ".rdp" / ".iso" are
         // what the OS acts on.
         for name in ["a.reg2", "a.unknownext"] {
-            assert_eq!(check(name, "image/png", PNG).verdict, Verdict::NotMedia, "{name}");
+            assert_eq!(
+                check(name, "image/png", PNG).verdict,
+                Verdict::NotMedia,
+                "{name}"
+            );
         }
         // Known-but-not-media extensions never open silently either.
         for name in ["a.rdp", "a.iso", "a.vhd", "a.img"] {
@@ -611,7 +794,10 @@ mod tests {
         assert_eq!(r.verdict, Verdict::Executable);
         let r = check("a.png", "application/x-futuristic-script", b"");
         assert!(!["js", "vbs", "exe"].contains(&r.suggested_ext.as_str()));
-        assert_eq!(check("photo", "text/javascript", b"").verdict, Verdict::Executable);
+        assert_eq!(
+            check("photo", "text/javascript", b"").verdict,
+            Verdict::Executable
+        );
     }
 
     #[test]
@@ -619,8 +805,19 @@ mod tests {
         assert_eq!(check("a.pdf", "application/pdf", PDF).verdict, Verdict::Ok);
         assert_eq!(check("a.mp4", "video/mp4", b"").verdict, Verdict::Ok);
         assert_eq!(check("a.mp3", "audio/mpeg", b"").verdict, Verdict::Ok);
-        assert_eq!(check("a.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", b"").verdict, Verdict::NotMedia);
-        assert_eq!(check("a.7z", "application/x-7z-compressed", b"").verdict, Verdict::NotMedia);
+        assert_eq!(
+            check(
+                "a.docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                b""
+            )
+            .verdict,
+            Verdict::NotMedia
+        );
+        assert_eq!(
+            check("a.7z", "application/x-7z-compressed", b"").verdict,
+            Verdict::NotMedia
+        );
         assert_eq!(check("a.xlsx", "", b"").verdict, Verdict::NotMedia);
         assert_eq!(check("a.png", "image/png", PNG).effective_mime, "image/png");
     }
@@ -654,29 +851,51 @@ mod tests {
             ("a.webloc", ""),
             ("a.txt", "text/html"),
         ] {
-            assert_eq!(check(name, mime, b"<x>").verdict, Verdict::Executable, "{name}");
+            assert_eq!(
+                check(name, mime, b"<x>").verdict,
+                Verdict::Executable,
+                "{name}"
+            );
         }
     }
 
     #[test]
     fn container_aliases_do_not_false_alarm() {
         assert_eq!(check("a.heic", "image/heif", b"").verdict, Verdict::Ok);
-        assert_eq!(check("a.flac", "audio/x-flac", b"fLaC\0\0\0\x22").verdict, Verdict::Ok);
+        assert_eq!(
+            check("a.flac", "audio/x-flac", b"fLaC\0\0\0\x22").verdict,
+            Verdict::Ok
+        );
         assert_eq!(check("a.ico", "image/x-icon", b"").verdict, Verdict::Ok);
     }
 
     #[test]
     fn weak_magic_does_not_flag_plain_text() {
-        assert_eq!(check("a.txt", "text/plain", b"MZ-1234 widget\n").verdict, Verdict::Ok);
-        assert_eq!(check("a.txt", "text/plain", b"#! not a script\n").verdict, Verdict::Ok);
+        assert_eq!(
+            check("a.txt", "text/plain", b"MZ-1234 widget\n").verdict,
+            Verdict::Ok
+        );
+        assert_eq!(
+            check("a.txt", "text/plain", b"#! not a script\n").verdict,
+            Verdict::Ok
+        );
         let mut pe = vec![0u8; 0x80];
         pe[0] = b'M';
         pe[1] = b'Z';
         pe[0x3C] = 0x40;
         pe[0x40..0x44].copy_from_slice(b"PE\0\0");
-        assert_eq!(check("a.png", "image/png", &pe).verdict, Verdict::Executable);
-        assert_eq!(check("a.txt", "text/plain", b"#!/bin/sh\n").verdict, Verdict::Executable);
-        assert_eq!(check("a.txt", "text/plain", b"#!/usr/bin/env python\n").verdict, Verdict::Executable);
+        assert_eq!(
+            check("a.png", "image/png", &pe).verdict,
+            Verdict::Executable
+        );
+        assert_eq!(
+            check("a.txt", "text/plain", b"#!/bin/sh\n").verdict,
+            Verdict::Executable
+        );
+        assert_eq!(
+            check("a.txt", "text/plain", b"#!/usr/bin/env python\n").verdict,
+            Verdict::Executable
+        );
     }
 
     #[test]
@@ -695,7 +914,10 @@ mod tests {
         // "photo" + RLO + "gpj.exe" renders as "photoexe.jpg".
         let s = sanitize_filename("photo\u{202E}gpj.exe");
         assert_eq!(s, "photogpj.exe");
-        assert_eq!(check("photo\u{202E}gpj.exe", "image/jpeg", JPEG).verdict, Verdict::Executable);
+        assert_eq!(
+            check("photo\u{202E}gpj.exe", "image/jpeg", JPEG).verdict,
+            Verdict::Executable
+        );
     }
 
     #[test]

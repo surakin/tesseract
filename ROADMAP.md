@@ -15,14 +15,27 @@ and in-progress work, as a single backlog ordered by priority/urgency.
 
 ## Tier 2 — Next up
 
-- **Mac App Store edition — live verification.** `TESSERACT_MAC_APP_STORE`
-  builds, but nothing has run sandboxed yet: OAuth loopback login, camera /
-  mic / screen share, location, file save/open, the `NSWorkspace`
-  profile-switch relaunch (vs. `LSMultipleInstancesProhibited`), and the
-  DMG→container migration — including whether keychain sessions written by
-  the DMG build stay readable. Then a real signed `appstore-pkg` through
-  `altool --validate-app`. Confirm `ITSAppUsesNonExemptEncryption`
-  against the export-compliance answer.
+- **Mac App Store edition — live verification.** A signed universal
+  `appstore-pkg` passes `altool --validate-app` and runs from TestFlight.
+  Verified: DMG→container migration, keychain sessions surviving it, camera
+  and mic, screen share, OAuth loopback login, drag-and-drop send, history
+  export to a chosen folder. Verified too: media-viewer save (after writing
+  the chosen file directly), avatar picker, key export/import. Settings'
+  "Restart now" works (LaunchServices refused the second instance until
+  `LSMultipleInstancesProhibited` was removed, and ignores a sandboxed
+  caller's arguments, so they travel in a handoff file). Known cosmetic issue:
+  the relaunched instance gets its own Dock tile instead of the pinned one,
+  because it starts as a second instance; a helper that reopens the app after
+  it exits would fix it. A duplicate launch can't forward to the running
+  instance in the sandbox (distributed notification with userInfo is blocked);
+  matters only for Terminal launches. Location: on a Mac upgraded from the DMG
+  build no permission prompt appeared and the request waited until access was
+  granted in System Settings; the log shows `locationd` denied reading the app
+  bundle at that moment (App Management protection, `com.apple.macl`?), cause
+  unconfirmed, retest under a fresh macOS user. The sandbox also logged `deny
+  hid-control` during calls: check push-to-talk / global shortcuts. Confirm
+  `ITSAppUsesNonExemptEncryption` against the export-compliance answer
+  (Tesseract's own crypto needs a French declaration if sold in France).
 - **DM-counterpart avatar picks the bridge bot itself** when the bridge
   doesn't publish `io.element.functional_members` (MSC4171) — heisenbridge
   currently lacks the state event, so 1:1 control rooms show the bot's own
@@ -37,7 +50,15 @@ and in-progress work, as a single backlog ordered by priority/urgency.
   nothing has been driven with a real screen reader yet (Orca on Qt6 first,
   then GTK4, Narrator/NVDA, VoiceOver). Phase 5's keyboard-only audit is
   done (2026-10-04) bar a live keyboard-only walkthrough per platform; the
-  high-contrast theme and reduce-motion still need their own plan.
+  high-contrast theme is done on Windows (other shells still return no
+  `os_high_contrast_()`); reduce-motion still needs its own plan.
+- **Qt6: multi-line native text areas still paint on screen.** `NavLineEdit`
+  now paints only while captured via `render()`, because `WA_DontShowOnScreen`
+  does nothing for a child widget; `QtNativeTextArea` (composer and other
+  multi-line fields) has the same leak, so it is drawn natively under its
+  canvas copy. The fix is the same idea, but painting happens in the scroll
+  area's viewport and its scrollbars are separate child widgets that would
+  also need suppressing.
 - **Animated avatars: bound their memory.** Animated avatars live in the
   shared 64 MB `anim_cache_` (stickers, GIFs, pickers). Decoding is capped only
   by `kAnimDecodeMaxFrames` (200 frames × ~25 KB at 80×80 ≈ 5 MB per avatar),
@@ -52,10 +73,9 @@ and in-progress work, as a single backlog ordered by priority/urgency.
   self-mention emphasis, device rename, new-device warnings, edit history
   viewer.
 - Room upgrades, alias management beyond viewing.
-- **MSC4153 follow-ups.** The MSC4350 bridge-bot annotation, a reason
-  tooltip on sends blocked by an encryption check (`pending_error` is
-  already on the row), and translating the Rust-side UTD reason strings
-  (`utd_message_for_cause`).
+- **MSC4153 follow-ups.** The MSC4350 bridge-bot annotation, a "verify this
+  device" action for sends blocked with `own_verification_required`, and
+  translating the Rust-side UTD reason strings (`utd_message_for_cause`).
 - **MSC2545 pack management — manual order/sort.** List/subscribe UI, pack
   creation/removal, and sticker delete/rename inside the user pack all
   shipped 2026-07-11 (global "Emojis & Stickers" settings tab +
@@ -84,15 +104,6 @@ and in-progress work, as a single backlog ordered by priority/urgency.
   skip the fetch when the notification won't be shown. The macOS + Linux
   (Qt6/GTK4) `IScreenLock` impls and notifier-render paths still need
   on-device smoke tests (built only on Win32 here).
-- **Win32 title-bar chrome doesn't follow the in-app accent choice** —
-  `ui/windows/src/Theme.h`/`.cpp` (`win32::theme`) is a separate,
-  GDI/DWM-only system governing native, non-client-area rendering (caption
-  colors, immersive-dark-mode toggling); it reads the OS's own registry
-  accent color and has no coupling to `tk::Palette` or
-  `Settings::theme_accent`. Picking a non-Blue accent (Forest/Sunset/Violet)
-  in Settings → Appearance currently only affects in-app widget painting,
-  not the window's own title bar. Out of scope for the accent-themes
-  feature; a distinct, Windows-only follow-up if wanted.
 - **GTK4 shell: dead CSS rules** — the static CSS block in
   `ui/linux-gtk/src/MainWindow.cpp` defines `.sidebar`, `.sidebar-separator`,
   `.message-body`, `.sender-name`, `.timestamp`, `.avatar-initial`,
@@ -167,6 +178,14 @@ and in-progress work, as a single backlog ordered by priority/urgency.
 
 - Group calls beyond current MatrixRTC support, Multi-SFU tracking as the
   spec evolves.
+- **MatrixRTC, remaining**: publishers still use the lk-jwt-service
+  `/sfu/get` token and legacy LiveKit identity, as Element Call does; the
+  homeserver `get_token` endpoint, hashed publisher identities and delegated
+  delayed leave are not used. No delayed leave is scheduled for the
+  `m.rtc.member` event (a delayed event cannot be encrypted client-side); its
+  5 minute sticky lifetime bounds how long a crashed client looks joined.
+  Verified live against Element Call and an Element phone on a Synapse with
+  MSC4354; still untested: servers without it, and the GTK4/Windows/macOS builds.
 - **Notifications, layer 2 server pushers** — Windows deferred (WNS needs
   Store registration; UnifiedPush distributors on Windows are an option);
   macOS deferred (APNs).

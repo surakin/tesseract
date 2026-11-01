@@ -19,50 +19,48 @@ constexpr std::int64_t kSkipIntervalMs = 15000;
 MacNowPlaying::MacNowPlaying(tesseract::AccountManager& account_manager)
     : account_manager_(account_manager)
 {
-    account_manager_.media_playback_hub().on_changed = [this] { refresh_(); };
+    account_manager_.media_playback_hub().on_changed = [this]
+    {
+        refresh_();
+    };
 
     MPRemoteCommandCenter* center = [MPRemoteCommandCenter sharedCommandCenter];
 
-    [center.playCommand addTargetWithHandler:^MPRemoteCommandHandlerStatus(
-        MPRemoteCommandEvent* event) {
-        (void)event;
-        account_manager_.media_playback_hub().play();
-        return MPRemoteCommandHandlerStatusSuccess;
-    }];
-    [center.pauseCommand addTargetWithHandler:^MPRemoteCommandHandlerStatus(
-        MPRemoteCommandEvent* event) {
-        (void)event;
-        account_manager_.media_playback_hub().pause();
-        return MPRemoteCommandHandlerStatusSuccess;
-    }];
+    [center.playCommand
+        addTargetWithHandler:^MPRemoteCommandHandlerStatus(MPRemoteCommandEvent* event) {
+            (void)event;
+            account_manager_.media_playback_hub().play();
+            return MPRemoteCommandHandlerStatusSuccess;
+        }];
+    [center.pauseCommand
+        addTargetWithHandler:^MPRemoteCommandHandlerStatus(MPRemoteCommandEvent* event) {
+            (void)event;
+            account_manager_.media_playback_hub().pause();
+            return MPRemoteCommandHandlerStatusSuccess;
+        }];
     [center.togglePlayPauseCommand
-        addTargetWithHandler:^MPRemoteCommandHandlerStatus(
-            MPRemoteCommandEvent* event) {
+        addTargetWithHandler:^MPRemoteCommandHandlerStatus(MPRemoteCommandEvent* event) {
             (void)event;
             account_manager_.media_playback_hub().play_pause();
             return MPRemoteCommandHandlerStatusSuccess;
         }];
-    [center.stopCommand addTargetWithHandler:^MPRemoteCommandHandlerStatus(
-        MPRemoteCommandEvent* event) {
-        (void)event;
-        account_manager_.media_playback_hub().stop();
-        return MPRemoteCommandHandlerStatusSuccess;
-    }];
+    [center.stopCommand
+        addTargetWithHandler:^MPRemoteCommandHandlerStatus(MPRemoteCommandEvent* event) {
+            (void)event;
+            account_manager_.media_playback_hub().stop();
+            return MPRemoteCommandHandlerStatusSuccess;
+        }];
 
-    center.skipForwardCommand.preferredIntervals =
-        @[ @(kSkipIntervalMs / 1000.0) ];
+    center.skipForwardCommand.preferredIntervals = @[ @(kSkipIntervalMs / 1000.0) ];
     [center.skipForwardCommand
-        addTargetWithHandler:^MPRemoteCommandHandlerStatus(
-            MPRemoteCommandEvent* event) {
+        addTargetWithHandler:^MPRemoteCommandHandlerStatus(MPRemoteCommandEvent* event) {
             (void)event;
             account_manager_.media_playback_hub().seek(kSkipIntervalMs);
             return MPRemoteCommandHandlerStatusSuccess;
         }];
-    center.skipBackwardCommand.preferredIntervals =
-        @[ @(kSkipIntervalMs / 1000.0) ];
+    center.skipBackwardCommand.preferredIntervals = @[ @(kSkipIntervalMs / 1000.0) ];
     [center.skipBackwardCommand
-        addTargetWithHandler:^MPRemoteCommandHandlerStatus(
-            MPRemoteCommandEvent* event) {
+        addTargetWithHandler:^MPRemoteCommandHandlerStatus(MPRemoteCommandEvent* event) {
             (void)event;
             account_manager_.media_playback_hub().seek(-kSkipIntervalMs);
             return MPRemoteCommandHandlerStatusSuccess;
@@ -92,8 +90,8 @@ MacNowPlaying::~MacNowPlaying()
     [center.skipBackwardCommand removeTarget:nil];
 
     MPNowPlayingInfoCenter* info = [MPNowPlayingInfoCenter defaultCenter];
-    info.nowPlayingInfo   = nil;
-    info.playbackState    = MPNowPlayingPlaybackStateStopped;
+    info.nowPlayingInfo = nil;
+    info.playbackState = MPNowPlayingPlaybackStateStopped;
 }
 
 void MacNowPlaying::refresh_()
@@ -107,31 +105,35 @@ void MacNowPlaying::refresh_()
     // "nothing loaded" snapshot (see GtkMprisPlayer.cpp); Control Center /
     // Touch Bar likely cache similarly.
     MPRemoteCommandCenter* center = [MPRemoteCommandCenter sharedCommandCenter];
-    center.playCommand.enabled           = loaded;
-    center.pauseCommand.enabled          = loaded;
+    center.playCommand.enabled = loaded;
+    center.pauseCommand.enabled = loaded;
     center.togglePlayPauseCommand.enabled = loaded;
-    center.stopCommand.enabled           = loaded;
-    center.skipForwardCommand.enabled    = loaded;
-    center.skipBackwardCommand.enabled   = loaded;
+    center.stopCommand.enabled = loaded;
+    center.skipForwardCommand.enabled = loaded;
+    center.skipBackwardCommand.enabled = loaded;
 
     MPNowPlayingInfoCenter* info = [MPNowPlayingInfoCenter defaultCenter];
     if (!loaded)
     {
         info.nowPlayingInfo = nil;
-        info.playbackState  = MPNowPlayingPlaybackStateStopped;
+        info.playbackState = MPNowPlayingPlaybackStateStopped;
         return;
     }
 
     NSMutableDictionary* dict = [NSMutableDictionary dictionary];
     if (!np.title.empty())
+    {
         dict[MPMediaItemPropertyTitle] = [NSString stringWithUTF8String:np.title.c_str()];
+    }
     if (!np.artist.empty())
+    {
         dict[MPMediaItemPropertyArtist] = [NSString stringWithUTF8String:np.artist.c_str()];
+    }
     // NowPlaying reports position/duration in milliseconds; MediaPlayer
     // framework properties are in seconds.
     dict[MPNowPlayingInfoPropertyElapsedPlaybackTime] = @(np.position_ms / 1000.0);
-    dict[MPMediaItemPropertyPlaybackDuration]         = @(np.duration_ms / 1000.0);
-    dict[MPNowPlayingInfoPropertyPlaybackRate]        = @(np.is_playing ? 1.0 : 0.0);
+    dict[MPMediaItemPropertyPlaybackDuration] = @(np.duration_ms / 1000.0);
+    dict[MPNowPlayingInfoPropertyPlaybackRate] = @(np.is_playing ? 1.0 : 0.0);
     info.nowPlayingInfo = dict;
     info.playbackState =
         np.is_playing ? MPNowPlayingPlaybackStatePlaying : MPNowPlayingPlaybackStatePaused;

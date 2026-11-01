@@ -9,10 +9,22 @@ TEST_CASE("call overlay programmatic controls preserve button behavior")
     bool video = false;
     int hangups = 0;
     int changes = 0;
-    overlay.on_toggle_audio = [&](bool muted) { audio = muted; };
-    overlay.on_toggle_video = [&](bool muted) { video = muted; };
-    overlay.on_hang_up = [&] { ++hangups; };
-    overlay.on_controls_changed = [&] { ++changes; };
+    overlay.on_toggle_audio = [&](bool muted)
+    {
+        audio = muted;
+    };
+    overlay.on_toggle_video = [&](bool muted)
+    {
+        video = muted;
+    };
+    overlay.on_hang_up = [&]
+    {
+        ++hangups;
+    };
+    overlay.on_controls_changed = [&]
+    {
+        ++changes;
+    };
 
     overlay.toggle_audio();
     overlay.toggle_video();

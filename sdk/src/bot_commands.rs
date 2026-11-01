@@ -198,9 +198,10 @@ pub enum UnionVariantSchema {
 
 fn array_item_well_formed(item: &ArrayItemSchema) -> bool {
     match item {
-        ArrayItemSchema::Literal { value, literal_type } => {
-            literal_value_matches(value, *literal_type)
-        }
+        ArrayItemSchema::Literal {
+            value,
+            literal_type,
+        } => literal_value_matches(value, *literal_type),
         ArrayItemSchema::Union { variants } => variants.iter().all(union_variant_well_formed),
         ArrayItemSchema::Primitive { .. } => true,
     }
@@ -208,9 +209,10 @@ fn array_item_well_formed(item: &ArrayItemSchema) -> bool {
 
 fn union_variant_well_formed(variant: &UnionVariantSchema) -> bool {
     match variant {
-        UnionVariantSchema::Literal { value, literal_type } => {
-            literal_value_matches(value, *literal_type)
-        }
+        UnionVariantSchema::Literal {
+            value,
+            literal_type,
+        } => literal_value_matches(value, *literal_type),
         UnionVariantSchema::Primitive { .. } => true,
     }
 }
@@ -224,7 +226,10 @@ fn union_variant_well_formed(variant: &UnionVariantSchema) -> bool {
 /// comments), so this only needs to check literal value/type agreement.
 fn schema_well_formed(schema: &ParamSchema) -> bool {
     match schema {
-        ParamSchema::Literal { value, literal_type } => literal_value_matches(value, *literal_type),
+        ParamSchema::Literal {
+            value,
+            literal_type,
+        } => literal_value_matches(value, *literal_type),
         ParamSchema::Array { items } => array_item_well_formed(items),
         ParamSchema::Primitive { .. } | ParamSchema::Object { .. } => true,
     }
@@ -314,8 +319,8 @@ pub fn parse_command_description(
 ) -> Option<CommandDescription> {
     let raw: CommandDescriptionContent = serde_json::from_value(content.clone()).ok()?;
 
-    let mut valid = command_name_well_formed(&raw.command)
-        && raw.parameters.len() <= MAX_COMMAND_PARAMETERS;
+    let mut valid =
+        command_name_well_formed(&raw.command) && raw.parameters.len() <= MAX_COMMAND_PARAMETERS;
 
     let mut seen_keys = HashSet::with_capacity(raw.parameters.len());
     for p in &raw.parameters {
@@ -479,7 +484,8 @@ mod tests {
             ],
             "description": { "m.text": [{ "body": "An example command with arguments" }] }
         });
-        let d = parse_command_description("@draupnir:draupnir.space", "state1", "!room:h", &c).unwrap();
+        let d =
+            parse_command_description("@draupnir:draupnir.space", "state1", "!room:h", &c).unwrap();
         assert!(d.valid);
         assert_eq!(d.command, "ban");
         assert_eq!(d.parameters.len(), 4);
@@ -584,7 +590,14 @@ mod tests {
 
     #[test]
     fn command_name_outside_the_grammar_marks_invalid() {
-        for name in ["", "Ban", "ban user", "ban\nnow", "\u{202e}ban", &"a".repeat(33)] {
+        for name in [
+            "",
+            "Ban",
+            "ban user",
+            "ban\nnow",
+            "\u{202e}ban",
+            &"a".repeat(33),
+        ] {
             let c = json!({ "command": name });
             let d = parse_command_description("@bot:h", "s", "!r:h", &c).unwrap();
             assert!(!d.valid, "{name:?} should be invalid");
@@ -805,14 +818,8 @@ mod tests {
 
     #[test]
     fn build_invocation_content_includes_formatted_body_when_present() {
-        let content = build_invocation_content(
-            "plain",
-            Some("<b>html</b>"),
-            &[],
-            false,
-            "cmd",
-            json!({}),
-        );
+        let content =
+            build_invocation_content("plain", Some("<b>html</b>"), &[], false, "cmd", json!({}));
         assert_eq!(content["formatted_body"], "<b>html</b>");
         assert_eq!(content["format"], "org.matrix.custom.html");
     }

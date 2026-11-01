@@ -66,7 +66,10 @@ pub(super) async fn download_images(
     }
     if let Err(e) = tokio::fs::create_dir_all(media_dir).await {
         tracing::warn!("history export: failed to create media dir {media_dir:?}: {e}");
-        return descriptors.into_iter().map(|d| (d, ImageOutcome::Failed)).collect();
+        return descriptors
+            .into_iter()
+            .map(|d| (d, ImageOutcome::Failed))
+            .collect();
     }
 
     // Pre-assign filenames sequentially (cheap, no I/O) so the concurrent
@@ -101,7 +104,9 @@ pub(super) async fn download_images(
                 .await
                 {
                     super::super::media::MediaFetchOutcome::Failed => (desc, ImageOutcome::Failed),
-                    super::super::media::MediaFetchOutcome::TooLarge => (desc, ImageOutcome::TooLarge),
+                    super::super::media::MediaFetchOutcome::TooLarge => {
+                        (desc, ImageOutcome::TooLarge)
+                    }
                     super::super::media::MediaFetchOutcome::Ok(bytes) => {
                         // `download_media_outcome` returns raw bytes, no
                         // content-type. A sender chooses the name, so a
@@ -115,7 +120,12 @@ pub(super) async fn download_images(
                         };
                         let final_name = format!("{stem}.{ext}");
                         match tokio::fs::write(media_dir.join(&final_name), &bytes).await {
-                            Ok(()) => (desc, ImageOutcome::Saved { rel_path: final_name }),
+                            Ok(()) => (
+                                desc,
+                                ImageOutcome::Saved {
+                                    rel_path: final_name,
+                                },
+                            ),
                             Err(_) => (desc, ImageOutcome::Failed),
                         }
                     }
@@ -199,8 +209,8 @@ fn sniff_image_extension(bytes: &[u8]) -> Option<&'static str> {
 /// Windows device names: a file whose stem is one of these (any case, any
 /// extension) can't be created normally on Windows.
 const WINDOWS_RESERVED_STEMS: [&str; 22] = [
-    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7",
-    "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+    "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
 ];
 
 /// Strips characters illegal (or awkward) in a filename on Windows, macOS,
@@ -223,7 +233,10 @@ fn sanitize_component(s: &str) -> String {
         return "file".to_string();
     }
     let stem = capped.split('.').next().unwrap_or("").trim_end();
-    if WINDOWS_RESERVED_STEMS.iter().any(|r| r.eq_ignore_ascii_case(stem)) {
+    if WINDOWS_RESERVED_STEMS
+        .iter()
+        .any(|r| r.eq_ignore_ascii_case(stem))
+    {
         format!("_{capped}")
     } else {
         capped
@@ -243,7 +256,10 @@ mod tests {
 
     #[test]
     fn sniff_image_extension_recognizes_jpeg() {
-        assert_eq!(sniff_image_extension(&[0xFF, 0xD8, 0xFF, 0xE0]), Some("jpg"));
+        assert_eq!(
+            sniff_image_extension(&[0xFF, 0xD8, 0xFF, 0xE0]),
+            Some("jpg")
+        );
     }
 
     #[test]
@@ -286,8 +302,14 @@ mod tests {
 
     #[test]
     fn sniff_image_extension_has_no_svg_or_html() {
-        assert_eq!(sniff_image_extension(b"<svg xmlns='http://www.w3.org/2000/svg'/>"), None);
-        assert_eq!(sniff_image_extension(b"<html><script>alert(1)</script>"), None);
+        assert_eq!(
+            sniff_image_extension(b"<svg xmlns='http://www.w3.org/2000/svg'/>"),
+            None
+        );
+        assert_eq!(
+            sniff_image_extension(b"<html><script>alert(1)</script>"),
+            None
+        );
     }
 
     #[test]
@@ -302,7 +324,10 @@ mod tests {
 
     #[test]
     fn sanitize_component_strips_illegal_characters() {
-        assert_eq!(sanitize_component("a/b\\c:d*e?f\"g<h>i|j"), "a_b_c_d_e_f_g_h_i_j");
+        assert_eq!(
+            sanitize_component("a/b\\c:d*e?f\"g<h>i|j"),
+            "a_b_c_d_e_f_g_h_i_j"
+        );
     }
 
     #[test]

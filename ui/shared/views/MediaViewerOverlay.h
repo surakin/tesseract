@@ -87,8 +87,7 @@ public:
     // per chunk, then exactly one of end_stream() / fail_stream(). Falls back to
     // buffering transparently when the backend can't stream.
     void begin_stream_or_buffer(std::uint64_t token);
-    void feed_stream_chunk(std::uint64_t token, const std::uint8_t* data,
-                           std::size_t size);
+    void feed_stream_chunk(std::uint64_t token, const std::uint8_t* data, std::size_t size);
     void set_stream_length(std::uint64_t token, std::uint64_t total_size);
     void end_stream(std::uint64_t token);
     void fail_stream(std::uint64_t token);
@@ -160,8 +159,7 @@ public:
 protected:
     bool on_content_pointer_down_(tk::Point world, tk::Point local) override;
     bool on_content_key_(const tk::KeyEvent& e) override;
-    bool on_content_pointer_up_(tk::Point world, tk::Point local,
-                                bool inside_self) override;
+    bool on_content_pointer_up_(tk::Point world, tk::Point local, bool inside_self) override;
     void fire_save_() override;
     void fire_copy_() override;
     bool wants_copy_button_() const override;
@@ -182,6 +180,7 @@ private:
     const tk::Image* host_image(const std::string& key) const override;
     tk::Button* host_add_icon_button() override;
     tk::Button* host_add_label_button(std::string label) override;
+    tk::Slider* host_add_slider() override;
     void host_playback_started() override;
 
     // Deactivate the current page (if any), bump the token, activate the page

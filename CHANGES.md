@@ -5,6 +5,166 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+## v0.9.6 — 2026-11-01
+
+### Summary
+
+- feat(messages): media captions support Markdown and mentions, like messages, also when a caption is edited. Linux release build, ctest 3824/3824; user-verified
+- fix(messages): image, file and video captions show their formatting, links and mentions instead of plain text. Linux build, ctest 3825/3825; user-verified
+- build: a pre-commit hook and a Claude Code edit hook keep C++ and Rust formatted, so the style can't drift again. Linux
+- style: all C++ and Objective-C++ code is now formatted to the style guide, with no change in behaviour. Linux build, ctest 3824/3825 (uk.po catalog check fails already)
+- build: a ctest and a CI step now check C++ formatting against `.clang-format`; it fails until the C++ reformat lands. Linux, ctest cxx_format_check
+- build: a ctest now fails when the Rust code isn't formatted with `cargo fmt`, after a one-time reformat of the crate. Linux, cargo check, ctest rust_fmt_check
+- fix(sync): Tesseract no longer floods Synapse with thread-subscription requests; thread follow/unfollow is off until upstream is fixed. Linux build; user-verified
+- fix(messages): developer mode offers "Copy event source" on undecryptable and deleted messages too. Not built
+- fix(messages): "Add to Saved Stickers" is an item in the message action menu instead of a second right-click menu. Linux build, ctest 3820/3821 (uk.po catalog check fails already)
+- fix(messages): the hover pill's "more" menu closes when the pointer moves onto another message. Linux build, ctest 3820/3821 (uk.po catalog check fails already)
+- fix(ui): links are underlined in the theme's link colour on every platform. macOS release build, ctest 3801/3801; user-verified macOS, GTK and Windows not built
+- fix(messages): links whose text differs from the URL, like Markdown `[text](url)`, no longer get a preview card. macOS release build, ctest 3801/3801, cargo 1572/1572
+- feat(messages): long code blocks show their first lines with an Expand button. macOS release build, ctest 3797/3797
+- fix(messages): forwards into bridged rooms leave out the "Forwarded from" text, so the other network sees the original message. Linux build, ctest 3813/3813
+- feat(messages): forwarded messages show who wrote the original and link back to it (MSC4553). Linux build, ctest 3813/3813; user-verified Windows
+- perf(sync): background work after sign-in or a cache clear starts after the first room-list response and runs at higher concurrency. Linux release build, ctest 3773/3773
+- fix(ui): every room's last activity comes from its newest message and is retried on failure, so inactive rooms are grouped correctly. Linux release build, ctest 3773/3773
+- fix(ui): the status-bar activity dot also covers sends, edits, reactions, thread loading, GIFs and server info. Linux release build, ctest 3773/3773
+- fix(ui): the Call Rooms and Knocks sections keep their collapsed state, and collapsing a section in a space no longer changes the root's. Linux release build, ctest 3773/3773
+- fix(ui): closing Settings while caches are clearing no longer crashes. Linux release build, ctest 3773/3773
+- feat(debug): a build option, `TESSERACT_ENABLE_REQUEST_LOG`, adds an opt-in log of homeserver request timings. Linux release build, ctest 3773/3773
+- feat(login): a per-user `provisioning.json` can preset the homeserver and username, and a Matrix ID typed or provisioned prefills the sign-in page. Linux release build, ctest 3762/3762
+- feat(windows): the whole app follows Windows High Contrast themes, overriding the in-app theme and accent while it is on. Windows release build + ctest 3732/3732; user-verified live
+- fix(windows): the custom title bar follows High Contrast themes and uses the system caption font. Windows release build; user-verified live
+- fix(calls): hanging up no longer freezes the window while the call is left. Linux release build, ctest 3803/3803
+- fix(calls): a call that ends, fails or is dropped no longer leaves you listed as a participant for other people. Linux release build, ctest 3803/3803
+- fix(calls): people who leave or are removed stop receiving the call's media keys, and keys that fail to send are retried. Linux release build, ctest 3803/3803
+- fix(calls): several callers can ring at once, and ignored users no longer ring or appear in the call banner. Linux release build, ctest 3803/3803
+- fix(calls): a room whose call slot predates encryption is repaired when a call starts, and a closed slot is no longer reopened. Linux release build, ctest 3803/3803
+- build(sdk): a test fails if a `std::string`-carrying cxx type returns to the Rust bridge, where it crashed with the newer WebRTC. Linux release build, ctest 3803/3803
+- fix(calls): your call's Join no longer disappears for other people a few seconds after you start it. Linux release build
+- build(ci): Linux CI and Flatpak builds install clang 21, which the newer WebRTC requires. YAML parsed only, not run on CI
+- fix(calls): calls use the latest LiveKit and WebRTC, which stop trusting the disclosed eMudhra certificates and fix several reconnect bugs. Linux release build (Qt6 + GTK4), ctest 3750/3750
+- fix(calls): Join in the call lobby releases the lobby's camera before the call opens its own, so the call no longer finds the camera busy and starts with video off. Qt6 build, ctest 3504/3504
+- fix(calls): call members written by newer Element clients (no `livekit_alias` in their preferred focus, which ruma's typed model rejects as an empty membership) are read from the raw event instead, so they appear in the call banner, get frame keys and have theirs applied, and ring. cargo 1309/1310 (unrelated `uppercase_http_scheme_is_kept` fails), ctest 3500/3500, user-verified with Element on a phone
+- feat(calls): MatrixRTC sticky `m.rtc.member` events are read from the SDK's sticky map (matrix-sdk now pinned to an upstream commit with MSC4354), merged with legacy members, and show in the call banner; a call also publishes its own sticky `m.rtc.member` (leaves on hang-up, slot close, SFU failure or the room turning encrypted) and rings a DM with a sticky `m.rtc.invite`; `m.rtc.slot` is opened by the first joiner and added to new private rooms and DMs. cargo 1309/1310 (unrelated `uppercase_http_scheme_is_kept` fails), ctest 3504/3504
+- feat(calls): `m.rtc.invite` is understood (targeting, slot, lifetime, own join/decline) and the call banner offers Decline, sent as `m.rtc.decline`, and drops it when the caller withdraws the invite; key events are accepted in the legacy and `m.rtc.encryption_key` shapes, bound to the sender's member event, and LiveKit participants with MSC4195 hashed identities map to their member. Qt6 build, ctest 3504/3504
+- fix(calls): call frame keys are accepted only from live call members (a key that arrives before its membership event waits up to 60 s) and, with "exclude insecure devices" on, only from cross-signed devices; a rotated key is sent first and used 5 s later, leaves within that window share one rotation, keys also rotate every 30 min, and a joiner is sent the key in use without a rotation (as Element Call does; rotating for a joiner left it unable to read us and LiveKit then gave up on our key). cargo 1309/1310 (unrelated `uppercase_http_scheme_is_kept` fails), ctest 3504/3504
+- feat(settings): a "Detect automatically" checkbox next to the profile timezone keeps it in sync with this computer's timezone. Linux release build, ctest 3757/3757
+- feat(ui): Appearance > Timeline can show each sender's timezone difference (like "+2h") next to their name, off by default. Linux release build, ctest 3757/3757
+- fix(windows): the title bar, window border and status-bar links follow the in-app accent, tinting the title bar with Windows' accent option. Windows release build + ctest 3720/3720; user-verified live
+- build(ui): the shared UI code builds as separate toolkit, platform, views and app libraries. Linux Qt6 + GTK, Windows and macOS builds, Qt6 ctest
+- build(macos): screenshot mode captures a 1440×900 window, a Mac App Store screenshot size. macOS release build
+- fix(macos): text no longer draws upside down after other drawing leaves CoreText's text matrix flipped. macOS release build
+- fix(ui): screenshot mode no longer crashes when a voice message is on screen. macOS release build
+- build(macos): the macOS build no longer prints the duplicate `-lSystem` linker warning or the null-reference test warning. Linux release build, ctest 3772/3772
+- ci: a nightly workflow builds only the Rust SDK for every build type to keep the Rust cache warm, and failed builds no longer save a cache. YAML parse only
+- feat(ui): messages from other people can be reported to your homeserver's administrators from the message menu, with an optional reason. Linux release build, ctest 3751/3751
+- fix(settings): signing out a device on an account-portal (MAS) server now opens the portal page instead of failing with 404. Linux release build, cargo test
+- fix(macos): "Restart now" restarts the Mac App Store build reliably instead of showing an error. Untested
+- fix(macos): another user on the same Mac can run Tesseract while it's open in your session. Untested
+- fix(ui): saving a file from the media viewer works in the sandboxed Mac App Store build. Untested
+- build(macos): the Mac App Store preset now builds a universal arm64 + x86_64 app. CI universal build
+- build(rust): `-DTESSERACT_RUST_LTO=ON` builds the Rust library with fat LTO, much smaller on disk but slower to build. macOS build
+- ci(macos): the Mac App Store jobs read their secrets from the `appstore` environment. CI universal build
+- fix(ui): the screen-share picker can no longer choose a source or cancel twice on macOS. macOS release build, ctest 3729/3729 (ASan)
+- fix(settings): an avatar file picker that finishes after its settings controller is gone no longer touches freed memory. macOS release build, ctest 3729/3729 (ASan)
+- test: shell tests run worker callbacks on the test thread, fixing a race that crashed the invites test. macOS release build, ctest 3729/3729 (ASan)
+- test: the animated-image test no longer reads past its pixel buffer. macOS release build, ctest 3729/3729 (ASan)
+- fix(ui): the thread list's "mark all as read" icon and the thread search bar now use the current theme's colours. macOS release build, ctest 3729/3729
+- chore(ci): the manually-run test workflow adds an AddressSanitizer build and a keyring for the keychain tests. YAML parse only
+- feat(ui): right-clicking a message offers the same actions as its hover toolbar. Linux Qt6 build
+- chore(ci): the Flatpak job retries its source and runtime downloads, so a transient crates.io or Flathub error no longer cancels the release run. YAML parse only
+
+## v0.9.5 — 2026-10-26
+
+### Summary
+
+- fix(ui): the space picker sidebar scrolls when there are more spaces than fit, with a fade at the edge that has more. Qt6 ctest 3742/3742, tested by the user
+- fix(ui): editing a message now puts the cursor at the end of the text instead of the start. Linux release build (Qt6 + GTK4)
+- fix(ui): open room tabs are now saved and come back after switching accounts or restarting the app. Linux release build (Qt6 + GTK4), ctest 3739/3739, tested by the user
+- fix(ui): the space picker no longer shows every space as empty after an account opens in another window. Linux release build (Qt6), ctest 3736/3736
+- fix(ui): the app no longer freezes for seconds when the connection drops while the thread list updates. Built and tested by the user
+- fix(ui): the account picker can be used from the keyboard (arrows, Tab, Enter, Esc) on every platform. Linux release build (Qt6 + GTK4), Windows cross-build compiles
+- fix(ui): closing a window hands over every account it owns, and no window shows an account that another window owns. Linux release build (Qt6 + GTK4), Windows cross-build compiles
+- fix(win32): Ctrl+click on an account in the picker now opens its window on Windows. Linux release build (Qt6 + GTK4), Windows cross-build compiles
+- fix(qt): the desktop theme and accent are read without blocking the window and correct themselves when the portal answers late. Linux release build (Qt6 + GTK4), Windows cross-build compiles
+- fix(ui): an @ mention lookup that is still running no longer outlives the account it belongs to. Linux release build (Qt6 + GTK4), Windows cross-build compiles
+- fix(ui): quitting with a pop-out window open no longer aborts the app on Windows and macOS. Linux release build (Qt6 + GTK4), Windows cross-build compiles
+- fix(login): closing a window during sign-in no longer aborts the app. Linux release build (Qt6 + GTK4), Windows cross-build compiles
+- fix(win32): a debounced action no longer stalls for good if its delayed post is dropped. Linux release build (Qt6 + GTK4), Windows cross-build compiles
+- fix(ui): the account picker opens above the user strip on every platform. Linux release build (Qt6 + GTK4), Windows cross-build compiles, ctest 3624/3624
+- fix(ui): popup dropdowns get rounded corners on Linux and macOS. Linux release build (Qt6 + GTK4), Windows cross-build compiles, ctest 3624/3624
+- fix(login): if the system browser cannot be opened, the login screen shows the sign-in URL on every platform. Linux release build (Qt6 + GTK4), Windows cross-build compiles, ctest 3621/3621
+- fix(ui): the Qt composer now sends typing notices. Linux release build (Qt6 + GTK4), Windows cross-build compiles, ctest 3618/3618
+- fix(ui): the macOS composer uses the same mention, command and emoji popups as every other window. Linux release build (Qt6 + GTK4), Windows cross-build compiles, ctest 3618/3618
+- fix(ui): animations keep playing while the pointer moves over the timeline on Windows. Windows release build
+- fix(media): an image that fails to decode is no longer requested again and is dropped from the cache. Linux release build (Qt6 + GTK4), Windows cross-build compiles, ctest 3607/3607
+- fix(media): an animated replacement of a still image now shows on every platform. Linux release build (Qt6 + GTK4), Windows cross-build compiles, ctest 3607/3607
+- fix(ui): the account picker has the same width on every platform. Linux release build (Qt6 + GTK4), Windows cross-build compiles, ctest 3605/3605
+- fix(ui): a tray click on macOS brings the window forward when something is unread. Linux release build (Qt6 + GTK4), Windows cross-build compiles, ctest 3605/3605
+- fix(accounts): switching to an account with cached rooms reopens its tabs at once on every platform. Linux release build (Qt6 + GTK4), Windows cross-build compiles, ctest 3603/3603
+- fix(settings): clearing caches no longer closes Settings on Windows and macOS. Linux release build (Qt6 + GTK4), Windows cross-build compiles, ctest 3603/3603
+- fix(login): after a failed sign-in, GTK, Qt and macOS show the error and let you sign in again. Linux release build (Qt6 + GTK4), Windows cross-build compiles, ctest 3599/3599
+- fix(login): cancelling Add Account no longer blanks the open room on macOS. Linux release build (Qt6 + GTK4), Windows cross-build compiles, ctest 3599/3599
+- fix(ui): choosing Add Account shows an "Add Account" status message on every platform. Linux release build (Qt6 + GTK4), Windows cross-build compiles, ctest 3580/3580
+- fix(ui): Windows repaints the unread-account dot at once. Linux release build (Qt6 + GTK4), Windows cross-build compiles, ctest 3578/3578
+- fix(ui): custom emoji and sticker pickers refresh after a pack edit on every platform. Linux release build (Qt6 + GTK4), Windows cross-build compiles, ctest 3578/3578
+- refactor(ui): the settings server-info, own-profile and profile-field updates are handled once for all shells. Linux release build (Qt6 + GTK4), Windows cross-build compiles, ctest 3578/3578
+- fix(ui): the macOS account picker shows unread dots. Linux release build (Qt6 + GTK4), Windows cross-build compiles, ctest 3578/3578
+- fix(ui): the call pop-out follows theme changes on Linux. Linux release build (Qt6 + GTK4), Windows cross-build compiles, ctest 3578/3578
+- fix(ui): macOS shows key-download progress. Linux release build (Qt6 + GTK4), Windows cross-build compiles, ctest 3578/3578
+- fix(ui): macOS hides the mention popup on room switch and refreshes the slash popup when bot commands change. Linux release build (Qt6 + GTK4), Windows cross-build compiles, ctest 3578/3578
+- fix(ui): GTK no longer waits 25 s on a slow desktop portal. Linux release build (Qt6 + GTK4), Windows cross-build compiles, ctest 3578/3578
+- refactor(ui): remove unused history-pagination code from the Windows, GTK and Qt shells. Linux release build (Qt6 + GTK4), Windows cross-build compiles, ctest 3578/3578
+- refactor(ui): starting a message edit now focuses the composer on Windows and in pop-out windows, as on the other shells. Linux release build (Qt6 + GTK4), Windows cross-build compiles, ctest 3576/3576
+- refactor(ui): macOS restores the previous tabs as soon as their rooms are known, like the other shells. Linux release build (Qt6 + GTK4), Windows cross-build compiles, ctest 3576/3576
+- fix(ui): one notification policy on every shell, so a visible but unfocused window no longer drops notifications. Linux release build (Qt6 + GTK4), Windows cross-build compiles, ctest 3574/3574
+- fix(ui): GTK repaints the animated stickers in the settings tab. Linux release build (Qt6 + GTK4), ctest 3569/3569
+- perf(ui): on Windows only the animated parts of the chat repaint each frame, not the whole window. Linux release build (Qt6 + GTK4), ctest 3569/3569
+- refactor(ui): the status bar shows the same "Not logged in", "Restoring session…" and "Connected" messages on every platform. Linux release build (Qt6 + GTK4), ctest 3567/3567
+- fix(ui): on Windows a homeserver error shown in the status bar could become a clickable link; only the update notice carries links now. Linux release build, ctest unchanged
+- refactor(ui): the status-line sync progress is shared by all platforms, and macOS now waits 300 ms before showing "Syncing rooms…". Linux release build (Qt6 + GTK4), ctest 3563/3563
+- fix(ui): after a session expires, GTK and Qt sign the account out like Windows and macOS instead of re-running the startup restore. Linux release build (Qt6 + GTK4), ctest 3558/3558
+- fix(ui): signing out shows "Signed out" (or "Signed out of <account>") on every platform, including macOS. Linux release build (Qt6 + GTK4), ctest 3558/3558
+- refactor(ui): avatar, image and map-tile loading is one shared implementation instead of four per-shell copies. Linux release build (Qt6 + GTK4), ctest 3552/3552
+- refactor(ui): dropped video/audio probing is one shared dispatcher with per-platform probes instead of four copies. Linux release build (Qt6 + GTK4), ctest 3547/3547
+- refactor(ui): invite/knock lists, the typing bar, the timeline scroll position and the /gif popup are shared by all shells. Linux release build (Qt6 + GTK4), ctest 3545/3545
+- refactor(ui): the GIF strip's fetch, decode and animate provider is shared by all four shells, and macOS pop-outs now get the strip. Linux release build (Qt6 + GTK4), ctest 3543/3543
+- refactor(ui): shared view callbacks (room list, tab bar, space root, room view) are wired once for all shells. Linux release build (Qt6 + GTK4), ctest 3540/3540
+- refactor(ui): the quick switcher, message search, forward picker and find-in-room share one implementation across all shells. Linux release build (Qt6 + GTK4), ctest 3537/3537
+- refactor(macos): the main window shares the common window code like the other shells. macOS release build
+- fix(ui): numbered lists now start at the number the sender chose, and an empty list item still shows its number (MSC4313). macOS x86_64 release build, ctest 3515/3517
+- feat(settings): the encryption privacy options now apply when Settings closes, without a restart. Linux debug build, ctest 3534/3534
+- fix(ui): a message blocked by an unconfirmed device or changed identity now says why on hover and in a dialog with the options that can help. Linux release build, ctest 3529/3529
+- fix(ui): a user's profile opened from a `matrix:` link or the send-blocked dialog now shows their name and avatar. Linux release build, ctest 3529/3529
+- feat(ui): new Privacy setting "Don't send to people with unconfirmed devices" (on by default); turn it off to send to every device as before 0.9.4. Linux release build, ctest 3529/3529
+- fix(ui): bare URLs in messages sent with HTML formatting are now clickable. Linux release build, 3 new ctest cases
+- fix(ui): the space picker no longer covers the user-info strip, and hides when the sidebar is collapsed or single-pane. Built and tested by the user
+- fix(ui): Clear Cache no longer erases the room browser's remembered servers from the `im.gnomos.tesseract` account data; the synced preferences that survive a prefs rewrite now come from one `carried_prefs_()`. Linux release build, ctest 3521/3521
+- fix(ui): the login view's Sign in button, "Create an account" link and password toggle are disabled while the server's sign-in methods are still being checked (the same wait Enter already honours), so a click can't start the wrong flow. Linux release build, 40 login ctest cases pass, 1 new, user-verified
+- feat(ui): the server browser shows cards in two columns when wide, highlights the card under the pointer and picks a server on a click anywhere on it (the "Use this server" button is gone), and shows each server's favicon (fetched from its own site when the browser opens, stored in the media disk cache). Linux release build, 84 related ctest cases, 2 new cargo tests, user-verified
+- feat(build): `TESSERACT_ENABLE_SERVER_BROWSER` (default `ON`) compiles the server browser and its community list in or out, with a matching `server_browser` Cargo feature. Linux release build with the flag on and off
+- feat(ui): pin a space from its room-list context menu to give it an avatar tab in a new column left of the room list (Home tab, drag to reorder, aggregated unread); pins sync as `pinned_spaces` in the `im.gnomos.tesseract` account data. Linux release build, ctest 3513/3513
+- fix(ui): in-app drag ghosts were drawn scale-times too big on HiDPI (the image's device-pixel size was used as a logical size). Linux release build, ctest 3513/3513
+- chore(ui): unjoined-space summary fetches are owned per space, so the room list and the space-root panel no longer cancel each other's and retry backoff survives space switches. Linux release build, ctest 3513/3513
+- feat(ui): a bridged room shows its network logo (or a cable glyph) before the room title in the header, with a tooltip saying the room is connected to that network and its rules apply; hidden when the room is marked as not bridged. Built and tested by the user; 1 new test case
+- feat(ui): the "Find a server" browser names where its list comes from, with a footer link to the provider's site; fetching, caching and parsing now sit behind a `ServerListProvider` trait in `sdk/src/client/server_list.rs` (servers.joinmatrix.org is the only implementation). Linux release build, cargo 1 new test, user-verified
+- fix(ui): the login view ignored the dark theme: it is created lazily and never received the current theme, and its `set_theme` skipped the root widget's `apply_theme`. Fixed in all four shells; `tk::TextField`/`TextArea` also take their text colour from the theme now. Linux release build (Qt6 + GTK4)
+- fix(ui): joining a room found by `#alias:server` in the Join a Room dialog now routes through the alias's server; the join used the resolved room id, whose own server part may be missing (room v12). Linux release build, 1 new ctest case
+- fix(ui): a scroll gesture keeps the wheel with the view that took it, so a combobox or inner list sliding under a stationary pointer no longer grabs the rest of the gesture (or changes its value); it ends after 400 ms without wheel events and no momentum, or when the pointer moves. A click during a coast only stops it. Shared in `tk::Host`, all backends. Linux release build, 3491 test cases pass, user-verified Qt6
+- feat(ui): the room timeline lays its rows out in a content column (default 100%, i.e. unchanged; narrower sits beside the room list), so join/leave lines, room events and messages stay together in wide windows; Settings → Appearance sets the width (30–100%) and left/centered position. Not used in thread panels or the IRC layout. Linux release build, ctest 3482/3482
+- feat(ui): new `tk::Slider` widget (keyboard, pointer drag, accessibility role on all four a11y bridges); the media viewer's scrub bar is rebuilt on it. Linux release build, ctest 3482/3482
+- fix(ui): Room Settings → Moderation no longer shows a disabled Unban button on banned users you lack permission to unban; the button is omitted. Linux release build, ctest moderation + i18n pass, user-verified
+- feat(ui): the login view's "Find a server" opens a browser of homeservers from the community list (servers.joinmatrix.org, sliding-sync servers only, cached for a day) instead of steering new users to matrix.org; "Create an account" with an empty field opens it too, while an empty field still signs in to matrix.org. Linux release build, ctest 3443/3443, cargo 5 new tests, user-verified on Qt6
+- fix(ui): on Qt6 a native line edit was painted into the window under its canvas copy (`WA_DontShowOnScreen` only applies to top-level windows), so it showed through anything drawn over the field and darkened translucent placeholders; `NavLineEdit` now paints only while being captured. Multi-line text areas are unchanged. Linux release build, user-verified
+- docs(license): added a GPLv3 section 7 additional permission (`LICENSE-EXCEPTION.md`) for Apple App Store distribution. Docs only
+- feat(ui): clicking the target avatar on a join/leave/invite/kick/ban line (a lone event, an expanded group's member, or a line of a non-expandable group) opens that user's profile panel, also exposed as a "View profile" accessibility action; collapsed expandable summaries still expand on click, and the IRC layout draws no avatars. Linux debug build, ctest 3435/3435, user-verified
+- chore(ui): new `tk::ClipScope` / `tk::OpacityScope` RAII guards pop canvas clips and opacity on scope exit; the hand-paired push/pop calls across `ui/shared` and the GTK host now use them, except clips that span `paint_before_children`/`paint_after_children` (RoomInfoPanel, SettingsPage, KnownPacksList). Linux release build, ctest 3433/3433, user-verified
+- fix(ui): the user profile panel no longer stretches non-square avatars; `draw_avatar` centre-crops them to a square (the panel draws the full-resolution original, not the pre-cropped thumbnail). Linux release build, ctest 3433/3433, user-verified
+- chore(sdk): removed the unused `list_rooms` FFI method (superseded by push-based room updates plus `room_info_by_id`) and the dead `MediaGate::stale_len` diagnostic helper. cargo build clean, cargo tests 1174/1175 (1 failure unrelated to this change, in URL-preview scheme handling)
+- fix(ui): a URL shown only inside a Markdown code block or inline code span no longer triggers a link-preview card, on send or on receive. Build and user-verified
+- feat(sdk): the profile panel lists the rooms you share with a user via MSC2666 mutual rooms (unstable or spec 1.19 endpoint, detected from the server), loading more as you scroll; room avatars in the list load on demand. cargo tests 1167, Windows build, user-verified Windows
+- feat(ui): the user profile panel is a two-column card (avatar, name, buttons left; profile fields and a scrollable rooms-in-common list right) and shows trust as a shield icon with a tooltip instead of a text label. Windows debug build, ctest 3399/3400 (the failure is a Bubbles layout test, not touched here), not run by eye
+- feat(ui): in the Bubbles layout, your own messages sit on the left while the thread list, a thread, or the room info panel is open. 4 new ctest cases, not built or run
+
 ## v0.9.4 — 2026-10-18
 
 ### Summary

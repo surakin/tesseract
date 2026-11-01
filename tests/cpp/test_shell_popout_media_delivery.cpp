@@ -26,13 +26,17 @@ namespace
 struct PopoutMediaShell : tesseract::test::TestShellBase
 {
 
-    void apply_thread_messages_(
-        const std::string&,
-        std::vector<tesseract::views::MessageRowData>, bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&, std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
 
     // Expose the protected registry/gating plumbing under test.
     using ShellBase::active_media_group_;
@@ -58,22 +62,33 @@ struct TestRoomWindow : RoomWindowBase
         : RoomWindowBase(shell, std::move(room_id))
     {
     }
-    void bring_to_front() override {}
-    void close_window() override {}
-    void request_relayout() override {}
-    void apply_theme(const tk::Theme&) override {}
-    void apply_scale_change(float) override {}
+    void bring_to_front() override
+    {
+    }
+    void close_window() override
+    {
+    }
+    void request_relayout() override
+    {
+    }
+    void apply_theme(const tk::Theme&) override
+    {
+    }
+    void apply_scale_change(float) override
+    {
+    }
 
 protected:
-    void surface_repaint_() override {}
+    void surface_repaint_() override
+    {
+    }
 };
 
 } // namespace
 
-TEST_CASE(
-    "register_room_window_ registers the popout's own room so its ordinary "
-    "timeline media isn't dropped by should_deliver_",
-    "[shell][popout][media]")
+TEST_CASE("register_room_window_ registers the popout's own room so its ordinary "
+          "timeline media isn't dropped by should_deliver_",
+          "[shell][popout][media]")
 {
     // Regression test for: pop-out windows silently failed to load thumbnails
     // for old (backward-paginated) events. Root cause: fetch_media_pipeline_'s
@@ -104,10 +119,9 @@ TEST_CASE(
     CHECK(s.active_popout_media_groups_.count(popout_grp) == 0);
 }
 
-TEST_CASE(
-    "unregister_room_window_ only clears the group for the window that "
-    "actually owns it",
-    "[shell][popout][media]")
+TEST_CASE("unregister_room_window_ only clears the group for the window that "
+          "actually owns it",
+          "[shell][popout][media]")
 {
     // Mirrors register_room_window_'s own it->second == w guard for
     // secondary_windows_ — a stale unregister call (e.g. from a window that
@@ -141,8 +155,7 @@ std::shared_ptr<tesseract::AccountSession> make_popout_session(const std::string
 }
 } // namespace
 
-TEST_CASE("each account can have its own pop-out of the same room",
-          "[shell][popout][accounts]")
+TEST_CASE("each account can have its own pop-out of the same room", "[shell][popout][accounts]")
 {
     PopoutMediaShell s;
     auto alice = make_popout_session("@alice:example.org");

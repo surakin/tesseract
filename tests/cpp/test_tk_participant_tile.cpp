@@ -19,9 +19,16 @@ struct PtStage : vt::Stage
     int repaints = 0;
     PtStage()
     {
-        tile->set_repaint_requester([this] { ++repaints; });
+        tile->set_repaint_requester(
+            [this]
+            {
+                ++repaints;
+            });
     }
-    void run() { mount(*tile, {0, 0, 320, 240}); }
+    void run()
+    {
+        mount(*tile, {0, 0, 320, 240});
+    }
 };
 
 ParticipantTile::State pt_state(const std::string& id)
@@ -39,7 +46,11 @@ TEST_CASE("ParticipantTile paints avatar, video, mute badges and pin states",
           "[tk][view][participant_tile]")
 {
     PtStage s;
-    s.tile->set_avatar_provider([](const std::string&) -> const tk::Image* { return nullptr; });
+    s.tile->set_avatar_provider(
+        [](const std::string&) -> const tk::Image*
+        {
+            return nullptr;
+        });
     s.tile->set_state(pt_state("p1"));
     CHECK(s.repaints >= 1);
     s.run(); // no video yet: avatar placeholder
@@ -78,7 +89,10 @@ TEST_CASE("ParticipantTile hover reveals the pin button; clicking it toggles",
     s.tile->set_state(pt_state("p9"));
     s.run();
     std::vector<std::string> pins;
-    s.tile->on_pin_toggled = [&](const std::string& id) { pins.push_back(id); };
+    s.tile->on_pin_toggled = [&](const std::string& id)
+    {
+        pins.push_back(id);
+    };
 
     s.tile->on_pointer_down({4, 4}); // before any layout of the pin: no crash
     s.tile->on_pointer_up({4, 4}, false);
@@ -89,13 +103,17 @@ TEST_CASE("ParticipantTile hover reveals the pin button; clicking it toggles",
     // Locate the pin button by probing (its exact spot depends on letterboxing).
     tk::Point pin{-1, -1};
     for (float y = 0; y < 240 && pin.x < 0; y += 2)
+    {
         for (float x = 0; x < 320; x += 2)
+        {
             if (s.tile->on_pointer_down({x, y}))
             {
                 pin = {x, y};
                 s.tile->on_pointer_up({x, y}, false);
                 break;
             }
+        }
+    }
     REQUIRE(pin.x >= 0);
     pin.x += 2;
     pin.y += 2;

@@ -49,7 +49,9 @@ std::vector<RoomInfo> read_rooms(int n = 40)
 {
     std::vector<RoomInfo> v;
     for (int i = 0; i < n; ++i)
+    {
         v.push_back(plain_room(i, 1'000 + static_cast<std::uint64_t>(i)));
+    }
     return v;
 }
 
@@ -71,8 +73,7 @@ void reset_settings(bool autoscroll)
 
 } // namespace
 
-TEST_CASE("autoscroll: all-read list does not scroll on first load",
-          "[roomlist][autoscroll]")
+TEST_CASE("autoscroll: all-read list does not scroll on first load", "[roomlist][autoscroll]")
 {
     reset_settings(true);
     RoomListAutoscrollStage st;
@@ -85,8 +86,7 @@ TEST_CASE("autoscroll: all-read list does not scroll on first load",
     CHECK_FALSE(visible(view, "$r39"));             // bottom room stays hidden
 }
 
-TEST_CASE("autoscroll: most-recent unread room is scrolled into view",
-          "[roomlist][autoscroll]")
+TEST_CASE("autoscroll: most-recent unread room is scrolled into view", "[roomlist][autoscroll]")
 {
     reset_settings(true);
     RoomListAutoscrollStage st;
@@ -107,8 +107,7 @@ TEST_CASE("autoscroll: most-recent unread room is scrolled into view",
     CHECK(visible(view, "$r39"));
 }
 
-TEST_CASE("autoscroll: first load with an unread room scrolls to it",
-          "[roomlist][autoscroll]")
+TEST_CASE("autoscroll: first load with an unread room scrolls to it", "[roomlist][autoscroll]")
 {
     reset_settings(true);
     RoomListAutoscrollStage st;
@@ -124,8 +123,7 @@ TEST_CASE("autoscroll: first load with an unread room scrolls to it",
     CHECK(visible(view, "$r39"));
 }
 
-TEST_CASE("autoscroll: among several unread, the most recent wins",
-          "[roomlist][autoscroll]")
+TEST_CASE("autoscroll: among several unread, the most recent wins", "[roomlist][autoscroll]")
 {
     reset_settings(true);
     RoomListAutoscrollStage st;
@@ -143,8 +141,7 @@ TEST_CASE("autoscroll: among several unread, the most recent wins",
     CHECK(visible(view, "$r39")); // scrolled to the newest, not $r10
 }
 
-TEST_CASE("autoscroll: a space with unread children is considered",
-          "[roomlist][autoscroll]")
+TEST_CASE("autoscroll: a space with unread children is considered", "[roomlist][autoscroll]")
 {
     reset_settings(true);
     RoomListAutoscrollStage st;
@@ -157,7 +154,7 @@ TEST_CASE("autoscroll: a space with unread children is considered",
     space.id = "$space";
     space.name = "My Space";
     space.is_space = true;
-    space.notification_count = 3;   // aggregate of unread children
+    space.notification_count = 3;    // aggregate of unread children
     space.last_activity_ts = 99'999; // newest activity among children
     rooms.push_back(space);
 
@@ -167,8 +164,7 @@ TEST_CASE("autoscroll: a space with unread children is considered",
     CHECK(visible(view, "$space"));
 }
 
-TEST_CASE("autoscroll: low-priority unread does not grab the scroll",
-          "[roomlist][autoscroll]")
+TEST_CASE("autoscroll: low-priority unread does not grab the scroll", "[roomlist][autoscroll]")
 {
     reset_settings(true);
     RoomListAutoscrollStage st;
@@ -185,8 +181,7 @@ TEST_CASE("autoscroll: low-priority unread does not grab the scroll",
     CHECK_FALSE(visible(view, "$r39")); // no scroll: it stays off-screen
 }
 
-TEST_CASE("autoscroll: disabled setting suppresses scrolling",
-          "[roomlist][autoscroll]")
+TEST_CASE("autoscroll: disabled setting suppresses scrolling", "[roomlist][autoscroll]")
 {
     reset_settings(false); // feature off
     RoomListAutoscrollStage st;
@@ -202,8 +197,7 @@ TEST_CASE("autoscroll: disabled setting suppresses scrolling",
     CHECK_FALSE(visible(view, "$r39"));
 }
 
-TEST_CASE("autoscroll: already-visible unread does not move the list",
-          "[roomlist][autoscroll]")
+TEST_CASE("autoscroll: already-visible unread does not move the list", "[roomlist][autoscroll]")
 {
     reset_settings(true);
     RoomListAutoscrollStage st;
@@ -211,11 +205,11 @@ TEST_CASE("autoscroll: already-visible unread does not move the list",
     RoomListView& view = *view_owner;
 
     auto rooms = read_rooms();
-    rooms[0].notification_count = 1;    // top room, already visible
+    rooms[0].notification_count = 1; // top room, already visible
     rooms[0].last_activity_ts = 99'999;
     view.set_rooms(std::move(rooms));
     st.layout(view, kBounds);
 
-    CHECK(visible(view, "$r0"));         // still at the top
-    CHECK_FALSE(visible(view, "$r39"));  // list did not jump to the bottom
+    CHECK(visible(view, "$r0"));        // still at the top
+    CHECK_FALSE(visible(view, "$r39")); // list did not jump to the bottom
 }

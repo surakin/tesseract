@@ -18,15 +18,15 @@ namespace
 {
 
 constexpr float kForwardRoomPickerAvatarSize = 28.0f;
-constexpr float kForwardRoomPickerPadX       = 12.0f;
-constexpr float kForwardRoomPickerAvatarGap  = 12.0f;
-constexpr float kForwardRoomPickerFieldH     = 34.0f;
-constexpr float kCheckSize  = kCheckCircleSize;
-constexpr float kCheckPadR  = 12.0f;
-constexpr float kForwardRoomPickerBtnH       = 32.0f;
-constexpr float kBtnMinW    = 80.0f;
-constexpr float kForwardRoomPickerBtnRadius  = tesseract::visual::kRadiusSM;
-constexpr float kForwardRoomPickerBtnGap     = 8.0f;
+constexpr float kForwardRoomPickerPadX = 12.0f;
+constexpr float kForwardRoomPickerAvatarGap = 12.0f;
+constexpr float kForwardRoomPickerFieldH = 34.0f;
+constexpr float kCheckSize = kCheckCircleSize;
+constexpr float kCheckPadR = 12.0f;
+constexpr float kForwardRoomPickerBtnH = 32.0f;
+constexpr float kBtnMinW = 80.0f;
+constexpr float kForwardRoomPickerBtnRadius = tesseract::visual::kRadiusSM;
+constexpr float kForwardRoomPickerBtnGap = 8.0f;
 
 using tesseract::text::name_matches;
 
@@ -37,7 +37,9 @@ using tesseract::text::name_matches;
 class ForwardRoomPicker::Adapter : public tk::ListAdapter, public tk::ListAdapterAccessibility
 {
 public:
-    explicit Adapter(ForwardRoomPicker& owner) : owner_(owner) {}
+    explicit Adapter(ForwardRoomPicker& owner) : owner_(owner)
+    {
+    }
 
     // Multi-select: each room is a checkbox (checked rows sort first).
     tk::Role access_role_for_row(std::size_t index) const override
@@ -48,7 +50,9 @@ public:
     {
         const auto* room = owner_.room_at_(index);
         if (!room)
+        {
             return {};
+        }
         return room->name.empty() ? tk::tr("Unnamed room") : room->name;
     }
     tk::AccessState access_state_for_row(std::size_t index) const override
@@ -60,39 +64,51 @@ public:
     bool access_activate_row(std::size_t index) override
     {
         if (!owner_.room_at_(index))
+        {
             return false;
+        }
         owner_.toggle_row_(index);
         return true;
     }
 
-    std::size_t count() const override { return owner_.row_count_(); }
+    std::size_t count() const override
+    {
+        return owner_.row_count_();
+    }
 
     float measure_row_height(std::size_t, tk::LayoutCtx&, float) override
     {
         return kRowH;
     }
 
-    void paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
-                   bool /*selected*/, bool hovered) override
+    void paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds, bool /*selected*/,
+                   bool hovered) override
     {
         const auto* room = owner_.room_at_(index);
         if (!room)
+        {
             return;
+        }
         const bool checked = owner_.is_row_selected_(index);
 
         // Thin divider above the first unselected row.
         if (owner_.is_divider_above_(index))
         {
-            ctx.canvas.fill_rect({bounds.x, bounds.y, bounds.w, 1.0f},
-                                 ctx.theme.palette.separator);
+            ctx.canvas.fill_rect({bounds.x, bounds.y, bounds.w, 1.0f}, ctx.theme.palette.separator);
         }
 
         if (checked)
+        {
             ctx.canvas.fill_rect(bounds, ctx.theme.palette.sidebar_selected);
+        }
         else if (hovered)
+        {
             ctx.canvas.fill_rect(bounds, ctx.theme.palette.sidebar_hover);
+            tk::paint_hc_hover_outline(ctx.canvas, ctx.theme, bounds);
+        }
 
-        const float avatar_cx = bounds.x + kForwardRoomPickerPadX + kForwardRoomPickerAvatarSize * 0.5f;
+        const float avatar_cx =
+            bounds.x + kForwardRoomPickerPadX + kForwardRoomPickerAvatarSize * 0.5f;
         const float avatar_cy = bounds.y + bounds.h * 0.5f;
 
         const tk::Image* avatar = nullptr;
@@ -101,37 +117,42 @@ public:
         {
             avatar = owner_.avatar_provider_(av_mxc);
             if (!avatar && owner_.on_room_avatar_needed)
+            {
                 owner_.on_room_avatar_needed(*room);
+            }
         }
         draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, kForwardRoomPickerAvatarSize,
                     room->name, ctx.theme.palette.avatar_initials_bg,
                     ctx.theme.palette.avatar_initials_text);
 
         const float check_total = kCheckPadR + kCheckSize + kCheckPadR;
-        const float text_x = bounds.x + kForwardRoomPickerPadX + kForwardRoomPickerAvatarSize + kForwardRoomPickerAvatarGap;
-        const float text_w =
-            std::max(0.0f, bounds.x + bounds.w - text_x - check_total);
+        const float text_x = bounds.x + kForwardRoomPickerPadX + kForwardRoomPickerAvatarSize +
+                             kForwardRoomPickerAvatarGap;
+        const float text_w = std::max(0.0f, bounds.x + bounds.w - text_x - check_total);
         tk::TextStyle ns{};
-        ns.role      = tk::FontRole::SidebarName;
-        ns.trim      = tk::TextTrim::Ellipsis;
+        ns.role = tk::FontRole::SidebarName;
+        ns.trim = tk::TextTrim::Ellipsis;
         ns.max_width = text_w;
-        auto name_lo = ctx.factory.build_text(
-            room->name.empty() ? tk::tr("Unnamed room") : room->name, ns);
+        auto name_lo =
+            ctx.factory.build_text(room->name.empty() ? tk::tr("Unnamed room") : room->name, ns);
         if (name_lo)
         {
             const tk::Size sz = name_lo->measure();
-            ctx.canvas.draw_text(
-                *name_lo,
-                {text_x, bounds.y + (bounds.h - sz.h) * 0.5f},
-                ctx.theme.palette.text_primary);
+            ctx.canvas.draw_text(*name_lo, {text_x, bounds.y + (bounds.h - sz.h) * 0.5f},
+                                 checked
+                                     ? tk::on_selected(ctx.theme, ctx.theme.palette.text_primary)
+                                     : ctx.theme.palette.text_primary);
         }
 
-        paint_check_circle(ctx.canvas, ctx.factory, check_icon_, kCheckSvg,
-                           {bounds.x + bounds.w - kCheckPadR - kCheckSize * 0.5f,
-                            bounds.y + bounds.h * 0.5f},
-                           checked, ctx.theme.palette.accent,
-                           ctx.theme.palette.text_on_accent,
-                           ctx.theme.palette.popup_border);
+        // High Contrast: the checked row is Highlight-filled, so invert the
+        // accent check disc.
+        const bool hc_sel = checked && ctx.theme.high_contrast;
+        paint_check_circle(
+            ctx.canvas, ctx.factory, check_icon_, kCheckSvg,
+            {bounds.x + bounds.w - kCheckPadR - kCheckSize * 0.5f, bounds.y + bounds.h * 0.5f},
+            checked, hc_sel ? ctx.theme.palette.selected_text : ctx.theme.palette.accent,
+            hc_sel ? ctx.theme.palette.sidebar_selected : ctx.theme.palette.text_on_accent,
+            hc_sel ? ctx.theme.palette.selected_text : ctx.theme.palette.popup_border);
     }
 
 private:
@@ -141,8 +162,7 @@ private:
 
 // ─────────────────────────────────────────────────────────────────────────
 
-ForwardRoomPicker::ForwardRoomPicker()
-    : adapter_(std::make_unique<Adapter>(*this))
+ForwardRoomPicker::ForwardRoomPicker() : adapter_(std::make_unique<Adapter>(*this))
 {
     tk::Widget::set_visible(false);
 
@@ -150,8 +170,16 @@ ForwardRoomPicker::ForwardRoomPicker()
     {
         auto field = tk::create_widget<tk::TextField>(this, kForwardRoomPickerFieldH);
         field->set_placeholder(tk::tr("Search rooms\xe2\x80\xa6"));
-        field->set_on_changed([this](const std::string& q) { set_query(q); });
-        field->set_on_submit([this] { confirm(); });
+        field->set_on_changed(
+            [this](const std::string& q)
+            {
+                set_query(q);
+            });
+        field->set_on_submit(
+            [this]
+            {
+                confirm();
+            });
         field->set_visible(false);
         search_field_ = add_child(std::move(field));
     }
@@ -161,17 +189,36 @@ ForwardRoomPicker::ForwardRoomPicker()
     list->on_row_clicked = [this](int idx)
     {
         if (idx >= 0)
+        {
             toggle_row_(static_cast<std::size_t>(idx));
+        }
     };
     list_ = add_child(std::move(list));
 
     cancel_btn_ = add_child(tk::create_widget<tk::Button>(
-        this, tk::tr("Cancel"), [this] { close(); }, tk::Button::Variant::Subtle));
+        this, tk::tr("Cancel"),
+        [this]
+        {
+            close();
+        },
+        tk::Button::Variant::Subtle));
     confirm_btn_ = add_child(tk::create_widget<tk::Button>(
-        this, tk::tr("Forward"), [this] { if (!selected_ids_.empty()) confirm(); },
+        this, tk::tr("Forward"),
+        [this]
+        {
+            if (!selected_ids_.empty())
+            {
+                confirm();
+            }
+        },
         tk::Button::Variant::Primary));
     dismiss_btn_ = add_child(tk::create_widget<tk::Button>(
-        this, tk::tr("Dismiss"), [this] { close(); }, tk::Button::Variant::Subtle));
+        this, tk::tr("Dismiss"),
+        [this]
+        {
+            close();
+        },
+        tk::Button::Variant::Subtle));
     dismiss_btn_->set_visible(false);
 }
 
@@ -183,15 +230,21 @@ std::string ForwardRoomPicker::access_name() const
 std::vector<std::string> ForwardRoomPicker::access_texts_() const
 {
     if (!is_open_)
+    {
         return {};
+    }
     if (forwarding_)
     {
         if (!forwarding_status_.empty())
+        {
             return {forwarding_status_};
+        }
         return error_lines_;
     }
     if (row_count_() == 0)
+    {
         return {tk::tr("No rooms")};
+    }
     return {};
 }
 
@@ -210,13 +263,17 @@ tk::Rect ForwardRoomPicker::access_rect_for_widget_row(std::size_t) const
 bool ForwardRoomPicker::on_key_down(const tk::KeyEvent& e)
 {
     if (!is_open_)
+    {
         return false;
+    }
     if (e.key == tk::Key::Escape)
     {
         // Like the backdrop: no dismissing mid-forward (the error body and
         // its Dismiss step would be lost). Once errors show, Escape = Dismiss.
         if (!forwarding_ || (forwarding_status_.empty() && !error_lines_.empty()))
+        {
             close();
+        }
         return true;
     }
     return false;
@@ -235,25 +292,33 @@ void ForwardRoomPicker::sync_footer_buttons_()
         can_forward ? tk::trf(tk::tr("Forward ({0})"), {std::to_string(selected_ids_.size())})
                     : tk::tr("Forward");
     if (confirm_btn_->label() != label)
+    {
         confirm_btn_->set_label(label);
+    }
     confirm_btn_->set_enabled(can_forward);
 }
 
 void ForwardRoomPicker::toggle_row_(std::size_t index)
 {
     if (index >= row_count_())
+    {
         return;
+    }
     const auto* room = room_at_(index);
     if (!room)
+    {
         return;
+    }
     const std::string id = room->id;
     if (selected_ids_.count(id))
     {
         selected_ids_.erase(id);
-        selected_order_.erase(
-            std::remove_if(selected_order_.begin(), selected_order_.end(),
-                           [&id](const auto& r) { return r.id == id; }),
-            selected_order_.end());
+        selected_order_.erase(std::remove_if(selected_order_.begin(), selected_order_.end(),
+                                             [&id](const auto& r)
+                                             {
+                                                 return r.id == id;
+                                             }),
+                              selected_order_.end());
     }
     else
     {
@@ -284,7 +349,9 @@ void ForwardRoomPicker::open(const std::string& exclude_room_id)
         for (auto& r : rooms_provider_())
         {
             if (r.id != exclude_room_id_)
+            {
                 all_rooms_.push_back(std::move(r));
+            }
         }
     }
     query_.clear();
@@ -307,7 +374,9 @@ void ForwardRoomPicker::open(const std::string& exclude_room_id)
 void ForwardRoomPicker::close()
 {
     if (!is_open_)
+    {
         return;
+    }
     is_open_ = false;
     pending_focus_ = false;
     set_visible(false);
@@ -315,19 +384,23 @@ void ForwardRoomPicker::close()
     selected_order_.clear();
     selected_ids_.clear();
     press_outside_ = false;
-    forwarding_     = false;
+    forwarding_ = false;
     forward_errors_ = 0;
     forwarding_status_.clear();
     error_lines_.clear();
     if (on_close)
+    {
         on_close();
+    }
 }
 
 void ForwardRoomPicker::set_visible(bool v)
 {
     tk::Widget::set_visible(v);
     if (!v && search_field_)
+    {
         search_field_->set_visible(false);
+    }
 }
 
 void ForwardRoomPicker::on_theme_changed(const tk::Theme& t)
@@ -337,7 +410,9 @@ void ForwardRoomPicker::on_theme_changed(const tk::Theme& t)
     // and Widget::background_color()'s doc comment.
     set_background_color(t.palette.compose_card_bg);
     if (search_field_)
+    {
         search_field_->set_text_color(t.palette.text_primary);
+    }
 }
 
 void ForwardRoomPicker::set_query(const std::string& q)
@@ -352,7 +427,9 @@ void ForwardRoomPicker::refilter_()
     for (const auto& r : all_rooms_)
     {
         if (!selected_ids_.count(r.id) && name_matches(r.name, query_))
+        {
             filtered_unselected_.push_back(r);
+        }
     }
     if (list_)
     {
@@ -372,10 +449,14 @@ std::size_t ForwardRoomPicker::row_count_() const
 const tesseract::RoomInfo* ForwardRoomPicker::room_at_(std::size_t index) const
 {
     if (index < selected_order_.size())
+    {
         return &selected_order_[index];
+    }
     const std::size_t u = index - selected_order_.size();
     if (u < filtered_unselected_.size())
+    {
         return &filtered_unselected_[u];
+    }
     return nullptr;
 }
 
@@ -386,18 +467,22 @@ bool ForwardRoomPicker::is_row_selected_(std::size_t index) const
 
 bool ForwardRoomPicker::is_divider_above_(std::size_t index) const
 {
-    return !selected_order_.empty() && !filtered_unselected_.empty()
-           && index == selected_order_.size();
+    return !selected_order_.empty() && !filtered_unselected_.empty() &&
+           index == selected_order_.size();
 }
 
 void ForwardRoomPicker::move_selection(int delta)
 {
     if (!list_ || row_count_() == 0)
+    {
         return;
-    const int n   = static_cast<int>(row_count_());
-    int cur       = list_->selected_index();
+    }
+    const int n = static_cast<int>(row_count_());
+    int cur = list_->selected_index();
     if (cur < 0)
+    {
         cur = 0;
+    }
     const int next = std::max(0, std::min(n - 1, cur + delta));
     list_->set_selected_index(next);
     list_->scroll_to_index(next);
@@ -408,35 +493,40 @@ void ForwardRoomPicker::confirm()
     // In flight already: the Forward button (and a screen reader's cached
     // tree) can outlive set_forwarding() until the next paint.
     if (forwarding_ || selected_ids_.empty())
+    {
         return;
+    }
     std::vector<std::string> ids;
     ids.reserve(selected_order_.size());
     for (const auto& r : selected_order_)
+    {
         ids.push_back(r.id);
+    }
     if (on_confirmed)
+    {
         on_confirmed(std::move(ids));
+    }
 }
 
 void ForwardRoomPicker::set_forwarding(int room_count)
 {
-    forwarding_     = true;
+    forwarding_ = true;
     forward_errors_ = 0;
     error_lines_.clear();
-    forward_count_  = room_count;
-    forwarding_status_ = tk::trf(
-        tk::trn("Forwarding to {0} room…", "Forwarding to {0} rooms…",
-                static_cast<long>(room_count)),
-        {std::to_string(room_count)});
+    forward_count_ = room_count;
+    forwarding_status_ = tk::trf(tk::trn("Forwarding to {0} room…", "Forwarding to {0} rooms…",
+                                         static_cast<long>(room_count)),
+                                 {std::to_string(room_count)});
     if (host())
+    {
         host()->announce(forwarding_status_);
+    }
 }
 
-void ForwardRoomPicker::add_forward_error(const std::string& room_name,
-                                          const std::string& detail)
+void ForwardRoomPicker::add_forward_error(const std::string& room_name, const std::string& detail)
 {
     ++forward_errors_;
-    error_lines_.push_back(
-        tk::trf(tk::tr("Failed to forward to {0}: {1}"), {room_name, detail}));
+    error_lines_.push_back(tk::trf(tk::tr("Failed to forward to {0}: {1}"), {room_name, detail}));
 }
 
 void ForwardRoomPicker::mark_complete()
@@ -444,9 +534,11 @@ void ForwardRoomPicker::mark_complete()
     if (forward_errors_ == 0)
     {
         if (host())
+        {
             host()->announce(tk::trf(tk::trn("Forwarded to {0} room", "Forwarded to {0} rooms",
                                              static_cast<long>(forward_count_)),
                                      {std::to_string(forward_count_)}));
+        }
         close();
         return;
     }
@@ -456,7 +548,9 @@ void ForwardRoomPicker::mark_complete()
     {
         std::string all;
         for (const auto& line : error_lines_)
+        {
             all += (all.empty() ? "" : "\n") + line;
+        }
         host()->announce(all, tk::Host::Politeness::Assertive);
     }
 }
@@ -472,19 +566,17 @@ void ForwardRoomPicker::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 {
     bounds_ = bounds;
     if (!list_)
+    {
         return;
+    }
 
     constexpr float margin = 40.0f;
     const float cw = std::min(kCardW, std::max(0.0f, bounds.w - 2.0f * margin));
     const float chrome_h = kHeaderH + kFooterH;
 
-    const float list_content = row_count_() == 0
-        ? kRowH
-        : static_cast<float>(row_count_()) * kRowH;
-    const float max_h =
-        std::min(kCardMaxH, std::max(0.0f, bounds.h - 2.0f * margin));
-    float ch =
-        chrome_h + std::min(list_content, std::max(0.0f, max_h - chrome_h));
+    const float list_content = row_count_() == 0 ? kRowH : static_cast<float>(row_count_()) * kRowH;
+    const float max_h = std::min(kCardMaxH, std::max(0.0f, bounds.h - 2.0f * margin));
+    float ch = chrome_h + std::min(list_content, std::max(0.0f, max_h - chrome_h));
     ch = std::max(ch, chrome_h + kRowH);
     ch = std::min(ch, max_h);
 
@@ -492,11 +584,10 @@ void ForwardRoomPicker::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     float cy = bounds.y + (bounds.h - ch) * 0.38f;
     cy = std::max(cy, bounds.y + margin);
 
-    card_rect_         = {cx, cy, cw, ch};
-    search_field_rect_ = {cx + kForwardRoomPickerPadX,
-                          cy + (kHeaderH - kForwardRoomPickerFieldH) * 0.5f,
-                          std::max(0.0f, cw - 2.0f * kForwardRoomPickerPadX),
-                          kForwardRoomPickerFieldH};
+    card_rect_ = {cx, cy, cw, ch};
+    search_field_rect_ = {
+        cx + kForwardRoomPickerPadX, cy + (kHeaderH - kForwardRoomPickerFieldH) * 0.5f,
+        std::max(0.0f, cw - 2.0f * kForwardRoomPickerPadX), kForwardRoomPickerFieldH};
 
     if (search_field_)
     {
@@ -504,13 +595,15 @@ void ForwardRoomPicker::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         // would otherwise float above the progress/error body.
         search_field_->set_visible(!forwarding_);
         if (!forwarding_)
+        {
             search_field_->arrange(ctx, search_field_rect_);
+        }
     }
 
     // Footer button rects — right-aligned, vertically centred in the footer.
-    const float footer_y    = cy + ch - kFooterH;
-    const float btn_cy      = footer_y + (kFooterH - kForwardRoomPickerBtnH) * 0.5f;
-    const float confirm_w   = 112.0f; // room for "Forward (99)"
+    const float footer_y = cy + ch - kFooterH;
+    const float btn_cy = footer_y + (kFooterH - kForwardRoomPickerBtnH) * 0.5f;
+    const float confirm_w = 112.0f; // room for "Forward (99)"
     const tk::Rect confirm_rect{cx + cw - kForwardRoomPickerPadX - confirm_w, btn_cy, confirm_w,
                                 kForwardRoomPickerBtnH};
     const tk::Rect cancel_rect{confirm_rect.x - kForwardRoomPickerBtnGap - kBtnMinW, btn_cy,
@@ -520,15 +613,16 @@ void ForwardRoomPicker::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     // Dismiss uses the confirm slot; shown in the error state.
     dismiss_btn_->arrange(ctx, confirm_rect);
 
-    const tk::Rect list_bounds{cx, cy + kHeaderH, cw,
-                                std::max(0.0f, ch - chrome_h)};
+    const tk::Rect list_bounds{cx, cy + kHeaderH, cw, std::max(0.0f, ch - chrome_h)};
     list_->arrange(ctx, list_bounds);
 }
 
 void ForwardRoomPicker::paint(tk::PaintCtx& ctx)
 {
     if (!is_open_)
+    {
         return;
+    }
 
     // See pending_focus_'s doc comment: open() defers this because the
     // native search field's overlay isn't positioned (arrange() hasn't run
@@ -539,7 +633,9 @@ void ForwardRoomPicker::paint(tk::PaintCtx& ctx)
     {
         pending_focus_ = false;
         if (search_field_)
+        {
             search_field_->set_focused(true);
+        }
     }
 
     sync_footer_buttons_();
@@ -548,15 +644,12 @@ void ForwardRoomPicker::paint(tk::PaintCtx& ctx)
     {
         ctx.canvas.fill_rect(bounds_, tk::Color::rgba(0, 0, 0, 160));
         ctx.canvas.fill_rounded_rect(card_rect_, 10.0f, ctx.theme.palette.chrome_bg);
-        ctx.canvas.stroke_rounded_rect(card_rect_, 10.0f,
-                                       ctx.theme.palette.popup_border, 1.0f);
-        ctx.canvas.fill_rect(
-            {card_rect_.x, card_rect_.y + kHeaderH - 1.0f, card_rect_.w, 1.0f},
-            ctx.theme.palette.separator);
+        ctx.canvas.stroke_rounded_rect(card_rect_, 10.0f, ctx.theme.palette.popup_border, 1.0f);
+        ctx.canvas.fill_rect({card_rect_.x, card_rect_.y + kHeaderH - 1.0f, card_rect_.w, 1.0f},
+                             ctx.theme.palette.separator);
         const float footer_y_f = card_rect_.y + card_rect_.h - kFooterH;
-        ctx.canvas.fill_rect(
-            {card_rect_.x, footer_y_f, card_rect_.w, 1.0f},
-            ctx.theme.palette.separator);
+        ctx.canvas.fill_rect({card_rect_.x, footer_y_f, card_rect_.w, 1.0f},
+                             ctx.theme.palette.separator);
 
         const float body_y_f = card_rect_.y + kHeaderH;
         const float body_h_f = card_rect_.h - kHeaderH - kFooterH;
@@ -569,17 +662,16 @@ void ForwardRoomPicker::paint(tk::PaintCtx& ctx)
             if (lo)
             {
                 const tk::Size sz = lo->measure();
-                ctx.canvas.draw_text(
-                    *lo,
-                    {card_rect_.x + (card_rect_.w - sz.w) * 0.5f,
-                     body_y_f + (body_h_f - sz.h) * 0.5f},
-                    ctx.theme.palette.text_primary);
+                ctx.canvas.draw_text(*lo,
+                                     {card_rect_.x + (card_rect_.w - sz.w) * 0.5f,
+                                      body_y_f + (body_h_f - sz.h) * 0.5f},
+                                     ctx.theme.palette.text_primary);
             }
         }
         else if (!error_lines_.empty())
         {
             constexpr float kLineH = 24.0f;
-            constexpr float kPad   = 16.0f;
+            constexpr float kPad = 16.0f;
             float ey = body_y_f + kPad;
             tk::TextStyle ts{};
             ts.role = tk::FontRole::Body;
@@ -587,13 +679,17 @@ void ForwardRoomPicker::paint(tk::PaintCtx& ctx)
             {
                 auto lo = ctx.factory.build_text(line, ts);
                 if (lo)
+                {
                     ctx.canvas.draw_text(*lo, {card_rect_.x + kPad, ey},
-                                        ctx.theme.palette.destructive);
+                                         ctx.theme.palette.destructive);
+                }
                 ey += kLineH;
             }
 
             if (dismiss_btn_->visible())
+            {
                 dismiss_btn_->paint(ctx);
+            }
         }
         return;
     }
@@ -601,25 +697,22 @@ void ForwardRoomPicker::paint(tk::PaintCtx& ctx)
     ctx.canvas.fill_rect(bounds_, tk::Color::rgba(0, 0, 0, 160));
 
     ctx.canvas.fill_rounded_rect(card_rect_, 10.0f, ctx.theme.palette.chrome_bg);
-    ctx.canvas.stroke_rounded_rect(card_rect_, 10.0f,
-                                   ctx.theme.palette.popup_border, 1.0f);
+    ctx.canvas.stroke_rounded_rect(card_rect_, 10.0f, ctx.theme.palette.popup_border, 1.0f);
 
-    ctx.canvas.fill_rect(
-        {card_rect_.x, card_rect_.y + kHeaderH - 1.0f, card_rect_.w, 1.0f},
-        ctx.theme.palette.separator);
+    ctx.canvas.fill_rect({card_rect_.x, card_rect_.y + kHeaderH - 1.0f, card_rect_.w, 1.0f},
+                         ctx.theme.palette.separator);
     if (!search_field_rect_.empty())
     {
-        ctx.canvas.fill_rounded_rect(search_field_rect_, 6.0f,
-                                     ctx.theme.palette.compose_card_bg);
-        ctx.canvas.stroke_rounded_rect(search_field_rect_, 6.0f,
-                                       ctx.theme.palette.border, 1.0f);
+        ctx.canvas.fill_rounded_rect(search_field_rect_, 6.0f, ctx.theme.palette.compose_card_bg);
+        ctx.canvas.stroke_rounded_rect(search_field_rect_, 6.0f, ctx.theme.palette.border, 1.0f);
     }
-    if (search_field_ && search_field_->visible()) search_field_->paint(ctx);
+    if (search_field_ && search_field_->visible())
+    {
+        search_field_->paint(ctx);
+    }
 
     const float footer_y = card_rect_.y + card_rect_.h - kFooterH;
-    ctx.canvas.fill_rect(
-        {card_rect_.x, footer_y, card_rect_.w, 1.0f},
-        ctx.theme.palette.separator);
+    ctx.canvas.fill_rect({card_rect_.x, footer_y, card_rect_.w, 1.0f}, ctx.theme.palette.separator);
 
     cancel_btn_->paint(ctx);
     confirm_btn_->paint(ctx);
@@ -627,26 +720,24 @@ void ForwardRoomPicker::paint(tk::PaintCtx& ctx)
     if (row_count_() == 0)
     {
         tk::TextStyle es{};
-        es.role  = tk::FontRole::Body;
-        auto lo  = ctx.factory.build_text(tk::tr("No rooms"), es);
+        es.role = tk::FontRole::Body;
+        auto lo = ctx.factory.build_text(tk::tr("No rooms"), es);
         if (lo)
         {
-            const tk::Size sz    = lo->measure();
-            const float body_h   = card_rect_.h - kHeaderH - kFooterH;
-            ctx.canvas.draw_text(
-                *lo,
-                {card_rect_.x + (card_rect_.w - sz.w) * 0.5f,
-                 card_rect_.y + kHeaderH + (body_h - sz.h) * 0.5f},
-                ctx.theme.palette.text_muted);
+            const tk::Size sz = lo->measure();
+            const float body_h = card_rect_.h - kHeaderH - kFooterH;
+            ctx.canvas.draw_text(*lo,
+                                 {card_rect_.x + (card_rect_.w - sz.w) * 0.5f,
+                                  card_rect_.y + kHeaderH + (body_h - sz.h) * 0.5f},
+                                 ctx.theme.palette.text_muted);
         }
         return;
     }
 
     if (list_ && list_->visible())
     {
-        ctx.canvas.push_clip_rounded_rect(card_rect_, 10.0f);
+        tk::ClipScope clip(ctx.canvas, card_rect_, 10.0f);
         list_->paint(ctx);
-        ctx.canvas.pop_clip();
     }
 }
 
@@ -655,7 +746,9 @@ void ForwardRoomPicker::paint(tk::PaintCtx& ctx)
 bool ForwardRoomPicker::on_pointer_down(tk::Point local)
 {
     if (!is_open_)
+    {
         return false;
+    }
 
     // Stored rects are in world coords; local is widget-local (world - bounds_).
     const tk::Point world{local.x + bounds_.x, local.y + bounds_.y};
@@ -671,7 +764,9 @@ bool ForwardRoomPicker::on_pointer_down(tk::Point local)
 void ForwardRoomPicker::on_pointer_up(tk::Point, bool inside_self)
 {
     if (!is_open_)
+    {
         return;
+    }
     if (press_outside_ && inside_self)
     {
         press_outside_ = false;
@@ -681,7 +776,8 @@ void ForwardRoomPicker::on_pointer_up(tk::Point, bool inside_self)
     press_outside_ = false;
 }
 
-bool ForwardRoomPicker::on_wheel(tk::Point /*local*/, float /*dx*/, float /*dy*/, bool /*is_touchpad*/)
+bool ForwardRoomPicker::on_wheel(tk::Point /*local*/, float /*dx*/, float /*dy*/,
+                                 bool /*is_touchpad*/)
 {
     // dispatch_wheel already tried the list child; if we're here the list
     // didn't consume (empty or at boundary).  Modal overlay — eat the event.

@@ -24,8 +24,8 @@ namespace tesseract::views::msgirc
 
 // ── Geometry ──────────────────────────────────────────────────────────────
 // One flat body column. No avatar gutter, no bubble.
-inline constexpr float kIrcPadX     = 12.0f; // list edge → text column
-inline constexpr float kIrcRowGapY  = 3.0f;  // vertical breathing room per row
+inline constexpr float kIrcPadX = 12.0f;     // list edge → text column
+inline constexpr float kIrcRowGapY = 3.0f;   // vertical breathing room per row
 inline constexpr float kIrcPrefixGap = 2.0f; // standalone prefix line → body
 
 // ── mIRC 16-colour palette (codes 0-15) ───────────────────────────────────
@@ -55,24 +55,20 @@ inline constexpr tk::Color kMirc16[16] = {
 // drawn from the mIRC table (navy/green/red/maroon/purple/orange/teal/
 // royal-blue/magenta/olive/steel/rust).
 inline constexpr tk::Color kNickLight[] = {
-    tk::Color::rgb(0x00007F), tk::Color::rgb(0x007000),
-    tk::Color::rgb(0xC80000), tk::Color::rgb(0x7F0000),
-    tk::Color::rgb(0x9C009C), tk::Color::rgb(0xB35A00),
-    tk::Color::rgb(0x008080), tk::Color::rgb(0x0000CD),
-    tk::Color::rgb(0xB000B0), tk::Color::rgb(0x5F6E00),
-    tk::Color::rgb(0x3A5FCD), tk::Color::rgb(0xA0522D),
+    tk::Color::rgb(0x00007F), tk::Color::rgb(0x007000), tk::Color::rgb(0xC80000),
+    tk::Color::rgb(0x7F0000), tk::Color::rgb(0x9C009C), tk::Color::rgb(0xB35A00),
+    tk::Color::rgb(0x008080), tk::Color::rgb(0x0000CD), tk::Color::rgb(0xB000B0),
+    tk::Color::rgb(0x5F6E00), tk::Color::rgb(0x3A5FCD), tk::Color::rgb(0xA0522D),
 };
 
 // Legible nick colours on a dark background — the bright end of the mIRC
 // table (periwinkle/green/red/orange/yellow/mint/cyan/sky/pink/lime/
 // aqua/salmon).
 inline constexpr tk::Color kNickDark[] = {
-    tk::Color::rgb(0x8C8CFF), tk::Color::rgb(0x5CD65C),
-    tk::Color::rgb(0xFF6B6B), tk::Color::rgb(0xFF9E5C),
-    tk::Color::rgb(0xE8E85C), tk::Color::rgb(0x7BE0A8),
-    tk::Color::rgb(0x5CD6D6), tk::Color::rgb(0x6FB8FF),
-    tk::Color::rgb(0xFF87D1), tk::Color::rgb(0xB6E05C),
-    tk::Color::rgb(0x5CE0C4), tk::Color::rgb(0xFFA79E),
+    tk::Color::rgb(0x8C8CFF), tk::Color::rgb(0x5CD65C), tk::Color::rgb(0xFF6B6B),
+    tk::Color::rgb(0xFF9E5C), tk::Color::rgb(0xE8E85C), tk::Color::rgb(0x7BE0A8),
+    tk::Color::rgb(0x5CD6D6), tk::Color::rgb(0x6FB8FF), tk::Color::rgb(0xFF87D1),
+    tk::Color::rgb(0xB6E05C), tk::Color::rgb(0x5CE0C4), tk::Color::rgb(0xFFA79E),
 };
 
 // Deterministic nick → colour. Keyed on the canonical Matrix id so a
@@ -81,7 +77,9 @@ inline tk::Color nick_color(std::string_view user_id, tk::ThemeMode mode)
 {
     const std::size_t h = std::hash<std::string_view>{}(user_id);
     if (mode == tk::ThemeMode::Dark)
+    {
         return kNickDark[h % (sizeof(kNickDark) / sizeof(kNickDark[0]))];
+    }
     return kNickLight[h % (sizeof(kNickLight) / sizeof(kNickLight[0]))];
 }
 
@@ -97,7 +95,9 @@ enum class PrefixKind
 inline std::string timestamp_part(std::string_view hhmm)
 {
     if (hhmm.empty())
+    {
         return {};
+    }
     std::string s;
     s.reserve(hhmm.size() + 3);
     s += '[';
@@ -135,8 +135,7 @@ inline std::string nick_part(std::string_view nick, PrefixKind kind)
 }
 
 // Full plain prefix, e.g. "[12:34] <alice> ".
-inline std::string line_prefix(std::string_view hhmm, std::string_view nick,
-                               PrefixKind kind)
+inline std::string line_prefix(std::string_view hhmm, std::string_view nick, PrefixKind kind)
 {
     return timestamp_part(hhmm) + nick_part(nick, kind);
 }

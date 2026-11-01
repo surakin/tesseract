@@ -42,7 +42,7 @@ inline constexpr int kFontDeltaMaxPt = 12;
 
 struct FontConfig
 {
-    int base_pt = 0;       // 0 = follow the system base
+    int base_pt = 0;         // 0 = follow the system base
     std::string ui_family;   // "" = platform default face
     std::string mono_family; // "" = platform default monospace
     std::array<int, kFontCategoryCount> delta_pt{};
@@ -111,9 +111,18 @@ public:
 
     // Null while empty or stale.
     TextLayout* get() const;
-    TextLayout* operator->() const { return get(); }
-    TextLayout& operator*() const { return *get(); }
-    explicit operator bool() const { return get() != nullptr; }
+    TextLayout* operator->() const
+    {
+        return get();
+    }
+    TextLayout& operator*() const
+    {
+        return *get();
+    }
+    explicit operator bool() const
+    {
+        return get() != nullptr;
+    }
 
     // Out of line: the by-value parameter's destructor needs TextLayout complete.
     CachedTextLayout& operator=(std::unique_ptr<TextLayout> layout);

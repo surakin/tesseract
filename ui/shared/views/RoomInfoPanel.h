@@ -76,7 +76,7 @@ public:
     struct MemberActions
     {
         bool can_kick = false;
-        bool can_ban  = false;
+        bool can_ban = false;
     };
     using MemberActionsProvider = std::function<MemberActions(const std::string& user_id)>;
     void set_member_actions_provider(MemberActionsProvider p);
@@ -89,7 +89,10 @@ public:
     // Test-only: display names of the rows laid out, in list order.
     std::vector<std::string> shown_member_names_for_test() const;
     // Test-only: expands the member list as its "Show all" button does.
-    void expand_members_for_test() { expand_members_(); }
+    void expand_members_for_test()
+    {
+        expand_members_();
+    }
     // Test-only: the joined labels of the badge row (encrypted, history, language, bridged).
     std::string badge_labels_for_test() const;
 
@@ -98,11 +101,20 @@ public:
 
     // Self-owned topic-edit control — see tk::TextArea. Non-null whenever
     // this body was constructed with a real Host.
-    tk::TextArea* topic_field() const { return topic_field_; }
+    tk::TextArea* topic_field() const
+    {
+        return topic_field_;
+    }
 
     // For the outer RoomInfoPanel's access_name().
-    const std::string& display_name() const { return display_name_; }
-    const std::string& topic() const { return topic_; }
+    const std::string& display_name() const
+    {
+        return display_name_;
+    }
+    const std::string& topic() const
+    {
+        return topic_;
+    }
 
     void on_theme_changed(const tk::Theme& t) override;
 
@@ -116,47 +128,48 @@ public:
     // public members (wired once in RoomInfoPanel's constructor) — kept
     // here (rather than only on the outer) because this class is the one
     // that actually fires them.
-    std::function<void(std::string room_id)>                on_fetch_notification_mode;
-    std::function<void(std::string room_id, std::string)>   on_notification_mode_changed;
-    std::function<void(std::string room_id, bool)>          on_favourite_changed;
-    std::function<void(std::string room_id, bool)>          on_low_priority_changed;
-    std::function<void(std::string room_id)>                on_fetch_members;
+    std::function<void(std::string room_id)> on_fetch_notification_mode;
+    std::function<void(std::string room_id, std::string)> on_notification_mode_changed;
+    std::function<void(std::string room_id, bool)> on_favourite_changed;
+    std::function<void(std::string room_id, bool)> on_low_priority_changed;
+    std::function<void(std::string room_id)> on_fetch_members;
     std::function<void(std::string room_id, std::string t)> on_save_topic;
-    std::function<void(std::string room_id)>                on_leave_room;
-    std::function<void(std::string room_id)>                on_invite_requested;
-    std::function<void(std::string room_id)>                on_export_history_requested;
-    std::function<void(std::string room_id)>                on_media_view_requested;
-    std::function<void(std::string user_id,
-                       std::string display_name,
-                       std::string avatar_url)>             on_member_clicked;
-    std::function<void(const tesseract::RoomMember&)>       on_member_avatar_needed;
-    std::function<void(std::string avatar_url,
-                       std::string display_name)>           on_avatar_clicked;
-    std::function<void(std::string url)>                    on_link_clicked;
-    std::function<void(std::string url)>                    on_link_hovered;
-    std::function<void(std::string room_id)>                on_knock_requests_view_requested;
-    std::function<void(std::string room_id, std::string user_id,
-                       std::string display_name)>           on_kick_member;
-    std::function<void(std::string room_id, std::string user_id,
-                       std::string display_name)>           on_ban_member;
+    std::function<void(std::string room_id)> on_leave_room;
+    std::function<void(std::string room_id)> on_invite_requested;
+    std::function<void(std::string room_id)> on_export_history_requested;
+    std::function<void(std::string room_id)> on_media_view_requested;
+    std::function<void(std::string user_id, std::string display_name, std::string avatar_url)>
+        on_member_clicked;
+    std::function<void(const tesseract::RoomMember&)> on_member_avatar_needed;
+    std::function<void(std::string avatar_url, std::string display_name)> on_avatar_clicked;
+    std::function<void(std::string url)> on_link_clicked;
+    std::function<void(std::string url)> on_link_hovered;
+    std::function<void(std::string room_id)> on_knock_requests_view_requested;
+    std::function<void(std::string room_id, std::string user_id, std::string display_name)>
+        on_kick_member;
+    std::function<void(std::string room_id, std::string user_id, std::string display_name)>
+        on_ban_member;
 
     // tk::Widget overrides
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint_before_children(tk::PaintCtx&) override;
-    void     paint_after_children(tk::PaintCtx&) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint_before_children(tk::PaintCtx&) override;
+    void paint_after_children(tk::PaintCtx&) override;
     // Member row → context menu (Show profile / Kick / Ban).
-    bool     on_right_click(tk::Point local) override;
-    void     on_popup_dismiss() override;
-    bool     on_pointer_down(tk::Point local) override;
-    void     on_pointer_up(tk::Point local, bool inside_self) override;
-    void     on_pointer_drag(tk::Point local) override;
-    bool     on_pointer_move(tk::Point local) override;
-    void     on_pointer_leave() override;
-    bool     on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
+    bool on_right_click(tk::Point local) override;
+    void on_popup_dismiss() override;
+    bool on_pointer_down(tk::Point local) override;
+    void on_pointer_up(tk::Point local, bool inside_self) override;
+    void on_pointer_drag(tk::Point local) override;
+    bool on_pointer_move(tk::Point local) override;
+    void on_pointer_leave() override;
+    bool on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
 
 protected:
-    float content_height() const override { return content_height_; }
+    float content_height() const override
+    {
+        return content_height_;
+    }
 
 private:
     bool open_ = false;
@@ -169,10 +182,10 @@ private:
     std::string topic_before_save_; // the topic a pending save replaced
     std::string topic_html_;
     std::vector<tk::TextSpan> topic_spans_; // non-empty when plain topic has links
-    bool        is_encrypted_      = false;
+    bool is_encrypted_ = false;
     std::string history_visibility_;
     std::string language_;
-    bool        is_bridged_        = false; // effective (raw && !overridden)
+    bool is_bridged_ = false; // effective (raw && !overridden)
     std::string bridge_network_name_;
     std::string bridge_network_avatar_url_;
 
@@ -184,22 +197,22 @@ private:
     bool members_expanded_ = false;
 
     // Topic edit state
-    bool        editing_topic_  = false;
+    bool editing_topic_ = false;
     std::string topic_edit_text_;
     tk::TextArea* topic_field_ = nullptr; // self-owned; null if constructed without a Host
 
     // Child widgets (borrowed pointers from add_child)
     tk::ComboBox* notification_combo_ = nullptr;
-    tk::SwitchButton* favourite_btn_    = nullptr;
+    tk::SwitchButton* favourite_btn_ = nullptr;
     tk::SwitchButton* low_priority_btn_ = nullptr;
     tk::Button* edit_topic_btn_ = nullptr;
 
-    tk::Button* save_btn_       = nullptr;
-    tk::Button* cancel_btn_     = nullptr;
-    tk::Button* expand_btn_     = nullptr;
-    tk::Button* invite_btn_     = nullptr;
-    tk::Button* export_btn_     = nullptr;
-    tk::Button* leave_btn_      = nullptr;
+    tk::Button* save_btn_ = nullptr;
+    tk::Button* cancel_btn_ = nullptr;
+    tk::Button* expand_btn_ = nullptr;
+    tk::Button* invite_btn_ = nullptr;
+    tk::Button* export_btn_ = nullptr;
+    tk::Button* leave_btn_ = nullptr;
 
     // Keyboard stand-ins for the hand-painted clickable parts (avatar,
     // topic links, member rows, Media / Requests-to-join rows) — placed by
@@ -207,12 +220,12 @@ private:
     // ONE Tab stop however long it is: members_target_ sits on the row at
     // member_cursor_ and Up/Down/Home/End move it (Enter opens the profile,
     // the context-menu key the member menu).
-    tk::KeyboardTarget* avatar_target_  = nullptr;
+    tk::KeyboardTarget* avatar_target_ = nullptr;
     // Pointer side of the same action: hover ring, pointer cursor, click.
-    tk::HoverArea*      avatar_area_    = nullptr;
-    tk::KeyboardTarget* topic_target_   = nullptr;
-    tk::KeyboardTarget* media_target_   = nullptr;
-    tk::KeyboardTarget* knock_target_   = nullptr;
+    tk::HoverArea* avatar_area_ = nullptr;
+    tk::KeyboardTarget* topic_target_ = nullptr;
+    tk::KeyboardTarget* media_target_ = nullptr;
+    tk::KeyboardTarget* knock_target_ = nullptr;
     tk::KeyboardTarget* members_target_ = nullptr;
     int member_cursor_ = 0;
     // Links parsed from the HTML topic, cached per topic_html_ value so
@@ -226,37 +239,39 @@ private:
     // world space at paint time via `bounds_.x` / `bounds_.y - scroll_y_`.
     tk::Rect avatar_rect_{};
     tk::Rect topic_rect_{};
-    bool     topic_truncated_ = false; // topic exceeds kTopicMaxLines lines
-    bool     hover_topic_     = false; // pointer is over the topic region
+    bool topic_truncated_ = false; // topic exceeds kTopicMaxLines lines
+    bool hover_topic_ = false;     // pointer is over the topic region
     // Member row rects: up to 5 (or all when expanded), 44px each
     std::vector<tk::Rect> member_rects_;
     // "Media (N)" row — locally-known image/video count, direct-painted and
     // hand-hit-tested like the member rows (see media_row_rect_ below).
-    int      media_count_ = 0;
+    int media_count_ = 0;
     tk::Rect media_row_rect_{};
-    bool     hover_media_ = false;
-    bool     press_media_ = false;
+    bool hover_media_ = false;
+    bool press_media_ = false;
     tk::CachedTextLayout media_row_layout_;
 
     // "Requests to join (N)" row — same direct-painted/hit-tested treatment
     // as the "Media (N)" row above, but only present when
     // set_knock_requests_visible(true) was called.
-    bool     knock_row_visible_ = false;
+    bool knock_row_visible_ = false;
     tk::Rect knock_row_rect_{};
-    bool     hover_knock_ = false;
-    bool     press_knock_ = false;
+    bool hover_knock_ = false;
+    bool press_knock_ = false;
     tk::CachedTextLayout knock_row_layout_;
 
     // Cached text layouts
     tk::CachedTextLayout name_layout_;
     tk::CachedTextLayout topic_layout_;
+    bool high_contrast_ = false; // topic syntax colours are dropped when set
 
     // Encrypted / history-visibility / language / bridged badges; wraps
     // onto extra rows. Rebuilt by update_badges_() whenever its inputs change.
     tk::BadgeFlow* badge_flow_ = nullptr;
-    float          badge_block_h_ = 16.0f; // flow height from the last arrange()
+    float badge_block_h_ = 16.0f; // flow height from the last arrange()
     void update_badges_();
-    struct MemberLayout {
+    struct MemberLayout
+    {
         tk::CachedTextLayout name;
         tk::CachedTextLayout uid;
     };
@@ -264,14 +279,14 @@ private:
 
     // Content-local y of separators/rows (see rect comment above).
     float notif_sep_y_ = 0.0f;
-    float tags_sep_y_  = 0.0f;
-    float tags_row_y_  = 0.0f;
+    float tags_sep_y_ = 0.0f;
+    float tags_row_y_ = 0.0f;
 
     std::string press_link_url_;
     std::string hover_link_url_; // non-empty while pointer is over a topic link
-    int   hover_member_    = -1;
-    int   press_member_    = -1;
-    float content_height_  = 0.0f; // total scrollable content height, updated each arrange
+    int hover_member_ = -1;
+    int press_member_ = -1;
+    float content_height_ = 0.0f; // total scrollable content height, updated each arrange
 
     ImageProvider image_provider_;
     PresenceProvider presence_provider_;
@@ -281,17 +296,17 @@ private:
     // PopupMenu's doc comment), so it's never painted/hit-tested here.
     PopupMenu* member_menu_ = nullptr;
 
-    static constexpr float kAvatarD     = 72.0f;
+    static constexpr float kAvatarD = 72.0f;
     static constexpr float kAvatarSmall = 32.0f;
-    static constexpr float kPadX        = 16.0f;
-    static constexpr float kPadY        = 12.0f;
-    static constexpr float kHeaderH     = 48.0f;
-    static constexpr float kButtonH     = 36.0f;
-    static constexpr float kMemberRowH  = 44.0f;
-    static constexpr float kMediaRowH   = 36.0f;
-    static constexpr float kSmallEditH  = 28.0f;
-    static constexpr int   kTopicMaxLines = 5;     // wrapped-topic display cap
-    static constexpr float kTopicEditH    = 80.0f; // editable-area height
+    static constexpr float kPadX = 16.0f;
+    static constexpr float kPadY = 12.0f;
+    static constexpr float kHeaderH = 48.0f;
+    static constexpr float kButtonH = 36.0f;
+    static constexpr float kMemberRowH = 44.0f;
+    static constexpr float kMediaRowH = 36.0f;
+    static constexpr float kSmallEditH = 28.0f;
+    static constexpr int kTopicMaxLines = 5;    // wrapped-topic display cap
+    static constexpr float kTopicEditH = 80.0f; // editable-area height
 
     // Measure the wrapped topic and set topic_truncated_. Returns the display
     // height for the topic block (1..kTopicMaxLines lines). Builds and caches
@@ -309,7 +324,7 @@ protected:
 
 public:
     static constexpr float kPanelW = RoomInfoPanelBody::kPanelW;
-    static constexpr float kHeaderBarH = 44.0f; // fixed non-scrolling header strip
+    static constexpr float kHeaderBarH = 44.0f;  // fixed non-scrolling header strip
     static constexpr float kHeaderBtnSz = 32.0f; // settings/close icon buttons
 
     ~RoomInfoPanel() override = default;
@@ -317,7 +332,10 @@ public:
     void open(const tesseract::RoomInfo& info);
     void refresh_info(const tesseract::RoomInfo& info); // update without resetting state
     void close();
-    bool is_open() const { return open_; }
+    bool is_open() const
+    {
+        return open_;
+    }
 
     void set_members(std::vector<tesseract::RoomMember> members);
 
@@ -359,7 +377,10 @@ public:
     void set_member_actions_provider(MemberActionsProvider p);
 
     // Test-only access to the body (member-row rects are body-local).
-    RoomInfoPanelBody* body_for_test() const { return body_; }
+    RoomInfoPanelBody* body_for_test() const
+    {
+        return body_;
+    }
 
     // Puts back the topic a failed save had shown.
     void topic_save_failed(const std::string& attempted);
@@ -375,62 +396,60 @@ public:
     std::function<void()> on_layout_changed;
 
     // Shell callbacks
-    std::function<void(std::string room_id)>                on_fetch_notification_mode;
-    std::function<void(std::string room_id, std::string)>   on_notification_mode_changed;
-    std::function<void(std::string room_id, bool)>          on_favourite_changed;
-    std::function<void(std::string room_id, bool)>          on_low_priority_changed;
-    std::function<void(std::string room_id)>                on_fetch_members;
+    std::function<void(std::string room_id)> on_fetch_notification_mode;
+    std::function<void(std::string room_id, std::string)> on_notification_mode_changed;
+    std::function<void(std::string room_id, bool)> on_favourite_changed;
+    std::function<void(std::string room_id, bool)> on_low_priority_changed;
+    std::function<void(std::string room_id)> on_fetch_members;
     std::function<void(std::string room_id, std::string t)> on_save_topic;
-    std::function<void(std::string room_id)>                on_leave_room;
+    std::function<void(std::string room_id)> on_leave_room;
 
     // Fired when the "Invite people" button is clicked. RoomView closes
     // this panel and opens its InviteDialog.
-    std::function<void(std::string room_id)>                on_invite_requested;
+    std::function<void(std::string room_id)> on_invite_requested;
     // Fired when the "Export History" button is clicked. The shell opens
     // the shared ExportHistoryDialog for this room.
-    std::function<void(std::string room_id)>                on_export_history_requested;
+    std::function<void(std::string room_id)> on_export_history_requested;
     // Fired when the user clicks the "Media (N)" row.
-    std::function<void(std::string room_id)>                on_media_view_requested;
-    std::function<void(std::string user_id,
-                       std::string display_name,
-                       std::string avatar_url)>             on_member_clicked;
+    std::function<void(std::string room_id)> on_media_view_requested;
+    std::function<void(std::string user_id, std::string display_name, std::string avatar_url)>
+        on_member_clicked;
     // Fired from paint() when a visible member row's avatar is a cache miss
     // (image_provider_ returned nullptr) — mirrors RoomListView's
     // on_room_avatar_needed: only members actually scrolled into view in the
     // open panel trigger a fetch. Safe to fire on every paint of that row;
     // the shell's own dedup (media_fetches_in_flight_) makes repeat calls a
     // no-op until the fetch resolves.
-    std::function<void(const tesseract::RoomMember&)>       on_member_avatar_needed;
-    std::function<void(std::string avatar_url,
-                       std::string display_name)>           on_avatar_clicked;
-    std::function<void(std::string url)>                    on_link_clicked;
-    std::function<void(std::string url)>                    on_link_hovered;
-    std::function<void()>                                   on_close;
+    std::function<void(const tesseract::RoomMember&)> on_member_avatar_needed;
+    std::function<void(std::string avatar_url, std::string display_name)> on_avatar_clicked;
+    std::function<void(std::string url)> on_link_clicked;
+    std::function<void(std::string url)> on_link_hovered;
+    std::function<void()> on_close;
     // Fired when the wrench icon is clicked. The shell closes this panel
     // and opens RoomSettingsView in its place.
-    std::function<void()>                                   on_room_settings_requested;
+    std::function<void()> on_room_settings_requested;
     // Fired when the "Requests to join (N)" row is clicked. The shell closes
     // this panel and opens KnockRequestsPanel in its place (mirrors
     // on_room_settings_requested).
-    std::function<void(std::string room_id)>                on_knock_requests_view_requested;
+    std::function<void(std::string room_id)> on_knock_requests_view_requested;
     // Fired by the member-row context menu's "Kick user…" / "Ban user…"
     // items (enabled only when MemberActionsProvider allows). RoomView
     // confirms (with an optional reason) before forwarding to the shell.
-    std::function<void(std::string room_id, std::string user_id,
-                       std::string display_name)>           on_kick_member;
-    std::function<void(std::string room_id, std::string user_id,
-                       std::string display_name)>           on_ban_member;
+    std::function<void(std::string room_id, std::string user_id, std::string display_name)>
+        on_kick_member;
+    std::function<void(std::string room_id, std::string user_id, std::string display_name)>
+        on_ban_member;
 
     // tk::Widget overrides
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     // Only the fixed chrome (backdrop, panel background/border) is painted
     // here; body_/settings_btn_/close_btn_ paint via the default
     // paint_children() (see widget.h) since they're ordinary add_child()
     // children now that body_ owns and clips its own scrollable content.
-    void     paint_before_children(tk::PaintCtx&) override;
-    bool     on_pointer_down(tk::Point local) override;
-    void     on_pointer_up(tk::Point local, bool inside_self) override;
+    void paint_before_children(tk::PaintCtx&) override;
+    bool on_pointer_down(tk::Point local) override;
+    void on_pointer_up(tk::Point local, bool inside_self) override;
 
     // Accessibility: a Group announcing the (canvas-painted) room name +
     // topic; the panel's buttons + member rows attach under it.
@@ -443,8 +462,8 @@ public:
 private:
     bool open_ = false;
 
-    tk::Button* close_btn_      = nullptr;
-    tk::Button* settings_btn_   = nullptr;
+    tk::Button* close_btn_ = nullptr;
+    tk::Button* settings_btn_ = nullptr;
 
     RoomInfoPanelBody* body_ = nullptr;
 
@@ -452,7 +471,7 @@ private:
     tk::Rect panel_rect_{};
     tk::Rect backdrop_rect_{};
 
-    bool  press_backdrop_  = false;
+    bool press_backdrop_ = false;
 };
 
 } // namespace tesseract::views

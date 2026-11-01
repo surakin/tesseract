@@ -38,8 +38,7 @@ struct Scene
 };
 
 /// "main" keeps the pre-scene names (`qt6-light.png`) so README links hold.
-std::string screenshot_filename(std::string_view prefix,
-                                std::string_view scene,
+std::string screenshot_filename(std::string_view prefix, std::string_view scene,
                                 ScreenshotTheme theme);
 
 /// Steps scenes × {light, dark}: setup, then per theme apply/refresh/wait/
@@ -47,8 +46,8 @@ std::string screenshot_filename(std::string_view prefix,
 class ScreenshotDirector
 {
 public:
-    ScreenshotDirector(ScreenshotHost& host, std::vector<Scene> scenes,
-                       std::string prefix, int settle_ms = 300);
+    ScreenshotDirector(ScreenshotHost& host, std::vector<Scene> scenes, std::string prefix,
+                       int settle_ms = 300);
 
     void start();
 

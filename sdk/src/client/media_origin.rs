@@ -41,7 +41,9 @@ impl std::fmt::Display for OriginKey {
 }
 
 fn mxc_server_name(uri: &OwnedMxcUri) -> Option<String> {
-    uri.parts().ok().map(|(server_name, _media_id)| server_name.to_string())
+    uri.parts()
+        .ok()
+        .map(|(server_name, _media_id)| server_name.to_string())
 }
 
 /// Origin key for `fetch_media_async`'s `source`, dispatching on `kind`
@@ -123,7 +125,10 @@ mod tests {
 
     #[test]
     fn distinct_malformed_urls_get_distinct_origins() {
-        assert_ne!(origin_from_url("not a url"), origin_from_url("also not a url"));
+        assert_ne!(
+            origin_from_url("not a url"),
+            origin_from_url("also not a url")
+        );
     }
 
     #[test]

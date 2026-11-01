@@ -18,14 +18,17 @@ struct ShellNavHistoryTestShell : tesseract::test::TestShellBase
     {
         last_navigate_to = id;
     }
-    void apply_thread_messages_(
-        const std::string&,
-        std::vector<tesseract::views::MessageRowData>, bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
 
     using ShellBase::current_room_id_;
     using ShellBase::room_nav_history_;
@@ -55,8 +58,7 @@ TEST_CASE("back/forward are no-ops on empty history", "[shell][nav_history]")
     CHECK(s.last_navigate_to.empty());
 }
 
-TEST_CASE("after_active_room_changed_ appends to nav history",
-          "[shell][nav_history]")
+TEST_CASE("after_active_room_changed_ appends to nav history", "[shell][nav_history]")
 {
     ShellNavHistoryTestShell s;
     visit(s, "!a:x");
@@ -70,8 +72,7 @@ TEST_CASE("after_active_room_changed_ appends to nav history",
     CHECK(s.room_nav_history_cursor_ == 1);
 }
 
-TEST_CASE("navigate_history_back goes to previous room",
-          "[shell][nav_history]")
+TEST_CASE("navigate_history_back goes to previous room", "[shell][nav_history]")
 {
     ShellNavHistoryTestShell s;
     visit(s, "!a:x");
@@ -83,8 +84,7 @@ TEST_CASE("navigate_history_back goes to previous room",
     CHECK(s.room_nav_history_cursor_ == 0);
 }
 
-TEST_CASE("navigate_history_back is a no-op at the oldest entry",
-          "[shell][nav_history]")
+TEST_CASE("navigate_history_back is a no-op at the oldest entry", "[shell][nav_history]")
 {
     ShellNavHistoryTestShell s;
     visit(s, "!a:x");
@@ -94,22 +94,20 @@ TEST_CASE("navigate_history_back is a no-op at the oldest entry",
     CHECK(s.room_nav_history_cursor_ == 0);
 }
 
-TEST_CASE("navigate_history_forward goes to next room after back",
-          "[shell][nav_history]")
+TEST_CASE("navigate_history_forward goes to next room after back", "[shell][nav_history]")
 {
     ShellNavHistoryTestShell s;
     visit(s, "!a:x");
     visit(s, "!b:x");
 
-    s.navigate_history_back(); // cursor -> 0
+    s.navigate_history_back();    // cursor -> 0
     s.navigate_history_forward(); // cursor -> 1
 
     CHECK(s.last_navigate_to == "!b:x");
     CHECK(s.room_nav_history_cursor_ == 1);
 }
 
-TEST_CASE("navigate_history_forward is a no-op at the newest entry",
-          "[shell][nav_history]")
+TEST_CASE("navigate_history_forward is a no-op at the newest entry", "[shell][nav_history]")
 {
     ShellNavHistoryTestShell s;
     visit(s, "!a:x");
@@ -144,21 +142,21 @@ TEST_CASE("new visit truncates forward history", "[shell][nav_history]")
     CHECK(s.last_navigate_to.empty());
 }
 
-TEST_CASE("history caps at kNavHistoryMax entries, cursor stays at end",
-          "[shell][nav_history]")
+TEST_CASE("history caps at kNavHistoryMax entries, cursor stays at end", "[shell][nav_history]")
 {
     ShellNavHistoryTestShell s;
     for (int i = 0; i < 105; ++i)
+    {
         visit(s, "!r" + std::to_string(i) + ":x");
+    }
 
     CHECK(s.room_nav_history_.size() == 100);
-    CHECK(s.room_nav_history_.front() == "!r5:x");  // first 5 evicted
+    CHECK(s.room_nav_history_.front() == "!r5:x"); // first 5 evicted
     CHECK(s.room_nav_history_.back() == "!r104:x");
     CHECK(s.room_nav_history_cursor_ == 99);
 }
 
-TEST_CASE("consecutive visits to same room append to history",
-          "[shell][nav_history]")
+TEST_CASE("consecutive visits to same room append to history", "[shell][nav_history]")
 {
     ShellNavHistoryTestShell s;
     visit(s, "!a:x");
@@ -168,8 +166,7 @@ TEST_CASE("consecutive visits to same room append to history",
     CHECK(s.room_nav_history_[1] == "!a:x");
 }
 
-TEST_CASE("room_nav_in_progress_ guard suppresses history append",
-          "[shell][nav_history]")
+TEST_CASE("room_nav_in_progress_ guard suppresses history append", "[shell][nav_history]")
 {
     // Simulates what navigate_history_back/forward do: set the guard
     // flag, then trigger after_active_room_changed_ (which in production
@@ -182,7 +179,7 @@ TEST_CASE("room_nav_in_progress_ guard suppresses history append",
     REQUIRE(s.room_nav_history_.size() == 2);
 
     s.room_nav_in_progress_ = true;
-    s.current_room_id_       = "!a:x";
+    s.current_room_id_ = "!a:x";
     s.after_active_room_changed_();
     s.room_nav_in_progress_ = false;
 

@@ -18,8 +18,7 @@ struct TkRoomMediaSectionStage
     }
     tk::PaintCtx paint_ctx()
     {
-        return tk::PaintCtx{surface->canvas(), surface->factory(),
-                            tk::Theme::light()};
+        return tk::PaintCtx{surface->canvas(), surface->factory(), tk::Theme::light()};
     }
     void run(tk::Widget& root, tk::Rect bounds)
     {
@@ -40,8 +39,7 @@ TEST_CASE("RoomMediaSection: paints without crashing", "[room_media_section]")
     st.run(s, {0.0f, 0.0f, 800.0f, 600.0f});
 }
 
-TEST_CASE("RoomMediaSection: defaults to \"Use global default\"",
-          "[room_media_section]")
+TEST_CASE("RoomMediaSection: defaults to \"Use global default\"", "[room_media_section]")
 {
     RoomMediaSection s;
     REQUIRE(s.override_combo() != nullptr);

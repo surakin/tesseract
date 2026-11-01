@@ -25,13 +25,15 @@ struct LineSegment
 // coupled to a perspective-divide term, so vertices visibly grow/shrink as they
 // "tumble" through the projection — the actual tesseract look. Pure geometry, no
 // Canvas dependency, so it's independently testable.
-inline std::array<LineSegment, 32> tesseract_wireframe_edges(float phase01,
-                                                              Point center,
-                                                              float scale)
+inline std::array<LineSegment, 32> tesseract_wireframe_edges(float phase01, Point center,
+                                                             float scale)
 {
     // 16 vertices of a unit hypercube: bit i of the vertex index selects +1/-1
     // for coordinate i (x=bit0, y=bit1, z=bit2, w=bit3).
-    struct Vec4 { float x, y, z, w; };
+    struct Vec4
+    {
+        float x, y, z, w;
+    };
     std::array<Vec4, 16> verts;
     for (int i = 0; i < 16; ++i)
     {
@@ -91,12 +93,11 @@ inline std::array<LineSegment, 32> tesseract_wireframe_edges(float phase01,
         for (int j = i + 1; j < 16; ++j)
         {
             const int diff = i ^ j;
-            const int bits = (diff & 1) + ((diff >> 1) & 1) +
-                             ((diff >> 2) & 1) + ((diff >> 3) & 1);
+            const int bits = (diff & 1) + ((diff >> 1) & 1) + ((diff >> 2) & 1) + ((diff >> 3) & 1);
             if (bits == 1)
             {
                 edges[n++] = {projected[static_cast<std::size_t>(i)],
-                             projected[static_cast<std::size_t>(j)]};
+                              projected[static_cast<std::size_t>(j)]};
             }
         }
     }

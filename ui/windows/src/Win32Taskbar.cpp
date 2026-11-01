@@ -20,7 +20,7 @@
 #include <unordered_set>
 #include <wrl/client.h>
 
-#include "winrt_coroutine_shim.h"
+#include "platform/win32/winrt_coroutine_shim.h"
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.UI.StartScreen.h>
@@ -39,14 +39,19 @@ constexpr char kRecentFileMagic[] = "TesseractRecentRooms 1";
 
 std::wstring to_wide(const std::string& text)
 {
-    if (text.empty()) return {};
-    const int count = MultiByteToWideChar(CP_UTF8, 0, text.data(),
-                                           static_cast<int>(text.size()),
-                                           nullptr, 0);
-    if (count <= 0) return {};
+    if (text.empty())
+    {
+        return {};
+    }
+    const int count =
+        MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0);
+    if (count <= 0)
+    {
+        return {};
+    }
     std::wstring result(static_cast<std::size_t>(count), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()),
-                        result.data(), count);
+    MultiByteToWideChar(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), result.data(),
+                        count);
     return result;
 }
 
@@ -55,20 +60,27 @@ std::wstring with_profile(const std::wstring& args)
 {
     std::wstring out;
     for (const auto& arg : tesseract::profile_relaunch_args(tesseract::profile()))
+    {
         out += to_wide(arg) + L" ";
+    }
     return out + args;
 }
 
 std::string to_utf8(const std::wstring& text)
 {
-    if (text.empty()) return {};
-    const int count = WideCharToMultiByte(CP_UTF8, 0, text.data(),
-                                           static_cast<int>(text.size()),
-                                           nullptr, 0, nullptr, nullptr);
-    if (count <= 0) return {};
+    if (text.empty())
+    {
+        return {};
+    }
+    const int count = WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()),
+                                          nullptr, 0, nullptr, nullptr);
+    if (count <= 0)
+    {
+        return {};
+    }
     std::string result(static_cast<std::size_t>(count), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()),
-                        result.data(), count, nullptr, nullptr);
+    WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), result.data(),
+                        count, nullptr, nullptr);
     return result;
 }
 
@@ -91,20 +103,29 @@ std::uint64_t room_hash(const std::wstring& room_id)
 std::wstring hash_name(const std::wstring& room_id)
 {
     wchar_t value[17]{};
-    swprintf_s(value, L"%016llx",
-               static_cast<unsigned long long>(room_hash(room_id)));
+    swprintf_s(value, L"%016llx", static_cast<unsigned long long>(room_hash(room_id)));
     return value;
 }
 
 const wchar_t* image_extension(std::span<const std::uint8_t> bytes)
 {
-    if (bytes.size() >= 8 && bytes[0] == 0x89 && bytes[1] == 'P' &&
-        bytes[2] == 'N' && bytes[3] == 'G') return L".png";
-    if (bytes.size() >= 3 && bytes[0] == 0xff && bytes[1] == 0xd8 &&
-        bytes[2] == 0xff) return L".jpg";
-    if (bytes.size() >= 6 && bytes[0] == 'G' && bytes[1] == 'I' &&
-        bytes[2] == 'F') return L".gif";
-    if (bytes.size() >= 2 && bytes[0] == 'B' && bytes[1] == 'M') return L".bmp";
+    if (bytes.size() >= 8 && bytes[0] == 0x89 && bytes[1] == 'P' && bytes[2] == 'N' &&
+        bytes[3] == 'G')
+    {
+        return L".png";
+    }
+    if (bytes.size() >= 3 && bytes[0] == 0xff && bytes[1] == 0xd8 && bytes[2] == 0xff)
+    {
+        return L".jpg";
+    }
+    if (bytes.size() >= 6 && bytes[0] == 'G' && bytes[1] == 'I' && bytes[2] == 'F')
+    {
+        return L".gif";
+    }
+    if (bytes.size() >= 2 && bytes[0] == 'B' && bytes[1] == 'M')
+    {
+        return L".bmp";
+    }
     return nullptr;
 }
 
@@ -129,11 +150,13 @@ HICON make_dot_icon(COLORREF colour)
     bi.bV5AlphaMask = 0xFF000000;
     void* bits = nullptr;
     HDC dc = GetDC(nullptr);
-    HBITMAP colour_bitmap = CreateDIBSection(
-        dc, reinterpret_cast<BITMAPINFO*>(&bi), DIB_RGB_COLORS, &bits, nullptr, 0);
+    HBITMAP colour_bitmap =
+        CreateDIBSection(dc, reinterpret_cast<BITMAPINFO*>(&bi), DIB_RGB_COLORS, &bits, nullptr, 0);
     ReleaseDC(nullptr, dc);
     if (!colour_bitmap || !bits)
+    {
         return nullptr;
+    }
     auto* pixels = static_cast<std::uint32_t*>(bits);
     std::fill(pixels, pixels + side * side, 0u);
     const int cr = GetRValue(colour), cg = GetGValue(colour), cb = GetBValue(colour);
@@ -144,12 +167,15 @@ HICON make_dot_icon(COLORREF colour)
             const int dx = x - 10, dy = y - 10;
             const int d2 = dx * dx + dy * dy;
             if (d2 <= 30)
+            {
                 pixels[y * side + x] = 0xFFFFFFFFu;
+            }
             if (d2 <= 18)
-                pixels[y * side + x] = 0xFF000000u |
-                    (static_cast<std::uint32_t>(cr) << 16) |
-                    (static_cast<std::uint32_t>(cg) << 8) |
-                    static_cast<std::uint32_t>(cb);
+            {
+                pixels[y * side + x] = 0xFF000000u | (static_cast<std::uint32_t>(cr) << 16) |
+                                       (static_cast<std::uint32_t>(cg) << 8) |
+                                       static_cast<std::uint32_t>(cb);
+            }
         }
     }
     HBITMAP mask = CreateBitmap(side, side, 1, 1, nullptr);
@@ -165,14 +191,15 @@ void set_tip(THUMBBUTTON& button, const wchar_t* text)
     wcsncpy_s(button.szTip, text, _TRUNCATE);
 }
 
-Microsoft::WRL::ComPtr<IShellLinkW>
-make_task_link(const wchar_t* exe, const wchar_t* arguments,
-               const wchar_t* title, const wchar_t* aumid)
+Microsoft::WRL::ComPtr<IShellLinkW> make_task_link(const wchar_t* exe, const wchar_t* arguments,
+                                                   const wchar_t* title, const wchar_t* aumid)
 {
     Microsoft::WRL::ComPtr<IShellLinkW> link;
-    if (FAILED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER,
-                                IID_PPV_ARGS(&link))))
+    if (FAILED(
+            CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&link))))
+    {
         return {};
+    }
     link->SetPath(exe);
     link->SetArguments(arguments);
     link->SetIconLocation(exe, 0);
@@ -201,8 +228,7 @@ Win32Taskbar::Win32Taskbar(HINSTANCE instance)
 {
     load_recent_rooms_();
     taskbar_button_created_ = RegisterWindowMessageW(L"TaskbarButtonCreated");
-    if (SUCCEEDED(CoCreateInstance(CLSID_TaskbarList, nullptr,
-                                   CLSCTX_INPROC_SERVER,
+    if (SUCCEEDED(CoCreateInstance(CLSID_TaskbarList, nullptr, CLSCTX_INPROC_SERVER,
                                    IID_PPV_ARGS(&taskbar_))))
     {
         if (FAILED(taskbar_->HrInit()))
@@ -215,8 +241,8 @@ Win32Taskbar::Win32Taskbar(HINSTANCE instance)
     highlight_icon_ = make_dot_icon(badge_colour(tesseract::kBadgeColorMention));
     next_icon_ = static_cast<HICON>(LoadImageW(instance_, MAKEINTRESOURCEW(IDI_TASK_NEXT),
                                                IMAGE_ICON, 16, 16, LR_DEFAULTCOLOR));
-    mic_icon_ = static_cast<HICON>(LoadImageW(instance_, MAKEINTRESOURCEW(IDI_TASK_MIC),
-                                              IMAGE_ICON, 16, 16, LR_DEFAULTCOLOR));
+    mic_icon_ = static_cast<HICON>(
+        LoadImageW(instance_, MAKEINTRESOURCEW(IDI_TASK_MIC), IMAGE_ICON, 16, 16, LR_DEFAULTCOLOR));
     mic_off_icon_ = static_cast<HICON>(LoadImageW(instance_, MAKEINTRESOURCEW(IDI_TASK_MIC_OFF),
                                                   IMAGE_ICON, 16, 16, LR_DEFAULTCOLOR));
     video_icon_ = static_cast<HICON>(LoadImageW(instance_, MAKEINTRESOURCEW(IDI_TASK_VIDEO),
@@ -231,23 +257,31 @@ Win32Taskbar::Win32Taskbar(HINSTANCE instance)
     wc.hInstance = instance_;
     wc.lpszClassName = kMessageClass;
     RegisterClassExW(&wc);
-    message_hwnd_ = CreateWindowExW(0, kMessageClass, L"", 0, 0, 0, 0, 0,
-                                    HWND_MESSAGE, nullptr, instance_, this);
+    message_hwnd_ = CreateWindowExW(0, kMessageClass, L"", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr,
+                                    instance_, this);
 }
 
 Win32Taskbar::~Win32Taskbar()
 {
     if (message_hwnd_)
+    {
         DestroyWindow(message_hwnd_);
-    for (HICON icon : {unread_icon_, highlight_icon_, next_icon_, mic_icon_,
-                       mic_off_icon_, video_icon_, video_off_icon_, hangup_icon_})
-        if (icon) DestroyIcon(icon);
+    }
+    for (HICON icon : {unread_icon_, highlight_icon_, next_icon_, mic_icon_, mic_off_icon_,
+                       video_icon_, video_off_icon_, hangup_icon_})
+    {
+        if (icon)
+        {
+            DestroyIcon(icon);
+        }
+    }
     if (taskbar_)
+    {
         taskbar_->Release();
+    }
 }
 
-LRESULT CALLBACK Win32Taskbar::message_wnd_proc_(HWND hwnd, UINT msg,
-                                                  WPARAM wp, LPARAM lp)
+LRESULT CALLBACK Win32Taskbar::message_wnd_proc_(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
     auto* self = reinterpret_cast<Win32Taskbar*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
     if (msg == WM_NCCREATE)
@@ -275,8 +309,7 @@ LRESULT CALLBACK Win32Taskbar::message_wnd_proc_(HWND hwnd, UINT msg,
     return DefWindowProcW(hwnd, msg, wp, lp);
 }
 
-void Win32Taskbar::register_main_window(HWND hwnd,
-                                         std::function<void()> next_unread)
+void Win32Taskbar::register_main_window(HWND hwnd, std::function<void()> next_unread)
 {
     Entry entry;
     entry.role = Role::Main;
@@ -289,9 +322,9 @@ void Win32Taskbar::register_room_window(HWND hwnd)
     windows_[hwnd] = Entry{Role::Room};
 }
 
-void Win32Taskbar::register_call_window(HWND hwnd,
-    std::function<void()> toggle_audio, std::function<void()> toggle_video,
-    std::function<void()> hang_up)
+void Win32Taskbar::register_call_window(HWND hwnd, std::function<void()> toggle_audio,
+                                        std::function<void()> toggle_video,
+                                        std::function<void()> hang_up)
 {
     Entry entry;
     entry.role = Role::Call;
@@ -301,13 +334,18 @@ void Win32Taskbar::register_call_window(HWND hwnd,
     windows_[hwnd] = std::move(entry);
 }
 
-void Win32Taskbar::unregister_window(HWND hwnd) { windows_.erase(hwnd); }
+void Win32Taskbar::unregister_window(HWND hwnd)
+{
+    windows_.erase(hwnd);
+}
 
 void Win32Taskbar::on_taskbar_button_created(HWND hwnd)
 {
     auto it = windows_.find(hwnd);
     if (it == windows_.end())
+    {
         return;
+    }
     it->second.ready = true;
     it->second.toolbar_added = false;
     apply_window_(hwnd, it->second);
@@ -316,7 +354,9 @@ void Win32Taskbar::on_taskbar_button_created(HWND hwnd)
 void Win32Taskbar::apply_window_(HWND hwnd, Entry& entry)
 {
     if (!taskbar_ || !entry.ready)
+    {
         return;
+    }
     apply_overlay_(hwnd);
     apply_progress_(hwnd);
     apply_toolbar_(hwnd, entry);
@@ -325,18 +365,22 @@ void Win32Taskbar::apply_window_(HWND hwnd, Entry& entry)
 void Win32Taskbar::apply_overlay_(HWND hwnd)
 {
     if (!taskbar_)
+    {
         return;
+    }
     HICON icon = has_highlight_ ? highlight_icon_ : (has_unread_ ? unread_icon_ : nullptr);
-    const std::wstring description = has_highlight_
-        ? to_wide(tk::tr("Mentions"))
-        : (has_unread_ ? to_wide(tk::tr("Unread messages")) : std::wstring{});
+    const std::wstring description =
+        has_highlight_ ? to_wide(tk::tr("Mentions"))
+                       : (has_unread_ ? to_wide(tk::tr("Unread messages")) : std::wstring{});
     taskbar_->SetOverlayIcon(hwnd, icon, description.c_str());
 }
 
 void Win32Taskbar::apply_progress_(HWND hwnd)
 {
     if (!taskbar_)
+    {
         return;
+    }
     auto snapshot = progress_error_ ? error_snapshot_ : progress_.snapshot();
     if (!snapshot.active || snapshot.total == 0)
     {
@@ -350,7 +394,9 @@ void Win32Taskbar::apply_progress_(HWND hwnd)
 void Win32Taskbar::apply_toolbar_(HWND hwnd, Entry& entry)
 {
     if (!taskbar_ || entry.role == Role::Room)
+    {
         return;
+    }
     std::array<THUMBBUTTON, 3> buttons{};
     UINT count = 0;
     if (entry.role == Role::Main)
@@ -371,16 +417,16 @@ void Win32Taskbar::apply_toolbar_(HWND hwnd, Entry& entry)
         mic.iId = kMuteButton;
         mic.hIcon = entry.audio_muted ? mic_off_icon_ : mic_icon_;
         mic.dwFlags = THBF_ENABLED;
-        const auto mic_tip = to_wide(entry.audio_muted
-            ? tk::tr("Unmute microphone") : tk::tr("Mute microphone"));
+        const auto mic_tip =
+            to_wide(entry.audio_muted ? tk::tr("Unmute microphone") : tk::tr("Mute microphone"));
         set_tip(mic, mic_tip.c_str());
         auto& video = buttons[1];
         video.dwMask = THB_ICON | THB_TOOLTIP | THB_FLAGS;
         video.iId = kVideoButton;
         video.hIcon = entry.video_muted ? video_off_icon_ : video_icon_;
         video.dwFlags = entry.show_video ? THBF_ENABLED : THBF_HIDDEN;
-        const auto video_tip = to_wide(entry.video_muted
-            ? tk::tr("Turn camera on") : tk::tr("Turn camera off"));
+        const auto video_tip =
+            to_wide(entry.video_muted ? tk::tr("Turn camera on") : tk::tr("Turn camera off"));
         set_tip(video, video_tip.c_str());
         auto& hang = buttons[2];
         hang.dwMask = THB_ICON | THB_TOOLTIP | THB_FLAGS;
@@ -394,27 +440,56 @@ void Win32Taskbar::apply_toolbar_(HWND hwnd, Entry& entry)
     if (!entry.toolbar_added)
     {
         if (SUCCEEDED(taskbar_->ThumbBarAddButtons(hwnd, count, buttons.data())))
+        {
             entry.toolbar_added = true;
+        }
     }
     else
+    {
         taskbar_->ThumbBarUpdateButtons(hwnd, count, buttons.data());
+    }
 }
 
 bool Win32Taskbar::handle_thumbnail_command(HWND hwnd, WPARAM wparam)
 {
     if (HIWORD(wparam) != THBN_CLICKED)
+    {
         return false;
+    }
     auto it = windows_.find(hwnd);
     if (it == windows_.end())
+    {
         return false;
+    }
     auto& e = it->second;
     switch (LOWORD(wparam))
     {
-    case kNextUnreadButton: if (e.next_unread) e.next_unread(); return true;
-    case kMuteButton: if (e.toggle_audio) e.toggle_audio(); return true;
-    case kVideoButton: if (e.toggle_video) e.toggle_video(); return true;
-    case kHangupButton: if (e.hang_up) e.hang_up(); return true;
-    default: return false;
+    case kNextUnreadButton:
+        if (e.next_unread)
+        {
+            e.next_unread();
+        }
+        return true;
+    case kMuteButton:
+        if (e.toggle_audio)
+        {
+            e.toggle_audio();
+        }
+        return true;
+    case kVideoButton:
+        if (e.toggle_video)
+        {
+            e.toggle_video();
+        }
+        return true;
+    case kHangupButton:
+        if (e.hang_up)
+        {
+            e.hang_up();
+        }
+        return true;
+    default:
+        return false;
     }
 }
 
@@ -423,42 +498,66 @@ void Win32Taskbar::set_unread(bool unread, bool highlight)
     has_unread_ = unread;
     has_highlight_ = highlight;
     for (auto& [hwnd, entry] : windows_)
-        if (entry.ready) apply_overlay_(hwnd);
+    {
+        if (entry.ready)
+        {
+            apply_overlay_(hwnd);
+        }
+    }
 }
 
 void Win32Taskbar::set_next_unread_available(HWND hwnd, bool available)
 {
     auto it = windows_.find(hwnd);
-    if (it == windows_.end() || it->second.role != Role::Main) return;
+    if (it == windows_.end() || it->second.role != Role::Main)
+    {
+        return;
+    }
     it->second.next_unread_available = available;
-    if (it->second.ready) apply_toolbar_(hwnd, it->second);
+    if (it->second.ready)
+    {
+        apply_toolbar_(hwnd, it->second);
+    }
 }
 
-void Win32Taskbar::set_call_state(HWND hwnd, bool audio_muted,
-                                   bool video_muted, bool show_video)
+void Win32Taskbar::set_call_state(HWND hwnd, bool audio_muted, bool video_muted, bool show_video)
 {
     auto it = windows_.find(hwnd);
-    if (it == windows_.end()) return;
+    if (it == windows_.end())
+    {
+        return;
+    }
     it->second.audio_muted = audio_muted;
     it->second.video_muted = video_muted;
     it->second.show_video = show_video;
-    if (it->second.ready) apply_toolbar_(hwnd, it->second);
+    if (it->second.ready)
+    {
+        apply_toolbar_(hwnd, it->second);
+    }
 }
 
 void Win32Taskbar::arm_progress_flush_()
 {
-    if (!message_hwnd_ || progress_flush_armed_) return;
+    if (!message_hwnd_ || progress_flush_armed_)
+    {
+        return;
+    }
     progress_flush_armed_ = SetTimer(message_hwnd_, kFlushTimer, 50, nullptr) != 0;
-    if (!progress_flush_armed_) flush_progress_();
+    if (!progress_flush_armed_)
+    {
+        flush_progress_();
+    }
 }
 
-void Win32Taskbar::upload_progress(std::uint64_t id, std::uint64_t current,
-                                    std::uint64_t total)
+void Win32Taskbar::upload_progress(std::uint64_t id, std::uint64_t current, std::uint64_t total)
 {
     if (progress_error_)
     {
         progress_error_ = false;
-        if (message_hwnd_) KillTimer(message_hwnd_, kErrorTimer);
+        if (message_hwnd_)
+        {
+            KillTimer(message_hwnd_, kErrorTimer);
+        }
     }
     progress_.update(id, current, total);
     arm_progress_flush_();
@@ -467,12 +566,18 @@ void Win32Taskbar::upload_progress(std::uint64_t id, std::uint64_t current,
 void Win32Taskbar::upload_finished(std::uint64_t id, bool ok)
 {
     auto before = progress_.finish(id);
-    if (!before) return;
+    if (!before)
+    {
+        return;
+    }
     if (!ok && before->active)
     {
         progress_error_ = true;
         error_snapshot_ = *before;
-        if (message_hwnd_) SetTimer(message_hwnd_, kErrorTimer, 3000, nullptr);
+        if (message_hwnd_)
+        {
+            SetTimer(message_hwnd_, kErrorTimer, 3000, nullptr);
+        }
     }
     flush_progress_();
 }
@@ -480,7 +585,12 @@ void Win32Taskbar::upload_finished(std::uint64_t id, bool ok)
 void Win32Taskbar::flush_progress_()
 {
     for (auto& [hwnd, entry] : windows_)
-        if (entry.ready) apply_progress_(hwnd);
+    {
+        if (entry.ready)
+        {
+            apply_progress_(hwnd);
+        }
+    }
 }
 
 void Win32Taskbar::clear_error_()
@@ -491,8 +601,8 @@ void Win32Taskbar::clear_error_()
 }
 
 void Win32Taskbar::rebuild_jump_list(const std::wstring& quick_switcher,
-                                      const std::wstring& message_search,
-                                      const std::wstring& settings)
+                                     const std::wstring& message_search,
+                                     const std::wstring& settings)
 {
     quick_switcher_label_ = quick_switcher;
     message_search_label_ = message_search;
@@ -500,20 +610,29 @@ void Win32Taskbar::rebuild_jump_list(const std::wstring& quick_switcher,
     rebuild_jump_list_();
 }
 
-void Win32Taskbar::record_recent_room(const std::wstring& room_id,
-                                       const std::wstring& title)
+void Win32Taskbar::record_recent_room(const std::wstring& room_id, const std::wstring& title)
 {
-    if (room_id.empty()) return;
-    recent_rooms_.erase(
-        std::remove_if(recent_rooms_.begin(), recent_rooms_.end(),
-                       [&](const RecentRoom& room) { return room.room_id == room_id; }),
-        recent_rooms_.end());
+    if (room_id.empty())
+    {
+        return;
+    }
+    recent_rooms_.erase(std::remove_if(recent_rooms_.begin(), recent_rooms_.end(),
+                                       [&](const RecentRoom& room)
+                                       {
+                                           return room.room_id == room_id;
+                                       }),
+                        recent_rooms_.end());
     recent_rooms_.insert(recent_rooms_.begin(),
                          RecentRoom{room_id, title.empty() ? room_id : title});
     if (recent_rooms_.size() > kRecentRoomLimit)
+    {
         recent_rooms_.resize(kRecentRoomLimit);
+    }
     save_recent_rooms_();
-    if (!quick_switcher_label_.empty()) rebuild_jump_list_();
+    if (!quick_switcher_label_.empty())
+    {
+        rebuild_jump_list_();
+    }
 }
 
 void Win32Taskbar::load_recent_rooms_()
@@ -528,33 +647,44 @@ void Win32Taskbar::load_recent_rooms_()
                input >> std::quoted(room_id) >> std::quoted(title))
         {
             if (!room_id.empty())
+            {
                 recent_rooms_.push_back({to_wide(room_id), to_wide(title)});
+            }
         }
         return;
     }
     import_legacy_recent_rooms_();
-    if (!recent_rooms_.empty()) save_recent_rooms_();
+    if (!recent_rooms_.empty())
+    {
+        save_recent_rooms_();
+    }
 }
 
 void Win32Taskbar::import_legacy_recent_rooms_()
 {
     DWORD bytes = 0;
-    if (RegGetValueW(HKEY_CURRENT_USER, kRecentRegistryKey,
-                     kRecentRegistryValue, RRF_RT_REG_MULTI_SZ, nullptr,
-                     nullptr, &bytes) != ERROR_SUCCESS || bytes < sizeof(wchar_t))
+    if (RegGetValueW(HKEY_CURRENT_USER, kRecentRegistryKey, kRecentRegistryValue,
+                     RRF_RT_REG_MULTI_SZ, nullptr, nullptr, &bytes) != ERROR_SUCCESS ||
+        bytes < sizeof(wchar_t))
+    {
         return;
+    }
     std::vector<wchar_t> data(bytes / sizeof(wchar_t) + 1, L'\0');
-    if (RegGetValueW(HKEY_CURRENT_USER, kRecentRegistryKey,
-                     kRecentRegistryValue, RRF_RT_REG_MULTI_SZ, nullptr,
-                     data.data(), &bytes) != ERROR_SUCCESS)
+    if (RegGetValueW(HKEY_CURRENT_USER, kRecentRegistryKey, kRecentRegistryValue,
+                     RRF_RT_REG_MULTI_SZ, nullptr, data.data(), &bytes) != ERROR_SUCCESS)
+    {
         return;
+    }
     const wchar_t* cursor = data.data();
     const wchar_t* end = data.data() + data.size();
     while (cursor < end && *cursor && recent_rooms_.size() < kRecentRoomLimit)
     {
         std::wstring room_id(cursor);
         cursor += room_id.size() + 1;
-        if (cursor >= end || !*cursor) break;
+        if (cursor >= end || !*cursor)
+        {
+            break;
+        }
         std::wstring title(cursor);
         cursor += title.size() + 1;
         recent_rooms_.push_back({std::move(room_id), std::move(title)});
@@ -567,17 +697,26 @@ void Win32Taskbar::save_recent_rooms_() const
     const auto temporary = path.wstring() + L".tmp";
     std::error_code ec;
     std::filesystem::create_directories(path.parent_path(), ec);
-    if (ec) return;
+    if (ec)
+    {
+        return;
+    }
     std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
-    if (!output) return;
+    if (!output)
+    {
+        return;
+    }
     output << kRecentFileMagic << '\n';
     for (const auto& room : recent_rooms_)
     {
-        output << std::quoted(to_utf8(room.room_id)) << ' '
-               << std::quoted(to_utf8(room.title)) << '\n';
+        output << std::quoted(to_utf8(room.room_id)) << ' ' << std::quoted(to_utf8(room.title))
+               << '\n';
     }
     output.close();
-    if (!output) return;
+    if (!output)
+    {
+        return;
+    }
     MoveFileExW(temporary.c_str(), path.c_str(),
                 MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);
 }
@@ -595,13 +734,18 @@ void Win32Taskbar::rebuild_jump_list_()
 void Win32Taskbar::rebuild_classic_jump_list_()
 {
     Microsoft::WRL::ComPtr<ICustomDestinationList> list;
-    if (FAILED(CoCreateInstance(CLSID_DestinationList, nullptr,
-                                CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&list))))
+    if (FAILED(CoCreateInstance(CLSID_DestinationList, nullptr, CLSCTX_INPROC_SERVER,
+                                IID_PPV_ARGS(&list))))
+    {
         return;
+    }
     list->SetAppID(aumid_.c_str());
     UINT slots = 0;
     Microsoft::WRL::ComPtr<IObjectArray> removed;
-    if (FAILED(list->BeginList(&slots, IID_PPV_ARGS(&removed)))) return;
+    if (FAILED(list->BeginList(&slots, IID_PPV_ARGS(&removed))))
+    {
+        return;
+    }
 
     std::unordered_set<std::wstring> removed_arguments;
     if (removed)
@@ -615,14 +759,16 @@ void Win32Taskbar::rebuild_classic_jump_list_()
             {
                 wchar_t args[2048]{};
                 if (SUCCEEDED(link->GetArguments(args, 2048)))
+                {
                     removed_arguments.emplace(args);
+                }
             }
         }
     }
 
     Microsoft::WRL::ComPtr<IObjectCollection> tasks;
-    if (FAILED(CoCreateInstance(CLSID_EnumerableObjectCollection, nullptr,
-                                CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&tasks))))
+    if (FAILED(CoCreateInstance(CLSID_EnumerableObjectCollection, nullptr, CLSCTX_INPROC_SERVER,
+                                IID_PPV_ARGS(&tasks))))
     {
         list->AbortList();
         return;
@@ -633,11 +779,16 @@ void Win32Taskbar::rebuild_classic_jump_list_()
         list->AbortList();
         return;
     }
-    const auto add_task = [&](const std::wstring& args, const std::wstring& title) {
-        if (removed_arguments.contains(args)) return;
-        if (auto link = make_task_link(exe, args.c_str(), title.c_str(),
-                                       aumid_.c_str()))
+    const auto add_task = [&](const std::wstring& args, const std::wstring& title)
+    {
+        if (removed_arguments.contains(args))
+        {
+            return;
+        }
+        if (auto link = make_task_link(exe, args.c_str(), title.c_str(), aumid_.c_str()))
+        {
             tasks->AddObject(link.Get());
+        }
     };
     add_task(with_profile(L"--open-quick-switcher"), quick_switcher_label_);
     add_task(with_profile(L"--open-message-search"), message_search_label_);
@@ -647,19 +798,20 @@ void Win32Taskbar::rebuild_classic_jump_list_()
     {
         Microsoft::WRL::ComPtr<IObjectCollection> recent;
         if (SUCCEEDED(CoCreateInstance(CLSID_EnumerableObjectCollection, nullptr,
-                                       CLSCTX_INPROC_SERVER,
-                                       IID_PPV_ARGS(&recent))))
+                                       CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&recent))))
         {
             UINT added = 0;
             for (const auto& room : recent_rooms_)
             {
-                const std::wstring args = with_profile(
-                    L"--open-room=" + tesseract::shell_helpers::quote_command_line_arg(
-                                          room.room_id));
-                if (removed_arguments.contains(args)) continue;
-                if (auto link = make_task_link(exe, args.c_str(),
-                                               room.title.c_str(),
-                                               aumid_.c_str()))
+                const std::wstring args =
+                    with_profile(L"--open-room=" +
+                                 tesseract::shell_helpers::quote_command_line_arg(room.room_id));
+                if (removed_arguments.contains(args))
+                {
+                    continue;
+                }
+                if (auto link =
+                        make_task_link(exe, args.c_str(), room.title.c_str(), aumid_.c_str()))
                 {
                     recent->AddObject(link.Get());
                     ++added;
@@ -668,34 +820,50 @@ void Win32Taskbar::rebuild_classic_jump_list_()
             Microsoft::WRL::ComPtr<IObjectArray> recent_array;
             const auto category = to_wide(tk::tr("Recent rooms"));
             if (added > 0 && SUCCEEDED(recent.As(&recent_array)))
+            {
                 list->AppendCategory(category.c_str(), recent_array.Get());
+            }
         }
     }
     Microsoft::WRL::ComPtr<IObjectArray> array;
     if (SUCCEEDED(tasks.As(&array)) && SUCCEEDED(list->AddUserTasks(array.Get())))
+    {
         list->CommitList();
+    }
     else
+    {
         list->AbortList();
+    }
 }
 
-void Win32Taskbar::record_recent_room_avatar(
-    const std::wstring& room_id, std::span<const std::uint8_t> bytes)
+void Win32Taskbar::record_recent_room_avatar(const std::wstring& room_id,
+                                             std::span<const std::uint8_t> bytes)
 {
     if (!package_context::is_packaged() || room_id.empty() || bytes.empty())
+    {
         return;
+    }
     const wchar_t* extension = image_extension(bytes);
     const auto local_state = package_context::local_state_path();
-    if (!extension || local_state.empty()) return;
+    if (!extension || local_state.empty())
+    {
+        return;
+    }
 
     const auto directory = local_state / L"jump-list";
     std::error_code ec;
     std::filesystem::create_directories(directory, ec);
-    if (ec) return;
+    if (ec)
+    {
+        return;
+    }
     const auto stem = L"room-" + hash_name(room_id);
     for (const auto* old_extension : {L".png", L".jpg", L".gif", L".bmp"})
     {
         if (wcscmp(old_extension, extension) != 0)
+        {
             std::filesystem::remove(directory / (stem + old_extension), ec);
+        }
         ec.clear();
     }
     const auto path = directory / (stem + extension);
@@ -703,13 +871,18 @@ void Win32Taskbar::record_recent_room_avatar(
     output.write(reinterpret_cast<const char*>(bytes.data()),
                  static_cast<std::streamsize>(bytes.size()));
     output.close();
-    if (!output) return;
+    if (!output)
+    {
+        return;
+    }
     prune_packaged_avatars_();
-    if (!quick_switcher_label_.empty()) rebuild_jump_list_();
+    if (!quick_switcher_label_.empty())
+    {
+        rebuild_jump_list_();
+    }
 }
 
-std::wstring Win32Taskbar::packaged_avatar_uri_(
-    const std::wstring& room_id) const
+std::wstring Win32Taskbar::packaged_avatar_uri_(const std::wstring& room_id) const
 {
     const auto directory = package_context::local_state_path() / L"jump-list";
     const auto stem = L"room-" + hash_name(room_id);
@@ -717,7 +890,9 @@ std::wstring Win32Taskbar::packaged_avatar_uri_(
     for (const auto* extension : {L".png", L".jpg", L".gif", L".bmp"})
     {
         if (std::filesystem::exists(directory / (stem + extension), ec))
+        {
             return L"ms-appdata:///local/jump-list/" + stem + extension;
+        }
         ec.clear();
     }
     return L"ms-appx:///Assets/Room.png";
@@ -728,13 +903,20 @@ void Win32Taskbar::prune_packaged_avatars_() const
     const auto directory = package_context::local_state_path() / L"jump-list";
     std::unordered_set<std::wstring> keep;
     for (const auto& room : recent_rooms_)
+    {
         keep.emplace(L"room-" + hash_name(room.room_id));
+    }
     std::error_code ec;
     for (const auto& item : std::filesystem::directory_iterator(directory, ec))
     {
-        if (!item.is_regular_file()) continue;
+        if (!item.is_regular_file())
+        {
+            continue;
+        }
         if (!keep.contains(item.path().stem().wstring()))
+        {
             std::filesystem::remove(item.path(), ec);
+        }
         ec.clear();
     }
 }
@@ -746,22 +928,37 @@ void Win32Taskbar::rebuild_packaged_jump_list_()
         using winrt::Windows::Foundation::Uri;
         using winrt::Windows::UI::StartScreen::JumpList;
         using winrt::Windows::UI::StartScreen::JumpListItem;
-        if (!JumpList::IsSupported()) return;
+        if (!JumpList::IsSupported())
+        {
+            return;
+        }
         auto list = JumpList::LoadCurrentAsync().get();
         std::unordered_set<std::wstring> removed;
         for (const auto& item : list.Items())
-            if (item.RemovedByUser()) removed.emplace(item.Arguments().c_str());
+        {
+            if (item.RemovedByUser())
+            {
+                removed.emplace(item.Arguments().c_str());
+            }
+        }
         list.Items().Clear();
 
-        const auto append = [&](const std::wstring& arguments,
-                                const std::wstring& title,
-                                const std::wstring& group,
-                                const std::wstring& logo)
+        const auto append = [&](const std::wstring& arguments, const std::wstring& title,
+                                const std::wstring& group, const std::wstring& logo)
         {
-            if (removed.contains(arguments)) return;
+            if (removed.contains(arguments))
+            {
+                return;
+            }
             auto item = JumpListItem::CreateWithArguments(arguments, title);
-            if (!group.empty()) item.GroupName(group);
-            if (!logo.empty()) item.Logo(Uri(logo));
+            if (!group.empty())
+            {
+                item.GroupName(group);
+            }
+            if (!logo.empty())
+            {
+                item.Logo(Uri(logo));
+            }
             list.Items().Append(item);
         };
         append(with_profile(L"--open-quick-switcher"), quick_switcher_label_, L"",
@@ -774,10 +971,8 @@ void Win32Taskbar::rebuild_packaged_jump_list_()
         for (const auto& room : recent_rooms_)
         {
             append(with_profile(L"--open-room=" +
-                                tesseract::shell_helpers::quote_command_line_arg(
-                                    room.room_id)),
-                   room.title,
-                   group, packaged_avatar_uri_(room.room_id));
+                                tesseract::shell_helpers::quote_command_line_arg(room.room_id)),
+                   room.title, group, packaged_avatar_uri_(room.room_id));
         }
         list.SaveAsync().get();
     }

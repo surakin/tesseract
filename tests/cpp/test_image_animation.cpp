@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "app/image_animation.h"
+#include "views/image_animation.h"
 
 #include <fstream>
 #include <iterator>
@@ -21,7 +21,9 @@ Bytes anim_fixture(const char* name)
 void put(Bytes& b, std::initializer_list<int> v)
 {
     for (int x : v)
+    {
         b.push_back(static_cast<std::uint8_t>(x));
+    }
 }
 
 // Minimal GIF: 1x1 canvas, optional global colour table, `frames` image blocks
@@ -31,14 +33,20 @@ Bytes gif(int frames, bool gct = true, bool lct = false, bool gce = true)
     Bytes b;
     put(b, {'G', 'I', 'F', '8', '9', 'a', 1, 0, 1, 0, gct ? 0x80 : 0x00, 0, 0});
     if (gct)
+    {
         put(b, {0, 0, 0, 255, 255, 255}); // 2 colours
+    }
     for (int i = 0; i < frames; ++i)
     {
         if (gce)
+        {
             put(b, {0x21, 0xF9, 4, 0, 10, 0, 0, 0});
+        }
         put(b, {0x2C, 0, 0, 0, 0, 1, 0, 1, 0, lct ? 0x80 : 0x00});
         if (lct)
+        {
             put(b, {0, 0, 0, 255, 255, 255});
+        }
         put(b, {2, 2, 0x44, 0x01, 0}); // LZW min code size + one data sub-block + terminator
     }
     put(b, {0x3B});
@@ -48,7 +56,8 @@ Bytes gif(int frames, bool gct = true, bool lct = false, bool gce = true)
 Bytes webp_vp8x(std::uint8_t flags)
 {
     Bytes b;
-    put(b, {'R', 'I', 'F', 'F', 0x1a, 0, 0, 0, 'W', 'E', 'B', 'P', 'V', 'P', '8', 'X', 10, 0, 0, 0, flags});
+    put(b, {'R', 'I', 'F', 'F', 0x1a, 0,  0, 0, 'W', 'E',  'B',
+            'P', 'V', 'P', '8', 'X',  10, 0, 0, 0,   flags});
     b.resize(b.size() + 9, 0);
     return b;
 }
@@ -67,7 +76,10 @@ Bytes png(const std::vector<std::pair<std::string, Bytes>>& chunks)
     return b;
 }
 
-Bytes actl(std::uint8_t frames) { return Bytes{0, 0, 0, frames, 0, 0, 0, 0}; }
+Bytes actl(std::uint8_t frames)
+{
+    return Bytes{0, 0, 0, frames, 0, 0, 0, 0};
+}
 
 Bytes ftyp(const std::string& major, const std::string& compat = "")
 {
@@ -82,13 +94,12 @@ Bytes ftyp(const std::string& major, const std::string& compat = "")
 
 } // namespace anim_test
 
-
 TEST_CASE("is_animated_image: GIF counts frames", "[animation]")
 {
     CHECK(tesseract::is_animated_image(anim_test::gif(2)));
-    CHECK(tesseract::is_animated_image(anim_test::gif(5, true, true)));   // local colour tables
+    CHECK(tesseract::is_animated_image(anim_test::gif(5, true, true))); // local colour tables
     CHECK(tesseract::is_animated_image(anim_test::gif(3, false, false, false)));
-    CHECK_FALSE(tesseract::is_animated_image(anim_test::gif(1)));         // single-frame GIF
+    CHECK_FALSE(tesseract::is_animated_image(anim_test::gif(1))); // single-frame GIF
     CHECK_FALSE(tesseract::is_animated_image(anim_test::gif(0)));
     auto truncated = anim_test::gif(3);
     truncated.resize(truncated.size() - 12); // cut inside the last frame; two seen already
@@ -107,10 +118,20 @@ TEST_CASE("is_animated_image: WebP honours the VP8X animation flag", "[animation
 
 TEST_CASE("is_animated_image: APNG needs acTL with more than one frame", "[animation]")
 {
-    CHECK(tesseract::is_animated_image(anim_test::png({{"IHDR", anim_test::Bytes(13)}, {"acTL", anim_test::actl(3)}, {"IDAT", {}}, {"IEND", {}}})));
-    CHECK_FALSE(tesseract::is_animated_image(anim_test::png({{"IHDR", anim_test::Bytes(13)}, {"acTL", anim_test::actl(1)}, {"IDAT", {}}, {"IEND", {}}})));
-    CHECK_FALSE(tesseract::is_animated_image(anim_test::png({{"IHDR", anim_test::Bytes(13)}, {"IDAT", {}}, {"IEND", {}}})));
-    CHECK_FALSE(tesseract::is_animated_image(anim_test::png({{"IHDR", anim_test::Bytes(13)}, {"IDAT", {}}, {"acTL", anim_test::actl(3)}, {"IEND", {}}})));
+    CHECK(tesseract::is_animated_image(anim_test::png({{"IHDR", anim_test::Bytes(13)},
+                                                       {"acTL", anim_test::actl(3)},
+                                                       {"IDAT", {}},
+                                                       {"IEND", {}}})));
+    CHECK_FALSE(tesseract::is_animated_image(anim_test::png({{"IHDR", anim_test::Bytes(13)},
+                                                             {"acTL", anim_test::actl(1)},
+                                                             {"IDAT", {}},
+                                                             {"IEND", {}}})));
+    CHECK_FALSE(tesseract::is_animated_image(
+        anim_test::png({{"IHDR", anim_test::Bytes(13)}, {"IDAT", {}}, {"IEND", {}}})));
+    CHECK_FALSE(tesseract::is_animated_image(anim_test::png({{"IHDR", anim_test::Bytes(13)},
+                                                             {"IDAT", {}},
+                                                             {"acTL", anim_test::actl(3)},
+                                                             {"IEND", {}}})));
 }
 
 TEST_CASE("is_animated_image: AVIF sequence brand", "[animation]")
@@ -141,5 +162,6 @@ TEST_CASE("is_animated_image: mime is only a pre-filter", "[animation]")
     CHECK(tesseract::is_animated_image(anim_test::gif(2), "application/octet-stream"));
     CHECK(tesseract::is_animated_image(anim_test::gif(2), "")); // magic decides
     CHECK_FALSE(tesseract::is_animated_image(anim_test::gif(2), "video/mp4"));
-    CHECK(tesseract::is_animated_image(anim_test::gif(2), "image/png")); // wrong mime: magic still wins
+    CHECK(tesseract::is_animated_image(anim_test::gif(2),
+                                       "image/png")); // wrong mime: magic still wins
 }

@@ -67,7 +67,11 @@ fn capture_original_env() -> OriginalEnv {
 /// macOS/Windows are only honoured again after a restart).
 fn system_from_original(o: &OriginalEnv, b: reqwest::ClientBuilder) -> reqwest::ClientBuilder {
     let mut b = b.no_proxy();
-    let np = || o.no_proxy.as_deref().and_then(reqwest::NoProxy::from_string);
+    let np = || {
+        o.no_proxy
+            .as_deref()
+            .and_then(reqwest::NoProxy::from_string)
+    };
     if let Some(Ok(p)) = o.https.as_deref().map(reqwest::Proxy::https) {
         b = b.proxy(p.no_proxy(np()));
     }
@@ -250,14 +254,23 @@ mod tests {
             http: Some("http://corp.example:3128".into()),
             no_proxy: Some("localhost,.internal".into()),
         };
-        assert!(system_from_original(&orig, reqwest::Client::builder()).build().is_ok());
-        // Nothing was set originally: no proxy at all, never the launch one.
-        assert!(system_from_original(&OriginalEnv::default(), reqwest::Client::builder())
+        assert!(system_from_original(&orig, reqwest::Client::builder())
             .build()
             .is_ok());
+        // Nothing was set originally: no proxy at all, never the launch one.
+        assert!(
+            system_from_original(&OriginalEnv::default(), reqwest::Client::builder())
+                .build()
+                .is_ok()
+        );
         // A junk original value is skipped rather than failing every request open.
-        let junk = OriginalEnv { https: Some("not a url".into()), ..Default::default() };
-        assert!(system_from_original(&junk, reqwest::Client::builder()).build().is_ok());
+        let junk = OriginalEnv {
+            https: Some("not a url".into()),
+            ..Default::default()
+        };
+        assert!(system_from_original(&junk, reqwest::Client::builder())
+            .build()
+            .is_ok());
     }
 
     #[tokio::test]
@@ -281,14 +294,19 @@ mod tests {
             http: Some(format!("http://{addr}")),
             ..Default::default()
         });
-        let client = apply_mode(&ProxyMode::System, reqwest::Client::builder()).build().unwrap();
+        let client = apply_mode(&ProxyMode::System, reqwest::Client::builder())
+            .build()
+            .unwrap();
         let resp = client.get("http://target.example.invalid/x").send().await;
         *ORIGINAL_ENV.write().unwrap() = None;
 
         assert!(resp.is_ok(), "{resp:?}");
         let request = seen.await.unwrap();
         // An absolute-form request line is what a client sends to a proxy.
-        assert!(request.starts_with("GET http://target.example.invalid/x "), "{request}");
+        assert!(
+            request.starts_with("GET http://target.example.invalid/x "),
+            "{request}"
+        );
     }
 
     #[test]

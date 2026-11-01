@@ -22,7 +22,9 @@ TEST_CASE("HistoryExportController: build_labels has no empty entries",
     // exists for the current locale, but it should never return an empty
     // string for a non-empty source literal.
     for (const auto& label : HistoryExportController::build_labels())
+    {
         CHECK_FALSE(label.empty());
+    }
 }
 
 TEST_CASE("HistoryExportController: extension_for maps format to file extension",
@@ -56,8 +58,15 @@ TEST_CASE("HistoryExportController: begin() is a no-op without a save-folder dia
           "[history_export][controller]")
 {
     int post_count = 0;
-    auto post_inline = [&](std::function<void()> fn) { ++post_count; fn(); };
-    auto run_inline  = [](std::function<void()> fn) { fn(); };
+    auto post_inline = [&](std::function<void()> fn)
+    {
+        ++post_count;
+        fn();
+    };
+    auto run_inline = [](std::function<void()> fn)
+    {
+        fn();
+    };
 
     HistoryExportController ctrl(nullptr, post_inline, run_inline);
     // show_save_folder_dialog left unset.
@@ -72,12 +81,20 @@ TEST_CASE("HistoryExportController: begin() is a no-op without a save-folder dia
 TEST_CASE("HistoryExportController: begin() marks itself active until handle_complete",
           "[history_export][controller]")
 {
-    auto post_inline = [](std::function<void()> fn) { fn(); };
-    auto run_inline  = [](std::function<void()> fn) { fn(); };
+    auto post_inline = [](std::function<void()> fn)
+    {
+        fn();
+    };
+    auto run_inline = [](std::function<void()> fn)
+    {
+        fn();
+    };
 
     HistoryExportController ctrl(nullptr, post_inline, run_inline);
-    ctrl.show_save_folder_dialog =
-        [](std::string, std::function<void(std::string)> cb) { cb("/tmp/export"); };
+    ctrl.show_save_folder_dialog = [](std::string, std::function<void(std::string)> cb)
+    {
+        cb("/tmp/export");
+    };
 
     HistoryExportController::Request req;
     req.room_id = "!room:example.org";
@@ -100,13 +117,22 @@ TEST_CASE("HistoryExportController: begin() marks itself active until handle_com
 TEST_CASE("HistoryExportController: a second begin() while active is a no-op",
           "[history_export][controller]")
 {
-    auto post_inline = [](std::function<void()> fn) { fn(); };
-    auto run_inline  = [](std::function<void()> fn) { fn(); };
+    auto post_inline = [](std::function<void()> fn)
+    {
+        fn();
+    };
+    auto run_inline = [](std::function<void()> fn)
+    {
+        fn();
+    };
 
     HistoryExportController ctrl(nullptr, post_inline, run_inline);
     int dialog_calls = 0;
-    ctrl.show_save_folder_dialog =
-        [&](std::string, std::function<void(std::string)> cb) { ++dialog_calls; cb("/tmp/export"); };
+    ctrl.show_save_folder_dialog = [&](std::string, std::function<void(std::string)> cb)
+    {
+        ++dialog_calls;
+        cb("/tmp/export");
+    };
 
     HistoryExportController::Request req;
     req.room_id = "!room:example.org";
@@ -123,12 +149,20 @@ TEST_CASE("HistoryExportController: a second begin() while active is a no-op",
 TEST_CASE("HistoryExportController: handle_complete clears active state and fires on_finished",
           "[history_export][controller]")
 {
-    auto post_inline = [](std::function<void()> fn) { fn(); };
-    auto run_inline  = [](std::function<void()> fn) { fn(); };
+    auto post_inline = [](std::function<void()> fn)
+    {
+        fn();
+    };
+    auto run_inline = [](std::function<void()> fn)
+    {
+        fn();
+    };
 
     HistoryExportController ctrl(nullptr, post_inline, run_inline);
-    ctrl.show_save_folder_dialog =
-        [](std::string, std::function<void(std::string)> cb) { cb("/tmp/export"); };
+    ctrl.show_save_folder_dialog = [](std::string, std::function<void(std::string)> cb)
+    {
+        cb("/tmp/export");
+    };
 
     HistoryExportController::Request req;
     req.room_id = "!room:example.org";
@@ -158,12 +192,20 @@ TEST_CASE("HistoryExportController: handle_complete clears active state and fire
 TEST_CASE("HistoryExportController: handle_complete for a stale request_id is ignored",
           "[history_export][controller]")
 {
-    auto post_inline = [](std::function<void()> fn) { fn(); };
-    auto run_inline  = [](std::function<void()> fn) { fn(); };
+    auto post_inline = [](std::function<void()> fn)
+    {
+        fn();
+    };
+    auto run_inline = [](std::function<void()> fn)
+    {
+        fn();
+    };
 
     HistoryExportController ctrl(nullptr, post_inline, run_inline);
-    ctrl.show_save_folder_dialog =
-        [](std::string, std::function<void(std::string)> cb) { cb("/tmp/export"); };
+    ctrl.show_save_folder_dialog = [](std::string, std::function<void(std::string)> cb)
+    {
+        cb("/tmp/export");
+    };
 
     HistoryExportController::Request req;
     req.room_id = "!room:example.org";
@@ -171,7 +213,10 @@ TEST_CASE("HistoryExportController: handle_complete for a stale request_id is ig
     REQUIRE(ctrl.active());
 
     int finished_count = 0;
-    ctrl.on_finished = [&](bool, bool, std::string, std::uint64_t, std::string) { ++finished_count; };
+    ctrl.on_finished = [&](bool, bool, std::string, std::uint64_t, std::string)
+    {
+        ++finished_count;
+    };
 
     // A completion for a request that isn't the currently-active one
     // (e.g. a very late callback from an export this controller no longer
@@ -185,19 +230,30 @@ TEST_CASE("HistoryExportController: handle_complete for a stale request_id is ig
 TEST_CASE("HistoryExportController: handle_progress updates last_progress and fires on_progress",
           "[history_export][controller]")
 {
-    auto post_inline = [](std::function<void()> fn) { fn(); };
-    auto run_inline  = [](std::function<void()> fn) { fn(); };
+    auto post_inline = [](std::function<void()> fn)
+    {
+        fn();
+    };
+    auto run_inline = [](std::function<void()> fn)
+    {
+        fn();
+    };
 
     HistoryExportController ctrl(nullptr, post_inline, run_inline);
-    ctrl.show_save_folder_dialog =
-        [](std::string, std::function<void(std::string)> cb) { cb("/tmp/export"); };
+    ctrl.show_save_folder_dialog = [](std::string, std::function<void(std::string)> cb)
+    {
+        cb("/tmp/export");
+    };
 
     HistoryExportController::Request req;
     req.room_id = "!room:example.org";
     ctrl.begin(req);
 
     int progress_calls = 0;
-    ctrl.on_progress = [&](const tesseract::RoomExportProgress&) { ++progress_calls; };
+    ctrl.on_progress = [&](const tesseract::RoomExportProgress&)
+    {
+        ++progress_calls;
+    };
 
     tesseract::RoomExportProgress p;
     p.request_id = 1;
@@ -211,8 +267,14 @@ TEST_CASE("HistoryExportController: handle_progress updates last_progress and fi
 TEST_CASE("HistoryExportController: stop() without an active export is a no-op",
           "[history_export][controller]")
 {
-    auto post_inline = [](std::function<void()> fn) { fn(); };
-    auto run_inline  = [](std::function<void()> fn) { fn(); };
+    auto post_inline = [](std::function<void()> fn)
+    {
+        fn();
+    };
+    auto run_inline = [](std::function<void()> fn)
+    {
+        fn();
+    };
 
     HistoryExportController ctrl(nullptr, post_inline, run_inline);
     ctrl.stop(); // must not crash with no active export and a null client
@@ -222,12 +284,20 @@ TEST_CASE("HistoryExportController: stop() without an active export is a no-op",
 TEST_CASE("HistoryExportController: stop() while active does not itself clear active state",
           "[history_export][controller]")
 {
-    auto post_inline = [](std::function<void()> fn) { fn(); };
-    auto run_inline  = [](std::function<void()> fn) { fn(); };
+    auto post_inline = [](std::function<void()> fn)
+    {
+        fn();
+    };
+    auto run_inline = [](std::function<void()> fn)
+    {
+        fn();
+    };
 
     HistoryExportController ctrl(nullptr, post_inline, run_inline);
-    ctrl.show_save_folder_dialog =
-        [](std::string, std::function<void(std::string)> cb) { cb("/tmp/export"); };
+    ctrl.show_save_folder_dialog = [](std::string, std::function<void(std::string)> cb)
+    {
+        cb("/tmp/export");
+    };
 
     HistoryExportController::Request req;
     req.room_id = "!room:example.org";
@@ -244,19 +314,30 @@ TEST_CASE("HistoryExportController: stop() while active does not itself clear ac
 TEST_CASE("HistoryExportController: handle_progress for a stale request_id is ignored",
           "[history_export][controller]")
 {
-    auto post_inline = [](std::function<void()> fn) { fn(); };
-    auto run_inline  = [](std::function<void()> fn) { fn(); };
+    auto post_inline = [](std::function<void()> fn)
+    {
+        fn();
+    };
+    auto run_inline = [](std::function<void()> fn)
+    {
+        fn();
+    };
 
     HistoryExportController ctrl(nullptr, post_inline, run_inline);
-    ctrl.show_save_folder_dialog =
-        [](std::string, std::function<void(std::string)> cb) { cb("/tmp/export"); };
+    ctrl.show_save_folder_dialog = [](std::string, std::function<void(std::string)> cb)
+    {
+        cb("/tmp/export");
+    };
 
     HistoryExportController::Request req;
     req.room_id = "!room:example.org";
     ctrl.begin(req);
 
     int progress_calls = 0;
-    ctrl.on_progress = [&](const tesseract::RoomExportProgress&) { ++progress_calls; };
+    ctrl.on_progress = [&](const tesseract::RoomExportProgress&)
+    {
+        ++progress_calls;
+    };
 
     tesseract::RoomExportProgress p;
     p.request_id = 999;
@@ -268,12 +349,20 @@ TEST_CASE("HistoryExportController: handle_progress for a stale request_id is ig
 TEST_CASE("HistoryExportController: set_client to another client abandons the active export",
           "[history_export][controller]")
 {
-    auto post_inline = [](std::function<void()> fn) { fn(); };
-    auto run_inline  = [](std::function<void()> fn) { fn(); };
+    auto post_inline = [](std::function<void()> fn)
+    {
+        fn();
+    };
+    auto run_inline = [](std::function<void()> fn)
+    {
+        fn();
+    };
 
     HistoryExportController ctrl(nullptr, post_inline, run_inline);
-    ctrl.show_save_folder_dialog =
-        [](std::string, std::function<void(std::string)> cb) { cb("/tmp/export"); };
+    ctrl.show_save_folder_dialog = [](std::string, std::function<void(std::string)> cb)
+    {
+        cb("/tmp/export");
+    };
 
     HistoryExportController::Request req;
     req.room_id = "!room:example.org";

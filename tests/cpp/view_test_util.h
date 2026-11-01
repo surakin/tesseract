@@ -20,12 +20,20 @@ namespace vt
 // A PopupCapableStubHost plus an offscreen canvas for layout/paint passes.
 struct Stage
 {
-    PopupCapableStubHost host;
+    // Declared before host so it outlives it: the host can still hold images
+    // the surface's backend made (e.g. a drag ghost), and on Win32 releasing
+    // them after that backend's CoUninitialize() crashes.
     std::unique_ptr<TestSurface> surface;
+    PopupCapableStubHost host;
 
-    explicit Stage(int w = 800, int h = 600) : surface(TestSurface::create(w, h)) {}
+    explicit Stage(int w = 800, int h = 600) : surface(TestSurface::create(w, h))
+    {
+    }
 
-    tk::LayoutCtx lc() { return tk::LayoutCtx{surface->factory(), tk::Theme::light()}; }
+    tk::LayoutCtx lc()
+    {
+        return tk::LayoutCtx{surface->factory(), tk::Theme::light()};
+    }
     tk::PaintCtx pc()
     {
         return tk::PaintCtx{surface->canvas(), surface->factory(), tk::Theme::light()};
@@ -69,10 +77,16 @@ template <typename T>
 T* find(tk::Widget& root)
 {
     if (auto* t = dynamic_cast<T*>(&root))
+    {
         return t;
+    }
     for (const auto& c : root.children())
+    {
         if (T* f = find<T>(*c))
+        {
             return f;
+        }
+    }
     return nullptr;
 }
 
@@ -80,9 +94,13 @@ template <typename T>
 void collect(tk::Widget& root, std::vector<T*>& out)
 {
     if (auto* t = dynamic_cast<T*>(&root))
+    {
         out.push_back(t);
+    }
     for (const auto& c : root.children())
+    {
         collect<T>(*c, out);
+    }
 }
 
 template <typename T>
@@ -97,10 +115,16 @@ std::vector<T*> find_all(tk::Widget& root)
 inline const tk::AccessNode* node_named(const tk::AccessNode& n, const std::string& name)
 {
     if (n.name == name)
+    {
         return &n;
+    }
     for (const auto& c : n.children)
+    {
         if (const auto* f = node_named(c, name))
+        {
             return f;
+        }
+    }
     return nullptr;
 }
 
@@ -108,9 +132,13 @@ inline void collect_nodes_named(const tk::AccessNode& n, const std::string& name
                                 std::vector<tk::AccessNode>& out)
 {
     if (n.name == name)
+    {
         out.push_back(n);
+    }
     for (const auto& c : n.children)
+    {
         collect_nodes_named(c, name, out);
+    }
 }
 
 // Every access node with this name (copies; their activate closures stay valid).
@@ -125,19 +153,29 @@ inline std::vector<tk::AccessNode> nodes_named(tk::Widget& root, const std::stri
 inline const tk::AccessNode* node_role(const tk::AccessNode& n, tk::Role role)
 {
     if (n.role == role)
+    {
         return &n;
+    }
     for (const auto& c : n.children)
+    {
         if (const auto* f = node_role(c, role))
+        {
             return f;
+        }
+    }
     return nullptr;
 }
 
 inline void collect_names(const tk::AccessNode& n, std::vector<std::string>& out)
 {
     if (!n.name.empty())
+    {
         out.push_back(n.name);
+    }
     for (const auto& c : n.children)
+    {
         collect_names(c, out);
+    }
 }
 
 inline std::vector<std::string> all_names(tk::Widget& root)

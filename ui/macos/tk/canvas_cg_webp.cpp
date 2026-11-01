@@ -52,7 +52,9 @@ struct WebPCFRetained
 {
     T ref = nullptr;
     WebPCFRetained() = default;
-    explicit WebPCFRetained(T r) : ref(r) {}
+    explicit WebPCFRetained(T r) : ref(r)
+    {
+    }
     ~WebPCFRetained()
     {
         if (ref)
@@ -62,7 +64,10 @@ struct WebPCFRetained
     }
     WebPCFRetained(const WebPCFRetained&) = delete;
     WebPCFRetained& operator=(const WebPCFRetained&) = delete;
-    T get() const { return ref; }
+    T get() const
+    {
+        return ref;
+    }
 };
 
 // Wrap one decoded frame buffer (premultiplied BGRA, native byte order — the
@@ -76,36 +81,32 @@ struct WebPCFRetained
 // kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little is the same
 // premultiplied-BGRA pairing already used (and working) elsewhere in this
 // codebase for raw camera-capture BGRA buffers — see
-// MainWindowController.mm's on_selfie_captured. Getting this pairing wrong
+// MainWindow::encode_selfie_jpeg_. Getting this pairing wrong
 // would reproduce an R/B swap via a new mechanism, not one of ImageIO's
 // historical ones — this is the first thing to check visually once built.
-CGImageRef make_cgimage_from_bgra(const std::uint8_t* pixels, int width,
-                                  int height)
+CGImageRef make_cgimage_from_bgra(const std::uint8_t* pixels, int width, int height)
 {
     if (!pixels || width <= 0 || height <= 0)
     {
         return nullptr;
     }
     const std::size_t stride = static_cast<std::size_t>(width) * 4;
-    WebPCFRetained<CFDataRef> data{CFDataCreate(
-        kCFAllocatorDefault, pixels,
-        static_cast<CFIndex>(stride * static_cast<std::size_t>(height)))};
+    WebPCFRetained<CFDataRef> data{
+        CFDataCreate(kCFAllocatorDefault, pixels,
+                     static_cast<CFIndex>(stride * static_cast<std::size_t>(height)))};
     if (!data.get())
     {
         return nullptr;
     }
-    WebPCFRetained<CGDataProviderRef> provider{
-        CGDataProviderCreateWithCFData(data.get())};
+    WebPCFRetained<CGDataProviderRef> provider{CGDataProviderCreateWithCFData(data.get())};
     if (!provider.get())
     {
         return nullptr;
     }
     WebPCFRetained<CGColorSpaceRef> cs{CGColorSpaceCreateDeviceRGB()};
     return CGImageCreate(
-        static_cast<std::size_t>(width), static_cast<std::size_t>(height), 8,
-        32, stride, cs.get(),
-        static_cast<CGBitmapInfo>(kCGImageAlphaPremultipliedFirst) |
-            kCGBitmapByteOrder32Little,
+        static_cast<std::size_t>(width), static_cast<std::size_t>(height), 8, 32, stride, cs.get(),
+        static_cast<CGBitmapInfo>(kCGImageAlphaPremultipliedFirst) | kCGBitmapByteOrder32Little,
         provider.get(), nullptr, false, kCGRenderingIntentDefault);
 }
 
@@ -124,9 +125,18 @@ public:
     {
     }
 
-    bool valid() const { return decoder_.valid(); }
-    std::size_t total_frames() const { return decoder_.frame_count(); }
-    bool has_more_frames() const { return decoder_.has_more_frames(); }
+    bool valid() const
+    {
+        return decoder_.valid();
+    }
+    std::size_t total_frames() const
+    {
+        return decoder_.frame_count();
+    }
+    bool has_more_frames() const
+    {
+        return decoder_.has_more_frames();
+    }
 
     // Decodes exactly one more frame from the decoder's own internal
     // sequential cursor. Returns nullptr (out_delay_ms left unchanged) once
@@ -144,9 +154,8 @@ public:
         {
             return nullptr;
         }
-        CGImageRef cg = make_cgimage_from_bgra(
-            buf, static_cast<int>(decoder_.canvas_width()),
-            static_cast<int>(decoder_.canvas_height()));
+        CGImageRef cg = make_cgimage_from_bgra(buf, static_cast<int>(decoder_.canvas_width()),
+                                               static_cast<int>(decoder_.canvas_height()));
         if (!cg)
         {
             return nullptr;
@@ -174,9 +183,8 @@ public:
     // (current frame + previous-disposed).
     std::size_t memory_bytes() const
     {
-        return source_bytes_ +
-               2u * static_cast<std::size_t>(decoder_.canvas_width()) *
-                   decoder_.canvas_height() * 4u;
+        return source_bytes_ + 2u * static_cast<std::size_t>(decoder_.canvas_width()) *
+                                   decoder_.canvas_height() * 4u;
     }
 
 private:
@@ -198,16 +206,16 @@ public:
     {
     }
 
-    std::size_t memory_bytes() const override { return handle_.memory_bytes(); }
+    std::size_t memory_bytes() const override
+    {
+        return handle_.memory_bytes();
+    }
 
     int decode_next_batch(
-        int n,
-        const std::function<void(int, std::unique_ptr<tk::Image>, int)>&
-            on_frame) override
+        int n, const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame) override
     {
         int produced = 0;
-        for (int attempted = 0;
-             attempted < n && cursor_ < static_cast<int>(handle_.total_frames());
+        for (int attempted = 0; attempted < n && cursor_ < static_cast<int>(handle_.total_frames());
              ++attempted)
         {
             const int idx = cursor_++;
@@ -251,8 +259,7 @@ bool is_webp_data(std::span<const std::uint8_t> bytes)
 DecodedFrames decode_webp_bytes_libwebp(
     std::span<const std::uint8_t> bytes, int max_w, int max_h,
     const std::function<void(std::unique_ptr<Image>, int)>* on_first_frame,
-    const std::function<void(int, std::unique_ptr<Image>, int)>*
-        on_extra_frame)
+    const std::function<void(int, std::unique_ptr<Image>, int)>* on_extra_frame)
 {
     DecodedFrames d;
     WebPDecodeHandle handle(bytes);
@@ -303,13 +310,10 @@ DecodedFrames decode_webp_bytes_libwebp(
 }
 
 DecodedFrames decode_webp_bytes_windowed_libwebp(
-    std::span<const std::uint8_t> bytes, int max_w, int max_h,
-    int window_threshold_frames,
-    const std::function<void(std::unique_ptr<Image>, int,
-                             std::shared_ptr<tk::AnimDecodeSession>,
+    std::span<const std::uint8_t> bytes, int max_w, int max_h, int window_threshold_frames,
+    const std::function<void(std::unique_ptr<Image>, int, std::shared_ptr<tk::AnimDecodeSession>,
                              std::size_t)>& on_first_frame,
-    const std::function<void(int, std::unique_ptr<Image>, int)>&
-        on_extra_frame)
+    const std::function<void(int, std::unique_ptr<Image>, int)>& on_extra_frame)
 {
     DecodedFrames d;
     // Peek the frame count without committing to the batch/windowed choice
@@ -321,8 +325,7 @@ DecodedFrames decode_webp_bytes_windowed_libwebp(
     {
         return d;
     }
-    const std::size_t count =
-        std::min<std::size_t>(probe.total_frames(), tk::kAnimDecodeMaxFrames);
+    const std::size_t count = std::min<std::size_t>(probe.total_frames(), tk::kAnimDecodeMaxFrames);
     if (count <= 1)
     {
         return d; // not animated — caller falls back to the still decode
@@ -332,28 +335,28 @@ DecodedFrames decode_webp_bytes_windowed_libwebp(
     {
         std::function<void(std::unique_ptr<Image>, int)> first_cb =
             [&](std::unique_ptr<Image> img, int delay_ms)
-        { on_first_frame(std::move(img), delay_ms, nullptr, 0); };
-        decode_webp_bytes_libwebp(bytes, max_w, max_h, &first_cb,
-                                  &on_extra_frame);
+        {
+            on_first_frame(std::move(img), delay_ms, nullptr, 0);
+        };
+        decode_webp_bytes_libwebp(bytes, max_w, max_h, &first_cb, &on_extra_frame);
         return d;
     }
 
     auto session = std::make_shared<WebPAnimSession>(bytes, max_w, max_h);
     bool got_first = false;
-    session->decode_next_batch(
-        tk::kAnimDecodeInitialBatchFrames,
-        [&](int idx, std::unique_ptr<Image> img, int delay_ms)
-        {
-            if (!got_first)
-            {
-                got_first = true;
-                on_first_frame(std::move(img), delay_ms, session, count);
-            }
-            else
-            {
-                on_extra_frame(idx, std::move(img), delay_ms);
-            }
-        });
+    session->decode_next_batch(tk::kAnimDecodeInitialBatchFrames,
+                               [&](int idx, std::unique_ptr<Image> img, int delay_ms)
+                               {
+                                   if (!got_first)
+                                   {
+                                       got_first = true;
+                                       on_first_frame(std::move(img), delay_ms, session, count);
+                                   }
+                                   else
+                                   {
+                                       on_extra_frame(idx, std::move(img), delay_ms);
+                                   }
+                               });
     return d;
 }
 

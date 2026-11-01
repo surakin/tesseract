@@ -48,8 +48,8 @@ void BrandView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 #if TESSERACT_HAS_BRAND_ICON
     if (!icon_)
     {
-        icon_ = ctx.factory.decode_image(std::span<const std::uint8_t>(
-            kBrandIconPng, sizeof(kBrandIconPng)));
+        icon_ = ctx.factory.decode_image(
+            std::span<const std::uint8_t>(kBrandIconPng, sizeof(kBrandIconPng)));
     }
 #endif
 }
@@ -60,37 +60,35 @@ void BrandView::paint_before_children(tk::PaintCtx& ctx)
     ctx.canvas.fill_rect(bounds_, pal.bg);
 
     {
-        const auto elapsed_ms =
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now() - wireframe_start_)
-                .count();
-        const float phase = std::fmod(static_cast<float>(elapsed_ms),
-                                      kWireframeRotationPeriodMs) /
+        const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    std::chrono::steady_clock::now() - wireframe_start_)
+                                    .count();
+        const float phase = std::fmod(static_cast<float>(elapsed_ms), kWireframeRotationPeriodMs) /
                             kWireframeRotationPeriodMs;
-        const float radius =
-            std::min(bounds_.w, bounds_.h) * kWireframeRadiusFactor;
-        const tk::Point center{bounds_.x + bounds_.w * 0.5f,
-                               bounds_.y + bounds_.h * 0.5f};
+        const float radius = std::min(bounds_.w, bounds_.h) * kWireframeRadiusFactor;
+        const tk::Point center{bounds_.x + bounds_.w * 0.5f, bounds_.y + bounds_.h * 0.5f};
 
         const auto edges = tk::tesseract_wireframe_edges(phase, center, radius);
-        ctx.canvas.push_opacity(kWireframeOpacity);
-        for (const auto& e : edges)
         {
-            ctx.canvas.draw_line(e.a, e.b, pal.text_muted, 1.0f);
+            tk::OpacityScope fade(ctx.canvas, kWireframeOpacity);
+            for (const auto& e : edges)
+            {
+                ctx.canvas.draw_line(e.a, e.b, pal.text_muted, 1.0f);
+            }
         }
-        ctx.canvas.pop_opacity();
 
         if (!wireframe_repaint_pending_ && host() && visible_in_tree())
         {
             wireframe_repaint_pending_ = true;
-            host()->post_delayed(kWireframeFrameIntervalMs, [this]
-            {
-                wireframe_repaint_pending_ = false;
-                if (host() && visible_in_tree())
-                {
-                    host()->request_repaint();
-                }
-            });
+            host()->post_delayed(kWireframeFrameIntervalMs,
+                                 [this]
+                                 {
+                                     wireframe_repaint_pending_ = false;
+                                     if (host() && visible_in_tree())
+                                     {
+                                         host()->request_repaint();
+                                     }
+                                 });
         }
     }
 
@@ -104,12 +102,11 @@ void BrandView::paint_before_children(tk::PaintCtx& ctx)
 
     // Stack height: icon + gap + name + gap + version, plus (while a startup
     // status is set) a spinner + status line below that.
-    float stack_h =
-        kIconDiameter + kIconToName + name_sz.h + kNameToVer + ver_sz.h;
+    float stack_h = kIconDiameter + kIconToName + name_sz.h + kNameToVer + ver_sz.h;
     if (status_layout_)
     {
-        stack_h += kVerToSpinner + kSpinnerRadius * 2.0f + kSpinnerToStatus +
-                   status_layout_->measure().h;
+        stack_h +=
+            kVerToSpinner + kSpinnerRadius * 2.0f + kSpinnerToStatus + status_layout_->measure().h;
     }
 
     // Bias the stack slightly above the geometric center — feels more balanced.
@@ -120,45 +117,37 @@ void BrandView::paint_before_children(tk::PaintCtx& ctx)
     const float r = kIconDiameter * 0.5f;
     if (icon_)
     {
-        ctx.canvas.draw_image(
-            *icon_, {cx - r, stack_top, kIconDiameter, kIconDiameter});
+        ctx.canvas.draw_image(*icon_, {cx - r, stack_top, kIconDiameter, kIconDiameter});
     }
     else
     {
-        ctx.canvas.draw_initials_circle(tesseract::kAppName,
-                                        {cx, stack_top + r}, kIconDiameter,
+        ctx.canvas.draw_initials_circle(tesseract::kAppName, {cx, stack_top + r}, kIconDiameter,
                                         pal.accent, pal.text_on_accent);
     }
 
     // App name ("Tesseract") in Title weight.
     const float name_top = stack_top + kIconDiameter + kIconToName;
-    ctx.canvas.draw_text(*name_layout_, {cx - name_sz.w * 0.5f, name_top},
-                         pal.text_primary);
+    ctx.canvas.draw_text(*name_layout_, {cx - name_sz.w * 0.5f, name_top}, pal.text_primary);
 
     // Version number in muted style.
     const float ver_top = name_top + name_sz.h + kNameToVer;
-    ctx.canvas.draw_text(*version_layout_, {cx - ver_sz.w * 0.5f, ver_top},
-                         pal.text_muted);
+    ctx.canvas.draw_text(*version_layout_, {cx - ver_sz.w * 0.5f, ver_top}, pal.text_muted);
 
     // Startup status: a small spinner + status line, shown only while a
     // shell has an active startup phase to narrate (see set_status()).
     if (status_layout_)
     {
-        const float spinner_cy =
-            ver_top + ver_sz.h + kVerToSpinner + kSpinnerRadius;
-        const auto elapsed_ms =
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now() - spinner_start_)
-                .count();
+        const float spinner_cy = ver_top + ver_sz.h + kVerToSpinner + kSpinnerRadius;
+        const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    std::chrono::steady_clock::now() - spinner_start_)
+                                    .count();
         const float phase = static_cast<float>(elapsed_ms % 1000) / 1000.0f;
-        tk::draw_spinner_dots(ctx.canvas, {cx, spinner_cy}, phase,
-                              kSpinnerRadius, kSpinnerDotR, pal.accent);
+        tk::draw_spinner_dots(ctx.canvas, {cx, spinner_cy}, phase, kSpinnerRadius, kSpinnerDotR,
+                              pal.accent);
 
         const auto status_sz = status_layout_->measure();
-        const float status_top =
-            spinner_cy + kSpinnerRadius + kSpinnerToStatus;
-        ctx.canvas.draw_text(*status_layout_,
-                             {cx - status_sz.w * 0.5f, status_top},
+        const float status_top = spinner_cy + kSpinnerRadius + kSpinnerToStatus;
+        ctx.canvas.draw_text(*status_layout_, {cx - status_sz.w * 0.5f, status_top},
                              pal.text_muted);
 
         if (host())

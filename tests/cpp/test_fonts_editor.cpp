@@ -3,7 +3,7 @@
 #include "view_test_util.h"
 #include "views/settings/FontsEditor.h"
 
-#include "app/font_prefs.h"
+#include "views/font_prefs.h"
 
 #include <vector>
 
@@ -35,15 +35,17 @@ struct FeStage : vt::Stage
     std::vector<Settings::FontPrefs> fired;
     FeStage()
     {
-        ed->on_changed = [this](const Settings::FontPrefs& p) { fired.push_back(p); };
+        ed->on_changed = [this](const Settings::FontPrefs& p)
+        {
+            fired.push_back(p);
+        };
         mount(*ed, {0, 0, 700, 900});
     }
 };
 
 } // namespace
 
-TEST_CASE("FontsEditor starts from the saved prefs and set_prefs is silent",
-          "[tk][view][fonts]")
+TEST_CASE("FontsEditor starts from the saved prefs and set_prefs is silent", "[tk][view][fonts]")
 {
     FeStage s;
     CHECK(s.ed->prefs() == Settings::FontPrefs{});
@@ -80,8 +82,7 @@ TEST_CASE("FontsEditor base stepper clamps at the limits", "[tk][view][fonts]")
     CHECK(s.ed->prefs().base_pt == tk::kFontBaseMaxPt);
 }
 
-TEST_CASE("FontsEditor category stepper edits only its category",
-          "[tk][view][fonts]")
+TEST_CASE("FontsEditor category stepper edits only its category", "[tk][view][fonts]")
 {
     FeStage s;
     s.ed->step_category_for_test(1, +1);
@@ -97,8 +98,7 @@ TEST_CASE("FontsEditor category stepper edits only its category",
     CHECK(s.ed->prefs().categories[1].delta_pt >= tk::kFontDeltaMinPt);
 }
 
-TEST_CASE("FontsEditor reset to defaults clears everything and fires once",
-          "[tk][view][fonts]")
+TEST_CASE("FontsEditor reset to defaults clears everything and fires once", "[tk][view][fonts]")
 {
     FeStage s;
     Settings::FontPrefs p;

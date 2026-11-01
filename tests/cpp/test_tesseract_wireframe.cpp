@@ -19,11 +19,9 @@ float dist(Point a, Point b)
 
 } // namespace
 
-TEST_CASE("tesseract_wireframe_edges produces exactly 32 non-degenerate edges",
-          "[tk][tesseract]")
+TEST_CASE("tesseract_wireframe_edges produces exactly 32 non-degenerate edges", "[tk][tesseract]")
 {
-    const auto edges =
-        tk::tesseract_wireframe_edges(0.3f, Point{0, 0}, 100.0f);
+    const auto edges = tk::tesseract_wireframe_edges(0.3f, Point{0, 0}, 100.0f);
     CHECK(edges.size() == 32);
 
     for (const auto& e : edges)
@@ -32,13 +30,11 @@ TEST_CASE("tesseract_wireframe_edges produces exactly 32 non-degenerate edges",
     }
 }
 
-TEST_CASE("tesseract_wireframe_edges never produces NaN/Inf coordinates",
-          "[tk][tesseract]")
+TEST_CASE("tesseract_wireframe_edges never produces NaN/Inf coordinates", "[tk][tesseract]")
 {
     for (float phase : {0.0f, 0.1f, 0.25f, 0.5f, 0.75f, 0.99f})
     {
-        const auto edges =
-            tk::tesseract_wireframe_edges(phase, Point{50, 50}, 30.0f);
+        const auto edges = tk::tesseract_wireframe_edges(phase, Point{50, 50}, 30.0f);
         for (const auto& e : edges)
         {
             CHECK(std::isfinite(e.a.x));
@@ -49,8 +45,7 @@ TEST_CASE("tesseract_wireframe_edges never produces NaN/Inf coordinates",
     }
 }
 
-TEST_CASE("tesseract_wireframe_edges actually rotates over phase",
-          "[tk][tesseract]")
+TEST_CASE("tesseract_wireframe_edges actually rotates over phase", "[tk][tesseract]")
 {
     const auto edges0 = tk::tesseract_wireframe_edges(0.0f, Point{0, 0}, 10.0f);
     const auto edges5 = tk::tesseract_wireframe_edges(0.5f, Point{0, 0}, 10.0f);
@@ -58,8 +53,7 @@ TEST_CASE("tesseract_wireframe_edges actually rotates over phase",
     bool any_different = false;
     for (std::size_t i = 0; i < edges0.size(); ++i)
     {
-        if (dist(edges0[i].a, edges5[i].a) > 0.01f ||
-            dist(edges0[i].b, edges5[i].b) > 0.01f)
+        if (dist(edges0[i].a, edges5[i].a) > 0.01f || dist(edges0[i].b, edges5[i].b) > 0.01f)
         {
             any_different = true;
             break;
@@ -68,8 +62,7 @@ TEST_CASE("tesseract_wireframe_edges actually rotates over phase",
     CHECK(any_different);
 }
 
-TEST_CASE("tesseract_wireframe_edges matches a hand-computed vertex at phase 0",
-          "[tk][tesseract]")
+TEST_CASE("tesseract_wireframe_edges matches a hand-computed vertex at phase 0", "[tk][tesseract]")
 {
     // At phase01 = 0 the rotation angle is 0, so it's the identity — easy to
     // hand-verify. Vertex 0 (all coordinates -1) is symmetric under the
@@ -78,8 +71,7 @@ TEST_CASE("tesseract_wireframe_edges matches a hand-computed vertex at phase 0",
     //   z3 = -1 * k4                 = -0.3125
     //   k3 = 1 / (2.2 - (-0.3125))   = 1 / 2.5125    ≈ 0.397913
     //   x2 = x3 * k3 = (-1 * k4) * k3 ≈ -0.124348
-    const auto edges =
-        tk::tesseract_wireframe_edges(0.0f, Point{0, 0}, 1.0f);
+    const auto edges = tk::tesseract_wireframe_edges(0.0f, Point{0, 0}, 1.0f);
 
     // Vertex 0 connects to vertices 1, 2, 4, 8 (each differs by one bit);
     // any of those edges' endpoint touching vertex 0 gives the same point.
@@ -89,8 +81,7 @@ TEST_CASE("tesseract_wireframe_edges matches a hand-computed vertex at phase 0",
     {
         for (Point p : {e.a, e.b})
         {
-            if (std::abs(p.x - (-0.124348f)) < 0.001f &&
-                std::abs(p.y - (-0.124348f)) < 0.001f)
+            if (std::abs(p.x - (-0.124348f)) < 0.001f && std::abs(p.y - (-0.124348f)) < 0.001f)
             {
                 found = true;
             }
@@ -99,15 +90,14 @@ TEST_CASE("tesseract_wireframe_edges matches a hand-computed vertex at phase 0",
     CHECK(found);
 }
 
-TEST_CASE("tesseract_wireframe_edges respects center and scale",
-          "[tk][tesseract]")
+TEST_CASE("tesseract_wireframe_edges respects center and scale", "[tk][tesseract]")
 {
     const Point center{20, 20};
     const auto small = tk::tesseract_wireframe_edges(0.2f, center, 10.0f);
-    const auto big   = tk::tesseract_wireframe_edges(0.2f, center, 20.0f);
+    const auto big = tk::tesseract_wireframe_edges(0.2f, center, 20.0f);
 
     float small_sum = 0.0f;
-    float big_sum   = 0.0f;
+    float big_sum = 0.0f;
     for (std::size_t i = 0; i < small.size(); ++i)
     {
         small_sum += dist(small[i].a, center) + dist(small[i].b, center);
@@ -119,8 +109,7 @@ TEST_CASE("tesseract_wireframe_edges respects center and scale",
     CHECK(ratio < 2.2f);
 }
 
-TEST_CASE("tesseract_wireframe_edges stays within a conservative radius bound",
-          "[tk][tesseract]")
+TEST_CASE("tesseract_wireframe_edges stays within a conservative radius bound", "[tk][tesseract]")
 {
     const Point center{0, 0};
     const float scale = 50.0f;

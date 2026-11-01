@@ -13,18 +13,21 @@ namespace
 void power_source_changed(void* context)
 {
     if (context)
+    {
         static_cast<MacPowerMonitor*>(context)->refresh();
+    }
 }
 
 bool read_on_battery()
 {
     CFTypeRef info = IOPSCopyPowerSourcesInfo();
     if (!info)
+    {
         return false;
+    }
     CFStringRef type = IOPSGetProvidingPowerSourceType(info);
     const bool on_battery =
-        type && CFStringCompare(type, CFSTR(kIOPSBatteryPowerValue), 0) ==
-                    kCFCompareEqualTo;
+        type && CFStringCompare(type, CFSTR(kIOPSBatteryPowerValue), 0) == kCFCompareEqualTo;
     CFRelease(info);
     return on_battery;
 }
@@ -32,7 +35,9 @@ bool read_on_battery()
 bool read_low_power_mode()
 {
     if (@available(macOS 12.0, *))
+    {
         return [NSProcessInfo processInfo].lowPowerModeEnabled;
+    }
     return false;
 }
 
@@ -42,11 +47,15 @@ bool read_has_battery()
 {
     CFTypeRef info = IOPSCopyPowerSourcesInfo();
     if (!info)
+    {
         return false;
+    }
     CFArrayRef list = IOPSCopyPowerSourcesList(info);
     const bool has_battery = list && CFArrayGetCount(list) > 0;
     if (list)
+    {
         CFRelease(list);
+    }
     CFRelease(info);
     return has_battery;
 }
@@ -68,12 +77,13 @@ MacPowerMonitor::MacPowerMonitor()
             addObserverForName:NSProcessInfoPowerStateDidChangeNotification
                         object:nil
                          queue:[NSOperationQueue mainQueue]
-                    usingBlock:^(NSNotification*) { refresh(); }];
+                    usingBlock:^(NSNotification*) {
+                        refresh();
+                    }];
     }
 
     // AC / battery changes.
-    CFRunLoopSourceRef src =
-        IOPSNotificationCreateRunLoopSource(&power_source_changed, this);
+    CFRunLoopSourceRef src = IOPSNotificationCreateRunLoopSource(&power_source_changed, this);
     if (src)
     {
         CFRunLoopAddSource(CFRunLoopGetMain(), src, kCFRunLoopCommonModes);
@@ -103,7 +113,9 @@ void MacPowerMonitor::refresh()
     bool changed = state_.set_on_battery(read_on_battery());
     changed = state_.set_power_saver(read_low_power_mode()) || changed;
     if (changed && on_change)
+    {
         on_change();
+    }
 }
 
 } // namespace mac

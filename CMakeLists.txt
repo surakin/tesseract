@@ -6,7 +6,7 @@ cmake_minimum_required(VERSION 3.30)
 # already in a dev environment. See cmake/MsvcAutoVcvars.cmake.
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/MsvcAutoVcvars.cmake)
 
-project(Tesseract VERSION 0.9.4 LANGUAGES CXX)
+project(Tesseract VERSION 0.9.6 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -88,6 +88,13 @@ endforeach()
 # CMAKE_OBJCXX_COMPILE_OBJECT unset in CMake 4.x.
 if(APPLE)
     enable_language(OBJCXX)
+
+    # Corrosion adds the Rust library's `-lSystem` next to the one the compiler
+    # driver already passes, and Xcode 15+'s ld warns about the duplicate. The
+    # flag is unknown to the older ld, so only use it where the linker has it.
+    include(CheckLinkerFlag)
+    check_linker_flag(CXX "LINKER:-no_warn_duplicate_libraries"
+        TESSERACT_LD_NO_WARN_DUPLICATE_LIBRARIES)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -115,6 +122,13 @@ option(TESSERACT_ENABLE_LEGACY_LOGIN
     "Enable legacy username/password (m.login.password) login as a fallback for homeservers without OIDC/MAS"
     ON)
 
+# The login view's "Find a server" browser (community homeserver list, fetched
+# from the network). OFF removes it and the Client list API; sign-in then goes
+# straight to the default homeserver (matrix.org) when the field is empty.
+option(TESSERACT_ENABLE_SERVER_BROWSER
+    "Enable the login view's \"Find a server\" browser (community homeserver list)"
+    ON)
+
 # Accounts without recovery get it set up without a dialog; the key is held in
 # the OS secure storage until the user saves it. OFF restores the setup dialog.
 option(TESSERACT_ENABLE_SILENT_RECOVERY_SETUP
@@ -124,6 +138,13 @@ option(TESSERACT_ENABLE_SILENT_RECOVERY_SETUP
 # Experimental — off by default while the feature is staged. See the usage
 # site below (near TESSERACT_ENABLE_LEGACY_LOGIN's corrosion_set_features
 # call) for what turning it on actually wires up.
+# Debugging aid: per-request timing log (see sdk/src/request_log.rs). Compiled in
+# only when ON; it still does nothing until the app is launched with
+# TESSERACT_REQUEST_LOG=1 (or a file path) in its environment.
+option(TESSERACT_ENABLE_REQUEST_LOG
+    "Compile in the homeserver request timing log (activated at run time by TESSERACT_REQUEST_LOG)"
+    OFF)
+
 option(TESSERACT_ENABLE_CRASH_HANDLER
     "Enable the optional local crash handler (writes a stack trace to disk if the app crashes; still opt-in per-user via Settings once built)"
     OFF)
@@ -215,8 +236,9 @@ endif()
 # ---------------------------------------------------------------------------
 # macOS / AppKit deployment target. CMakePresets.json picks the architecture
 # (arm64 or x86_64) and the matching Rust target triple via
-# CMAKE_OSX_ARCHITECTURES + Rust_CARGO_TARGET. Both targets compile against
-# the standard macOS SDK — no iOSSupport / Catalyst plumbing.
+# CMAKE_OSX_ARCHITECTURES + Rust_CARGO_TARGET; the universal Mac App Store
+# preset lists both architectures (see cmake/MacUniversal.cmake). All of them
+# compile against the standard macOS SDK — no iOSSupport / Catalyst plumbing.
 # ---------------------------------------------------------------------------
 if(TESSERACT_UI STREQUAL "macos")
     if(NOT APPLE)
@@ -251,6 +273,7 @@ endif()
 # the directory-scoped compile/link options propagate to every C++ target.
 # ---------------------------------------------------------------------------
 include(${CMAKE_SOURCE_DIR}/cmake/Hardening.cmake)
+include(${CMAKE_SOURCE_DIR}/cmake/CppWinRT.cmake)
 
 # Compress DWARF debug info (ELF only). Every UI and test executable links the
 # whole Rust archive, debug info included, so uncompressed Debug executables
@@ -302,6 +325,10 @@ add_subdirectory(third_party/nlohmann_json)
 # CMake targets mirroring each crate's [lib] / [[bin]] entries.
 corrosion_import_crate(MANIFEST_PATH ${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml)
 
+# Universal macOS builds (CMAKE_OSX_ARCHITECTURES with several entries): sets
+# TESSERACT_MAC_UNIVERSAL and defines the helpers called below. No-op otherwise.
+include(${CMAKE_SOURCE_DIR}/cmake/MacUniversal.cmake)
+
 # matrix-sdk is rustls-only (no native-tls feature), so no system OpenSSL is
 # required. SQLite is bundled via the `bundled-sqlite` feature, so
 # rusqlite compiles its own copy of SQLite internally.
@@ -329,6 +356,20 @@ option(TESSERACT_CARGO_INCREMENTAL
     OFF)
 if(NOT TESSERACT_CARGO_INCREMENTAL)
     corrosion_set_env_vars(tesseract_sdk_ffi CARGO_INCREMENTAL=0)
+endif()
+
+# Without LTO the release staticlib carries every dependency's object code
+# (~800 MB per copy, and Corrosion keeps several copies). Fat LTO with one
+# codegen unit cuts the Rust part to ~100 MB but makes release Rust builds
+# much slower and hungrier for RAM, so it's opt-in for disk-constrained
+# machines rather than set in Cargo.toml for every build. Release only.
+option(TESSERACT_RUST_LTO
+    "Fat LTO for the Rust SDK crate in release builds (much smaller archive, slower build)"
+    OFF)
+if(TESSERACT_RUST_LTO)
+    corrosion_set_env_vars(tesseract_sdk_ffi
+        CARGO_PROFILE_RELEASE_LTO=fat
+        CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1)
 endif()
 if(MSVC)
     corrosion_set_env_vars(tesseract_sdk_ffi AWS_LC_SYS_PREBUILT_NASM=1)
@@ -411,6 +452,12 @@ if(APPLE)
         COMMENT "Stripping stray protoc-plugin objects from libtesseract_sdk_ffi.a (if present)"
         VERBATIM
     )
+
+    # Universal build: add the second architecture's Rust archive and lipo it
+    # in. Must follow the strip above (Apple `ar` can't edit a fat archive).
+    if(TESSERACT_MAC_UNIVERSAL)
+        tesseract_mac_universal_rust_slice()
+    endif()
 endif()
 
 # audiopus_sys emits cargo:rustc-link-lib=opus but Corrosion may place it
@@ -419,6 +466,10 @@ endif()
 # follows the archive in the link command.  MSVC CI builds bundle opus into
 # the Rust archive via OPUS_STATIC=1; non-Windows needs it explicitly.
 if(NOT WIN32)
+    # Universal macOS builds build libopus themselves and preset OPUS_LIB.
+    if(TESSERACT_MAC_UNIVERSAL)
+        tesseract_mac_universal_opus()
+    endif()
     find_library(OPUS_LIB NAMES opus
         HINTS "$ENV{OPUS_LIB_DIR}" /opt/homebrew/lib /usr/local/lib
         REQUIRED)
@@ -463,7 +514,7 @@ if(MSVC)
     # mismatch).
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded" CACHE STRING "" FORCE)
 
-    # Unity builds (ui/shared/CMakeFiles/tesseract_tk.dir/Unity) merge enough
+    # Unity builds (ui/shared/CMakeFiles/tesseract_{tk,views,app}.dir/Unity) merge enough
     # translation units per object file to exceed the COFF section limit
     # (C1128) without /bigobj.
     add_compile_options(/bigobj)
@@ -673,6 +724,7 @@ endif()
 
 # ---------------------------------------------------------------------------
 # TESSERACT_ENABLE_LEGACY_LOGIN — m.login.password fallback for non-OIDC servers
+# TESSERACT_ENABLE_SERVER_BROWSER — community homeserver list (Find a server)
 # TESSERACT_ENABLE_CRASH_HANDLER — optional local crash handler
 # TESSERACT_ENABLE_JEMALLOC     — jemalloc process allocator (Linux only)
 #
@@ -691,6 +743,20 @@ if(TESSERACT_ENABLE_LEGACY_LOGIN)
     # Propagate the flag to all C++ targets so #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
     # guards compile their password-login-related code.
     add_compile_definitions(TESSERACT_LEGACY_LOGIN_ENABLED)
+endif()
+
+if(TESSERACT_ENABLE_SERVER_BROWSER)
+    message(STATUS "tesseract: server browser enabled")
+    # Also activates the `server_browser` Cargo feature, which compiles the Rust
+    # list fetcher; without it `load_server_list` is a failing stub (the bridge
+    # declaration is unconditional).
+    add_compile_definitions(TESSERACT_SERVER_BROWSER_ENABLED)
+    list(APPEND _tesseract_cargo_features server_browser)
+endif()
+
+if(TESSERACT_ENABLE_REQUEST_LOG)
+    message(STATUS "tesseract: request timing log compiled in")
+    list(APPEND _tesseract_cargo_features request_log)
 endif()
 
 if(TESSERACT_ENABLE_SILENT_RECOVERY_SETUP)
@@ -745,9 +811,9 @@ target_include_directories(tesseract_client PUBLIC
     "${CMAKE_CURRENT_BINARY_DIR}/include")
 
 # ---------------------------------------------------------------------------
-# Shared UI toolkit (tesseract_tk) — widget tree, theme, abstract Canvas,
+# Shared UI libraries (tesseract_tk, tesseract_views, tesseract_app) — widget tree, theme, abstract Canvas,
 # and the per-platform Canvas/TextLayout backend implementations selected
-# by TESSERACT_UI. Always compiled; each platform UI links against it.
+# by TESSERACT_UI. Always compiled; each platform UI links tesseract_app.
 # ---------------------------------------------------------------------------
 add_subdirectory(ui/shared)
 

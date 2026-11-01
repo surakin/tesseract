@@ -120,8 +120,7 @@ public:
     }
 
 private:
-    friend ParseResult parse(std::span<const OptionSpec>,
-                             std::span<const std::string>,
+    friend ParseResult parse(std::span<const OptionSpec>, std::span<const std::string>,
                              std::span<const ForeignOption>);
 
     std::vector<std::pair<std::string_view, std::string>> occurrences_;
@@ -130,8 +129,7 @@ private:
 };
 
 /// Parse `args` (argv[1..], i.e. excluding the program name) against `specs`.
-ParseResult parse(std::span<const OptionSpec> specs,
-                  std::span<const std::string> args,
+ParseResult parse(std::span<const OptionSpec> specs, std::span<const std::string> args,
                   std::span<const ForeignOption> foreign = {});
 
 /// Render a usage/help block:
@@ -144,10 +142,8 @@ ParseResult parse(std::span<const OptionSpec> specs,
 ///
 /// Hidden options are omitted. The help column is aligned to the longest
 /// visible option. Labels are passed in so the caller can translate them.
-std::string format_usage(std::span<const OptionSpec> specs,
-                         std::string_view program,
-                         std::string_view synopsis,
-                         std::string_view usage_label,
+std::string format_usage(std::span<const OptionSpec> specs, std::string_view program,
+                         std::string_view synopsis, std::string_view usage_label,
                          std::string_view options_heading);
 
 /// One-line English description of a diagnostic, for stderr (developer

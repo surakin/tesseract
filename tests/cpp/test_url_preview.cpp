@@ -59,8 +59,7 @@ TEST_CASE("parse_url_preview: quoted-string dimensions are accepted", "[url_prev
 {
     // Some OpenGraph servers emit dimensions as strings; the old digit scanner
     // accepted them and nlohmann path must too.
-    const std::string json =
-        R"({"og:title":"T","og:image:width":"800","og:image:height":"600"})";
+    const std::string json = R"({"og:title":"T","og:image:width":"800","og:image:height":"600"})";
     Client::UrlPreview p = Client::parse_url_preview(json);
     CHECK(p.image_w == 800);
     CHECK(p.image_h == 600);

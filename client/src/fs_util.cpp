@@ -36,9 +36,7 @@ static bool write_all_fd(int fd, std::string_view content)
     while (left > 0)
     {
 #if defined(_WIN32)
-        int n = _write(
-            fd, p,
-            static_cast<unsigned>(left > 0x7fffffff ? 0x7fffffff : left));
+        int n = _write(fd, p, static_cast<unsigned>(left > 0x7fffffff ? 0x7fffffff : left));
 #else
         ssize_t n = ::write(fd, p, left);
         if (n < 0 && errno == EINTR)
@@ -71,9 +69,8 @@ bool atomic_write_file(const fs::path& p, std::string_view content)
     {
 #if defined(_WIN32)
         int fd = -1;
-        _wsopen_s(&fd, tmp.wstring().c_str(),
-                  _O_WRONLY | _O_CREAT | _O_TRUNC | _O_BINARY, _SH_DENYNO,
-                  _S_IREAD | _S_IWRITE);
+        _wsopen_s(&fd, tmp.wstring().c_str(), _O_WRONLY | _O_CREAT | _O_TRUNC | _O_BINARY,
+                  _SH_DENYNO, _S_IREAD | _S_IWRITE);
 #else
         // A leftover .tmp (crash, or planted) would keep its own mode under
         // O_TRUNC; start from a fresh file so 0600 always applies.

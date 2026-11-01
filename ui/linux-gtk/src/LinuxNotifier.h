@@ -1,6 +1,6 @@
 #pragma once
 #include <tesseract/notifier.h>
-#include "../../shared/linux_notification_reply.h"
+#include "platform/linux/linux_notification_reply.h"
 #include <gio/gio.h>
 #include <functional>
 #include <memory>
@@ -15,7 +15,7 @@ public:
     // on_reply: (room_id, event_id, reply_text), fired from either the
     // KDE-only legacy D-Bus "inline-reply" extension, or the portal's
     // standardized "im.reply-with-text" button purpose (interface v2+) —
-    // see ui/shared/linux_notification_reply.h for both. Never fires when
+    // see ui/shared/platform/linux/linux_notification_reply.h for both. Never fires when
     // neither is supported. Deliberately separate from on_activate — a
     // reply must not switch account or navigate, unlike a click.
     explicit LinuxNotifierGtk(
@@ -25,17 +25,13 @@ public:
     void notify(const tesseract::Notification& n) override;
 
 private:
-    static void on_action_invoked_cb(GDBusConnection*, const char*, const char*,
-                                     const char*, const char*, GVariant*,
-                                     gpointer);
-    static void on_notification_closed_cb(GDBusConnection*, const char*,
-                                          const char*, const char*, const char*,
-                                          GVariant*, gpointer);
-    static void on_portal_action_invoked_cb(GDBusConnection*, const char*,
-                                            const char*, const char*,
+    static void on_action_invoked_cb(GDBusConnection*, const char*, const char*, const char*,
+                                     const char*, GVariant*, gpointer);
+    static void on_notification_closed_cb(GDBusConnection*, const char*, const char*, const char*,
+                                          const char*, GVariant*, gpointer);
+    static void on_portal_action_invoked_cb(GDBusConnection*, const char*, const char*, const char*,
                                             const char*, GVariant*, gpointer);
-    static void on_notification_replied_cb(GDBusConnection*, const char*,
-                                           const char*, const char*,
+    static void on_notification_replied_cb(GDBusConnection*, const char*, const char*, const char*,
                                            const char*, GVariant*, gpointer);
     // KDE/GNOME de-facto extension (not in the base freedesktop.org spec):
     // fires just before ActionInvoked with a Wayland xdg_activation_v1
@@ -43,9 +39,8 @@ private:
     // resolve. Daemons that don't implement it simply never fire this, so
     // subscribing unconditionally is safe. Stashed in correlation_ until
     // the matching ActionInvoked arrives.
-    static void on_activation_token_cb(GDBusConnection*, const char*,
-                                       const char*, const char*, const char*,
-                                       GVariant*, gpointer);
+    static void on_activation_token_cb(GDBusConnection*, const char*, const char*, const char*,
+                                       const char*, GVariant*, gpointer);
     bool use_portal() const;
 
     GDBusConnection* bus_ = nullptr;

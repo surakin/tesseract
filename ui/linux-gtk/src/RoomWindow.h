@@ -37,8 +37,7 @@ protected:
     // pop-out; only the controller that issued the search matches).
     void on_gif_results(std::uint64_t request_id,
                         std::vector<tesseract::GifResult> results) override;
-    void on_gif_search_failed(std::uint64_t request_id,
-                              const std::string& message) override;
+    void on_gif_search_failed(std::uint64_t request_id, const std::string& message) override;
 
 private:
     // Closes any open popup — called from the notify::default-width/-height
@@ -47,12 +46,11 @@ private:
     void dismiss_popups_on_resize_();
 
     static void on_destroy_(GtkWidget* widget, gpointer self);
-    static gboolean on_key_pressed_(GtkEventControllerKey*, guint keyval,
-                                    guint, GdkModifierType, gpointer self);
+    static gboolean on_key_pressed_(GtkEventControllerKey*, guint keyval, guint, GdkModifierType,
+                                    gpointer self);
     // Global-scope Ctrl+K shortcut — routes to the main window's quick
     // switcher, bringing the main window forward (the switcher lives there).
-    static gboolean on_quick_switch_shortcut_(GtkWidget*, GVariant*,
-                                              gpointer self);
+    static gboolean on_quick_switch_shortcut_(GtkWidget*, GVariant*, gpointer self);
 
     static void on_copy_action_(GSimpleAction*, GVariant*, gpointer self);
 
@@ -67,8 +65,7 @@ private:
     // RoomSearchBar::search_field() / ForwardRoomPicker::search_field().
     tk::TextArea* room_text_area_ = nullptr;
     tesseract::views::ForwardRoomPicker* forward_picker_widget_ = nullptr; // borrowed
-    tesseract::views::RoomMediaView* room_media_view_widget_ = nullptr; // borrowed
-    tesseract::views::ConfirmDialog* confirm_dialog_widget_ = nullptr; // borrowed
+    tesseract::views::RoomMediaView* room_media_view_widget_ = nullptr;    // borrowed
 
     // Composer popups (@mention, /command, :shortcode:, /gif). Declared after
     // surface_ so the popups are destroyed before the Host they came from.

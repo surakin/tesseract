@@ -16,8 +16,8 @@ constexpr float kTbPadX = 10.0f;
 constexpr float kTbPlayBtnD = 36.0f;
 constexpr float kTbSpeedPillW = 32.0f;
 constexpr float kTbSpeedPillH = 20.0f;
-constexpr float kTbScrubH = 6.0f;
-constexpr float kTbScrubR = 3.0f;
+// The scrub slider's hit height; its drawn track is thinner (see tk::Slider).
+constexpr float kTbScrubH = 24.0f;
 
 // Fixed, backdrop-tuned fill states for the play/speed buttons — the
 // controls bar is always near-black regardless of the app's light/dark
@@ -68,6 +68,21 @@ MediaTransportBar::MediaTransportBar(MediaViewerPageHost& host, bool with_speed)
     play_btn_->set_icon_color_override(kTbGlyphColor);
     play_btn_->set_visible(false);
 
+    scrub_ = host.host_add_slider();
+    scrub_->set_keyboard_focusable(false);             // page-level shortcuts own the keyboard
+    scrub_->set_hoverable(true, tk::HoverStyle::None); // tracked for hovered()
+    scrub_->set_colors(tk::Slider::Colors{tk::Color::rgba(255, 255, 255, 60), kTbBufferedFill,
+                                          tk::Color::rgba(255, 255, 255, 200), kTbGlyphColor});
+    scrub_->set_accessible_name(tk::tr("Seek"));
+    scrub_->set_visible(false);
+    scrub_->on_changed = [this](double frac)
+    {
+        if (on_seek)
+        {
+            on_seek(static_cast<float>(frac));
+        }
+    };
+
     if (with_speed)
     {
         speed_btn_ = host.host_add_icon_button();
@@ -88,25 +103,30 @@ MediaTransportBar::MediaTransportBar(MediaViewerPageHost& host, bool with_speed)
 void MediaTransportBar::arrange(tk::LayoutCtx& lc, tk::Rect bar, bool shown)
 {
     bar_ = bar;
-    const tk::Rect play_rect{bar.x + kTbPadX, bar.y + (kHeight - kTbPlayBtnD) * 0.5f,
-                             kTbPlayBtnD, kTbPlayBtnD};
+    const tk::Rect play_rect{bar.x + kTbPadX, bar.y + (kHeight - kTbPlayBtnD) * 0.5f, kTbPlayBtnD,
+                             kTbPlayBtnD};
     play_btn_->arrange(lc, play_rect);
 
     float scrub_xe = bar.x + bar.w - kTbPadX;
     if (speed_btn_)
     {
         const tk::Rect speed_rect{bar.x + bar.w - kTbPadX - kTbSpeedPillW,
-                                  bar.y + (kHeight - kTbSpeedPillH) * 0.5f,
-                                  kTbSpeedPillW, kTbSpeedPillH};
+                                  bar.y + (kHeight - kTbSpeedPillH) * 0.5f, kTbSpeedPillW,
+                                  kTbSpeedPillH};
         speed_btn_->arrange(lc, speed_rect);
         scrub_xe = speed_rect.x - kTbPadX;
     }
 
     const float scrub_x = play_rect.x + kTbPlayBtnD + kTbPadX;
     const float scrub_w = std::max(0.0f, scrub_xe - scrub_x);
-    scrub_ = {scrub_x, bar.y + (kHeight - kTbScrubH) * 0.5f, scrub_w, kTbScrubH};
+    scrub_->arrange(lc, {scrub_x, bar.y + (kHeight - kTbScrubH) * 0.5f, scrub_w, kTbScrubH});
 
     play_btn_->set_visible(shown);
+    if (!shown)
+    {
+        scrub_->cancel_drag(); // a hidden slider never sees the pointer-up
+    }
+    scrub_->set_visible(shown);
     if (speed_btn_)
     {
         speed_btn_->set_visible(shown);
@@ -115,7 +135,8 @@ void MediaTransportBar::arrange(tk::LayoutCtx& lc, tk::Rect bar, bool shown)
 
 void MediaTransportBar::deactivate()
 {
-    scrubbing_ = false;
+    scrub_->cancel_drag();
+    scrub_->set_visible(false);
     play_btn_->set_visible(false);
     if (speed_btn_)
     {
@@ -125,7 +146,8 @@ void MediaTransportBar::deactivate()
 
 bool MediaTransportBar::hovered() const
 {
-    return (play_btn_ && play_btn_->hovered()) || (speed_btn_ && speed_btn_->hovered());
+    return (play_btn_ && play_btn_->hovered()) || (speed_btn_ && speed_btn_->hovered()) ||
+           (scrub_ && (scrub_->hovered() || scrub_->dragging()));
 }
 
 bool MediaTransportBar::contains(tk::Point world) const
@@ -149,11 +171,11 @@ void MediaTransportBar::paint(tk::PaintCtx& ctx, const State& s)
     // it into a circle. The play glyph is Button's own icon; while playing it
     // is hidden (empty span) and the pause bars are drawn here instead.
     const tk::Rect play_bounds = play_btn_->bounds();
-    play_btn_->set_icon(s.playing ? std::span<const std::uint8_t>{} : kPlaySvg,
-                        kTbPlayBtnD * 0.5f);
-    cv.push_clip_rounded_rect(play_bounds, kTbPlayBtnD * 0.5f);
-    play_btn_->paint(ctx);
-    cv.pop_clip();
+    play_btn_->set_icon(s.playing ? std::span<const std::uint8_t>{} : kPlaySvg, kTbPlayBtnD * 0.5f);
+    {
+        tk::ClipScope clip(cv, play_bounds, kTbPlayBtnD * 0.5f);
+        play_btn_->paint(ctx);
+    }
     if (s.playing)
     {
         const float bar_w = 3.0f;
@@ -168,9 +190,10 @@ void MediaTransportBar::paint(tk::PaintCtx& ctx, const State& s)
     if (speed_btn_)
     {
         const tk::Rect speed_bounds = speed_btn_->bounds();
-        cv.push_clip_rounded_rect(speed_bounds, kTbSpeedPillH * 0.5f);
-        speed_btn_->paint(ctx);
-        cv.pop_clip();
+        {
+            tk::ClipScope clip(cv, speed_bounds, kTbSpeedPillH * 0.5f);
+            speed_btn_->paint(ctx);
+        }
 
         char rate_buf[8];
         const char* rate_plain; // plain "x" for the accessible name, not the
@@ -204,83 +227,20 @@ void MediaTransportBar::paint(tk::PaintCtx& ctx, const State& s)
         }
     }
 
-    // Scrub bar — track + downloaded band + filled region + playhead
-    if (scrub_.w > 0)
+    // Scrub slider: the position never overwrites a value the user is dragging.
+    // The selectable limit is the downloaded part (whole range when the file is
+    // fully available) and collapses to nothing for a stream of unknown length.
+    const double buffered = s.buffered_frac >= 0.0f ? std::clamp(s.buffered_frac, 0.0f, 1.0f) : 1.0;
+    scrub_->set_limit(s.duration_ms > 0 ? buffered : 0.0);
+    scrub_->set_buffered(s.buffered_frac > 0.0f ? std::min(1.0f, s.buffered_frac) : -1.0f);
+    if (!scrub_->dragging())
     {
-        const float frac = (s.duration_ms > 0)
-                               ? std::clamp(static_cast<float>(s.position_ms) /
-                                                static_cast<float>(s.duration_ms),
-                                            0.0f, 1.0f)
-                               : 0.0f;
-
-        cv.fill_rounded_rect(scrub_, kTbScrubR, tk::Color::rgba(255, 255, 255, 60));
-
-        if (s.buffered_frac > 0.0f)
-        {
-            const float buffered_w = scrub_.w * std::min(1.0f, s.buffered_frac);
-            cv.fill_rounded_rect({scrub_.x, scrub_.y, buffered_w, scrub_.h}, kTbScrubR,
-                                 kTbBufferedFill);
-        }
-
-        // Playback position, drawn over the downloaded band.
-        if (frac > 0.0f)
-        {
-            cv.fill_rounded_rect({scrub_.x, scrub_.y, scrub_.w * frac, scrub_.h},
-                                 kTbScrubR, tk::Color::rgba(255, 255, 255, 200));
-        }
-
-        constexpr float kKnobD = 12.0f;
-        const float kx = scrub_.x + scrub_.w * frac - kKnobD * 0.5f;
-        const float ky = scrub_.y + (scrub_.h - kKnobD) * 0.5f;
-        cv.fill_rounded_rect({kx, ky, kKnobD, kKnobD}, kKnobD * 0.5f, glyph_col);
+        scrub_->set_value(s.duration_ms > 0 ? std::clamp(static_cast<double>(s.position_ms) /
+                                                             static_cast<double>(s.duration_ms),
+                                                         0.0, 1.0)
+                                            : 0.0);
     }
-}
-
-bool MediaTransportBar::on_pointer_down(tk::Point world, const State& s)
-{
-    if (!rect_contains(scrub_, world))
-    {
-        return false;
-    }
-    scrubbing_ = true;
-    // Immediate seek on press for snappy scrub-start; on_drag continues.
-    seek_from_x_(world.x, s);
-    return true;
-}
-
-bool MediaTransportBar::on_pointer_up()
-{
-    if (scrubbing_)
-    {
-        scrubbing_ = false;
-        return true;
-    }
-    return false;
-}
-
-void MediaTransportBar::on_drag(float world_x, const State& s)
-{
-    if (scrubbing_)
-    {
-        seek_from_x_(world_x, s);
-    }
-}
-
-void MediaTransportBar::seek_from_x_(float world_x, const State& s)
-{
-    if (scrub_.w <= 0 || !on_seek)
-    {
-        return;
-    }
-    float frac = std::clamp((world_x - scrub_.x) / scrub_.w, 0.0f, 1.0f);
-    // Never seek ahead of what's actually downloaded — that byte range doesn't
-    // exist yet, so the player would just block waiting on data that hasn't
-    // arrived. Only meaningful while streaming and not yet fully downloaded.
-    if (s.buffered_frac >= 0.0f)
-    {
-        frac = std::min(frac, std::clamp(s.buffered_frac, 0.0f, 1.0f));
-    }
-    on_seek(frac);
+    scrub_->paint(ctx);
 }
 
 } // namespace tesseract::views

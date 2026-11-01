@@ -24,7 +24,10 @@ public:
     // `successor_joined` picks the button label: "Go to the new room" when
     // the user is already in it, "Join the new room" otherwise.
     void set_successor_joined(bool joined);
-    bool successor_joined() const { return successor_joined_; }
+    bool successor_joined() const
+    {
+        return successor_joined_;
+    }
     std::string label_text() const;
     std::string action_text() const;
 
@@ -33,8 +36,14 @@ public:
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
 
-    tk::Role access_role() const override { return tk::Role::Group; }
-    std::string access_name() const override { return label_text(); }
+    tk::Role access_role() const override
+    {
+        return tk::Role::Group;
+    }
+    std::string access_name() const override
+    {
+        return label_text();
+    }
 
     void paint_before_children(tk::PaintCtx&) override;
 
@@ -45,7 +54,7 @@ private:
 
     bool successor_joined_ = false;
 
-    tk::Label*  label_  = nullptr; // borrowed
+    tk::Label* label_ = nullptr;   // borrowed
     tk::Button* action_ = nullptr; // borrowed
 };
 

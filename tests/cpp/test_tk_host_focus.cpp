@@ -32,7 +32,9 @@ public:
     {
         return {bounds_.w, bounds_.h};
     }
-    void paint(PaintCtx&) override {}
+    void paint(PaintCtx&) override
+    {
+    }
     bool on_pointer_down(Point) override
     {
         return true;
@@ -58,7 +60,9 @@ public:
     {
         return {bounds_.w, bounds_.h};
     }
-    void paint(PaintCtx&) override {}
+    void paint(PaintCtx&) override
+    {
+    }
     bool on_pointer_down(Point) override
     {
         return true;
@@ -82,7 +86,9 @@ public:
     {
         return {bounds_.w, bounds_.h};
     }
-    void paint(PaintCtx&) override {}
+    void paint(PaintCtx&) override
+    {
+    }
     bool on_pointer_down(Point) override
     {
         return true;
@@ -112,7 +118,9 @@ public:
     {
         return {bounds_.w, bounds_.h};
     }
-    void paint(PaintCtx&) override {}
+    void paint(PaintCtx&) override
+    {
+    }
     bool focusable() const override
     {
         return true;
@@ -130,8 +138,7 @@ public:
 class CustomRingWidget : public Widget
 {
 public:
-    explicit CustomRingWidget(Rect bounds, Rect ring_rect)
-        : ring_rect_(ring_rect)
+    explicit CustomRingWidget(Rect bounds, Rect ring_rect) : ring_rect_(ring_rect)
     {
         bounds_ = bounds;
     }
@@ -140,7 +147,9 @@ public:
     {
         return {bounds_.w, bounds_.h};
     }
-    void paint(PaintCtx&) override {}
+    void paint(PaintCtx&) override
+    {
+    }
     bool focusable() const override
     {
         return true;
@@ -160,7 +169,9 @@ private:
 class ClaimCountingHost : public TestHost
 {
 public:
-    explicit ClaimCountingHost(Widget* root) : TestHost(root) {}
+    explicit ClaimCountingHost(Widget* root) : TestHost(root)
+    {
+    }
 
     int claims = 0;
 
@@ -185,7 +196,9 @@ public:
     {
         return {bounds_.w, bounds_.h};
     }
-    void paint(PaintCtx&) override {}
+    void paint(PaintCtx&) override
+    {
+    }
 };
 
 bool nearly(Color a, Color b, int tol = 20)
@@ -194,14 +207,12 @@ bool nearly(Color a, Color b, int tol = 20)
     {
         return x > y ? x - y : y - x;
     };
-    return delta(a.r, b.r) <= tol && delta(a.g, b.g) <= tol &&
-           delta(a.b, b.b) <= tol;
+    return delta(a.r, b.r) <= tol && delta(a.g, b.g) <= tol && delta(a.b, b.b) <= tol;
 }
 
 } // namespace
 
-TEST_CASE("Host::dispatch_key_down sets focus_visible_ for any key",
-          "[tk][host][focus]")
+TEST_CASE("Host::dispatch_key_down sets focus_visible_ for any key", "[tk][host][focus]")
 {
     FocusProbeWidget root({0, 0, 200, 200});
     TestHost host(&root);
@@ -211,8 +222,7 @@ TEST_CASE("Host::dispatch_key_down sets focus_visible_ for any key",
     CHECK(host.focus_visible_);
 }
 
-TEST_CASE("Host::dispatch_key_down Tab moves focus and sets focus_visible_",
-          "[tk][host][focus]")
+TEST_CASE("Host::dispatch_key_down Tab moves focus and sets focus_visible_", "[tk][host][focus]")
 {
     FocusProbeWidget root({0, 0, 200, 200});
     TestHost host(&root);
@@ -237,8 +247,7 @@ TEST_CASE("Host::dispatch_pointer_down clears focus_visible_ even on an "
     CHECK_FALSE(host.focus_visible_);
 }
 
-TEST_CASE("Host::dispatch_pointer_down moves focus but clears focus_visible_",
-          "[tk][host][focus]")
+TEST_CASE("Host::dispatch_pointer_down moves focus but clears focus_visible_", "[tk][host][focus]")
 {
     FocusProbeWidget root({0, 0, 200, 200});
     TestHost host(&root);
@@ -342,8 +351,7 @@ TEST_CASE("Tab then click ends with the ring hidden; click then Tab ends "
     CHECK(host.focus_visible_);
 }
 
-TEST_CASE("paint_focus_overlay draws the ring when focus_visible_ is true",
-          "[tk][host][focus]")
+TEST_CASE("paint_focus_overlay draws the ring when focus_visible_ is true", "[tk][host][focus]")
 {
     const Rect bounds{10, 10, 120, 36};
     FocusProbeWidget root(bounds);
@@ -361,8 +369,7 @@ TEST_CASE("paint_focus_overlay draws the ring when focus_visible_ is true",
     // top stroke line — see paint_focus_ring()'s 2px-wide stroke geometry.
     const int sample_x = static_cast<int>(bounds.x + bounds.w / 2);
     const int sample_y = static_cast<int>(bounds.y + 1);
-    CHECK(nearly(surface->read_pixel(sample_x, sample_y),
-                Theme::light().palette.accent));
+    CHECK(nearly(surface->read_pixel(sample_x, sample_y), Theme::light().palette.accent));
 }
 
 TEST_CASE("paint_focus_overlay skips the ring when focus_visible_ is false, "
@@ -385,8 +392,7 @@ TEST_CASE("paint_focus_overlay skips the ring when focus_visible_ is false, "
 
     const int sample_x = static_cast<int>(bounds.x + bounds.w / 2);
     const int sample_y = static_cast<int>(bounds.y + 1);
-    CHECK_FALSE(nearly(surface->read_pixel(sample_x, sample_y),
-                       Theme::light().palette.accent));
+    CHECK_FALSE(nearly(surface->read_pixel(sample_x, sample_y), Theme::light().palette.accent));
 }
 
 TEST_CASE("Host::dispatch_pointer_down does not clear focus when a click "
@@ -403,16 +409,14 @@ TEST_CASE("Host::dispatch_pointer_down does not clear focus when a click "
     // in a real app does this). Only a click that claims *nothing at all*
     // anywhere in the tree should clear focus now.
     ContainerWidget root({0, 0, 200, 200});
-    auto* target = root.add_child(
-        std::make_unique<FocusProbeWidget>(Rect{0, 0, 50, 50}));
-    root.add_child(
-        std::make_unique<ClaimingNonFocusableWidget>(Rect{100, 0, 50, 50}));
+    auto* target = root.add_child(std::make_unique<FocusProbeWidget>(Rect{0, 0, 50, 50}));
+    root.add_child(std::make_unique<ClaimingNonFocusableWidget>(Rect{100, 0, 50, 50}));
     TestHost host(&root);
 
     host.dispatch_pointer_down({25, 25}); // inside target
     REQUIRE(host.focused_widget() == target);
 
-    host.dispatch_pointer_down({125, 25}); // inside claiming, not target
+    host.dispatch_pointer_down({125, 25});  // inside claiming, not target
     CHECK(host.focused_widget() == target); // untouched, not cleared
 
     host.dispatch_pointer_down({500, 500}); // genuinely unclaimed
@@ -429,16 +433,15 @@ TEST_CASE("Host::dispatch_pointer_down does not move focus onto a "
     // ordinary click on it must not steal focus from whatever else — e.g.
     // the compose box, modeled here by `target` — currently holds it.
     ContainerWidget root({0, 0, 200, 200});
-    auto* target = root.add_child(
-        std::make_unique<FocusProbeWidget>(Rect{0, 0, 50, 50}));
-    auto* no_click_target = root.add_child(
-        std::make_unique<FocusableNoClickWidget>(Rect{100, 0, 50, 50}));
+    auto* target = root.add_child(std::make_unique<FocusProbeWidget>(Rect{0, 0, 50, 50}));
+    auto* no_click_target =
+        root.add_child(std::make_unique<FocusableNoClickWidget>(Rect{100, 0, 50, 50}));
     TestHost host(&root);
 
     host.dispatch_pointer_down({25, 25}); // inside target
     REQUIRE(host.focused_widget() == target);
 
-    host.dispatch_pointer_down({125, 25}); // inside no_click_target
+    host.dispatch_pointer_down({125, 25});  // inside no_click_target
     CHECK(host.focused_widget() == target); // untouched, not stolen
 
     // Still genuinely focusable() via Tab traversal.
@@ -461,8 +464,7 @@ TEST_CASE("Host::request_focus claims the native focus container when the "
     // live as Tab snapping back to the very first stop). See
     // Host::claim_native_focus_container_'s doc comment.
     ContainerWidget root({0, 0, 200, 200});
-    auto* plain = root.add_child(
-        std::make_unique<FocusProbeWidget>(Rect{0, 0, 50, 50}));
+    auto* plain = root.add_child(std::make_unique<FocusProbeWidget>(Rect{0, 0, 50, 50}));
     ClaimCountingHost host(&root);
 
     host.request_focus(plain);
@@ -480,8 +482,7 @@ TEST_CASE("Host::request_focus does not claim the native focus container "
           "[tk][host][focus]")
 {
     ContainerWidget root({0, 0, 200, 200});
-    auto* native = root.add_child(
-        std::make_unique<NativeFocusHoldingWidget>(Rect{0, 0, 50, 50}));
+    auto* native = root.add_child(std::make_unique<NativeFocusHoldingWidget>(Rect{0, 0, 50, 50}));
     ClaimCountingHost host(&root);
 
     host.request_focus(native);
@@ -512,15 +513,13 @@ TEST_CASE("paint_focus_overlay dispatches to a widget's own "
     // bounds() — proves the override's geometry was actually used.
     const int ring_x = static_cast<int>(ring_rect.x + ring_rect.w / 2);
     const int ring_y = static_cast<int>(ring_rect.y + 1);
-    CHECK(nearly(surface->read_pixel(ring_x, ring_y),
-                Theme::light().palette.accent));
+    CHECK(nearly(surface->read_pixel(ring_x, ring_y), Theme::light().palette.accent));
 
     // bounds()'s own top edge must NOT show the ring — the override fully
     // replaced the default, it didn't draw both.
     const int bounds_x = static_cast<int>(bounds.x + bounds.w / 2);
     const int bounds_y = static_cast<int>(bounds.y + 1);
-    CHECK_FALSE(nearly(surface->read_pixel(bounds_x, bounds_y),
-                       Theme::light().palette.accent));
+    CHECK_FALSE(nearly(surface->read_pixel(bounds_x, bounds_y), Theme::light().palette.accent));
 }
 
 TEST_CASE("paint_focus_overlay uses the default bounds()-based ring for a "
@@ -544,8 +543,7 @@ TEST_CASE("paint_focus_overlay uses the default bounds()-based ring for a "
 
     const int sample_x = static_cast<int>(bounds.x + bounds.w / 2);
     const int sample_y = static_cast<int>(bounds.y + 1);
-    CHECK(nearly(surface->read_pixel(sample_x, sample_y),
-                Theme::light().palette.accent));
+    CHECK(nearly(surface->read_pixel(sample_x, sample_y), Theme::light().palette.accent));
 }
 
 // ── Reading-order Tab traversal (collect_focus_order's geometric sort) ─────
@@ -556,12 +554,9 @@ TEST_CASE("Tab traversal follows left-to-right x order within a row, "
 {
     ContainerWidget root({0, 0, 300, 100});
     // Added right-to-left — insertion order is the opposite of visual order.
-    auto* right = root.add_child(
-        std::make_unique<FocusProbeWidget>(Rect{200, 0, 50, 50}));
-    auto* middle = root.add_child(
-        std::make_unique<FocusProbeWidget>(Rect{100, 0, 50, 50}));
-    auto* left = root.add_child(
-        std::make_unique<FocusProbeWidget>(Rect{0, 0, 50, 50}));
+    auto* right = root.add_child(std::make_unique<FocusProbeWidget>(Rect{200, 0, 50, 50}));
+    auto* middle = root.add_child(std::make_unique<FocusProbeWidget>(Rect{100, 0, 50, 50}));
+    auto* left = root.add_child(std::make_unique<FocusProbeWidget>(Rect{0, 0, 50, 50}));
     TestHost host(&root);
 
     host.advance_focus(true);
@@ -579,10 +574,8 @@ TEST_CASE("Tab traversal follows top-to-bottom row order, regardless of "
     ContainerWidget root({0, 0, 100, 300});
     // Added bottom-row-first — insertion order is the opposite of visual
     // order.
-    auto* bottom = root.add_child(
-        std::make_unique<FocusProbeWidget>(Rect{0, 200, 50, 50}));
-    auto* top = root.add_child(
-        std::make_unique<FocusProbeWidget>(Rect{0, 0, 50, 50}));
+    auto* bottom = root.add_child(std::make_unique<FocusProbeWidget>(Rect{0, 200, 50, 50}));
+    auto* top = root.add_child(std::make_unique<FocusProbeWidget>(Rect{0, 0, 50, 50}));
     TestHost host(&root);
 
     host.advance_focus(true);
@@ -603,10 +596,8 @@ TEST_CASE("Tab traversal treats overlapping-but-unequal-y widgets as the "
     ContainerWidget root({0, 0, 300, 100});
     // Added right-to-left, and the right one has a taller box (starts
     // higher, extends lower) that still vertically overlaps the left one.
-    auto* right = root.add_child(
-        std::make_unique<FocusProbeWidget>(Rect{200, 0, 50, 80}));
-    auto* left = root.add_child(
-        std::make_unique<FocusProbeWidget>(Rect{0, 20, 50, 40}));
+    auto* right = root.add_child(std::make_unique<FocusProbeWidget>(Rect{200, 0, 50, 80}));
+    auto* left = root.add_child(std::make_unique<FocusProbeWidget>(Rect{0, 20, 50, 40}));
     TestHost host(&root);
 
     host.advance_focus(true);
@@ -622,10 +613,8 @@ TEST_CASE("Tab traversal falls back to add_child() order for widgets at "
     // Mirrors Stack's same-rect children — the stable_sort tiebreak must
     // preserve insertion order deterministically rather than reshuffling.
     ContainerWidget root({0, 0, 100, 100});
-    auto* first = root.add_child(
-        std::make_unique<FocusProbeWidget>(Rect{0, 0, 50, 50}));
-    auto* second = root.add_child(
-        std::make_unique<FocusProbeWidget>(Rect{0, 0, 50, 50}));
+    auto* first = root.add_child(std::make_unique<FocusProbeWidget>(Rect{0, 0, 50, 50}));
+    auto* second = root.add_child(std::make_unique<FocusProbeWidget>(Rect{0, 0, 50, 50}));
     TestHost host(&root);
 
     host.advance_focus(true);

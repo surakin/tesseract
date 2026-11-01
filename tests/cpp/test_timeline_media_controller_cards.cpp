@@ -36,8 +36,14 @@ struct TmcCardsPlayer : tk::AudioPlayer
         playing = true;
         pos = 0;
     }
-    void pause() override { playing = false; }
-    void resume() override { playing = true; }
+    void pause() override
+    {
+        playing = false;
+    }
+    void resume() override
+    {
+        playing = true;
+    }
     void stop() override
     {
         playing = false;
@@ -48,12 +54,30 @@ struct TmcCardsPlayer : tk::AudioPlayer
         pos = ms;
         seeks.push_back(ms);
     }
-    void set_playback_rate(float r) override { rate = r; }
-    float playback_rate() const override { return rate; }
-    std::uint64_t position_ms() const override { return pos; }
-    std::uint64_t duration_ms() const override { return dur; }
-    bool is_playing() const override { return playing; }
-    bool reached_end() const override { return false; }
+    void set_playback_rate(float r) override
+    {
+        rate = r;
+    }
+    float playback_rate() const override
+    {
+        return rate;
+    }
+    std::uint64_t position_ms() const override
+    {
+        return pos;
+    }
+    std::uint64_t duration_ms() const override
+    {
+        return dur;
+    }
+    bool is_playing() const override
+    {
+        return playing;
+    }
+    bool reached_end() const override
+    {
+        return false;
+    }
 };
 
 MessageRowData tmc_row(const std::string& id, MessageRowData::Kind kind, std::uint64_t dur_ms = 0)
@@ -81,8 +105,16 @@ struct TmcCardsFixture
         auto p = std::make_unique<TmcCardsPlayer>();
         player = p.get();
         c.set_player(std::move(p));
-        c.set_bytes_provider([this](const std::string&) { return bytes; });
-        c.set_repaint([this] { ++repaints; });
+        c.set_bytes_provider(
+            [this](const std::string&)
+            {
+                return bytes;
+            });
+        c.set_repaint(
+            [this]
+            {
+                ++repaints;
+            });
     }
     tk::PaintCtx pc()
     {
@@ -132,8 +164,7 @@ TEST_CASE("Voice card paint records geometry used for scrubbing", "[media][voice
     CHECK(f.c.audio_geom_at("$v") == nullptr);
 }
 
-TEST_CASE("Voice scrub guards: no geometry, unknown duration, cache miss",
-          "[media][voice][cards]")
+TEST_CASE("Voice scrub guards: no geometry, unknown duration, cache miss", "[media][voice][cards]")
 {
     TmcCardsFixture f;
     auto row = tmc_row("$v", MessageRowData::Kind::Voice, 0);
@@ -184,8 +215,7 @@ TEST_CASE("Voice speed pill cycles 1x -> 1.5x -> 2x -> 1x", "[media][voice][card
     CHECK(f.player->rate == 1.0f);
 }
 
-TEST_CASE("Audio card paint, play/pause toggle and linear scrub",
-          "[media][audio][cards]")
+TEST_CASE("Audio card paint, play/pause toggle and linear scrub", "[media][audio][cards]")
 {
     TmcCardsFixture f;
     auto row = tmc_row("$a", MessageRowData::Kind::Audio, 30000);

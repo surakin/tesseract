@@ -97,14 +97,12 @@ private:
 class EventHandlerBridge
 {
 public:
-    explicit EventHandlerBridge(std::shared_ptr<HandlerSlot> slot)
-        : slot_(std::move(slot))
+    explicit EventHandlerBridge(std::shared_ptr<HandlerSlot> slot) : slot_(std::move(slot))
     {
     }
 
     /// Atomically reset the room's timeline to `snapshot` (oldest-first).
-    void on_timeline_reset(rust::Str room_id,
-                           const rust::Vec<TimelineEvent>& snapshot) const;
+    void on_timeline_reset(rust::Str room_id, const rust::Vec<TimelineEvent>& snapshot) const;
 
     /// Insert `event` at visible-index `index` in `room_id`'s timeline.
     void on_message_inserted(rust::Str room_id, std::uint64_t index,
@@ -118,14 +116,11 @@ public:
     void on_message_removed(rust::Str room_id, std::uint64_t index) const;
 
     /// Batch prepend: N events added at front (back-pagination). Oldest-first.
-    void on_messages_prepended(rust::Str room_id,
-                               const rust::Vec<TimelineEvent>& events) const;
+    void on_messages_prepended(rust::Str room_id, const rust::Vec<TimelineEvent>& events) const;
     /// Batch append: N events added at end. Oldest-first.
-    void on_messages_appended(rust::Str room_id,
-                              const rust::Vec<TimelineEvent>& events) const;
+    void on_messages_appended(rust::Str room_id, const rust::Vec<TimelineEvent>& events) const;
     /// Batch update: parallel arrays of visible-indices and replacement events.
-    void on_messages_updated_batch(rust::Str room_id,
-                                   const rust::Vec<std::uint64_t>& indices,
+    void on_messages_updated_batch(rust::Str room_id, const rust::Vec<std::uint64_t>& indices,
                                    const rust::Vec<TimelineEvent>& events) const;
 
     void on_rooms_updated(const rust::Vec<RoomInfo>& rooms) const;
@@ -134,10 +129,8 @@ public:
     void on_error(rust::Str context, rust::Str message, bool soft_logout) const;
     void on_session_refreshed(rust::Str session_json) const;
     void on_backup_progress(const BackupProgress& progress) const;
-    void on_enable_recovery_progress(std::uint8_t step,
-                                     rust::Str recovery_key,
-                                     std::uint32_t backed_up,
-                                     std::uint32_t total) const;
+    void on_enable_recovery_progress(std::uint8_t step, rust::Str recovery_key,
+                                     std::uint32_t backed_up, std::uint32_t total) const;
     void on_crypto_reset_result(bool ok, rust::Str message) const;
     void on_room_list_state(std::uint8_t state) const;
     void on_inflight_changed(std::uint32_t count) const;
@@ -146,98 +139,68 @@ public:
     void on_threads_updated(rust::Str room_id) const;
     void on_knock_requests_updated(rust::Str room_id) const;
     void on_bot_commands_updated(rust::Str room_id) const;
-    void on_media_ready(std::uint64_t request_id,
-                        rust::Slice<const uint8_t> bytes) const;
-    void on_media_chunk(std::uint64_t request_id,
-                        rust::Slice<const uint8_t> chunk,
-                        std::uint8_t status,
-                        std::uint64_t total_size) const;
-    void on_url_preview_ready(std::uint64_t request_id,
-                              rust::Str preview_json) const;
-    void on_gif_results(std::uint64_t request_id,
-                        const rust::Vec<GifResult>& results) const;
-    void on_gif_search_failed(std::uint64_t request_id,
-                              rust::Str message) const;
+    void on_media_ready(std::uint64_t request_id, rust::Slice<const uint8_t> bytes) const;
+    void on_media_chunk(std::uint64_t request_id, rust::Slice<const uint8_t> chunk,
+                        std::uint8_t status, std::uint64_t total_size) const;
+    void on_url_preview_ready(std::uint64_t request_id, rust::Str preview_json) const;
+    void on_gif_results(std::uint64_t request_id, const rust::Vec<GifResult>& results) const;
+    void on_gif_search_failed(std::uint64_t request_id, rust::Str message) const;
     void on_forward_done(std::uint64_t request_id) const;
     void on_forward_failed(std::uint64_t request_id, rust::Str message) const;
-    void on_space_child_summary_ready(std::uint64_t request_id,
-                                      rust::Str summary_json) const;
-    void on_server_info_ready(std::uint64_t request_id,
-                              const ServerInfoFfi& info) const;
-    void on_media_preview_config_ready(std::uint64_t request_id,
-                                       rust::Str config_json) const;
-    void on_room_preview_override_ready(std::uint64_t request_id,
-                                        rust::Str override_json) const;
-    void on_room_security_state_ready(
-        std::uint64_t request_id,
-        const RoomSecurityStateFfi& state) const;
-    void on_search_results(std::uint64_t request_id,
-                           const rust::Vec<SearchHit>& results) const;
-    void on_search_failed(std::uint64_t request_id,
-                          rust::Str message) const;
-    void on_room_directory_search_results(
-        std::uint64_t request_id,
-        const rust::Vec<RoomDirectoryEntryFfi>& entries,
-        bool reached_end) const;
-    void on_room_directory_search_failed(std::uint64_t request_id,
-                                         rust::Str message) const;
-    void on_paginate_result(std::uint64_t request_id, bool ok,
-                            bool reached_start, bool reached_end,
+    void on_space_child_summary_ready(std::uint64_t request_id, rust::Str summary_json) const;
+    void on_server_info_ready(std::uint64_t request_id, const ServerInfoFfi& info) const;
+    void on_media_preview_config_ready(std::uint64_t request_id, rust::Str config_json) const;
+    void on_room_preview_override_ready(std::uint64_t request_id, rust::Str override_json) const;
+    void on_room_security_state_ready(std::uint64_t request_id,
+                                      const RoomSecurityStateFfi& state) const;
+    void on_search_results(std::uint64_t request_id, const rust::Vec<SearchHit>& results) const;
+    void on_search_failed(std::uint64_t request_id, rust::Str message) const;
+    void on_room_directory_search_results(std::uint64_t request_id,
+                                          const rust::Vec<RoomDirectoryEntryFfi>& entries,
+                                          bool reached_end) const;
+    void on_room_directory_search_failed(std::uint64_t request_id, rust::Str message) const;
+    void on_paginate_result(std::uint64_t request_id, bool ok, bool reached_start, bool reached_end,
                             rust::Str message) const;
-    void on_media_view_paginate_result(std::uint64_t request_id, bool ok,
-                                       bool reached_start,
-                                       std::uint64_t media_count,
-                                       rust::Str message) const;
-    void on_room_media_page(std::uint64_t request_id,
-                            const rust::Vec<MediaIndexRowFfi>& rows,
+    void on_media_view_paginate_result(std::uint64_t request_id, bool ok, bool reached_start,
+                                       std::uint64_t media_count, rust::Str message) const;
+    void on_room_media_page(std::uint64_t request_id, const rust::Vec<MediaIndexRowFfi>& rows,
                             bool reached_db_end, std::uint64_t total) const;
     void on_room_export_progress(const RoomExportProgressFfi& progress) const;
-    void on_room_export_complete(std::uint64_t request_id, bool ok,
-                                 bool cancelled, bool reached_start,
-                                 rust::Str out_path,
-                                 std::uint64_t events_written,
-                                 std::uint64_t bytes_written,
+    void on_room_export_complete(std::uint64_t request_id, bool ok, bool cancelled,
+                                 bool reached_start, rust::Str out_path,
+                                 std::uint64_t events_written, std::uint64_t bytes_written,
                                  rust::Str message) const;
-    void on_room_action_complete(std::uint64_t request_id, bool ok,
-                                 rust::Str joined_room_id,
+    void on_room_action_complete(std::uint64_t request_id, bool ok, rust::Str joined_room_id,
                                  rust::Str message) const;
-    void on_upload_complete(std::uint64_t request_id, bool ok,
-                            rust::Str message) const;
-    void on_upload_progress(std::uint64_t request_id,
-                            std::uint64_t current_bytes,
+    void on_upload_complete(std::uint64_t request_id, bool ok, rust::Str message) const;
+    void on_upload_progress(std::uint64_t request_id, std::uint64_t current_bytes,
                             std::uint64_t total_bytes) const;
-    void on_profile_field_result(std::uint64_t request_id, rust::Str key,
-                                 bool ok, rust::Str message) const;
-    void on_extended_profile_ready(std::uint64_t request_id,
-                                   rust::Str profile_json) const;
+    void on_profile_field_result(std::uint64_t request_id, rust::Str key, bool ok,
+                                 rust::Str message) const;
+    void on_extended_profile_ready(std::uint64_t request_id, rust::Str profile_json) const;
+    void on_mutual_rooms_ready(std::uint64_t request_id, rust::Str json) const;
     void on_account_prefs_updated(rust::Str json) const;
     void on_media_preview_config_updated(rust::Str json) const;
-    void on_own_profile_changed(bool has_display_name, rust::Str display_name,
-                                bool has_avatar_url,
+    void on_own_profile_changed(bool has_display_name, rust::Str display_name, bool has_avatar_url,
                                 rust::Str avatar_url) const;
-    void on_room_media_preview_override_updated(rust::Str room_id,
-                                                rust::Str json) const;
-    void on_notification(rust::Str room_id, rust::Str room_name,
-                         rust::Str sender, rust::Str body, bool is_mention,
-                         rust::Slice<const uint8_t> avatar_bytes,
-                         rust::Slice<const uint8_t> image_bytes,
-                         rust::Str event_id) const;
+    void on_room_media_preview_override_updated(rust::Str room_id, rust::Str json) const;
+    void on_notification(rust::Str room_id, rust::Str room_name, rust::Str sender, rust::Str body,
+                         bool is_mention, rust::Slice<const uint8_t> avatar_bytes,
+                         rust::Slice<const uint8_t> image_bytes, rust::Str event_id) const;
 
-    void on_verification_request(rust::Str flow_id, rust::Str user_id,
-                                 rust::Str device_id, bool incoming) const;
+    void on_verification_request(rust::Str flow_id, rust::Str user_id, rust::Str device_id,
+                                 bool incoming) const;
     void on_sas_ready(rust::Str flow_id, const VerificationSas& sas) const;
     void on_verification_done(rust::Str flow_id) const;
     void on_verification_cancelled(rust::Str flow_id, rust::Str cancel_code) const;
     void on_verification_state_changed(bool verified) const;
     void on_recovery_state_changed(std::uint8_t state) const;
 
-    void on_typing_changed(rust::Str room_id,
-                           const rust::Vec<rust::String>& user_ids) const;
+    void on_typing_changed(rust::Str room_id, const rust::Vec<rust::String>& user_ids) const;
 
     void on_user_identities_changed(const rust::Vec<rust::String>& user_ids) const;
 
-    void on_identity_status_changed(rust::Str room_id,
-                                    const rust::Vec<rust::String>& user_ids,
+    void on_identity_status_changed(rust::Str room_id, const rust::Vec<rust::String>& user_ids,
                                     const rust::Vec<rust::String>& display_names,
                                     const rust::Vec<std::uint8_t>& kinds) const;
 
@@ -247,40 +210,32 @@ public:
     /// above with an additional `thread_root` parameter.
     void on_thread_reset(rust::Str room_id, rust::Str thread_root,
                          const rust::Vec<TimelineEvent>& snapshot) const;
-    void on_thread_inserted(rust::Str room_id, rust::Str thread_root,
-                            std::uint64_t index, const TimelineEvent& ev) const;
-    void on_thread_updated(rust::Str room_id, rust::Str thread_root,
-                           std::uint64_t index, const TimelineEvent& ev) const;
-    void on_thread_removed(rust::Str room_id, rust::Str thread_root,
-                           std::uint64_t index) const;
+    void on_thread_inserted(rust::Str room_id, rust::Str thread_root, std::uint64_t index,
+                            const TimelineEvent& ev) const;
+    void on_thread_updated(rust::Str room_id, rust::Str thread_root, std::uint64_t index,
+                           const TimelineEvent& ev) const;
+    void on_thread_removed(rust::Str room_id, rust::Str thread_root, std::uint64_t index) const;
     void on_thread_messages_prepended(rust::Str room_id, rust::Str thread_root,
                                       const rust::Vec<TimelineEvent>& events) const;
     void on_thread_messages_appended(rust::Str room_id, rust::Str thread_root,
                                      const rust::Vec<TimelineEvent>& events) const;
 
     // MatrixRTC call event callbacks.
-    void on_rtc_invitation(rust::Str room_id, rust::Str slot_id,
-                            rust::Str caller_user_id,
-                            rust::Str call_intent,
-                            std::uint64_t lifetime_ms,
-                            rust::Str notification_event_id) const;
-    void on_rtc_participant_joined(std::uint64_t session_id,
-                                    const RtcParticipantInfo& info) const;
-    void on_rtc_participant_left(std::uint64_t session_id,
-                                  rust::Str participant_id) const;
-    void on_rtc_participant_updated(std::uint64_t session_id,
-                                     const RtcParticipantInfo& info) const;
+    void on_rtc_invitation(rust::Str room_id, rust::Str slot_id, rust::Str caller_user_id,
+                           rust::Str call_intent, std::uint64_t lifetime_ms,
+                           rust::Str notification_event_id) const;
+    void on_rtc_participant_joined(std::uint64_t session_id, const RtcParticipantInfo& info) const;
+    void on_rtc_participant_left(std::uint64_t session_id, rust::Str participant_id) const;
+    void on_rtc_participant_updated(std::uint64_t session_id, const RtcParticipantInfo& info) const;
     void on_rtc_session_ended(std::uint64_t session_id, rust::Str reason) const;
-    void on_rtc_video_frame(std::uint64_t session_id, rust::Str participant_id,
+    void on_rtc_video_frame(std::uint64_t session_id, rust::Str participant_id, std::uint32_t width,
+                            std::uint32_t height, rust::Slice<const uint8_t> rgba) const;
+    void on_rtc_screen_frame(std::uint64_t session_id, rust::Str participant_id,
                              std::uint32_t width, std::uint32_t height,
                              rust::Slice<const uint8_t> rgba) const;
-    void on_rtc_screen_frame(std::uint64_t session_id, rust::Str participant_id,
-                              std::uint32_t width, std::uint32_t height,
-                              rust::Slice<const uint8_t> rgba) const;
     void on_rtc_audio_frame(std::uint64_t session_id, rust::Str participant_id,
-                             rust::Slice<const int16_t> samples,
-                             std::uint32_t sample_rate,
-                             std::uint32_t num_channels) const;
+                            rust::Slice<const int16_t> samples, std::uint32_t sample_rate,
+                            std::uint32_t num_channels) const;
 
 private:
     // Shared, mutex-guarded handler slot. `const`: the shared_ptr is set once

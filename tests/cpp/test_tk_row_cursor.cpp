@@ -32,9 +32,18 @@ public:
     std::vector<RcRow> rows;
     std::vector<std::size_t> activated;
 
-    Size measure(LayoutCtx&, Size c) override { return c; }
-    bool focusable() const override { return true; }
-    std::size_t access_row_count() const override { return rows.size(); }
+    Size measure(LayoutCtx&, Size c) override
+    {
+        return c;
+    }
+    bool focusable() const override
+    {
+        return true;
+    }
+    std::size_t access_row_count() const override
+    {
+        return rows.size();
+    }
     Role access_role_for_widget_row(std::size_t i) const override
     {
         return rows[i].role;
@@ -67,11 +76,26 @@ public:
     std::vector<RcRow> rows;
     std::vector<Rect> scrolled_to;
 
-    Size measure(LayoutCtx&, Size c) override { return c; }
-    bool focusable() const override { return true; }
-    float content_height() const override { return 1000.0f; }
-    void scroll_into_view(Rect r) override { scrolled_to.push_back(r); }
-    std::size_t access_row_count() const override { return rows.size(); }
+    Size measure(LayoutCtx&, Size c) override
+    {
+        return c;
+    }
+    bool focusable() const override
+    {
+        return true;
+    }
+    float content_height() const override
+    {
+        return 1000.0f;
+    }
+    void scroll_into_view(Rect r) override
+    {
+        scrolled_to.push_back(r);
+    }
+    std::size_t access_row_count() const override
+    {
+        return rows.size();
+    }
     Role access_role_for_widget_row(std::size_t i) const override
     {
         return rows[i].role;
@@ -96,19 +120,18 @@ KeyEvent rc_key(Key k)
 std::vector<RcRow> sample_rows()
 {
     return {
-        {Role::StaticText, "heading", false, {0, 0, 100, 20}},    // not a stop
-        {Role::Button, "A", false, {0, 20, 100, 20}},        // stop
-        {Role::Button, "B", true, {0, 40, 100, 20}},         // disabled
-        {Role::Link, "C", false, {0, 60, 100, 20}},          // stop
-        {Role::Button, "offscreen", false, {0, 80, 0, 0}},   // empty rect
-        {Role::CheckBox, "D", false, {0, 100, 100, 20}},     // stop
+        {Role::StaticText, "heading", false, {0, 0, 100, 20}}, // not a stop
+        {Role::Button, "A", false, {0, 20, 100, 20}},          // stop
+        {Role::Button, "B", true, {0, 40, 100, 20}},           // disabled
+        {Role::Link, "C", false, {0, 60, 100, 20}},            // stop
+        {Role::Button, "offscreen", false, {0, 80, 0, 0}},     // empty rect
+        {Role::CheckBox, "D", false, {0, 100, 100, 20}},       // stop
     };
 }
 
 } // namespace
 
-TEST_CASE("RowKeyboardCursor row_is_stop and has_stops classify rows",
-          "[tk][row_cursor]")
+TEST_CASE("RowKeyboardCursor row_is_stop and has_stops classify rows", "[tk][row_cursor]")
 {
     StubHost host;
     auto o = create_root_widget<RcOwner>(&host);
@@ -122,8 +145,7 @@ TEST_CASE("RowKeyboardCursor row_is_stop and has_stops classify rows",
     CHECK(RowKeyboardCursor::row_is_stop(*o, 5));
     CHECK(RowKeyboardCursor::has_stops(*o));
 
-    for (Role r : {Role::RadioButton, Role::Switch, Role::MenuItem,
-                   Role::GridCell})
+    for (Role r : {Role::RadioButton, Role::Switch, Role::MenuItem, Role::GridCell})
     {
         o->rows = {{r, "x", false, {0, 0, 10, 10}}};
         CHECK(RowKeyboardCursor::has_stops(*o));
@@ -188,8 +210,7 @@ TEST_CASE("RowKeyboardCursor arrow keys move between stops and swallow at the "
     CHECK(c.index() == 5);
 }
 
-TEST_CASE("RowKeyboardCursor Home/End jump and Enter/Space activate",
-          "[tk][row_cursor]")
+TEST_CASE("RowKeyboardCursor Home/End jump and Enter/Space activate", "[tk][row_cursor]")
 {
     StubHost host;
     auto o = create_root_widget<RcOwner>(&host);
@@ -237,8 +258,7 @@ TEST_CASE("RowKeyboardCursor Enter with no stops is not consumed; a stale "
     CHECK_FALSE(RowKeyboardCursor::has_stops(*o));
 }
 
-TEST_CASE("RowKeyboardCursor scrolls a ScrollableBase owner to the landed row",
-          "[tk][row_cursor]")
+TEST_CASE("RowKeyboardCursor scrolls a ScrollableBase owner to the landed row", "[tk][row_cursor]")
 {
     StubHost host;
     auto o = create_root_widget<RcScroller>(&host);
@@ -250,8 +270,7 @@ TEST_CASE("RowKeyboardCursor scrolls a ScrollableBase owner to the landed row",
     CHECK(o->scrolled_to[0].y == 500);
 }
 
-TEST_CASE("RowKeyboardCursor paint_ring targets the row or the owner",
-          "[tk][row_cursor]")
+TEST_CASE("RowKeyboardCursor paint_ring targets the row or the owner", "[tk][row_cursor]")
 {
     StubHost host;
     auto o = create_root_widget<RcOwner>(&host);

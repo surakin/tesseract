@@ -21,11 +21,16 @@ QGuiApplication* g_app()
     static int argc = 1;
     static char name[] = "tesseract_tests";
     static char* argv[] = {name, nullptr};
-    static QGuiApplication* app = []() -> QGuiApplication* {
+    static QGuiApplication* app = []() -> QGuiApplication*
+    {
         if (QCoreApplication::instance())
+        {
             return static_cast<QGuiApplication*>(QCoreApplication::instance());
+        }
         if (!qEnvironmentVariableIsSet("QT_QPA_PLATFORM"))
+        {
             qputenv("QT_QPA_PLATFORM", "offscreen");
+        }
         return new QGuiApplication(argc, argv);
     }();
     return app;
@@ -36,8 +41,7 @@ class QtTestSurface : public TestSurface
 public:
     QtTestSurface(int w, int h)
         : img_(w, h, QImage::Format_ARGB32_Premultiplied), painter_(&img_),
-          factory_(tk::qt6::make_factory()),
-          canvas_(tk::qt6::make_canvas(painter_))
+          factory_(tk::qt6::make_factory()), canvas_(tk::qt6::make_canvas(painter_))
     {
         img_.fill(Qt::white);
     }
@@ -66,10 +70,9 @@ public:
         }
         QImage unpremul = img_.convertToFormat(QImage::Format_ARGB32);
         QRgb px = unpremul.pixel(x, y);
-        return tk::Color::rgba(static_cast<std::uint8_t>(qRed(px)),
-                               static_cast<std::uint8_t>(qGreen(px)),
-                               static_cast<std::uint8_t>(qBlue(px)),
-                               static_cast<std::uint8_t>(qAlpha(px)));
+        return tk::Color::rgba(
+            static_cast<std::uint8_t>(qRed(px)), static_cast<std::uint8_t>(qGreen(px)),
+            static_cast<std::uint8_t>(qBlue(px)), static_cast<std::uint8_t>(qAlpha(px)));
     }
 
     int width() const override

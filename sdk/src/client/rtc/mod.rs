@@ -5,11 +5,18 @@
 
 pub mod audio_mix;
 pub mod e2ee;
-pub mod members;
+pub mod identity;
+pub mod invites;
+pub mod key_rotation;
 pub mod livekit_room;
+pub mod members;
+pub mod model;
+pub mod mrtc_membership;
 pub mod session;
 pub mod sfu_set;
 pub mod signaling;
+pub mod slots;
+pub mod sticky;
 pub mod transport;
 
 pub use session::{start_call, RtcSession};
@@ -71,8 +78,9 @@ pub trait RtcEventSink: Send + Sync + 'static {
 /// the first account's sink, so later accounts (and the same account after
 /// a restart) received no call events.
 fn sinks() -> &'static std::sync::Mutex<std::collections::HashMap<String, Arc<dyn RtcEventSink>>> {
-    static SINKS: OnceLock<std::sync::Mutex<std::collections::HashMap<String, Arc<dyn RtcEventSink>>>> =
-        OnceLock::new();
+    static SINKS: OnceLock<
+        std::sync::Mutex<std::collections::HashMap<String, Arc<dyn RtcEventSink>>>,
+    > = OnceLock::new();
     SINKS.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
 }
 
@@ -128,8 +136,14 @@ mod sink_registry_tests {
         let bob: Arc<dyn RtcEventSink> = Arc::new(Null);
         register_sink("@alice:registry.test", alice.clone());
         register_sink("@bob:registry.test", bob.clone());
-        assert!(Arc::ptr_eq(&sink_for_user("@alice:registry.test").unwrap(), &alice));
-        assert!(Arc::ptr_eq(&sink_for_user("@bob:registry.test").unwrap(), &bob));
+        assert!(Arc::ptr_eq(
+            &sink_for_user("@alice:registry.test").unwrap(),
+            &alice
+        ));
+        assert!(Arc::ptr_eq(
+            &sink_for_user("@bob:registry.test").unwrap(),
+            &bob
+        ));
 
         unregister_sink("@alice:registry.test");
         assert!(sink_for_user("@alice:registry.test").is_none());

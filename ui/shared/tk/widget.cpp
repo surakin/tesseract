@@ -1,6 +1,6 @@
 #include "widget.h"
 
-#include "host.h" // Host::queue_for_deletion, called via RootWidget::queue_for_deletion
+#include "host.h"            // Host::queue_for_deletion, called via RootWidget::queue_for_deletion
 #include "scrollable_base.h" // ScrollableBase, for scroll_widget_into_view()'s dynamic_cast
 
 #include <tesseract/visual.h>
@@ -60,20 +60,28 @@ void RootWidget::apply_fonts_to_all_roots()
     {
         r->apply_fonts();
         if (Host* h = r->host())
+        {
             h->mark_needs_relayout();
+        }
     }
 }
 
 void paint_native_drag_hover_highlight(PaintCtx& ctx, Rect rect)
 {
-    constexpr float kInset  = 4.0f;
+    constexpr float kInset = 4.0f;
     constexpr float kRadius = tesseract::visual::kRadiusMD;
-    const Rect area{rect.x + kInset, rect.y + kInset,
-                    std::max(0.0f, rect.w - 2.0f * kInset),
+    const Rect area{rect.x + kInset, rect.y + kInset, std::max(0.0f, rect.w - 2.0f * kInset),
                     std::max(0.0f, rect.h - 2.0f * kInset)};
     if (area.empty())
+    {
         return;
+    }
     const Color accent = ctx.theme.palette.accent;
+    if (ctx.theme.high_contrast)
+    {
+        ctx.canvas.stroke_rounded_rect(area, kRadius, accent, 2.0f);
+        return;
+    }
     ctx.canvas.fill_rounded_rect(area, kRadius, accent.with_alpha(28));
     ctx.canvas.stroke_rounded_rect(area, kRadius, accent.with_alpha(192), 2.0f);
 }
@@ -118,7 +126,9 @@ float Widget::hover_fade()
     if (fade_state.still_animating())
     {
         if (auto* h = host())
+        {
             h->request_repaint();
+        }
     }
     return fade;
 }
@@ -126,15 +136,21 @@ float Widget::hover_fade()
 void Widget::set_hovered(bool h)
 {
     if (h == hovered_)
+    {
         return;
+    }
     hovered_ = h;
     if (!hover_data_)
+    {
         return;
+    }
     // Copy: a callback may reconfigure or destroy this widget.
     if (h)
     {
         if (auto cb = hover_data_->on_enter)
+        {
             cb();
+        }
     }
     else if (auto cb = hover_data_->on_leave)
     {
@@ -145,7 +161,9 @@ void Widget::set_hovered(bool h)
 void Widget::notify_host_input_state_changed_()
 {
     if (host_)
+    {
         host_->revalidate_hover_feedback_();
+    }
 }
 
 void Widget::click()
@@ -163,7 +181,9 @@ void Widget::click()
 bool Widget::on_pointer_down(Point /*local*/)
 {
     if (!enabled_ || !clickable())
+    {
         return false;
+    }
     pressed_ = true;
     return true;
 }
@@ -173,7 +193,9 @@ void Widget::on_pointer_up(Point /*local*/, bool inside_self)
     const bool was_pressed = pressed_;
     pressed_ = false;
     if (was_pressed && inside_self)
+    {
         click();
+    }
 }
 
 bool Widget::on_key_down(const KeyEvent& event)
@@ -190,9 +212,10 @@ bool Widget::on_key_down(const KeyEvent& event)
 void Widget::paint_hover_fill(PaintCtx& ctx)
 {
     if (!hoverable_ || !hover_data_ ||
-        (hover_data_->style != HoverStyle::Fill &&
-         hover_data_->style != HoverStyle::Ring))
+        (hover_data_->style != HoverStyle::Fill && hover_data_->style != HoverStyle::Ring))
+    {
         return;
+    }
     const HoverStyle style = hover_data_->style;
     const float radius = hover_data_->radius;
     const auto& pal = ctx.theme.palette;
@@ -203,8 +226,7 @@ void Widget::paint_hover_fill(PaintCtx& ctx)
         if (amount > 0.0f)
         {
             ctx.canvas.stroke_rounded_rect(
-                bounds_, radius,
-                pal.accent.with_alpha(static_cast<std::uint8_t>(255.0f * amount)),
+                bounds_, radius, pal.accent.with_alpha(static_cast<std::uint8_t>(255.0f * amount)),
                 2.0f);
         }
         return;
@@ -216,8 +238,7 @@ void Widget::paint_hover_fill(PaintCtx& ctx)
     else if (enabled_ && fade > 0.0f)
     {
         ctx.canvas.fill_rounded_rect(
-            bounds_, radius,
-            Color::lerp(pal.subtle_hover.with_alpha(0), pal.subtle_hover, fade));
+            bounds_, radius, Color::lerp(pal.subtle_hover.with_alpha(0), pal.subtle_hover, fade));
     }
 }
 
@@ -256,8 +277,8 @@ void Widget::set_enabled(bool enabled)
 
 bool Widget::contains_world(Point world) const
 {
-    return world.x >= bounds_.x && world.y >= bounds_.y &&
-           world.x < bounds_.x + bounds_.w && world.y < bounds_.y + bounds_.h;
+    return world.x >= bounds_.x && world.y >= bounds_.y && world.x < bounds_.x + bounds_.w &&
+           world.y < bounds_.y + bounds_.h;
 }
 
 // Snapshot child raw pointers (topmost-first) before dispatching. A pointer
@@ -462,54 +483,76 @@ bool reading_order_less(const Rect& a, const Rect& b)
 static void collect_focus_order(Widget* w, std::vector<Widget*>& out)
 {
     if (!w->visible() || !w->enabled())
+    {
         return;
+    }
     if (w->focusable())
+    {
         out.push_back(w);
+    }
 
     std::vector<Widget*> kids;
     kids.reserve(w->children().size());
     for (auto& ch : w->children())
+    {
         kids.push_back(ch.get());
+    }
     std::stable_sort(kids.begin(), kids.end(),
                      [](Widget* a, Widget* b)
-                     { return reading_order_less(a->bounds(), b->bounds()); });
+                     {
+                         return reading_order_less(a->bounds(), b->bounds());
+                     });
 
     for (Widget* ch : kids)
+    {
         collect_focus_order(ch, out);
+    }
 }
 
 Widget* next_focusable(Widget* root, Widget* current, bool forward)
 {
     if (!root)
+    {
         return nullptr;
+    }
 
     std::vector<Widget*> order;
     collect_focus_order(root, order);
     if (order.empty())
+    {
         return nullptr;
+    }
 
     if (!current)
+    {
         return forward ? order.front() : order.back();
+    }
 
     auto it = std::find(order.begin(), order.end(), current);
     if (it == order.end())
+    {
         return forward ? order.front() : order.back();
+    }
 
-    const std::size_t n   = order.size();
-    std::size_t       idx = static_cast<std::size_t>(it - order.begin());
-    idx                   = forward ? (idx + 1) % n : (idx + n - 1) % n;
+    const std::size_t n = order.size();
+    std::size_t idx = static_cast<std::size_t>(it - order.begin());
+    idx = forward ? (idx + 1) % n : (idx + n - 1) % n;
     return order[idx];
 }
 
 void scroll_widget_into_view(Widget* w)
 {
     if (!w)
+    {
         return;
+    }
     const Rect target = w->bounds();
     for (Widget* p = w->parent(); p; p = p->parent())
     {
         if (auto* region = dynamic_cast<ScrollableBase*>(p))
+        {
             region->scroll_into_view(target);
+        }
     }
 }
 
@@ -573,7 +616,12 @@ bool Widget::dispatch_wheel(Point world, float dx, float dy, bool is_touchpad)
         }
     }
     Point local{world.x - bounds_.x, world.y - bounds_.y};
-    return on_wheel(local, dx, dy, is_touchpad);
+    const bool consumed = on_wheel(local, dx, dy, is_touchpad);
+    if (consumed && host_)
+    {
+        host_->note_wheel_consumer_(this);
+    }
+    return consumed;
 }
 
 Widget* Widget::hit_test(Point world)
@@ -626,7 +674,9 @@ void Widget::remove_child(Widget* child)
             // (Host's deferred-deletion queue) instead of destroying
             // `removed` right here.
             if (RootWidget* rw = get_root_widget())
+            {
                 rw->queue_for_deletion(std::move(removed));
+            }
             mark_relayout_needed_();
             return;
         }
@@ -639,7 +689,9 @@ void Widget::remove_child(Widget* child)
 void Widget::clear_children()
 {
     if (children_.empty())
+    {
         return;
+    }
 
     RootWidget* rw = get_root_widget();
 
@@ -648,7 +700,9 @@ void Widget::clear_children()
         child->parent_ = nullptr;
         child->apply_parent_visible_(true); // detached — see remove_child()
         if (rw)
+        {
             rw->queue_for_deletion(std::move(child));
+        }
     }
     children_.clear();
     mark_relayout_needed_();
@@ -656,13 +710,19 @@ void Widget::clear_children()
 
 void Widget::mark_relayout_needed_()
 {
-    if (host_) host_->mark_needs_relayout();
+    if (host_)
+    {
+        host_->mark_needs_relayout();
+    }
 }
 
 RootWidget* Widget::get_root_widget()
 {
     Widget* root = this;
-    while (root->parent_) root = root->parent_;
+    while (root->parent_)
+    {
+        root = root->parent_;
+    }
     return dynamic_cast<RootWidget*>(root);
 }
 

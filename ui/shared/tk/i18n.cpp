@@ -44,9 +44,7 @@ uint32_t read_u32(const uint8_t* p, bool swap)
     std::memcpy(&v, p, 4);
     if (swap)
     {
-        v = ((v & 0x000000FFU) << 24) |
-            ((v & 0x0000FF00U) << 8)  |
-            ((v & 0x00FF0000U) >> 8)  |
+        v = ((v & 0x000000FFU) << 24) | ((v & 0x0000FF00U) << 8) | ((v & 0x00FF0000U) >> 8) |
             ((v & 0xFF000000U) >> 24);
     }
     return v;
@@ -72,9 +70,9 @@ uint32_t read_u32(const uint8_t* p, bool swap)
 // from a long-lived catalog member (g_catalog.plural_expr_).
 struct PluralExpr
 {
-    const char* src_;   // original expression string
-    const char* pos_;   // current parse position
-    long n_;            // value of 'n' during evaluation
+    const char* src_; // original expression string
+    const char* pos_; // current parse position
+    long n_;          // value of 'n' during evaluation
 
     explicit PluralExpr(const std::string& expr, long n)
         : src_(expr.c_str()), pos_(expr.c_str()), n_(n)
@@ -412,9 +410,8 @@ void parse_plural_forms(Catalog& cat, const std::string& metadata)
         {
             std::string expr = value.substr(pe_pos + 7); // skip "plural="
             // Trim trailing whitespace, semicolons, newlines
-            while (!expr.empty() &&
-                   (expr.back() == ';' || expr.back() == '\n' ||
-                    expr.back() == '\r' || expr.back() == ' '))
+            while (!expr.empty() && (expr.back() == ';' || expr.back() == '\n' ||
+                                     expr.back() == '\r' || expr.back() == ' '))
             {
                 expr.pop_back();
             }
@@ -465,8 +462,8 @@ bool load_mo(Catalog& cat, const std::string& path)
     {
         return false;
     }
-    uint32_t num_strings  = read_u32(buf + 8,  swap);
-    uint32_t orig_offset  = read_u32(buf + 12, swap);
+    uint32_t num_strings = read_u32(buf + 8, swap);
+    uint32_t orig_offset = read_u32(buf + 12, swap);
     uint32_t trans_offset = read_u32(buf + 16, swap);
 
     // Sanity: each table entry is 8 bytes (length + offset)
@@ -478,9 +475,9 @@ bool load_mo(Catalog& cat, const std::string& path)
 
     for (uint32_t i = 0; i < num_strings; ++i)
     {
-        uint32_t orig_len  = read_u32(buf + orig_offset  + i * 8,     swap);
-        uint32_t orig_off  = read_u32(buf + orig_offset  + i * 8 + 4, swap);
-        uint32_t trans_len = read_u32(buf + trans_offset + i * 8,     swap);
+        uint32_t orig_len = read_u32(buf + orig_offset + i * 8, swap);
+        uint32_t orig_off = read_u32(buf + orig_offset + i * 8 + 4, swap);
+        uint32_t trans_len = read_u32(buf + trans_offset + i * 8, swap);
         uint32_t trans_off = read_u32(buf + trans_offset + i * 8 + 4, swap);
 
         if ((uint64_t)orig_off + orig_len > size || (uint64_t)trans_off + trans_len > size)
@@ -488,7 +485,7 @@ bool load_mo(Catalog& cat, const std::string& path)
             continue;
         }
 
-        const char* orig_str  = reinterpret_cast<const char*>(buf + orig_off);
+        const char* orig_str = reinterpret_cast<const char*>(buf + orig_off);
         const char* trans_str = reinterpret_cast<const char*>(buf + trans_off);
 
         if (orig_len == 0)
@@ -501,8 +498,7 @@ bool load_mo(Catalog& cat, const std::string& path)
 
         // Check for plural entry: msgid contains a NUL separator
         // (sing\0plural form)
-        const char* nul = static_cast<const char*>(
-            std::memchr(orig_str, '\0', orig_len));
+        const char* nul = static_cast<const char*>(std::memchr(orig_str, '\0', orig_len));
         if (nul != nullptr)
         {
             // Plural entry
@@ -519,7 +515,7 @@ bool load_mo(Catalog& cat, const std::string& path)
                 {
                     break;
                 }
-                fp        += form_len + 1;
+                fp += form_len + 1;
                 remaining -= form_len + 1;
             }
             if (!forms.empty())
@@ -626,9 +622,13 @@ std::string trn(const char* sing, const char* plur, long n)
         {
             long form = g_catalog.pick_plural_form(n);
             if (forms.empty())
+            {
                 return sing;
+            }
             if (static_cast<std::size_t>(form) >= forms.size())
+            {
                 form = static_cast<long>(forms.size()) - 1;
+            }
             return forms[static_cast<std::size_t>(form)];
         }
     }
@@ -641,19 +641,18 @@ namespace
 {
 
 constexpr const char* kMonthNames[12] = {
-    N_("January"), N_("February"), N_("March"),     N_("April"),
-    N_("May"),     N_("June"),     N_("July"),      N_("August"),
-    N_("September"), N_("October"), N_("November"), N_("December")};
-constexpr const char* kMonthAbbrs[12] = {
-    N_("Jan"), N_("Feb"), N_("Mar"), N_("Apr"), N_("May"), N_("Jun"),
-    N_("Jul"), N_("Aug"), N_("Sep"), N_("Oct"), N_("Nov"), N_("Dec")};
-constexpr const char* kWeekdayNames[7] = {
-    N_("Sunday"), N_("Monday"), N_("Tuesday"), N_("Wednesday"),
-    N_("Thursday"), N_("Friday"), N_("Saturday")};
-constexpr const char* kWeekdayAbbrs[7] = {
-    N_("Sun"), N_("Mon"), N_("Tue"), N_("Wed"), N_("Thu"), N_("Fri"), N_("Sat")};
-constexpr const char* kWeekdayInitials[7] = {
-    N_("Su"), N_("Mo"), N_("Tu"), N_("We"), N_("Th"), N_("Fr"), N_("Sa")};
+    N_("January"), N_("February"), N_("March"),     N_("April"),   N_("May"),      N_("June"),
+    N_("July"),    N_("August"),   N_("September"), N_("October"), N_("November"), N_("December")};
+constexpr const char* kMonthAbbrs[12] = {N_("Jan"), N_("Feb"), N_("Mar"), N_("Apr"),
+                                         N_("May"), N_("Jun"), N_("Jul"), N_("Aug"),
+                                         N_("Sep"), N_("Oct"), N_("Nov"), N_("Dec")};
+constexpr const char* kWeekdayNames[7] = {N_("Sunday"),    N_("Monday"),   N_("Tuesday"),
+                                          N_("Wednesday"), N_("Thursday"), N_("Friday"),
+                                          N_("Saturday")};
+constexpr const char* kWeekdayAbbrs[7] = {N_("Sun"), N_("Mon"), N_("Tue"), N_("Wed"),
+                                          N_("Thu"), N_("Fri"), N_("Sat")};
+constexpr const char* kWeekdayInitials[7] = {N_("Su"), N_("Mo"), N_("Tu"), N_("We"),
+                                             N_("Th"), N_("Fr"), N_("Sa")};
 
 int clamp_index(int i, int n)
 {
@@ -689,19 +688,33 @@ std::string format_date(const std::tm& tm, std::string_view pattern)
         }
         switch (pattern[j])
         {
-        case 'A': out += tr(kWeekdayNames[clamp_index(tm.tm_wday, 7)]); break;
-        case 'a': out += tr(kWeekdayAbbrs[clamp_index(tm.tm_wday, 7)]); break;
-        case 'B': out += tr(kMonthNames[clamp_index(tm.tm_mon, 12)]); break;
-        case 'b': out += tr(kMonthAbbrs[clamp_index(tm.tm_mon, 12)]); break;
+        case 'A':
+            out += tr(kWeekdayNames[clamp_index(tm.tm_wday, 7)]);
+            break;
+        case 'a':
+            out += tr(kWeekdayAbbrs[clamp_index(tm.tm_wday, 7)]);
+            break;
+        case 'B':
+            out += tr(kMonthNames[clamp_index(tm.tm_mon, 12)]);
+            break;
+        case 'b':
+            out += tr(kMonthAbbrs[clamp_index(tm.tm_mon, 12)]);
+            break;
         case 'd':
             out += no_pad ? std::to_string(tm.tm_mday) : two_digits(tm.tm_mday);
             break;
         case 'm':
             out += no_pad ? std::to_string(tm.tm_mon + 1) : two_digits(tm.tm_mon + 1);
             break;
-        case 'Y': out += std::to_string(tm.tm_year + 1900); break;
-        case 'y': out += two_digits((tm.tm_year + 1900) % 100); break;
-        case '%': out += '%'; break;
+        case 'Y':
+            out += std::to_string(tm.tm_year + 1900);
+            break;
+        case 'y':
+            out += two_digits((tm.tm_year + 1900) % 100);
+            break;
+        case '%':
+            out += '%';
+            break;
         default:
             // Unknown directive: copy it through untouched.
             out.append(pattern.substr(i, j - i + 1));
@@ -720,11 +733,17 @@ std::string weekday_initials(int wday)
 std::string format_size(std::uint64_t bytes)
 {
     if (bytes < 1024)
+    {
         return trf(tr("{0} B"), {std::to_string(bytes)});
+    }
     if (bytes < 1024 * 1024)
+    {
         return trf(tr("{0} KB"), {std::to_string(bytes / 1024)});
+    }
     if (bytes < 1024ull * 1024 * 1024)
+    {
         return trf(tr("{0} MB"), {std::to_string(bytes / (1024 * 1024))});
+    }
     return trf(tr("{0} GB"), {std::to_string(bytes / (1024ull * 1024 * 1024))});
 }
 

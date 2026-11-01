@@ -12,22 +12,22 @@ namespace tk
 {
 class CanvasFactory;
 class PixmapCache;
-}
+} // namespace tk
 
 namespace tesseract::screenshot
 {
 
 struct Fixture
 {
-    std::string                       user_id;
-    std::string                       display_name;
-    std::string                       avatar_url;
-    std::vector<tesseract::RoomInfo>  rooms;
-    std::string                       selected_room_id;
+    std::string user_id;
+    std::string display_name;
+    std::string avatar_url;
+    std::vector<tesseract::RoomInfo> rooms;
+    std::string selected_room_id;
     std::vector<views::MessageRowData> messages;
 
     // Thread scene: the root row first, then its replies.
-    std::string                        thread_root_id;
+    std::string thread_root_id;
     std::vector<views::MessageRowData> thread_messages;
 
     // Room-info scene.

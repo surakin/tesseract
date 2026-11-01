@@ -40,7 +40,12 @@ impl Drop for WebpAnimDecoder {
 /// True iff `bytes` parse as a (still or animated) WebP bitstream.
 pub fn webp_is_data(bytes: &[u8]) -> bool {
     unsafe {
-        w::WebPGetInfo(bytes.as_ptr(), bytes.len(), std::ptr::null_mut(), std::ptr::null_mut()) != 0
+        w::WebPGetInfo(
+            bytes.as_ptr(),
+            bytes.len(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        ) != 0
     }
 }
 
@@ -202,7 +207,10 @@ mod tests {
         assert!(!webp_is_data(b"not a webp"));
         let mut d = webp_anim_decoder_new(&bytes);
         assert!(d.valid());
-        assert_eq!((d.canvas_width(), d.canvas_height(), d.frame_count()), (16, 16, 3));
+        assert_eq!(
+            (d.canvas_width(), d.canvas_height(), d.frame_count()),
+            (16, 16, 3)
+        );
         assert!(d.next_frame());
         assert_eq!(d.frame_pixels().len(), 16 * 16 * 4);
         // RGBA (200,30,30) → premultiplied BGRA (30,30,200,255), opaque.

@@ -127,10 +127,22 @@ pub(super) fn membership_labels(action: &str) -> Option<MembershipLabels> {
     Some(match action {
         "joined" => S(MembershipJoined),
         "left" => S(MembershipLeft),
-        "banned" => P(MembershipPair { by_actor: MembershipBannedByActor, no_actor: MembershipBannedNoActor }),
-        "unbanned" => P(MembershipPair { by_actor: MembershipUnbannedByActor, no_actor: MembershipUnbannedNoActor }),
-        "kicked" => P(MembershipPair { by_actor: MembershipKickedByActor, no_actor: MembershipKickedNoActor }),
-        "invited" => P(MembershipPair { by_actor: MembershipInvitedByActor, no_actor: MembershipInvitedNoActor }),
+        "banned" => P(MembershipPair {
+            by_actor: MembershipBannedByActor,
+            no_actor: MembershipBannedNoActor,
+        }),
+        "unbanned" => P(MembershipPair {
+            by_actor: MembershipUnbannedByActor,
+            no_actor: MembershipUnbannedNoActor,
+        }),
+        "kicked" => P(MembershipPair {
+            by_actor: MembershipKickedByActor,
+            no_actor: MembershipKickedNoActor,
+        }),
+        "invited" => P(MembershipPair {
+            by_actor: MembershipInvitedByActor,
+            no_actor: MembershipInvitedNoActor,
+        }),
         "kicked_and_banned" => P(MembershipPair {
             by_actor: MembershipKickedAndBannedByActor,
             no_actor: MembershipKickedAndBannedNoActor,
@@ -335,7 +347,10 @@ mod tests {
             "knock_denied",
         ];
         for action in known {
-            assert!(membership_labels(action).is_some(), "missing mapping for {action}");
+            assert!(
+                membership_labels(action).is_some(),
+                "missing mapping for {action}"
+            );
         }
     }
 
@@ -369,6 +384,9 @@ mod tests {
     fn format_membership_pair_no_actor_uses_target_only() {
         let labels = full_labels();
         let pair = membership_labels("banned").unwrap();
-        assert_eq!(labels.format_membership(pair, false, "Bob", "Alice"), "SLOT13:Bob");
+        assert_eq!(
+            labels.format_membership(pair, false, "Bob", "Alice"),
+            "SLOT13:Bob"
+        );
     }
 }

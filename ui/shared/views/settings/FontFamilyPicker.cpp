@@ -10,11 +10,17 @@ namespace tesseract::views
 FontFamilyPicker::FontFamilyPicker(bool monospace_only)
 {
     if (!host())
+    {
         return;
+    }
     families_.emplace_back(); // "System default"
     for (auto& f : host()->list_font_families())
+    {
         if (!monospace_only || f.monospace)
+        {
             families_.push_back(std::move(f.name));
+        }
+    }
     init_(kFieldH, kRowH, kWidth, kMaxRows, tk::tr("Font"));
 }
 
@@ -28,14 +34,22 @@ std::size_t FontFamilyPicker::entry_count_() const
 int FontFamilyPicker::match_rank_(std::size_t index, std::string_view query) const
 {
     if (query.empty())
+    {
         return index == 0 ? 0 : 3;
+    }
     if (index == 0)
+    {
         return icontains(tk::tr("System default"), query) ? 3 : -1;
+    }
     const std::string& name = families_[index];
     if (iequals(name, query))
+    {
         return 1;
+    }
     if (istarts_with(name, query))
+    {
         return 2;
+    }
     return icontains(name, query) ? 3 : -1;
 }
 

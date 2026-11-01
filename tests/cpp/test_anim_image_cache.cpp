@@ -13,16 +13,27 @@ namespace
 
 struct AnimImageCacheFakeImage : tk::Image
 {
-    int width() const override { return 1; }
-    int height() const override { return 1; }
-    std::size_t memory_bytes() const noexcept override { return 0; }
+    int width() const override
+    {
+        return 1;
+    }
+    int height() const override
+    {
+        return 1;
+    }
+    std::size_t memory_bytes() const noexcept override
+    {
+        return 0;
+    }
 };
 
 std::vector<std::unique_ptr<tk::Image>> frames(int n)
 {
     std::vector<std::unique_ptr<tk::Image>> v;
     for (int i = 0; i < n; ++i)
+    {
         v.push_back(std::make_unique<AnimImageCacheFakeImage>());
+    }
     return v;
 }
 
@@ -35,7 +46,11 @@ struct Fixture
 
     Fixture()
     {
-        cache.set_clock_for_testing([this] { return clock; });
+        cache.set_clock_for_testing(
+            [this]
+            {
+                return clock;
+            });
     }
 };
 
@@ -57,8 +72,7 @@ TEST_CASE("a visible entry advances and reports a repaint", "[anim-cache]")
     CHECK(f.cache.advance(50) == true);
 }
 
-TEST_CASE("visibility expires after the grace window without a paint",
-          "[anim-cache]")
+TEST_CASE("visibility expires after the grace window without a paint", "[anim-cache]")
 {
     Fixture f;
     f.cache.store(tk::CacheKey::media("k"), frames(3), {50, 50, 50}, 0);
@@ -66,8 +80,7 @@ TEST_CASE("visibility expires after the grace window without a paint",
     CHECK(f.cache.any_visible() == false);
 }
 
-TEST_CASE("an off-screen entry does not drive repaints even past its deadline",
-          "[anim-cache]")
+TEST_CASE("an off-screen entry does not drive repaints even past its deadline", "[anim-cache]")
 {
     Fixture f;
     f.cache.store(tk::CacheKey::media("k"), frames(3), {50, 50, 50}, 0);
@@ -76,8 +89,7 @@ TEST_CASE("an off-screen entry does not drive repaints even past its deadline",
     CHECK(f.cache.advance(5000) == false); // hidden → no repaint requested
 }
 
-TEST_CASE("current_frame refreshes visibility, keeping the entry alive",
-          "[anim-cache]")
+TEST_CASE("current_frame refreshes visibility, keeping the entry alive", "[anim-cache]")
 {
     Fixture f;
     f.cache.store(tk::CacheKey::media("k"), frames(3), {50, 50, 50}, 0);
@@ -118,7 +130,7 @@ TEST_CASE("current_frame counts hits and misses", "[anim-cache]")
     f.cache.current_frame(tk::CacheKey::media("missing")); // miss
     f.cache.current_frame(tk::CacheKey::media("k"));       // hit
 
-    CHECK(f.cache.hits()   == 2);
+    CHECK(f.cache.hits() == 2);
     CHECK(f.cache.misses() == 1);
 }
 
@@ -154,8 +166,7 @@ TEST_CASE("unpausing resumes normal advancement", "[anim-cache]")
     CHECK(f.cache.advance(100) == true);
 }
 
-TEST_CASE("a paused entry still counts as visible (TTL/sweep retention)",
-          "[anim-cache]")
+TEST_CASE("a paused entry still counts as visible (TTL/sweep retention)", "[anim-cache]")
 {
     Fixture f;
     const auto key = tk::CacheKey::media("k");
@@ -179,8 +190,7 @@ TEST_CASE("set_paused on an unknown key is a safe no-op", "[anim-cache]")
     CHECK(f.cache.advance(50) == true);
 }
 
-TEST_CASE("returning to view resyncs instead of fast-forwarding many frames",
-          "[anim-cache]")
+TEST_CASE("returning to view resyncs instead of fast-forwarding many frames", "[anim-cache]")
 {
     Fixture f;
     f.cache.store(tk::CacheKey::media("k"), frames(10), std::vector<int>(10, 50), 0);
@@ -216,14 +226,13 @@ TEST_CASE("append_frame grows an existing entry", "[anim-cache]")
 TEST_CASE("append_frame on an unknown key is a safe no-op", "[anim-cache]")
 {
     Fixture f;
-    f.cache.append_frame(tk::CacheKey::media("missing"), std::make_unique<AnimImageCacheFakeImage>(),
-                         50);
+    f.cache.append_frame(tk::CacheKey::media("missing"),
+                         std::make_unique<AnimImageCacheFakeImage>(), 50);
     CHECK(f.cache.has(tk::CacheKey::media("missing")) == false);
     CHECK(f.cache.current_bytes() == 0);
 }
 
-TEST_CASE("append_frame is a no-op once the entry has been evicted",
-          "[anim-cache]")
+TEST_CASE("append_frame is a no-op once the entry has been evicted", "[anim-cache]")
 {
     Fixture f;
     f.cache.store(tk::CacheKey::media("k"), frames(1), {50}, 0);
@@ -235,8 +244,7 @@ TEST_CASE("append_frame is a no-op once the entry has been evicted",
     CHECK(f.cache.has(tk::CacheKey::media("k")) == false);
 }
 
-TEST_CASE("append_frame keeps current_bytes() accounting correct",
-          "[anim-cache]")
+TEST_CASE("append_frame keeps current_bytes() accounting correct", "[anim-cache]")
 {
     Fixture f;
     f.cache.store(tk::CacheKey::media("k"), frames(1), {50}, 0);
@@ -276,9 +284,7 @@ struct FakeSession : tk::AnimDecodeSession
     int restart_count = 0;
 
     int decode_next_batch(
-        int n,
-        const std::function<void(int, std::unique_ptr<tk::Image>, int)>&
-            on_frame) override
+        int n, const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame) override
     {
         int produced = 0;
         while (produced < n && cursor < total)
@@ -290,7 +296,10 @@ struct FakeSession : tk::AnimDecodeSession
         return produced;
     }
 
-    bool exhausted() const override { return cursor >= total; }
+    bool exhausted() const override
+    {
+        return cursor >= total;
+    }
 
     void restart() override
     {
@@ -299,7 +308,10 @@ struct FakeSession : tk::AnimDecodeSession
     }
 
     std::size_t retained = 0;
-    std::size_t memory_bytes() const override { return retained; }
+    std::size_t memory_bytes() const override
+    {
+        return retained;
+    }
 };
 
 // Runs every pending collect_topups() request against `cache` synchronously
@@ -310,18 +322,18 @@ void run_topups(AnimImageCache& cache)
 {
     for (auto& req : cache.collect_topups())
     {
-        req.session->decode_next_batch(
-            req.batch_size,
-            [&](int /*idx*/, std::unique_ptr<tk::Image> img, int delay)
-            { cache.append_frame(req.key, std::move(img), delay); });
+        req.session->decode_next_batch(req.batch_size,
+                                       [&](int /*idx*/, std::unique_ptr<tk::Image> img, int delay)
+                                       {
+                                           cache.append_frame(req.key, std::move(img), delay);
+                                       });
         cache.finish_topup(req.key);
     }
 }
 
 } // namespace
 
-TEST_CASE("a paused windowed entry does not top up or advance",
-          "[anim-cache]")
+TEST_CASE("a paused windowed entry does not top up or advance", "[anim-cache]")
 {
     Fixture f;
     auto key = tk::CacheKey::media("k");
@@ -373,8 +385,7 @@ TEST_CASE("a windowed entry stays bounded across many frames", "[anim-cache]")
     CHECK(f.cache.has(key));
 }
 
-TEST_CASE("windowed trim never drops within kKeepBehindFrames of current",
-          "[anim-cache]")
+TEST_CASE("windowed trim never drops within kKeepBehindFrames of current", "[anim-cache]")
 {
     Fixture f;
     auto key = tk::CacheKey::media("k");
@@ -402,8 +413,7 @@ TEST_CASE("windowed trim never drops within kKeepBehindFrames of current",
     }
 }
 
-TEST_CASE("looping past a trimmed window restarts the session once per loop",
-          "[anim-cache]")
+TEST_CASE("looping past a trimmed window restarts the session once per loop", "[anim-cache]")
 {
     Fixture f;
     auto key = tk::CacheKey::media("k");
@@ -471,8 +481,7 @@ TEST_CASE("a loop restart never leaves current_frame() null before the "
     CHECK(saw_restart);
 }
 
-TEST_CASE("a below-threshold (unwindowed) entry is unaffected by windowing",
-          "[anim-cache]")
+TEST_CASE("a below-threshold (unwindowed) entry is unaffected by windowing", "[anim-cache]")
 {
     // Regression guard: store() with no session behaves exactly as before —
     // this mirrors "an off-screen entry does not drive repaints..." etc.
@@ -488,8 +497,7 @@ TEST_CASE("a below-threshold (unwindowed) entry is unaffected by windowing",
     CHECK(f.cache.collect_topups().empty());
 }
 
-TEST_CASE("current_bytes includes the decode session's retained state",
-          "[anim-cache]")
+TEST_CASE("current_bytes includes the decode session's retained state", "[anim-cache]")
 {
     Fixture f;
     auto key = tk::CacheKey::media("k");

@@ -25,8 +25,7 @@ int count_synced_media_(const std::vector<MessageRowData>& rows)
     int n = 0;
     for (const auto& r : rows)
     {
-        if (r.kind == MessageRowData::Kind::Image ||
-            r.kind == MessageRowData::Kind::Video)
+        if (r.kind == MessageRowData::Kind::Image || r.kind == MessageRowData::Kind::Video)
         {
             ++n;
         }
@@ -58,13 +57,17 @@ public:
     {
         const bool fire = pressed_ && inside_self;
         pressed_ = false;
-        if (fire && on_click) on_click();
+        if (fire && on_click)
+        {
+            on_click();
+        }
     }
     bool on_pointer_move(tk::Point /*local*/) override
     {
         return false;
     }
-    bool on_wheel(tk::Point /*local*/, float /*dx*/, float /*dy*/, bool /*is_touchpad*/ = false) override
+    bool on_wheel(tk::Point /*local*/, float /*dx*/, float /*dy*/,
+                  bool /*is_touchpad*/ = false) override
     {
         // Swallow wheel input on the dimmed main column. Without this,
         // wheel over the floating thread overlay falls through to
@@ -90,10 +93,17 @@ RoomView::RoomView()
 
     auto header = std::make_unique<RoomHeader>();
     header_ = add_child(std::move(header));
-    header_->on_back_requested = [this] { if (on_back_requested) on_back_requested(); };
+    header_->on_back_requested = [this]
+    {
+        if (on_back_requested)
+        {
+            on_back_requested();
+        }
+    };
 
     auto msg = std::make_unique<MessageListView>();
     message_list_ = add_child(std::move(msg));
+    message_list_->set_content_column_enabled(true);
 
     // Added immediately after message_list_ so it dispatches BEFORE the
     // message list (children walk reverse in dispatch_pointer_*), capturing
@@ -101,17 +111,24 @@ RoomView::RoomView()
     auto blocker = std::make_unique<MessageBlocker>();
     message_blocker_ = add_child(std::move(blocker));
     message_blocker_->set_visible(false);
-    message_blocker_->on_click = [this] {
+    message_blocker_->on_click = [this]
+    {
         // The shell's CloseThread trigger only fires when an individual
         // thread is open — it's a no-op for List mode. Pick the callback
         // that actually closes the panel in each state.
         if (thread_panel_state_ == ThreadPanelState::Open)
         {
-            if (on_thread_close_requested) on_thread_close_requested();
+            if (on_thread_close_requested)
+            {
+                on_thread_close_requested();
+            }
         }
         else if (thread_panel_state_ == ThreadPanelState::List)
         {
-            if (on_threads_button_clicked) on_threads_button_clicked();
+            if (on_threads_button_clicked)
+            {
+                on_threads_button_clicked();
+            }
         }
     };
 
@@ -123,7 +140,10 @@ RoomView::RoomView()
     // native search-field child gets a valid host()) but deliberately
     // never add_child'd; see show_emoji_picker_'s doc comment.
     emoji_picker_ = tk::create_widget<EmojiPicker>(this);
-    emoji_picker_->on_dismiss = [this] { hide_pickers_(); };
+    emoji_picker_->on_dismiss = [this]
+    {
+        hide_pickers_();
+    };
     emoji_picker_->on_selected = [this](const std::string& glyph)
     {
         // Reaction mode always closes the picker (one reaction per open).
@@ -135,7 +155,9 @@ RoomView::RoomView()
         {
             std::string ev = std::move(pending_reaction_event_id_);
             if (on_reaction_toggled)
+            {
                 on_reaction_toggled(ev, glyph, "");
+            }
             hide_pickers_();
         }
         else if (compose_bar_ && compose_bar_->text_area())
@@ -148,17 +170,20 @@ RoomView::RoomView()
     emoji_picker_->on_skin_tone_changed = [this](tesseract::emoji::SkinTone tone)
     {
         if (on_emoji_skin_tone_changed)
+        {
             on_emoji_skin_tone_changed(tone);
+        }
     };
-    emoji_picker_->on_emoticon_selected =
-        [this](const tesseract::ImagePackImage& img)
+    emoji_picker_->on_emoticon_selected = [this](const tesseract::ImagePackImage& img)
     {
         // See on_selected above for the reaction-vs-compose close behavior.
         if (!pending_reaction_event_id_.empty())
         {
             std::string ev = std::move(pending_reaction_event_id_);
             if (on_reaction_toggled)
+            {
                 on_reaction_toggled(ev, ":" + img.shortcode + ":", img.url);
+            }
             hide_pickers_();
         }
         else if (compose_bar_ && compose_bar_->text_area())
@@ -174,17 +199,24 @@ RoomView::RoomView()
     };
 
     sticker_picker_ = tk::create_widget<StickerPicker>(this);
-    sticker_picker_->on_dismiss = [this] { hide_pickers_(); };
-    sticker_picker_->on_selected =
-        [this](const tesseract::ImagePackImage& img)
+    sticker_picker_->on_dismiss = [this]
+    {
+        hide_pickers_();
+    };
+    sticker_picker_->on_selected = [this](const tesseract::ImagePackImage& img)
     {
         hide_pickers_();
         if (on_sticker_picked)
+        {
             on_sticker_picked(img);
+        }
     };
 
     receipt_popup_ = tk::create_widget<ReceiptGridPopup>(this);
-    receipt_popup_->on_dismiss = [this] { hide_pickers_(); };
+    receipt_popup_->on_dismiss = [this]
+    {
+        hide_pickers_();
+    };
 
     auto room_info = tk::create_widget<RoomInfoPanel>(this);
     room_info_panel_ = add_child(std::move(room_info));
@@ -205,15 +237,21 @@ RoomView::RoomView()
     overflow_menu_->on_dismissed = [this]
     {
         if (message_list_)
+        {
             message_list_->set_hover_locked(false);
+        }
         if (thread_view_ && thread_view_->message_list())
+        {
             thread_view_->message_list()->set_hover_locked(false);
+        }
         overflow_menu_->close();
     };
     overflow_menu_->on_layout_changed = [this]
     {
         if (on_layout_changed)
+        {
             on_layout_changed();
+        }
     };
 
     // Call-type popup — anchored to the call button; opened by the
@@ -221,11 +259,16 @@ RoomView::RoomView()
     {
         auto cp = std::make_unique<PopupMenu>();
         call_popup_ = add_child(std::move(cp));
-        call_popup_->on_dismissed = [this] { call_popup_->close(); };
+        call_popup_->on_dismissed = [this]
+        {
+            call_popup_->close();
+        };
         call_popup_->on_layout_changed = [this]
         {
             if (on_layout_changed)
+            {
                 on_layout_changed();
+            }
         };
     }
 
@@ -241,19 +284,24 @@ RoomView::RoomView()
         header_overflow_menu_->on_layout_changed = [this]
         {
             if (on_layout_changed)
+            {
                 on_layout_changed();
+            }
         };
     }
-    header_->on_overflow_requested =
-        [this](std::vector<PopupMenu::Item> items, tk::Rect anchor)
+    header_->on_overflow_requested = [this](std::vector<PopupMenu::Item> items, tk::Rect anchor)
     {
         if (header_overflow_menu_)
+        {
             header_overflow_menu_->open(std::move(items), anchor);
+        }
     };
     header_->on_overflow_should_close = [this]
     {
         if (header_overflow_menu_)
+        {
             header_overflow_menu_->close();
+        }
     };
 
     // In-room search bar — docked strip under the header. Hidden until
@@ -263,20 +311,37 @@ RoomView::RoomView()
     room_search_bar_->set_visible(false);
     room_search_bar_->on_query_changed = [this](const std::string& q)
     {
-        if (on_room_search_query) on_room_search_query(q);
+        if (on_room_search_query)
+        {
+            on_room_search_query(q);
+        }
     };
     room_search_bar_->on_navigate = [this](int delta)
     {
-        if (on_room_search_navigate) on_room_search_navigate(delta);
+        if (on_room_search_navigate)
+        {
+            on_room_search_navigate(delta);
+        }
     };
     room_search_bar_->on_paginate_toggled = [this](bool enabled)
     {
-        if (on_room_search_paginate_toggled) on_room_search_paginate_toggled(enabled);
+        if (on_room_search_paginate_toggled)
+        {
+            on_room_search_paginate_toggled(enabled);
+        }
     };
-    room_search_bar_->on_close = [this] { close_room_search(); };
+    room_search_bar_->on_close = [this]
+    {
+        close_room_search();
+    };
 
     if (header_)
-        header_->on_search_requested = [this] { open_room_search(); };
+    {
+        header_->on_search_requested = [this]
+        {
+            open_room_search();
+        };
+    }
 
     auto banner = std::make_unique<CallBanner>();
     call_banner_ = add_child(std::move(banner));
@@ -284,7 +349,10 @@ RoomView::RoomView()
     identity_banner_ = add_child(std::make_unique<IdentityChangeBanner>());
     identity_banner_->on_resolve = [this](const tesseract::IdentityWarning& w)
     {
-        if (on_resolve_identity_warning) on_resolve_identity_warning(w);
+        if (on_resolve_identity_warning)
+        {
+            on_resolve_identity_warning(w);
+        }
     };
 
     replaced_banner_ = add_child(std::make_unique<RoomReplacedBanner>());
@@ -292,38 +360,55 @@ RoomView::RoomView()
     replaced_banner_->on_open = [this]
     {
         if (on_open_room_version && !current_room_info_.successor_room_id.empty())
+        {
             on_open_room_version(current_room_info_.successor_room_id,
                                  current_room_info_.successor_via);
+        }
     };
     if (message_list_)
+    {
         message_list_->on_open_predecessor = [this]
         {
             if (on_open_room_version && !current_room_info_.predecessor_room_id.empty())
+            {
                 on_open_room_version(current_room_info_.predecessor_room_id,
                                      current_room_info_.predecessor_via);
+            }
         };
+    }
 
     if (header_)
+    {
         header_->on_call_requested = [this](tk::Rect btn_rect)
         {
-            if (!call_popup_) return;
+            if (!call_popup_)
+            {
+                return;
+            }
             const std::string rid = current_room_info_.id;
             PopupMenu::Item audio;
-            audio.svg_icon    = kPhoneSvg;
-            audio.label       = tk::tr("Audio call");
+            audio.svg_icon = kPhoneSvg;
+            audio.label = tk::tr("Audio call");
             audio.on_selected = [this, rid]
             {
-                if (on_start_call) on_start_call(rid, "call#default", true);
+                if (on_start_call)
+                {
+                    on_start_call(rid, "call#default", true);
+                }
             };
             PopupMenu::Item video;
-            video.svg_icon    = kVideoSvg;
-            video.label       = tk::tr("Video call");
+            video.svg_icon = kVideoSvg;
+            video.label = tk::tr("Video call");
             video.on_selected = [this, rid]
             {
-                if (on_start_call) on_start_call(rid, "call#default", false);
+                if (on_start_call)
+                {
+                    on_start_call(rid, "call#default", false);
+                }
             };
             call_popup_->open({audio, video}, btn_rect);
         };
+    }
 
     // Full-bleed media gallery — added last so it paints and dispatches
     // above every other child in this room, including the other overlay
@@ -337,12 +422,21 @@ RoomView::RoomView()
     invite_dialog_ = add_child(tk::create_widget<InviteDialog>(this));
     invite_dialog_->on_layout_changed = [this]()
     {
-        if (on_layout_changed) on_layout_changed();
+        if (on_layout_changed)
+        {
+            on_layout_changed();
+        }
     };
     invite_dialog_->on_close = [this]()
     {
-        if (on_layout_changed) on_layout_changed();
-        if (repaint_requester_) repaint_requester_();
+        if (on_layout_changed)
+        {
+            on_layout_changed();
+        }
+        if (repaint_requester_)
+        {
+            repaint_requester_();
+        }
     };
 
     // Added last of all so it dispatches/paints above the whole room,
@@ -357,31 +451,36 @@ RoomView::RoomView()
 
 void RoomView::wire_message_list_callbacks_(MessageListView* ml)
 {
-    if (!ml) return;
+    if (!ml)
+    {
+        return;
+    }
 
     // Reply flow: hover ↩ → compose enters reply mode + focus.
-    ml->on_reply_requested = [this](const std::string& event_id,
-                                    const std::string& sender_name,
+    ml->on_reply_requested = [this](const std::string& event_id, const std::string& sender_name,
                                     const std::string& body_preview)
     {
         compose_bar_->set_reply_to(event_id, sender_name, body_preview);
         compose_bar_->focus();
     };
 
-    // Edit flow: hover ✏ → compose enters edit mode, shell prefills textarea.
+    // Edit flow: hover ✏ → compose enters edit mode, the textarea is prefilled
+    // with the message and focused (as the reply flow focuses it).
     ml->on_edit_requested =
-        [this](const std::string& event_id, const std::string& current_body,
-               bool is_caption)
+        [this](const std::string& event_id, const std::string& current_body, bool is_caption)
     {
         compose_bar_->set_editing(event_id, is_caption);
-        compose_bar_->set_current_text(current_body);
-        if (on_edit_prefill) on_edit_prefill(current_body);
+        compose_bar_->set_text(current_body);
+        compose_bar_->focus();
     };
 
     // Clipboard write — forwarded to the shell via on_set_clipboard.
     ml->on_set_clipboard = [this](std::string_view text)
     {
-        if (on_set_clipboard) on_set_clipboard(text);
+        if (on_set_clipboard)
+        {
+            on_set_clipboard(text);
+        }
     };
 
     // Selection just became active — drop any selection in the sibling
@@ -390,116 +489,152 @@ void RoomView::wire_message_list_callbacks_(MessageListView* ml)
     // on_selection_started.
     ml->on_selection_started = [this, ml]
     {
-        MessageListView* thread_ml =
-            thread_view_ ? thread_view_->message_list() : nullptr;
+        MessageListView* thread_ml = thread_view_ ? thread_view_->message_list() : nullptr;
         for (MessageListView* other : {message_list_, thread_ml})
         {
             if (other && other != ml)
+            {
                 other->clear_selection();
+            }
         }
-        if (on_selection_started) on_selection_started();
-    };
-
-    // Right-click on a selection — the shell's native Copy menu, if it set
-    // one; otherwise MessageListView copies directly.
-    ml->on_show_copy_menu = [this]
-    {
-        if (!on_show_copy_menu)
-            return false;
-        on_show_copy_menu();
-        return true;
+        if (on_selection_started)
+        {
+            on_selection_started();
+        }
     };
 
     // Selection just cleared (e.g. a new click elsewhere deselects it) —
     // return keyboard focus to the composer.
     ml->on_selection_cleared = [this]
     {
-        if (compose_bar_) compose_bar_->focus();
+        if (compose_bar_)
+        {
+            compose_bar_->focus();
+        }
     };
     // Escape out of the keyboard-focused timeline (main or thread — both
     // send through the one compose bar) goes back to typing.
     ml->on_keyboard_exit = [this]
     {
-        if (compose_bar_) compose_bar_->focus();
+        if (compose_bar_)
+        {
+            compose_bar_->focus();
+        }
     };
 
-    ml->on_more_requested =
-        [this, ml](const std::string& event_id, tk::Rect anchor,
-                   bool can_delete, bool can_pin, bool is_pinned,
-                   bool can_forward)
+    // Pill "⋯" and right-click / Menu key: one popup over the shared action
+    // list (MessageActions.h).
+    ml->on_overflow_action_requested = [this](MessageActionId id, const std::string& event_id)
     {
-        // anchor is in world coordinates — PopupMenu::open() takes world coords.
+        switch (id)
+        {
+        case MessageActionId::Forward:
+            if (on_forward_requested)
+            {
+                on_forward_requested(event_id);
+            }
+            break;
+        case MessageActionId::Delete:
+            if (on_delete_requested)
+            {
+                on_delete_requested(event_id);
+            }
+            break;
+        case MessageActionId::Report:
+            confirm_and_report_(event_id);
+            break;
+        case MessageActionId::Pin:
+            if (on_pin_requested)
+            {
+                on_pin_requested(event_id);
+            }
+            break;
+        case MessageActionId::Unpin:
+            if (on_unpin_requested)
+            {
+                on_unpin_requested(event_id);
+            }
+            break;
+        case MessageActionId::CopyEventSource:
+            if (on_copy_event_source_requested)
+            {
+                on_copy_event_source_requested(event_id);
+            }
+            break;
+        default:
+            break;
+        }
+    };
+    ml->on_save_sticker_requested =
+        [this](const std::string& mxc, const std::string& body, const std::string& info)
+    {
+        if (on_save_sticker_requested)
+        {
+            on_save_sticker_requested(mxc, body, info);
+        }
+    };
+    ml->is_sticker_saved = [this](const std::string& mxc, const std::string& info)
+    {
+        return is_sticker_saved && is_sticker_saved(mxc, info);
+    };
+    ml->on_pill_menu_row_left = [this]
+    {
+        if (overflow_menu_ && overflow_menu_->is_open() && overflow_menu_->on_dismissed)
+        {
+            overflow_menu_->on_dismissed();
+        }
+    };
+    ml->on_actions_menu_requested = [this, ml](const MessageListView::MessageMenuRequest& req)
+    {
         std::vector<PopupMenu::Item> items;
-        if (can_forward)
+        if (req.copy_selection)
         {
-            items.push_back({"",
-                             kForwardSvg,
-                             tk::tr("Forward message"), /*destructive=*/false,
-                             [this, event_id]
+            items.push_back({"", kCopySvg, tk::tr("Copy"), false, [ml]
                              {
-                                 if (on_forward_requested)
-                                     on_forward_requested(event_id);
+                                 ml->copy_selection();
                              }});
         }
-        if (can_delete)
+        if (req.copy_link)
         {
-            items.push_back({"", // SVG icon below
-                             kRedactSvg,
-                             tk::tr("Delete message"), /*destructive=*/true,
-                             [this, event_id]
+            items.push_back({"", kCopySvg, tk::tr("Copy link"), false, [ml]
                              {
-                                 if (on_delete_requested)
-                                     on_delete_requested(event_id);
+                                 ml->copy_context_link();
                              }});
         }
-        if (can_pin)
+        if (!items.empty() && !req.actions.empty())
         {
-            items.push_back({"", // SVG icon below
-                             kPinSvg,
-                             is_pinned ? tk::tr("Unpin message")
-                                       : tk::tr("Pin message"),
-                             /*destructive=*/false,
-                             [this, event_id, is_pinned]
-                             {
-                                 if (is_pinned)
-                                 {
-                                     if (on_unpin_requested)
-                                         on_unpin_requested(event_id);
-                                 }
-                                 else
-                                 {
-                                     if (on_pin_requested)
-                                         on_pin_requested(event_id);
-                                 }
-                             }});
+            PopupMenu::Item sep;
+            sep.is_separator = true;
+            items.push_back(std::move(sep));
         }
-        if (tesseract::Settings::instance().developer_mode)
+        for (const auto& act : req.actions)
         {
-            items.push_back({"", // SVG icon below
-                             kCopySvg,
-                             tk::tr("Copy event source"), /*destructive=*/false,
-                             [this, event_id]
+            items.push_back({"", act.svg, act.label, act.destructive,
+                             [ml, id = act.id, ev = req.event_id, anchor = req.anchor]
                              {
-                                 if (on_copy_event_source_requested)
-                                     on_copy_event_source_requested(event_id);
+                                 ml->invoke_message_action(id, ev, anchor);
                              }});
         }
         if (!items.empty())
         {
             ml->set_hover_locked(true);
-            overflow_menu_->open(std::move(items), anchor);
+            overflow_menu_->open(std::move(items), req.anchor);
         }
     };
     ml->on_reaction_toggled =
-        [this](const std::string& event_id, const std::string& key,
-               const std::string& source_mxc)
+        [this](const std::string& event_id, const std::string& key, const std::string& source_mxc)
     {
-        if (on_reaction_toggled) on_reaction_toggled(event_id, key, source_mxc);
+        if (on_reaction_toggled)
+        {
+            on_reaction_toggled(event_id, key, source_mxc);
+        }
     };
-    ml->on_poll_vote = [this](const std::string& event_id,
-                              std::vector<std::string> answer_ids)
+    ml->on_poll_vote = [this](const std::string& event_id, std::vector<std::string> answer_ids)
     {
-        if (on_poll_vote) on_poll_vote(event_id, std::move(answer_ids));
+        if (on_poll_vote)
+        {
+            on_poll_vote(event_id, std::move(answer_ids));
+        }
     };
     ml->on_poll_end_requested = [this](const std::string& event_id)
     {
@@ -507,7 +642,10 @@ void RoomView::wire_message_list_callbacks_(MessageListView* ml)
         // no confirm provider is wired, like the other confirm helpers).
         auto fire = [this, event_id]()
         {
-            if (on_poll_end_requested) on_poll_end_requested(event_id);
+            if (on_poll_end_requested)
+            {
+                on_poll_end_requested(event_id);
+            }
         };
         if (!confirm_provider_)
         {
@@ -515,81 +653,125 @@ void RoomView::wire_message_list_callbacks_(MessageListView* ml)
             return;
         }
         ConfirmDialog::Options opts;
-        opts.title         = tk::tr("End this poll?");
-        opts.body          = tk::tr("Voting will close and the final results will "
-                                    "be shown to everyone.");
+        opts.title = tk::tr("End this poll?");
+        opts.body = tk::tr("Voting will close and the final results will "
+                           "be shown to everyone.");
         opts.confirm_label = tk::tr("End poll");
-        opts.cancel_label  = tk::tr("Cancel");
-        opts.destructive   = false;
+        opts.cancel_label = tk::tr("Cancel");
+        opts.destructive = false;
         confirm_provider_(std::move(opts), std::move(fire));
     };
-    ml->on_add_reaction_requested =
-        [this](const std::string& event_id, tk::Rect anchor)
+    ml->on_add_reaction_requested = [this](const std::string& event_id, tk::Rect anchor)
     {
         show_emoji_picker_(anchor, /*for_reaction=*/true, event_id);
     };
     ml->on_receipt_overflow_clicked =
-        [this, ml](const std::string&, tk::Rect anchor,
-                   std::vector<tesseract::ReadReceipt> hidden)
+        [this, ml](const std::string&, tk::Rect anchor, std::vector<tesseract::ReadReceipt> hidden)
     {
         show_receipt_popup_(ml, anchor, std::move(hidden));
     };
     ml->on_link_clicked = [this](const std::string& url)
     {
-        if (on_link_clicked) on_link_clicked(url);
+        if (on_link_clicked)
+        {
+            on_link_clicked(url);
+        }
         // Clicking anywhere on the canvas steals OS focus from the native
         // text area overlay. Restore it after the browser opens.
         compose_bar_->focus();
     };
     ml->on_link_hovered = [this](const std::string& url)
     {
-        if (on_link_hovered) on_link_hovered(url);
+        if (on_link_hovered)
+        {
+            on_link_hovered(url);
+        }
     };
     ml->on_receipt_needed = [this](const std::string& event_id)
     {
-        if (on_receipt_needed) on_receipt_needed(event_id);
+        if (on_receipt_needed)
+        {
+            on_receipt_needed(event_id);
+        }
     };
     ml->on_jump_to_unread = [this](const std::string& event_id)
     {
-        if (on_jump_to_unread) on_jump_to_unread(event_id);
+        if (on_jump_to_unread)
+        {
+            on_jump_to_unread(event_id);
+        }
     };
     ml->on_member_pronoun_needed = [this](const std::string& user_id)
     {
-        if (on_member_pronoun_needed) on_member_pronoun_needed(user_id);
+        if (on_member_pronoun_needed)
+        {
+            on_member_pronoun_needed(user_id);
+        }
     };
-    ml->on_visible_range_changed =
-        [this](const std::vector<std::string>& keys)
+    ml->on_sender_timezone_needed = [this](const std::string& user_id)
     {
-        if (on_visible_range_changed) on_visible_range_changed(keys);
+        if (on_sender_timezone_needed)
+        {
+            on_sender_timezone_needed(user_id);
+        }
     };
-    ml->on_visible_avatars_changed =
-        [this](const std::vector<std::string>& urls)
+    ml->on_visible_range_changed = [this](const std::vector<std::string>& keys)
     {
-        if (on_visible_avatars_changed) on_visible_avatars_changed(urls);
+        if (on_visible_range_changed)
+        {
+            on_visible_range_changed(keys);
+        }
+    };
+    ml->on_visible_avatars_changed = [this](const std::vector<std::string>& urls)
+    {
+        if (on_visible_avatars_changed)
+        {
+            on_visible_avatars_changed(urls);
+        }
     };
     ml->on_image_clicked = [this](const MessageListView::ImageHit& hit)
     {
-        if (on_image_clicked) on_image_clicked(hit);
+        if (on_image_clicked)
+        {
+            on_image_clicked(hit);
+        }
     };
     ml->on_video_clicked = [this](const MessageListView::VideoHit& hit)
     {
-        if (on_video_clicked) on_video_clicked(hit);
+        if (on_video_clicked)
+        {
+            on_video_clicked(hit);
+        }
     };
     ml->on_gallery_item_clicked = [this](const MessageListView::GalleryHit& hit)
     {
-        if (on_gallery_item_clicked) on_gallery_item_clicked(hit);
+        if (on_gallery_item_clicked)
+        {
+            on_gallery_item_clicked(hit);
+        }
     };
     ml->on_file_clicked = [this](const MessageListView::FileHit& hit)
     {
-        if (on_file_clicked) on_file_clicked(hit);
+        if (on_file_clicked)
+        {
+            on_file_clicked(hit);
+        }
     };
-    ml->on_scroll_to_original =
-        [this](const std::string& original_event_id)
+    ml->on_scroll_to_original = [this](const std::string& original_event_id)
     {
-        if (on_scroll_to_original) on_scroll_to_original(original_event_id);
+        if (on_scroll_to_original)
+        {
+            on_scroll_to_original(original_event_id);
+        }
     };
-    ml->on_sender_clicked =
-        [this](std::string uid, std::string name, std::string av)
+    ml->on_forward_origin_clicked = [this](const std::string& room_id, const std::string& event_id)
+    {
+        if (on_forward_origin_clicked)
+        {
+            on_forward_origin_clicked(room_id, event_id);
+        }
+    };
+    ml->on_sender_clicked = [this](std::string uid, std::string name, std::string av)
     {
         show_user_profile(std::move(uid), std::move(name), std::move(av));
     };
@@ -597,17 +779,7 @@ void RoomView::wire_message_list_callbacks_(MessageListView* ml)
     // room's members and open the profile panel.
     ml->on_mention_clicked = [this](const std::string& uid)
     {
-        std::string name, avatar;
-        for (const auto& m : room_members_)
-        {
-            if (m.user_id == uid)
-            {
-                name   = m.display_name;
-                avatar = m.avatar_url;
-                break;
-            }
-        }
-        show_user_profile(uid, name, avatar);
+        open_user_profile(uid);
     };
 }
 
@@ -643,20 +815,24 @@ void RoomView::wire_internal_callbacks()
     {
         if (thread_panel_state_ == ThreadPanelState::Open)
         {
-            if (on_thread_send) on_thread_send(body, std::string{});
+            if (on_thread_send)
+            {
+                on_thread_send(body, std::string{});
+            }
         }
         else if (on_send)
         {
             on_send(body);
         }
     };
-    compose_bar_->on_send_reply =
-        [this](const std::string& reply_id, const std::string& body)
+    compose_bar_->on_send_reply = [this](const std::string& reply_id, const std::string& body)
     {
         if (thread_panel_state_ == ThreadPanelState::Open)
         {
             if (on_thread_send_reply)
+            {
                 on_thread_send_reply(reply_id, body, std::string{});
+            }
             return;
         }
         if (on_send_reply)
@@ -665,109 +841,101 @@ void RoomView::wire_internal_callbacks()
         }
     };
     compose_bar_->on_send_edit =
-        [this](const std::string& event_id, const std::string& new_body,
-               bool is_caption)
+        [this](const std::string& event_id, const std::string& new_body, bool is_caption)
     {
         if (on_send_edit)
         {
             on_send_edit(event_id, new_body, is_caption);
         }
     };
-    compose_bar_->on_send_image =
-        [this](std::vector<std::uint8_t> bytes, std::string mime,
-               std::string filename, std::string caption, std::uint32_t w,
-               std::uint32_t h, bool is_animated, std::string reply_id)
+    compose_bar_->on_send_image = [this](std::vector<std::uint8_t> bytes, std::string mime,
+                                         std::string filename, std::string caption, std::uint32_t w,
+                                         std::uint32_t h, bool is_animated, std::string reply_id)
     {
         if (on_send_image)
         {
-            on_send_image(std::move(bytes), std::move(mime),
-                          std::move(filename), std::move(caption),
-                          static_cast<int>(w), static_cast<int>(h), is_animated,
+            on_send_image(std::move(bytes), std::move(mime), std::move(filename),
+                          std::move(caption), static_cast<int>(w), static_cast<int>(h), is_animated,
                           std::move(reply_id));
         }
     };
-    compose_bar_->on_send_file =
-        [this](std::vector<std::uint8_t> bytes, std::string mime,
-               std::string filename, std::string caption, std::string reply_id)
+    compose_bar_->on_send_file = [this](std::vector<std::uint8_t> bytes, std::string mime,
+                                        std::string filename, std::string caption,
+                                        std::string reply_id)
     {
         if (on_send_file)
         {
-            on_send_file(std::move(bytes), std::move(mime), std::move(filename),
-                         std::move(caption), std::move(reply_id));
+            on_send_file(std::move(bytes), std::move(mime), std::move(filename), std::move(caption),
+                         std::move(reply_id));
         }
     };
-    compose_bar_->on_file_paste =
-        [this](std::vector<tk::FileDropPayload> files)
+    compose_bar_->on_file_paste = [this](std::vector<tk::FileDropPayload> files)
     {
         if (!compose_bar_ || !compose_bar_->enabled())
+        {
             return;
-        const std::uint64_t limit =
-            media_upload_limit_provider ? media_upload_limit_provider() : 0;
+        }
+        const std::uint64_t limit = media_upload_limit_provider ? media_upload_limit_provider() : 0;
         for (auto& f : files)
         {
-            auto outcome = route_file_drop_to_compose_bar(
-                *compose_bar_, std::move(f.bytes), std::move(f.mime),
-                std::move(f.filename), limit, media_info_extractor);
+            auto outcome =
+                route_file_drop_to_compose_bar(*compose_bar_, std::move(f.bytes), std::move(f.mime),
+                                               std::move(f.filename), limit, media_info_extractor);
             if (on_file_drop_outcome)
+            {
                 on_file_drop_outcome(outcome);
+            }
         }
     };
-    compose_bar_->on_send_video =
-        [this](std::vector<std::uint8_t> bytes, std::string mime,
-               std::string filename, std::string caption,
-               std::uint32_t w, std::uint32_t h,
-               std::vector<std::uint8_t> thumb_bytes,
-               std::uint32_t tw, std::uint32_t th,
-               std::uint64_t duration_ms, std::string reply_id)
+    compose_bar_->on_send_video = [this](std::vector<std::uint8_t> bytes, std::string mime,
+                                         std::string filename, std::string caption, std::uint32_t w,
+                                         std::uint32_t h, std::vector<std::uint8_t> thumb_bytes,
+                                         std::uint32_t tw, std::uint32_t th,
+                                         std::uint64_t duration_ms, std::string reply_id)
     {
         if (on_send_video)
         {
-            on_send_video(std::move(bytes), std::move(mime),
-                          std::move(filename), std::move(caption),
-                          static_cast<int>(w), static_cast<int>(h),
-                          std::move(thumb_bytes),
-                          static_cast<int>(tw), static_cast<int>(th),
+            on_send_video(std::move(bytes), std::move(mime), std::move(filename),
+                          std::move(caption), static_cast<int>(w), static_cast<int>(h),
+                          std::move(thumb_bytes), static_cast<int>(tw), static_cast<int>(th),
                           duration_ms, std::move(reply_id));
         }
     };
-    compose_bar_->on_send_audio =
-        [this](std::vector<std::uint8_t> bytes, std::string mime,
-               std::string filename, std::string caption,
-               std::uint64_t duration_ms, std::string reply_id)
+    compose_bar_->on_send_audio = [this](std::vector<std::uint8_t> bytes, std::string mime,
+                                         std::string filename, std::string caption,
+                                         std::uint64_t duration_ms, std::string reply_id)
     {
         if (on_send_audio)
         {
-            on_send_audio(std::move(bytes), std::move(mime),
-                          std::move(filename), std::move(caption),
-                          duration_ms, std::move(reply_id));
+            on_send_audio(std::move(bytes), std::move(mime), std::move(filename),
+                          std::move(caption), duration_ms, std::move(reply_id));
         }
     };
-    compose_bar_->on_send_gallery =
-        [this](std::vector<ComposeBar::PendingAttachment> items,
-               std::string caption, std::string reply_id)
+    compose_bar_->on_send_gallery = [this](std::vector<ComposeBar::PendingAttachment> items,
+                                           std::string caption, std::string reply_id)
     {
         if (on_send_gallery)
         {
-            on_send_gallery(std::move(items), std::move(caption),
-                            std::move(reply_id));
+            on_send_gallery(std::move(items), std::move(caption), std::move(reply_id));
         }
     };
     compose_bar_->on_mic_clicked = [this]
     {
         if (on_mic_clicked)
+        {
             on_mic_clicked();
+        }
     };
     compose_bar_->on_cancel_voice = [this]
     {
         if (on_cancel_voice)
+        {
             on_cancel_voice();
+        }
     };
     compose_bar_->on_edit_cancelled = [this]
     {
-        if (on_edit_cancelled)
-        {
-            on_edit_cancelled();
-        }
+        compose_bar_->set_text({});
     };
     compose_bar_->on_emoji = [this](tk::Rect r)
     {
@@ -776,13 +944,17 @@ void RoomView::wire_internal_callbacks()
         // pending_reaction_event_id_) — leave it exactly as it is rather
         // than resetting its search text/scroll on every reclick.
         if (emoji_picker_visible_ && pending_reaction_event_id_.empty())
+        {
             return;
+        }
         show_emoji_picker_(r, /*for_reaction=*/false, {});
     };
     compose_bar_->on_sticker = [this](tk::Rect r)
     {
         if (sticker_picker_visible_)
+        {
             return;
+        }
         show_sticker_picker_(r);
     };
 
@@ -796,7 +968,10 @@ void RoomView::wire_internal_callbacks()
     };
     header_->on_link_hovered = [this](const std::string& url)
     {
-        if (on_link_hovered) on_link_hovered(url);
+        if (on_link_hovered)
+        {
+            on_link_hovered(url);
+        }
     };
     message_list_->on_near_top = [this]
     {
@@ -822,12 +997,16 @@ void RoomView::wire_internal_callbacks()
     header_->on_date_jump = [this](std::uint64_t ts_ms)
     {
         if (on_date_jump)
+        {
             on_date_jump(ts_ms);
+        }
     };
     header_->on_date_picker_opened = [this]
     {
         if (on_date_picker_opened)
+        {
             on_date_picker_opened();
+        }
     };
     header_->on_threads_requested = [this]
     {
@@ -836,8 +1015,7 @@ void RoomView::wire_internal_callbacks()
             on_threads_button_clicked();
         }
     };
-    message_list_->on_thread_preview_clicked =
-        [this](const std::string& root_event_id)
+    message_list_->on_thread_preview_clicked = [this](const std::string& root_event_id)
     {
         if (on_thread_open_requested)
         {
@@ -849,53 +1027,88 @@ void RoomView::wire_internal_callbacks()
     // the request to Client::pin_event / Client::unpin_event.
     message_list_->on_pin_requested = [this](const std::string& event_id)
     {
-        if (on_pin_requested) on_pin_requested(event_id);
+        if (on_pin_requested)
+        {
+            on_pin_requested(event_id);
+        }
     };
     message_list_->on_unpin_requested = [this](const std::string& event_id)
     {
-        if (on_unpin_requested) on_unpin_requested(event_id);
+        if (on_unpin_requested)
+        {
+            on_unpin_requested(event_id);
+        }
     };
     // Wire header info-requested to show room info panel.
-    header_->on_info_requested = [this]() { show_room_info(); };
+    header_->on_info_requested = [this]()
+    {
+        show_room_info();
+    };
+    header_->on_bridge_avatar_needed = [this](const std::string& mxc)
+    {
+        if (on_bridge_avatar_needed)
+        {
+            on_bridge_avatar_needed(mxc);
+        }
+    };
 
     // Wire room info panel callbacks.
     room_info_panel_->on_close = [this]()
     {
         room_info_panel_->close();
-        if (repaint_requester_) repaint_requester_();
+        if (repaint_requester_)
+        {
+            repaint_requester_();
+        }
     };
     room_info_panel_->on_fetch_notification_mode = [this](std::string room_id)
     {
         if (on_fetch_notification_mode)
+        {
             on_fetch_notification_mode(std::move(room_id));
+        }
     };
-    room_info_panel_->on_notification_mode_changed =
-        [this](std::string room_id, std::string mode)
+    room_info_panel_->on_notification_mode_changed = [this](std::string room_id, std::string mode)
     {
         if (on_notification_mode_changed)
+        {
             on_notification_mode_changed(std::move(room_id), std::move(mode));
+        }
     };
-    room_info_panel_->on_favourite_changed =
-        [this](std::string room_id, bool on)
+    room_info_panel_->on_favourite_changed = [this](std::string room_id, bool on)
     {
-        if (on_favourite_changed) on_favourite_changed(std::move(room_id), on);
+        if (on_favourite_changed)
+        {
+            on_favourite_changed(std::move(room_id), on);
+        }
     };
-    room_info_panel_->on_low_priority_changed =
-        [this](std::string room_id, bool on)
+    room_info_panel_->on_low_priority_changed = [this](std::string room_id, bool on)
     {
-        if (on_low_priority_changed) on_low_priority_changed(std::move(room_id), on);
+        if (on_low_priority_changed)
+        {
+            on_low_priority_changed(std::move(room_id), on);
+        }
     };
     room_info_panel_->on_link_clicked = [this](std::string url)
     {
-        if (on_link_clicked) on_link_clicked(std::move(url));
+        if (on_link_clicked)
+        {
+            on_link_clicked(std::move(url));
+        }
     };
     room_info_panel_->on_link_hovered = [this](std::string url)
     {
-        if (on_link_hovered) on_link_hovered(std::move(url));
+        if (on_link_hovered)
+        {
+            on_link_hovered(std::move(url));
+        }
     };
     room_info_panel_->on_fetch_members = [this](std::string room_id)
     {
-        if (on_fetch_room_members) on_fetch_room_members(std::move(room_id));
+        if (on_fetch_room_members)
+        {
+            on_fetch_room_members(std::move(room_id));
+        }
     };
     room_info_panel_->on_save_topic = [this](std::string room_id, std::string t)
     {
@@ -903,16 +1116,25 @@ void RoomView::wire_internal_callbacks()
         // immediately, without waiting for the SDK to echo the state event back.
         if (room_id == current_room_info_.id && header_)
         {
-            current_room_info_.topic      = t;
+            current_room_info_.topic = t;
             current_room_info_.topic_html = {};
             header_->set_room(current_room_info_);
         }
-        if (on_save_topic) on_save_topic(std::move(room_id), std::move(t));
+        if (on_save_topic)
+        {
+            on_save_topic(std::move(room_id), std::move(t));
+        }
     };
     room_info_panel_->on_leave_room = [this](std::string room_id)
     {
         confirm_and_leave_room_(
-            [this]() { if (room_info_panel_) room_info_panel_->close(); },
+            [this]()
+            {
+                if (room_info_panel_)
+                {
+                    room_info_panel_->close();
+                }
+            },
             std::move(room_id));
     };
     room_info_panel_->on_export_history_requested = [this](std::string room_id)
@@ -920,10 +1142,18 @@ void RoomView::wire_internal_callbacks()
         // Same hand-off shape as on_media_view_requested: close the panel
         // (RoomView-owned, so it would otherwise sit visually underneath
         // the MainAppWidget-level export overlay) before forwarding.
-        if (room_info_panel_) room_info_panel_->close();
-        if (on_layout_changed) on_layout_changed();
+        if (room_info_panel_)
+        {
+            room_info_panel_->close();
+        }
+        if (on_layout_changed)
+        {
+            on_layout_changed();
+        }
         if (export_history_provider_)
+        {
             export_history_provider_(std::move(room_id), current_room_info_.name);
+        }
     };
     room_info_panel_->on_media_view_requested = [this](std::string room_id)
     {
@@ -931,24 +1161,37 @@ void RoomView::wire_internal_callbacks()
         // stays open (and, since RoomInfoPanel is a RoomView-owned overlay
         // rather than a MainAppWidget-level one, visually underneath) once
         // the gallery closes again.
-        if (room_info_panel_) room_info_panel_->close();
-        if (on_layout_changed) on_layout_changed();
-        if (on_media_view_requested) on_media_view_requested(std::move(room_id));
+        if (room_info_panel_)
+        {
+            room_info_panel_->close();
+        }
+        if (on_layout_changed)
+        {
+            on_layout_changed();
+        }
+        if (on_media_view_requested)
+        {
+            on_media_view_requested(std::move(room_id));
+        }
     };
-    room_info_panel_->on_member_clicked =
-        [this](std::string uid, std::string name, std::string av)
+    room_info_panel_->on_member_clicked = [this](std::string uid, std::string name, std::string av)
     {
         show_user_profile(std::move(uid), std::move(name), std::move(av));
     };
-    room_info_panel_->on_avatar_clicked =
-        [this](std::string url, std::string name)
+    room_info_panel_->on_avatar_clicked = [this](std::string url, std::string name)
     {
         if (on_avatar_clicked)
+        {
             on_avatar_clicked(std::move(url), std::move(name));
+        }
     };
     room_info_panel_->on_layout_changed = [this]()
     {
-        if (on_layout_changed) on_layout_changed();
+        sync_side_panel_state_();
+        if (on_layout_changed)
+        {
+            on_layout_changed();
+        }
     };
     room_info_panel_->on_room_settings_requested = [this]()
     {
@@ -971,24 +1214,31 @@ void RoomView::wire_internal_callbacks()
     room_info_panel_->on_ban_member =
         [this](std::string room_id, std::string user_id, std::string name)
     {
-        confirm_and_moderate_member_(true, std::move(room_id), std::move(user_id),
-                                     std::move(name));
+        confirm_and_moderate_member_(true, std::move(room_id), std::move(user_id), std::move(name));
     };
 
     // Wire knock-requests panel callbacks.
     knock_requests_panel_->on_layout_changed = [this]()
     {
-        if (on_layout_changed) on_layout_changed();
+        if (on_layout_changed)
+        {
+            on_layout_changed();
+        }
     };
     knock_requests_panel_->on_close = [this]()
     {
         knock_requests_panel_->close();
-        if (on_knock_requests_closed) on_knock_requests_closed();
+        if (on_knock_requests_closed)
+        {
+            on_knock_requests_closed();
+        }
         show_room_info();
-        if (repaint_requester_) repaint_requester_();
+        if (repaint_requester_)
+        {
+            repaint_requester_();
+        }
     };
-    knock_requests_panel_->on_decline_and_ban =
-        [this](std::string user_id, std::string reason)
+    knock_requests_panel_->on_decline_and_ban = [this](std::string user_id, std::string reason)
     {
         // Deny & Ban is destructive (irreversible from the target's
         // perspective) — confirm before forwarding, mirroring
@@ -996,45 +1246,54 @@ void RoomView::wire_internal_callbacks()
         if (!confirm_provider_)
         {
             if (on_decline_and_ban_knock_request)
-                on_decline_and_ban_knock_request(current_room_info_.id,
-                                                 std::move(user_id),
+            {
+                on_decline_and_ban_knock_request(current_room_info_.id, std::move(user_id),
                                                  std::move(reason));
+            }
             return;
         }
         ConfirmDialog::Options opts;
-        opts.title         = tk::tr("Deny and ban this user?");
-        opts.body          = tk::tr(
-            "They will be removed from the room and unable to rejoin or "
-            "knock again unless unbanned.");
+        opts.title = tk::tr("Deny and ban this user?");
+        opts.body = tk::tr("They will be removed from the room and unable to rejoin or "
+                           "knock again unless unbanned.");
         opts.confirm_label = tk::tr("Deny & Ban");
-        opts.cancel_label  = tk::tr("Cancel");
-        opts.destructive   = true;
+        opts.cancel_label = tk::tr("Cancel");
+        opts.destructive = true;
 
         const std::string room_id = current_room_info_.id;
         confirm_provider_(
             std::move(opts),
-            [this, room_id, user_id = std::move(user_id),
-             reason = std::move(reason)]()
+            [this, room_id, user_id = std::move(user_id), reason = std::move(reason)]()
             {
                 if (on_decline_and_ban_knock_request)
+                {
                     on_decline_and_ban_knock_request(room_id, user_id, reason);
+                }
             });
     };
 
     // Wire room settings view callbacks.
     room_settings_view_->on_layout_changed = [this]()
     {
-        if (on_layout_changed) on_layout_changed();
+        if (on_layout_changed)
+        {
+            on_layout_changed();
+        }
     };
     room_settings_view_->on_cancel = [this]()
     {
         room_settings_view_->close();
-        if (repaint_requester_) repaint_requester_();
+        if (repaint_requester_)
+        {
+            repaint_requester_();
+        }
     };
     room_settings_view_->on_avatar_upload_clicked = [this]()
     {
         if (on_room_settings_avatar_upload_requested)
+        {
             on_room_settings_avatar_upload_requested(current_room_info_.id);
+        }
     };
     room_settings_view_->on_avatar_remove_clicked = [this]()
     {
@@ -1042,36 +1301,54 @@ void RoomView::wire_internal_callbacks()
     };
     room_settings_view_->on_copy_to_clipboard = [this](std::string text)
     {
-        if (on_set_clipboard) on_set_clipboard(text);
+        if (on_set_clipboard)
+        {
+            on_set_clipboard(text);
+        }
     };
     room_settings_view_->on_leave_room = [this](std::string room_id)
     {
         confirm_and_leave_room_(
-            [this]() { if (room_settings_view_) room_settings_view_->close(); },
+            [this]()
+            {
+                if (room_settings_view_)
+                {
+                    room_settings_view_->close();
+                }
+            },
             std::move(room_id));
     };
     room_settings_view_->on_unban_requested =
         [this](std::string room_id, std::string user_id, std::string name)
     {
         if (on_unban_member)
+        {
             on_unban_member(std::move(room_id), std::move(user_id), std::move(name));
+        }
     };
-    room_settings_view_->on_bridge_override_changed =
-        [this](std::string room_id, bool not_bridged)
+    room_settings_view_->on_bridge_override_changed = [this](std::string room_id, bool not_bridged)
     {
         if (on_bridge_override_changed)
+        {
             on_bridge_override_changed(std::move(room_id), not_bridged);
+        }
     };
 
     // Wire user profile panel callbacks.
     user_profile_panel_->on_close = [this]()
     {
         user_profile_panel_->close();
-        if (repaint_requester_) repaint_requester_();
+        if (repaint_requester_)
+        {
+            repaint_requester_();
+        }
     };
     user_profile_panel_->on_open_dm = [this](std::string user_id)
     {
-        if (on_open_dm) on_open_dm(std::move(user_id));
+        if (on_open_dm)
+        {
+            on_open_dm(std::move(user_id));
+        }
     };
     user_profile_panel_->on_check_has_dm = [this](const std::string& user_id)
     {
@@ -1079,17 +1356,24 @@ void RoomView::wire_internal_callbacks()
     };
     user_profile_panel_->on_ignore = [this](std::string user_id)
     {
-        if (on_ignore_user) on_ignore_user(std::move(user_id));
+        if (on_ignore_user)
+        {
+            on_ignore_user(std::move(user_id));
+        }
     };
-    user_profile_panel_->on_avatar_clicked =
-        [this](std::string url, std::string name)
+    user_profile_panel_->on_avatar_clicked = [this](std::string url, std::string name)
     {
         if (on_avatar_clicked)
+        {
             on_avatar_clicked(std::move(url), std::move(name));
+        }
     };
     user_profile_panel_->on_layout_changed = [this]()
     {
-        if (on_layout_changed) on_layout_changed();
+        if (on_layout_changed)
+        {
+            on_layout_changed();
+        }
     };
 }
 
@@ -1103,16 +1387,16 @@ int RoomView::media_count_() const
 {
     if (client_ && has_room_)
     {
-        const std::uint64_t indexed =
-            client_->room_media_count(current_room_info_.id);
+        const std::uint64_t indexed = client_->room_media_count(current_room_info_.id);
         if (indexed > 0)
+        {
             return static_cast<int>(indexed);
+        }
     }
     return message_list_ ? count_synced_media_(message_list_->messages()) : 0;
 }
 
-void RoomView::confirm_and_leave_room_(std::function<void()> close_panel,
-                                       std::string room_id)
+void RoomView::confirm_and_leave_room_(std::function<void()> close_panel, std::string room_id)
 {
     // If MainAppWidget supplied a confirm provider, prompt before forwarding
     // the SDK-touching callback. Falls back to firing directly so tests /
@@ -1120,40 +1404,55 @@ void RoomView::confirm_and_leave_room_(std::function<void()> close_panel,
     if (confirm_provider_)
     {
         ConfirmDialog::Options opts;
-        const std::string display = current_room_info_.name.empty()
-                                        ? tk::tr("this room")
-                                        : current_room_info_.name;
-        opts.title          = tk::trf(tk::tr("Leave {0}?"), {display});
-        opts.body           = tk::tr("You will stop receiving messages and need "
-                                     "to be re-invited to rejoin.");
-        opts.confirm_label  = tk::tr("Leave");
-        opts.cancel_label   = tk::tr("Cancel");
-        opts.destructive    = true;
+        const std::string display =
+            current_room_info_.name.empty() ? tk::tr("this room") : current_room_info_.name;
+        opts.title = tk::trf(tk::tr("Leave {0}?"), {display});
+        opts.body = tk::tr("You will stop receiving messages and need "
+                           "to be re-invited to rejoin.");
+        opts.confirm_label = tk::tr("Leave");
+        opts.cancel_label = tk::tr("Cancel");
+        opts.destructive = true;
 
         // Close whichever panel we're handing off from — otherwise the
         // prompt would sit on top of it and the user would see two
         // backdrops stacked.
-        if (close_panel) close_panel();
-        if (on_layout_changed) on_layout_changed();
+        if (close_panel)
+        {
+            close_panel();
+        }
+        if (on_layout_changed)
+        {
+            on_layout_changed();
+        }
 
         const std::string captured_id = room_id;
-        confirm_provider_(std::move(opts), [this, captured_id]() {
-            if (on_leave_room) on_leave_room(captured_id);
-        });
+        confirm_provider_(std::move(opts),
+                          [this, captured_id]()
+                          {
+                              if (on_leave_room)
+                              {
+                                  on_leave_room(captured_id);
+                              }
+                          });
         return;
     }
-    if (on_leave_room) on_leave_room(std::move(room_id));
+    if (on_leave_room)
+    {
+        on_leave_room(std::move(room_id));
+    }
 }
 
-void RoomView::confirm_and_moderate_member_(bool ban, std::string room_id,
-                                            std::string user_id,
+void RoomView::confirm_and_moderate_member_(bool ban, std::string room_id, std::string user_id,
                                             std::string display_name)
 {
     auto forward = [this, ban](const std::string& rid, const std::string& uid,
                                const std::string& name, std::string reason)
     {
         auto& cb = ban ? on_ban_member : on_kick_member;
-        if (cb) cb(rid, uid, name, std::move(reason));
+        if (cb)
+        {
+            cb(rid, uid, name, std::move(reason));
+        }
     };
     if (!confirm_provider_)
     {
@@ -1165,58 +1464,131 @@ void RoomView::confirm_and_moderate_member_(bool ban, std::string room_id,
     ConfirmDialog::Options opts;
     if (ban)
     {
-        opts.title         = tk::trf(tk::tr("Ban {0}?"), {who});
-        opts.body          = tk::tr("They will be removed from the room and unable "
-                                    "to rejoin unless unbanned.");
+        opts.title = tk::trf(tk::tr("Ban {0}?"), {who});
+        opts.body = tk::tr("They will be removed from the room and unable "
+                           "to rejoin unless unbanned.");
         opts.confirm_label = tk::tr("Ban");
     }
     else
     {
-        opts.title         = tk::trf(tk::tr("Remove {0} from the room?"), {who});
-        opts.body          = tk::tr("They can rejoin if the room allows it.");
+        opts.title = tk::trf(tk::tr("Remove {0} from the room?"), {who});
+        opts.body = tk::tr("They can rejoin if the room allows it.");
         opts.confirm_label = tk::tr("Kick");
     }
-    opts.cancel_label       = tk::tr("Cancel");
-    opts.destructive        = true;
-    opts.reason_field       = true;
+    opts.cancel_label = tk::tr("Cancel");
+    opts.destructive = true;
+    opts.reason_field = true;
     opts.reason_placeholder = tk::tr("Reason (optional)");
     // on_reason fires immediately before the confirm callback; stash the text
     // for it to forward.
     auto reason = std::make_shared<std::string>();
-    opts.on_reason = [reason](std::string r) { *reason = std::move(r); };
+    opts.on_reason = [reason](std::string r)
+    {
+        *reason = std::move(r);
+    };
 
     // Close the panel so the prompt doesn't stack on top of its backdrop.
-    if (room_info_panel_) room_info_panel_->close();
-    if (on_layout_changed) on_layout_changed();
+    if (room_info_panel_)
+    {
+        room_info_panel_->close();
+    }
+    if (on_layout_changed)
+    {
+        on_layout_changed();
+    }
 
     confirm_provider_(std::move(opts),
-                      [forward, reason, room_id = std::move(room_id),
-                       user_id = std::move(user_id),
+                      [forward, reason, room_id = std::move(room_id), user_id = std::move(user_id),
                        display_name = std::move(display_name)]()
-                      { forward(room_id, user_id, display_name, std::move(*reason)); });
+                      {
+                          forward(room_id, user_id, display_name, std::move(*reason));
+                      });
+}
+
+void RoomView::confirm_and_report_(std::string event_id)
+{
+    if (!confirm_provider_)
+    {
+        if (on_report_requested)
+        {
+            on_report_requested(std::move(event_id), {});
+        }
+        return;
+    }
+
+    ConfirmDialog::Options opts;
+    opts.title = tk::tr("Report this message?");
+    opts.body = tk::tr("The report is sent to your homeserver's "
+                       "administrators, not to this room's moderators. "
+                       "The message stays visible.");
+    opts.confirm_label = tk::tr("Report");
+    opts.cancel_label = tk::tr("Cancel");
+    opts.destructive = true;
+    opts.reason_field = true;
+    opts.reason_placeholder = tk::tr("Reason (optional)");
+    // on_reason fires immediately before the confirm callback; stash the text
+    // for it to forward.
+    auto reason = std::make_shared<std::string>();
+    opts.on_reason = [reason](std::string r)
+    {
+        *reason = std::move(r);
+    };
+
+    confirm_provider_(std::move(opts),
+                      [this, reason, event_id = std::move(event_id)]()
+                      {
+                          if (on_report_requested)
+                          {
+                              on_report_requested(event_id, std::move(*reason));
+                          }
+                      });
+}
+
+void RoomView::sync_side_panel_state_()
+{
+    if (!message_list_)
+    {
+        return;
+    }
+    message_list_->set_side_panel_open(thread_panel_state_ != ThreadPanelState::Closed ||
+                                       (room_info_panel_ && room_info_panel_->is_open()));
 }
 
 void RoomView::show_room_info()
 {
     if (!room_info_panel_ || !has_room_)
+    {
         return;
+    }
     if (user_profile_panel_ && user_profile_panel_->is_open())
+    {
         user_profile_panel_->close();
+    }
     room_info_panel_->set_media_count(media_count_());
     room_info_panel_->open(current_room_info_);
-    if (on_room_info_opened) on_room_info_opened(current_room_info_.id);
-    if (repaint_requester_) repaint_requester_();
+    if (on_room_info_opened)
+    {
+        on_room_info_opened(current_room_info_.id);
+    }
+    if (repaint_requester_)
+    {
+        repaint_requester_();
+    }
 }
 
 void RoomView::refresh_media_count_()
 {
     if (!room_info_panel_ || !room_info_panel_->is_open())
+    {
         return;
+    }
     // A timeline burst (a sync batch, a backfill page) calls this once per row,
     // and the count is a database query. Mark it dirty and take it once in paint.
     media_count_dirty_ = true;
     if (repaint_requester_)
+    {
         repaint_requester_();
+    }
 }
 
 void RoomView::refresh_media_count()
@@ -1227,64 +1599,123 @@ void RoomView::refresh_media_count()
 void RoomView::show_room_settings()
 {
     if (!room_settings_view_ || !has_room_)
+    {
         return;
+    }
     if (room_info_panel_ && room_info_panel_->is_open())
+    {
         room_info_panel_->close();
+    }
     if (user_profile_panel_ && user_profile_panel_->is_open())
+    {
         user_profile_panel_->close();
+    }
     room_settings_view_->open(current_room_info_);
-    if (on_room_settings_opened) on_room_settings_opened(current_room_info_.id);
-    if (repaint_requester_) repaint_requester_();
+    if (on_room_settings_opened)
+    {
+        on_room_settings_opened(current_room_info_.id);
+    }
+    if (repaint_requester_)
+    {
+        repaint_requester_();
+    }
 }
 
 void RoomView::show_knock_requests()
 {
     if (!knock_requests_panel_ || !has_room_)
+    {
         return;
+    }
     if (room_info_panel_ && room_info_panel_->is_open())
+    {
         room_info_panel_->close();
+    }
     if (user_profile_panel_ && user_profile_panel_->is_open())
+    {
         user_profile_panel_->close();
+    }
     knock_requests_panel_->open(current_room_info_.id);
-    if (on_knock_requests_opened) on_knock_requests_opened(current_room_info_.id);
-    if (repaint_requester_) repaint_requester_();
+    if (on_knock_requests_opened)
+    {
+        on_knock_requests_opened(current_room_info_.id);
+    }
+    if (repaint_requester_)
+    {
+        repaint_requester_();
+    }
 }
 
 void RoomView::show_invite_dialog()
 {
     if (!invite_dialog_ || !has_room_)
+    {
         return;
+    }
     if (room_info_panel_ && room_info_panel_->is_open())
+    {
         room_info_panel_->close();
+    }
     if (user_profile_panel_ && user_profile_panel_->is_open())
+    {
         user_profile_panel_->close();
+    }
     invite_dialog_->open(current_room_info_.id, current_room_info_.name);
-    if (on_invite_dialog_opened) on_invite_dialog_opened(current_room_info_.id);
-    if (on_layout_changed) on_layout_changed();
-    if (repaint_requester_) repaint_requester_();
+    if (on_invite_dialog_opened)
+    {
+        on_invite_dialog_opened(current_room_info_.id);
+    }
+    if (on_layout_changed)
+    {
+        on_layout_changed();
+    }
+    if (repaint_requester_)
+    {
+        repaint_requester_();
+    }
 }
 
 void RoomView::open_user_profile(const std::string& user_id)
 {
-    show_user_profile(user_id, "", "");
+    // The panel can't look the name and avatar up itself: take them from the
+    // room's members, as a mention click does.
+    std::string name, avatar;
+    for (const auto& m : room_members_)
+    {
+        if (m.user_id == user_id)
+        {
+            name = m.display_name;
+            avatar = m.avatar_url;
+            break;
+        }
+    }
+    show_user_profile(user_id, std::move(name), std::move(avatar));
 }
 
 void RoomView::show_user_profile(std::string user_id, std::string display_name,
-                                  std::string avatar_url)
+                                 std::string avatar_url)
 {
     if (!user_profile_panel_)
+    {
         return;
+    }
     if (room_info_panel_ && room_info_panel_->is_open())
+    {
         room_info_panel_->close();
-    user_profile_panel_->open(std::move(user_id), std::move(display_name),
-                               std::move(avatar_url));
-    if (repaint_requester_) repaint_requester_();
+    }
+    user_profile_panel_->open(std::move(user_id), std::move(display_name), std::move(avatar_url));
+    if (repaint_requester_)
+    {
+        repaint_requester_();
+    }
 }
 
 void RoomView::set_dm_button_state(UserProfilePanel::DmButtonState state)
 {
     if (user_profile_panel_)
+    {
         user_profile_panel_->set_dm_button_state(state);
+    }
 }
 
 void RoomView::close_user_profile()
@@ -1292,7 +1723,10 @@ void RoomView::close_user_profile()
     if (user_profile_panel_ && user_profile_panel_->is_open())
     {
         user_profile_panel_->close();
-        if (repaint_requester_) repaint_requester_();
+        if (repaint_requester_)
+        {
+            repaint_requester_();
+        }
     }
 }
 
@@ -1305,7 +1739,9 @@ tk::Rect RoomView::clamp_picker_rect_(tk::Rect anchor, float w, float h) const
     float px = anchor.x;
     float py = anchor.y - h - 4.0f;
     if (py < bounds_.y)
+    {
         py = anchor.y + anchor.h + 4.0f; // flip below if that would clip the top
+    }
     px = std::clamp(px, bounds_.x, bounds_.x + bounds_.w - w);
     py = std::clamp(py, bounds_.y, bounds_.y + bounds_.h - h);
     return {px, py, w, h};
@@ -1315,70 +1751,99 @@ void RoomView::show_emoji_picker_(tk::Rect anchor, bool for_reaction,
                                   const std::string& reaction_event_id)
 {
     if (!emoji_picker_)
+    {
         return;
+    }
     sticker_picker_visible_ = false;
     if (sticker_picker_)
+    {
         sticker_picker_->set_visible(false);
+    }
     pending_reaction_event_id_ = for_reaction ? reaction_event_id : std::string();
 
     if (emoji_skin_tone_provider)
+    {
         emoji_picker_->set_skin_tone(emoji_skin_tone_provider());
+    }
     emoji_picker_->refresh_frequents();
     emoji_picker_->set_search_query("");
     if (auto* sf = emoji_picker_->search_field())
+    {
         sf->set_text("");
+    }
     emoji_picker_->show_frequents_page();
 
-    emoji_picker_->open_at(
-        clamp_picker_rect_(anchor, EmojiPicker::kWidth, EmojiPicker::kHeight));
+    emoji_picker_->open_at(clamp_picker_rect_(anchor, EmojiPicker::kWidth, EmojiPicker::kHeight));
     emoji_picker_->set_visible(true);
     emoji_picker_visible_ = true;
 
     if (message_list_)
+    {
         message_list_->set_hover_locked(for_reaction);
+    }
 
     if (auto* sf = emoji_picker_->search_field())
+    {
         sf->set_focused(true);
+    }
     if (repaint_requester_)
+    {
         repaint_requester_();
+    }
 }
 
 void RoomView::show_sticker_picker_(tk::Rect anchor)
 {
     if (!sticker_picker_)
+    {
         return;
+    }
     emoji_picker_visible_ = false;
     if (emoji_picker_)
+    {
         emoji_picker_->set_visible(false);
+    }
     pending_reaction_event_id_.clear();
 
     sticker_picker_->refresh_packs();
     sticker_picker_->set_search_query("");
     if (auto* sf = sticker_picker_->search_field())
+    {
         sf->set_text("");
+    }
 
-    sticker_picker_->open_at(clamp_picker_rect_(anchor, StickerPicker::kWidth,
-                                                StickerPicker::kHeight));
+    sticker_picker_->open_at(
+        clamp_picker_rect_(anchor, StickerPicker::kWidth, StickerPicker::kHeight));
     sticker_picker_->set_visible(true);
     sticker_picker_visible_ = true;
 
     if (auto* sf = sticker_picker_->search_field())
+    {
         sf->set_focused(true);
+    }
     if (repaint_requester_)
+    {
         repaint_requester_();
+    }
 }
 
 void RoomView::show_receipt_popup_(MessageListView* ml, tk::Rect anchor,
                                    std::vector<tesseract::ReadReceipt> hidden)
 {
     if (!receipt_popup_)
+    {
         return;
+    }
     emoji_picker_visible_ = false;
     sticker_picker_visible_ = false;
     if (emoji_picker_)
+    {
         emoji_picker_->set_visible(false);
+    }
     if (sticker_picker_)
+    {
         sticker_picker_->set_visible(false);
+    }
     pending_reaction_event_id_.clear();
 
     receipt_popup_->set_entries(std::move(hidden));
@@ -1388,23 +1853,37 @@ void RoomView::show_receipt_popup_(MessageListView* ml, tk::Rect anchor,
     receipt_popup_visible_ = true;
 
     if (ml)
+    {
         ml->set_hover_locked(true);
+    }
     receipt_popup_locked_ml_ = ml;
 
     if (repaint_requester_)
+    {
         repaint_requester_();
+    }
 }
 
 void RoomView::focus_compose_keeping_popup_()
 {
     if (!compose_bar_)
+    {
         return;
+    }
     // Focusing the composer would otherwise dismiss the open picker as an
     // "outside" focus change; the picker stays up while emoji are inserted.
     if (host())
-        host()->with_popup_kept_open([this] { compose_bar_->focus(); });
+    {
+        host()->with_popup_kept_open(
+            [this]
+            {
+                compose_bar_->focus();
+            });
+    }
     else
+    {
         compose_bar_->focus();
+    }
 }
 
 void RoomView::close_pickers()
@@ -1414,17 +1893,23 @@ void RoomView::close_pickers()
 
 void RoomView::hide_pickers_()
 {
-    const bool was_visible = emoji_picker_visible_ || sticker_picker_visible_ ||
-                             receipt_popup_visible_;
+    const bool was_visible =
+        emoji_picker_visible_ || sticker_picker_visible_ || receipt_popup_visible_;
     emoji_picker_visible_ = false;
     sticker_picker_visible_ = false;
     receipt_popup_visible_ = false;
     if (emoji_picker_)
+    {
         emoji_picker_->set_visible(false);
+    }
     if (sticker_picker_)
+    {
         sticker_picker_->set_visible(false);
+    }
     if (receipt_popup_)
+    {
         receipt_popup_->set_visible(false);
+    }
     if (receipt_popup_locked_ml_)
     {
         receipt_popup_locked_ml_->set_hover_locked(false);
@@ -1432,41 +1917,59 @@ void RoomView::hide_pickers_()
     }
     pending_reaction_event_id_.clear();
     if (message_list_)
+    {
         message_list_->set_hover_locked(false);
+    }
     if (compose_bar_)
+    {
         compose_bar_->focus();
+    }
     if (was_visible && repaint_requester_)
+    {
         repaint_requester_();
+    }
 }
 
 void RoomView::set_client(tesseract::Client* c)
 {
     client_ = c;
     if (emoji_picker_)
+    {
         emoji_picker_->set_client(c);
+    }
     if (sticker_picker_)
+    {
         sticker_picker_->set_client(c);
+    }
     refresh_media_count_();
 }
 
 void RoomView::set_current_room_parent_spaces(std::vector<std::string> space_ids)
 {
     if (emoji_picker_)
+    {
         emoji_picker_->set_current_room_parent_spaces(space_ids);
+    }
     if (sticker_picker_)
+    {
         sticker_picker_->set_current_room_parent_spaces(std::move(space_ids));
+    }
 }
 
 void RoomView::refresh_emoticon_packs()
 {
     if (emoji_picker_)
+    {
         emoji_picker_->refresh_emoticon_packs();
+    }
 }
 
 void RoomView::refresh_stickers()
 {
     if (sticker_picker_)
+    {
         sticker_picker_->refresh_packs();
+    }
 }
 
 void RoomView::show_emoji_picker()
@@ -1478,7 +1981,9 @@ void RoomView::show_emoji_picker()
     {
         const tk::Rect b = compose_bar_->emoji_button()->bounds();
         if (b.w > 0.0f && b.h > 0.0f)
+        {
             anchor = b;
+        }
     }
     show_emoji_picker_(anchor, /*for_reaction=*/false, {});
 }
@@ -1538,9 +2043,13 @@ void RoomView::set_media_failed_provider(std::function<bool(const std::string&)>
 {
     stored_media_failed_provider_ = p;
     if (thread_view_ && thread_view_->message_list())
+    {
         thread_view_->message_list()->set_media_failed_provider(p);
+    }
     if (message_list_)
+    {
         message_list_->set_media_failed_provider(std::move(p));
+    }
 }
 
 void RoomView::set_shortcode_provider(MessageListView::ShortcodeProvider p)
@@ -1584,13 +2093,16 @@ void RoomView::set_repaint_requester(std::function<void()> f)
     }
 }
 
-void RoomView::set_post_delayed(
-    std::function<void(int, std::function<void()>)> f)
+void RoomView::set_post_delayed(std::function<void(int, std::function<void()>)> f)
 {
     post_delayed_ = f;
     if (thread_view_)
+    {
         if (auto* ml = thread_view_->message_list())
+        {
             ml->set_post_delayed(f);
+        }
+    }
     if (message_list_)
     {
         message_list_->set_post_delayed(std::move(f));
@@ -1602,11 +2114,12 @@ void RoomView::set_confirm_provider(ConfirmProvider p)
     confirm_provider_ = std::move(p);
 }
 
-bool RoomView::request_confirm(ConfirmDialog::Options opts,
-                               std::function<void()> on_confirm)
+bool RoomView::request_confirm(ConfirmDialog::Options opts, std::function<void()> on_confirm)
 {
     if (!confirm_provider_)
+    {
         return false;
+    }
     confirm_provider_(std::move(opts), std::move(on_confirm));
     return true;
 }
@@ -1619,11 +2132,10 @@ void RoomView::set_export_history_provider(ExportHistoryProvider p)
 bool RoomView::is_overlay_open() const
 {
     return (room_settings_view_ && room_settings_view_->is_open()) ||
-           (room_info_panel_    && room_info_panel_->is_open()) ||
+           (room_info_panel_ && room_info_panel_->is_open()) ||
            (user_profile_panel_ && user_profile_panel_->is_open()) ||
-           (room_media_view_    && room_media_view_->is_open()) ||
-           (invite_dialog_      && invite_dialog_->is_open()) ||
-           (call_lobby_         && call_lobby_->is_open());
+           (room_media_view_ && room_media_view_->is_open()) ||
+           (invite_dialog_ && invite_dialog_->is_open()) || (call_lobby_ && call_lobby_->is_open());
 }
 
 RoomSearchBar* RoomView::room_search_bar() const
@@ -1634,17 +2146,23 @@ RoomSearchBar* RoomView::room_search_bar() const
 void RoomView::open_room_search()
 {
     if (!has_room_ || !room_search_bar_)
+    {
         return;
+    }
     room_search_bar_->set_visible(true);
     room_search_bar_->open();
     if (on_layout_changed)
+    {
         on_layout_changed();
+    }
 }
 
 void RoomView::close_room_search()
 {
     if (!room_search_bar_ || !room_search_bar_->is_open())
+    {
         return;
+    }
     room_search_bar_->close();
     room_search_bar_->set_visible(false);
     if (message_list_)
@@ -1653,41 +2171,80 @@ void RoomView::close_room_search()
         message_list_->set_highlighted_event({});
     }
     if (on_room_search_closed)
+    {
         on_room_search_closed();
+    }
     if (on_layout_changed)
+    {
         on_layout_changed();
+    }
 }
 
-void RoomView::set_call_banner(const std::string&              room_id,
-                               const std::string&              call_intent,
-                               std::vector<CallBanner::Member> members,
-                               bool                            join_enabled)
+void RoomView::set_call_banner(const std::string& room_id, const std::string& call_intent,
+                               std::vector<CallBanner::Member> members, bool join_enabled)
 {
-    if (!call_banner_) return;
+    if (!call_banner_)
+    {
+        return;
+    }
 
     const bool was_visible = call_banner_->visible();
     call_banner_->set_call(
         call_intent, std::move(members),
-        [this, room_id] {
-            if (on_start_call) on_start_call(room_id, "call#default", false);
+        [this, room_id]
+        {
+            if (on_start_call)
+            {
+                on_start_call(room_id, "call#default", false);
+            }
         },
         join_enabled);
 
     // The height only changes when the banner appears; member/avatar changes
     // just need a repaint, which the caller's data path already triggers.
-    if (!was_visible && on_layout_changed) on_layout_changed();
+    if (!was_visible && on_layout_changed)
+    {
+        on_layout_changed();
+    }
 }
 
 void RoomView::clear_call_banner()
 {
-    if (!call_banner_ || !call_banner_->visible()) return;
+    if (!call_banner_ || !call_banner_->visible())
+    {
+        return;
+    }
     call_banner_->clear();
-    if (on_layout_changed) on_layout_changed();
+    if (on_layout_changed)
+    {
+        on_layout_changed();
+    }
+}
+
+void RoomView::set_call_banner_decline(std::function<void()> on_decline)
+{
+    if (!call_banner_)
+    {
+        return;
+    }
+    // The button changes the banner's layout, which only a relayout applies.
+    if (call_banner_->set_decline(std::move(on_decline)) && on_layout_changed)
+    {
+        on_layout_changed();
+    }
+}
+
+bool RoomView::call_banner_decline_visible() const
+{
+    return call_banner_ && call_banner_->visible() && call_banner_->decline_visible();
 }
 
 void RoomView::set_call_banner_avatar_provider(CallBanner::AvatarProvider p)
 {
-    if (call_banner_) call_banner_->set_avatar_provider(std::move(p));
+    if (call_banner_)
+    {
+        call_banner_->set_avatar_provider(std::move(p));
+    }
 }
 
 bool RoomView::call_banner_visible() const
@@ -1702,24 +2259,34 @@ bool RoomView::identity_warning_shown() const
 
 void RoomView::set_identity_warnings(std::vector<tesseract::IdentityWarning> warnings)
 {
-    if (!identity_banner_) return;
+    if (!identity_banner_)
+    {
+        return;
+    }
     // has_warning(), not visible(): the latter is false while RoomView itself
     // is hidden, and skipping the clear then would resurface a stale warning.
-    if (!identity_banner_->has_warning() && warnings.empty()) return;
+    if (!identity_banner_->has_warning() && warnings.empty())
+    {
+        return;
+    }
     identity_banner_->set_warnings(std::move(warnings));
     // Relayout (and repaint): the strip's height or its text changed.
-    if (on_layout_changed) on_layout_changed();
+    if (on_layout_changed)
+    {
+        on_layout_changed();
+    }
 }
 
 views::CallOverlayWidget*
-RoomView::mount_call_panel(
-    views::CallOverlayWidget::Mode initial_mode,
-    PostDelayedFn                  post_delayed,
-    std::function<void()>          repaint_requester,
-    std::function<const tk::Image*(const std::string&)> avatar_provider,
-    std::function<std::string(const std::string&)>      display_name_provider)
+RoomView::mount_call_panel(views::CallOverlayWidget::Mode initial_mode, PostDelayedFn post_delayed,
+                           std::function<void()> repaint_requester,
+                           std::function<const tk::Image*(const std::string&)> avatar_provider,
+                           std::function<std::string(const std::string&)> display_name_provider)
 {
-    if (call_panel_) unmount_call_panel();
+    if (call_panel_)
+    {
+        unmount_call_panel();
+    }
     auto w = std::make_unique<views::CallOverlayWidget>();
     w->set_post_delayed(std::move(post_delayed));
     w->set_repaint_requester(std::move(repaint_requester));
@@ -1732,7 +2299,10 @@ RoomView::mount_call_panel(
 
 void RoomView::unmount_call_panel()
 {
-    if (!call_panel_) return;
+    if (!call_panel_)
+    {
+        return;
+    }
     call_panel_->stop_timer();
     remove_child(call_panel_);
     call_panel_ = nullptr;
@@ -1796,20 +2366,25 @@ void RoomView::set_message_list_video_suspended(bool suspended)
 void RoomView::advance_video_generation()
 {
     if (message_list_)
+    {
         message_list_->advance_video_generation();
+    }
 }
 
-void RoomView::sweep_video_players(unsigned keep_generations,
-                                   std::chrono::milliseconds retired_ttl)
+void RoomView::sweep_video_players(unsigned keep_generations, std::chrono::milliseconds retired_ttl)
 {
     if (message_list_)
+    {
         message_list_->sweep_video_players(keep_generations, retired_ttl);
+    }
 }
 
 void RoomView::release_idle_video_players(std::chrono::milliseconds retired_ttl)
 {
     if (message_list_)
+    {
         message_list_->release_idle_video_players(retired_ttl);
+    }
 }
 
 std::size_t RoomView::video_memory_bytes() const
@@ -1832,10 +2407,12 @@ void RoomView::set_room(const tesseract::RoomInfo& info)
     // the same room (e.g. a rooms-list refresh) while the lobby is up, and
     // gating on room_changed alone would close it right after it opens.
     // Switching to a different room abandons it, exactly like Cancel.
-    if (call_lobby_ && call_lobby_->is_open() &&
-        call_lobby_->room_id() != info.id)
+    if (call_lobby_ && call_lobby_->is_open() && call_lobby_->room_id() != info.id)
     {
-        if (call_lobby_->on_cancel) call_lobby_->on_cancel();
+        if (call_lobby_->on_cancel)
+        {
+            call_lobby_->on_cancel();
+        }
         call_lobby_->close();
     }
 
@@ -1843,20 +2420,33 @@ void RoomView::set_room(const tesseract::RoomInfo& info)
     if (room_changed)
     {
         if (room_info_panel_)
+        {
             room_info_panel_->close();
+        }
         if (room_settings_view_)
+        {
             room_settings_view_->close();
+        }
         if (knock_requests_panel_ && knock_requests_panel_->is_open())
         {
             knock_requests_panel_->close();
-            if (on_knock_requests_closed) on_knock_requests_closed();
+            if (on_knock_requests_closed)
+            {
+                on_knock_requests_closed();
+            }
         }
         if (user_profile_panel_)
+        {
             user_profile_panel_->close();
+        }
         if (room_media_view_ && room_media_view_->is_open())
+        {
             room_media_view_->close();
+        }
         if (invite_dialog_ && invite_dialog_->is_open())
+        {
             invite_dialog_->close();
+        }
         close_room_search();
         // The action-pill "more" submenu and the call-type popup are backdrop
         // overlays that only close via their own click-outside handling
@@ -1864,17 +2454,22 @@ void RoomView::set_room(const tesseract::RoomInfo& info)
         // until the user happens to click in the new room's timeline. Run
         // the same cleanup on_dismissed does rather than a bare close() so
         // hover-locked rows aren't left stuck.
-        if (overflow_menu_ && overflow_menu_->is_open() &&
-            overflow_menu_->on_dismissed)
+        if (overflow_menu_ && overflow_menu_->is_open() && overflow_menu_->on_dismissed)
+        {
             overflow_menu_->on_dismissed();
+        }
         if (call_popup_ && call_popup_->is_open() && call_popup_->on_dismissed)
+        {
             call_popup_->on_dismissed();
+        }
         // A picker left open across a room switch would show the wrong
         // room's emoticon/sticker packs — not part of DatePickerView's
         // precedent (RoomHeader::set_room doesn't close it either), but
         // clearly correct here.
         if (emoji_picker_visible_ || sticker_picker_visible_)
+        {
             hide_pickers_();
+        }
     }
     else if (room_info_panel_ && room_info_panel_->is_open())
     {
@@ -1883,7 +2478,9 @@ void RoomView::set_room(const tesseract::RoomInfo& info)
     // A same-room update reaches an open settings form too, so an untouched
     // field follows the server instead of being saved back over it.
     if (!room_changed && room_settings_view_ && room_settings_view_->is_open())
+    {
         room_settings_view_->refresh_room_info(info);
+    }
     has_room_ = true;
     current_room_info_ = info;
     if (message_list_)
@@ -1899,19 +2496,29 @@ void RoomView::set_room(const tesseract::RoomInfo& info)
         replaced_banner_->set_successor_joined(info.successor_joined);
         replaced_banner_->set_visible(replaced);
         if (was_shown != replaced && on_layout_changed)
+        {
             on_layout_changed();
+        }
     }
     if (emoji_picker_)
+    {
         emoji_picker_->set_current_room_id(info.id);
+    }
     if (sticker_picker_)
+    {
         sticker_picker_->set_current_room_id(info.id);
+    }
     if (on_room_avatar_needed)
+    {
         on_room_avatar_needed(info);
+    }
     // Prefetch members on room change so mention pills (avatar) and mention
     // clicks (display name + avatar) resolve without first opening the
     // room-info panel. Lives here so every shell gets it for free.
     if (room_changed && on_fetch_room_members)
+    {
         on_fetch_room_members(info.id);
+    }
     if (header_)
     {
         header_->set_room(info);
@@ -1932,7 +2539,9 @@ void RoomView::set_room(const tesseract::RoomInfo& info)
         if (room_changed && !replaced)
         {
             if (auto* ta = compose_bar_->text_area())
+            {
                 ta->set_visible(true);
+            }
             compose_bar_->focus();
         }
     }
@@ -1947,10 +2556,15 @@ void RoomView::clear_room()
         message_list_->set_predecessor_available(false);
     }
     if (replaced_banner_)
+    {
         replaced_banner_->set_visible(false);
+    }
     if (call_lobby_ && call_lobby_->is_open())
     {
-        if (call_lobby_->on_cancel) call_lobby_->on_cancel();
+        if (call_lobby_->on_cancel)
+        {
+            call_lobby_->on_cancel();
+        }
         call_lobby_->close();
     }
     close_room_search();
@@ -1962,7 +2576,10 @@ void RoomView::clear_room()
     // into the next set_room() before refresh_pinned_for_current_room_ runs
     // (e.g. account switch → onRoomSelected fast-path skips tab_select_room).
     set_pinned({});
-    if (on_room_cleared) on_room_cleared();
+    if (on_room_cleared)
+    {
+        on_room_cleared();
+    }
 }
 
 void RoomView::set_messages(std::vector<MessageRowData> msgs, bool room_switch)
@@ -2013,14 +2630,18 @@ void RoomView::append_message(MessageRowData msg)
 void RoomView::prepend_messages(std::vector<MessageRowData> rows)
 {
     if (message_list_)
+    {
         message_list_->prepend_messages(std::move(rows));
+    }
     refresh_media_count_();
 }
 
 void RoomView::append_messages(std::vector<MessageRowData> rows)
 {
     if (message_list_)
+    {
         message_list_->append_messages(std::move(rows));
+    }
     refresh_media_count_();
 }
 
@@ -2033,18 +2654,24 @@ void RoomView::notify_image_ready(const std::string& url)
     if (thread_view_ && thread_view_->visible())
     {
         if (auto* ml = thread_view_->message_list())
+        {
             ml->notify_image_ready(url);
+        }
     }
 }
 
 void RoomView::notify_media_failed(const std::string& url)
 {
     if (message_list_)
+    {
         message_list_->notify_media_failed(url);
+    }
     if (thread_view_ && thread_view_->visible())
     {
         if (auto* ml = thread_view_->message_list())
+        {
             ml->notify_media_failed(url);
+        }
     }
 }
 
@@ -2057,7 +2684,9 @@ void RoomView::notify_url_preview_ready(const std::string& url)
     if (thread_view_ && thread_view_->visible())
     {
         if (auto* ml = thread_view_->message_list())
+        {
             ml->notify_url_preview_ready(url);
+        }
     }
 }
 
@@ -2070,7 +2699,9 @@ void RoomView::notify_reply_ready(const std::string& event_id)
     if (thread_view_ && thread_view_->visible())
     {
         if (auto* ml = thread_view_->message_list())
+        {
             ml->notify_reply_ready(event_id);
+        }
     }
 }
 
@@ -2132,7 +2763,9 @@ tk::Rect RoomView::compose_text_area_rect() const
     // so its cached rect is stale. Return empty to tell the shell to hide the
     // native text-area overlay.
     if (!has_room_)
+    {
         return {};
+    }
     // text_area_rect() inside ComposeBar is computed from bounds_ (world
     // coords) so the rect is already in surface space — no offset needed.
     return compose_bar_ ? compose_bar_->text_area_rect() : tk::Rect{};
@@ -2143,7 +2776,9 @@ tk::Rect RoomView::compose_bar_rect() const
     // Full compose-bar bounds in surface space (used to anchor the full-width
     // GIF strip just above the bar). Empty when no room is active.
     if (!has_room_)
+    {
         return {};
+    }
     return compose_bar_ ? compose_bar_->bounds() : tk::Rect{};
 }
 
@@ -2168,11 +2803,13 @@ void RoomView::set_room_members(std::vector<tesseract::RoomMember> members)
 void RoomView::set_show_threads_button(bool show)
 {
     if (header_)
+    {
         header_->set_show_threads_btn(show);
+    }
 }
 
-void RoomView::set_thread_subscriptions(
-    bool supported, const std::vector<tesseract::ThreadInfo>& threads)
+void RoomView::set_thread_subscriptions(bool supported,
+                                        const std::vector<tesseract::ThreadInfo>& threads)
 {
     thread_subscriptions_supported_ = supported;
     // The snapshot is authoritative for the threads it lists; a thread absent
@@ -2180,49 +2817,65 @@ void RoomView::set_thread_subscriptions(
     for (const auto& t : threads)
     {
         if (t.subscribed)
+        {
             followed_threads_.insert(t.root_event_id);
+        }
         else
+        {
             followed_threads_.erase(t.root_event_id);
+        }
     }
     if (thread_list_view_)
+    {
         thread_list_view_->set_subscriptions_supported(supported);
+    }
     refresh_thread_follow_state_();
 }
 
 void RoomView::set_thread_followed(const std::string& root_event_id, bool followed)
 {
     if (followed)
+    {
         followed_threads_.insert(root_event_id);
+    }
     else
+    {
         followed_threads_.erase(root_event_id);
+    }
     refresh_thread_follow_state_();
 }
 
 void RoomView::refresh_thread_follow_state_()
 {
     if (!thread_view_)
+    {
         return;
-    thread_view_->set_follow_state(
-        thread_subscriptions_supported_,
-        followed_threads_.count(thread_panel_root_) != 0);
+    }
+    thread_view_->set_follow_state(thread_subscriptions_supported_,
+                                   followed_threads_.count(thread_panel_root_) != 0);
     if (repaint_requester_)
+    {
         repaint_requester_();
+    }
 }
 
 void RoomView::set_threads_unread(bool any_unread, bool any_mention)
 {
     if (!header_)
+    {
         return;
+    }
     header_->set_threads_unread(any_unread, any_mention);
     if (repaint_requester_)
+    {
         repaint_requester_();
+    }
 }
 
-void RoomView::set_thread_panel(ThreadPanelState state,
-                                const std::string& root_event_id)
+void RoomView::set_thread_panel(ThreadPanelState state, const std::string& root_event_id)
 {
     thread_panel_state_ = state;
-    thread_panel_root_  = root_event_id;
+    thread_panel_root_ = root_event_id;
 
     // Lazily instantiate the child widgets the first time each panel mode
     // is requested. Once created they live for the lifetime of the
@@ -2236,19 +2889,26 @@ void RoomView::set_thread_panel(ThreadPanelState state,
         thread_list_view_ = add_child(std::move(tlv));
         thread_list_view_->on_close = [this]
         {
-            if (on_threads_button_clicked) on_threads_button_clicked();
+            if (on_threads_button_clicked)
+            {
+                on_threads_button_clicked();
+            }
         };
-        thread_list_view_->on_thread_clicked =
-            [this](const std::string& root)
+        thread_list_view_->on_thread_clicked = [this](const std::string& root)
         {
-            if (on_thread_open_requested) on_thread_open_requested(root);
+            if (on_thread_open_requested)
+            {
+                on_thread_open_requested(root);
+            }
         };
         thread_list_view_->on_mark_all_read = [this]
         {
-            if (on_mark_all_read) on_mark_all_read();
+            if (on_mark_all_read)
+            {
+                on_mark_all_read();
+            }
         };
-        thread_list_view_->set_subscriptions_supported(
-            thread_subscriptions_supported_);
+        thread_list_view_->set_subscriptions_supported(thread_subscriptions_supported_);
     }
     if (state == ThreadPanelState::Open && !thread_view_)
     {
@@ -2262,16 +2922,24 @@ void RoomView::set_thread_panel(ThreadPanelState state,
         if (auto* ml = thread_view_->message_list())
         {
             if (stored_avatar_provider_)
+            {
                 ml->set_avatar_provider(stored_avatar_provider_);
+            }
             if (stored_image_provider_)
+            {
                 ml->set_image_provider(stored_image_provider_);
+            }
             if (stored_media_failed_provider_)
+            {
                 ml->set_media_failed_provider(stored_media_failed_provider_);
+            }
             // Without this the room-switch gate armed by each thread reset
             // has no timeout fallback, so one unresolved dependency holds
             // the thread list invisible forever.
             if (post_delayed_)
+            {
                 ml->set_post_delayed(post_delayed_);
+            }
             // Wire the same hover-action / media / reaction callbacks as the
             // main timeline so reply / edit / redact (and friends) work
             // inside the thread panel. Reply sends are routed through the
@@ -2282,7 +2950,10 @@ void RoomView::set_thread_panel(ThreadPanelState state,
             // unthreaded on_receipt_needed).
             ml->on_receipt_needed = [this](const std::string& event_id)
             {
-                if (on_thread_receipt_needed) on_thread_receipt_needed(event_id);
+                if (on_thread_receipt_needed)
+                {
+                    on_thread_receipt_needed(event_id);
+                }
             };
             // Polls are read-only inside the thread panel for now:
             // wire_message_list_callbacks_ set the vote/end callbacks, and an
@@ -2293,7 +2964,10 @@ void RoomView::set_thread_panel(ThreadPanelState state,
         }
         thread_view_->on_close = [this]
         {
-            if (on_thread_close_requested) on_thread_close_requested();
+            if (on_thread_close_requested)
+            {
+                on_thread_close_requested();
+            }
         };
         thread_view_->on_follow_toggled = [this](bool follow)
         {
@@ -2301,17 +2975,25 @@ void RoomView::set_thread_panel(ThreadPanelState state,
             // re-queries and on_threads_updated reconciles with the server.
             set_thread_followed(thread_panel_root_, follow);
             if (on_thread_follow_toggled)
+            {
                 on_thread_follow_toggled(thread_panel_root_, follow);
+            }
         };
         if (auto* bar = thread_view_->search_bar())
         {
             bar->on_query_changed = [this](const std::string& q)
             {
-                if (on_thread_search_query) on_thread_search_query(q);
+                if (on_thread_search_query)
+                {
+                    on_thread_search_query(q);
+                }
             };
             bar->on_navigate = [this](int delta)
             {
-                if (on_thread_search_navigate) on_thread_search_navigate(delta);
+                if (on_thread_search_navigate)
+                {
+                    on_thread_search_navigate(delta);
+                }
             };
         }
     }
@@ -2319,21 +3001,31 @@ void RoomView::set_thread_panel(ThreadPanelState state,
     // Toggle child visibility so the tk pointer-dispatch + paint loop
     // honours the active mode automatically.
     if (thread_view_)
+    {
         thread_view_->set_visible(state == ThreadPanelState::Open);
-        if (state == ThreadPanelState::Open)
-            refresh_thread_follow_state_();
+    }
+    if (state == ThreadPanelState::Open)
+    {
+        refresh_thread_follow_state_();
+    }
     if (thread_list_view_)
+    {
         thread_list_view_->set_visible(state == ThreadPanelState::List);
+    }
 
     // Block hover + click on the main timeline whenever any thread panel
     // is open. The blocker's on_click fires on_thread_close_requested.
     const bool panel_open = state != ThreadPanelState::Closed;
     if (message_blocker_)
+    {
         message_blocker_->set_visible(panel_open);
+    }
     // Clear any stale hover state on the main timeline so affordances
     // from before the panel opened don't linger under the blocker.
     if (panel_open && message_list_)
+    {
         message_list_->on_pointer_leave();
+    }
 
     // Dim the main timeline whenever any thread panel is open (list or a
     // single thread), and additionally highlight the thread root when a
@@ -2342,12 +3034,19 @@ void RoomView::set_thread_panel(ThreadPanelState state,
     if (message_list_)
     {
         message_list_->set_dimmed(state != ThreadPanelState::Closed);
-        message_list_->set_highlighted_event(
-            state == ThreadPanelState::Open ? root_event_id : std::string{});
+        message_list_->set_highlighted_event(state == ThreadPanelState::Open ? root_event_id
+                                                                             : std::string{});
     }
+    sync_side_panel_state_();
 
-    if (on_layout_changed) on_layout_changed();
-    if (repaint_requester_) repaint_requester_();
+    if (on_layout_changed)
+    {
+        on_layout_changed();
+    }
+    if (repaint_requester_)
+    {
+        repaint_requester_();
+    }
 }
 
 // ── Pinned events ─────────────────────────────────────────────────────────
@@ -2358,11 +3057,20 @@ void RoomView::set_pinned(std::vector<tesseract::PinnedEvent> pins)
     // button reflects the correct state even before the banner exists.
     std::unordered_set<std::string> ids;
     ids.reserve(pins.size());
-    for (const auto& p : pins) ids.insert(p.event_id);
-    if (message_list_) message_list_->set_pinned_event_ids(std::move(ids));
+    for (const auto& p : pins)
+    {
+        ids.insert(p.event_id);
+    }
+    if (message_list_)
+    {
+        message_list_->set_pinned_event_ids(std::move(ids));
+    }
 
     // No banner needed and none ever created → cheap exit.
-    if (pins.empty() && !pinned_banner_) return;
+    if (pins.empty() && !pinned_banner_)
+    {
+        return;
+    }
 
     // Lazily create the banner the first time a non-empty pin set arrives.
     // Mirrors the thread_view_ / thread_list_view_ pattern in
@@ -2373,14 +3081,23 @@ void RoomView::set_pinned(std::vector<tesseract::PinnedEvent> pins)
         pinned_banner_ = add_child(std::move(banner));
         pinned_banner_->on_jump_to = [this](const std::string& event_id)
         {
-            if (!message_list_) return;
+            if (!message_list_)
+            {
+                return;
+            }
             message_list_->set_highlighted_event(event_id);
             // If the pinned event is already loaded, just scroll. Otherwise
             // route through on_scroll_to_original so the shell rebuilds the
             // timeline focused on the target via subscribe_room_at — same
             // path the reply-quote click uses for off-window events.
-            if (message_list_->scroll_to_event_id(event_id)) return;
-            if (on_scroll_to_original) on_scroll_to_original(event_id);
+            if (message_list_->scroll_to_event_id(event_id))
+            {
+                return;
+            }
+            if (on_scroll_to_original)
+            {
+                on_scroll_to_original(event_id);
+            }
         };
     }
 
@@ -2393,19 +3110,31 @@ void RoomView::set_pinned(std::vector<tesseract::PinnedEvent> pins)
     // message_list_ rect depends on whether the banner consumes the row.
     if (was_visible != now_visible)
     {
-        if (on_layout_changed) on_layout_changed();
+        if (on_layout_changed)
+        {
+            on_layout_changed();
+        }
     }
-    if (repaint_requester_) repaint_requester_();
+    if (repaint_requester_)
+    {
+        repaint_requester_();
+    }
 }
 
 void RoomView::set_can_pin(bool can_pin)
 {
-    if (message_list_) message_list_->set_can_pin(can_pin);
+    if (message_list_)
+    {
+        message_list_->set_can_pin(can_pin);
+    }
 }
 
 void RoomView::set_can_redact_others(bool can_redact_others)
 {
-    if (message_list_) message_list_->set_can_redact_others(can_redact_others);
+    if (message_list_)
+    {
+        message_list_->set_can_redact_others(can_redact_others);
+    }
 }
 
 // ── tk::Widget overrides ───────────────────────────────────────────────────
@@ -2437,12 +3166,10 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         return;
     }
 
-    const float compose_h =
-        compose_bar_ ? compose_bar_->natural_height() : ComposeBar::kMinHeight;
+    const float compose_h = compose_bar_ ? compose_bar_->natural_height() : ComposeBar::kMinHeight;
 
-    const float header_h = header_
-                               ? header_->measure(ctx, {bounds.w, bounds.h}).h
-                               : RoomHeader::kHeight;
+    const float header_h =
+        header_ ? header_->measure(ctx, {bounds.w, bounds.h}).h : RoomHeader::kHeight;
     const float header_bottom = bounds.y + header_h;
     const float compose_top = bounds.y + bounds.h - compose_h;
 
@@ -2458,8 +3185,7 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     // panel opens it floats on top of both header + banner + list.
     float list_top = header_bottom;
     const bool banner_visible =
-        pinned_banner_ && pinned_banner_->visible() &&
-        !pinned_banner_->pins().empty();
+        pinned_banner_ && pinned_banner_->visible() && !pinned_banner_->pins().empty();
     if (banner_visible)
     {
         const float bh = PinnedBanner::kBannerH;
@@ -2471,24 +3197,22 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     // the search bar / message list when visible.
     if (call_banner_ && call_banner_->visible())
     {
-        call_banner_->arrange(ctx, {bounds.x, list_top, bounds.w,
-                                    CallBanner::kBannerH});
+        call_banner_->arrange(ctx, {bounds.x, list_top, bounds.w, CallBanner::kBannerH});
         list_top += CallBanner::kBannerH;
     }
 
     // Identity-change strip — below the call banner, same full-width strip.
     if (identity_banner_ && identity_banner_->visible())
     {
-        identity_banner_->arrange(ctx, {bounds.x, list_top, bounds.w,
-                                        IdentityChangeBanner::kHeight});
+        identity_banner_->arrange(ctx,
+                                  {bounds.x, list_top, bounds.w, IdentityChangeBanner::kHeight});
         list_top += IdentityChangeBanner::kHeight;
     }
 
     // Room-replaced strip — same full-width strip, for an upgraded room.
     if (replaced_banner_ && replaced_banner_->visible())
     {
-        replaced_banner_->arrange(ctx, {bounds.x, list_top, bounds.w,
-                                        RoomReplacedBanner::kHeight});
+        replaced_banner_->arrange(ctx, {bounds.x, list_top, bounds.w, RoomReplacedBanner::kHeight});
         list_top += RoomReplacedBanner::kHeight;
     }
 
@@ -2519,8 +3243,7 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     {
         if (search_bar_open)
         {
-            room_search_bar_->arrange(
-                ctx, {bounds.x, list_top, bounds.w, RoomSearchBar::kStripH});
+            room_search_bar_->arrange(ctx, {bounds.x, list_top, bounds.w, RoomSearchBar::kStripH});
             list_top += RoomSearchBar::kStripH;
         }
         else
@@ -2543,14 +3266,12 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
     if (message_blocker_)
     {
-        message_blocker_->arrange(ctx,
-                                  {bounds.x, list_top, bounds.w, msg_h});
+        message_blocker_->arrange(ctx, {bounds.x, list_top, bounds.w, msg_h});
     }
 
     if (compose_bar_)
     {
-        compose_bar_->arrange(ctx,
-                              {bounds.x, compose_top, bounds.w, compose_h});
+        compose_bar_->arrange(ctx, {bounds.x, compose_top, bounds.w, compose_h});
     }
 
     // Right-anchored floating panel. Fixed `kThreadPanelWidth`, clamped to
@@ -2564,13 +3285,11 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     const float panel_h = std::max(0.0f, compose_top - header_bottom);
     if (thread_list_view_ && thread_panel_state_ == ThreadPanelState::List)
     {
-        thread_list_view_->arrange(
-            ctx, {panel_x, header_bottom, panel_w, panel_h});
+        thread_list_view_->arrange(ctx, {panel_x, header_bottom, panel_w, panel_h});
     }
     if (thread_view_ && thread_panel_state_ == ThreadPanelState::Open)
     {
-        thread_view_->arrange(
-            ctx, {panel_x, header_bottom, panel_w, panel_h});
+        thread_view_->arrange(ctx, {panel_x, header_bottom, panel_w, panel_h});
     }
 
     // Overlay panels fill the full bounds (painted on top of all other
@@ -2579,7 +3298,9 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     for (tk::Widget* panel : overlay_panels_())
     {
         if (panel)
+        {
             panel->arrange(ctx, bounds);
+        }
     }
 
     // Pre-call lobby — covers everything below the header (banners, search
@@ -2589,8 +3310,10 @@ void RoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     // depend on header_h, which the lobby doesn't need to zero when closed
     // since dispatch already gates on visible()).
     if (call_lobby_ && call_lobby_->is_open())
-        call_lobby_->arrange(ctx, {bounds.x, header_bottom, bounds.w,
-                                   bounds.bottom() - header_bottom});
+    {
+        call_lobby_->arrange(ctx,
+                             {bounds.x, header_bottom, bounds.w, bounds.bottom() - header_bottom});
+    }
 }
 
 // Genuine paint() override, kept intentionally (see the paint_children()-
@@ -2610,7 +3333,9 @@ void RoomView::paint(tk::PaintCtx& ctx)
     {
         media_count_dirty_ = false;
         if (room_info_panel_ && room_info_panel_->is_open())
+        {
             room_info_panel_->set_media_count(media_count_());
+        }
     }
     // Scope Tab/Shift-Tab traversal to whichever overlay panel is open (if
     // any) — mirrors active_overlay_panel_()'s existing role for pointer
@@ -2623,13 +3348,19 @@ void RoomView::paint(tk::PaintCtx& ctx)
     if (ctx.host)
     {
         if (tk::Widget* o = active_overlay_panel_())
+        {
             ctx.host->set_focus_scope(o);
+        }
         else if (call_lobby_ && call_lobby_->is_open())
+        {
             // Covers the timeline + compose bar, which stay visible() under
             // it — without a scope Tab would wander into them.
             ctx.host->set_focus_scope(call_lobby_);
+        }
         else
+        {
             ctx.host->clear_focus_scope();
+        }
     }
 
     if (!has_room_)
@@ -2654,19 +3385,26 @@ void RoomView::paint(tk::PaintCtx& ctx)
     {
         header_->paint(ctx);
     }
-    if (pinned_banner_ && pinned_banner_->visible() &&
-        !pinned_banner_->pins().empty())
+    if (pinned_banner_ && pinned_banner_->visible() && !pinned_banner_->pins().empty())
     {
         pinned_banner_->paint(ctx);
     }
     if (call_banner_ && call_banner_->visible())
+    {
         call_banner_->paint(ctx);
+    }
     if (identity_banner_ && identity_banner_->visible())
+    {
         identity_banner_->paint(ctx);
+    }
     if (replaced_banner_ && replaced_banner_->visible())
+    {
         replaced_banner_->paint(ctx);
+    }
     if (room_search_bar_ && room_search_bar_->is_open())
+    {
         room_search_bar_->paint(ctx);
+    }
     if (message_list_)
     {
         message_list_->paint(ctx);
@@ -2676,32 +3414,44 @@ void RoomView::paint(tk::PaintCtx& ctx)
     {
         compose_bar_->paint(ctx);
         if (native_drag_hover_)
+        {
             tk::paint_native_drag_hover_highlight(ctx, compose_bar_->bounds());
+        }
     }
 
     // Paint call panel last so it always draws on top of both message list and
     // compose bar (critical in DockedExpanded mode where it fills the area).
     if (call_panel_ && call_panel_->visible())
+    {
         call_panel_->paint(ctx);
+    }
 
     // Right-side thread panel.
     if (thread_list_view_ && thread_panel_state_ == ThreadPanelState::List)
+    {
         thread_list_view_->paint(ctx);
+    }
     if (thread_view_ && thread_panel_state_ == ThreadPanelState::Open)
+    {
         thread_view_->paint(ctx);
+    }
 
     // Each of these self-gates on its own is_open()/open_ state — see
     // overlay_panels_()'s doc comment.
     for (tk::Widget* panel : overlay_panels_())
     {
         if (panel)
+        {
             panel->paint(ctx);
+        }
     }
 
     // Pre-call lobby paints last of all so it's the true topmost content
     // below the header.
     if (call_lobby_ && call_lobby_->is_open())
+    {
         call_lobby_->paint(ctx);
+    }
 
     // Register whichever picker is visible as the active popup so the host
     // routes input to it first and calls paint_overlay() on it after the
@@ -2714,18 +3464,22 @@ void RoomView::paint(tk::PaintCtx& ctx)
         // reclicking it while the picker is already open doesn't
         // dismiss-then-reopen it (see register_popup()'s doc comment).
         if (emoji_picker_visible_ && emoji_picker_)
-            ctx.host->register_popup(
-                emoji_picker_.get(),
-                compose_bar_ ? compose_bar_->emoji_button() : nullptr);
+        {
+            ctx.host->register_popup(emoji_picker_.get(),
+                                     compose_bar_ ? compose_bar_->emoji_button() : nullptr);
+        }
         else if (sticker_picker_visible_ && sticker_picker_)
-            ctx.host->register_popup(
-                sticker_picker_.get(),
-                compose_bar_ ? compose_bar_->sticker_button() : nullptr);
+        {
+            ctx.host->register_popup(sticker_picker_.get(),
+                                     compose_bar_ ? compose_bar_->sticker_button() : nullptr);
+        }
         else if (receipt_popup_visible_ && receipt_popup_)
+        {
             // No persistent trigger widget — the "+N" pill isn't a
             // standalone widget, just a rect painted inline by
             // MessageListView.
             ctx.host->register_popup(receipt_popup_.get(), nullptr);
+        }
     }
 }
 
@@ -2735,11 +3489,17 @@ void RoomView::paint_overlay(tk::PaintCtx& ctx)
     // None of these popups are ever a tree child, so the tree traversal
     // inside Widget::paint_overlay() never reaches them — call explicitly.
     if (emoji_picker_visible_ && emoji_picker_)
+    {
         emoji_picker_->paint_overlay(ctx);
+    }
     else if (sticker_picker_visible_ && sticker_picker_)
+    {
         sticker_picker_->paint_overlay(ctx);
+    }
     else if (receipt_popup_visible_ && receipt_popup_)
+    {
         receipt_popup_->paint_overlay(ctx);
+    }
 }
 
 void RoomView::on_popup_dismiss()
@@ -2751,11 +3511,17 @@ void RoomView::on_popup_dismiss()
     // registered popup" branch) rather than any bounds-based backdrop logic
     // of its own — mirrors tk::ComboBox::on_popup_dismiss().
     if (overflow_menu_ && overflow_menu_->is_open())
+    {
         overflow_menu_->close();
+    }
     if (call_popup_ && call_popup_->is_open())
+    {
         call_popup_->close();
+    }
     if (header_overflow_menu_ && header_overflow_menu_->is_open())
+    {
         header_overflow_menu_->close();
+    }
 }
 
 MessageListView* RoomView::selection_list_() const
@@ -2767,19 +3533,23 @@ MessageListView* RoomView::selection_list_() const
     // An open popup (emoji/sticker picker, receipt popup, a menu) covers
     // the timeline the same way.
     if (host() && host()->popup())
+    {
         return nullptr;
+    }
     tk::Widget* scope = host() ? host()->focus_scope() : nullptr;
     const auto usable = [scope](MessageListView* ml)
     {
-        return ml && ml->visible() && ml->has_selection() &&
-               (!scope || scope->is_ancestor_of(ml));
+        return ml && ml->visible() && ml->has_selection() && (!scope || scope->is_ancestor_of(ml));
     };
     if (usable(message_list_))
+    {
         return message_list_;
-    MessageListView* thread_ml =
-        thread_view_ ? thread_view_->message_list() : nullptr;
+    }
+    MessageListView* thread_ml = thread_view_ ? thread_view_->message_list() : nullptr;
     if (usable(thread_ml))
+    {
         return thread_ml;
+    }
     return nullptr;
 }
 
@@ -2792,31 +3562,32 @@ bool RoomView::copy_active_selection()
 {
     MessageListView* target = selection_list_();
     if (!target)
+    {
         return false;
+    }
     target->copy_selection();
     return true;
 }
 
 bool RoomView::has_context_link() const
 {
-    MessageListView* thread_ml =
-        thread_view_ ? thread_view_->message_list() : nullptr;
+    MessageListView* thread_ml = thread_view_ ? thread_view_->message_list() : nullptr;
     return (message_list_ && message_list_->has_context_link()) ||
            (thread_ml && thread_ml->has_context_link());
 }
 
 std::string RoomView::copy_menu_label() const
 {
-    return has_context_link() && !has_active_selection() ? tk::tr("Copy link")
-                                                         : tk::tr("Copy");
+    return has_context_link() && !has_active_selection() ? tk::tr("Copy link") : tk::tr("Copy");
 }
 
 bool RoomView::copy_context_menu_target()
 {
     if (copy_active_selection())
+    {
         return true;
-    MessageListView* thread_ml =
-        thread_view_ ? thread_view_->message_list() : nullptr;
+    }
+    MessageListView* thread_ml = thread_view_ ? thread_view_->message_list() : nullptr;
     return (message_list_ && message_list_->copy_context_link()) ||
            (thread_ml && thread_ml->copy_context_link());
 }
@@ -2826,7 +3597,9 @@ bool RoomView::on_key_down(const tk::KeyEvent& event)
     if (matches(ShortcutId::CopyMessage, event))
     {
         if (copy_active_selection())
+        {
             return true;
+        }
         // No text selection anywhere: copy the keyboard-focused timeline's
         // cursor message (no-op unless that list has focus).
         MessageListView* thread_ml = thread_view_ ? thread_view_->message_list() : nullptr;
@@ -2839,18 +3612,23 @@ bool RoomView::on_key_down(const tk::KeyEvent& event)
 void RoomView::on_theme_changed(const tk::Theme& t)
 {
     if (emoji_picker_)
+    {
         emoji_picker_->apply_theme(t);
+    }
     if (sticker_picker_)
+    {
         sticker_picker_->apply_theme(t);
+    }
     if (receipt_popup_)
+    {
         receipt_popup_->apply_theme(t);
+    }
 }
 
 std::array<tk::Widget*, 8> RoomView::overlay_panels_() const
 {
-    return {room_info_panel_, user_profile_panel_, overflow_menu_,
-            call_popup_, room_media_view_, header_overflow_menu_,
-            knock_requests_panel_, invite_dialog_};
+    return {room_info_panel_, user_profile_panel_,   overflow_menu_,        call_popup_,
+            room_media_view_, header_overflow_menu_, knock_requests_panel_, invite_dialog_};
 }
 
 // ── Pointer/hit-test routing ────────────────────────────────────────────────
@@ -2882,33 +3660,51 @@ tk::Widget* RoomView::active_overlay_panel_() const
     // dismissing it. Host::register_popup()'s click-anywhere-dismiss (see
     // on_popup_dismiss()) is what closes them now, independent of this path.
     if (invite_dialog_ && invite_dialog_->is_open())
+    {
         return invite_dialog_;
+    }
     if (room_media_view_ && room_media_view_->is_open())
+    {
         return room_media_view_;
+    }
     if (room_settings_view_ && room_settings_view_->is_open())
+    {
         return room_settings_view_;
+    }
     if (knock_requests_panel_ && knock_requests_panel_->is_open())
+    {
         return knock_requests_panel_;
+    }
     if (user_profile_panel_ && user_profile_panel_->is_open())
+    {
         return user_profile_panel_;
+    }
     if (room_info_panel_ && room_info_panel_->is_open())
+    {
         return room_info_panel_;
+    }
     return nullptr;
 }
 
 tk::Widget* RoomView::hit_test(tk::Point world)
 {
     if (tk::Widget* o = active_overlay_panel_())
+    {
         return o->hit_test(world);
+    }
     return tk::Widget::hit_test(world);
 }
 
 tk::Widget* RoomView::dispatch_pointer_down(tk::Point world)
 {
     if (tk::Widget* o = active_overlay_panel_())
+    {
         return o->dispatch_pointer_down(world);
+    }
     if (tk::Widget* hit = tk::Widget::dispatch_pointer_down(world))
+    {
         return hit;
+    }
     // Nothing in the room claimed the click (blank timeline/header space,
     // gaps between rows, etc.) and it's genuinely within our own bounds —
     // redirect it to the compose box rather than losing focus to nothing,
@@ -2918,63 +3714,80 @@ tk::Widget* RoomView::dispatch_pointer_down(tk::Point world)
     // exactly as if the click had landed on it directly — Host's own
     // existing post-dispatch request_focus(pressed) does the rest.
     if (has_room_ && contains_world(world) && compose_bar_)
+    {
         return compose_bar_->text_area();
+    }
     return nullptr;
 }
 
 tk::Widget* RoomView::dispatch_pointer_move(tk::Point world, bool* dirty)
 {
     if (tk::Widget* o = active_overlay_panel_())
+    {
         return o->dispatch_pointer_move(world, dirty);
+    }
     return tk::Widget::dispatch_pointer_move(world, dirty);
 }
 
 tk::Widget* RoomView::dispatch_right_click(tk::Point world)
 {
     if (tk::Widget* o = active_overlay_panel_())
+    {
         return o->dispatch_right_click(world);
+    }
     return tk::Widget::dispatch_right_click(world);
 }
 
 bool RoomView::dispatch_wheel(tk::Point world, float dx, float dy, bool is_touchpad)
 {
     if (tk::Widget* o = active_overlay_panel_())
+    {
         return o->dispatch_wheel(world, dx, dy, is_touchpad);
+    }
     return tk::Widget::dispatch_wheel(world, dx, dy, is_touchpad);
 }
 
 tk::Widget* RoomView::dispatch_file_drop(tk::Point world, tk::FileDropPayload& payload)
 {
     if (tk::Widget* o = active_overlay_panel_())
+    {
         return o->dispatch_file_drop(world, payload);
+    }
     return tk::Widget::dispatch_file_drop(world, payload);
 }
 
 bool RoomView::on_file_drop(tk::Point /*local*/, tk::FileDropPayload& payload)
 {
     if (!compose_bar_ || !compose_bar_->enabled())
+    {
         return false;
-    const std::uint64_t limit =
-        media_upload_limit_provider ? media_upload_limit_provider() : 0;
+    }
+    const std::uint64_t limit = media_upload_limit_provider ? media_upload_limit_provider() : 0;
     auto outcome = route_file_drop_to_compose_bar(
         *compose_bar_, std::move(payload.bytes), std::move(payload.mime),
         std::move(payload.filename), limit, media_info_extractor);
     if (on_file_drop_outcome)
+    {
         on_file_drop_outcome(outcome);
+    }
     return outcome == FileDropOutcome::Accepted;
 }
 
 tk::Widget* RoomView::dispatch_native_drag_hover(tk::Point world)
 {
     if (tk::Widget* o = active_overlay_panel_())
+    {
         return o->dispatch_native_drag_hover(world);
+    }
     return tk::Widget::dispatch_native_drag_hover(world);
 }
 
 bool RoomView::on_native_drag_hover(tk::Point /*local*/)
 {
     if (!compose_bar_ || !compose_bar_->enabled())
+    {
         return false;
+    }
     native_drag_hover_ = true;
     return true;
 }

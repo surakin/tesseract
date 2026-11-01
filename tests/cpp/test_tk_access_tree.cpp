@@ -27,8 +27,8 @@ namespace
 class AccessProbe : public Widget
 {
 public:
-    explicit AccessProbe(Rect rect, Role role = Role::None,
-                         std::string name = {}, AccessState state = {})
+    explicit AccessProbe(Rect rect, Role role = Role::None, std::string name = {},
+                         AccessState state = {})
         : role_(role), name_(std::move(name)), state_(state)
     {
         bounds_ = rect;
@@ -38,7 +38,9 @@ public:
     {
         return {bounds_.w, bounds_.h};
     }
-    void paint(PaintCtx&) override {}
+    void paint(PaintCtx&) override
+    {
+    }
 
     Role access_role() const override
     {
@@ -61,8 +63,7 @@ private:
 
 } // namespace
 
-TEST_CASE("build_access_tree excludes Role::None widgets by default",
-         "[tk][access_tree]")
+TEST_CASE("build_access_tree excludes Role::None widgets by default", "[tk][access_tree]")
 {
     auto root = tk::create_root_widget<AccessProbe>(nullptr, Rect{0, 0, 100, 100});
 
@@ -71,14 +72,13 @@ TEST_CASE("build_access_tree excludes Role::None widgets by default",
     CHECK(tree.children.empty());
 }
 
-TEST_CASE("a widget with an explicit role produces a node with its name/state",
-         "[tk][access_tree]")
+TEST_CASE("a widget with an explicit role produces a node with its name/state", "[tk][access_tree]")
 {
     auto root = tk::create_root_widget<AccessProbe>(nullptr, Rect{0, 0, 100, 100});
     AccessState checked;
     checked.checked = true;
-    root->add_child(std::make_unique<AccessProbe>(
-        Rect{10, 10, 20, 20}, Role::CheckBox, "Remember me", checked));
+    root->add_child(std::make_unique<AccessProbe>(Rect{10, 10, 20, 20}, Role::CheckBox,
+                                                  "Remember me", checked));
 
     AccessNode tree = build_access_tree(root.get());
     REQUIRE(tree.children.size() == 1);
@@ -88,15 +88,13 @@ TEST_CASE("a widget with an explicit role produces a node with its name/state",
 }
 
 TEST_CASE("Role::None widgets flatten through, attaching their accessible "
-         "descendants to the nearest accessible ancestor",
-         "[tk][access_tree]")
+          "descendants to the nearest accessible ancestor",
+          "[tk][access_tree]")
 {
     // root (None) -> group (None, e.g. a plain VBox) -> button (Button)
     auto root = tk::create_root_widget<AccessProbe>(nullptr, Rect{0, 0, 100, 100});
-    auto* group = root->add_child(
-        std::make_unique<AccessProbe>(Rect{0, 0, 100, 50}));
-    group->add_child(std::make_unique<AccessProbe>(
-        Rect{10, 10, 20, 20}, Role::Button, "OK"));
+    auto* group = root->add_child(std::make_unique<AccessProbe>(Rect{0, 0, 100, 50}));
+    group->add_child(std::make_unique<AccessProbe>(Rect{10, 10, 20, 20}, Role::Button, "OK"));
 
     AccessNode tree = build_access_tree(root.get());
     // The intermediate structural group contributed no node of its own —
@@ -107,18 +105,17 @@ TEST_CASE("Role::None widgets flatten through, attaching their accessible "
 }
 
 TEST_CASE("invisible subtrees are skipped entirely, even if they contain "
-         "accessible widgets",
-         "[tk][access_tree]")
+          "accessible widgets",
+          "[tk][access_tree]")
 {
     auto root = tk::create_root_widget<AccessProbe>(nullptr, Rect{0, 0, 100, 100});
-    auto* hidden = root->add_child(std::make_unique<AccessProbe>(
-        Rect{0, 0, 100, 50}, Role::Group, "Hidden group"));
+    auto* hidden = root->add_child(
+        std::make_unique<AccessProbe>(Rect{0, 0, 100, 50}, Role::Group, "Hidden group"));
     hidden->set_visible(false);
-    hidden->add_child(std::make_unique<AccessProbe>(
-        Rect{10, 10, 20, 20}, Role::Button, "Unreachable"));
+    hidden->add_child(
+        std::make_unique<AccessProbe>(Rect{10, 10, 20, 20}, Role::Button, "Unreachable"));
 
-    root->add_child(std::make_unique<AccessProbe>(
-        Rect{0, 50, 100, 20}, Role::Button, "Visible"));
+    root->add_child(std::make_unique<AccessProbe>(Rect{0, 50, 100, 20}, Role::Button, "Visible"));
 
     AccessNode tree = build_access_tree(root.get());
     REQUIRE(tree.children.size() == 1);
@@ -126,20 +123,18 @@ TEST_CASE("invisible subtrees are skipped entirely, even if they contain "
 }
 
 TEST_CASE("children are ordered in reading order, top-to-bottom then "
-         "left-to-right — not insertion order",
-         "[tk][access_tree]")
+          "left-to-right — not insertion order",
+          "[tk][access_tree]")
 {
     auto root = tk::create_root_widget<AccessProbe>(nullptr, Rect{0, 0, 100, 100});
     // Added out of visual order: bottom-row-right, top-row-left,
     // bottom-row-left, top-row-right.
-    root->add_child(std::make_unique<AccessProbe>(
-        Rect{60, 60, 20, 20}, Role::Button, "bottom-right"));
-    root->add_child(std::make_unique<AccessProbe>(
-        Rect{0, 0, 20, 20}, Role::Button, "top-left"));
-    root->add_child(std::make_unique<AccessProbe>(
-        Rect{0, 60, 20, 20}, Role::Button, "bottom-left"));
-    root->add_child(std::make_unique<AccessProbe>(
-        Rect{60, 0, 20, 20}, Role::Button, "top-right"));
+    root->add_child(
+        std::make_unique<AccessProbe>(Rect{60, 60, 20, 20}, Role::Button, "bottom-right"));
+    root->add_child(std::make_unique<AccessProbe>(Rect{0, 0, 20, 20}, Role::Button, "top-left"));
+    root->add_child(
+        std::make_unique<AccessProbe>(Rect{0, 60, 20, 20}, Role::Button, "bottom-left"));
+    root->add_child(std::make_unique<AccessProbe>(Rect{60, 0, 20, 20}, Role::Button, "top-right"));
 
     AccessNode tree = build_access_tree(root.get());
     REQUIRE(tree.children.size() == 4);
@@ -149,8 +144,7 @@ TEST_CASE("children are ordered in reading order, top-to-bottom then "
     CHECK(tree.children[3].name == "bottom-right");
 }
 
-TEST_CASE("a null or invisible root produces an empty tree",
-         "[tk][access_tree]")
+TEST_CASE("a null or invisible root produces an empty tree", "[tk][access_tree]")
 {
     CHECK(build_access_tree(nullptr).role == Role::None);
 
@@ -170,7 +164,9 @@ namespace
 class FakeRowAdapter : public ListAdapter, public ListAdapterAccessibility
 {
 public:
-    explicit FakeRowAdapter(std::vector<std::string> names) : names_(std::move(names)) {}
+    explicit FakeRowAdapter(std::vector<std::string> names) : names_(std::move(names))
+    {
+    }
 
     std::size_t count() const override
     {
@@ -180,7 +176,9 @@ public:
     {
         return 20.0f;
     }
-    void paint_row(std::size_t, PaintCtx&, Rect, bool, bool) override {}
+    void paint_row(std::size_t, PaintCtx&, Rect, bool, bool) override
+    {
+    }
 
     Role access_role_for_row(std::size_t) const override
     {
@@ -198,8 +196,8 @@ private:
 } // namespace
 
 TEST_CASE("a ListView whose adapter implements ListAdapterAccessibility "
-         "gets synthesized ListItem children, one per row",
-         "[tk][access_tree]")
+          "gets synthesized ListItem children, one per row",
+          "[tk][access_tree]")
 {
     FakeRowAdapter adapter({"Alice", "Bob", "Carol"});
     auto list = tk::create_root_widget<ListView>(nullptr);
@@ -222,8 +220,8 @@ TEST_CASE("a ListView whose adapter implements ListAdapterAccessibility "
 }
 
 TEST_CASE("a ListView whose adapter does NOT implement "
-         "ListAdapterAccessibility produces no children (not a crash)",
-         "[tk][access_tree]")
+          "ListAdapterAccessibility produces no children (not a crash)",
+          "[tk][access_tree]")
 {
     class PlainAdapter : public ListAdapter
     {
@@ -236,7 +234,9 @@ TEST_CASE("a ListView whose adapter does NOT implement "
         {
             return 20.0f;
         }
-        void paint_row(std::size_t, PaintCtx&, Rect, bool, bool) override {}
+        void paint_row(std::size_t, PaintCtx&, Rect, bool, bool) override
+        {
+        }
     };
 
     PlainAdapter adapter;

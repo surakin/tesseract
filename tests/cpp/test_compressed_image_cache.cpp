@@ -110,8 +110,7 @@ TEST_CASE("concurrent get/put stays consistent", "[compressed-image-cache]")
                 }
                 for (int i = 0; i < 2000; ++i)
                 {
-                    const std::string key =
-                        "k" + std::to_string((t * 7 + i) % 64);
+                    const std::string key = "k" + std::to_string((t * 7 + i) % 64);
                     if (i % 3 == 0)
                     {
                         c.put(tk::CacheKey::media(key), blob(128 + (i % 512)));
@@ -123,7 +122,7 @@ TEST_CASE("concurrent get/put stays consistent", "[compressed-image-cache]")
                         {
                             // Touch the buffer to catch use-after-free under TSan/ASan.
                             volatile std::uint8_t x = b->empty() ? 0 : b->front();
-                            (void) x;
+                            (void)x;
                         }
                     }
                 }

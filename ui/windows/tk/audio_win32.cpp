@@ -52,7 +52,6 @@ namespace tk::win32
 
 using PostFn = std::function<void(std::function<void()>)>;
 
-
 // ─────────────────────────────────────────────────────────────────────────
 //  IMFMediaEngineNotify implementation
 // ─────────────────────────────────────────────────────────────────────────
@@ -105,8 +104,7 @@ public:
     HRESULT STDMETHODCALLTYPE EventNotify(DWORD event, DWORD_PTR /*param1*/,
                                           DWORD /*param2*/) override
     {
-        if (event != MF_MEDIA_ENGINE_EVENT_ENDED &&
-            event != MF_MEDIA_ENGINE_EVENT_ERROR &&
+        if (event != MF_MEDIA_ENGINE_EVENT_ENDED && event != MF_MEDIA_ENGINE_EVENT_ERROR &&
             event != MF_MEDIA_ENGINE_EVENT_DURATIONCHANGE)
         {
             return S_OK;
@@ -116,11 +114,9 @@ public:
         // runs on the UI thread.
         auto alive = alive_;
         auto cb = progress_;
-        auto err_cb = (event == MF_MEDIA_ENGINE_EVENT_ERROR) ? error_
-                                                             : std::function<void()>{};
+        auto err_cb = (event == MF_MEDIA_ENGINE_EVENT_ERROR) ? error_ : std::function<void()>{};
         post_(
-            [alive = std::move(alive), cb = std::move(cb),
-             err_cb = std::move(err_cb)]()
+            [alive = std::move(alive), cb = std::move(cb), err_cb = std::move(err_cb)]()
             {
                 if (*alive && cb)
                 {
@@ -149,8 +145,7 @@ class Win32AudioPlayer final : public tk::AudioPlayer
 {
 public:
     explicit Win32AudioPlayer(PostFn post)
-        : post_(std::move(post)),
-          alive_(std::make_shared<std::atomic<bool>>(true))
+        : post_(std::move(post)), alive_(std::make_shared<std::atomic<bool>>(true))
     {
         init_engine();
     }
@@ -177,8 +172,7 @@ public:
 
     // ── Playback controls ────────────────────────────────────────────────
 
-    void play(const std::uint8_t* data, std::size_t size,
-              std::string_view mime) override
+    void play(const std::uint8_t* data, std::size_t size, std::string_view mime) override
     {
         if (!engine_ || !data || size == 0)
         {
@@ -188,8 +182,8 @@ public:
         engine_->Pause();
 
         // Wrap bytes in an IStream (SHCreateMemStream copies the buffer).
-        IStream* raw_stream = SHCreateMemStream(
-            reinterpret_cast<const BYTE*>(data), static_cast<UINT>(size));
+        IStream* raw_stream =
+            SHCreateMemStream(reinterpret_cast<const BYTE*>(data), static_cast<UINT>(size));
         if (!raw_stream)
         {
             fail_playback_();
@@ -199,8 +193,7 @@ public:
         stream.Attach(raw_stream);
 
         Microsoft::WRL::ComPtr<IMFByteStream> mf_stream;
-        if (FAILED(MFCreateMFByteStreamOnStream(stream.Get(),
-                                                mf_stream.GetAddressOf())))
+        if (FAILED(MFCreateMFByteStreamOnStream(stream.Get(), mf_stream.GetAddressOf())))
         {
             fail_playback_();
             return;
@@ -327,8 +320,7 @@ public:
         }
         double d = engine_->GetDuration();
         // GetDuration returns NaN or infinity when duration is unknown.
-        return (d > 0.0 && d < 1.0e10) ? static_cast<std::uint64_t>(d * 1000.0)
-                                       : 0u;
+        return (d > 0.0 && d < 1.0e10) ? static_cast<std::uint64_t>(d * 1000.0) : 0u;
     }
     bool is_playing() const override
     {
@@ -386,16 +378,15 @@ private:
         attrs->SetUINT64(MF_MEDIA_ENGINE_PLAYBACK_HWND, 0);
 
         Microsoft::WRL::ComPtr<IMFMediaEngineClassFactory> factory;
-        if (FAILED(CoCreateInstance(CLSID_MFMediaEngineClassFactory, nullptr,
-                                    CLSCTX_ALL,
+        if (FAILED(CoCreateInstance(CLSID_MFMediaEngineClassFactory, nullptr, CLSCTX_ALL,
                                     IID_PPV_ARGS(factory.GetAddressOf()))))
         {
             return;
         }
 
         Microsoft::WRL::ComPtr<IMFMediaEngine> engine;
-        if (FAILED(factory->CreateInstance(MF_MEDIA_ENGINE_AUDIOONLY,
-                                           attrs.Get(), engine.GetAddressOf())))
+        if (FAILED(factory->CreateInstance(MF_MEDIA_ENGINE_AUDIOONLY, attrs.Get(),
+                                           engine.GetAddressOf())))
         {
             return;
         }
@@ -460,9 +451,8 @@ private:
         if (!mime.empty())
         {
             auto slash = mime.rfind('/');
-            ext = (slash != std::string_view::npos)
-                      ? std::string(mime.substr(slash + 1))
-                      : std::string(mime);
+            ext = (slash != std::string_view::npos) ? std::string(mime.substr(slash + 1))
+                                                    : std::string(mime);
             auto semi = ext.find(';');
             if (semi != std::string::npos)
             {

@@ -64,8 +64,7 @@ public:
     /// both pickers — used for custom emoticon/sticker cells and pack-avatar
     /// tabs.
     using ImageProvider = std::function<const tk::Image*(
-        const std::string& cache_key, const std::string& source_token,
-        bool hovered)>;
+        const std::string& cache_key, const std::string& source_token, bool hovered)>;
     void set_image_provider(ImageProvider p);
 
     /// Force a grid repaint after the host's media cache lands new bitmaps.
@@ -127,7 +126,10 @@ public:
     void on_popup_dismiss() override;
     // Holds a real focusable grid (and, for pickers, a search field), so
     // Tab/Shift-Tab cycles inside it rather than escaping and dismissing.
-    bool popup_scopes_focus() const override { return true; }
+    bool popup_scopes_focus() const override
+    {
+        return true;
+    }
 
 protected:
     // ── Layout config (override to change pixel metrics) ─────────────────
@@ -139,8 +141,8 @@ protected:
 
     // ── Item (grid) model ────────────────────────────────────────────────
     virtual std::size_t item_count() const = 0;
-    virtual void paint_cell(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
-                            bool selected, bool hovered) = 0;
+    virtual void paint_cell(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds, bool selected,
+                            bool hovered) = 0;
     virtual void on_item_activated(int index) = 0;
     // Secondary action on cell `index` (long press / right-click /
     // Shift+Enter); `cell` is its world rect. Return true if it opened
@@ -157,8 +159,7 @@ protected:
     virtual int active_tab_index() const = 0;
     // Paint the tab's content (glyph / avatar / initial) inside `tab`. The base
     // has already drawn the active/hover background + underline.
-    virtual void paint_tab_content(int index, tk::PaintCtx& ctx,
-                                   tk::Rect tab) = 0;
+    virtual void paint_tab_content(int index, tk::PaintCtx& ctx, tk::Rect tab) = 0;
     // User clicked tab `index` (already validated against tab_count()).
     virtual void on_tab_clicked(int index) = 0;
     // Accessible name for tab `index` (e.g. the category/pack display
@@ -175,8 +176,7 @@ protected:
     // ── Search ────────────────────────────────────────────────────────────
     // Called from set_search_query after `query_` is updated. `cleared` is
     // true when the query just became empty.
-    virtual void on_search_query_changed(const std::string& query,
-                                         bool cleared) = 0;
+    virtual void on_search_query_changed(const std::string& query, bool cleared) = 0;
 
     // ── Helpers for subclasses ───────────────────────────────────────────
     // Subclasses call this from their own constructor (not from here —

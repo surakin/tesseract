@@ -1,4 +1,4 @@
-﻿//! LiveKit room connection and media track management.
+//! LiveKit room connection and media track management.
 //!
 //! This module wraps the `livekit` crate. The API calls here target livekit
 //! ~0.7; minor adjustments may be needed once the crate is first compiled.
@@ -17,7 +17,9 @@ use tokio::task::AbortHandle;
 use tracing::{info, warn};
 
 use super::RtcParticipantInfo;
-use crate::client::rtc::{audio_mix::RemoteAudioMixer, RtcEventSink};
+use crate::client::rtc::{
+    audio_mix::RemoteAudioMixer, e2ee::SecretBytes, identity::IdentityMap, RtcEventSink,
+};
 
 use livekit::{
     e2ee::{
@@ -45,11 +47,84 @@ use livekit::{
 #[derive(Clone)]
 pub struct SharedKeys {
     pub key_provider: KeyProvider,
-    pending: Arc<StdMutex<HashMap<(String, String), HashMap<i32, Vec<u8>>>>>,
+    pending: Arc<parking_lot::Mutex<PendingKeys>>,
+    identities: IdentityMap,
+}
+
+/// A device whose keys we hold is dropped once it has been absent from the
+/// live call members for this long. The wait covers a key that arrives a
+/// moment before the membership shows in a reconcile pass, and a member one
+/// reconcile read leaves out by mistake (a timed-out or partial read): their
+/// keys must still be there when the next pass lists them again.
+const PENDING_KEY_GRACE: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Peer keys by sending `(user, device)` and key index, with when each device
+/// was last seen (listed as live, or sent a key). Plain state: callers pass the
+/// clock in.
+#[derive(Default)]
+pub struct PendingKeys {
+    devices: HashMap<(String, String), PendingDevice>,
+}
+
+struct PendingDevice {
+    by_index: HashMap<i32, SecretBytes>,
+    /// The last time the device was a live member or stored a key. Absence is
+    /// measured from here, not from the last key: a long-lived member's last
+    /// key can be hours old.
+    last_live_at: std::time::Instant,
+}
+
+impl PendingKeys {
+    pub fn insert(
+        &mut self,
+        user: &str,
+        device: &str,
+        index: i32,
+        key: SecretBytes,
+        now: std::time::Instant,
+    ) {
+        let d = self
+            .devices
+            .entry((user.to_owned(), device.to_owned()))
+            .or_insert_with(|| PendingDevice {
+                by_index: HashMap::new(),
+                last_live_at: now,
+            });
+        d.by_index.insert(index, key);
+        d.last_live_at = now;
+    }
+
+    /// `((user, device), index -> key)` for every device held.
+    pub fn iter(&self) -> impl Iterator<Item = (&(String, String), &HashMap<i32, SecretBytes>)> {
+        self.devices.iter().map(|(k, d)| (k, &d.by_index))
+    }
+
+    pub fn len(&self) -> usize {
+        self.devices.len()
+    }
+
+    /// Note the devices that are live members (`is_live(user, device)`) and
+    /// forget the ones that have been neither live nor given a key for
+    /// [`PENDING_KEY_GRACE`]; the dropped keys are wiped. A key stored without
+    /// a device id belongs to every device of the user, so it stays while any
+    /// of them is live.
+    pub fn retain_live(&mut self, is_live: impl Fn(&str, &str) -> bool, now: std::time::Instant) {
+        self.devices.retain(|(user, device), d| {
+            if is_live(user, device) {
+                d.last_live_at = now;
+                return true;
+            }
+            now.saturating_duration_since(d.last_live_at) < PENDING_KEY_GRACE
+        });
+    }
 }
 
 impl SharedKeys {
     pub fn new() -> Self {
+        Self::with_identities(IdentityMap::default())
+    }
+
+    pub fn with_identities(identities: IdentityMap) -> Self {
         // Match Element Call's key provider: HKDF, ratchet window 10, keyring
         // 256 (MSC4195 / Element's MatrixKeyProvider). PBKDF2 would derive a
         // different key and frames could not be decrypted.
@@ -62,28 +137,63 @@ impl SharedKeys {
         });
         Self {
             key_provider,
-            pending: Arc::new(StdMutex::new(HashMap::new())),
+            pending: Arc::new(parking_lot::Mutex::new(PendingKeys::default())),
+            identities,
         }
+    }
+
+    pub fn identities(&self) -> IdentityMap {
+        self.identities.clone()
+    }
+
+    /// Whether the LiveKit participant `identity` belongs to `(user_id,
+    /// device_id)`: a parsed `@user:server:DEVICE` identity, or a hashed one
+    /// the member reconciler resolved.
+    pub fn owner_matches(&self, identity: &str, user_id: &str, device_id: &str) -> bool {
+        identity_owner_matches(&self.identities, identity, user_id, device_id)
     }
 
     /// Remember a peer key (all indices are kept so frames encrypted before a
     /// rotation can still be decrypted when the participant first appears).
     /// `sender_device_id` may be empty when the event didn't name one; the
     /// key then applies to every device of the sender (see `key_owner_matches`).
-    pub fn store(&self, sender_user_id: &str, sender_device_id: &str, index: i32, raw_key: Vec<u8>) {
+    pub fn store(
+        &self,
+        sender_user_id: &str,
+        sender_device_id: &str,
+        index: i32,
+        raw_key: SecretBytes,
+    ) {
+        self.pending.lock().insert(
+            sender_user_id,
+            sender_device_id,
+            index,
+            raw_key,
+            std::time::Instant::now(),
+        );
+    }
+
+    /// Drop the keys of devices that are no longer in the call (see
+    /// [`PendingKeys::retain_live`]); without this they would pile up for the
+    /// life of the call.
+    pub fn retain_members(&self, live: &std::collections::HashSet<(String, String)>) {
+        let is_live = |user: &str, device: &str| {
+            if device.is_empty() {
+                live.iter().any(|(u, _)| u == user)
+            } else {
+                live.contains(&(user.to_owned(), device.to_owned()))
+            }
+        };
         self.pending
             .lock()
-            .unwrap()
-            .entry((sender_user_id.to_owned(), sender_device_id.to_owned()))
-            .or_default()
-            .insert(index, raw_key);
+            .retain_live(is_live, std::time::Instant::now());
     }
 
     /// Apply every stored key to the participants currently in `room`.
     fn apply_all_to(&self, room: &Room) {
-        let pending = self.pending.lock().unwrap_or_else(|e| e.into_inner());
+        let pending = self.pending.lock();
         for (identity, _) in room.remote_participants() {
-            apply_pending_for(&self.key_provider, &pending, &identity);
+            apply_pending_for(&self.key_provider, &pending, &self.identities, &identity);
         }
     }
 
@@ -99,12 +209,13 @@ impl SharedKeys {
         let mut applied = 0usize;
         for (identity, _) in room.remote_participants() {
             let id_str = identity.as_str();
-            if key_owner_matches(id_str, sender_user_id, sender_device_id) {
+            if self.owner_matches(id_str, sender_user_id, sender_device_id) {
                 info!(
                     "e2ee: set_key for participant {id_str} \
                      (from {sender_user_id}/{sender_device_id} index={index})"
                 );
-                self.key_provider.set_key(&identity, index, raw_key.to_vec());
+                self.key_provider
+                    .set_key(&identity, index, raw_key.to_vec());
                 applied += 1;
             }
         }
@@ -124,36 +235,73 @@ fn key_owner_matches(identity: &str, user_id: &str, device_id: &str) -> bool {
     if device_id.is_empty() {
         return matches!(parse_lk_identity(identity), Some((user, Some(_))) if user == user_id);
     }
-    match identity.strip_prefix(user_id).and_then(|rest| rest.strip_prefix(':')) {
+    match identity
+        .strip_prefix(user_id)
+        .and_then(|rest| rest.strip_prefix(':'))
+    {
         Some(id_device) => id_device == device_id,
         None => false,
     }
 }
 
+fn identity_owner_matches(
+    identities: &IdentityMap,
+    identity: &str,
+    user_id: &str,
+    device_id: &str,
+) -> bool {
+    key_owner_matches(identity, user_id, device_id)
+        || identities
+            .resolve(identity)
+            .is_some_and(|(u, d)| u == user_id && (device_id.is_empty() || d == device_id))
+}
+
 /// Set every stored key that belongs to `identity` (`{user_id}:{device}`).
 fn apply_pending_for(
     key_provider: &KeyProvider,
-    pending: &HashMap<(String, String), HashMap<i32, Vec<u8>>>,
+    pending: &PendingKeys,
+    identities: &IdentityMap,
     identity: &ParticipantIdentity,
 ) {
     let id_str = identity.as_str();
-    for ((user_id, device_id), keys_by_index) in pending {
-        if key_owner_matches(id_str, user_id, device_id) {
+    for ((user_id, device_id), keys_by_index) in pending.iter() {
+        if identity_owner_matches(identities, id_str, user_id, device_id) {
             for (idx, raw_key) in keys_by_index {
-                key_provider.set_key(identity, *idx, raw_key.clone());
+                // LiveKit takes the key by value, so this copy is its own to wipe.
+                key_provider.set_key(identity, *idx, raw_key.to_vec());
             }
         }
     }
 }
 
 /// Which SFU each live call member publishes on (`(user_id, device_id)` ->
-/// JWT service URL), kept current by the session's member reconciler.
+/// JWT service URL), kept current by the session's member reconciler. It also
+/// carries the call's "over" flag, which every connection's sink checks.
 #[derive(Clone, Default)]
-pub struct MemberTransports(Arc<parking_lot::Mutex<HashMap<(String, String), String>>>);
+pub struct MemberTransports(
+    Arc<parking_lot::Mutex<HashMap<(String, String), String>>>,
+    IdentityMap,
+    Arc<AtomicBool>,
+);
 
 impl MemberTransports {
+    /// The call is over: its connections may still be closing, but nothing
+    /// they receive reaches the UI any more (a newer call is on screen by then).
+    pub fn end(&self) {
+        self.2.store(true, Ordering::SeqCst);
+    }
+
+    fn is_ended(&self) -> bool {
+        self.2.load(Ordering::SeqCst)
+    }
+
     pub fn replace(&self, map: HashMap<(String, String), String>) {
         *self.0.lock() = map;
+    }
+
+    /// The hashed-identity table shared with the call's [`SharedKeys`].
+    pub fn identities(&self) -> IdentityMap {
+        self.1.clone()
     }
 
     /// Whether a LiveKit participant seen on the SFU `sfu_url` is a real call
@@ -163,7 +311,10 @@ impl MemberTransports {
     /// So an identity must look like `@user:server:DEVICE`, and a known member
     /// must actually publish on this SFU.
     fn allows(&self, sfu_url: &str, identity: &str) -> bool {
-        let (user, device) = split_identity(identity);
+        let (user, device) = self
+            .1
+            .resolve(identity)
+            .unwrap_or_else(|| split_identity(identity));
         if device.is_empty() {
             return false;
         }
@@ -202,7 +353,9 @@ impl FilteredSink {
     }
 
     fn ok(&self, participant_id: &str) -> bool {
-        participant_id == self.local_identity || self.members.allows(&self.sfu_url, participant_id)
+        !self.members.is_ended()
+            && (participant_id == self.local_identity
+                || self.members.allows(&self.sfu_url, participant_id))
     }
 }
 
@@ -243,14 +396,30 @@ impl RtcEventSink for FilteredSink {
     fn on_session_ended(&self, session_id: u64, reason: &str) {
         self.inner.on_session_ended(session_id, reason);
     }
-    fn on_video_frame(&self, session_id: u64, participant_id: &str, width: u32, height: u32, rgba: Vec<u8>) {
+    fn on_video_frame(
+        &self,
+        session_id: u64,
+        participant_id: &str,
+        width: u32,
+        height: u32,
+        rgba: Vec<u8>,
+    ) {
         if self.ok(participant_id) {
-            self.inner.on_video_frame(session_id, participant_id, width, height, rgba);
+            self.inner
+                .on_video_frame(session_id, participant_id, width, height, rgba);
         }
     }
-    fn on_screen_frame(&self, session_id: u64, participant_id: &str, width: u32, height: u32, rgba: Vec<u8>) {
+    fn on_screen_frame(
+        &self,
+        session_id: u64,
+        participant_id: &str,
+        width: u32,
+        height: u32,
+        rgba: Vec<u8>,
+    ) {
         if self.ok(participant_id) {
-            self.inner.on_screen_frame(session_id, participant_id, width, height, rgba);
+            self.inner
+                .on_screen_frame(session_id, participant_id, width, height, rgba);
         }
     }
     fn on_audio_frame(
@@ -262,8 +431,13 @@ impl RtcEventSink for FilteredSink {
         num_channels: u32,
     ) {
         if self.ok(participant_id) {
-            self.inner
-                .on_audio_frame(session_id, participant_id, samples, sample_rate, num_channels);
+            self.inner.on_audio_frame(
+                session_id,
+                participant_id,
+                samples,
+                sample_rate,
+                num_channels,
+            );
         }
     }
     fn accepts_participant(&self, participant_id: &str) -> bool {
@@ -306,10 +480,16 @@ pub struct LiveKitRoom {
     call_start: std::time::Instant,
 }
 
+/// Run when the primary connection drops, before the UI is told the session
+/// ended. Returns whether the call ended on its own: `false` for the end a
+/// hang-up caused, which the UI already knows and must not hear about again.
+pub type PrimaryEnded = Arc<dyn Fn() -> bool + Send + Sync>;
+
 impl LiveKitRoom {
     /// Connect, publish local audio + video tracks, start the event loop.
     /// This is the primary connection: it publishes on our own homeserver's
-    /// SFU, and its `Disconnected` event ends the call session.
+    /// SFU, and its `Disconnected` event ends the call session (after calling
+    /// `on_ended`, which takes back what the call announced).
     pub async fn connect(
         server_url: &str,
         jwt: &str,
@@ -319,6 +499,7 @@ impl LiveKitRoom {
         shared: SharedKeys,
         sfu_url: &str,
         members: MemberTransports,
+        on_ended: PrimaryEnded,
     ) -> anyhow::Result<Self> {
         // RoomOptions is #[non_exhaustive] in the external crate — must use
         // Default::default() then field-assign rather than struct literal.
@@ -332,83 +513,105 @@ impl LiveKitRoom {
         let (room, events) = Room::connect(server_url, jwt, room_options).await?;
         let room = Arc::new(room);
 
-        // Local audio track via platform hardware ADM.
-        // PlatformAudio gives libwebrtc's AEC3 access to the speaker-output
-        // reference, enabling echo cancellation. AudioProcessingOptions::default()
-        // enables AEC, NS, and AGC. Capture is handled entirely by the platform
-        // ADM â€” no manual PCM injection needed.
-        let platform_audio =
-            PlatformAudio::new().map_err(|e| anyhow::anyhow!("PlatformAudio init failed: {e}"))?;
-        platform_audio
-            .configure_audio_processing(AudioProcessingOptions::default())
-            .map_err(|e| anyhow::anyhow!("PlatformAudio configure failed: {e}"))?;
-        // Disable the platform ADM's PLAYOUT side (recording stays enabled above,
-        // for the mic track). PlatformAudio::new() turns playout on by default,
-        // which on Linux auto-selects a native-PipeWire-backed device (the
-        // shipped libwebrtc was built with rtc_use_pipewire=true) purely to give
-        // AEC3 a speaker-output reference. That native PipeWire client collides
-        // with the separate pipewiresrc-based screen-share pipeline in
-        // screen_capture_portal.cpp, silently stalling screen-share negotiation
-        // whenever a call is active. Disabling it here routes playout through
-        // webrtc-sys's SyntheticAudioDevice instead, which keeps pumping AEC3 a
-        // correct render reference (via periodic NeedMorePlayData calls) without
-        // opening any real playback device. Remote audio is unaffected: it's
-        // already rendered separately by our own NativeAudioStream sink (see
-        // RtcEventSink::on_audio_frame below, -> tk::AudioPlayback), so the
-        // platform ADM's own playout was never used for anything but this AEC3
-        // reference in the first place.
-        livekit::rtc_engine::lk_runtime::LkRuntime::instance()
-            .pc_factory()
-            .set_adm_playout_enabled(false);
-        let local_audio = LocalAudioTrack::create_audio_track("mic", platform_audio.rtc_source());
-        // dtx=false: always send audio packets even during silence.
-        // red=false: send plain Opus instead of RED; some SFUs fail to forward
-        //   RED audio to subscribers when the subscriber's codec is Opus-only.
-        // source=Microphone: required by SFUs that use source to classify tracks
-        //   before deciding whether to forward to subscribers.
-        let audio_opts_pub = TrackPublishOptions {
-            dtx: false,
-            red: false,
-            simulcast: false,
-            source: TrackSource::Microphone,
-            ..Default::default()
-        };
-        let audio_publication = room
-            .local_participant()
-            .publish_track(LocalTrack::Audio(local_audio), audio_opts_pub)
-            .await?;
+        // Whatever fails from here on closes the connection again: a half-set-up
+        // call must not stay in the SFU's room.
+        let published: anyhow::Result<_> = async {
+            // Local audio track via platform hardware ADM.
+            // PlatformAudio gives libwebrtc's AEC3 access to the speaker-output
+            // reference, enabling echo cancellation. AudioProcessingOptions::default()
+            // enables AEC, NS, and AGC. Capture is handled entirely by the platform
+            // ADM â€” no manual PCM injection needed.
+            let platform_audio = PlatformAudio::new()
+                .map_err(|e| anyhow::anyhow!("PlatformAudio init failed: {e}"))?;
+            platform_audio
+                .configure_audio_processing(AudioProcessingOptions::default())
+                .map_err(|e| anyhow::anyhow!("PlatformAudio configure failed: {e}"))?;
+            // Disable the platform ADM's PLAYOUT side (recording stays enabled above,
+            // for the mic track). PlatformAudio::new() turns playout on by default,
+            // which on Linux auto-selects a native-PipeWire-backed device (the
+            // shipped libwebrtc was built with rtc_use_pipewire=true) purely to give
+            // AEC3 a speaker-output reference. That native PipeWire client collides
+            // with the separate pipewiresrc-based screen-share pipeline in
+            // screen_capture_portal.cpp, silently stalling screen-share negotiation
+            // whenever a call is active. Disabling it here routes playout through
+            // webrtc-sys's SyntheticAudioDevice instead, which keeps pumping AEC3 a
+            // correct render reference (via periodic NeedMorePlayData calls) without
+            // opening any real playback device. Remote audio is unaffected: it's
+            // already rendered separately by our own NativeAudioStream sink (see
+            // RtcEventSink::on_audio_frame below, -> tk::AudioPlayback), so the
+            // platform ADM's own playout was never used for anything but this AEC3
+            // reference in the first place.
+            livekit::rtc_engine::lk_runtime::LkRuntime::instance()
+                .pc_factory()
+                .set_adm_playout_enabled(false);
+            let local_audio =
+                LocalAudioTrack::create_audio_track("mic", platform_audio.rtc_source());
+            // dtx=false: always send audio packets even during silence.
+            // red=false: send plain Opus instead of RED; some SFUs fail to forward
+            //   RED audio to subscribers when the subscriber's codec is Opus-only.
+            // source=Microphone: required by SFUs that use source to classify tracks
+            //   before deciding whether to forward to subscribers.
+            let audio_opts_pub = TrackPublishOptions {
+                dtx: false,
+                red: false,
+                simulcast: false,
+                source: TrackSource::Microphone,
+                ..Default::default()
+            };
+            let audio_publication = room
+                .local_participant()
+                .publish_track(LocalTrack::Audio(local_audio), audio_opts_pub)
+                .await?;
 
-        // Local video track (camera frames injected by Layer 3)
-        let video_source = NativeVideoSource::new(
-            livekit::webrtc::video_source::VideoResolution {
-                width: 640,
-                height: 480,
-            },
-            false,
-        );
-        let local_video = LocalVideoTrack::create_video_track(
-            "camera",
-            RtcVideoSource::Native(video_source.clone()),
-        );
-        // Published muted (the AddTrack request carries track.is_muted()):
-        // see `video_unmute_pending`.
-        local_video.mute();
-        // simulcast=false: single VP8 layer.
-        // source=Camera: signals to the SFU what kind of track this is.
-        let video_opts_pub = TrackPublishOptions {
-            simulcast: false,
-            source: TrackSource::Camera,
-            ..Default::default()
+            // Local video track (camera frames injected by Layer 3)
+            let video_source = NativeVideoSource::new(
+                livekit::webrtc::video_source::VideoResolution {
+                    width: 640,
+                    height: 480,
+                },
+                false,
+            );
+            let local_video = LocalVideoTrack::create_video_track(
+                "camera",
+                RtcVideoSource::Native(video_source.clone()),
+            );
+            // Published muted (the AddTrack request carries track.is_muted()):
+            // see `video_unmute_pending`.
+            local_video.mute();
+            // simulcast=false: single VP8 layer.
+            // source=Camera: signals to the SFU what kind of track this is.
+            let video_opts_pub = TrackPublishOptions {
+                simulcast: false,
+                source: TrackSource::Camera,
+                ..Default::default()
+            };
+            let video_publication = room
+                .local_participant()
+                .publish_track(LocalTrack::Video(local_video), video_opts_pub)
+                .await?;
+            Ok((
+                platform_audio,
+                video_source,
+                audio_publication,
+                video_publication,
+            ))
+        }
+        .await;
+        let (platform_audio, video_source, audio_publication, video_publication) = match published {
+            Ok(parts) => parts,
+            Err(e) => {
+                let _ = room.close().await;
+                return Err(e);
+            }
         };
-        let video_publication = room
-            .local_participant()
-            .publish_track(LocalTrack::Video(local_video), video_opts_pub)
-            .await?;
 
         // Emit local participant immediately so the call overlay populates even
         // when no remote participants have joined yet.
         if let Some(ref s) = sink {
-            s.on_participant_joined(session_id, local_participant_info(&room.local_participant()));
+            s.on_participant_joined(
+                session_id,
+                local_participant_info(&room.local_participant()),
+            );
         }
 
         let local_identity = room.local_participant().identity().as_str().to_owned();
@@ -424,7 +627,7 @@ impl LiveKitRoom {
             Arc::clone(&screen_frame_in_flight),
             FilteredSink::wrap(sink.clone(), sfu_url, &members, local_identity.clone()),
             shared.clone(),
-            true,
+            Some(on_ended),
         );
 
         info!("rtc: livekit connected (session {session_id}), local identity={local_identity}");
@@ -462,7 +665,10 @@ impl LiveKitRoom {
     /// frame (see `video_unmute_pending`), so a camera that is missing or
     /// held by another app never goes live as a placeholder stream.
     pub fn set_video_muted(&self, muted: bool) {
-        let mut pending = self.video_unmute_pending.lock().unwrap_or_else(|e| e.into_inner());
+        let mut pending = self
+            .video_unmute_pending
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         if muted {
             *pending = false;
             self.video_publication.mute();
@@ -497,7 +703,10 @@ impl LiveKitRoom {
         };
         self.video_source.capture_frame(&frame);
         {
-            let mut pending = self.video_unmute_pending.lock().unwrap_or_else(|e| e.into_inner());
+            let mut pending = self
+                .video_unmute_pending
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             if *pending {
                 *pending = false;
                 self.video_publication.unmute();
@@ -545,7 +754,10 @@ impl LiveKitRoom {
             .publish_track(LocalTrack::Video(screen_track), opts)
             .await?;
         *self.screen_source.lock().unwrap_or_else(|e| e.into_inner()) = Some(screen_source);
-        *self.screen_publication.lock().unwrap_or_else(|e| e.into_inner()) = Some(pub_);
+        *self
+            .screen_publication
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(pub_);
         // LocalTrackPublished only logs (see spawn_event_task below) — emit the
         // participant update ourselves so the UI creates the local ":screen"
         // tile. Without this, is_screen_sharing never flips true for the local
@@ -567,7 +779,24 @@ impl LiveKitRoom {
     /// unambiguous signal (RoomEvent::TrackUnpublished on their side) that the
     /// track is gone.
     pub fn stop_screen_share(&self) {
-        let pub_ = self.screen_publication.lock().unwrap_or_else(|e| e.into_inner()).take();
+        self.unpublish_screen_share();
+        // Explicit symmetric update — don't rely solely on a TrackMuted/
+        // TrackUnpublished event round-trip to clear is_screen_sharing for
+        // the local participant's own tile.
+        if let Some(ref s) = self.sink {
+            s.on_participant_updated(
+                self.session_id,
+                local_participant_info(&self.room.local_participant()),
+            );
+        }
+    }
+
+    fn unpublish_screen_share(&self) {
+        let pub_ = self
+            .screen_publication
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
         *self.screen_source.lock().unwrap_or_else(|e| e.into_inner()) = None;
         if let Some(pub_) = pub_ {
             pub_.mute();
@@ -579,14 +808,20 @@ impl LiveKitRoom {
                 }
             });
         }
-        // Explicit symmetric update — don't rely solely on a TrackMuted/
-        // TrackUnpublished event round-trip to clear is_screen_sharing for
-        // the local participant's own tile.
-        if let Some(ref s) = self.sink {
-            s.on_participant_updated(
-                self.session_id,
-                local_participant_info(&self.room.local_participant()),
-            );
+    }
+
+    /// Stop sending anything of ours: the mic, the camera and the screen share.
+    /// Cheap and idempotent; the hang-up runs it before anything that can wait
+    /// on the network, so media stops at once however slow the leave is. Needs
+    /// a tokio runtime context (the mutes and the unpublish spawn).
+    pub fn stop_local_media(&self) {
+        self.set_audio_muted(true);
+        self.set_video_muted(true);
+        self.unpublish_screen_share();
+        // Releases the microphone itself (and its privacy indicator); the
+        // published audio track is already muted.
+        if let Err(e) = self.platform_audio.stop_recording() {
+            warn!("rtc: could not stop the microphone: {e}");
         }
     }
 
@@ -724,11 +959,17 @@ impl RemoteSfuRoom {
             Arc::new(AtomicBool::new(false)),
             FilteredSink::wrap(sink.clone(), sfu_url, &members, local_identity),
             shared.clone(),
-            false,
+            None,
         );
         info!("rtc: connected to remote SFU {server_url} (session {session_id})");
         let sink = FilteredSink::wrap(sink, sfu_url, &members, String::new());
-        Ok(Self { room, session_id, sink, shared, event_task })
+        Ok(Self {
+            room,
+            session_id,
+            sink,
+            shared,
+            event_task,
+        })
     }
 
     pub fn apply_peer_key(
@@ -856,7 +1097,7 @@ fn spawn_event_task(
     screen_in_flight: Arc<AtomicBool>,
     sink: Option<Arc<dyn RtcEventSink>>,
     shared: SharedKeys,
-    is_primary: bool,
+    on_primary_ended: Option<PrimaryEnded>,
 ) -> AbortHandle {
     tokio::spawn(async move {
         // Created on the first remote audio track; stops with this task.
@@ -871,12 +1112,16 @@ fn spawn_event_task(
                     // ParticipantConnected for these pre-existing participants.
                     for (participant, _pubs) in &participants_with_tracks {
                         if let Some(ref s) = sink {
-                            s.on_participant_joined(session_id, participant_info(participant));
+                            s.on_participant_joined(
+                                session_id,
+                                participant_info(participant, &shared.identities),
+                            );
                         }
                         // Apply any stored E2EE keys for this participant.
                         apply_pending_for(
                             &shared.key_provider,
-                            &shared.pending.lock().unwrap(),
+                            &shared.pending.lock(),
+                            &shared.identities,
                             &participant.identity(),
                         );
                     }
@@ -903,11 +1148,15 @@ fn spawn_event_task(
                 RoomEvent::ParticipantConnected(p) => {
                     info!("rtc: participant connected: {}", p.identity());
                     if let Some(ref s) = sink {
-                        s.on_participant_joined(session_id, participant_info(&p));
+                        s.on_participant_joined(
+                            session_id,
+                            participant_info(&p, &shared.identities),
+                        );
                     }
                     apply_pending_for(
                         &shared.key_provider,
-                        &shared.pending.lock().unwrap(),
+                        &shared.pending.lock(),
+                        &shared.identities,
                         &p.identity(),
                     );
                 }
@@ -930,7 +1179,10 @@ fn spawn_event_task(
                     // (0 pubs), so is_video_muted=true and the tile shows an avatar
                     // even though frames are arriving. Refreshing here fixes that.
                     if let Some(ref s) = sink {
-                        s.on_participant_updated(session_id, participant_info(&participant));
+                        s.on_participant_updated(
+                            session_id,
+                            participant_info(&participant, &shared.identities),
+                        );
                     }
                     let pid = participant.identity().as_str().to_owned();
                     match track {
@@ -1022,7 +1274,10 @@ fn spawn_event_task(
                     if let Some(ref s) = sink {
                         let identity = participant.identity();
                         if let Some(rp) = room.remote_participants().get(&identity) {
-                            s.on_participant_updated(session_id, participant_info(&rp));
+                            s.on_participant_updated(
+                                session_id,
+                                participant_info(&rp, &shared.identities),
+                            );
                         } else if identity == room.local_participant().identity() {
                             s.on_participant_updated(
                                 session_id,
@@ -1035,7 +1290,10 @@ fn spawn_event_task(
                     if let Some(ref s) = sink {
                         let identity = participant.identity();
                         if let Some(rp) = room.remote_participants().get(&identity) {
-                            s.on_participant_updated(session_id, participant_info(&rp));
+                            s.on_participant_updated(
+                                session_id,
+                                participant_info(&rp, &shared.identities),
+                            );
                         } else if identity == room.local_participant().identity() {
                             s.on_participant_updated(
                                 session_id,
@@ -1050,7 +1308,10 @@ fn spawn_event_task(
                     // so is_screen_sharing recomputes to false and the ":screen"
                     // tile is removed, even if a TrackMuted event was missed.
                     if let Some(ref s) = sink {
-                        s.on_participant_updated(session_id, participant_info(&participant));
+                        s.on_participant_updated(
+                            session_id,
+                            participant_info(&participant, &shared.identities),
+                        );
                     }
                 }
                 RoomEvent::Reconnecting => {
@@ -1063,9 +1324,11 @@ fn spawn_event_task(
                     info!("rtc: room disconnected: {reason:?}");
                     // Only the primary (publishing) connection ends the call.
                     // A dropped remote SFU is retried by the SFU reconciler.
-                    if is_primary {
-                        if let Some(ref s) = sink {
-                            s.on_session_ended(session_id, &format!("{reason:?}"));
+                    if let Some(on_ended) = &on_primary_ended {
+                        if on_ended() {
+                            if let Some(ref s) = sink {
+                                s.on_session_ended(session_id, &format!("{reason:?}"));
+                            }
                         }
                     }
                     break;
@@ -1079,7 +1342,7 @@ fn spawn_event_task(
     .abort_handle()
 }
 
-fn participant_info(p: &RemoteParticipant) -> RtcParticipantInfo {
+fn participant_info(p: &RemoteParticipant, identities: &IdentityMap) -> RtcParticipantInfo {
     let pubs = p.track_publications();
     let is_audio_muted = !pubs
         .values()
@@ -1095,7 +1358,9 @@ fn participant_info(p: &RemoteParticipant) -> RtcParticipantInfo {
     // user_id is a Matrix ID (@localpart:server_name, where server_name may
     // carry a port).  `split_identity` finds the device boundary, which is not
     // simply the second ':'.
-    let (user_id, device_id) = split_identity(&identity);
+    let (user_id, device_id) = identities
+        .resolve(&identity)
+        .unwrap_or_else(|| split_identity(&identity));
     RtcParticipantInfo {
         participant_id: identity,
         user_id,
@@ -1277,7 +1542,53 @@ mod participant_filter_tests {
     #[test]
     fn hashed_identity_is_not_a_participant() {
         let m = members(&[]);
-        assert!(!m.allows("https://sfu.a", "W9SGZNapjtEwbxf1GgfA6thQiWT4zZvHrJHxWIj/lJs"));
+        assert!(!m.allows(
+            "https://sfu.a",
+            "W9SGZNapjtEwbxf1GgfA6thQiWT4zZvHrJHxWIj/lJs"
+        ));
+    }
+
+    #[test]
+    fn hashed_publisher_is_allowed_on_its_sfu() {
+        let id =
+            crate::client::rtc::identity::livekit_participant_identity("@b:matrix.org", "mid1");
+        let m = members(&[("@b:matrix.org", "DEV", "https://sfu.matrix.org")]);
+        m.identities().replace(HashMap::from([(
+            id.clone(),
+            ("@b:matrix.org".to_owned(), "DEV".to_owned()),
+        )]));
+        assert!(m.allows("https://sfu.matrix.org", &id));
+        assert!(
+            !m.allows("https://sfu.gnomos.org", &id),
+            "subscribe-only copy elsewhere"
+        );
+    }
+
+    #[test]
+    fn unknown_hashed_identity_is_still_a_phantom() {
+        let m = members(&[]);
+        m.identities().replace(HashMap::from([(
+            "known".to_owned(),
+            ("@b:x".to_owned(), "D".to_owned()),
+        )]));
+        assert!(!m.allows(
+            "https://sfu.a",
+            "W9SGZNapjtEwbxf1GgfA6thQiWT4zZvHrJHxWIj/lJs"
+        ));
+    }
+
+    #[test]
+    fn keys_reach_a_hashed_participant() {
+        let shared = SharedKeys::new();
+        shared.identities().replace(HashMap::from([(
+            "hashedid".to_owned(),
+            ("@b:x".to_owned(), "PHONE".to_owned()),
+        )]));
+        assert!(shared.owner_matches("hashedid", "@b:x", "PHONE"));
+        assert!(!shared.owner_matches("hashedid", "@b:x", "LAPTOP"));
+        assert!(!shared.owner_matches("otherid", "@b:x", "PHONE"));
+        // Legacy identities keep working.
+        assert!(shared.owner_matches("@b:x:PHONE", "@b:x", "PHONE"));
     }
 
     #[test]
@@ -1310,19 +1621,43 @@ mod participant_filter_tests {
 
     #[test]
     fn a_server_name_with_a_port_still_matches_its_device() {
-        assert!(key_owner_matches("@b:x.org:8448:PHONE", "@b:x.org:8448", "PHONE"));
-        assert!(!key_owner_matches("@b:x.org:8448:LAPTOP", "@b:x.org:8448", "PHONE"));
-        assert!(key_owner_matches("@b:x.org:8448:PHONE", "@b:x.org:8448", ""));
+        assert!(key_owner_matches(
+            "@b:x.org:8448:PHONE",
+            "@b:x.org:8448",
+            "PHONE"
+        ));
+        assert!(!key_owner_matches(
+            "@b:x.org:8448:LAPTOP",
+            "@b:x.org:8448",
+            "PHONE"
+        ));
+        assert!(key_owner_matches(
+            "@b:x.org:8448:PHONE",
+            "@b:x.org:8448",
+            ""
+        ));
         // A different user, whose id is this one's without the port.
-        assert!(!key_owner_matches("@b:x.org:8448:PHONE", "@b:x.org", "PHONE"));
+        assert!(!key_owner_matches(
+            "@b:x.org:8448:PHONE",
+            "@b:x.org",
+            "PHONE"
+        ));
     }
 
     #[test]
     fn an_empty_device_key_does_not_leak_to_a_ported_server_user() {
         assert!(!key_owner_matches("@b:x.org:8448:PHONE", "@b:x.org", ""));
-        assert!(key_owner_matches("@b:x.org:8448:PHONE", "@b:x.org:8448", ""));
+        assert!(key_owner_matches(
+            "@b:x.org:8448:PHONE",
+            "@b:x.org:8448",
+            ""
+        ));
         assert!(key_owner_matches("@b:x.org:8448", "@b:x.org:8448", ""));
-        assert!(key_owner_matches("@b:[::1]:8448:PHONE", "@b:[::1]:8448", ""));
+        assert!(key_owner_matches(
+            "@b:[::1]:8448:PHONE",
+            "@b:[::1]:8448",
+            ""
+        ));
         assert!(!key_owner_matches("@b:[::1]:8448:PHONE", "@b:[::1]", ""));
     }
 }
@@ -1356,12 +1691,28 @@ mod helper_tests {
             ("@b:x.org:8448", "@b:x.org", "8448"),
         ];
         for (id, user, device) in cases {
-            assert_eq!(split_identity(id), (user.to_owned(), device.to_owned()), "{id}");
+            assert_eq!(
+                split_identity(id),
+                (user.to_owned(), device.to_owned()),
+                "{id}"
+            );
         }
-        assert_eq!(matrix_user_id_from_lk_identity("@b:x.org:8448:PHONE"), Some("@b:x.org:8448"));
-        assert_eq!(matrix_user_id_from_lk_identity("@b:[::1]:8448:P"), Some("@b:[::1]:8448"));
-        assert_eq!(matrix_user_id_from_lk_identity("@b:[::1]:P"), Some("@b:[::1]"));
-        assert_eq!(matrix_user_id_from_lk_identity("@b:x.org:8448"), Some("@b:x.org"));
+        assert_eq!(
+            matrix_user_id_from_lk_identity("@b:x.org:8448:PHONE"),
+            Some("@b:x.org:8448")
+        );
+        assert_eq!(
+            matrix_user_id_from_lk_identity("@b:[::1]:8448:P"),
+            Some("@b:[::1]:8448")
+        );
+        assert_eq!(
+            matrix_user_id_from_lk_identity("@b:[::1]:P"),
+            Some("@b:[::1]")
+        );
+        assert_eq!(
+            matrix_user_id_from_lk_identity("@b:x.org:8448"),
+            Some("@b:x.org")
+        );
     }
 
     #[test]
@@ -1373,8 +1724,14 @@ mod helper_tests {
 
     #[test]
     fn matrix_user_id_from_identity_cuts_at_the_second_colon() {
-        assert_eq!(matrix_user_id_from_lk_identity("@a:x.org:DEV"), Some("@a:x.org"));
-        assert_eq!(matrix_user_id_from_lk_identity("@a:x.org:DE:V"), Some("@a:x.org"));
+        assert_eq!(
+            matrix_user_id_from_lk_identity("@a:x.org:DEV"),
+            Some("@a:x.org")
+        );
+        assert_eq!(
+            matrix_user_id_from_lk_identity("@a:x.org:DE:V"),
+            Some("@a:x.org")
+        );
     }
 
     #[test]
@@ -1484,26 +1841,103 @@ mod helper_tests {
         }
     }
 
+    fn key(b: u8) -> SecretBytes {
+        crate::client::rtc::e2ee::Secret::new(vec![b])
+    }
+
     #[test]
     fn shared_keys_store_keeps_one_entry_per_device_and_index() {
         let keys = SharedKeys::new();
-        keys.store("@a:x", "PHONE", 0, vec![1]);
-        keys.store("@a:x", "PHONE", 1, vec![2]);
-        keys.store("@a:x", "LAPTOP", 0, vec![3]);
-        keys.store("@a:x", "PHONE", 0, vec![4]); // overwrite
-        let p = keys.pending.lock().unwrap();
+        keys.store("@a:x", "PHONE", 0, key(1));
+        keys.store("@a:x", "PHONE", 1, key(2));
+        keys.store("@a:x", "LAPTOP", 0, key(3));
+        keys.store("@a:x", "PHONE", 0, key(4)); // overwrite
+        let p = keys.pending.lock();
         assert_eq!(p.len(), 2);
-        let phone = &p[&("@a:x".to_owned(), "PHONE".to_owned())];
+        let by_device: HashMap<_, _> = p.iter().collect();
+        let phone = by_device[&("@a:x".to_owned(), "PHONE".to_owned())];
         assert_eq!(phone.len(), 2);
-        assert_eq!(phone[&0], vec![4]);
-        assert_eq!(phone[&1], vec![2]);
-        assert_eq!(p[&("@a:x".to_owned(), "LAPTOP".to_owned())][&0], vec![3]);
+        assert_eq!(**phone[&0], vec![4]);
+        assert_eq!(**phone[&1], vec![2]);
+        assert_eq!(
+            **by_device[&("@a:x".to_owned(), "LAPTOP".to_owned())][&0],
+            vec![3]
+        );
+    }
+
+    #[test]
+    fn keys_of_devices_that_left_are_dropped_after_a_grace_period() {
+        let t0 = std::time::Instant::now();
+        let mut p = PendingKeys::default();
+        p.insert("@a:x", "PHONE", 0, key(1), t0);
+        p.insert("@b:x", "TAB", 0, key(2), t0);
+        p.insert("@c:x", "", 0, key(3), t0); // no device id: any device of @c
+        let live = |u: &str, d: &str| u == "@a:x" && d == "PHONE";
+        // Just stored: kept even though @b and @c are not live yet.
+        p.retain_live(live, t0 + std::time::Duration::from_secs(5));
+        assert_eq!(p.len(), 3);
+        // Long enough: only the live device's keys remain.
+        p.retain_live(live, t0 + PENDING_KEY_GRACE);
+        assert_eq!(p.len(), 1);
+        assert!(p.iter().all(|((u, d), _)| u == "@a:x" && d == "PHONE"));
+    }
+
+    #[test]
+    fn a_long_lived_member_one_pass_omits_keeps_their_keys() {
+        let t0 = std::time::Instant::now();
+        let hour = std::time::Duration::from_secs(3600);
+        let mut p = PendingKeys::default();
+        p.insert("@a:x", "PHONE", 0, key(1), t0);
+        let live = |u: &str, d: &str| u == "@a:x" && d == "PHONE";
+        let nobody = |_: &str, _: &str| false;
+        // Listed live over a long call; the key itself is hours old.
+        p.retain_live(live, t0 + hour);
+        // One pass whose member read left them out.
+        p.retain_live(nobody, t0 + hour + std::time::Duration::from_secs(30));
+        assert_eq!(p.len(), 1, "a single omission must not delete the key");
+        // Listed again: the absence clock starts over.
+        p.retain_live(live, t0 + hour + std::time::Duration::from_secs(31));
+        p.retain_live(
+            nobody,
+            t0 + hour + std::time::Duration::from_secs(31) + PENDING_KEY_GRACE
+                - std::time::Duration::from_secs(1),
+        );
+        assert_eq!(p.len(), 1);
+        // Gone for the whole grace period.
+        p.retain_live(
+            nobody,
+            t0 + hour + std::time::Duration::from_secs(31) + PENDING_KEY_GRACE,
+        );
+        assert_eq!(p.len(), 0);
+    }
+
+    #[test]
+    fn retain_members_treats_a_deviceless_key_as_every_device_of_the_user() {
+        let keys = SharedKeys::new();
+        keys.store("@c:x", "", 0, key(3));
+        keys.pending
+            .lock()
+            .retain_live(|_, _| false, std::time::Instant::now() + PENDING_KEY_GRACE);
+        assert_eq!(keys.pending.lock().len(), 0);
+        keys.store("@c:x", "", 0, key(3));
+        keys.retain_members(&[("@c:x".to_owned(), "D".to_owned())].into_iter().collect());
+        assert_eq!(keys.pending.lock().len(), 1);
+    }
+
+    #[test]
+    fn a_secret_never_prints_its_value() {
+        let k = crate::client::rtc::e2ee::Secret::new("hunter2-key-material".to_owned());
+        assert!(!format!("{k:?}").contains("hunter2"));
+        assert_eq!(k.clone(), k);
     }
 
     #[test]
     fn member_transports_replace_swaps_the_whole_map() {
         let m = MemberTransports::default();
-        m.replace(HashMap::from([(("@a:x".to_owned(), "D".to_owned()), "sfu1".to_owned())]));
+        m.replace(HashMap::from([(
+            ("@a:x".to_owned(), "D".to_owned()),
+            "sfu1".to_owned(),
+        )]));
         assert!(m.allows("sfu1", "@a:x:D"));
         assert!(!m.allows("sfu2", "@a:x:D"));
         m.replace(HashMap::new());
@@ -1520,13 +1954,19 @@ mod helper_tests {
             self.0.lock().unwrap().push(format!("invite:{room_id}"));
         }
         fn on_participant_joined(&self, _: u64, info: RtcParticipantInfo) {
-            self.0.lock().unwrap().push(format!("joined:{}", info.participant_id));
+            self.0
+                .lock()
+                .unwrap()
+                .push(format!("joined:{}", info.participant_id));
         }
         fn on_participant_left(&self, _: u64, id: &str) {
             self.0.lock().unwrap().push(format!("left:{id}"));
         }
         fn on_participant_updated(&self, _: u64, info: RtcParticipantInfo) {
-            self.0.lock().unwrap().push(format!("updated:{}", info.participant_id));
+            self.0
+                .lock()
+                .unwrap()
+                .push(format!("updated:{}", info.participant_id));
         }
         fn on_session_ended(&self, _: u64, reason: &str) {
             self.0.lock().unwrap().push(format!("ended:{reason}"));
@@ -1561,7 +2001,10 @@ mod helper_tests {
         let members = MemberTransports::default();
         members.replace(HashMap::from([
             (("@b:x".to_owned(), "D".to_owned()), "sfu-here".to_owned()),
-            (("@c:x".to_owned(), "D".to_owned()), "sfu-elsewhere".to_owned()),
+            (
+                ("@c:x".to_owned(), "D".to_owned()),
+                "sfu-elsewhere".to_owned(),
+            ),
         ]));
         let sink = FilteredSink::wrap(
             Some(rec.clone() as Arc<dyn RtcEventSink>),
@@ -1609,6 +2052,43 @@ mod helper_tests {
         assert_eq!(
             *rec.0.lock().unwrap(),
             vec!["joined:@me:x:D", "ended:bye", "invite:!r:x"]
+        );
+    }
+
+    #[test]
+    fn nothing_reaches_the_ui_once_the_call_is_over_but_its_end_still_does() {
+        let rec = Arc::new(Recorder::default());
+        let members = MemberTransports::default();
+        let sink = FilteredSink::wrap(
+            Some(rec.clone() as Arc<dyn RtcEventSink>),
+            "sfu",
+            &members,
+            "@me:x:D".into(),
+        )
+        .unwrap();
+        sink.on_audio_frame(1, "@me:x:D", &[0], 48000, 1);
+        members.end();
+        sink.on_audio_frame(1, "@me:x:D", &[0], 48000, 1);
+        sink.on_video_frame(1, "@b:x:D", 1, 1, vec![]);
+        sink.on_screen_frame(1, "@me:x:D", 1, 1, vec![]);
+        sink.on_participant_left(1, "@b:x:D");
+        assert!(!sink.accepts_participant("@me:x:D"));
+        sink.on_session_ended(1, "bye");
+        assert_eq!(*rec.0.lock().unwrap(), vec!["audio:@me:x:D", "ended:bye"]);
+    }
+}
+
+#[cfg(test)]
+mod key_provider_pin_tests {
+    use livekit::e2ee::key_provider::KeyProviderOptions;
+
+    /// MSC4195 requires the LiveKit default ratchet salt; pin it so a livekit
+    /// upgrade that changes the default fails here instead of on the wire.
+    #[test]
+    fn default_ratchet_salt_matches_msc4195() {
+        assert_eq!(
+            KeyProviderOptions::default().ratchet_salt,
+            b"LKFrameEncryptionKey".to_vec()
         );
     }
 }

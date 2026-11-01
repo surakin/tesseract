@@ -29,8 +29,7 @@ struct TkRoomHeaderStage
 
     tk::PaintCtx paint_ctx()
     {
-        return tk::PaintCtx{surface->canvas(), surface->factory(),
-                            tk::Theme::light()};
+        return tk::PaintCtx{surface->canvas(), surface->factory(), tk::Theme::light()};
     }
 
     void arrange(tk::Widget& w, tk::Rect bounds)
@@ -49,8 +48,7 @@ struct TkRoomHeaderStage
 
 } // namespace
 
-TEST_CASE("threads button fires on_threads_requested",
-          "[room_header][threads]")
+TEST_CASE("threads button fires on_threads_requested", "[room_header][threads]")
 {
     TkRoomHeaderStage st;
     RoomHeader h;
@@ -58,7 +56,10 @@ TEST_CASE("threads button fires on_threads_requested",
     st.arrange(h, {0, 0, 800, 60});
 
     bool clicked = false;
-    h.on_threads_requested = [&] { clicked = true; };
+    h.on_threads_requested = [&]
+    {
+        clicked = true;
+    };
 
     const tk::Rect r = h.threads_btn_rect_for_test();
     REQUIRE(r.w == 28.0f);
@@ -83,7 +84,10 @@ TEST_CASE("threads button does NOT fire if release leaves the button rect",
     st.arrange(h, {0, 0, 800, 60});
 
     bool clicked = false;
-    h.on_threads_requested = [&] { clicked = true; };
+    h.on_threads_requested = [&]
+    {
+        clicked = true;
+    };
 
     const tk::Rect r = h.threads_btn_rect_for_test();
     const tk::Point press{r.x + r.w * 0.5f, r.y + r.h * 0.5f};
@@ -92,8 +96,7 @@ TEST_CASE("threads button does NOT fire if release leaves the button rect",
     // Release well outside the button (still within the header strip). The
     // button only fires when the release lands inside its own bounds.
     const tk::Point release{10.0f, 30.0f};
-    claimer->on_pointer_up(claimer->world_to_local(release),
-                           claimer->contains_world(release));
+    claimer->on_pointer_up(claimer->world_to_local(release), claimer->contains_world(release));
     CHECK_FALSE(clicked);
 }
 
@@ -114,8 +117,7 @@ TEST_CASE("threads button sits 8 px left of the calendar button when shown",
     CHECK(threads.x == 728.0f);
 }
 
-TEST_CASE("threads button is hidden by default",
-          "[room_header][threads]")
+TEST_CASE("threads button is hidden by default", "[room_header][threads]")
 {
     TkRoomHeaderStage st;
     RoomHeader h;
@@ -131,7 +133,10 @@ TEST_CASE("threads button is hidden by default",
     CHECK(r.h == 0.0f);
 
     bool clicked = false;
-    h.on_threads_requested = [&] { clicked = true; };
+    h.on_threads_requested = [&]
+    {
+        clicked = true;
+    };
     // Click where the button would be if it were shown.
     h.on_pointer_down({764.0f, 30.0f});
     h.on_pointer_up({764.0f, 30.0f}, true);
@@ -147,7 +152,10 @@ TEST_CASE("toggling threads visibility off after a click in progress is safe",
     st.arrange(h, {0, 0, 800, 60});
 
     bool clicked = false;
-    h.on_threads_requested = [&] { clicked = true; };
+    h.on_threads_requested = [&]
+    {
+        clicked = true;
+    };
 
     const tk::Rect r = h.threads_btn_rect_for_test();
     const tk::Point press{r.x + r.w * 0.5f, r.y + r.h * 0.5f};
@@ -160,8 +168,7 @@ TEST_CASE("toggling threads visibility off after a click in progress is safe",
 
     // Release at the original press location. The button's bounds are now
     // zeroed, so the release lands outside it and the click must not fire.
-    claimer->on_pointer_up(claimer->world_to_local(press),
-                           claimer->contains_world(press));
+    claimer->on_pointer_up(claimer->world_to_local(press), claimer->contains_world(press));
     CHECK_FALSE(clicked);
 }
 
@@ -180,8 +187,7 @@ TEST_CASE("threads button alone takes the right-most slot when calendar is off",
     CHECK(r.x == 764.0f);
 }
 
-TEST_CASE("search button fires on_search_requested",
-          "[room_header][search]")
+TEST_CASE("search button fires on_search_requested", "[room_header][search]")
 {
     TkRoomHeaderStage st;
     RoomHeader h;
@@ -189,7 +195,10 @@ TEST_CASE("search button fires on_search_requested",
     st.arrange(h, {0, 0, 800, 60});
 
     bool clicked = false;
-    h.on_search_requested = [&] { clicked = true; };
+    h.on_search_requested = [&]
+    {
+        clicked = true;
+    };
 
     const tk::Rect r = h.search_btn_rect_for_test();
     REQUIRE(r.w == 28.0f);
@@ -202,8 +211,7 @@ TEST_CASE("search button fires on_search_requested",
     CHECK(clicked);
 }
 
-TEST_CASE("search button does NOT fire if release leaves the button rect",
-          "[room_header][search]")
+TEST_CASE("search button does NOT fire if release leaves the button rect", "[room_header][search]")
 {
     TkRoomHeaderStage st;
     RoomHeader h;
@@ -211,7 +219,10 @@ TEST_CASE("search button does NOT fire if release leaves the button rect",
     st.arrange(h, {0, 0, 800, 60});
 
     bool clicked = false;
-    h.on_search_requested = [&] { clicked = true; };
+    h.on_search_requested = [&]
+    {
+        clicked = true;
+    };
 
     const tk::Rect r = h.search_btn_rect_for_test();
     const tk::Point centre{r.x + r.w * 0.5f, r.y + r.h * 0.5f};
@@ -240,7 +251,10 @@ TEST_CASE("Hovering the room name lights the title block; clicking it opens room
     TestHost host(&h);
 
     int opened = 0;
-    h.on_info_requested = [&] { ++opened; };
+    h.on_info_requested = [&]
+    {
+        ++opened;
+    };
 
     const tk::Point on_name{120.0f, 30.0f};
     host.dispatch_pointer_move(on_name);
@@ -292,9 +306,40 @@ TEST_CASE("The title block keeps the name and topic labels where RoomHeader plac
     REQUIRE(title.w > 0.0f);
     REQUIRE(name.w > 0.0f);
     REQUIRE(topic.w > 0.0f);
-    CHECK(name.h < title.h);            // not stretched to the whole block
-    CHECK(topic.y > name.y);            // topic sits below the name
+    CHECK(name.h < title.h); // not stretched to the whole block
+    CHECK(topic.y > name.y); // topic sits below the name
     CHECK(name.y + name.h <= topic.y + 0.5f);
+}
+
+TEST_CASE("A bridged room shows a bridge badge beside the title; an override hides it",
+          "[room_header][bridge]")
+{
+    TkRoomHeaderStage st;
+    RoomHeader h;
+    tesseract::RoomInfo info{};
+    info.name = "Design";
+    info.is_bridged = true;
+    info.bridge_network_name = "WhatsApp";
+    h.set_room(info);
+    st.arrange(h, {0, 0, 800, 60});
+
+    auto has_bridge_row = [&]
+    {
+        for (std::size_t i = 0; i < h.access_row_count(); ++i)
+        {
+            if (h.access_name_for_widget_row(i).find("WhatsApp") != std::string::npos)
+            {
+                return true;
+            }
+        }
+        return false;
+    };
+    CHECK(has_bridge_row());
+
+    info.bridge_overridden = true;
+    h.set_room(info);
+    st.arrange(h, {0, 0, 800, 60});
+    CHECK_FALSE(has_bridge_row());
 }
 
 #ifndef _WIN32
@@ -319,7 +364,9 @@ TEST_CASE("local_midnight_ms starts the picked day at local midnight",
     CHECK(tesseract::views::local_midnight_ms(2026, 10, 12) == 1791763200000ULL);
 
     if (saved)
+    {
         set_tz(saved_tz.c_str());
+    }
     else
     {
         unsetenv("TZ");

@@ -24,7 +24,7 @@ namespace tk::cg
 // `scale_override`, when > 0, is what Canvas::scale_factor() reports instead
 // of reading it back from the context's CTM. Needed for the live window
 // surface: when an ancestor NSView is layer-backed (content.wantsLayer =
-// YES, set for chrome elsewhere in MainWindowController.mm), every
+// YES, set for chrome elsewhere in MainWindow.mm), every
 // descendant view — including ours, even with its own wantsLayer left NO —
 // is forced into inherited layer-backing too, and the CGContext handed to
 // -drawRect: in that case has an unscaled, unflipped CTM (a=1, d=1)
@@ -90,7 +90,7 @@ struct DecodedFrames
 // the Timeline or the sticker-picker grid tile); going through ImageIO's
 // dedicated thumbnail generator instead avoids it.
 // Safe to call from any thread. This is the single implementation for both
-// MacShell::decode_image_ (Room List, Timeline, avatars) and ComposeBar's
+// macos::MainWindow::decode_image_ (Room List, Timeline, avatars) and ComposeBar's
 // attachment preview — do not reimplement this logic at a third call site.
 // `max_w`/`max_h` (0/0 = unbounded, the historical default) downscale each
 // *animated* frame (independent axis limits — NOT a single square bound) to
@@ -110,13 +110,11 @@ struct DecodedFrames
 // that to `on_extra_frame` (with a running delivery index) — and the
 // returned DecodedFrames' `frames` stays empty; checking `delays_ms`/still
 // emptiness is not a valid success signal in that mode, the boolean return
-// callers build on top of this (see MacShell::decode_image_streamed_) is.
+// callers build on top of this (see macos::MainWindow::decode_image_streamed_) is.
 DecodedFrames decode_image_bytes(
     std::span<const std::uint8_t> bytes, int max_w = 0, int max_h = 0,
-    const std::function<void(std::unique_ptr<Image>, int)>* on_first_frame =
-        nullptr,
-    const std::function<void(int, std::unique_ptr<Image>, int)>*
-        on_extra_frame = nullptr);
+    const std::function<void(std::unique_ptr<Image>, int)>* on_first_frame = nullptr,
+    const std::function<void(int, std::unique_ptr<Image>, int)>* on_extra_frame = nullptr);
 
 // Windowed variant of decode_image_bytes' streaming mode: for animations
 // with at most `window_threshold_frames` frames, behaves exactly like
@@ -146,13 +144,12 @@ DecodedFrames decode_image_bytes(
 // on_first_frame fired, exactly like decode_image_bytes' own streaming
 // mode.
 DecodedFrames decode_image_bytes_windowed(
-    std::span<const std::uint8_t> bytes, int max_w, int max_h,
-    int window_threshold_frames,
+    std::span<const std::uint8_t> bytes, int max_w, int max_h, int window_threshold_frames,
     const std::function<void(std::unique_ptr<Image>, int delay_ms,
-                             std::shared_ptr<tk::AnimDecodeSession>,
-                             std::size_t total_frames)>& on_first_frame,
-    const std::function<void(int frame_index, std::unique_ptr<Image>,
-                             int delay_ms)>& on_extra_frame);
+                             std::shared_ptr<tk::AnimDecodeSession>, std::size_t total_frames)>&
+        on_first_frame,
+    const std::function<void(int frame_index, std::unique_ptr<Image>, int delay_ms)>&
+        on_extra_frame);
 
 // The reverse of make_image() — extract the underlying native bitmap from
 // a tk::Image so it can be embedded into a platform-native rich-text
@@ -181,5 +178,10 @@ struct RealLineMetrics
 // descent space for an inline attachment so it doesn't render flush with —
 // or above — the baseline).
 RealLineMetrics real_line_metrics(FontRole role);
+
+// Colour for plain hyperlink runs in rich text (links are also underlined).
+// Baked into a layout when it is built, so call before the views rebuild
+// their text on a theme change.
+void set_link_color(Color c);
 
 } // namespace tk::cg

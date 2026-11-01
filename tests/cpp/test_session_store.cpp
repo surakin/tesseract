@@ -11,10 +11,10 @@
 #include <iterator>
 #include <string>
 #if defined(_WIN32)
-#  include <process.h>
+#include <process.h>
 #else
-#  include <sys/stat.h>
-#  include <unistd.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -50,11 +50,12 @@ struct SessionFixture
         }
     }
 
-    explicit SessionFixture(bool touches_keychain = false)
-        : touches_keychain_(touches_keychain)
+    explicit SessionFixture(bool touches_keychain = false) : touches_keychain_(touches_keychain)
     {
         if (touches_keychain_)
+        {
             wipe_keychain();
+        }
 
         // Use the OS PID so every ctest process (ctest -jN spawns one
         // process per test) gets a distinct temp directory even though the
@@ -64,9 +65,8 @@ struct SessionFixture
 #else
         const auto pid = static_cast<unsigned long>(::getpid());
 #endif
-        dir = (fs::temp_directory_path() /
-               ("tesseract_unit_tests_" + std::to_string(pid)))
-                  .string();
+        dir =
+            (fs::temp_directory_path() / ("tesseract_unit_tests_" + std::to_string(pid))).string();
         fs::create_directories(dir);
 #if defined(_WIN32)
         _putenv_s("APPDATA", dir.c_str());
@@ -92,7 +92,9 @@ struct SessionFixture
     ~SessionFixture()
     {
         if (touches_keychain_)
+        {
             wipe_keychain();
+        }
 
 #if defined(_WIN32)
         _putenv_s("APPDATA", "");
@@ -121,8 +123,7 @@ struct SessionFixture
 #if defined(_WIN32)
         return fs::path(dir) / "tesseract" / "matrix-store";
 #elif defined(__APPLE__)
-        return fs::path(dir) / "Library" / "Application Support" / "tesseract" /
-               "matrix-store";
+        return fs::path(dir) / "Library" / "Application Support" / "tesseract" / "matrix-store";
 #else
         // Mirrors legacy_sdk_store_dir(): $XDG_DATA_HOME/tesseract/matrix-store,
         // where XDG_DATA_HOME is the "data" subdir set in the constructor.
@@ -137,7 +138,9 @@ private:
 // For [keychain]-tagged tests only (see wipe_keychain()).
 struct KeychainFixture : SessionFixture
 {
-    KeychainFixture() : SessionFixture(true) {}
+    KeychainFixture() : SessionFixture(true)
+    {
+    }
 };
 
 // ---------------------------------------------------------------------------
@@ -214,16 +217,14 @@ TEST_CASE("save overwrites existing content", "[session_store]")
 // Multi-account API tests
 // ---------------------------------------------------------------------------
 
-TEST_CASE("sanitize_user_id replaces awkward characters",
-          "[session_store][accounts]")
+TEST_CASE("sanitize_user_id replaces awkward characters", "[session_store][accounts]")
 {
     using S = tesseract::SessionStore;
     // '.' is replaced too so a malicious user_id can't smuggle ".." into
     // the account directory path.
     CHECK(S::sanitize_user_id("@alice:example.org") == "alice_example_org");
     CHECK(S::sanitize_user_id("@bob:matrix.org") == "bob_matrix_org");
-    CHECK(S::sanitize_user_id("@../../etc:evil").find("..") ==
-          std::string::npos);
+    CHECK(S::sanitize_user_id("@../../etc:evil").find("..") == std::string::npos);
     // Leading underscores from the @ are stripped so the dir name doesn't
     // start with one — purely cosmetic, but it keeps `ls` readable.
     CHECK_FALSE(S::sanitize_user_id("@x:y").empty());
@@ -242,8 +243,7 @@ TEST_CASE("save_account + load_account round-trip", "[session_store][accounts][k
     CHECK(*loaded == body);
 
     // sdk_store_dir is a sibling of session.json, inside the account dir.
-    auto session_path =
-        tesseract::SessionStore::account_dir(uid) / "session.json";
+    auto session_path = tesseract::SessionStore::account_dir(uid) / "session.json";
     auto store_path = tesseract::SessionStore::sdk_store_dir(uid);
     CHECK(fs::exists(session_path));
     CHECK(store_path.parent_path() == session_path.parent_path());
@@ -263,8 +263,7 @@ TEST_CASE("save_account_with_key + load_account_with_key round-trip with a key",
     REQUIRE(loaded.has_value());
     // session_json round-trips through nlohmann re-serialization, so compare
     // parsed content rather than the raw string.
-    CHECK(nlohmann::json::parse(loaded->session_json) ==
-          nlohmann::json::parse(body));
+    CHECK(nlohmann::json::parse(loaded->session_json) == nlohmann::json::parse(body));
     CHECK(loaded->store_key == key);
 }
 
@@ -316,8 +315,7 @@ TEST_CASE("clear_account wipes a persisted store key along with everything "
     const std::string uid = "@alice:example.org";
     const std::vector<uint8_t> key(32, 0x7a);
 
-    REQUIRE(tesseract::SessionStore::save_account_with_key(
-        uid, R"({"v":1})", key));
+    REQUIRE(tesseract::SessionStore::save_account_with_key(uid, R"({"v":1})", key));
     REQUIRE(tesseract::SessionStore::load_account_with_key(uid).has_value());
 
     tesseract::SessionStore::clear_account(uid);
@@ -332,13 +330,11 @@ TEST_CASE("save_session_update preserves an existing store_key across a "
     const std::string uid = "@alice:example.org";
     const std::vector<uint8_t> key(32, 0x11);
 
-    REQUIRE(tesseract::SessionStore::save_account_with_key(
-        uid, R"({"token":"old"})", key));
+    REQUIRE(tesseract::SessionStore::save_account_with_key(uid, R"({"token":"old"})", key));
 
     // Simulates a token-refresh persistence call, which only ever has the
     // new session JSON on hand — never the account's store_key.
-    REQUIRE(tesseract::SessionStore::save_session_update(
-        uid, R"({"token":"refreshed"})"));
+    REQUIRE(tesseract::SessionStore::save_session_update(uid, R"({"token":"refreshed"})"));
 
     auto loaded = tesseract::SessionStore::load_account_with_key(uid);
     REQUIRE(loaded.has_value());
@@ -355,8 +351,7 @@ TEST_CASE("save_session_update on a legacy (no-key) account behaves like a "
     const std::string uid = "@alice:example.org";
 
     REQUIRE(tesseract::SessionStore::save_account(uid, R"({"token":"old"})"));
-    REQUIRE(tesseract::SessionStore::save_session_update(
-        uid, R"({"token":"refreshed"})"));
+    REQUIRE(tesseract::SessionStore::save_session_update(uid, R"({"token":"refreshed"})"));
 
     // Unchanged on-disk shape: the plain load_account API still sees a bare,
     // unwrapped JSON — a legacy account never gains a store_key wrapper it
@@ -394,8 +389,7 @@ TEST_CASE("clear_account removes the entire account directory",
 
     REQUIRE(tesseract::SessionStore::save_account(uid, R"({"v":1})"));
     fs::create_directories(tesseract::SessionStore::sdk_store_dir(uid));
-    std::ofstream{tesseract::SessionStore::sdk_store_dir(uid) / "db.sqlite"}
-        << "x";
+    std::ofstream{tesseract::SessionStore::sdk_store_dir(uid) / "db.sqlite"} << "x";
 
     tesseract::SessionStore::clear_account(uid);
     CHECK_FALSE(fs::exists(tesseract::SessionStore::account_dir(uid)));
@@ -414,8 +408,7 @@ TEST_CASE("save_index + load_index round-trip", "[session_store][accounts]")
     CHECK(loaded.user_ids == idx.user_ids);
 }
 
-TEST_CASE("load_index returns empty index when missing",
-          "[session_store][accounts]")
+TEST_CASE("load_index returns empty index when missing", "[session_store][accounts]")
 {
     SessionFixture f;
     auto loaded = tesseract::SessionStore::load_index();
@@ -456,7 +449,9 @@ TEST_CASE("load_index flags a corrupt accounts.json instead of silently "
     // be dropped and forced to re-login.
     const fs::path p = tesseract::data_dir() / "accounts.json";
     fs::create_directories(p.parent_path());
-    { std::ofstream(p, std::ios::binary) << R"({"user_ids": ["@a:b.com")"; }
+    {
+        std::ofstream(p, std::ios::binary) << R"({"user_ids": ["@a:b.com")";
+    }
 
     auto loaded = tesseract::SessionStore::load_index();
     CHECK(loaded.corrupt);
@@ -471,7 +466,9 @@ TEST_CASE("save_index does not clobber a corrupt accounts.json on the same run",
     const fs::path p = tesseract::data_dir() / "accounts.json";
     fs::create_directories(p.parent_path());
     const std::string corrupt_body = R"({"user_ids": ["@a:b.com")";
-    { std::ofstream(p, std::ios::binary) << corrupt_body; }
+    {
+        std::ofstream(p, std::ios::binary) << corrupt_body;
+    }
 
     // The startup restore loop observes corruption...
     auto loaded = tesseract::SessionStore::load_index();
@@ -493,17 +490,20 @@ TEST_CASE("save_index does not clobber a corrupt accounts.json on the same run",
             std::string body((std::istreambuf_iterator<char>(in)),
                              std::istreambuf_iterator<char>());
             if (body == corrupt_body)
+            {
                 recoverable = true;
+            }
         }
     }
     const fs::path quarantine = tesseract::data_dir() / "accounts.json.corrupt";
     if (fs::exists(quarantine))
     {
         std::ifstream in(quarantine, std::ios::binary);
-        std::string body((std::istreambuf_iterator<char>(in)),
-                         std::istreambuf_iterator<char>());
+        std::string body((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
         if (body == corrupt_body)
+        {
             recoverable = true;
+        }
     }
     CHECK(recoverable);
 }
@@ -517,8 +517,7 @@ namespace
 // Plants <data>/accounts/<folder>/matrix-store/marker and returns the marker.
 fs::path plant_account_folder(const std::string& folder)
 {
-    const fs::path marker =
-        tesseract::data_dir() / "accounts" / folder / "matrix-store" / "marker";
+    const fs::path marker = tesseract::data_dir() / "accounts" / folder / "matrix-store" / "marker";
     fs::create_directories(marker.parent_path());
     std::ofstream(marker, std::ios::binary) << "keys";
     return marker;
@@ -532,12 +531,13 @@ TEST_CASE("an empty accounts.json is corrupt and the sweep keeps every folder",
     tesseract::SessionStore::AccountIndex idx;
     idx.user_ids = {"@alice:example.org"};
     REQUIRE(tesseract::SessionStore::save_index(idx));
-    const fs::path marker = plant_account_folder(
-        tesseract::SessionStore::sanitize_user_id("@alice:example.org"));
+    const fs::path marker =
+        plant_account_folder(tesseract::SessionStore::sanitize_user_id("@alice:example.org"));
 
     // Truncate the index to zero bytes.
-    { std::ofstream(tesseract::data_dir() / "accounts.json",
-                    std::ios::binary | std::ios::trunc); }
+    {
+        std::ofstream(tesseract::data_dir() / "accounts.json", std::ios::binary | std::ios::trunc);
+    }
 
     CHECK(tesseract::SessionStore::load_index().corrupt);
     tesseract::SessionStore::sweep_orphaned_account_dirs();
@@ -563,8 +563,8 @@ TEST_CASE("load_index recovers accounts.json from its .bak and the sweep keeps i
     idx.active_user_id = "@alice:example.org";
     idx.user_ids = {"@alice:example.org"};
     REQUIRE(tesseract::SessionStore::save_index(idx));
-    const fs::path marker = plant_account_folder(
-        tesseract::SessionStore::sanitize_user_id("@alice:example.org"));
+    const fs::path marker =
+        plant_account_folder(tesseract::SessionStore::sanitize_user_id("@alice:example.org"));
 
     // Crash inside atomic_write's replace fallback: the old index was moved
     // to .bak and the new one never got renamed into place.
@@ -584,15 +584,14 @@ TEST_CASE("load_index recovers accounts.json from its .bak and the sweep keeps i
     CHECK(fs::exists(marker));
 }
 
-TEST_CASE("the sweep still removes an orphan when the index is valid",
-          "[session_store][accounts]")
+TEST_CASE("the sweep still removes an orphan when the index is valid", "[session_store][accounts]")
 {
     SessionFixture f;
     tesseract::SessionStore::AccountIndex idx;
     idx.user_ids = {"@alice:example.org"};
     REQUIRE(tesseract::SessionStore::save_index(idx));
-    const fs::path kept = plant_account_folder(
-        tesseract::SessionStore::sanitize_user_id("@alice:example.org"));
+    const fs::path kept =
+        plant_account_folder(tesseract::SessionStore::sanitize_user_id("@alice:example.org"));
     const fs::path orphan = plant_account_folder("leftover-2");
 
     tesseract::SessionStore::sweep_orphaned_account_dirs();
@@ -645,8 +644,7 @@ TEST_CASE("migrate_legacy_layout moves session.json and matrix-store into the "
     auto migrated = tesseract::SessionStore::load_account(uid);
     REQUIRE(migrated.has_value());
     CHECK(*migrated == legacy_body);
-    CHECK(fs::exists(tesseract::SessionStore::sdk_store_dir(uid) /
-                     "matrix.sqlite"));
+    CHECK(fs::exists(tesseract::SessionStore::sdk_store_dir(uid) / "matrix.sqlite"));
 
     // Index points at the migrated account.
     auto idx = tesseract::SessionStore::load_index();
@@ -698,9 +696,8 @@ TEST_CASE("migrate_legacy_layout deletes corrupt legacy files",
     CHECK(tesseract::SessionStore::load_index().active_user_id.empty());
 }
 
-TEST_CASE(
-    "migrate_legacy_layout deletes an orphan store when no session is present",
-    "[session_store][migration][keychain]")
+TEST_CASE("migrate_legacy_layout deletes an orphan store when no session is present",
+          "[session_store][migration][keychain]")
 {
     KeychainFixture f;
     auto legacy_store = f.legacy_store_dir();
@@ -756,18 +753,17 @@ TEST_CASE("migrate_legacy_layout relocates a config-dir accounts tree into the "
     // Plant a multi-account layout under config_dir() — where builds that
     // predate the data/config split used to store it.
     const fs::path cfg_accounts = tesseract::config_dir() / "accounts";
-    const fs::path cfg_acct =
-        cfg_accounts / tesseract::SessionStore::sanitize_user_id(uid);
+    const fs::path cfg_acct = cfg_accounts / tesseract::SessionStore::sanitize_user_id(uid);
     fs::create_directories(cfg_acct / "matrix-store");
-    { std::ofstream(cfg_acct / "session.json", std::ios::binary) << body; }
     {
-        std::ofstream(cfg_acct / "matrix-store" / "matrix.sqlite",
-                      std::ios::binary)
+        std::ofstream(cfg_acct / "session.json", std::ios::binary) << body;
+    }
+    {
+        std::ofstream(cfg_acct / "matrix-store" / "matrix.sqlite", std::ios::binary)
             << "sentinel-bytes";
     }
     {
-        std::ofstream(tesseract::config_dir() / "accounts.json",
-                      std::ios::binary)
+        std::ofstream(tesseract::config_dir() / "accounts.json", std::ios::binary)
             << R"({"active_user_id":"@dave:example.org",)"
                R"("user_ids":["@dave:example.org"]})";
     }
@@ -782,8 +778,7 @@ TEST_CASE("migrate_legacy_layout relocates a config-dir accounts tree into the "
     auto migrated = tesseract::SessionStore::load_account(uid);
     REQUIRE(migrated.has_value());
     CHECK(*migrated == body);
-    CHECK(fs::exists(tesseract::SessionStore::sdk_store_dir(uid) /
-                     "matrix.sqlite"));
+    CHECK(fs::exists(tesseract::SessionStore::sdk_store_dir(uid) / "matrix.sqlite"));
 
     auto idx = tesseract::SessionStore::load_index();
     CHECK(idx.active_user_id == uid);
@@ -811,8 +806,7 @@ TEST_CASE("migrate_legacy_layout is a no-op when the data dir is already "
     // A stale config-dir accounts.json from a half-finished older migration.
     fs::create_directories(tesseract::config_dir());
     {
-        std::ofstream(tesseract::config_dir() / "accounts.json",
-                      std::ios::binary)
+        std::ofstream(tesseract::config_dir() / "accounts.json", std::ios::binary)
             << R"({"active_user_id":"@stale:x","user_ids":["@stale:x"]})";
     }
 
@@ -836,8 +830,8 @@ TEST_CASE("SessionStore::save: stale tmp file's loose permissions don't carry ov
     {
         std::ofstream(tmp) << "stale";
     }
-    fs::permissions(tmp, fs::perms::owner_read | fs::perms::owner_write |
-                             fs::perms::group_read | fs::perms::others_read);
+    fs::permissions(tmp, fs::perms::owner_read | fs::perms::owner_write | fs::perms::group_read |
+                             fs::perms::others_read);
 
     REQUIRE(tesseract::SessionStore::save("{\"k\":1}"));
 

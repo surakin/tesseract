@@ -87,6 +87,7 @@ version) are noted where relevant.
 - A Bridged badge (with the bridged network's name, when known) appears in the room-info panel for rooms bridged to a third-party network (MSC2346), overridable per-room in room settings
 - Sticky section headers — the current section's header pins to the top while scrolling (interactive: click to collapse/expand)
 - Space navigation with drill-down and recursive subspace support; unjoined child rooms shown with a preview panel (name, avatar, topic, member count, Join button); selecting a joined space itself shows a summary panel (avatar, topic, joined/unjoined child counts)
+- Space picker sidebar: right-click a space → "Pin to sidebar" adds an avatar tab in a narrow column left of the room list (hidden until something is pinned, and while the sidebar is collapsed or the window is single-pane; a Home tab returns to the plain list). Pinned spaces leave the room list (unless the picker is hidden), tabs show the space's aggregated unread, and the pin list syncs across devices with the other account preferences
 - Space room management: drag rooms between a candidates list and the space's rooms grid to add or remove them (Enter/Delete from the keyboard), shown only to members allowed to edit the space
 - Multiple rooms open in tabs
 - Pop-out room windows (ctrl/⌘+click a tab to open the room in its own native window)

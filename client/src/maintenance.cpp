@@ -76,7 +76,9 @@ LogoutAllReport logout_all_accounts()
         report.accounts.push_back(std::move(outcome));
     }
     if (settings_changed)
+    {
         settings.save_to_disk(config_dir());
+    }
 
     SessionStore::save_index({});
     return report;

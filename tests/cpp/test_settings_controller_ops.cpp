@@ -6,7 +6,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "app/SettingsController.h"
+#include "views/settings/SettingsController.h"
 
 #include <tesseract/client.h>
 
@@ -30,8 +30,7 @@ struct ScRig
     bool picker_called = false;
     std::unique_ptr<SettingsController> ctl;
 
-    explicit ScRig(tesseract::Client* client, bool defer_run = false)
-        : inline_run(!defer_run)
+    explicit ScRig(tesseract::Client* client, bool defer_run = false) : inline_run(!defer_run)
     {
         ctl = std::make_unique<SettingsController>(
             client,
@@ -57,7 +56,10 @@ struct ScRig
                 picker_called = true;
                 picker_cb = std::move(cb);
             },
-            [](const std::vector<uint8_t>&) { return std::shared_ptr<tk::Image>(); });
+            [](const std::vector<uint8_t>&)
+            {
+                return std::shared_ptr<tk::Image>();
+            });
     }
 };
 
@@ -95,8 +97,14 @@ TEST_CASE("SettingsController: avatar upload flow with a picker result",
         last_ok = o;
         ++results;
     };
-    r.ctl->on_avatar_preview = [&](std::shared_ptr<tk::Image>) { ++previews; };
-    r.ctl->on_avatar_changed = [&](std::string) { ++changed; };
+    r.ctl->on_avatar_preview = [&](std::shared_ptr<tk::Image>)
+    {
+        ++previews;
+    };
+    r.ctl->on_avatar_changed = [&](std::string)
+    {
+        ++changed;
+    };
 
     r.ctl->upload_avatar();
     REQUIRE(r.picker_called);
@@ -145,7 +153,10 @@ TEST_CASE("SettingsController: avatar picked after the client changed is dropped
     tesseract::Client a, b;
     ScRig r(&a);
     int results = 0;
-    r.ctl->on_avatar_result = [&](bool, std::string) { ++results; };
+    r.ctl->on_avatar_result = [&](bool, std::string)
+    {
+        ++results;
+    };
     r.ctl->upload_avatar();
     REQUIRE(r.picker_called);
     r.ctl->set_client(&b);
@@ -175,7 +186,10 @@ TEST_CASE("SettingsController: remove_avatar", "[settings][controller][ops]")
             CHECK_FALSE(ok);
             ++results;
         };
-        r.ctl->on_avatar_changed = [&](std::string) { ++changed; };
+        r.ctl->on_avatar_changed = [&](std::string)
+        {
+            ++changed;
+        };
         r.ctl->remove_avatar();
         CHECK(results == 1);
         CHECK(changed == 0);
@@ -193,7 +207,10 @@ TEST_CASE("SettingsController: display name with a session-less client fails",
         CHECK_FALSE(ok);
         ++results;
     };
-    r.ctl->on_name_changed = [&](std::string) { ++renamed; };
+    r.ctl->on_name_changed = [&](std::string)
+    {
+        ++renamed;
+    };
     r.ctl->set_display_name("Alice");
     CHECK(results == 1);
     CHECK(renamed == 0);
@@ -205,8 +222,14 @@ TEST_CASE("SettingsController: results for a replaced client are dropped",
     tesseract::Client a, b;
     ScRig r(&a, /*defer_run=*/true);
     int results = 0;
-    r.ctl->on_name_result = [&](bool, std::string) { ++results; };
-    r.ctl->on_mentions_toggle_result = [&](bool, bool) { ++results; };
+    r.ctl->on_name_result = [&](bool, std::string)
+    {
+        ++results;
+    };
+    r.ctl->on_mentions_toggle_result = [&](bool, bool)
+    {
+        ++results;
+    };
     r.ctl->set_display_name("x");
     r.ctl->set_mentions_enabled(true);
     REQUIRE(r.deferred.size() == 2);
@@ -223,8 +246,8 @@ TEST_CASE("SettingsController: mentions settings default when logged out",
 {
     ScRig r(nullptr);
     bool called = false;
-    r.ctl->on_mentions_settings_loaded = [&](bool m, bool rm, bool all, bool kw,
-                                             std::vector<std::string> words)
+    r.ctl->on_mentions_settings_loaded =
+        [&](bool m, bool rm, bool all, bool kw, std::vector<std::string> words)
     {
         called = true;
         CHECK(m);
@@ -242,8 +265,14 @@ TEST_CASE("SettingsController: notification toggles do nothing without a client"
 {
     ScRig r(nullptr);
     int results = 0;
-    auto bump2 = [&](bool, bool) { ++results; };
-    auto bump_s = [&](bool, std::string) { ++results; };
+    auto bump2 = [&](bool, bool)
+    {
+        ++results;
+    };
+    auto bump_s = [&](bool, std::string)
+    {
+        ++results;
+    };
     r.ctl->on_mentions_toggle_result = bump2;
     r.ctl->on_room_mentions_toggle_result = bump2;
     r.ctl->on_notify_all_messages_result = bump2;
@@ -269,17 +298,29 @@ TEST_CASE("SettingsController: notification toggles report failure on a "
     ScRig r(&client);
     std::vector<std::string> log;
     r.ctl->on_mentions_toggle_result = [&](bool ok, bool en)
-    { log.push_back(std::string("m") + (ok ? "1" : "0") + (en ? "1" : "0")); };
+    {
+        log.push_back(std::string("m") + (ok ? "1" : "0") + (en ? "1" : "0"));
+    };
     r.ctl->on_room_mentions_toggle_result = [&](bool ok, bool en)
-    { log.push_back(std::string("r") + (ok ? "1" : "0") + (en ? "1" : "0")); };
+    {
+        log.push_back(std::string("r") + (ok ? "1" : "0") + (en ? "1" : "0"));
+    };
     r.ctl->on_notify_all_messages_result = [&](bool ok, bool en)
-    { log.push_back(std::string("a") + (ok ? "1" : "0") + (en ? "1" : "0")); };
+    {
+        log.push_back(std::string("a") + (ok ? "1" : "0") + (en ? "1" : "0"));
+    };
     r.ctl->on_notify_on_keywords_result = [&](bool ok, bool en)
-    { log.push_back(std::string("k") + (ok ? "1" : "0") + (en ? "1" : "0")); };
+    {
+        log.push_back(std::string("k") + (ok ? "1" : "0") + (en ? "1" : "0"));
+    };
     r.ctl->on_keyword_add_result = [&](bool ok, std::string kw)
-    { log.push_back("add:" + std::string(ok ? "1" : "0") + kw); };
+    {
+        log.push_back("add:" + std::string(ok ? "1" : "0") + kw);
+    };
     r.ctl->on_keyword_remove_result = [&](bool ok, std::string kw)
-    { log.push_back("rm:" + std::string(ok ? "1" : "0") + kw); };
+    {
+        log.push_back("rm:" + std::string(ok ? "1" : "0") + kw);
+    };
 
     r.ctl->set_mentions_enabled(true);
     r.ctl->set_room_mentions_enabled(false);
@@ -287,8 +328,7 @@ TEST_CASE("SettingsController: notification toggles report failure on a "
     r.ctl->set_notify_on_keywords(false);
     r.ctl->add_notification_keyword("word");
     r.ctl->remove_notification_keyword("word");
-    CHECK(log == std::vector<std::string>{"m01", "r00", "a01", "k00",
-                                          "add:0word", "rm:0word"});
+    CHECK(log == std::vector<std::string>{"m01", "r00", "a01", "k00", "add:0word", "rm:0word"});
 }
 
 TEST_CASE("SettingsController: loading mentions on a session-less client "
@@ -298,8 +338,10 @@ TEST_CASE("SettingsController: loading mentions on a session-less client "
     tesseract::Client client;
     ScRig r(&client);
     int loaded = 0;
-    r.ctl->on_mentions_settings_loaded =
-        [&](bool, bool, bool, bool, std::vector<std::string>) { ++loaded; };
+    r.ctl->on_mentions_settings_loaded = [&](bool, bool, bool, bool, std::vector<std::string>)
+    {
+        ++loaded;
+    };
     r.ctl->load_mentions_settings();
     r.ctl->load_mentions_settings();
     CHECK(loaded == 2); // flag released after each completed load
@@ -311,9 +353,13 @@ TEST_CASE("SettingsController: image packs", "[settings][controller][ops]")
         ScRig r(nullptr);
         int packs = 0, imgs = 0, saves = 0;
         r.ctl->on_image_packs_loaded = [&](std::vector<tesseract::ImagePack>)
-        { ++packs; };
-        r.ctl->on_user_pack_images_loaded =
-            [&](std::vector<tesseract::ImagePackImage>) { ++imgs; };
+        {
+            ++packs;
+        };
+        r.ctl->on_user_pack_images_loaded = [&](std::vector<tesseract::ImagePackImage>)
+        {
+            ++imgs;
+        };
         r.ctl->on_user_pack_save_result = [&](bool ok, std::string)
         {
             CHECK_FALSE(ok);
@@ -334,8 +380,7 @@ TEST_CASE("SettingsController: image packs", "[settings][controller][ops]")
             CHECK(p.empty());
             ++packs;
         };
-        r.ctl->on_user_pack_images_loaded =
-            [&](std::vector<tesseract::ImagePackImage> i)
+        r.ctl->on_user_pack_images_loaded = [&](std::vector<tesseract::ImagePackImage> i)
         {
             CHECK(i.empty());
             ++imgs;
@@ -356,7 +401,9 @@ TEST_CASE("SettingsController: saving user pack changes aggregates the first err
     ScRig r(&client);
     std::vector<std::pair<bool, std::string>> results;
     r.ctl->on_user_pack_save_result = [&](bool ok, std::string e)
-    { results.emplace_back(ok, e); };
+    {
+        results.emplace_back(ok, e);
+    };
 
     tesseract::views::UserPackEditor::Result diff;
     diff.removed_shortcodes = {"gone"};
@@ -401,9 +448,14 @@ TEST_CASE("SettingsController: device deletion on a session-less client fails "
     tesseract::Client client;
     ScRig r(&client);
     int deleted = 0, uia = 0, renamed = 0;
-    r.ctl->on_device_deleted = [&](std::string, bool, std::string) { ++deleted; };
-    r.ctl->on_device_needs_uia =
-        [&](std::string, std::string, std::string) { ++uia; };
+    r.ctl->on_device_deleted = [&](std::string, bool, std::string)
+    {
+        ++deleted;
+    };
+    r.ctl->on_device_needs_uia = [&](std::string, std::string, std::string)
+    {
+        ++uia;
+    };
     r.ctl->on_device_renamed = [&](std::string, bool ok, std::string)
     {
         CHECK_FALSE(ok);
@@ -417,8 +469,7 @@ TEST_CASE("SettingsController: device deletion on a session-less client fails "
     CHECK(renamed == 1);
 }
 
-TEST_CASE("SettingsController: room key export/import dialog flow",
-          "[settings][controller][ops]")
+TEST_CASE("SettingsController: room key export/import dialog flow", "[settings][controller][ops]")
 {
     ScRig r(nullptr);
     // Without the dialogs wired both are no-ops.
@@ -427,22 +478,22 @@ TEST_CASE("SettingsController: room key export/import dialog flow",
 
     std::string prompted;
     std::function<void(std::string)> pass_cb;
-    r.ctl->show_passphrase_prompt = [&](std::string title,
-                                        std::function<void(std::string)> cb)
+    r.ctl->show_passphrase_prompt = [&](std::string title, std::function<void(std::string)> cb)
     {
         prompted = title;
         pass_cb = std::move(cb);
     };
     std::function<void(std::string)> save_cb;
-    r.ctl->show_save_file_dialog = [&](std::string suggested,
-                                       std::function<void(std::string)> cb)
+    r.ctl->show_save_file_dialog = [&](std::string suggested, std::function<void(std::string)> cb)
     {
         CHECK(suggested == "room-keys.txt");
         save_cb = std::move(cb);
     };
     std::function<void(std::string)> open_cb;
     r.ctl->show_open_file_dialog = [&](std::function<void(std::string)> cb)
-    { open_cb = std::move(cb); };
+    {
+        open_cb = std::move(cb);
+    };
 
     int exports = 0, imports = 0;
     r.ctl->on_export_keys_result = [&](bool ok, std::string)

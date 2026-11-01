@@ -30,9 +30,18 @@ public:
     // screen): a proxy change applies at once, so the note says so (calls
     // still need a restart) instead of "Changes take effect after restart".
     void set_applies_immediately(bool immediately);
-    bool restart_pending_for_test() const { return restart_pending_; }
-    bool restart_row_visible() const { return restart_row_ && restart_row_->own_visible(); }
-    std::string restart_note_text() const { return restart_note_ ? restart_note_->text() : std::string(); }
+    bool restart_pending_for_test() const
+    {
+        return restart_pending_;
+    }
+    bool restart_row_visible() const
+    {
+        return restart_row_ && restart_row_->own_visible();
+    }
+    std::string restart_note_text() const
+    {
+        return restart_note_ ? restart_note_->text() : std::string();
+    }
 
     // On a user change of the mode, or of the URL in Manual mode, the new
     // values are written to Settings and SettingKey::Proxy is reported. An

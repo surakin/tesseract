@@ -7,6 +7,7 @@
 using tesseract::MembershipAction;
 using tesseract::views::is_membership_group_start;
 using tesseract::views::MembershipGroupExpander;
+using tesseract::views::membership_avatar_hit;
 using tesseract::views::membership_group_actions;
 using tesseract::views::membership_group_end;
 using tesseract::views::membership_group_expandable;
@@ -18,8 +19,7 @@ using tesseract::views::with_membership_reason;
 namespace
 {
 
-MessageRowData membership_row(const std::string& event_id,
-                              MembershipAction action)
+MessageRowData membership_row(const std::string& event_id, MembershipAction action)
 {
     MessageRowData r;
     r.kind = MessageRowData::Kind::Membership;
@@ -45,8 +45,7 @@ MessageRowData day_separator_row()
 
 } // namespace
 
-TEST_CASE("consecutive same-action membership rows form one group",
-          "[message_list][membership]")
+TEST_CASE("consecutive same-action membership rows form one group", "[message_list][membership]")
 {
     std::vector<MessageRowData> msgs = {
         membership_row("$a", MembershipAction::Joined),
@@ -60,8 +59,7 @@ TEST_CASE("consecutive same-action membership rows form one group",
     CHECK(membership_group_start_of(msgs, 2) == 0);
 }
 
-TEST_CASE("mixed membership actions stay in one group",
-          "[message_list][membership]")
+TEST_CASE("mixed membership actions stay in one group", "[message_list][membership]")
 {
     std::vector<MessageRowData> msgs = {
         membership_row("$a", MembershipAction::Joined),
@@ -96,8 +94,7 @@ TEST_CASE("membership_group_actions lists actions in first-appearance order",
     CHECK(runs[2].rows == std::vector<std::size_t>{3});
 }
 
-TEST_CASE("a group is expandable only when an action repeats",
-          "[message_list][membership]")
+TEST_CASE("a group is expandable only when an action repeats", "[message_list][membership]")
 {
     std::vector<MessageRowData> distinct = {
         membership_row("$a", MembershipAction::Joined),
@@ -131,8 +128,7 @@ TEST_CASE("a non-membership row breaks a group", "[message_list][membership]")
     CHECK(is_membership_group_start(msgs, 2)); // $b starts its own new group
 }
 
-TEST_CASE("a day separator breaks a group even with the same action",
-          "[message_list][membership]")
+TEST_CASE("a day separator breaks a group even with the same action", "[message_list][membership]")
 {
     std::vector<MessageRowData> msgs = {
         membership_row("$a", MembershipAction::Joined),
@@ -211,11 +207,9 @@ TEST_CASE("with_membership_reason appends the reason to removal phrases only",
     CHECK(with_membership_reason("Bob was removed", row) == "Bob was removed");
 
     row.membership_reason = "spamming";
-    CHECK(with_membership_reason("Bob was removed", row) ==
-          "Bob was removed. Reason: spamming");
+    CHECK(with_membership_reason("Bob was removed", row) == "Bob was removed. Reason: spamming");
     row.membership_action = MembershipAction::Banned;
-    CHECK(with_membership_reason("Bob was banned", row) ==
-          "Bob was banned. Reason: spamming");
+    CHECK(with_membership_reason("Bob was banned", row) == "Bob was banned. Reason: spamming");
     row.membership_action = MembershipAction::KickedAndBanned;
     CHECK(with_membership_reason("x", row) == "x. Reason: spamming");
 
@@ -314,14 +308,15 @@ TEST_CASE("membership_run_phrase counts each person once", "[message_list][membe
 
     SECTION("one person twice reads as one person")
     {
-        std::vector<MessageRowData> msgs = {row("$1", "@john:x", "John"), row("$2", "@john:x", "John")};
+        std::vector<MessageRowData> msgs = {row("$1", "@john:x", "John"),
+                                            row("$2", "@john:x", "John")};
         MembershipActionRun run{MembershipAction::AvatarChanged, {0, 1}};
         CHECK(membership_run_phrase(msgs, run) == "John updated their avatar");
     }
     SECTION("two people, one of them twice")
     {
-        std::vector<MessageRowData> msgs = {row("$1", "@john:x", "John"), row("$2", "@bob:x", "Bob"),
-                                            row("$3", "@john:x", "John")};
+        std::vector<MessageRowData> msgs = {
+            row("$1", "@john:x", "John"), row("$2", "@bob:x", "Bob"), row("$3", "@john:x", "John")};
         MembershipActionRun run{MembershipAction::AvatarChanged, {0, 1, 2}};
         CHECK(membership_run_phrase(msgs, run) == "John and Bob updated their avatars");
     }
@@ -342,4 +337,18 @@ TEST_CASE("membership_run_phrase counts each person once", "[message_list][membe
         MembershipActionRun run{MembershipAction::Kicked, {0}};
         CHECK(membership_run_phrase(msgs, run).find("Reason: spam") != std::string::npos);
     }
+}
+
+TEST_CASE("membership_avatar_hit tests the single-line target avatar", "[message_list][membership]")
+{
+    // Avatar centre: x = row.x + 12 (pad) + 9, y = row.y + 12 (half line).
+    const tk::Rect rect{10.0f, 100.0f, 400.0f, 24.0f};
+    const float cx = 10.0f + 12.0f + 9.0f;
+    const float cy = 100.0f + 12.0f;
+
+    CHECK(membership_avatar_hit(rect, {cx, cy}));
+    CHECK(membership_avatar_hit(rect, {cx + 8.0f, cy}));
+    CHECK_FALSE(membership_avatar_hit(rect, {cx + 12.0f, cy}));
+    CHECK_FALSE(membership_avatar_hit(rect, {cx, cy + 30.0f}));
+    CHECK_FALSE(membership_avatar_hit(rect, {cx + 150.0f, cy}));
 }

@@ -51,8 +51,7 @@ class Host : public tk::Host, public tk::AnimDamageSink
 {
 public:
     Host(TKSurfaceView* view, const Theme& theme, bool transparent = false)
-        : view_(view), theme_(&theme), factory_(cg::make_factory()),
-          transparent_(transparent)
+        : view_(view), theme_(&theme), factory_(cg::make_factory()), transparent_(transparent)
     {
     }
 
@@ -65,16 +64,17 @@ public:
             for (NSString* fam in [fm availableFontFamilies])
             {
                 if (fam.length == 0 || [fam hasPrefix:@"."])
+                {
                     continue; // hidden system families
-                NSFont* mono = [fm fontWithFamily:fam
-                                           traits:NSFixedPitchFontMask
-                                           weight:5
-                                             size:12];
+                }
+                NSFont* mono = [fm fontWithFamily:fam traits:NSFixedPitchFontMask weight:5 size:12];
                 out.push_back({std::string(fam.UTF8String), mono != nil});
             }
             std::sort(out.begin(), out.end(),
                       [](const FontFamilyInfo& a, const FontFamilyInfo& b)
-                      { return a.name < b.name; });
+                      {
+                          return a.name < b.name;
+                      });
             return out;
         }();
         return cached;
@@ -94,12 +94,23 @@ public:
         NSCursor* c = nil;
         switch (shape)
         {
-        case tk::CursorShape::Default:  break;
-        case tk::CursorShape::Pointer:  c = [NSCursor pointingHandCursor]; break;
-        case tk::CursorShape::Text:     c = [NSCursor IBeamCursor]; break;
-        case tk::CursorShape::Grab:     c = [NSCursor openHandCursor]; break;
-        case tk::CursorShape::Grabbing: c = [NSCursor closedHandCursor]; break;
-        case tk::CursorShape::ResizeH:  c = [NSCursor resizeLeftRightCursor]; break;
+        case tk::CursorShape::Default:
+            break;
+        case tk::CursorShape::Pointer:
+            c = [NSCursor pointingHandCursor];
+            break;
+        case tk::CursorShape::Text:
+            c = [NSCursor IBeamCursor];
+            break;
+        case tk::CursorShape::Grab:
+            c = [NSCursor openHandCursor];
+            break;
+        case tk::CursorShape::Grabbing:
+            c = [NSCursor closedHandCursor];
+            break;
+        case tk::CursorShape::ResizeH:
+            c = [NSCursor resizeLeftRightCursor];
+            break;
         }
         if (c)
         {
@@ -155,14 +166,13 @@ public:
     std::unique_ptr<AudioCapture> make_audio_capture() override;
     std::unique_ptr<VideoPlayer> make_video_player() override;
     std::unique_ptr<AudioPlayback> make_audio_playback() override;
-    EncodedImage encode_for_send(const std::uint8_t* data, std::size_t len,
-                                 bool compress) override;
+    EncodedImage encode_for_send(const std::uint8_t* data, std::size_t len, bool compress) override;
     void set_clipboard_text(std::string_view text) override;
     bool set_clipboard_image(std::span<const std::uint8_t> encoded_bytes) override;
 
-    std::vector<tk::DeviceListing> enumerate_audio_inputs()  const override;
+    std::vector<tk::DeviceListing> enumerate_audio_inputs() const override;
     std::vector<tk::DeviceListing> enumerate_audio_outputs() const override;
-    std::vector<tk::DeviceListing> enumerate_cameras()       const override;
+    std::vector<tk::DeviceListing> enumerate_cameras() const override;
 
     void set_root(std::unique_ptr<Widget> root)
     {
@@ -175,7 +185,7 @@ public:
     {
         return root_.get();
     }
-    const Theme& theme() const
+    const Theme& theme() const override
     {
         return *theme_;
     }
@@ -197,10 +207,6 @@ public:
     }
 
     void relayout();
-    void set_on_layout(std::function<void()> cb)
-    {
-        on_layout_ = std::move(cb);
-    }
     void add_layout_listener(std::function<void()> cb)
     {
         layout_listeners_.push_back(std::move(cb));
@@ -246,16 +252,22 @@ public:
     }
 
 protected:
-    Widget* input_root_() const override { return root_.get(); }
+    Widget* input_root_() const override
+    {
+        return root_.get();
+    }
 
 public:
     std::uint16_t supported_emoji_version() override
     {
-        return tk::cached_emoji_version([] { return tk::cg::make_factory(); });
+        return tk::cached_emoji_version(
+            []
+            {
+                return tk::cg::make_factory();
+            });
     }
 
 protected:
-
     // See tk::Host::claim_native_focus_container_'s doc comment: the newly
     // tk-focused widget has no native AppKit control of its own (e.g. a
     // plain Button reached via Tab from the compose box), so nothing would
@@ -286,7 +298,6 @@ private:
     std::unique_ptr<CanvasFactory> factory_;
     bool transparent_ = false;
     std::unique_ptr<Widget> root_;
-    std::function<void()> on_layout_;
     std::vector<std::function<void()>> layout_listeners_;
     FileDropErrorHandler on_file_drop_error_;
     std::function<void(tk::Point)> on_right_click_;
@@ -310,27 +321,41 @@ tk::Key key_from_macos(NSEvent* event)
     const unichar ch = [chars characterAtIndex:0];
     switch (ch)
     {
-    case 0x1B: return tk::Key::Escape;
+    case 0x1B:
+        return tk::Key::Escape;
     case '\r':
-    case '\n': return tk::Key::Enter;
-    case ' ': return tk::Key::Space;
+    case '\n':
+        return tk::Key::Enter;
+    case ' ':
+        return tk::Key::Space;
     case '\t':
-        return (event.modifierFlags & NSEventModifierFlagShift)
-                   ? tk::Key::Backtab
-                   : tk::Key::Tab;
-    case NSUpArrowFunctionKey: return tk::Key::Up;
-    case NSDownArrowFunctionKey: return tk::Key::Down;
-    case NSLeftArrowFunctionKey: return tk::Key::Left;
-    case NSRightArrowFunctionKey: return tk::Key::Right;
-    case NSHomeFunctionKey: return tk::Key::Home;
-    case NSEndFunctionKey: return tk::Key::End;
-    case NSPageUpFunctionKey: return tk::Key::PageUp;
-    case NSPageDownFunctionKey: return tk::Key::PageDown;
-    case 0x7F: return tk::Key::Backspace;
-    case NSDeleteFunctionKey: return tk::Key::Delete;
-    case NSF10FunctionKey: return tk::Key::F10;
-    case NSF1FunctionKey: return tk::Key::F1;
-    default: return tk::Key::Unknown;
+        return (event.modifierFlags & NSEventModifierFlagShift) ? tk::Key::Backtab : tk::Key::Tab;
+    case NSUpArrowFunctionKey:
+        return tk::Key::Up;
+    case NSDownArrowFunctionKey:
+        return tk::Key::Down;
+    case NSLeftArrowFunctionKey:
+        return tk::Key::Left;
+    case NSRightArrowFunctionKey:
+        return tk::Key::Right;
+    case NSHomeFunctionKey:
+        return tk::Key::Home;
+    case NSEndFunctionKey:
+        return tk::Key::End;
+    case NSPageUpFunctionKey:
+        return tk::Key::PageUp;
+    case NSPageDownFunctionKey:
+        return tk::Key::PageDown;
+    case 0x7F:
+        return tk::Key::Backspace;
+    case NSDeleteFunctionKey:
+        return tk::Key::Delete;
+    case NSF10FunctionKey:
+        return tk::Key::F10;
+    case NSF1FunctionKey:
+        return tk::Key::F1;
+    default:
+        return tk::Key::Unknown;
     }
 }
 
@@ -341,20 +366,20 @@ std::string ascii_layout_letter(unsigned short keyCode, bool shift)
 {
     TISInputSourceRef src = TISCopyCurrentASCIICapableKeyboardLayoutInputSource();
     if (!src)
+    {
         return {};
+    }
     std::string out;
-    auto data = static_cast<CFDataRef>(
-        TISGetInputSourceProperty(src, kTISPropertyUnicodeKeyLayoutData));
+    auto data =
+        static_cast<CFDataRef>(TISGetInputSourceProperty(src, kTISPropertyUnicodeKeyLayoutData));
     if (data)
     {
-        const auto* layout =
-            reinterpret_cast<const UCKeyboardLayout*>(CFDataGetBytePtr(data));
+        const auto* layout = reinterpret_cast<const UCKeyboardLayout*>(CFDataGetBytePtr(data));
         UInt32 dead = 0;
         UniChar buf[4];
         UniCharCount len = 0;
-        if (UCKeyTranslate(layout, keyCode, kUCKeyActionDown, 0,
-                           LMGetKbdType(), kUCKeyTranslateNoDeadKeysBit,
-                           &dead, 4, &len, buf) == noErr &&
+        if (UCKeyTranslate(layout, keyCode, kUCKeyActionDown, 0, LMGetKbdType(),
+                           kUCKeyTranslateNoDeadKeysBit, &dead, 4, &len, buf) == noErr &&
             len == 1 && buf[0] < 0x80 && std::isalpha(buf[0]))
         {
             const int c = shift ? std::toupper(buf[0]) : std::tolower(buf[0]);
@@ -380,10 +405,12 @@ std::string character_text_from_macos(NSEvent* event)
     // same physical key types on the user's Latin layout.
     if ((event.modifierFlags & NSEventModifierFlagCommand) && ch >= 0x80)
     {
-        std::string latin = ascii_layout_letter(
-            event.keyCode, event.modifierFlags & NSEventModifierFlagShift);
+        std::string latin =
+            ascii_layout_letter(event.keyCode, event.modifierFlags & NSEventModifierFlagShift);
         if (!latin.empty())
+        {
             return latin;
+        }
     }
     if ([[NSCharacterSet controlCharacterSet] characterIsMember:ch])
     {
@@ -569,9 +596,8 @@ tk::KeyEvent translate_key_event(NSEvent* event)
     // deliberately never made key, so gating on key-window status meant
     // mouseMoved: never fired for PopupMenu/ComboBox/SearchablePicker
     // popups and their hover highlighting never updated.
-    NSTrackingAreaOptions opts =
-        NSTrackingMouseEnteredAndExited | NSTrackingMouseMoved |
-        NSTrackingActiveInActiveApp | NSTrackingInVisibleRect;
+    NSTrackingAreaOptions opts = NSTrackingMouseEnteredAndExited | NSTrackingMouseMoved |
+                                 NSTrackingActiveInActiveApp | NSTrackingInVisibleRect;
     self.trackingArea = [[NSTrackingArea alloc] initWithRect:NSZeroRect
                                                      options:opts
                                                        owner:self
@@ -708,9 +734,8 @@ tk::KeyEvent translate_key_event(NSEvent* event)
     {
         return NSDragOperationNone;
     }
-    return self.hostPtr->pasteboard_has_dropable(sender.draggingPasteboard)
-               ? NSDragOperationCopy
-               : NSDragOperationNone;
+    return self.hostPtr->pasteboard_has_dropable(sender.draggingPasteboard) ? NSDragOperationCopy
+                                                                            : NSDragOperationNone;
 }
 
 - (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)sender
@@ -720,8 +745,7 @@ tk::KeyEvent translate_key_event(NSEvent* event)
     {
         // Same conversion as -performDragOperation: below.
         NSPoint loc = [self convertPoint:sender.draggingLocation fromView:nil];
-        self.hostPtr->on_native_drag_hover(
-            {static_cast<float>(loc.x), static_cast<float>(loc.y)});
+        self.hostPtr->on_native_drag_hover({static_cast<float>(loc.x), static_cast<float>(loc.y)});
     }
     return op;
 }
@@ -737,8 +761,7 @@ tk::KeyEvent translate_key_event(NSEvent* event)
 
 - (BOOL)prepareForDragOperation:(id<NSDraggingInfo>)sender
 {
-    return self.hostPtr &&
-           self.hostPtr->pasteboard_has_dropable(sender.draggingPasteboard);
+    return self.hostPtr && self.hostPtr->pasteboard_has_dropable(sender.draggingPasteboard);
 }
 
 - (BOOL)performDragOperation:(id<NSDraggingInfo>)sender
@@ -754,9 +777,7 @@ tk::KeyEvent translate_key_event(NSEvent* event)
     // plumbing that needs on-device verification.
     NSPoint loc = [self convertPoint:sender.draggingLocation fromView:nil];
     tk::Point pos{static_cast<float>(loc.x), static_cast<float>(loc.y)};
-    BOOL ok = self.hostPtr->ingest_native_file_drop(sender.draggingPasteboard, pos)
-                 ? YES
-                 : NO;
+    BOOL ok = self.hostPtr->ingest_native_file_drop(sender.draggingPasteboard, pos) ? YES : NO;
     self.hostPtr->on_native_drag_leave();
     return ok;
 }
@@ -775,14 +796,14 @@ namespace tk::macos
 // drawn over a native text control. See NativeTextField::set_occlusion_query:
 // the control's -hitTest: then returns nil, so AppKit falls through to the
 // surface view and Host's popup routing instead of the alphaValue-0 control.
-static bool occluded_at(const std::function<std::optional<Rect>()>& query,
-                        NSPoint p)
+static bool occluded_at(const std::function<std::optional<Rect>()>& query, NSPoint p)
 {
     if (!query)
+    {
         return false;
+    }
     const std::optional<Rect> r = query();
-    return r && p.x >= r->x && p.y >= r->y && p.x < r->x + r->w &&
-           p.y < r->y + r->h;
+    return r && p.x >= r->x && p.y >= r->y && p.x < r->x + r->w && p.y < r->y + r->h;
 }
 
 // NSFont for a FontRole honouring the user's font config (family, size);
@@ -800,12 +821,16 @@ static NSFont* ns_font_for_role(FontRole role)
                                                 encoding:NSUTF8StringEncoding];
         if (name)
         {
-            NSFontDescriptor* d = [NSFontDescriptor
-                fontDescriptorWithFontAttributes:@{NSFontFamilyAttribute : name}];
+            NSFontDescriptor* d =
+                [NSFontDescriptor fontDescriptorWithFontAttributes:@{NSFontFamilyAttribute : name}];
             if (bold)
+            {
                 d = [d fontDescriptorWithSymbolicTraits:NSFontDescriptorTraitBold];
+            }
             if (NSFont* f = [NSFont fontWithDescriptor:d size:pt])
+            {
                 return f;
+            }
         }
     }
     return bold ? [NSFont boldSystemFontOfSize:pt] : [NSFont systemFontOfSize:pt];
@@ -948,7 +973,7 @@ private:
 // Ctrl+K quick switcher). The field editor routes these as command selectors;
 // returning YES consumes the command so the caret / field editor ignores it.
 - (BOOL)control:(NSControl*)control
-              textView:(NSTextView*)textView
+               textView:(NSTextView*)textView
     doCommandBySelector:(SEL)commandSelector
 {
     if (!self.owner || !self.owner->popup_nav_)
@@ -1024,7 +1049,9 @@ private:
 - (NSView*)hitTest:(NSPoint)point
 {
     if (self.owner && self.owner->occluded_at(point))
+    {
         return nil;
+    }
     return [super hitTest:point];
 }
 - (void)mouseDown:(NSEvent*)event
@@ -1045,7 +1072,9 @@ private:
 - (NSView*)hitTest:(NSPoint)point
 {
     if (self.owner && self.owner->occluded_at(point))
+    {
         return nil;
+    }
     return [super hitTest:point];
 }
 - (void)mouseDown:(NSEvent*)event
@@ -1061,8 +1090,7 @@ private:
 namespace tk::macos
 {
 
-NSTextFieldNative::NSTextFieldNative(TKSurfaceView* superview)
-    : superview_(superview)
+NSTextFieldNative::NSTextFieldNative(TKSurfaceView* superview) : superview_(superview)
 {
     TKTextFieldView* tf = [[TKTextFieldView alloc] initWithFrame:NSZeroRect];
     tf.owner = this;
@@ -1156,8 +1184,7 @@ std::string NSTextFieldNative::text() const
 
 void NSTextFieldNative::set_placeholder(std::string text)
 {
-    field_.placeholderString =
-        [NSString stringWithUTF8String:text.c_str()] ?: @"";
+    field_.placeholderString = [NSString stringWithUTF8String:text.c_str()] ?: @"";
 }
 
 void NSTextFieldNative::set_focused(bool focused)
@@ -1207,9 +1234,8 @@ void NSTextFieldNative::set_password(bool password)
     if (win)
     {
         NSResponder* fr = win.firstResponder;
-        wasFocused = (fr == field_) ||
-                     ([fr isKindOfClass:[NSText class]] &&
-                      [(NSText*)fr delegate] == (id<NSTextDelegate>)field_);
+        wasFocused = (fr == field_) || ([fr isKindOfClass:[NSText class]] &&
+                                        [(NSText*)fr delegate] == (id<NSTextDelegate>)field_);
     }
 
     field_.delegate = nil;
@@ -1219,8 +1245,7 @@ void NSTextFieldNative::set_password(bool password)
     NSTextField* newField;
     if (password)
     {
-        TKSecureTextFieldView* sf =
-            [[TKSecureTextFieldView alloc] initWithFrame:frame];
+        TKSecureTextFieldView* sf = [[TKSecureTextFieldView alloc] initWithFrame:frame];
         sf.owner = this;
         newField = sf;
     }
@@ -1283,10 +1308,10 @@ void NSTextFieldNative::notify_focus_gained()
     {
         NSTextFieldNative* self_ptr = this; // plain C++ ptr, not an ObjC ref
         blink_timer_ = [NSTimer scheduledTimerWithTimeInterval:0.53
-                                                        repeats:YES
-                                                          block:^(NSTimer*) {
-            self_ptr->refresh_image();
-        }];
+                                                       repeats:YES
+                                                         block:^(NSTimer*) {
+                                                             self_ptr->refresh_image();
+                                                         }];
     }
     if (on_focus_changed_)
     {
@@ -1317,8 +1342,7 @@ void NSTextFieldNative::refresh_image()
     {
         return;
     }
-    NSBitmapImageRep* rep =
-        [field_ bitmapImageRepForCachingDisplayInRect:field_.bounds];
+    NSBitmapImageRep* rep = [field_ bitmapImageRepForCachingDisplayInRect:field_.bounds];
     if (!rep)
     {
         return;
@@ -1451,14 +1475,16 @@ public:
                          const std::string& mxc_url, const tk::Image* image) override;
     std::vector<tesseract::MentionSeg> composer_draft() const override;
     void set_mention_colors(const tk::MentionColors& colors) override;
-    void refresh_mention_avatar(const std::string& user_id,
-                               const tk::Image* avatar) override;
+    void refresh_mention_avatar(const std::string& user_id, const tk::Image* avatar) override;
     void refresh_room_mention_avatar(const tk::Image* avatar) override;
     void set_font_role(FontRole role) override
     {
         NSFont* f = ns_font_for_role(role);
         view_.font = f;
-        if (placeholder_) placeholder_.font = f;
+        if (placeholder_)
+        {
+            placeholder_.font = f;
+        }
     }
     void set_on_popup_nav(std::function<bool(NavKey)> fn) override
     {
@@ -1604,14 +1630,18 @@ private:
 {
     BOOL ok = [super becomeFirstResponder];
     if (ok && self.owner)
+    {
         self.owner->notify_focus_gained();
+    }
     return ok;
 }
 - (BOOL)resignFirstResponder
 {
     BOOL ok = [super resignFirstResponder];
     if (ok && self.owner)
+    {
         self.owner->notify_focus_lost();
+    }
     return ok;
 }
 
@@ -1623,10 +1653,12 @@ private:
         {
             NSPasteboard* pb = [NSPasteboard generalPasteboard];
             if ([pb availableTypeFromArray:@[
-                    NSPasteboardTypePNG, NSPasteboardTypeTIFF,
-                    (NSPasteboardType) @"public.jpeg",
-                    (NSPasteboardType) @"public.webp"]])
+                    NSPasteboardTypePNG, NSPasteboardTypeTIFF, (NSPasteboardType) @"public.jpeg",
+                    (NSPasteboardType) @"public.webp"
+                ]])
+            {
                 return YES;
+            }
         }
         // Files copied in Finder ("Copy", not a drag): Cmd+V is normally
         // dispatched as the Edit menu's key equivalent, which asks this
@@ -1637,10 +1669,10 @@ private:
         {
             NSPasteboard* pb = [NSPasteboard generalPasteboard];
             if ([pb canReadObjectForClasses:@[ NSURL.class ]
-                                    options:@{
-                                        NSPasteboardURLReadingFileURLsOnlyKey : @YES
-                                    }])
+                                    options:@{NSPasteboardURLReadingFileURLsOnlyKey : @YES}])
+            {
                 return YES;
+            }
         }
     }
     return [super validateMenuItem:item];
@@ -1706,8 +1738,7 @@ private:
     }
     // Up in an empty composer (popup didn't consume it) → edit the last
     // own message (Element/Slack convention).
-    if (self.owner && self.owner->on_edit_last_ && event.keyCode == 126 &&
-        self.string.length == 0)
+    if (self.owner && self.owner->on_edit_last_ && event.keyCode == 126 && self.string.length == 0)
     {
         if (self.owner->on_edit_last_())
         {
@@ -1750,7 +1781,9 @@ private:
 - (void)draggingExited:(id<NSDraggingInfo>)sender
 {
     if (self.owner)
+    {
         self.owner->dragging_exited(sender);
+    }
 }
 
 - (BOOL)prepareForDragOperation:(id<NSDraggingInfo>)sender
@@ -1968,7 +2001,9 @@ private:
 - (NSView*)hitTest:(NSPoint)point
 {
     if (self.owner && self.owner->occluded_at(point))
+    {
         return nil;
+    }
     return [super hitTest:point];
 }
 @end
@@ -1976,11 +2011,9 @@ private:
 namespace tk::macos
 {
 
-NSTextViewNative::NSTextViewNative(TKSurfaceView* superview)
-    : superview_(superview)
+NSTextViewNative::NSTextViewNative(TKSurfaceView* superview) : superview_(superview)
 {
-    TKOcclusionScrollView* sv =
-        [[TKOcclusionScrollView alloc] initWithFrame:NSZeroRect];
+    TKOcclusionScrollView* sv = [[TKOcclusionScrollView alloc] initWithFrame:NSZeroRect];
     sv.owner = this;
     scroll_ = sv;
     scroll_.borderType = NSNoBorder;
@@ -1989,8 +2022,7 @@ NSTextViewNative::NSTextViewNative(TKSurfaceView* superview)
     scroll_.autohidesScrollers = YES;
     scroll_.drawsBackground = NO;
 
-    TKComposeTextView* tv =
-        [[TKComposeTextView alloc] initWithFrame:NSMakeRect(0, 0, 200, 40)];
+    TKComposeTextView* tv = [[TKComposeTextView alloc] initWithFrame:NSMakeRect(0, 0, 200, 40)];
     tv.owner = this;
     view_ = tv;
     view_.minSize = NSMakeSize(0, 0);
@@ -2019,7 +2051,9 @@ NSTextViewNative::NSTextViewNative(TKSurfaceView* superview)
             addObserverForName:NSViewBoundsDidChangeNotification
                         object:scroll_.contentView
                          queue:nil
-                    usingBlock:^(NSNotification*) { self_ptr->refresh_image(); }];
+                    usingBlock:^(NSNotification*) {
+                        self_ptr->refresh_image();
+                    }];
     }
     // Canvas-drawn-text spike — see NSTextFieldNative's ctor comment for the
     // full rationale, including refresh_image()'s temporary-flip-to-1.0
@@ -2051,8 +2085,7 @@ NSTextViewNative::NSTextViewNative(TKSurfaceView* superview)
     placeholder_.horizontallyResizable = NO;
     placeholder_.autoresizingMask = NSViewWidthSizable;
     placeholder_.textContainerInset = view_.textContainerInset;
-    placeholder_.textContainer.lineFragmentPadding =
-        view_.textContainer.lineFragmentPadding;
+    placeholder_.textContainer.lineFragmentPadding = view_.textContainer.lineFragmentPadding;
     // Container width is driven explicitly (set_rect / placeholder_natural_height)
     // rather than tracking the view, so a measurement pass can't be undone by a
     // later auto-resize.
@@ -2108,8 +2141,8 @@ void NSTextViewNative::set_rect(Rect r)
     // Constrain the text container to the target width up front, so
     // natural_height() below measures the wrapped height and long lines wrap
     // instead of scrolling sideways. (widthTracksTextView is off — see ctor.)
-    view_.textContainer.containerSize = NSMakeSize(
-        std::max<CGFloat>(0.0, rw - view_.textContainerInset.width * 2), FLT_MAX);
+    view_.textContainer.containerSize =
+        NSMakeSize(std::max<CGFloat>(0.0, rw - view_.textContainerInset.width * 2), FLT_MAX);
     {
         NSRect vf = view_.frame;
         vf.size.width = rw;
@@ -2135,8 +2168,7 @@ void NSTextViewNative::set_rect(Rect r)
         // frames makes its glyphs land where real typed text would.
         placeholder_.frame = scroll_.frame;
         placeholder_.textContainer.containerSize = NSMakeSize(
-            std::max<CGFloat>(0.0, rw - placeholder_.textContainerInset.width * 2),
-            FLT_MAX);
+            std::max<CGFloat>(0.0, rw - placeholder_.textContainerInset.width * 2), FLT_MAX);
     }
     refresh_image();
 }
@@ -2151,15 +2183,16 @@ void NSTextViewNative::set_text(std::string t)
     // font instead of the control's own — visibly different weight/size from
     // freshly typed text on the same line. Mirrors what -insertText: applies
     // on a real keystroke.
-    NSAttributedString* as =
-        [[NSAttributedString alloc] initWithString:s
-                                       attributes:view_.typingAttributes];
+    NSAttributedString* as = [[NSAttributedString alloc] initWithString:s
+                                                             attributes:view_.typingAttributes];
     [view_.textStorage setAttributedString:as];
     // Re-run emoji sizing the same way a user edit does (textDidChange:),
     // so restored drafts match typed text for emoji too.
     reformat_emoji_runs();
     if (placeholder_)
+    {
         placeholder_.hidden = !t.empty() || placeholder_text_.empty();
+    }
     refresh_image();
 }
 
@@ -2178,8 +2211,8 @@ void NSTextViewNative::set_placeholder(std::string ph)
             (placeholder_.font ?: [NSFont systemFontOfSize:[NSFont systemFontSize]]),
         NSForegroundColorAttributeName : NSColor.placeholderTextColor,
     };
-    [placeholder_.textStorage setAttributedString:
-        [[NSAttributedString alloc] initWithString:s attributes:attrs]];
+    [placeholder_.textStorage
+        setAttributedString:[[NSAttributedString alloc] initWithString:s attributes:attrs]];
     placeholder_.hidden = scroll_.hidden || !text().empty() || ph.empty();
     // A placeholder can now wrap to multiple lines while the document is
     // empty (see natural_height()'s placeholder branch), so re-report the
@@ -2202,14 +2235,13 @@ float NSTextViewNative::placeholder_natural_height() const
     // (natural_height()) adds the inset once, same as its real-content branch.
     CGFloat w = scroll_.frame.size.width;
     if (w <= 0)
+    {
         w = placeholder_.frame.size.width;
-    placeholder_.textContainer.containerSize = NSMakeSize(
-        std::max<CGFloat>(0.0, w - placeholder_.textContainerInset.width * 2),
-        FLT_MAX);
-    [placeholder_.layoutManager
-        ensureLayoutForTextContainer:placeholder_.textContainer];
-    NSRect used = [placeholder_.layoutManager
-        usedRectForTextContainer:placeholder_.textContainer];
+    }
+    placeholder_.textContainer.containerSize =
+        NSMakeSize(std::max<CGFloat>(0.0, w - placeholder_.textContainerInset.width * 2), FLT_MAX);
+    [placeholder_.layoutManager ensureLayoutForTextContainer:placeholder_.textContainer];
+    NSRect used = [placeholder_.layoutManager usedRectForTextContainer:placeholder_.textContainer];
     return static_cast<float>(used.size.height);
 }
 
@@ -2232,7 +2264,9 @@ void NSTextViewNative::set_visible(bool visible)
     visible_ = visible;
     scroll_.hidden = !visible;
     if (placeholder_)
+    {
         placeholder_.hidden = !visible || !text().empty() || placeholder_text_.empty();
+    }
 }
 void NSTextViewNative::set_enabled(bool enabled)
 {
@@ -2259,10 +2293,8 @@ float NSTextViewNative::natural_height() const
                static_cast<float>(view_.textContainerInset.height * 2);
     }
     [view_.layoutManager ensureLayoutForTextContainer:view_.textContainer];
-    NSRect used =
-        [view_.layoutManager usedRectForTextContainer:view_.textContainer];
-    return static_cast<float>(used.size.height +
-                              view_.textContainerInset.height * 2);
+    NSRect used = [view_.layoutManager usedRectForTextContainer:view_.textContainer];
+    return static_cast<float>(used.size.height + view_.textContainerInset.height * 2);
 }
 
 void NSTextViewNative::notify_changed()
@@ -2273,7 +2305,9 @@ void NSTextViewNative::notify_changed()
         on_changed_(text());
     }
     if (placeholder_)
+    {
         placeholder_.hidden = scroll_.hidden || !text().empty() || placeholder_text_.empty();
+    }
     float h = natural_height();
     if (h != last_height_ && on_height_changed_)
     {
@@ -2295,7 +2329,9 @@ void NSTextViewNative::notify_focus_gained()
     // room open) and from the -textDidBeginEditing: delegate hook (fires on the
     // first user edit). Whichever lands first wins; the other is a no-op.
     if (has_focus_)
+    {
         return;
+    }
     has_focus_ = true;
     caret_blink_visible_ = true;
     refresh_image();
@@ -2307,15 +2343,17 @@ void NSTextViewNative::notify_focus_gained()
         // override on TKComposeTextView) — each tick only toggles
         // caret_blink_visible_ and requests a scoped repaint of the
         // caret's own small rect, not a full refresh_image() capture.
-        blink_timer_ = [NSTimer scheduledTimerWithTimeInterval:0.53
-                                                        repeats:YES
-                                                          block:^(NSTimer*) {
-            self_ptr->caret_blink_visible_ = !self_ptr->caret_blink_visible_;
-            if (self_ptr->on_repaint_needed_)
-            {
-                self_ptr->on_repaint_needed_(self_ptr->caret_rect());
-            }
-        }];
+        blink_timer_ = [NSTimer
+            scheduledTimerWithTimeInterval:0.53
+                                   repeats:YES
+                                     block:^(NSTimer*) {
+                                         self_ptr->caret_blink_visible_ =
+                                             !self_ptr->caret_blink_visible_;
+                                         if (self_ptr->on_repaint_needed_)
+                                         {
+                                             self_ptr->on_repaint_needed_(self_ptr->caret_rect());
+                                         }
+                                     }];
     }
     if (on_focus_changed_)
     {
@@ -2325,7 +2363,9 @@ void NSTextViewNative::notify_focus_gained()
 void NSTextViewNative::notify_focus_lost()
 {
     if (!has_focus_)
+    {
         return;
+    }
     has_focus_ = false;
     [blink_timer_ invalidate];
     blink_timer_ = nil;
@@ -2361,8 +2401,7 @@ void NSTextViewNative::refresh_image()
     {
         return;
     }
-    NSBitmapImageRep* rep =
-        [scroll_ bitmapImageRepForCachingDisplayInRect:scroll_.bounds];
+    NSBitmapImageRep* rep = [scroll_ bitmapImageRepForCachingDisplayInRect:scroll_.bounds];
     if (!rep)
     {
         return;
@@ -2418,30 +2457,25 @@ void NSTextViewNative::reformat_emoji_runs()
     if (base_font && len > 0)
     {
         [lm setTemporaryAttributes:@{NSFontAttributeName : base_font}
-                  forCharacterRange:NSMakeRange(0, len)];
+                 forCharacterRange:NSMakeRange(0, len)];
     }
     if (!ranges.empty())
     {
         const int base_pt = static_cast<int>(std::round([NSFont systemFontSize]));
-        const CGFloat emoji_pt =
-            static_cast<CGFloat>(font_role_pt(FontRole::InlineEmoji, base_pt));
+        const CGFloat emoji_pt = static_cast<CGFloat>(font_role_pt(FontRole::InlineEmoji, base_pt));
         NSFont* emoji_font = [NSFont systemFontOfSize:emoji_pt];
 
         NSData* utf8data = [s dataUsingEncoding:NSUTF8StringEncoding];
         for (const auto& r : ranges)
         {
             NSString* prefix_s = [[NSString alloc]
-                initWithData:[utf8data
-                                 subdataWithRange:NSMakeRange(0, r.start_byte)]
+                initWithData:[utf8data subdataWithRange:NSMakeRange(0, r.start_byte)]
                     encoding:NSUTF8StringEncoding];
             NSString* prefix_e = [[NSString alloc]
-                initWithData:[utf8data
-                                 subdataWithRange:NSMakeRange(0, r.end_byte)]
+                initWithData:[utf8data subdataWithRange:NSMakeRange(0, r.end_byte)]
                     encoding:NSUTF8StringEncoding];
-            NSRange range =
-                NSMakeRange(prefix_s.length, prefix_e.length - prefix_s.length);
-            [lm addTemporaryAttributes:@{NSFontAttributeName : emoji_font}
-                      forCharacterRange:range];
+            NSRange range = NSMakeRange(prefix_s.length, prefix_e.length - prefix_s.length);
+            [lm addTemporaryAttributes:@{NSFontAttributeName : emoji_font} forCharacterRange:range];
         }
     }
 }
@@ -2474,12 +2508,10 @@ tk::Rect NSTextViewNative::cursor_rect() const
         return {};
     }
     NSRange sel = view_.selectedRange;
-    NSRange glyph = [view_.layoutManager
-        glyphRangeForCharacterRange:NSMakeRange(sel.location, 0)
-               actualCharacterRange:nullptr];
-    NSRect cr = [view_.layoutManager
-        boundingRectForGlyphRange:NSMakeRange(glyph.location, 0)
-                  inTextContainer:view_.textContainer];
+    NSRange glyph = [view_.layoutManager glyphRangeForCharacterRange:NSMakeRange(sel.location, 0)
+                                                actualCharacterRange:nullptr];
+    NSRect cr = [view_.layoutManager boundingRectForGlyphRange:NSMakeRange(glyph.location, 0)
+                                               inTextContainer:view_.textContainer];
     if (view_.textStorage.length == 0)
     {
         // Empty document: there's no glyph, so boundingRectForGlyphRange
@@ -2488,9 +2520,8 @@ tk::Rect NSTextViewNative::cursor_rect() const
         // the first-glyph origin with a real line height instead.
         NSFont* f = view_.font ?: [NSFont systemFontOfSize:[NSFont systemFontSize]];
         NSRect extra = [view_.layoutManager extraLineFragmentRect];
-        CGFloat lh = extra.size.height > 0.0
-                         ? extra.size.height
-                         : [view_.layoutManager defaultLineHeightForFont:f];
+        CGFloat lh = extra.size.height > 0.0 ? extra.size.height
+                                             : [view_.layoutManager defaultLineHeightForFont:f];
         cr = NSMakeRect(view_.textContainer.lineFragmentPadding, 0.0, 0.0, lh);
     }
     cr.origin.x += view_.textContainerInset.width;
@@ -2500,8 +2531,8 @@ tk::Rect NSTextViewNative::cursor_rect() const
     // view_.superview (NSClipView), which is buried inside the NSScrollView
     // and has a different origin.
     NSRect inSuper = [view_ convertRect:cr toView:superview_];
-    return {float(inSuper.origin.x), float(inSuper.origin.y),
-            float(inSuper.size.width), float(inSuper.size.height)};
+    return {float(inSuper.origin.x), float(inSuper.origin.y), float(inSuper.size.width),
+            float(inSuper.size.height)};
 }
 
 void NSTextViewNative::replace_range(int start, int end, std::string text)
@@ -2514,16 +2545,14 @@ void NSTextViewNative::replace_range(int start, int end, std::string text)
     NSData* utf8 = [ns dataUsingEncoding:NSUTF8StringEncoding];
     int bounded_start = std::min(start, (int)utf8.length);
     int bounded_end = std::min(end, (int)utf8.length);
-    NSString* prefix_s = [[NSString alloc]
-        initWithData:[utf8 subdataWithRange:NSMakeRange(0, bounded_start)]
-            encoding:NSUTF8StringEncoding];
-    NSString* prefix_e = [[NSString alloc]
-        initWithData:[utf8 subdataWithRange:NSMakeRange(0, bounded_end)]
-            encoding:NSUTF8StringEncoding];
-    NSRange range =
-        NSMakeRange(prefix_s.length, prefix_e.length - prefix_s.length);
-    [view_ insertText:[NSString stringWithUTF8String:text.c_str()]
-        replacementRange:range];
+    NSString* prefix_s =
+        [[NSString alloc] initWithData:[utf8 subdataWithRange:NSMakeRange(0, bounded_start)]
+                              encoding:NSUTF8StringEncoding];
+    NSString* prefix_e =
+        [[NSString alloc] initWithData:[utf8 subdataWithRange:NSMakeRange(0, bounded_end)]
+                              encoding:NSUTF8StringEncoding];
+    NSRange range = NSMakeRange(prefix_s.length, prefix_e.length - prefix_s.length);
+    [view_ insertText:[NSString stringWithUTF8String:text.c_str()] replacementRange:range];
 }
 
 int NSTextViewNative::cursor_byte_pos() const
@@ -2533,8 +2562,7 @@ int NSTextViewNative::cursor_byte_pos() const
         return 0;
     }
     NSString* s = view_.string ?: @"";
-    NSUInteger loc = std::min((NSUInteger)view_.selectedRange.location,
-                              (NSUInteger)s.length);
+    NSUInteger loc = std::min((NSUInteger)view_.selectedRange.location, (NSUInteger)s.length);
     NSString* prefix = [s substringToIndex:loc];
     NSData* d = [prefix dataUsingEncoding:NSUTF8StringEncoding];
     return (int)d.length;
@@ -2549,16 +2577,15 @@ void NSTextViewNative::set_cursor_byte_pos(int byte_pos)
     NSString* ns = view_.string ?: @"";
     NSData* utf8 = [ns dataUsingEncoding:NSUTF8StringEncoding];
     int bounded = std::min(byte_pos, (int)utf8.length);
-    NSString* prefix = [[NSString alloc]
-        initWithData:[utf8 subdataWithRange:NSMakeRange(0, bounded)]
-            encoding:NSUTF8StringEncoding];
+    NSString* prefix =
+        [[NSString alloc] initWithData:[utf8 subdataWithRange:NSMakeRange(0, bounded)]
+                              encoding:NSUTF8StringEncoding];
     [view_ setSelectedRange:NSMakeRange(prefix.length, 0)];
 }
 
-void NSTextViewNative::insert_mention(int start, int end,
-                                      const std::string& user_id,
-                                      const std::string& display_name,
-                                      bool is_room, const tk::Image* avatar)
+void NSTextViewNative::insert_mention(int start, int end, const std::string& user_id,
+                                      const std::string& display_name, bool is_room,
+                                      const tk::Image* avatar)
 {
     if (!view_)
     {
@@ -2576,7 +2603,9 @@ void NSTextViewNative::insert_mention(int start, int end,
     // a missing image rather than inserting an attachment with no visible
     // content), fall back to a plain-text mention.
     if (!pill_factory_)
+    {
         pill_factory_ = tk::cg::make_factory();
+    }
     tk::PillSpec spec;
     spec.text = is_room ? "room" : display_name;
     spec.kind = is_room ? tk::PillKind::Room : tk::PillKind::User;
@@ -2613,11 +2642,9 @@ void NSTextViewNative::insert_mention(int start, int end,
     // elsewhere — see CTLayout::ascent()'s non-elided branch), so descent
     // computed out that way is always 0. tk::cg::real_line_metrics() gets
     // the real split directly via CTFontGetAscent/GetDescent.
-    const tk::cg::RealLineMetrics lm =
-        tk::cg::real_line_metrics(tk::FontRole::Body);
+    const tk::cg::RealLineMetrics lm = tk::cg::real_line_metrics(tk::FontRole::Body);
     tk::ImageRef pinned = tk::render_pill_bitmap_cached(
-        *pill_factory_, pill_cache_, spec, lm.ascent, lm.descent,
-        static_cast<float>(scale));
+        *pill_factory_, pill_cache_, spec, lm.ascent, lm.descent, static_cast<float>(scale));
     if (!pinned)
     {
         // No pill chrome in this fallback, so the '@' is the only visual cue
@@ -2631,12 +2658,10 @@ void NSTextViewNative::insert_mention(int start, int end,
     NSData* utf8 = [ns dataUsingEncoding:NSUTF8StringEncoding];
     int bs = std::min(start, (int)utf8.length);
     int be = std::min(end, (int)utf8.length);
-    NSString* ps = [[NSString alloc]
-        initWithData:[utf8 subdataWithRange:NSMakeRange(0, bs)]
-            encoding:NSUTF8StringEncoding];
-    NSString* pe = [[NSString alloc]
-        initWithData:[utf8 subdataWithRange:NSMakeRange(0, be)]
-            encoding:NSUTF8StringEncoding];
+    NSString* ps = [[NSString alloc] initWithData:[utf8 subdataWithRange:NSMakeRange(0, bs)]
+                                         encoding:NSUTF8StringEncoding];
+    NSString* pe = [[NSString alloc] initWithData:[utf8 subdataWithRange:NSMakeRange(0, be)]
+                                         encoding:NSUTF8StringEncoding];
     NSRange range = NSMakeRange(ps.length, pe.length - ps.length);
 
     TKMentionAttachment* att = [[TKMentionAttachment alloc] init];
@@ -2658,18 +2683,15 @@ void NSTextViewNative::insert_mention(int start, int end,
     att.attachmentCell = cell;
 
     NSMutableAttributedString* a = [[NSMutableAttributedString alloc]
-        initWithAttributedString:[NSAttributedString
-                                     attributedStringWithAttachment:att]];
+        initWithAttributedString:[NSAttributedString attributedStringWithAttachment:att]];
     // Trailing space (with the view's font) so typing continues normally.
-    NSDictionary* fontAttrs =
-        view_.font ? @{NSFontAttributeName : view_.font} : @{};
+    NSDictionary* fontAttrs = view_.font ? @{NSFontAttributeName : view_.font} : @{};
     [a appendAttributedString:[[NSAttributedString alloc] initWithString:@" "
                                                               attributes:fontAttrs]];
 
     if ([view_ shouldChangeTextInRange:range replacementString:a.string])
     {
-        [view_.textStorage replaceCharactersInRange:range
-                               withAttributedString:a];
+        [view_.textStorage replaceCharactersInRange:range withAttributedString:a];
         NSUInteger caret = range.location + a.length;
         [view_ setSelectedRange:NSMakeRange(caret, 0)];
         [view_ didChangeText];
@@ -2677,10 +2699,8 @@ void NSTextViewNative::insert_mention(int start, int end,
     notify_changed();
 }
 
-void NSTextViewNative::insert_emoticon(int start, int end,
-                                       const std::string& shortcode,
-                                       const std::string& mxc_url,
-                                       const tk::Image* image)
+void NSTextViewNative::insert_emoticon(int start, int end, const std::string& shortcode,
+                                       const std::string& mxc_url, const tk::Image* image)
 {
     if (!view_)
     {
@@ -2695,18 +2715,15 @@ void NSTextViewNative::insert_emoticon(int start, int end,
     NSData* utf8 = [ns dataUsingEncoding:NSUTF8StringEncoding];
     int bs = std::min(start, (int)utf8.length);
     int be = std::min(end, (int)utf8.length);
-    NSString* ps = [[NSString alloc]
-        initWithData:[utf8 subdataWithRange:NSMakeRange(0, bs)]
-            encoding:NSUTF8StringEncoding];
-    NSString* pe = [[NSString alloc]
-        initWithData:[utf8 subdataWithRange:NSMakeRange(0, be)]
-            encoding:NSUTF8StringEncoding];
+    NSString* ps = [[NSString alloc] initWithData:[utf8 subdataWithRange:NSMakeRange(0, bs)]
+                                         encoding:NSUTF8StringEncoding];
+    NSString* pe = [[NSString alloc] initWithData:[utf8 subdataWithRange:NSMakeRange(0, be)]
+                                         encoding:NSUTF8StringEncoding];
     NSRange range = NSMakeRange(ps.length, pe.length - ps.length);
 
     constexpr CGFloat kSide = 20; // matches the reaction-chip inline image size
     CGImageRef cg = tk::cg::to_native_image(*image);
-    NSImage* nsImage = [[NSImage alloc] initWithCGImage:cg
-                                                    size:NSMakeSize(kSide, kSide)];
+    NSImage* nsImage = [[NSImage alloc] initWithCGImage:cg size:NSMakeSize(kSide, kSide)];
 
     TKEmoticonAttachment* att = [[TKEmoticonAttachment alloc] init];
     att.shortcode = [NSString stringWithUTF8String:shortcode.c_str()];
@@ -2716,18 +2733,15 @@ void NSTextViewNative::insert_emoticon(int start, int end,
     att.attachmentCell = cell;
 
     NSMutableAttributedString* a = [[NSMutableAttributedString alloc]
-        initWithAttributedString:[NSAttributedString
-                                     attributedStringWithAttachment:att]];
+        initWithAttributedString:[NSAttributedString attributedStringWithAttachment:att]];
     // Trailing space (with the view's font) so typing continues normally.
-    NSDictionary* fontAttrs =
-        view_.font ? @{NSFontAttributeName : view_.font} : @{};
+    NSDictionary* fontAttrs = view_.font ? @{NSFontAttributeName : view_.font} : @{};
     [a appendAttributedString:[[NSAttributedString alloc] initWithString:@" "
                                                               attributes:fontAttrs]];
 
     if ([view_ shouldChangeTextInRange:range replacementString:a.string])
     {
-        [view_.textStorage replaceCharactersInRange:range
-                               withAttributedString:a];
+        [view_.textStorage replaceCharactersInRange:range withAttributedString:a];
         NSUInteger caret = range.location + a.length;
         [view_ setSelectedRange:NSMakeRange(caret, 0)];
         [view_ didChangeText];
@@ -2761,9 +2775,7 @@ std::vector<tesseract::MentionSeg> NSTextViewNative::composer_draft() const
     while (i < n)
     {
         NSRange eff;
-        id att = [a attribute:NSAttachmentAttributeName
-                      atIndex:i
-               effectiveRange:&eff];
+        id att = [a attribute:NSAttachmentAttributeName atIndex:i effectiveRange:&eff];
         if ([att isKindOfClass:[TKMentionAttachment class]])
         {
             flush();
@@ -2771,8 +2783,7 @@ std::vector<tesseract::MentionSeg> NSTextViewNative::composer_draft() const
             tesseract::MentionSeg s;
             s.kind = tesseract::MentionSeg::Kind::Mention;
             s.user_id = m.userId.UTF8String ? m.userId.UTF8String : "";
-            s.display_name =
-                m.displayName.UTF8String ? m.displayName.UTF8String : "";
+            s.display_name = m.displayName.UTF8String ? m.displayName.UTF8String : "";
             s.is_room = m.isRoom;
             segs.push_back(std::move(s));
         }
@@ -2805,8 +2816,7 @@ void NSTextViewNative::set_mention_colors(const tk::MentionColors& colors)
     mention_colors_ = colors;
 }
 
-void NSTextViewNative::refresh_mention_avatar(const std::string& user_id,
-                                              const tk::Image* avatar)
+void NSTextViewNative::refresh_mention_avatar(const std::string& user_id, const tk::Image* avatar)
 {
     if (!view_ || !avatar)
     {
@@ -2823,9 +2833,7 @@ void NSTextViewNative::refresh_mention_avatar(const std::string& user_id,
     while (i < n)
     {
         NSRange eff;
-        id att = [a attribute:NSAttachmentAttributeName
-                      atIndex:i
-               effectiveRange:&eff];
+        id att = [a attribute:NSAttachmentAttributeName atIndex:i effectiveRange:&eff];
         if ([att isKindOfClass:[TKMentionAttachment class]])
         {
             TKMentionAttachment* m = (TKMentionAttachment*)att;
@@ -2833,7 +2841,9 @@ void NSTextViewNative::refresh_mention_avatar(const std::string& user_id,
             if (!m.isRoom && uid == user_id)
             {
                 if (!pill_factory_)
+                {
                     pill_factory_ = tk::cg::make_factory();
+                }
                 tk::PillSpec spec;
                 spec.text = m.displayName.UTF8String ? m.displayName.UTF8String : "";
                 spec.kind = tk::PillKind::User;
@@ -2842,20 +2852,18 @@ void NSTextViewNative::refresh_mention_avatar(const std::string& user_id,
                 spec.fg = mention_colors_.fg;
                 spec.initials_bg = mention_colors_.initials_bg;
                 spec.initials_fg = mention_colors_.initials_fg;
-                const tk::cg::RealLineMetrics lm =
-                    tk::cg::real_line_metrics(tk::FontRole::Body);
+                const tk::cg::RealLineMetrics lm = tk::cg::real_line_metrics(tk::FontRole::Body);
                 const CGFloat scale = view_.window.backingScaleFactor ?: 2.0;
-                tk::ImageRef pinned = tk::render_pill_bitmap_cached(
-                    *pill_factory_, pill_cache_, spec, lm.ascent, lm.descent,
-                    static_cast<float>(scale));
+                tk::ImageRef pinned =
+                    tk::render_pill_bitmap_cached(*pill_factory_, pill_cache_, spec, lm.ascent,
+                                                  lm.descent, static_cast<float>(scale));
                 if (pinned)
                 {
                     const CGFloat img_w = pinned->width() / scale;
                     const CGFloat img_h = pinned->height() / scale;
                     CGImageRef cg = tk::cg::to_native_image(*pinned);
                     TKImagePillCell* cell = (TKImagePillCell*)m.attachmentCell;
-                    cell.image = [[NSImage alloc] initWithCGImage:cg
-                                                             size:NSMakeSize(img_w, img_h)];
+                    cell.image = [[NSImage alloc] initWithCGImage:cg size:NSMakeSize(img_w, img_h)];
                     cell.pillDescent = lm.descent;
                     m->pillPin_ = pinned;
                     changed = true;
@@ -2885,16 +2893,16 @@ void NSTextViewNative::refresh_room_mention_avatar(const tk::Image* avatar)
     while (i < n)
     {
         NSRange eff;
-        id att = [a attribute:NSAttachmentAttributeName
-                      atIndex:i
-               effectiveRange:&eff];
+        id att = [a attribute:NSAttachmentAttributeName atIndex:i effectiveRange:&eff];
         if ([att isKindOfClass:[TKMentionAttachment class]])
         {
             TKMentionAttachment* m = (TKMentionAttachment*)att;
             if (m.isRoom)
             {
                 if (!pill_factory_)
+                {
                     pill_factory_ = tk::cg::make_factory();
+                }
                 tk::PillSpec spec;
                 spec.text = "room";
                 spec.kind = tk::PillKind::Room;
@@ -2904,20 +2912,18 @@ void NSTextViewNative::refresh_room_mention_avatar(const tk::Image* avatar)
                 spec.fg = mention_colors_.fg;
                 spec.initials_bg = mention_colors_.initials_bg;
                 spec.initials_fg = mention_colors_.initials_fg;
-                const tk::cg::RealLineMetrics lm =
-                    tk::cg::real_line_metrics(tk::FontRole::Body);
+                const tk::cg::RealLineMetrics lm = tk::cg::real_line_metrics(tk::FontRole::Body);
                 const CGFloat scale = view_.window.backingScaleFactor ?: 2.0;
-                tk::ImageRef pinned = tk::render_pill_bitmap_cached(
-                    *pill_factory_, pill_cache_, spec, lm.ascent, lm.descent,
-                    static_cast<float>(scale));
+                tk::ImageRef pinned =
+                    tk::render_pill_bitmap_cached(*pill_factory_, pill_cache_, spec, lm.ascent,
+                                                  lm.descent, static_cast<float>(scale));
                 if (pinned)
                 {
                     const CGFloat img_w = pinned->width() / scale;
                     const CGFloat img_h = pinned->height() / scale;
                     CGImageRef cg = tk::cg::to_native_image(*pinned);
                     TKImagePillCell* cell = (TKImagePillCell*)m.attachmentCell;
-                    cell.image = [[NSImage alloc] initWithCGImage:cg
-                                                             size:NSMakeSize(img_w, img_h)];
+                    cell.image = [[NSImage alloc] initWithCGImage:cg size:NSMakeSize(img_w, img_h)];
                     cell.pillDescent = lm.descent;
                     m->pillPin_ = pinned;
                     changed = true;
@@ -2969,9 +2975,9 @@ bool NSTextViewNative::maybe_handle_paste()
             NSData* d = [pb dataForType:pt];
             if (d.length > 0)
             {
-                std::vector<std::uint8_t> bytes(
-                    static_cast<const std::uint8_t*>(d.bytes),
-                    static_cast<const std::uint8_t*>(d.bytes) + d.length);
+                std::vector<std::uint8_t> bytes(static_cast<const std::uint8_t*>(d.bytes),
+                                                static_cast<const std::uint8_t*>(d.bytes) +
+                                                    d.length);
                 std::string mime = [type_to_mime[pt] UTF8String];
                 on_image_paste_(std::move(bytes), std::move(mime));
                 return true;
@@ -2985,13 +2991,12 @@ bool NSTextViewNative::maybe_handle_paste()
             NSBitmapImageRep* rep = [[NSBitmapImageRep alloc] initWithData:tiff];
             if (rep)
             {
-                NSData* png = [rep representationUsingType:NSBitmapImageFileTypePNG
-                                                properties:@{}];
+                NSData* png = [rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
                 if (png.length > 0)
                 {
-                    std::vector<std::uint8_t> bytes(
-                        static_cast<const std::uint8_t*>(png.bytes),
-                        static_cast<const std::uint8_t*>(png.bytes) + png.length);
+                    std::vector<std::uint8_t> bytes(static_cast<const std::uint8_t*>(png.bytes),
+                                                    static_cast<const std::uint8_t*>(png.bytes) +
+                                                        png.length);
                     on_image_paste_(std::move(bytes), "image/png");
                     return true;
                 }
@@ -3015,8 +3020,7 @@ bool NSTextViewNative::maybe_handle_paste()
             }
             NSString* path = url.path;
             NSDictionary<NSFileAttributeKey, id>* attrs =
-                [NSFileManager.defaultManager attributesOfItemAtPath:path
-                                                               error:nil];
+                [NSFileManager.defaultManager attributesOfItemAtPath:path error:nil];
             if (!attrs)
             {
                 continue;
@@ -3026,23 +3030,19 @@ bool NSTextViewNative::maybe_handle_paste()
             {
                 continue;
             }
-            NSData* data = [NSData dataWithContentsOfFile:path
-                                                  options:0
-                                                    error:nil];
+            NSData* data = [NSData dataWithContentsOfFile:path options:0 error:nil];
             if (!data || data.length == 0)
             {
                 continue;
             }
             std::string mime = mime_for_url(url);
-            std::vector<std::uint8_t> bytes(
-                static_cast<const std::uint8_t*>(data.bytes),
-                static_cast<const std::uint8_t*>(data.bytes) + data.length);
-            std::string filename =
-                path.lastPathComponent.UTF8String
-                    ? std::string(path.lastPathComponent.UTF8String)
-                    : std::string{};
-            files.push_back({std::move(bytes), std::move(mime),
-                             std::move(filename)});
+            std::vector<std::uint8_t> bytes(static_cast<const std::uint8_t*>(data.bytes),
+                                            static_cast<const std::uint8_t*>(data.bytes) +
+                                                data.length);
+            std::string filename = path.lastPathComponent.UTF8String
+                                       ? std::string(path.lastPathComponent.UTF8String)
+                                       : std::string{};
+            files.push_back({std::move(bytes), std::move(mime), std::move(filename)});
         }
         if (!files.empty())
         {
@@ -3056,7 +3056,9 @@ bool NSTextViewNative::maybe_handle_paste()
 NSDragOperation NSTextViewNative::dragging_entered(id<NSDraggingInfo> sender) const
 {
     if (!superview_.hostPtr)
+    {
         return NSDragOperationNone;
+    }
     return superview_.hostPtr->pasteboard_has_dropable(sender.draggingPasteboard)
                ? NSDragOperationCopy
                : NSDragOperationNone;
@@ -3078,7 +3080,9 @@ void NSTextViewNative::dragging_exited(id<NSDraggingInfo> sender) const
 {
     (void)sender;
     if (superview_.hostPtr)
+    {
         superview_.hostPtr->on_native_drag_leave();
+    }
 }
 
 BOOL NSTextViewNative::prepare_for_drag_operation(id<NSDraggingInfo> sender) const
@@ -3090,12 +3094,13 @@ BOOL NSTextViewNative::prepare_for_drag_operation(id<NSDraggingInfo> sender) con
 BOOL NSTextViewNative::perform_drag_operation(id<NSDraggingInfo> sender) const
 {
     if (!superview_.hostPtr)
+    {
         return NO;
+    }
     NSPoint loc = [superview_ convertPoint:sender.draggingLocation fromView:nil];
     tk::Point pos{static_cast<float>(loc.x), static_cast<float>(loc.y)};
-    BOOL ok = superview_.hostPtr->ingest_native_file_drop(sender.draggingPasteboard, pos)
-                  ? YES
-                  : NO;
+    BOOL ok =
+        superview_.hostPtr->ingest_native_file_drop(sender.draggingPasteboard, pos) ? YES : NO;
     superview_.hostPtr->on_native_drag_leave();
     return ok;
 }
@@ -3116,7 +3121,9 @@ void Host::request_repaint()
         // queue matches how ParticipantTile drives repaints: EventHandlerBase
         // posts via dispatch_get_main_queue() before calling request_repaint_.
         NSView* v = view_;
-        dispatch_async(dispatch_get_main_queue(), ^{ [v setNeedsDisplay:YES]; });
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [v setNeedsDisplay:YES];
+        });
     }
 }
 
@@ -3130,7 +3137,9 @@ void Host::request_repaint_rect(Rect world)
     // setNeedsDisplayInRect: synchronously from inside drawRect:.
     NSView* v = view_;
     NSRect r = NSMakeRect(world.x - 1.0, world.y - 1.0, world.w + 2.0, world.h + 2.0);
-    dispatch_async(dispatch_get_main_queue(), ^{ [v setNeedsDisplayInRect:r]; });
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [v setNeedsDisplayInRect:r];
+    });
 }
 
 void Host::invalidate_anim_damage()
@@ -3148,8 +3157,7 @@ void Host::invalidate_anim_damage()
     {
         // view_ is isFlipped (top-left origin), matching canvas coords.
         // Pad by 1px so anti-aliased edges are not clipped.
-        [view_ setNeedsDisplayInRect:NSMakeRect(r.x - 1.0, r.y - 1.0,
-                                                r.w + 2.0, r.h + 2.0)];
+        [view_ setNeedsDisplayInRect:NSMakeRect(r.x - 1.0, r.y - 1.0, r.w + 2.0, r.h + 2.0)];
     }
 }
 
@@ -3168,8 +3176,7 @@ void Host::post_delayed(int ms, std::function<void()> fn)
 {
     __block std::function<void()> captured = std::move(fn);
     dispatch_after(
-        dispatch_time(DISPATCH_TIME_NOW,
-                      static_cast<int64_t>(ms < 0 ? 0 : ms) * NSEC_PER_MSEC),
+        dispatch_time(DISPATCH_TIME_NOW, static_cast<int64_t>(ms < 0 ? 0 : ms) * NSEC_PER_MSEC),
         dispatch_get_main_queue(), ^{
             if (captured)
             {
@@ -3189,11 +3196,17 @@ bool Host::is_network_available() const
     zero.sin_family = AF_INET;
     SCNetworkReachabilityRef ref = SCNetworkReachabilityCreateWithAddress(
         nullptr, reinterpret_cast<const struct sockaddr*>(&zero));
-    if (!ref) return true;
+    if (!ref)
+    {
+        return true;
+    }
     SCNetworkReachabilityFlags flags = 0;
     bool ok = SCNetworkReachabilityGetFlags(ref, &flags);
     CFRelease(ref);
-    if (!ok) return true;
+    if (!ok)
+    {
+        return true;
+    }
     return (flags & kSCNetworkReachabilityFlagsReachable) != 0;
 }
 
@@ -3203,7 +3216,7 @@ bool Host::is_network_available() const
 //  never a descendant of the anchor Surface's own NSView. Generalizes the
 //  hand-rolled NSPanel-per-popup pattern that MentionPopup/SlashCommandPopup/
 //  ShortcodePopup/the Gif popup each built by hand in RoomWindowController.mm
-//  / MainWindowController.mm.
+//  / MainWindow.mm.
 // ─────────────────────────────────────────────────────────────────────────
 
 class MacosPopupSurfaceHandle : public tk::PopupSurfaceHandle
@@ -3215,8 +3228,7 @@ public:
         NSRect frame = NSMakeRect(0, 0, 10, 10);
         panel_ = [[NSPanel alloc]
             initWithContentRect:frame
-                      styleMask:NSWindowStyleMaskNonactivatingPanel |
-                                NSWindowStyleMaskBorderless
+                      styleMask:NSWindowStyleMaskNonactivatingPanel | NSWindowStyleMaskBorderless
                         backing:NSBackingStoreBuffered
                           defer:NO];
         panel_.floatingPanel = YES;
@@ -3239,8 +3251,24 @@ public:
         surface_->set_root(std::move(root));
     }
 
-    void set_rect(Rect anchor_world_rect, Size size,
-                  tk::PopupPlacement placement) override
+    // Round the panel's content and let the area behind the corners show
+    // through, for content that paints its own rounded card.
+    void set_corner_radius(float radius_dip) override
+    {
+        if (radius_dip <= 0.f || !panel_)
+        {
+            return;
+        }
+        panel_.opaque = NO;
+        panel_.backgroundColor = [NSColor clearColor];
+        panel_.hasShadow = YES;
+        NSView* view = (__bridge NSView*)surface_->view_handle();
+        view.wantsLayer = YES;
+        view.layer.cornerRadius = radius_dip;
+        view.layer.masksToBounds = YES;
+    }
+
+    void set_rect(Rect anchor_world_rect, Size size, tk::PopupPlacement placement) override
     {
         if (!anchor_view_ || !panel_)
         {
@@ -3257,8 +3285,7 @@ public:
         NSPoint window_pt = [anchor_view_ convertPoint:local_pt toView:nil];
         NSPoint screen_pt = [anchor_view_.window convertPointToScreen:window_pt];
 
-        NSRect sf = panel_.screen ? panel_.screen.visibleFrame
-                                  : [NSScreen mainScreen].visibleFrame;
+        NSRect sf = panel_.screen ? panel_.screen.visibleFrame : [NSScreen mainScreen].visibleFrame;
         CGFloat panel_h = ns_size.height;
         CGFloat x = screen_pt.x;
         CGFloat y;
@@ -3268,10 +3295,8 @@ public:
             // caret so the popup doesn't cover text below it, falling back
             // below only when it would be clipped at the screen's top edge.
             CGFloat y_above = screen_pt.y + 4;
-            CGFloat y_below =
-                screen_pt.y - (CGFloat)anchor_world_rect.h - 4 - panel_h;
-            y = (y_above + panel_h <= sf.origin.y + sf.size.height) ? y_above
-                                                                    : y_below;
+            CGFloat y_below = screen_pt.y - (CGFloat)anchor_world_rect.h - 4 - panel_h;
+            y = (y_above + panel_h <= sf.origin.y + sf.size.height) ? y_above : y_below;
         }
         else
         {
@@ -3282,8 +3307,7 @@ public:
             y = (y_below >= sf.origin.y) ? y_below : y_above;
         }
         x = std::clamp(x, sf.origin.x, sf.origin.x + sf.size.width - ns_size.width);
-        y = std::clamp(y, sf.origin.y,
-                       sf.origin.y + sf.size.height - ns_size.height);
+        y = std::clamp(y, sf.origin.y, sf.origin.y + sf.size.height - ns_size.height);
         [panel_ setFrameOrigin:NSMakePoint(x, y)];
     }
 
@@ -3301,7 +3325,15 @@ public:
             unwatch_clicks_();
         }
     }
-    bool visible() const override { return visible_; }
+    bool visible() const override
+    {
+        return visible_;
+    }
+
+    tk::Host* popup_host() override
+    {
+        return &surface_->host();
+    }
 
     void set_theme(const Theme& theme) override
     {
@@ -3312,14 +3344,23 @@ public:
         }
     }
 
-    void request_repaint() override { surface_->host().request_repaint(); }
-    void request_relayout() override { surface_->relayout(); }
+    void request_repaint() override
+    {
+        surface_->host().request_repaint();
+    }
+    void request_relayout() override
+    {
+        surface_->relayout();
+    }
 
     void set_anim_cache(const tk::AnimImageCache* cache) override
     {
         surface_->set_anim_cache(cache);
     }
-    void update_anim_regions() override { surface_->update_anim_regions(); }
+    void update_anim_regions() override
+    {
+        surface_->update_anim_regions();
+    }
 
 private:
     // Observe every native mouse-button-down across the app (before it
@@ -3330,7 +3371,7 @@ private:
     // QtPopupSurfaceHandle). Only installed while a caller actually wants
     // to know (on_dismiss_requested set) and the popup is visible, same
     // guard as Qt's filter_installed_. Local monitors are the standard
-    // idiom here — see MainWindowController.mm's _escapeMonitor for the
+    // idiom here — see MainWindow.mm's escape_monitor_ for the
     // same technique with a different event mask.
     void watch_clicks_()
     {
@@ -3339,17 +3380,16 @@ private:
             return;
         }
         MacosPopupSurfaceHandle* self = this;
-        monitor_ = [NSEvent
-            addLocalMonitorForEventsMatchingMask:(NSEventMaskLeftMouseDown |
-                                                  NSEventMaskRightMouseDown)
-                                          handler:^NSEvent*(NSEvent* event) {
-                                              if (event.window != self->panel_ &&
-                                                  self->on_dismiss_requested)
-                                              {
-                                                  self->on_dismiss_requested();
-                                              }
-                                              return event;
-                                          }];
+        monitor_ = [NSEvent addLocalMonitorForEventsMatchingMask:(NSEventMaskLeftMouseDown |
+                                                                  NSEventMaskRightMouseDown)
+                                                         handler:^NSEvent*(NSEvent* event) {
+                                                             if (event.window != self->panel_ &&
+                                                                 self->on_dismiss_requested)
+                                                             {
+                                                                 self->on_dismiss_requested();
+                                                             }
+                                                             return event;
+                                                         }];
     }
 
     void unwatch_clicks_()
@@ -3406,7 +3446,10 @@ std::unique_ptr<tk::AudioPlayer> Host::make_audio_player()
 std::unique_ptr<tk::AudioCapture> Host::make_audio_capture()
 {
     return tk::make_audio_capture_macos(
-        [this](std::function<void()> fn) { post_to_ui(std::move(fn)); });
+        [this](std::function<void()> fn)
+        {
+            post_to_ui(std::move(fn));
+        });
 }
 
 // Defined in video_macos.mm.
@@ -3422,8 +3465,7 @@ std::unique_ptr<tk::AudioPlayback> Host::make_audio_playback()
     return ::tk::make_audio_playback_macos();
 }
 
-EncodedImage Host::encode_for_send(const std::uint8_t* data, std::size_t len,
-                                   bool compress)
+EncodedImage Host::encode_for_send(const std::uint8_t* data, std::size_t len, bool compress)
 {
     EncodedImage out{};
     if (!data || len == 0)
@@ -3432,8 +3474,7 @@ EncodedImage Host::encode_for_send(const std::uint8_t* data, std::size_t len,
     }
 
     NSData* src = [NSData dataWithBytes:data length:len];
-    CGImageSourceRef src_ref =
-        CGImageSourceCreateWithData((__bridge CFDataRef)src, nullptr);
+    CGImageSourceRef src_ref = CGImageSourceCreateWithData((__bridge CFDataRef)src, nullptr);
     if (!src_ref)
     {
         return out;
@@ -3452,11 +3493,9 @@ EncodedImage Host::encode_for_send(const std::uint8_t* data, std::size_t len,
     const std::size_t raw_w = CGImageGetWidth(cg);
     const std::size_t raw_h = CGImageGetHeight(cg);
     int orientation = 1;
-    if (CFDictionaryRef props =
-            CGImageSourceCopyPropertiesAtIndex(src_ref, 0, nullptr))
+    if (CFDictionaryRef props = CGImageSourceCopyPropertiesAtIndex(src_ref, 0, nullptr))
     {
-        CFNumberRef n = (CFNumberRef)CFDictionaryGetValue(
-            props, kCGImagePropertyOrientation);
+        CFNumberRef n = (CFNumberRef)CFDictionaryGetValue(props, kCGImagePropertyOrientation);
         if (n)
         {
             CFNumberGetValue(n, kCFNumberIntType, &orientation);
@@ -3469,14 +3508,29 @@ EncodedImage Host::encode_for_send(const std::uint8_t* data, std::size_t len,
     CGAffineTransform orient_xf = CGAffineTransformIdentity;
     switch (orientation)
     {
-    case 2: orient_xf = CGAffineTransformMake(-1, 0, 0, 1, fw, 0); break;
-    case 3: orient_xf = CGAffineTransformMake(-1, 0, 0, -1, fw, fh); break;
-    case 4: orient_xf = CGAffineTransformMake(1, 0, 0, -1, 0, fh); break;
-    case 5: orient_xf = CGAffineTransformMake(0, -1, -1, 0, fh, fw); break;
-    case 6: orient_xf = CGAffineTransformMake(0, -1, 1, 0, 0, fw); break;
-    case 7: orient_xf = CGAffineTransformMake(0, 1, 1, 0, 0, 0); break;
-    case 8: orient_xf = CGAffineTransformMake(0, 1, -1, 0, fh, 0); break;
-    default: break;
+    case 2:
+        orient_xf = CGAffineTransformMake(-1, 0, 0, 1, fw, 0);
+        break;
+    case 3:
+        orient_xf = CGAffineTransformMake(-1, 0, 0, -1, fw, fh);
+        break;
+    case 4:
+        orient_xf = CGAffineTransformMake(1, 0, 0, -1, 0, fh);
+        break;
+    case 5:
+        orient_xf = CGAffineTransformMake(0, -1, -1, 0, fh, fw);
+        break;
+    case 6:
+        orient_xf = CGAffineTransformMake(0, -1, 1, 0, 0, fw);
+        break;
+    case 7:
+        orient_xf = CGAffineTransformMake(0, 1, 1, 0, 0, 0);
+        break;
+    case 8:
+        orient_xf = CGAffineTransformMake(0, 1, -1, 0, fh, 0);
+        break;
+    default:
+        break;
     }
     const bool swap_wh = orientation >= 5 && orientation <= 8;
     const std::size_t src_w = swap_wh ? raw_h : raw_w;
@@ -3514,12 +3568,10 @@ EncodedImage Host::encode_for_send(const std::uint8_t* data, std::size_t len,
     std::size_t dst_w = src_w, dst_h = src_h;
     if (src_w > kMaxW || src_h > kMaxH)
     {
-        double s = std::min({1.0, static_cast<double>(kMaxW) / src_w,
-                             static_cast<double>(kMaxH) / src_h});
-        dst_w = std::max<std::size_t>(
-            1, static_cast<std::size_t>(std::round(src_w * s)));
-        dst_h = std::max<std::size_t>(
-            1, static_cast<std::size_t>(std::round(src_h * s)));
+        double s =
+            std::min({1.0, static_cast<double>(kMaxW) / src_w, static_cast<double>(kMaxH) / src_h});
+        dst_w = std::max<std::size_t>(1, static_cast<std::size_t>(std::round(src_w * s)));
+        dst_h = std::max<std::size_t>(1, static_cast<std::size_t>(std::round(src_h * s)));
     }
 
     // Draw into a fresh BGRA bitmap context at the target size; CG handles
@@ -3527,9 +3579,9 @@ EncodedImage Host::encode_for_send(const std::uint8_t* data, std::size_t len,
     CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-anon-enum-enum-conversion"
-    CGContextRef bm = CGBitmapContextCreate(nullptr, dst_w, dst_h, 8, 0, cs,
-                                            kCGImageAlphaPremultipliedFirst |
-                                                kCGBitmapByteOrder32Little);
+    CGContextRef bm =
+        CGBitmapContextCreate(nullptr, dst_w, dst_h, 8, 0, cs,
+                              kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little);
 #pragma clang diagnostic pop
     CGColorSpaceRelease(cs);
     if (!bm)
@@ -3539,8 +3591,7 @@ EncodedImage Host::encode_for_send(const std::uint8_t* data, std::size_t len,
         return EncodedImage{};
     }
     CGContextSetInterpolationQuality(bm, kCGInterpolationHigh);
-    CGContextScaleCTM(bm, static_cast<CGFloat>(dst_w) / src_w,
-                      static_cast<CGFloat>(dst_h) / src_h);
+    CGContextScaleCTM(bm, static_cast<CGFloat>(dst_w) / src_w, static_cast<CGFloat>(dst_h) / src_h);
     CGContextConcatCTM(bm, orient_xf);
     CGContextDrawImage(bm, CGRectMake(0, 0, raw_w, raw_h), cg);
     CGImageRef scaled = CGBitmapContextCreateImage(bm);
@@ -3553,9 +3604,8 @@ EncodedImage Host::encode_for_send(const std::uint8_t* data, std::size_t len,
     }
 
     CFMutableDataRef out_data = CFDataCreateMutable(nullptr, 0);
-    CGImageDestinationRef dst =
-        CGImageDestinationCreateWithData(
-            out_data, (__bridge CFStringRef)UTTypeJPEG.identifier, 1, nullptr);
+    CGImageDestinationRef dst = CGImageDestinationCreateWithData(
+        out_data, (__bridge CFStringRef)UTTypeJPEG.identifier, 1, nullptr);
     if (!dst)
     {
         CGImageRelease(scaled);
@@ -3589,7 +3639,9 @@ void Host::set_clipboard_text(std::string_view text)
 {
     NSString* str = [NSString stringWithUTF8String:std::string(text).c_str()];
     if (!str)
+    {
         return;
+    }
     NSPasteboard* pb = [NSPasteboard generalPasteboard];
     [pb clearContents];
     [pb setString:str forType:NSPasteboardTypeString];
@@ -3598,17 +3650,22 @@ void Host::set_clipboard_text(std::string_view text)
 bool Host::set_clipboard_image(std::span<const std::uint8_t> encoded_bytes)
 {
     if (encoded_bytes.empty())
+    {
         return false;
-    NSData* data = [NSData dataWithBytes:encoded_bytes.data()
-                                 length:encoded_bytes.size()];
+    }
+    NSData* data = [NSData dataWithBytes:encoded_bytes.data() length:encoded_bytes.size()];
     NSImage* img = [[NSImage alloc] initWithData:data];
     if (!img)
+    {
         return false;
+    }
     // writeObjects: uses NSPasteboardItem promises internally, which some apps
     // can't paste. Convert to TIFF explicitly and use the classic API instead.
     NSData* tiff = [img TIFFRepresentation];
     if (!tiff || tiff.length == 0)
+    {
         return false;
+    }
     NSPasteboard* pb = [NSPasteboard generalPasteboard];
     [pb clearContents];
     [pb declareTypes:@[ NSPasteboardTypeTIFF ] owner:nil];
@@ -3623,22 +3680,18 @@ std::vector<tk::DeviceListing> Host::enumerate_cameras() const
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
     NSArray<AVCaptureDeviceType>* types =
-        @[AVCaptureDeviceTypeBuiltInWideAngleCamera,
-          AVCaptureDeviceTypeExternalUnknown];
-    AVCaptureDeviceDiscoverySession* session =
-        [AVCaptureDeviceDiscoverySession
-            discoverySessionWithDeviceTypes:types
-                                  mediaType:AVMediaTypeVideo
-                                   position:AVCaptureDevicePositionUnspecified];
+        @[ AVCaptureDeviceTypeBuiltInWideAngleCamera, AVCaptureDeviceTypeExternalUnknown ];
+    AVCaptureDeviceDiscoverySession* session = [AVCaptureDeviceDiscoverySession
+        discoverySessionWithDeviceTypes:types
+                              mediaType:AVMediaTypeVideo
+                               position:AVCaptureDevicePositionUnspecified];
 #pragma clang diagnostic pop
     for (AVCaptureDevice* dev in session.devices)
     {
         tk::DeviceListing entry;
-        entry.id           = dev.uniqueID.UTF8String
-                                 ? std::string(dev.uniqueID.UTF8String) : "";
-        entry.display_name = dev.localizedName.UTF8String
-                                 ? std::string(dev.localizedName.UTF8String)
-                                 : entry.id;
+        entry.id = dev.uniqueID.UTF8String ? std::string(dev.uniqueID.UTF8String) : "";
+        entry.display_name =
+            dev.localizedName.UTF8String ? std::string(dev.localizedName.UTF8String) : entry.id;
         result.push_back(std::move(entry));
     }
     return result;
@@ -3650,22 +3703,18 @@ std::vector<tk::DeviceListing> Host::enumerate_audio_inputs() const
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
     NSArray<AVCaptureDeviceType>* types =
-        @[AVCaptureDeviceTypeBuiltInMicrophone,
-          AVCaptureDeviceTypeExternalUnknown];
-    AVCaptureDeviceDiscoverySession* session =
-        [AVCaptureDeviceDiscoverySession
-            discoverySessionWithDeviceTypes:types
-                                  mediaType:AVMediaTypeAudio
-                                   position:AVCaptureDevicePositionUnspecified];
+        @[ AVCaptureDeviceTypeBuiltInMicrophone, AVCaptureDeviceTypeExternalUnknown ];
+    AVCaptureDeviceDiscoverySession* session = [AVCaptureDeviceDiscoverySession
+        discoverySessionWithDeviceTypes:types
+                              mediaType:AVMediaTypeAudio
+                               position:AVCaptureDevicePositionUnspecified];
 #pragma clang diagnostic pop
     for (AVCaptureDevice* dev in session.devices)
     {
         tk::DeviceListing entry;
-        entry.id           = dev.uniqueID.UTF8String
-                                 ? std::string(dev.uniqueID.UTF8String) : "";
-        entry.display_name = dev.localizedName.UTF8String
-                                 ? std::string(dev.localizedName.UTF8String)
-                                 : entry.id;
+        entry.id = dev.uniqueID.UTF8String ? std::string(dev.uniqueID.UTF8String) : "";
+        entry.display_name =
+            dev.localizedName.UTF8String ? std::string(dev.localizedName.UTF8String) : entry.id;
         result.push_back(std::move(entry));
     }
     return result;
@@ -3675,50 +3724,54 @@ std::vector<tk::DeviceListing> Host::enumerate_audio_outputs() const
 {
     std::vector<tk::DeviceListing> result;
 
-    AudioObjectPropertyAddress addr{kAudioHardwarePropertyDevices,
-                                    kAudioObjectPropertyScopeGlobal,
+    AudioObjectPropertyAddress addr{kAudioHardwarePropertyDevices, kAudioObjectPropertyScopeGlobal,
                                     kAudioObjectPropertyElementMain};
     UInt32 data_size = 0;
-    if (AudioObjectGetPropertyDataSize(kAudioObjectSystemObject,
-                                       &addr, 0, nullptr, &data_size) != noErr)
+    if (AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &addr, 0, nullptr, &data_size) !=
+        noErr)
+    {
         return result;
+    }
 
     std::vector<AudioDeviceID> device_ids(data_size / sizeof(AudioDeviceID));
-    if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &addr, 0, nullptr,
-                                   &data_size, device_ids.data()) != noErr)
+    if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &addr, 0, nullptr, &data_size,
+                                   device_ids.data()) != noErr)
+    {
         return result;
+    }
 
     for (AudioDeviceID dev_id : device_ids)
     {
         // Skip devices that have no output streams.
-        AudioObjectPropertyAddress streams_addr{
-            kAudioDevicePropertyStreams,
-            kAudioDevicePropertyScopeOutput,
-            kAudioObjectPropertyElementMain};
+        AudioObjectPropertyAddress streams_addr{kAudioDevicePropertyStreams,
+                                                kAudioDevicePropertyScopeOutput,
+                                                kAudioObjectPropertyElementMain};
         UInt32 streams_size = 0;
-        if (AudioObjectGetPropertyDataSize(dev_id, &streams_addr, 0, nullptr,
-                                           &streams_size) != noErr ||
+        if (AudioObjectGetPropertyDataSize(dev_id, &streams_addr, 0, nullptr, &streams_size) !=
+                noErr ||
             streams_size == 0)
+        {
             continue;
+        }
 
         // Retrieve the device name as a CFStringRef.
-        AudioObjectPropertyAddress name_addr{
-            kAudioDevicePropertyDeviceNameCFString,
-            kAudioObjectPropertyScopeGlobal,
-            kAudioObjectPropertyElementMain};
+        AudioObjectPropertyAddress name_addr{kAudioDevicePropertyDeviceNameCFString,
+                                             kAudioObjectPropertyScopeGlobal,
+                                             kAudioObjectPropertyElementMain};
         CFStringRef name_ref = nullptr;
         UInt32 name_size = sizeof(name_ref);
-        if (AudioObjectGetPropertyData(dev_id, &name_addr, 0, nullptr,
-                                       &name_size, &name_ref) != noErr)
+        if (AudioObjectGetPropertyData(dev_id, &name_addr, 0, nullptr, &name_size, &name_ref) !=
+            noErr)
+        {
             continue;
+        }
 
         tk::DeviceListing entry;
         entry.id = std::to_string(dev_id);
         char name_buf[256] = {};
         if (name_ref)
         {
-            CFStringGetCString(name_ref, name_buf, sizeof(name_buf),
-                               kCFStringEncodingUTF8);
+            CFStringGetCString(name_ref, name_buf, sizeof(name_buf), kCFStringEncodingUTF8);
             CFRelease(name_ref);
         }
         entry.display_name = name_buf[0] ? name_buf : entry.id;
@@ -3735,16 +3788,11 @@ void Host::relayout()
     }
     NSRect b = view_.bounds;
     LayoutCtx ctx{*factory_, *theme_};
-    Rect bounds{0, 0, static_cast<float>(b.size.width),
-                static_cast<float>(b.size.height)};
+    Rect bounds{0, 0, static_cast<float>(b.size.width), static_cast<float>(b.size.height)};
     begin_relayout_pass_();
     root_->measure(ctx, {bounds.w, bounds.h});
     root_->arrange(ctx, bounds);
     end_relayout_pass_();
-    if (on_layout_)
-    {
-        on_layout_();
-    }
     for (auto& cb : layout_listeners_)
     {
         cb();
@@ -3765,7 +3813,7 @@ void Host::on_draw(CGContextRef ctx)
     {
         return;
     }
-    // Explicit scale, not read back from ctx's own CTM: MainWindowController
+    // Explicit scale, not read back from ctx's own CTM: MainWindow
     // sets content.wantsLayer = YES on this view's ancestor for other chrome,
     // which forces this view into inherited layer-backing even though it
     // sets its own wantsLayer = NO — and the CGContext -drawRect: receives in
@@ -3823,8 +3871,7 @@ void Host::on_pointer_down(NSPoint p)
     // free to Host::queue_for_deletion() (see set_root() above), and
     // pressed_widget_ is a weak_ptr, so either way this stays safe without
     // the extra bookkeeping this used to require.
-    dispatch_pointer_down(
-        {static_cast<float>(p.x), static_cast<float>(p.y)});
+    dispatch_pointer_down({static_cast<float>(p.x), static_cast<float>(p.y)});
 }
 
 void Host::on_pointer_up(NSPoint p)
@@ -3834,8 +3881,7 @@ void Host::on_pointer_up(NSPoint p)
 
 void Host::on_pointer_move(NSPoint p)
 {
-    dispatch_pointer_move(
-        {static_cast<float>(p.x), static_cast<float>(p.y)});
+    dispatch_pointer_move({static_cast<float>(p.x), static_cast<float>(p.y)});
 }
 
 void Host::on_pointer_leave()
@@ -3850,9 +3896,8 @@ void Host::on_wheel(NSPoint p, CGFloat dx, CGFloat dy, bool is_touchpad)
     {
         return;
     }
-    if (dispatch_wheel(
-            {static_cast<float>(p.x), static_cast<float>(p.y)},
-            static_cast<float>(dx), static_cast<float>(dy), is_touchpad))
+    if (dispatch_wheel({static_cast<float>(p.x), static_cast<float>(p.y)}, static_cast<float>(dx),
+                       static_cast<float>(dy), is_touchpad))
     {
         request_repaint();
         on_pointer_move(p);
@@ -3865,7 +3910,9 @@ void Host::on_right_click(NSPoint p)
     const bool in_popup = popup_contains(pt);
     dispatch_right_click(pt);
     if (!in_popup && on_right_click_)
+    {
         on_right_click_(pt);
+    }
 }
 
 bool Host::on_key_down(const KeyEvent& event)
@@ -3886,8 +3933,7 @@ const char* mime_from_extension_lower(NSString* ext_lower)
     {
         return "image/png";
     }
-    if ([ext_lower isEqualToString:@"jpg"] ||
-        [ext_lower isEqualToString:@"jpeg"])
+    if ([ext_lower isEqualToString:@"jpg"] || [ext_lower isEqualToString:@"jpeg"])
     {
         return "image/jpeg";
     }
@@ -3989,16 +4035,14 @@ bool Host::ingest_native_file_drop(NSPasteboard* pb, tk::Point pos)
         NSString* path = url.path;
         NSError* err = nil;
         NSDictionary<NSFileAttributeKey, id>* attrs =
-            [NSFileManager.defaultManager attributesOfItemAtPath:path
-                                                           error:&err];
+            [NSFileManager.defaultManager attributesOfItemAtPath:path error:&err];
         if (!attrs)
         {
             if (on_file_drop_error_)
             {
-                std::string reason =
-                    err.localizedDescription.UTF8String
-                        ? std::string(err.localizedDescription.UTF8String)
-                        : tk::tr("Could not read file");
+                std::string reason = err.localizedDescription.UTF8String
+                                         ? std::string(err.localizedDescription.UTF8String)
+                                         : tk::tr("Could not read file");
                 on_file_drop_error_(std::move(reason));
             }
             continue;
@@ -4009,32 +4053,26 @@ bool Host::ingest_native_file_drop(NSPasteboard* pb, tk::Point pos)
             continue;
         }
 
-        NSData* data = [NSData dataWithContentsOfFile:path
-                                              options:0
-                                                error:&err];
+        NSData* data = [NSData dataWithContentsOfFile:path options:0 error:&err];
         if (!data || data.length == 0)
         {
             if (on_file_drop_error_)
             {
-                std::string reason =
-                    err.localizedDescription.UTF8String
-                        ? std::string(err.localizedDescription.UTF8String)
-                        : tk::tr("Could not read file");
+                std::string reason = err.localizedDescription.UTF8String
+                                         ? std::string(err.localizedDescription.UTF8String)
+                                         : tk::tr("Could not read file");
                 on_file_drop_error_(std::move(reason));
             }
             continue;
         }
 
         std::string mime = mime_for_url(url);
-        std::vector<std::uint8_t> bytes(
-            static_cast<const std::uint8_t*>(data.bytes),
-            static_cast<const std::uint8_t*>(data.bytes) + data.length);
-        std::string filename =
-            path.lastPathComponent.UTF8String
-                ? std::string(path.lastPathComponent.UTF8String)
-                : std::string{};
-        tk::FileDropPayload payload{std::move(bytes), std::move(mime),
-                                    std::move(filename)};
+        std::vector<std::uint8_t> bytes(static_cast<const std::uint8_t*>(data.bytes),
+                                        static_cast<const std::uint8_t*>(data.bytes) + data.length);
+        std::string filename = path.lastPathComponent.UTF8String
+                                   ? std::string(path.lastPathComponent.UTF8String)
+                                   : std::string{};
+        tk::FileDropPayload payload{std::move(bytes), std::move(mime), std::move(filename)};
         if (dispatch_file_drop(pos, payload))
         {
             any = true;
@@ -4049,18 +4087,16 @@ bool Host::ingest_native_file_drop(NSPasteboard* pb, tk::Point pos)
     NSData* png = [pb dataForType:NSPasteboardTypePNG];
     if (png && png.length > 0 && png.length <= kMaxDroppedImageBytes)
     {
-        std::vector<std::uint8_t> bytes(
-            static_cast<const std::uint8_t*>(png.bytes),
-            static_cast<const std::uint8_t*>(png.bytes) + png.length);
+        std::vector<std::uint8_t> bytes(static_cast<const std::uint8_t*>(png.bytes),
+                                        static_cast<const std::uint8_t*>(png.bytes) + png.length);
         tk::FileDropPayload payload{std::move(bytes), "image/png", {}};
         return dispatch_file_drop(pos, payload) != nullptr;
     }
     NSData* jpg = [pb dataForType:@"public.jpeg"];
     if (jpg && jpg.length > 0 && jpg.length <= kMaxDroppedImageBytes)
     {
-        std::vector<std::uint8_t> bytes(
-            static_cast<const std::uint8_t*>(jpg.bytes),
-            static_cast<const std::uint8_t*>(jpg.bytes) + jpg.length);
+        std::vector<std::uint8_t> bytes(static_cast<const std::uint8_t*>(jpg.bytes),
+                                        static_cast<const std::uint8_t*>(jpg.bytes) + jpg.length);
         tk::FileDropPayload payload{std::move(bytes), "image/jpeg", {}};
         return dispatch_file_drop(pos, payload) != nullptr;
     }
@@ -4074,8 +4110,7 @@ bool Host::ingest_native_file_drop(NSPasteboard* pb, tk::Point pos)
 
 Surface::Surface(const Theme& theme, bool transparent)
 {
-    TKSurfaceView* view =
-        [[TKSurfaceView alloc] initWithFrame:NSMakeRect(0, 0, 100, 100)];
+    TKSurfaceView* view = [[TKSurfaceView alloc] initWithFrame:NSMakeRect(0, 0, 100, 100)];
     host_ = std::make_unique<Host>(view, theme, transparent);
     view.hostPtr = host_.get();
     view.transparent = transparent ? YES : NO;
@@ -4148,18 +4183,19 @@ void Surface::set_theme(const Theme& t)
 
 void Surface::apply_scale_change(float scale)
 {
-    if (Widget* r = root()) r->apply_scale_change(scale);
-    if (on_scale_changed_) on_scale_changed_(scale);
+    if (Widget* r = root())
+    {
+        r->apply_scale_change(scale);
+    }
+    if (on_scale_changed_)
+    {
+        on_scale_changed_(scale);
+    }
 }
 
 void Surface::set_on_scale_changed(std::function<void(float)> cb)
 {
     on_scale_changed_ = std::move(cb);
-}
-
-void Surface::set_on_layout(std::function<void()> cb)
-{
-    host_->set_on_layout(std::move(cb));
 }
 
 void Surface::add_layout_listener(std::function<void()> cb)

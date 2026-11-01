@@ -30,9 +30,15 @@ protected:
 public:
     // A font change alters measure(): re-measure (the layout itself rebuilds
     // via CachedTextLayout).
-    void on_fonts_changed() override { invalidate_cache(); }
+    void on_fonts_changed() override
+    {
+        invalidate_cache();
+    }
 
-    FontRole role() const { return role_; }
+    FontRole role() const
+    {
+        return role_;
+    }
 
     Label& set_text(std::string t)
     {
@@ -49,6 +55,19 @@ public:
     Label& set_colour(std::optional<Color> c)
     {
         colour_ = c;
+        return *this;
+    }
+    // A theme-resolved colour used while no explicit colour is set, so the
+    // label follows theme changes (including High Contrast).
+    enum class Tone
+    {
+        Normal,
+        Error,  // palette.text_error
+        Notice, // palette.notice_text
+    };
+    Label& set_tone(Tone t)
+    {
+        tone_ = t;
         return *this;
     }
     Label& set_halign(TextHAlign a)
@@ -102,7 +121,8 @@ private:
 
     std::string text_;
     FontRole role_;
-    std::optional<Color> colour_; // null = theme.text_primary
+    std::optional<Color> colour_; // null = by tone_
+    Tone tone_ = Tone::Normal;
     TextHAlign halign_ = TextHAlign::Leading;
     bool wrap_ = false;
     TextTrim trim_ = TextTrim::None;
@@ -126,8 +146,7 @@ public:
     };
 
 protected:
-    explicit Separator(Orientation o = Orientation::Horizontal)
-        : orientation_(o)
+    explicit Separator(Orientation o = Orientation::Horizontal) : orientation_(o)
     {
     }
     TK_WIDGET_FACTORY_FRIEND(Separator)
@@ -304,8 +323,7 @@ public:
     // raw glyph test hook (see set_accessible_name()).
     std::string focus_tooltip_text() const override
     {
-        const bool icon_only = variant_ == Variant::Icon ||
-                               (!icon_svg_.empty() && !icon_leading_);
+        const bool icon_only = variant_ == Variant::Icon || (!icon_svg_.empty() && !icon_leading_);
         return icon_only ? accessible_name_ : std::string{};
     }
 
@@ -382,11 +400,14 @@ private:
 class ToggleButton : public Button
 {
 protected:
-    explicit ToggleButton(std::string label,
-                          Variant variant = Variant::Icon)
+    explicit ToggleButton(std::string label, Variant variant = Variant::Icon)
         : Button(std::move(label), {}, variant)
     {
-        Widget::set_on_click([this] { toggle_(); });
+        Widget::set_on_click(
+            [this]
+            {
+                toggle_();
+            });
     }
     TK_WIDGET_FACTORY_FRIEND(ToggleButton)
 
@@ -474,7 +495,10 @@ public:
     // root-broadcast exposure applies here.
     bool on_key_down(const KeyEvent& e) override
     {
-        if (!enabled_ || !has_focus()) return false;
+        if (!enabled_ || !has_focus())
+        {
+            return false;
+        }
         if (e.key == Key::Enter || e.key == Key::Space)
         {
             checked_ = !checked_;
@@ -511,7 +535,9 @@ public:
     bool access_default_action() override
     {
         if (!enabled_)
+        {
             return false;
+        }
         checked_ = !checked_;
         if (on_change)
         {
@@ -543,13 +569,26 @@ class SwitchButton : public Widget
 {
 protected:
     explicit SwitchButton(std::string label, bool checked = false)
-        : label_(std::move(label)), checked_(checked) { }
+        : label_(std::move(label)), checked_(checked)
+    {
+    }
     TK_WIDGET_FACTORY_FRIEND(SwitchButton)
 
 public:
-    SwitchButton& set_label(std::string l) { label_ = std::move(l); cached_.reset(); return *this; }
-    void set_checked(bool c) { checked_ = c; }
-    bool checked() const { return checked_; }
+    SwitchButton& set_label(std::string l)
+    {
+        label_ = std::move(l);
+        cached_.reset();
+        return *this;
+    }
+    void set_checked(bool c)
+    {
+        checked_ = c;
+    }
+    bool checked() const
+    {
+        return checked_;
+    }
 
     std::function<void(bool)> on_change; // fires with the new state on user click
 
@@ -568,7 +607,10 @@ public:
     // root-broadcast exposure applies here.
     bool on_key_down(const KeyEvent& e) override
     {
-        if (!enabled_ || !has_focus()) return false;
+        if (!enabled_ || !has_focus())
+        {
+            return false;
+        }
         if (e.key == Key::Enter || e.key == Key::Space)
         {
             checked_ = !checked_;
@@ -601,7 +643,9 @@ public:
     bool access_default_action() override
     {
         if (!enabled_)
+        {
             return false;
+        }
         checked_ = !checked_;
         if (on_change)
         {
@@ -612,12 +656,12 @@ public:
     }
 
 private:
-    std::string                 label_;
-    bool                        checked_ = false;
-    bool                        hovered_ = false;
-    bool                        pressed_ = false;
+    std::string label_;
+    bool checked_ = false;
+    bool hovered_ = false;
+    bool pressed_ = false;
     CachedTextLayout cached_;
-    Size                        cached_size_{};
+    Size cached_size_{};
 };
 
 // A thin, non-interactive horizontal progress indicator. Determinate mode
@@ -642,8 +686,14 @@ public:
     // Switches to indeterminate mode (a looping sweep). This is the
     // default until set_progress() is first called.
     void set_indeterminate();
-    bool indeterminate() const { return indeterminate_; }
-    float progress() const { return value_; }
+    bool indeterminate() const
+    {
+        return indeterminate_;
+    }
+    float progress() const
+    {
+        return value_;
+    }
 
     // Optional caption drawn above the track (e.g. "12,431 messages —
     // back to Mar 2019"). Empty (the default) draws no caption row.
@@ -652,12 +702,21 @@ public:
     Size measure(LayoutCtx&, Size constraints) override;
     void paint(PaintCtx&) override;
 
-    bool focusable() const override { return false; }
+    bool focusable() const override
+    {
+        return false;
+    }
 
     // The caption doubles as the accessible name; an indeterminate bar
     // reports no value (screen readers then just say "busy").
-    Role access_role() const override { return Role::ProgressBar; }
-    std::string access_name() const override { return label_; }
+    Role access_role() const override
+    {
+        return Role::ProgressBar;
+    }
+    std::string access_name() const override
+    {
+        return label_;
+    }
     AccessState access_state() const override
     {
         AccessState s;
@@ -667,18 +726,20 @@ public:
     AccessValue access_value() const override
     {
         if (indeterminate_)
+        {
             return {};
+        }
         return AccessValue{true, 0.0, 100.0, static_cast<double>(value_) * 100.0};
     }
 
 private:
-    bool  indeterminate_ = true;
+    bool indeterminate_ = true;
     float value_ = 0.0f;
     std::chrono::steady_clock::time_point start_time_{std::chrono::steady_clock::now()};
 
-    std::string                 label_;
+    std::string label_;
     CachedTextLayout label_layout_;
-    Size                        label_size_{};
+    Size label_size_{};
 };
 
 } // namespace tk

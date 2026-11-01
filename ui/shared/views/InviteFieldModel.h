@@ -29,23 +29,23 @@ namespace tesseract::views
 
 struct InviteFieldPill
 {
-    int         start = 0; // byte offset of the U+FFFC placeholder
+    int start = 0; // byte offset of the U+FFFC placeholder
     std::string user_id;
     std::string display_name;
 };
 
 struct InviteFieldToken
 {
-    int         start = 0; // byte range [start, end) in text()
-    int         end   = 0;
+    int start = 0; // byte range [start, end) in text()
+    int end = 0;
     std::string text;
 };
 
 struct InviteFieldParse
 {
-    std::vector<InviteFieldPill>  pills;
+    std::vector<InviteFieldPill> pills;
     std::vector<InviteFieldToken> committed;
-    InviteFieldToken              query;
+    InviteFieldToken query;
 };
 
 // Byte length of a pill placeholder (U+FFFC) in text().
@@ -56,8 +56,7 @@ inline constexpr int kInvitePillBytes = 3;
 // caret's byte offset (cursor_byte_pos()); a caret outside [0, size] is
 // treated as end-of-text.
 InviteFieldParse parse_invite_field(std::string_view text,
-                                    const std::vector<tesseract::MentionSeg>& segs,
-                                    int cursor);
+                                    const std::vector<tesseract::MentionSeg>& segs, int cursor);
 
 // A complete mxid: "@localpart:server" with both parts non-empty and no
 // whitespace. Loose by design (the homeserver is the authority) — matches

@@ -6,12 +6,18 @@
 #include <fstream>
 #include <string>
 #ifdef _WIN32
-#  include <process.h>
-#  define getpid _getpid
-static int setenv(const char* n, const char* v, int) { return _putenv_s(n, v); }
-static int unsetenv(const char* n) { return _putenv_s(n, ""); }
+#include <process.h>
+#define getpid _getpid
+static int setenv(const char* n, const char* v, int)
+{
+    return _putenv_s(n, v);
+}
+static int unsetenv(const char* n)
+{
+    return _putenv_s(n, "");
+}
 #else
-#  include <unistd.h>
+#include <unistd.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -19,9 +25,7 @@ namespace fs = std::filesystem;
 struct TmpConfig
 {
     fs::path dir;
-    TmpConfig()
-        : dir(fs::temp_directory_path() /
-              ("tss_test_" + std::to_string(::getpid())))
+    TmpConfig() : dir(fs::temp_directory_path() / ("tss_test_" + std::to_string(::getpid())))
     {
         fs::create_directories(dir);
         ::setenv("XDG_CONFIG_HOME", dir.string().c_str(), 1);
@@ -39,8 +43,7 @@ struct TmpConfig
     }
 };
 
-TEST_CASE("SecretStore: load returns nullopt for unknown user",
-          "[session][secret][keychain]")
+TEST_CASE("SecretStore: load returns nullopt for unknown user", "[session][secret][keychain]")
 {
     auto result = tesseract::SecretStore::load("@nonexistent_xyz:example.org");
     CHECK(!result.has_value());
@@ -48,13 +51,14 @@ TEST_CASE("SecretStore: load returns nullopt for unknown user",
 
 TEST_CASE("SecretStore round-trip: save and load", "[session][secret][roundtrip][keychain]")
 {
-    const std::string uid  = "@roundtrip_test:example.org";
-    const std::string json =
-        R"({"user_id":"@roundtrip_test:example.org","access_token":"t0ken"})";
+    const std::string uid = "@roundtrip_test:example.org";
+    const std::string json = R"({"user_id":"@roundtrip_test:example.org","access_token":"t0ken"})";
 
     bool saved = tesseract::SecretStore::save(uid, json);
     if (!saved)
+    {
         return; // skip: backend not available (no running secret service daemon)
+    }
 
     auto loaded = tesseract::SecretStore::load(uid);
     REQUIRE(loaded.has_value());
@@ -71,9 +75,8 @@ TEST_CASE("SessionStore: save_account and load_account round-trip",
           "[session][integration][keychain]")
 {
     TmpConfig cfg;
-    const std::string uid  = "@alice:example.org";
-    const std::string json =
-        R"({"user_id":"@alice:example.org","access_token":"tok_abc"})";
+    const std::string uid = "@alice:example.org";
+    const std::string json = R"({"user_id":"@alice:example.org","access_token":"tok_abc"})";
 
     REQUIRE(tesseract::SessionStore::save_account(uid, json));
     auto loaded = tesseract::SessionStore::load_account(uid);
@@ -88,9 +91,8 @@ TEST_CASE("SessionStore: load_account migrates legacy plaintext to SecretStore",
           "[session][migration][keychain]")
 {
     TmpConfig cfg;
-    const std::string uid  = "@bob:matrix.org";
-    const std::string json =
-        R"({"user_id":"@bob:matrix.org","access_token":"tok_xyz"})";
+    const std::string uid = "@bob:matrix.org";
+    const std::string json = R"({"user_id":"@bob:matrix.org","access_token":"tok_xyz"})";
 
     // Pre-clear any stale SecretStore entry left by other tests using the
     // same UID, so we exercise the plaintext-fallback + migration path.
@@ -120,13 +122,11 @@ TEST_CASE("SessionStore: load_account migrates legacy plaintext to SecretStore",
     tesseract::SessionStore::clear_account(uid);
 }
 
-TEST_CASE("SessionStore: clear_account removes SecretStore entry",
-          "[session][migration][keychain]")
+TEST_CASE("SessionStore: clear_account removes SecretStore entry", "[session][migration][keychain]")
 {
     TmpConfig cfg;
-    const std::string uid  = "@carol:server.net";
-    const std::string json =
-        R"({"user_id":"@carol:server.net","access_token":"tok_qrs"})";
+    const std::string uid = "@carol:server.net";
+    const std::string json = R"({"user_id":"@carol:server.net","access_token":"tok_qrs"})";
 
     REQUIRE(tesseract::SessionStore::save_account(uid, json));
     tesseract::SessionStore::clear_account(uid);

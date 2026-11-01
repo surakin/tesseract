@@ -13,8 +13,7 @@ namespace
 {
 
 // An unread room with a definite recency. unread_count > 0, not muted.
-RoomInfo unread_room(const std::string& id, std::uint64_t ts,
-                     std::uint64_t unread = 1)
+RoomInfo unread_room(const std::string& id, std::uint64_t ts, std::uint64_t unread = 1)
 {
     RoomInfo r;
     r.id = id;
@@ -54,7 +53,9 @@ TEST_CASE("prefetch set: all unread non-muted non-current rooms")
     // Both the quiet-unread and the notifying room must be included.
     REQUIRE(sel.ids.size() == 2);
     auto has = [&](const std::string& id)
-    { return std::find(sel.ids.begin(), sel.ids.end(), id) != sel.ids.end(); };
+    {
+        return std::find(sel.ids.begin(), sel.ids.end(), id) != sel.ids.end();
+    };
     REQUIRE(has("!unread:ex.org"));
     REQUIRE(has("!notifying:ex.org"));
 }
@@ -64,8 +65,10 @@ TEST_CASE("prefetch set: cap drops the least-recently-active rooms")
     std::vector<RoomInfo> rooms;
     // 21 unread rooms with ascending timestamps r0..r20 (r20 most recent).
     for (int i = 0; i < 21; ++i)
+    {
         rooms.push_back(unread_room("!r" + std::to_string(i) + ":ex.org",
                                     1'000 + static_cast<std::uint64_t>(i)));
+    }
 
     auto sel = compute_unread_prefetch_set(rooms, "", 20);
 
@@ -73,7 +76,9 @@ TEST_CASE("prefetch set: cap drops the least-recently-active rooms")
     // Most-recently-active first; the oldest (r0) is the one dropped.
     REQUIRE(sel.ids.front() == "!r20:ex.org");
     for (const auto& id : sel.ids)
+    {
         REQUIRE(id != "!r0:ex.org");
+    }
 }
 
 TEST_CASE("prefetch set: fingerprint is stable across reorder only")

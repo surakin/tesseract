@@ -12,15 +12,19 @@ use std::pin::Pin;
 use std::time::Duration;
 use url::Url;
 
-
 /// Outcome of classifying a piece of text as a maps link.
 #[derive(Debug, Clone, PartialEq)]
 pub enum MapsLinkKind {
     NotAMapsLink,
     /// Coordinates were extracted directly from the URL — no network needed.
-    Direct { lat: f64, lon: f64 },
+    Direct {
+        lat: f64,
+        lon: f64,
+    },
     /// A shortlink that needs an HTTP redirect-follow to resolve coordinates.
-    Shortlink { url: String },
+    Shortlink {
+        url: String,
+    },
 }
 
 /// Classify `text` (expected to be the entire trimmed composed message body)

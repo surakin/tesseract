@@ -2,7 +2,8 @@
 #include <memory>
 #include <string>
 
-namespace tesseract {
+namespace tesseract
+{
 
 /// Abstract representation of a Matrix media source — either a plain mxc://
 /// URI or an encrypted attachment.  Use shared_ptr<const MediaSource> for
@@ -33,8 +34,7 @@ public:
 
     /// Factory: encrypted source.  `url` is the ciphertext mxc://, `json` is
     /// the full JSON MediaSource blob (as produced by the Rust bridge).
-    static std::shared_ptr<MediaSource> encrypted(std::string url,
-                                                   std::string json);
+    static std::shared_ptr<MediaSource> encrypted(std::string url, std::string json);
 };
 
 /// Shared ownership of an immutable MediaSource. nullptr = absent source.

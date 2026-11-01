@@ -32,17 +32,25 @@ namespace
 
 struct TtImg : tk::Image
 {
-    int width() const override { return 1; }
-    int height() const override { return 1; }
-    std::size_t memory_bytes() const override { return 4; }
+    int width() const override
+    {
+        return 1;
+    }
+    int height() const override
+    {
+        return 1;
+    }
+    std::size_t memory_bytes() const override
+    {
+        return 4;
+    }
 };
 
 struct TtShell : tesseract::test::TestShellBase
 {
     ~TtShell() override
     {
-        pool_.wait_idle(std::chrono::seconds(5));
-        mut_pool_.wait_idle(std::chrono::seconds(5));
+        wait_pools_idle();
         main_room_pane_.reset();
         pool_.drain();
         mut_pool_.drain();
@@ -52,17 +60,37 @@ struct TtShell : tesseract::test::TestShellBase
     {
         delayed.emplace_back(ms, std::move(fn));
     }
-    void prep_row_media_(const tesseract::Event&, bool) override {}
-    void request_relayout_() override { ++relayouts; }
-    void repaint_anim_frame_() override { ++anim_repaints; }
-    void stop_anim_tick_() override { ++anim_stops; }
-    std::int64_t monotonic_ms_() override { return now_ms; }
+    void prep_row_media_(const tesseract::Event&, bool) override
+    {
+    }
+    void request_relayout_() override
+    {
+        ++relayouts;
+    }
+    void repaint_anim_frame_() override
+    {
+        ++anim_repaints;
+    }
+    void stop_anim_tick_() override
+    {
+        ++anim_stops;
+    }
+    std::int64_t monotonic_ms_() override
+    {
+        return now_ms;
+    }
+    // Runs the queued posts, including the ones a debounce re-arms while firing.
     void fire_delayed()
     {
-        auto d = std::move(delayed);
-        delayed.clear();
-        for (auto& [ms, fn] : d)
-            fn();
+        while (!delayed.empty())
+        {
+            auto d = std::move(delayed);
+            delayed.clear();
+            for (auto& [ms, fn] : d)
+            {
+                fn();
+            }
+        }
     }
 
     std::vector<std::pair<int, std::function<void()>>> delayed;
@@ -104,8 +132,7 @@ struct TtShell : tesseract::test::TestShellBase
     using ShellBase::mut_pool_;
 };
 
-std::unique_ptr<tesseract::Event> tt_ev(const std::string& id,
-                                        const std::string& reply_to = "")
+std::unique_ptr<tesseract::Event> tt_ev(const std::string& id, const std::string& reply_to = "")
 {
     auto e = std::make_unique<tesseract::Event>();
     e->event_id = id;
@@ -119,7 +146,9 @@ tesseract::EventList tt_list(std::initializer_list<const char*> ids)
 {
     tesseract::EventList l;
     for (auto* i : ids)
+    {
         l.push_back(tt_ev(i));
+    }
     return l;
 }
 
@@ -146,9 +175,7 @@ struct TtFx
         s.rooms_ = {info};
         s.mark_room_index_dirty_();
         s.main_room_pane_ = std::make_unique<tesseract::RoomPane>(
-            tesseract::RoomPane::Deps{
-                .shell = &s, .repaint = [] {}, .relayout = [] {}},
-            "!r:x");
+            tesseract::RoomPane::Deps{.shell = &s, .repaint = [] {}, .relayout = [] {}}, "!r:x");
         s.main_room_pane_->attach({.room_view = view.get()});
         view->on_thread_open_requested("$root");
     }
@@ -161,8 +188,12 @@ struct TtFx
     {
         std::vector<std::string> v;
         if (auto* ml = thread_list())
+        {
             for (const auto& m : ml->messages())
+            {
                 v.push_back(m.event_id);
+            }
+        }
         return v;
     }
 };
@@ -227,11 +258,13 @@ TEST_CASE("unhandled and null thread events are ignored, replies resolve",
     f.s.handle_thread_updated_ui_("!r:x", "$root", 0, nullptr);
     f.s.handle_thread_inserted_ui_("!r:x", "$root", 0, tt_ev("$r2", "$a"));
     f.s.handle_thread_updated_ui_("!r:x", "$root", 0, tt_ev("$r2", "$a"));
-    f.s.handle_thread_reset_ui_("!r:x", "$root", [] {
-        tesseract::EventList l;
-        l.push_back(tt_ev("$x1", "$x0"));
-        return l;
-    }());
+    f.s.handle_thread_reset_ui_("!r:x", "$root",
+                                []
+                                {
+                                    tesseract::EventList l;
+                                    l.push_back(tt_ev("$x1", "$x0"));
+                                    return l;
+                                }());
     CHECK(f.thread_ids() == Ids{"$x1"});
 }
 
@@ -328,13 +361,13 @@ TEST_CASE("search-index stats poll only while the settings panel is open",
     s.client_ = &client;
 
     s.refresh_search_index_stats_(); // panel closed: nothing
-    s.pool_.wait_idle(std::chrono::seconds(5));
+    s.drain_workers();
     CHECK(s.delayed.empty());
 
     tesseract::Settings::instance().index_messages_for_search = true;
     s.start_search_index_stats_poll_();
     CHECK(s.search_stats_panel_open_);
-    s.pool_.wait_idle(std::chrono::seconds(5));
+    s.drain_workers();
     // Backfill not done on a sessionless client: the poll re-arms itself.
     CHECK_FALSE(s.delayed.empty());
 
@@ -346,7 +379,7 @@ TEST_CASE("search-index stats poll only while the settings panel is open",
     tesseract::Settings::instance().index_messages_for_search = false;
     s.delayed.clear();
     s.start_search_index_stats_poll_();
-    s.pool_.wait_idle(std::chrono::seconds(5));
+    s.drain_workers();
     s.stop_search_index_stats_poll_();
 }
 

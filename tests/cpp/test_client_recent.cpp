@@ -13,8 +13,7 @@ TEST_CASE("recent_emoji_top is empty before login", "[client][recent_emoji]")
 
 // Bump before login must be a no-op (must not crash). Mirrors `send_*`
 // methods that all return early without a session.
-TEST_CASE("recent_emoji_bump is harmless before login",
-          "[client][recent_emoji]")
+TEST_CASE("recent_emoji_bump is harmless before login", "[client][recent_emoji]")
 {
     tesseract::Client client;
     client.recent_emoji_bump("\xF0\x9F\x98\x80"); // 😀

@@ -28,8 +28,9 @@ const PNG_KEEP_CHUNKS: [[u8; 4]; 19] = [
 /// WebP chunks that describe the pixels (EXIF, XMP and anything unknown go).
 /// VP8X flag bits for the EXIF (0x08) and XMP (0x04) chunks.
 const WEBP_VP8X_EXIF_XMP: u8 = 0x0C;
-const WEBP_KEEP_CHUNKS: [[u8; 4]; 7] =
-    [*b"VP8 ", *b"VP8L", *b"VP8X", *b"ALPH", *b"ANIM", *b"ANMF", *b"ICCP"];
+const WEBP_KEEP_CHUNKS: [[u8; 4]; 7] = [
+    *b"VP8 ", *b"VP8L", *b"VP8X", *b"ALPH", *b"ANIM", *b"ANMF", *b"ICCP",
+];
 
 /// What the user chose to send, which decides how much of the file may be
 /// rewritten. `Image` is a picture the user meant to share as such: every
@@ -45,7 +46,11 @@ pub(crate) enum StripScope {
 }
 
 /// The single entry point every upload path uses.
-pub(super) fn strip_for_upload<'a>(bytes: &'a [u8], mime: &str, scope: StripScope) -> Cow<'a, [u8]> {
+pub(super) fn strip_for_upload<'a>(
+    bytes: &'a [u8],
+    mime: &str,
+    scope: StripScope,
+) -> Cow<'a, [u8]> {
     if scope == StripScope::File && !is_photo_container(bytes) {
         return Cow::Borrowed(bytes);
     }
@@ -81,7 +86,9 @@ pub fn is_strippable(bytes: &[u8], mime: &str) -> bool {
 /// it must not abort the process across the FFI boundary, and the fuzz-style
 /// tests below keep that path from being reached in practice.
 fn strip_checked<'a>(bytes: &'a [u8], mime: &str) -> Option<Cow<'a, [u8]>> {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| strip_inner(bytes, mime))).ok().flatten()
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| strip_inner(bytes, mime)))
+        .ok()
+        .flatten()
 }
 
 /// Formats with no metadata fields, as the length of their meaningful bytes
@@ -94,7 +101,10 @@ fn metadata_free_len(b: &[u8]) -> Option<usize> {
     }
     let bmp = b.len() >= 26
         && b.starts_with(b"BM")
-        && matches!(u32::from_le_bytes(b[14..18].try_into().unwrap_or([0; 4])), 12 | 40 | 52 | 56 | 64 | 108 | 124);
+        && matches!(
+            u32::from_le_bytes(b[14..18].try_into().unwrap_or([0; 4])),
+            12 | 40 | 52 | 56 | 64 | 108 | 124
+        );
     if !bmp {
         return None;
     }
@@ -133,13 +143,17 @@ fn strip_inner<'a>(bytes: &'a [u8], mime: &str) -> Option<Cow<'a, [u8]>> {
     let ext = if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
         FileExtension::JPEG
     } else if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
-        FileExtension::PNG { as_zTXt_chunk: false }
+        FileExtension::PNG {
+            as_zTXt_chunk: false,
+        }
     } else if bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
         FileExtension::WEBP
     } else {
         match mime {
             "image/jpeg" | "image/jpg" => FileExtension::JPEG,
-            "image/png" => FileExtension::PNG { as_zTXt_chunk: false },
+            "image/png" => FileExtension::PNG {
+                as_zTXt_chunk: false,
+            },
             "image/webp" => FileExtension::WEBP,
             _ => return None,
         }
@@ -189,7 +203,11 @@ fn strip_jpeg(bytes: &[u8]) -> Option<Vec<u8>> {
     });
     // Anything after the end-of-image marker (appended originals, motion-photo
     // video, secondary pictures) is not part of the picture: drop it.
-    if let Some(eoi) = jpeg.segments().iter().position(|s| s.marker() == markers::EOI) {
+    if let Some(eoi) = jpeg
+        .segments()
+        .iter()
+        .position(|s| s.marker() == markers::EOI)
+    {
         jpeg.segments_mut().truncate(eoi + 1);
     }
     trim_after_eoi(&mut jpeg);
@@ -216,7 +234,10 @@ fn trim_after_eoi(jpeg: &mut Jpeg) {
         }
         let enc = segs[i].clone().encoder().bytes().to_vec();
         let start = 4 + segs[i].contents().len(); // marker(2) + length(2) + header
-        let Some(rel) = enc.get(start..).and_then(|e| e.windows(2).position(|w| w == [0xFF, 0xD9])) else {
+        let Some(rel) = enc
+            .get(start..)
+            .and_then(|e| e.windows(2).position(|w| w == [0xFF, 0xD9]))
+        else {
             continue;
         };
         let entropy = Bytes::copy_from_slice(&enc[start..start + rel + 2]);
@@ -244,7 +265,8 @@ fn strip_png(bytes: &[u8]) -> Option<Vec<u8>> {
     let mut png = Png::from_bytes(Bytes::copy_from_slice(bytes)).ok()?;
     // Keep only the orientation, rewritten as a minimal standard `eXIf` chunk.
     let orientation = png.exif().and_then(|e| tiff_orientation(&e));
-    png.chunks_mut().retain(|c| PNG_KEEP_CHUNKS.contains(&c.kind()));
+    png.chunks_mut()
+        .retain(|c| PNG_KEEP_CHUNKS.contains(&c.kind()));
     png.set_exif(None);
     if let Some(o) = orientation {
         png.set_exif(Some(Bytes::from(minimal_exif_orientation(o))));
@@ -261,10 +283,18 @@ fn tiff_orientation(e: &[u8]) -> Option<u16> {
     };
     let u16_at = |at: usize| -> Option<u16> {
         let v: [u8; 2] = e.get(at..at + 2)?.try_into().ok()?;
-        Some(if le { u16::from_le_bytes(v) } else { u16::from_be_bytes(v) })
+        Some(if le {
+            u16::from_le_bytes(v)
+        } else {
+            u16::from_be_bytes(v)
+        })
     };
     let ifd_bytes: [u8; 4] = e.get(4..8)?.try_into().ok()?;
-    let ifd = if le { u32::from_le_bytes(ifd_bytes) } else { u32::from_be_bytes(ifd_bytes) } as usize;
+    let ifd = if le {
+        u32::from_le_bytes(ifd_bytes)
+    } else {
+        u32::from_be_bytes(ifd_bytes)
+    } as usize;
     (0..u16_at(ifd)? as usize)
         .map(|i| ifd + 2 + 12 * i)
         .find(|&at| u16_at(at) == Some(274))
@@ -287,7 +317,8 @@ fn strip_webp(bytes: &[u8]) -> Option<Vec<u8>> {
     let mut webp = WebP::from_bytes(Bytes::copy_from_slice(bytes)).ok()?;
     // Keeps only the chunks that describe the pixels, which drops EXIF, XMP
     // and anything private.
-    webp.chunks_mut().retain(|c| WEBP_KEEP_CHUNKS.contains(&c.id()));
+    webp.chunks_mut()
+        .retain(|c| WEBP_KEEP_CHUNKS.contains(&c.id()));
     // The VP8X header says which of those exist (ICC, alpha, animation, EXIF,
     // XMP). Clear only the EXIF and XMP bits. img-parts' own `set_exif(None)`
     // is not usable here: it re-infers the container kind and, when there is
@@ -411,7 +442,12 @@ pub(super) fn iso_boxes(b: &[u8], start: usize, end: usize) -> Option<Vec<IsoBox
         if box_end > end || payload > box_end {
             return None;
         }
-        v.push(IsoBox { ty, start: pos, payload, end: box_end });
+        v.push(IsoBox {
+            ty,
+            start: pos,
+            payload,
+            end: box_end,
+        });
         pos = box_end;
     }
     (pos == end).then_some(v)
@@ -440,7 +476,11 @@ fn drop_iso_boxes(b: &[u8], drop: impl Fn(&IsoBox) -> bool) -> Option<Vec<u8>> {
 fn strip_jxl(b: &[u8]) -> Option<Vec<u8>> {
     drop_iso_boxes(b, |bx| {
         let is_meta = |t: &[u8]| t == b"Exif" || t == b"xml " || t == b"jumb" || t == b"jbrd";
-        let inner = if &bx.ty == b"brob" { b.get(bx.payload..bx.payload + 4) } else { None };
+        let inner = if &bx.ty == b"brob" {
+            b.get(bx.payload..bx.payload + 4)
+        } else {
+            None
+        };
         is_meta(&bx.ty) || inner.is_some_and(is_meta)
     })
 }
@@ -502,7 +542,9 @@ fn strip_j2k_comments(cs: &[u8]) -> Option<Vec<u8>> {
             return None;
         }
         let len = be16(cs, pos + 2)?;
-        let end = pos.checked_add(2 + len).filter(|e| len >= 2 && *e <= cs.len())?;
+        let end = pos
+            .checked_add(2 + len)
+            .filter(|e| len >= 2 && *e <= cs.len())?;
         if marker != COM {
             out.extend_from_slice(&cs[pos..end]);
         }
@@ -512,7 +554,11 @@ fn strip_j2k_comments(cs: &[u8]) -> Option<Vec<u8>> {
     // Tile-parts: only inspected, copied verbatim.
     while be16(cs, pos)? == SOT {
         let psot = be32(cs, pos + 6)?;
-        let tile_end = if psot == 0 { cs.len() } else { pos.checked_add(psot)? };
+        let tile_end = if psot == 0 {
+            cs.len()
+        } else {
+            pos.checked_add(psot)?
+        };
         if tile_end > cs.len() || tile_end < pos + 14 {
             return None;
         }
@@ -542,8 +588,9 @@ fn strip_j2k_comments(cs: &[u8]) -> Option<Vec<u8>> {
 /// HEIF family (AVIF, HEIC, HEIX, ...): an `ftyp` whose major or compatible
 /// brands include one of the HEIF image brands.
 fn is_heif(b: &[u8]) -> bool {
-    const BRANDS: [&[u8; 4]; 10] =
-        [b"avif", b"avis", b"heic", b"heix", b"hevc", b"hevx", b"heim", b"heis", b"mif1", b"msf1"];
+    const BRANDS: [&[u8; 4]; 10] = [
+        b"avif", b"avis", b"heic", b"heix", b"hevc", b"hevx", b"heim", b"heis", b"mif1", b"msf1",
+    ];
     if b.len() < 16 || &b[4..8] != b"ftyp" {
         return false;
     }
@@ -551,7 +598,10 @@ fn is_heif(b: &[u8]) -> bool {
     (8..end)
         .step_by(4)
         .filter(|&at| at != 12) // 12..16 is the minor version, not a brand
-        .any(|at| b.get(at..at + 4).is_some_and(|x| BRANDS.iter().any(|br| &br[..] == x)))
+        .any(|at| {
+            b.get(at..at + 4)
+                .is_some_and(|x| BRANDS.iter().any(|br| &br[..] == x))
+        })
 }
 
 /// XMP packet carried in a `uuid` box (ISO/Adobe convention).
@@ -572,7 +622,8 @@ fn strip_heif(b: &[u8]) -> Option<Vec<u8>> {
     // Whole-box metadata: XMP `uuid` boxes at the top level, `xml ` in `meta`.
     let mut out = b.to_vec();
     for bx in top.iter().chain(kids.iter()) {
-        let xmp_uuid = &bx.ty == b"uuid" && b.get(bx.payload..bx.payload + 16) == Some(&XMP_UUID[..]);
+        let xmp_uuid =
+            &bx.ty == b"uuid" && b.get(bx.payload..bx.payload + 16) == Some(&XMP_UUID[..]);
         if xmp_uuid || &bx.ty == b"xml " {
             out[bx.payload..bx.end].fill(0);
             out[bx.start + 4..bx.start + 8].copy_from_slice(b"free");
@@ -583,7 +634,11 @@ fn strip_heif(b: &[u8]) -> Option<Vec<u8>> {
     let mut targets: Vec<(usize, usize)> = Vec::new();
     let version = *b.get(iinf.payload)?;
     let count_at = iinf.payload + 4;
-    let first = if version == 0 { count_at + 2 } else { count_at + 4 };
+    let first = if version == 0 {
+        count_at + 2
+    } else {
+        count_at + 4
+    };
     for infe in iso_boxes(b, first, iinf.end)? {
         if &infe.ty != b"infe" {
             continue;
@@ -629,7 +684,11 @@ fn strip_heif(b: &[u8]) -> Option<Vec<u8>> {
     let (offset_size, length_size) = ((sizes >> 4) as usize, (sizes & 15) as usize);
     let sizes2 = *b.get(iloc.payload + 5)?;
     let base_size = (sizes2 >> 4) as usize;
-    let index_size = if v == 1 || v == 2 { (sizes2 & 15) as usize } else { 0 };
+    let index_size = if v == 1 || v == 2 {
+        (sizes2 & 15) as usize
+    } else {
+        0
+    };
     // Extents that occupy no bytes would let a crafted file make the loops
     // below spin without consuming input; field widths above 8 are not valid.
     if (offset_size == 0 && length_size == 0)
@@ -713,14 +772,26 @@ const TIFF_MAX_SUB_IFDS: usize = 4096;
 impl Tiff<'_> {
     fn u16(&self, at: usize) -> Option<u16> {
         let v: [u8; 2] = self.b.get(at..at + 2)?.try_into().ok()?;
-        Some(if self.le { u16::from_le_bytes(v) } else { u16::from_be_bytes(v) })
+        Some(if self.le {
+            u16::from_le_bytes(v)
+        } else {
+            u16::from_be_bytes(v)
+        })
     }
     fn u32(&self, at: usize) -> Option<u32> {
         let v: [u8; 4] = self.b.get(at..at + 4)?.try_into().ok()?;
-        Some(if self.le { u32::from_le_bytes(v) } else { u32::from_be_bytes(v) })
+        Some(if self.le {
+            u32::from_le_bytes(v)
+        } else {
+            u32::from_be_bytes(v)
+        })
     }
     fn put_u16(&mut self, at: usize, v: u16) -> Option<()> {
-        let bytes = if self.le { v.to_le_bytes() } else { v.to_be_bytes() };
+        let bytes = if self.le {
+            v.to_le_bytes()
+        } else {
+            v.to_be_bytes()
+        };
         self.b.get_mut(at..at + 2)?.copy_from_slice(&bytes);
         Some(())
     }
@@ -804,7 +875,9 @@ impl Tiff<'_> {
             self.b.get_mut(e..e + 12)?.copy_from_slice(entry);
         }
         let new_next = off + 2 + 12 * kept.len();
-        self.b.get_mut(new_next..new_next + 4)?.copy_from_slice(&next_bytes);
+        self.b
+            .get_mut(new_next..new_next + 4)?
+            .copy_from_slice(&next_bytes);
         Some((next, true))
     }
 }
@@ -817,7 +890,11 @@ impl Tiff<'_> {
 fn strip_tiff(b: &[u8]) -> Option<Vec<u8>> {
     let le = b.starts_with(b"II");
     let mut out = b.to_vec();
-    let mut t = Tiff { b: &mut out, le, wiped: Default::default() };
+    let mut t = Tiff {
+        b: &mut out,
+        le,
+        wiped: Default::default(),
+    };
     let mut off = t.u32(4)? as usize;
     let mut seen = Vec::new();
     while off != 0 && seen.len() < 64 && !seen.contains(&off) {
@@ -837,7 +914,10 @@ fn is_svg(b: &[u8]) -> bool {
     let head = &b[..b.len().min(1024)];
     let text = String::from_utf8_lossy(head);
     let t = text.trim_start_matches('\u{feff}').trim_start();
-    (t.starts_with("<?xml") || t.starts_with("<svg") || t.starts_with("<!--") || t.starts_with("<!DOCTYPE svg"))
+    (t.starts_with("<?xml")
+        || t.starts_with("<svg")
+        || t.starts_with("<!--")
+        || t.starts_with("<!DOCTYPE svg"))
         && text.contains("<svg")
 }
 
@@ -881,17 +961,26 @@ const EDITOR_NAMESPACES: [&str; 6] = [
 /// (`xmlns:ink="http://www.inkscape.org/namespaces/inkscape"` makes `ink`
 /// one), plus the conventional ones.
 fn editor_prefixes(s: &str) -> Vec<String> {
-    let mut v: Vec<String> = ["inkscape", "sodipodi", "sketch", "serif", "i"].iter().map(|p| p.to_string()).collect();
+    let mut v: Vec<String> = ["inkscape", "sodipodi", "sketch", "serif", "i"]
+        .iter()
+        .map(|p| p.to_string())
+        .collect();
     let mut rest = s;
     while let Some(i) = rest.find("xmlns:") {
         rest = &rest[i + 6..];
         let Some(eq) = rest.find('=') else { break };
         let (name, after) = (rest[..eq].trim(), rest[eq + 1..].trim_start());
-        let Some(q) = after.chars().next().filter(|c| *c == '"' || *c == '\'') else { continue };
-        let Some(close) = after[1..].find(q) else { break };
+        let Some(q) = after.chars().next().filter(|c| *c == '"' || *c == '\'') else {
+            continue;
+        };
+        let Some(close) = after[1..].find(q) else {
+            break;
+        };
         let uri = &after[1..1 + close];
         if !name.is_empty()
-            && name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '.')
+            && name
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '.')
             && EDITOR_NAMESPACES.iter().any(|ns| uri.contains(ns))
             && !v.iter().any(|p| p == name)
         {
@@ -906,8 +995,11 @@ fn remove_prefixed_elements(s: &str, prefix: &str) -> Option<String> {
     let mut cur = s.to_owned();
     let open = format!("<{prefix}:");
     for _ in 0..4096 {
-        let Some(i) = cur.find(&open) else { return Some(cur) };
-        let name_end = cur[i + 1..].find(|c: char| c.is_whitespace() || c == '/' || c == '>')? + i + 1;
+        let Some(i) = cur.find(&open) else {
+            return Some(cur);
+        };
+        let name_end =
+            cur[i + 1..].find(|c: char| c.is_whitespace() || c == '/' || c == '>')? + i + 1;
         let name = cur[i + 1..name_end].to_owned();
         let next = remove_element(&cur, &name)?;
         if next.len() == cur.len() {
@@ -920,7 +1012,9 @@ fn remove_prefixed_elements(s: &str, prefix: &str) -> Option<String> {
 
 fn is_editor_attribute(name: &str, prefixes: &[String]) -> bool {
     name.starts_with("data-")
-        || name.split_once(':').is_some_and(|(p, _)| prefixes.iter().any(|x| x == p))
+        || name
+            .split_once(':')
+            .is_some_and(|(p, _)| prefixes.iter().any(|x| x == p))
 }
 
 /// Walks the markup tag by tag (skipping CDATA, processing instructions,
@@ -989,7 +1083,9 @@ fn filter_start_tag(tag: &str, prefixes: &[String]) -> Option<String> {
             let consumed_before_value = after_name.len() - v.len();
             let value_len = match v.chars().next()? {
                 q @ ('"' | '\'') => v[1..].find(q)? + 2,
-                _ => v.find(|c: char| c.is_whitespace() || c == '/' || c == '>').unwrap_or(v.len()),
+                _ => v
+                    .find(|c: char| c.is_whitespace() || c == '/' || c == '>')
+                    .unwrap_or(v.len()),
             };
             (n + consumed_before_value + value_len, &v[value_len..])
         } else {
@@ -1045,10 +1141,10 @@ fn remove_element(s: &str, tag: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use img_parts::webp::CHUNK_XMP;
     use img_parts::jpeg::JpegSegment;
     use img_parts::png::PngChunk;
     use img_parts::riff::{RiffChunk, RiffContent};
+    use img_parts::webp::CHUNK_XMP;
 
     fn contains(hay: &[u8], needle: &[u8]) -> bool {
         hay.windows(needle.len()).any(|w| w == needle)
@@ -1065,14 +1161,23 @@ mod tests {
     fn jpeg_fixture() -> Vec<u8> {
         let segs = vec![
             JpegSegment::new(markers::SOI),
-            JpegSegment::new_with_contents(markers::APP0, Bytes::from_static(b"JFIF\0\x01\x01\0\0\x01\0\x01\0\0")),
+            JpegSegment::new_with_contents(
+                markers::APP0,
+                Bytes::from_static(b"JFIF\0\x01\x01\0\0\x01\0\x01\0\0"),
+            ),
             JpegSegment::new_with_contents(
                 markers::APP1,
                 Bytes::from_static(b"http://ns.adobe.com/xap/1.0/\0<x:xmpmeta>SECRETXMP"),
             ),
-            JpegSegment::new_with_contents(markers::APP13, Bytes::from_static(b"Photoshop 3.0\0SECRETIPTC")),
+            JpegSegment::new_with_contents(
+                markers::APP13,
+                Bytes::from_static(b"Photoshop 3.0\0SECRETIPTC"),
+            ),
             JpegSegment::new_with_contents(markers::COM, Bytes::from_static(b"SECRETCOMMENT")),
-            JpegSegment::new_with_contents(markers::APP2, Bytes::from_static(b"ICC_PROFILE\0\x01\x01PROFILE")),
+            JpegSegment::new_with_contents(
+                markers::APP2,
+                Bytes::from_static(b"ICC_PROFILE\0\x01\x01PROFILE"),
+            ),
             JpegSegment::new_with_contents(markers::DQT, Bytes::from_static(&[0; 65])),
             JpegSegment::new_with_entropy(
                 markers::SOS,
@@ -1090,12 +1195,17 @@ mod tests {
 
     fn png_fixture() -> Vec<u8> {
         let mut png = Png::from_bytes(Bytes::from_static(&[
-            0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0, b'I', b'E', b'N', b'D', 0xAE, 0x42, 0x60, 0x82,
+            0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0, b'I', b'E', b'N', b'D',
+            0xAE, 0x42, 0x60, 0x82,
         ]))
         .unwrap();
         let end = png.chunks().len() - 1;
-        png.chunks_mut().insert(end, PngChunk::new(*b"tEXt", Bytes::from_static(b"Comment\0SECRETTEXT")));
-        png.chunks_mut().insert(end, PngChunk::new(*b"IDAT", Bytes::from_static(b"pixels")));
+        png.chunks_mut().insert(
+            end,
+            PngChunk::new(*b"tEXt", Bytes::from_static(b"Comment\0SECRETTEXT")),
+        );
+        png.chunks_mut()
+            .insert(end, PngChunk::new(*b"IDAT", Bytes::from_static(b"pixels")));
         png.encoder().bytes().to_vec()
     }
 
@@ -1105,8 +1215,14 @@ mod tests {
             RiffContent::List {
                 kind: Some(*b"WEBP"),
                 subchunks: vec![
-                    RiffChunk::new(*b"VP8L", RiffContent::Data(Bytes::from_static(b"\x2f\0\0\0\0pixels"))),
-                    RiffChunk::new(CHUNK_XMP, RiffContent::Data(Bytes::from_static(b"SECRETXMP"))),
+                    RiffChunk::new(
+                        *b"VP8L",
+                        RiffContent::Data(Bytes::from_static(b"\x2f\0\0\0\0pixels")),
+                    ),
+                    RiffChunk::new(
+                        CHUNK_XMP,
+                        RiffContent::Data(Bytes::from_static(b"SECRETXMP")),
+                    ),
                 ],
             },
         );
@@ -1118,8 +1234,17 @@ mod tests {
         let src = with_exif(jpeg_fixture(), FileExtension::JPEG, 6);
         assert!(contains(&src, b"SECRETMAKE") && contains(&src, b"SECRETXMP"));
         let out = strip_image_metadata(&src, "image/jpeg");
-        for secret in [&b"SECRETMAKE"[..], b"SECRETXMP", b"SECRETIPTC", b"SECRETCOMMENT"] {
-            assert!(!contains(&out, secret), "{}", String::from_utf8_lossy(secret));
+        for secret in [
+            &b"SECRETMAKE"[..],
+            b"SECRETXMP",
+            b"SECRETIPTC",
+            b"SECRETCOMMENT",
+        ] {
+            assert!(
+                !contains(&out, secret),
+                "{}",
+                String::from_utf8_lossy(secret)
+            );
         }
         assert!(contains(&out, b"ICC_PROFILE") && contains(&out, &[0xAB, 0xCD]));
         assert_eq!(read_orientation(&out, &FileExtension::JPEG), Some(6));
@@ -1130,12 +1255,21 @@ mod tests {
         let src = with_exif(jpeg_fixture(), FileExtension::JPEG, 1);
         for mime in ["application/octet-stream", "", "image/png"] {
             let out = strip_image_metadata(&src, mime);
-            assert!(!contains(&out, b"SECRETMAKE") && !contains(&out, b"SECRETXMP"), "{mime}");
+            assert!(
+                !contains(&out, b"SECRETMAKE") && !contains(&out, b"SECRETXMP"),
+                "{mime}"
+            );
         }
         let png = png_fixture();
-        assert!(!contains(&strip_image_metadata(&png, "application/octet-stream"), b"SECRETTEXT"));
+        assert!(!contains(
+            &strip_image_metadata(&png, "application/octet-stream"),
+            b"SECRETTEXT"
+        ));
         let webp = webp_fixture();
-        assert!(!contains(&strip_image_metadata(&webp, "image/jpeg"), b"SECRETXMP"));
+        assert!(!contains(
+            &strip_image_metadata(&webp, "image/jpeg"),
+            b"SECRETXMP"
+        ));
     }
 
     #[test]
@@ -1148,7 +1282,9 @@ mod tests {
 
     #[test]
     fn png_strips_text_and_exif() {
-        let ext = FileExtension::PNG { as_zTXt_chunk: false };
+        let ext = FileExtension::PNG {
+            as_zTXt_chunk: false,
+        };
         let src = with_exif(png_fixture(), ext, 8);
         assert!(contains(&src, b"SECRETTEXT") && contains(&src, b"Raw profile type exif"));
         let out = strip_image_metadata(&src, "image/png");
@@ -1173,10 +1309,18 @@ mod tests {
     #[test]
     fn jxl_container_metadata_boxes_are_removed_compressed_or_not() {
         assert!(contains(JXL_RAW, b"SECRETMAKE"));
-        for (src, mime) in [(JXL_BROB, "image/jxl"), (JXL_RAW, "image/jxl"), (JXL_RAW, "application/octet-stream")] {
+        for (src, mime) in [
+            (JXL_BROB, "image/jxl"),
+            (JXL_RAW, "image/jxl"),
+            (JXL_RAW, "application/octet-stream"),
+        ] {
             let out = strip_image_metadata(src, mime);
             assert!(out.len() < src.len());
-            assert!(!contains(&out, b"SECRETMAKE") && !contains(&out, b"Exif") && !contains(&out, b"brob"));
+            assert!(
+                !contains(&out, b"SECRETMAKE")
+                    && !contains(&out, b"Exif")
+                    && !contains(&out, b"brob")
+            );
             // Pixels are untouched: still a valid, same-size image.
             let d = crate::jxl::jxl_decoder_new(&out, 100, 100);
             assert!(d.valid());
@@ -1223,7 +1367,10 @@ mod tests {
         // A non-XMP uuid box is left alone.
         let mut other = AVIF.to_vec();
         other.extend(iso_box(b"uuid", &[7u8; 24]));
-        assert!(contains(&strip_image_metadata(&other, "image/avif"), &[7u8; 24]));
+        assert!(contains(
+            &strip_image_metadata(&other, "image/avif"),
+            &[7u8; 24]
+        ));
     }
 
     #[test]
@@ -1248,7 +1395,10 @@ mod tests {
         let out = strip_image_metadata(src, "image/avif");
         assert!(!contains(&out, b"SECRETMAKE"));
         let at = |b: &[u8]| b.windows(4).position(|w| w == b"irot").unwrap();
-        assert_eq!(&out[at(&out) - 4..at(&out) + 5], &src[at(src) - 4..at(src) + 5]);
+        assert_eq!(
+            &out[at(&out) - 4..at(&out) + 5],
+            &src[at(src) - 4..at(src) + 5]
+        );
     }
 
     const TIFF: &[u8] = include_bytes!("../../tests/fixtures/meta/meta.tif");
@@ -1258,22 +1408,54 @@ mod tests {
 
     #[test]
     fn tiff_tags_ifds_and_xmp_are_removed_but_orientation_stays() {
-        for s in [&b"SECRETMAKE"[..], b"SECRETARTIST", b"SECRETSOFT", b"SECRETDESC", b"SECRETXMP", b"SECRETIPTC"] {
-            assert!(contains(TIFF, s), "fixture lacks {}", String::from_utf8_lossy(s));
+        for s in [
+            &b"SECRETMAKE"[..],
+            b"SECRETARTIST",
+            b"SECRETSOFT",
+            b"SECRETDESC",
+            b"SECRETXMP",
+            b"SECRETIPTC",
+        ] {
+            assert!(
+                contains(TIFF, s),
+                "fixture lacks {}",
+                String::from_utf8_lossy(s)
+            );
         }
         for mime in ["image/tiff", "application/octet-stream"] {
             let out = strip_image_metadata(TIFF, mime);
             assert_eq!(out.len(), TIFF.len()); // pixel offsets untouched
-            for s in [&b"SECRETMAKE"[..], b"SECRETARTIST", b"SECRETSOFT", b"SECRETDESC", b"SECRETXMP", b"SECRETIPTC"] {
+            for s in [
+                &b"SECRETMAKE"[..],
+                b"SECRETARTIST",
+                b"SECRETSOFT",
+                b"SECRETDESC",
+                b"SECRETXMP",
+                b"SECRETIPTC",
+            ] {
                 assert!(!contains(&out, s), "{}", String::from_utf8_lossy(s));
             }
             // Orientation 6 (tag 274) survives; the GPS/Exif IFD pointers do not.
             let mut copy = out.to_vec();
-            let t = Tiff { b: &mut copy, le: out.starts_with(b"II"), wiped: Default::default() };
+            let t = Tiff {
+                b: &mut copy,
+                le: out.starts_with(b"II"),
+                wiped: Default::default(),
+            };
             let ifd = t.u32(4).unwrap() as usize;
-            let tags: Vec<u16> = (0..t.u16(ifd).unwrap() as usize).map(|i| t.u16(ifd + 2 + 12 * i).unwrap()).collect();
-            assert!(tags.contains(&274) && !tags.contains(&34853) && !tags.contains(&34665) && !tags.contains(&271));
-            assert!(tags.windows(2).all(|w| w[0] < w[1]), "IFD entries stay sorted");
+            let tags: Vec<u16> = (0..t.u16(ifd).unwrap() as usize)
+                .map(|i| t.u16(ifd + 2 + 12 * i).unwrap())
+                .collect();
+            assert!(
+                tags.contains(&274)
+                    && !tags.contains(&34853)
+                    && !tags.contains(&34665)
+                    && !tags.contains(&271)
+            );
+            assert!(
+                tags.windows(2).all(|w| w[0] < w[1]),
+                "IFD entries stay sorted"
+            );
         }
     }
 
@@ -1283,7 +1465,10 @@ mod tests {
         assert_eq!(&*strip_image_metadata(&clean, "image/tiff"), &clean[..]);
         let big = b"II+\0\x08\0\0\0\x10\0\0\0\0\0\0\0".to_vec();
         assert_eq!(&*strip_image_metadata(&big, "image/tiff"), &big[..]);
-        assert_eq!(&*strip_image_metadata(&TIFF[..30], "image/tiff"), &TIFF[..30]);
+        assert_eq!(
+            &*strip_image_metadata(&TIFF[..30], "image/tiff"),
+            &TIFF[..30]
+        );
     }
 
     #[test]
@@ -1300,14 +1485,25 @@ mod tests {
         assert!(contains(JP2, b"SECRETMAKE") && contains(JP2, b"SECRETXMP"));
         let out = strip_image_metadata(JP2, "image/jp2");
         assert!(out.len() < JP2.len());
-        assert!(!contains(&out, b"SECRETMAKE") && !contains(&out, b"SECRETXMP") && !contains(&out, b"uuid"));
+        assert!(
+            !contains(&out, b"SECRETMAKE")
+                && !contains(&out, b"SECRETXMP")
+                && !contains(&out, b"uuid")
+        );
         assert!(contains(&out, b"jp2h") && contains(&out, b"jp2c"));
     }
 
     #[test]
     fn svg_metadata_comments_and_editor_state_are_removed() {
-        let out = String::from_utf8(strip_image_metadata(SVG, "image/svg+xml").into_owned()).unwrap();
-        for secret in ["SECRETCOMMENT", "SECRETUSER", "SECRETAUTHOR", "namedview", "<metadata"] {
+        let out =
+            String::from_utf8(strip_image_metadata(SVG, "image/svg+xml").into_owned()).unwrap();
+        for secret in [
+            "SECRETCOMMENT",
+            "SECRETUSER",
+            "SECRETAUTHOR",
+            "namedview",
+            "<metadata",
+        ] {
             assert!(!out.contains(secret), "{secret}");
         }
         // The drawing is intact.
@@ -1326,7 +1522,17 @@ mod tests {
     #[test]
     fn corrupted_and_truncated_files_never_panic() {
         // Direct calls (no catch_unwind): any panic fails the test.
-        let files: [&[u8]; 9] = [TIFF, HEIC, JP2, SVG, AVIF, JXL_BROB, JXL_RAW, &gif_fixture(), include_bytes!("../../tests/fixtures/meta/rot_meta.avif")];
+        let files: [&[u8]; 9] = [
+            TIFF,
+            HEIC,
+            JP2,
+            SVG,
+            AVIF,
+            JXL_BROB,
+            JXL_RAW,
+            &gif_fixture(),
+            include_bytes!("../../tests/fixtures/meta/rot_meta.avif"),
+        ];
         for src in files {
             for cut in (0..src.len()).step_by(7) {
                 let _ = strip_inner(&src[..cut], "image/jpeg");
@@ -1367,7 +1573,11 @@ mod tests {
         }
         let t0 = std::time::Instant::now();
         let out = strip_image_metadata(&b, "image/tiff");
-        assert!(t0.elapsed() < std::time::Duration::from_secs(5), "took {:?}", t0.elapsed());
+        assert!(
+            t0.elapsed() < std::time::Duration::from_secs(5),
+            "took {:?}",
+            t0.elapsed()
+        );
         assert!(out.len() <= b.len()); // the wiped sub-IFDs are no longer referenced
     }
 
@@ -1379,8 +1589,14 @@ mod tests {
         }
         svg.push_str("<g xinkscape:export-xdpi=\"1\" inkscape:export-filename='/home/x'/></svg>");
         let t0 = std::time::Instant::now();
-        let out = String::from_utf8(strip_image_metadata(svg.as_bytes(), "image/svg+xml").into_owned()).unwrap();
-        assert!(t0.elapsed() < std::time::Duration::from_secs(5), "took {:?}", t0.elapsed());
+        let out =
+            String::from_utf8(strip_image_metadata(svg.as_bytes(), "image/svg+xml").into_owned())
+                .unwrap();
+        assert!(
+            t0.elapsed() < std::time::Duration::from_secs(5),
+            "took {:?}",
+            t0.elapsed()
+        );
         assert!(!out.contains("inkscape:export-xdpi=\"96\"") && !out.contains("/home/x"));
         assert!(out.contains("xinkscape:export-xdpi=\"1\"")); // not preceded by whitespace: kept
         assert_eq!(out.matches("id=\"a\"").count(), 200_000);
@@ -1410,9 +1626,15 @@ mod tests {
         bmp.extend_from_slice(&40u32.to_le_bytes());
         bmp.extend_from_slice(&[0u8; 40]);
         assert!(is_strippable(&bmp, "image/bmp"));
-        assert!(is_strippable(include_bytes!("../../tests/fixtures/jxl/still_rgb.jxl"), "image/jxl"));
+        assert!(is_strippable(
+            include_bytes!("../../tests/fixtures/jxl/still_rgb.jxl"),
+            "image/jxl"
+        ));
         // QOI has no end we can bound, so it is not "known clean" (it gets recompressed).
-        assert!(!is_strippable(b"qoif\0\0\0\x01\0\0\0\x01\x03\0", "image/qoi"));
+        assert!(!is_strippable(
+            b"qoif\0\0\0\x01\0\0\0\x01\x03\0",
+            "image/qoi"
+        ));
     }
 
     #[test]
@@ -1434,7 +1656,10 @@ mod tests {
         let g = gif_fixture();
         assert!(!is_strippable(&g[..g.len() - 5], "image/gif"));
         assert!(!is_strippable(&JPEG_TRUNC, "image/jpeg"));
-        assert!(!is_strippable(b"<svg xmlns=\"http://www.w3.org/2000/svg\"><!-- oops</svg>", "image/svg+xml"));
+        assert!(!is_strippable(
+            b"<svg xmlns=\"http://www.w3.org/2000/svg\"><!-- oops</svg>",
+            "image/svg+xml"
+        ));
         // A declared image mime does not make unknown bytes strippable.
         assert!(!is_strippable(&[1u8; 64], "image/png"));
     }
@@ -1452,7 +1677,10 @@ mod tests {
         // ...and add a JFXX extension thumbnail.
         segs.insert(
             2,
-            JpegSegment::new_with_contents(markers::APP0, Bytes::from_static(b"JFXX\0\x10SECRETJFXXTHUMB")),
+            JpegSegment::new_with_contents(
+                markers::APP0,
+                Bytes::from_static(b"JFXX\0\x10SECRETJFXXTHUMB"),
+            ),
         );
         jpeg.encoder().bytes().to_vec()
     }
@@ -1462,13 +1690,20 @@ mod tests {
         let src = jpeg_with_thumbnails();
         assert!(contains(&src, b"SECRETTHUMB!") && contains(&src, b"SECRETJFXXTHUMB"));
         let out = strip_image_metadata(&src, "image/jpeg");
-        assert!(!contains(&out, b"SECRETTHUMB!") && !contains(&out, b"SECRETJFXXTHUMB") && !contains(&out, b"JFXX"));
+        assert!(
+            !contains(&out, b"SECRETTHUMB!")
+                && !contains(&out, b"SECRETJFXXTHUMB")
+                && !contains(&out, b"JFXX")
+        );
         // JFIF header kept: units=1, density 0x48 x 0x48, thumbnail size zeroed.
         assert!(contains(&out, b"JFIF\0\x01\x01\x01\0\x48\0\x48\0\0"));
         assert!(contains(&out, b"ICC_PROFILE") && contains(&out, &[0xAB, 0xCD]));
         // A JFIF without a thumbnail is left exactly as it was.
         let plain = jpeg_fixture();
-        assert!(contains(&strip_image_metadata(&plain, "image/jpeg"), b"JFIF\0\x01\x01\0\0\x01\0\x01\0\0"));
+        assert!(contains(
+            &strip_image_metadata(&plain, "image/jpeg"),
+            b"JFIF\0\x01\x01\0\0\x01\0\x01\0\0"
+        ));
     }
 
     fn png_with_exif(orientation: u16) -> Vec<u8> {
@@ -1492,14 +1727,20 @@ mod tests {
         for mime in ["image/png", "application/octet-stream"] {
             let out = strip_image_metadata(&src, mime);
             assert!(!contains(&out, b"SECRETMAKE") && !contains(&out, b"SECRETTEXT"));
-            let exif = Png::from_bytes(Bytes::copy_from_slice(&out)).unwrap().exif().expect("eXIf kept");
+            let exif = Png::from_bytes(Bytes::copy_from_slice(&out))
+                .unwrap()
+                .exif()
+                .expect("eXIf kept");
             assert_eq!(tiff_orientation(&exif), Some(6));
             assert!(exif.len() < 40, "only the orientation entry remains");
         }
         // Upright PNGs end up with no EXIF at all.
         let upright = png_with_exif(1);
         let out = strip_image_metadata(&upright, "image/png");
-        assert!(Png::from_bytes(Bytes::copy_from_slice(&out)).unwrap().exif().is_none());
+        assert!(Png::from_bytes(Bytes::copy_from_slice(&out))
+            .unwrap()
+            .exif()
+            .is_none());
     }
 
     #[test]
@@ -1510,16 +1751,33 @@ mod tests {
   <text><![CDATA[ keep <b data-y="SECRETCDATA"> as text ]]></text>
   <rect id="r" serif:id="SECRETSERIF" sketch:type="MSPage"/>
 </svg>"##;
-        let out = String::from_utf8(strip_image_metadata(svg, "image/svg+xml").into_owned()).unwrap();
-        for secret in ["SECRETVERSION", "SECRETAUTHOR", "SECRETLAYER", "SECRETX", "SECRETSERIF", "path-effect", "nodetypes", "sketch:type"] {
+        let out =
+            String::from_utf8(strip_image_metadata(svg, "image/svg+xml").into_owned()).unwrap();
+        for secret in [
+            "SECRETVERSION",
+            "SECRETAUTHOR",
+            "SECRETLAYER",
+            "SECRETX",
+            "SECRETSERIF",
+            "path-effect",
+            "nodetypes",
+            "sketch:type",
+        ] {
             assert!(!out.contains(secret), "{secret} in {out}");
         }
         // Drawing, ids, a '>' inside a quoted value and CDATA text are intact.
-        assert!(out.contains(r#"id="g1""#) && out.contains(r##"fill="#fff""##) && out.contains(r#"title="a > b""#));
+        assert!(
+            out.contains(r#"id="g1""#)
+                && out.contains(r##"fill="#fff""##)
+                && out.contains(r#"title="a > b""#)
+        );
         assert!(out.contains(r#"<![CDATA[ keep <b data-y="SECRETCDATA"> as text ]]>"#));
         assert!(out.contains(r#"<rect id="r"/>"#));
         // An unterminated tag is not confidently clean.
-        assert!(!is_strippable(b"<svg xmlns=\"http://www.w3.org/2000/svg\"><g data-a=\"x", "image/svg+xml"));
+        assert!(!is_strippable(
+            b"<svg xmlns=\"http://www.w3.org/2000/svg\"><g data-a=\"x",
+            "image/svg+xml"
+        ));
     }
 
     #[test]
@@ -1535,13 +1793,16 @@ mod tests {
         let out = strip_image_metadata(&jpeg, "image/jpeg");
         assert!(!contains(&out, tail) && contains(&out, &[0xAB, 0xCD]));
         assert_eq!(&out[out.len() - 2..], &[0xFF, 0xD9]); // ends at EOI
-        // PNG (after IEND), WebP (after the RIFF size), GIF (after the trailer).
+                                                          // PNG (after IEND), WebP (after the RIFF size), GIF (after the trailer).
         for (name, file, mime) in [
             ("png", with_tail(png_fixture()), "image/png"),
             ("webp", with_tail(webp_fixture()), "image/webp"),
             ("gif", with_tail(gif_fixture()), "image/gif"),
         ] {
-            assert!(!contains(&strip_image_metadata(&file, mime), tail), "{name}");
+            assert!(
+                !contains(&strip_image_metadata(&file, mime), tail),
+                "{name}"
+            );
         }
         // TIFF is never truncated: camera RAW keeps data behind tags the walker
         // does not model, so bytes past the last known structure are kept.
@@ -1575,11 +1836,22 @@ mod tests {
   <defs><ink:path-effect id="e"/></defs>
   <g ink:label="SECRETLAYER" id="g1"><rect id="r" width="4" height="4"/></g>
 </svg>"##;
-        let out = String::from_utf8(strip_image_metadata(svg, "image/svg+xml").into_owned()).unwrap();
-        for secret in ["SECRETVERSION", "SECRETUSER", "SECRETLAYER", "namedview", "path-effect", "ink:grid"] {
+        let out =
+            String::from_utf8(strip_image_metadata(svg, "image/svg+xml").into_owned()).unwrap();
+        for secret in [
+            "SECRETVERSION",
+            "SECRETUSER",
+            "SECRETLAYER",
+            "namedview",
+            "path-effect",
+            "ink:grid",
+        ] {
             assert!(!out.contains(secret), "{secret} in {out}");
         }
-        assert!(out.contains(r#"<g id="g1">"#) && out.contains(r#"<rect id="r" width="4" height="4"/>"#));
+        assert!(
+            out.contains(r#"<g id="g1">"#)
+                && out.contains(r#"<rect id="r" width="4" height="4"/>"#)
+        );
         // A prefix bound to an unrelated namespace is left alone.
         let other = br#"<svg xmlns="http://www.w3.org/2000/svg" xmlns:ink="http://example.com/ns"><rect ink:label="kept"/></svg>"#;
         assert_eq!(&*strip_image_metadata(other, "image/svg+xml"), &other[..]);
@@ -1605,7 +1877,9 @@ mod tests {
             let out = strip_image_metadata(AVIF, mime);
             assert_eq!(out.len(), AVIF.len()); // offsets stay valid
             assert!(!contains(&out, b"SECRETMAKE") && !contains(&out, b"SECRETXMP"));
-            assert!(!contains(&out, b"Exif") && !contains(&out, b"rdf+xml") || contains(&out, b"free"));
+            assert!(
+                !contains(&out, b"Exif") && !contains(&out, b"rdf+xml") || contains(&out, b"free")
+            );
             assert!(contains(&out, b"ftypavif") && contains(&out, b"mdat"));
         }
     }
@@ -1631,7 +1905,12 @@ mod tests {
             assert!(!contains(&out, b"SECRETCOMMENT") && !contains(&out, b"SECRETXMPDATA"));
             assert!(contains(&out, b"NETSCAPE2.0"));
             assert_eq!(out.iter().filter(|&&b| b == 0x2C).count(), 2); // both frames
-            assert_eq!(out.windows(8).filter(|w| w == b"\x21\xF9\x04\x00\x0A\x00\x00\x00").count(), 2);
+            assert_eq!(
+                out.windows(8)
+                    .filter(|w| w == b"\x21\xF9\x04\x00\x0A\x00\x00\x00")
+                    .count(),
+                2
+            );
             assert_eq!(*out.last().unwrap(), 0x3B);
         }
     }
@@ -1639,15 +1918,30 @@ mod tests {
     #[test]
     fn truncated_gif_and_avif_pass_through() {
         let g = gif_fixture();
-        assert_eq!(&*strip_image_metadata(&g[..g.len() - 5], "image/gif"), &g[..g.len() - 5]);
-        assert_eq!(&*strip_image_metadata(&AVIF[..40], "image/avif"), &AVIF[..40]);
+        assert_eq!(
+            &*strip_image_metadata(&g[..g.len() - 5], "image/gif"),
+            &g[..g.len() - 5]
+        );
+        assert_eq!(
+            &*strip_image_metadata(&AVIF[..40], "image/avif"),
+            &AVIF[..40]
+        );
     }
 
     #[test]
     fn garbage_and_unknown_mime_pass_through() {
         let junk = b"definitely not an image";
-        for mime in ["image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4"] {
-            assert!(matches!(strip_image_metadata(junk, mime), Cow::Borrowed(_)), "{mime}");
+        for mime in [
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "image/gif",
+            "video/mp4",
+        ] {
+            assert!(
+                matches!(strip_image_metadata(junk, mime), Cow::Borrowed(_)),
+                "{mime}"
+            );
         }
         let jpeg = jpeg_fixture();
         let _ = strip_image_metadata(&jpeg[..20], "image/jpeg");
@@ -1678,15 +1972,27 @@ mod tests {
             assert_eq!(&*out, &bytes[..], "{name}");
         }
         // The same TIFF *is* stripped when the user sent it as an image.
-        assert_ne!(&*strip_for_upload(TIFF, "image/tiff", StripScope::Image), TIFF);
+        assert_ne!(
+            &*strip_for_upload(TIFF, "image/tiff", StripScope::Image),
+            TIFF
+        );
     }
 
     #[test]
     fn png_private_chunks_are_dropped_but_rendering_chunks_stay() {
         let mut png = Png::from_bytes(Bytes::from(png_fixture())).unwrap();
         let end = png.chunks().len() - 1;
-        png.chunks_mut().insert(end, PngChunk::new(*b"caBX", Bytes::from_static(b"C2PA-MANIFEST-AUTHOR")));
-        png.chunks_mut().insert(end, PngChunk::new(*b"pHYs", Bytes::from_static(&[0, 0, 0x0b, 0x13, 0, 0, 0x0b, 0x13, 1])));
+        png.chunks_mut().insert(
+            end,
+            PngChunk::new(*b"caBX", Bytes::from_static(b"C2PA-MANIFEST-AUTHOR")),
+        );
+        png.chunks_mut().insert(
+            end,
+            PngChunk::new(
+                *b"pHYs",
+                Bytes::from_static(&[0, 0, 0x0b, 0x13, 0, 0, 0x0b, 0x13, 1]),
+            ),
+        );
         let bytes = png.encoder().bytes().to_vec();
         assert!(contains(&bytes, b"caBX"));
         let out = strip_image_metadata(&bytes, "image/png");
@@ -1701,9 +2007,15 @@ mod tests {
             RiffContent::List {
                 kind: Some(*b"WEBP"),
                 subchunks: vec![
-                    RiffChunk::new(*b"VP8L", RiffContent::Data(Bytes::from_static(b"\x2f\0\0\0\0pixels"))),
+                    RiffChunk::new(
+                        *b"VP8L",
+                        RiffContent::Data(Bytes::from_static(b"\x2f\0\0\0\0pixels")),
+                    ),
                     RiffChunk::new(*b"ICCP", RiffContent::Data(Bytes::from_static(b"ICCDATA"))),
-                    RiffChunk::new(*b"C2PA", RiffContent::Data(Bytes::from_static(b"SECRETMANIFEST"))),
+                    RiffChunk::new(
+                        *b"C2PA",
+                        RiffContent::Data(Bytes::from_static(b"SECRETMANIFEST")),
+                    ),
                 ],
             },
         );
@@ -1738,9 +2050,12 @@ mod tests {
 
         let t = std::time::Instant::now();
         assert!(!is_strippable(&file, "image/heic"));
-        assert!(t.elapsed() < std::time::Duration::from_secs(1), "{:?}", t.elapsed());
+        assert!(
+            t.elapsed() < std::time::Duration::from_secs(1),
+            "{:?}",
+            t.elapsed()
+        );
     }
-
 
     // ---- WebP with a VP8X header (animation, alpha, ...) ---------------------
 
@@ -1748,12 +2063,21 @@ mod tests {
     const WEBP_ALPHA: &[u8] = include_bytes!("../../tests/fixtures/meta/alpha_lossy_meta.webp");
 
     fn webp_ids(b: &[u8]) -> Vec<[u8; 4]> {
-        WebP::from_bytes(Bytes::copy_from_slice(b)).unwrap().chunks().iter().map(|c| c.id()).collect()
+        WebP::from_bytes(Bytes::copy_from_slice(b))
+            .unwrap()
+            .chunks()
+            .iter()
+            .map(|c| c.id())
+            .collect()
     }
 
     fn vp8x_flags(b: &[u8]) -> u8 {
         let w = WebP::from_bytes(Bytes::copy_from_slice(b)).unwrap();
-        w.chunk_by_id(*b"VP8X").expect("VP8X chunk").content().data().unwrap()[0]
+        w.chunk_by_id(*b"VP8X")
+            .expect("VP8X chunk")
+            .content()
+            .data()
+            .unwrap()[0]
     }
 
     #[test]
@@ -1777,7 +2101,13 @@ mod tests {
         use image::AnimationDecoder;
         let dec = image::codecs::webp::WebPDecoder::new(std::io::Cursor::new(&out[..])).unwrap();
         assert!(dec.has_animation());
-        assert_eq!(dec.into_frames().collect::<Result<Vec<_>, _>>().unwrap().len(), 3);
+        assert_eq!(
+            dec.into_frames()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap()
+                .len(),
+            3
+        );
 
         // (EXIF orientation is not read from animated WebP at all, before or
         // after, and renderers ignore it there.)
@@ -1806,7 +2136,6 @@ mod tests {
         assert_eq!(webp_ids(&twice), webp_ids(&once));
     }
 
-
     // ---- JPEG 2000 codestream comments ---------------------------------------
 
     const JP2_COMMENT: &[u8] = include_bytes!("../../tests/fixtures/meta/jp2_comment.jp2");
@@ -1829,14 +2158,19 @@ mod tests {
     #[test]
     fn jp2_codestream_comments_are_removed_and_the_file_stays_well_formed() {
         assert!(contains(JP2_COMMENT, b"SECRETCOMMENT"));
-        assert!(j2k_main_header(JP2_COMMENT).iter().any(|(m, _)| *m == 0xFF64));
+        assert!(j2k_main_header(JP2_COMMENT)
+            .iter()
+            .any(|(m, _)| *m == 0xFF64));
         let out = strip_image_metadata(JP2_COMMENT, "image/jp2");
         assert!(!contains(&out, b"SECRETCOMMENT"));
         // Still a valid box tiling whose codestream has no COM, and whose
         // other main-header segments (SIZ, COD, QCD) are untouched.
         let hdr = j2k_main_header(&out);
         assert!(!hdr.iter().any(|(m, _)| *m == 0xFF64), "{hdr:?}");
-        let orig: Vec<_> = j2k_main_header(JP2_COMMENT).into_iter().filter(|(m, _)| *m != 0xFF64).collect();
+        let orig: Vec<_> = j2k_main_header(JP2_COMMENT)
+            .into_iter()
+            .filter(|(m, _)| *m != 0xFF64)
+            .collect();
         assert_eq!(hdr, orig);
         // The jp2c box size matches its new payload.
         let boxes = iso_boxes(&out, 0, out.len()).unwrap();
@@ -1855,5 +2189,4 @@ mod tests {
         cs.extend_from_slice(&[0xFF, 0xD9]);
         assert!(strip_j2k_comments(&cs).is_none());
     }
-
 }

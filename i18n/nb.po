@@ -92,14 +92,6 @@ msgstr "Passfrase"
 msgid "Recovery passphrase"
 msgstr "Gjenopprettingsfrase"
 
-#: ui/linux-gtk/src/MainWindow.cpp:3171
-msgid "Save message keys"
-msgstr "Lagre meldingsnøkler"
-
-#: ui/linux-gtk/src/MainWindow.cpp:3200
-msgid "Open message keys"
-msgstr "Åpne meldingsnøkler"
-
 #: ui/linux-gtk/src/MainWindow.cpp:3231 ui/linux-qt/src/SettingsWidget.cpp:176
 #: ui/macos/src/MainWindowController.mm:6748 ui/windows/src/MainWindow.cpp:6440
 msgid "Message keys exported successfully."
@@ -154,23 +146,14 @@ msgstr "Videoer (*.mp4 *.webm *.mkv);;Alle filer (*.*)"
 msgid "Already in Saved Stickers"
 msgstr "Allerede i lagrede klistremerker"
 
-msgid "Restoring sessions…"
-msgstr "Gjenoppretter økter…"
-
-msgid "Already signed in as %1"
-msgstr "Du er allerede logget inn som %1"
-
-msgid "Sign-in failed: %1"
-msgstr "Innlogging mislyktes: %1"
-
 msgid "Images (*.png *.jpg *.jpeg *.gif *.webp)"
 msgstr "Bilder (*.png *.jpg *.jpeg *.gif *.webp)"
 
 msgid "Add Account"
 msgstr "Legg til konto"
 
-msgid "Signed out of %1"
-msgstr "Logget ut av %1"
+msgid "Signed out of {0}"
+msgstr "Logget ut av {0}"
 
 #: ui/linux-qt/src/SettingsWidget.cpp:161
 #: ui/shared/app/SettingsController.cpp:795
@@ -1805,10 +1788,6 @@ msgstr "{0} ({1})"
 msgid "{0}'s verified digital identity was reset."
 msgstr "Den verifiserte digitale identiteten til {0} ble tilbakestilt."
 
-#: ui/shared/views/IdentityChangeBanner.cpp:61
-msgid "{0}'s digital identity was reset."
-msgstr "Den digitale identiteten til {0} ble tilbakestilt."
-
 msgid "Withdraw verification"
 msgstr "Trekk tilbake verifiseringen"
 
@@ -1980,8 +1959,9 @@ msgstr "?"
 msgid "Sign in"
 msgstr "Logg inn"
 
-msgid "Your homeserver is where your account lives — similar to choosing an email provider. Not sure? matrix.org is a good default and works with anyone on Matrix."
-msgstr "Hjemmetjeneren din er der kontoen din ligger – omtrent som å velge e-postleverandør. Usikker? matrix.org er et godt utgangspunkt og fungerer med alle på Matrix."
+#: ui/shared/views/LoginView.cpp
+msgid "Your homeserver is where your account lives — similar to choosing an email provider. Not sure? Use \"Find a server\" to browse some. Any server works with anyone on Matrix."
+msgstr "Hjemmeserveren din er stedet kontoen din ligger — som å velge en e-postleverandør. Usikker? Bruk «Finn en server» for å bla gjennom noen. Alle servere fungerer sammen med alle andre på Matrix."
 
 msgid "Sign in with password"
 msgstr "Logg inn med passord"
@@ -2255,9 +2235,6 @@ msgid "{0} reaction"
 msgid_plural "{0} reactions"
 msgstr[0] "{0} reaksjon"
 msgstr[1] "{0} reaksjoner"
-
-msgid "View profile of {0}"
-msgstr "Vis profilen til {0}"
 
 msgid "Reveal spoiler"
 msgstr "Vis spoiler"
@@ -3375,8 +3352,8 @@ msgid "Encryption"
 msgstr "Kryptering"
 
 #: ui/shared/views/settings/PrivacySection.cpp:216
-msgid "Exclude unconfirmed devices (takes effect after restart)"
-msgstr "Utelat ubekreftede enheter (trer i kraft etter omstart)"
+msgid "Exclude unconfirmed devices"
+msgstr "Utelat ubekreftede enheter"
 
 #: ui/shared/views/settings/PrivacySection.cpp:226
 msgid "Only send encrypted messages to devices their owner has confirmed, and hide messages sent from devices that aren't. This device must be confirmed to send, and people whose clients don't confirm their devices won't see your messages."
@@ -3444,9 +3421,6 @@ msgstr "Bannlyst av {0}"
 
 msgid "Unban"
 msgstr "Opphev bannlysing"
-
-msgid "Unban (you don't have permission to lift this ban)"
-msgstr "Opphev bannlysing (du har ikke tillatelse til å oppheve denne bannlysingen)"
 
 msgid "Banned users"
 msgstr "Bannlyste brukere"
@@ -5166,3 +5140,278 @@ msgstr "Vis bare fulgte tråder"
 #: ui/shared/views/ThreadListView.cpp
 msgid "Show all threads"
 msgstr "Vis alle tråder"
+
+#: ui/shared/views/UserProfilePanel.cpp
+msgid "Rooms in common"
+msgstr "Felles rom"
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Couldn't load the server list. Check your connection and try again."
+msgstr "Kunne ikke laste serverlisten. Sjekk tilkoblingen din og prøv igjen."
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Currently unreachable"
+msgstr "Utilgjengelig for øyeblikket"
+
+#: ui/shared/views/LoginView.cpp
+msgid "Find a server"
+msgstr "Finn en server"
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Invite or community only"
+msgstr "Kun på invitasjon eller for fellesskapet"
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Loading servers…"
+msgstr "Laster servere…"
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "No servers match your search."
+msgstr "Ingen servere samsvarer med søket ditt."
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Open registration"
+msgstr "Åpen registrering"
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Open registration only"
+msgstr "Kun åpen registrering"
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Server list from {0}"
+msgstr "Serverliste fra {0}"
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Rules"
+msgstr "Regler"
+
+#: ui/shared/views/LoginView.cpp
+msgid "Run by the Matrix.org Foundation. The largest public server."
+msgstr "Drevet av Matrix.org Foundation. Den største offentlige serveren."
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Search servers"
+msgstr "Søk etter servere"
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Search servers…"
+msgstr "Søk etter servere…"
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Sign up"
+msgstr "Registrer deg"
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Website"
+msgstr "Nettsted"
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "{0} · Established"
+msgstr "{0} · Etablert"
+
+#: ui/shared/views/MediaTransportBar.cpp
+msgid "Seek"
+msgstr "Avspillingsposisjon"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "Timeline width"
+msgstr "Bredde på tidslinjen"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "Timeline position"
+msgstr "Plassering av tidslinjen"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "Left"
+msgstr "Venstre"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "Centered"
+msgstr "Sentrert"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "{0}%"
+msgstr "{0} %"
+
+#: ui/shared/views/RoomHeader.cpp
+msgid "This room is connected to another chat app. Your messages are sent there too, and that app's own rules apply, not just Matrix's."
+msgstr "Dette rommet er koblet til en annen chat-app. Meldingene dine sendes også dit, og appens egne regler gjelder, ikke bare Matrix sine."
+
+#: ui/shared/views/RoomHeader.cpp
+msgid "This room is connected to {0}. Your messages are sent there too, and {0}'s own rules apply, not just Matrix's."
+msgstr "Dette rommet er koblet til {0}. Meldingene dine sendes også dit, og {0} sine egne regler gjelder, ikke bare Matrix sine."
+
+#: ui/shared/views/RoomListView.cpp
+msgid "Pin to sidebar"
+msgstr "Fest i sidestolpen"
+
+#: ui/shared/views/SpacePickerView.cpp
+msgid "Unpin from sidebar"
+msgstr "Løsne fra sidestolpen"
+
+#: ui/shared/views/RoomListView.cpp
+msgid "Leave space"
+msgstr "Forlat området"
+
+#: ui/shared/views/SpacePickerView.cpp
+msgid "Home (all rooms)"
+msgstr "Hjem (alle rom)"
+
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "Don't send to people with unconfirmed devices"
+msgstr "Ikke send til personer med ubekreftede enheter"
+
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "Refuse to send a message while someone you confirmed has a device they haven't confirmed, or their digital identity has changed. Turn this off to send to every device regardless; you will no longer be warned about identity changes when sending."
+msgstr "Nekt å sende en melding mens noen du har bekreftet har en ubekreftet enhet, eller den digitale identiteten deres har endret seg. Slå av for å sende til alle enheter uansett; du blir da ikke lenger varslet om identitetsendringer ved sending."
+
+#: ui/shared/views/send_block.cpp
+msgid "This device must be confirmed before it can send messages"
+msgstr "Denne enheten må bekreftes før den kan sende meldinger"
+
+#: ui/shared/views/send_block.cpp
+msgid "someone in this room"
+msgstr "noen i dette rommet"
+
+#: ui/shared/views/send_block.cpp
+#, c++-format
+msgid "{0} has a device that isn't confirmed by its owner"
+msgid_plural "{0} have devices that aren't confirmed by their owners"
+msgstr[0] "{0} har en enhet som eieren ikke har bekreftet"
+msgstr[1] "{0} har enheter som eierne ikke har bekreftet"
+
+#: ui/shared/views/send_block.cpp
+#, c++-format
+msgid "{0}, so the message wasn't sent."
+msgstr "{0}, så meldingen ble ikke sendt."
+
+#: ui/shared/views/send_block.cpp
+#, c++-format
+msgid "{0}, so the message wasn't sent. It can be sent once they confirm or sign out that device. You can also discard the message, or turn off this check in Settings."
+msgstr "{0}, så meldingen ble ikke sendt. Den kan sendes når de bekrefter eller logger ut denne enheten. Du kan også forkaste meldingen eller slå av denne kontrollen i innstillingene."
+
+#: ui/shared/app/RoomPane.cpp
+msgid "The check that blocked this message is turned off, but the change takes effect after you restart Tesseract."
+msgstr "Kontrollen som blokkerte denne meldingen er slått av, men endringen trer i kraft etter at du har startet Tesseract på nytt."
+
+#: ui/shared/app/RoomPane.cpp
+msgid "Withdraw verification and send"
+msgstr "Trekk tilbake verifiseringen og send"
+
+#: ui/shared/views/send_block.cpp
+#, c++-format
+msgid "{0}'s digital identity was reset"
+msgid_plural "The digital identities of {0} were reset"
+msgstr[0] "Den digitale identiteten til {0} ble tilbakestilt"
+msgstr[1] "De digitale identitetene til {0} ble tilbakestilt"
+
+#: ui/shared/views/send_block.cpp
+#, c++-format
+msgid "{0}, so the message wasn't sent. You can withdraw your verification, which lets it go through; you can verify them again later from their profile."
+msgstr "{0}, så meldingen ble ikke sendt. Du kan trekke tilbake verifiseringen din slik at den går gjennom; du kan verifisere dem igjen senere fra profilen deres."
+
+#: ui/shared/views/IdentityChangeBanner.cpp:61
+msgid "{0}'s digital identity was reset."
+msgstr "Den digitale identiteten til {0} ble tilbakestilt."
+
+msgid "View profile of {0}"
+msgstr "Vis profilen til {0}"
+
+msgid "Applying encryption settings…"
+msgstr "Bruker krypteringsinnstillinger…"
+
+msgid "Your accounts are reconnecting. This takes a few seconds."
+msgstr "Kontoene dine kobler til på nytt. Dette tar noen sekunder."
+
+msgid "Encryption settings applied."
+msgstr "Krypteringsinnstillingene er brukt."
+
+msgid "Encryption settings applied, but reloading failed: {0}"
+msgstr "Krypteringsinnstillingene er brukt, men ny innlasting mislyktes: {0}"
+
+msgid "Encryption settings will apply once the call ends."
+msgstr "Krypteringsinnstillingene brukes når samtalen er over."
+
+msgid "Encryption settings will apply once you finish confirming your device."
+msgstr "Krypteringsinnstillingene brukes når du er ferdig med å bekrefte enheten din."
+
+#: ui/shared/app/SettingsController.cpp
+msgid "The device is still signed in. Finish signing it out in the browser first."
+msgstr "Enheten er fortsatt pålogget. Fullfør utloggingen i nettleseren først."
+
+#: ui/shared/app/SettingsController.cpp
+msgid "The server does not provide an account-management page."
+msgstr "Serveren tilbyr ingen side for kontoadministrasjon."
+
+#: ui/shared/views/MessageActions.cpp
+msgid "Report message"
+msgstr "Rapporter melding"
+
+#: ui/shared/views/RoomView.cpp
+msgid "Report this message?"
+msgstr "Rapportere denne meldingen?"
+
+#: ui/shared/views/RoomView.cpp
+msgid "The report is sent to your homeserver's administrators, not to this room's moderators. The message stays visible."
+msgstr "Rapporten sendes til administratorene på hjemmeserveren din, ikke til moderatorene i dette rommet. Meldingen forblir synlig."
+
+#: ui/shared/views/RoomView.cpp
+msgid "Report"
+msgstr "Rapporter"
+
+#: ui/shared/app/RoomPane.cpp
+msgid "Message reported"
+msgstr "Melding rapportert"
+
+#: ui/shared/app/RoomPane.cpp
+msgid "Couldn't report message: {0}"
+msgstr "Kunne ikke rapportere meldingen: {0}"
+
+msgid "Detect automatically"
+msgstr "Oppdag automatisk"
+
+msgid "Show timezone difference next to names"
+msgstr "Vis tidssoneforskjell ved siden av navn"
+
+msgid "{0} ({1} from you): {2}"
+msgstr "{0} ({1} fra deg): {2}"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "The theme follows your system's high contrast setting."
+msgstr "Temaet følger systemets innstilling for høy kontrast."
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Forwarded from {0}"
+msgstr "Videresendt fra {0}"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Forwarded message"
+msgstr "Videresendt melding"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "forwarded from {0}"
+msgstr "videresendt fra {0}"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "forwarded message"
+msgstr "videresendt melding"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "View original message"
+msgstr "Vis opprinnelig melding"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Sender"
+msgstr "Avsender"
+
+msgid "Expand"
+msgstr "Utvid"
+
+msgid "Collapse"
+msgstr "Skjul"
+
+msgid "Expand code block"
+msgstr "Utvid kodeblokk"
+
+msgid "Collapse code block"
+msgstr "Skjul kodeblokk"

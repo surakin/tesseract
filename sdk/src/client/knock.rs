@@ -9,10 +9,10 @@
 
 use crate::ffi::OpResult;
 
-#[cfg(not(test))]
-use super::{err, ok, ClientFfi, KnockRequestsHandle};
 #[cfg(test)]
 use super::ClientFfi;
+#[cfg(not(test))]
+use super::{err, ok, ClientFfi, KnockRequestsHandle};
 
 #[cfg(not(test))]
 use futures_util::StreamExt;

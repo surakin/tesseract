@@ -2,7 +2,7 @@
 
 #include "FontFamilyPicker.h"
 
-#include "app/font_prefs.h"
+#include "views/font_prefs.h"
 #include "tk/canvas.h"
 #include "tk/font_config.h"
 #include "tk/i18n.h"
@@ -48,17 +48,19 @@ std::string pt_text(int pt)
 // "[−] value [+]" with the value label returned through `value`.
 // `subject` (already translated) names the setting for screen readers: the
 // −/+ glyph buttons would otherwise all read the same.
-std::unique_ptr<tk::HBox> make_stepper(tk::Widget* parent,
-                                       const std::string& subject,
-                                       tk::Label*& value,
-                                       std::function<void(int)> on_step)
+std::unique_ptr<tk::HBox> make_stepper(tk::Widget* parent, const std::string& subject,
+                                       tk::Label*& value, std::function<void(int)> on_step)
 {
     auto box = tk::create_widget<tk::HBox>(parent);
     box->set_spacing(4.0f);
     box->set_cross(tk::Cross::Center);
 
     auto minus = tk::create_widget<tk::Button>(
-        parent, "\xE2\x88\x92", [on_step] { on_step(-1); },
+        parent, "\xE2\x88\x92",
+        [on_step]
+        {
+            on_step(-1);
+        },
         tk::Button::Variant::Subtle);
     minus->set_min_size({kStepBtnW, 0.0f});
     minus->set_accessible_name(tk::trf(tk::tr("Decrease {0}"), {subject}));
@@ -70,7 +72,12 @@ std::unique_ptr<tk::HBox> make_stepper(tk::Widget* parent,
     value = box->add_child(std::move(label));
 
     auto plus = tk::create_widget<tk::Button>(
-        parent, "+", [on_step] { on_step(+1); }, tk::Button::Variant::Subtle);
+        parent, "+",
+        [on_step]
+        {
+            on_step(+1);
+        },
+        tk::Button::Variant::Subtle);
     plus->set_min_size({kStepBtnW, 0.0f});
     plus->set_accessible_name(tk::trf(tk::tr("Increase {0}"), {subject}));
     box->add_child(std::move(plus));
@@ -93,7 +100,9 @@ public:
         ensure_(ctx.factory);
         float h = 2.0f * kPad;
         for (const Line& l : lines_)
+        {
             h += l.layout ? l.layout->measure().h : 0.0f;
+        }
         h += kLineGap * static_cast<float>(lines_.size() - 1);
         return {constraints.w, h};
     }
@@ -108,7 +117,9 @@ public:
         for (const Line& l : lines_)
         {
             if (!l.layout)
+            {
                 continue;
+            }
             ctx.canvas.draw_text(*l.layout, {bounds_.x + kPad, y},
                                  l.muted ? pal.text_muted : pal.text_primary);
             y += l.layout->measure().h + kLineGap;
@@ -118,12 +129,19 @@ public:
     void on_fonts_changed() override
     {
         for (Line& l : lines_)
+        {
             l.layout.reset();
+        }
         if (host())
+        {
             host()->mark_needs_relayout();
+        }
     }
 
-    tk::Role access_role() const override { return tk::Role::None; }
+    tk::Role access_role() const override
+    {
+        return tk::Role::None;
+    }
 
 private:
     static constexpr float kPad = 10.0f;
@@ -153,7 +171,9 @@ private:
         for (std::size_t i = 0; i < lines_.size(); ++i)
         {
             if (lines_[i].layout)
+            {
                 continue;
+            }
             tk::TextStyle st;
             st.role = lines_[i].role;
             lines_[i].layout = factory.build_text(texts[i], st);
@@ -181,7 +201,10 @@ FontsEditor::FontsEditor()
         label->set_min_size({kLabelW, 0.0f});
         row->add_child(std::move(label));
         row->add_child(make_stepper(this, tk::tr("Base size"), base_value_,
-                                    [this](int d) { step_base_(d); }));
+                                    [this](int d)
+                                    {
+                                        step_base_(d);
+                                    }));
         add_child(std::move(row));
     }
 
@@ -197,7 +220,9 @@ FontsEditor::FontsEditor()
         picker->on_changed = [this](std::string v)
         {
             if (updating_ || prefs_.ui_family == v)
+            {
                 return;
+            }
             prefs_.ui_family = std::move(v);
             changed_();
         };
@@ -215,7 +240,9 @@ FontsEditor::FontsEditor()
         picker->on_changed = [this](std::string v)
         {
             if (updating_ || prefs_.mono_family == v)
+            {
                 return;
+            }
             prefs_.mono_family = std::move(v);
             changed_();
         };
@@ -224,8 +251,8 @@ FontsEditor::FontsEditor()
     }
 
     // Per-category overrides.
-    add_child(tk::create_widget<tk::Label>(
-        this, tk::tr("Adjust individual text types"), tk::FontRole::Small));
+    add_child(tk::create_widget<tk::Label>(this, tk::tr("Adjust individual text types"),
+                                           tk::FontRole::Small));
     for (std::size_t i = 0; i < kCats; ++i)
     {
         auto row = tk::create_widget<tk::HBox>(this);
@@ -234,26 +261,33 @@ FontsEditor::FontsEditor()
         auto label = tk::create_widget<tk::Label>(this, tk::tr(kCategories[i].label));
         label->set_min_size({kLabelW, 0.0f});
         row->add_child(std::move(label));
-        row->add_child(make_stepper(this, tk::tr(kCategories[i].label),
-                                    rows_[i].value,
-                                    [this, i](int d) { step_category_(i, d); }));
+        row->add_child(make_stepper(this, tk::tr(kCategories[i].label), rows_[i].value,
+                                    [this, i](int d)
+                                    {
+                                        step_category_(i, d);
+                                    }));
         if (i != static_cast<std::size_t>(tk::FontCategory::Emoji))
         {
             auto picker = tk::create_widget<FontFamilyPicker>(this, false);
             picker->on_changed = [this, i](std::string v)
             {
                 if (updating_ || prefs_.categories[i].family == v)
+                {
                     return;
+                }
                 prefs_.categories[i].family = std::move(v);
                 changed_();
             };
             rows_[i].family = row->add_child(std::move(picker));
         }
         auto reset = tk::create_widget<tk::Button>(
-            this, tk::tr("Reset"), [this, i] { reset_category_(i); },
+            this, tk::tr("Reset"),
+            [this, i]
+            {
+                reset_category_(i);
+            },
             tk::Button::Variant::Link);
-        reset->set_accessible_name(
-            tk::trf(tk::tr("Reset {0}"), {tk::tr(kCategories[i].label)}));
+        reset->set_accessible_name(tk::trf(tk::tr("Reset {0}"), {tk::tr(kCategories[i].label)}));
         rows_[i].reset = row->add_child(std::move(reset));
         add_child(std::move(row));
     }
@@ -261,7 +295,11 @@ FontsEditor::FontsEditor()
     preview_ = add_child(std::make_unique<FontPreview>());
 
     auto reset_all = tk::create_widget<tk::Button>(
-        this, tk::tr("Reset to defaults"), [this] { reset_all_(); },
+        this, tk::tr("Reset to defaults"),
+        [this]
+        {
+            reset_all_();
+        },
         tk::Button::Variant::Subtle);
     reset_all_btn_ = add_child(std::move(reset_all));
 
@@ -285,7 +323,9 @@ void FontsEditor::step_base_(int dir)
     const int cur = prefs_.base_pt ? prefs_.base_pt : sys;
     const int next = std::clamp(cur + dir, tk::kFontBaseMinPt, tk::kFontBaseMaxPt);
     if (next == prefs_.base_pt)
+    {
         return;
+    }
     prefs_.base_pt = next;
     changed_();
 }
@@ -295,7 +335,9 @@ void FontsEditor::step_category_(std::size_t cat, int dir)
     auto& d = prefs_.categories[cat].delta_pt;
     const int next = std::clamp(d + dir, tk::kFontDeltaMinPt, tk::kFontDeltaMaxPt);
     if (next == d)
+    {
         return;
+    }
     d = next;
     changed_();
 }
@@ -303,7 +345,9 @@ void FontsEditor::step_category_(std::size_t cat, int dir)
 void FontsEditor::reset_category_(std::size_t cat)
 {
     if (prefs_.categories[cat] == Prefs::Category{})
+    {
         return;
+    }
     prefs_.categories[cat] = {};
     changed_();
 }
@@ -311,7 +355,9 @@ void FontsEditor::reset_category_(std::size_t cat)
 void FontsEditor::reset_all_()
 {
     if (prefs_ == Prefs{})
+    {
         return;
+    }
     prefs_ = {};
     changed_();
 }
@@ -319,7 +365,9 @@ void FontsEditor::reset_all_()
 void FontsEditor::changed_()
 {
     if (on_changed)
+    {
         on_changed(prefs_);
+    }
     refresh_();
 }
 
@@ -333,37 +381,44 @@ void FontsEditor::refresh_()
     if (base_value_)
     {
         base_value_->set_text(
-            prefs_.base_pt
-                ? pt_text(prefs_.base_pt)
-                : (sys > 0 ? tk::trf(tk::tr("System ({0} pt)"),
-                                     {std::to_string(sys)})
-                           : tk::tr("System")));
+            prefs_.base_pt ? pt_text(prefs_.base_pt)
+                           : (sys > 0 ? tk::trf(tk::tr("System ({0} pt)"), {std::to_string(sys)})
+                                      : tk::tr("System")));
     }
 
     updating_ = true;
     if (ui_family_)
+    {
         ui_family_->set_value(prefs_.ui_family);
+    }
     if (mono_family_)
+    {
         mono_family_->set_value(prefs_.mono_family);
+    }
     for (std::size_t i = 0; i < kCats; ++i)
     {
         auto& row = rows_[i];
         if (row.value)
         {
             row.value->set_text(sys > 0
-                                    ? pt_text(tk::font_role_pt_with(
-                                          cfg, kCategories[i].lead, sys))
+                                    ? pt_text(tk::font_role_pt_with(cfg, kCategories[i].lead, sys))
                                     : std::to_string(prefs_.categories[i].delta_pt));
         }
         if (row.family)
+        {
             row.family->set_value(prefs_.categories[i].family);
+        }
         if (row.reset)
+        {
             row.reset->set_enabled(!(prefs_.categories[i] == Prefs::Category{}));
+        }
     }
     updating_ = false;
 
     if (reset_all_btn_)
+    {
         reset_all_btn_->set_enabled(!(prefs_ == Prefs{}));
+    }
 }
 
 } // namespace tesseract::views

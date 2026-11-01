@@ -34,8 +34,7 @@ struct AccessKeyHash
 {
     std::size_t operator()(const AccessKey& k) const
     {
-        return std::hash<void*>()(k.widget) ^
-              (std::hash<int>()(k.row_index) << 1);
+        return std::hash<void*>()(k.widget) ^ (std::hash<int>()(k.row_index) << 1);
     }
 };
 
@@ -48,27 +47,50 @@ GtkAccessibleRole to_gtk_role(tk::Role r)
 {
     switch (r)
     {
-    case tk::Role::Button:      return GTK_ACCESSIBLE_ROLE_BUTTON;
-    case tk::Role::CheckBox:    return GTK_ACCESSIBLE_ROLE_CHECKBOX;
-    case tk::Role::Switch:      return GTK_ACCESSIBLE_ROLE_SWITCH;
-    case tk::Role::RadioButton: return GTK_ACCESSIBLE_ROLE_RADIO;
-    case tk::Role::ComboBox:    return GTK_ACCESSIBLE_ROLE_COMBO_BOX;
-    case tk::Role::TextInput:   return GTK_ACCESSIBLE_ROLE_TEXT_BOX;
-    case tk::Role::StaticText:  return GTK_ACCESSIBLE_ROLE_LABEL;
-    case tk::Role::Image:       return GTK_ACCESSIBLE_ROLE_IMG;
-    case tk::Role::Link:        return GTK_ACCESSIBLE_ROLE_LINK;
-    case tk::Role::List:        return GTK_ACCESSIBLE_ROLE_LIST;
-    case tk::Role::ListItem:    return GTK_ACCESSIBLE_ROLE_LIST_ITEM;
-    case tk::Role::Grid:        return GTK_ACCESSIBLE_ROLE_GRID;
-    case tk::Role::GridCell:    return GTK_ACCESSIBLE_ROLE_GRID_CELL;
-    case tk::Role::Tab:         return GTK_ACCESSIBLE_ROLE_TAB;
-    case tk::Role::TabList:     return GTK_ACCESSIBLE_ROLE_TAB_LIST;
-    case tk::Role::TabPanel:    return GTK_ACCESSIBLE_ROLE_TAB_PANEL;
-    case tk::Role::Dialog:      return GTK_ACCESSIBLE_ROLE_DIALOG;
-    case tk::Role::MenuItem:    return GTK_ACCESSIBLE_ROLE_MENU_ITEM;
-    case tk::Role::Group:       return GTK_ACCESSIBLE_ROLE_GROUP;
-    case tk::Role::ProgressBar: return GTK_ACCESSIBLE_ROLE_PROGRESS_BAR;
-    case tk::Role::None:        return GTK_ACCESSIBLE_ROLE_GENERIC;
+    case tk::Role::Button:
+        return GTK_ACCESSIBLE_ROLE_BUTTON;
+    case tk::Role::CheckBox:
+        return GTK_ACCESSIBLE_ROLE_CHECKBOX;
+    case tk::Role::Switch:
+        return GTK_ACCESSIBLE_ROLE_SWITCH;
+    case tk::Role::RadioButton:
+        return GTK_ACCESSIBLE_ROLE_RADIO;
+    case tk::Role::ComboBox:
+        return GTK_ACCESSIBLE_ROLE_COMBO_BOX;
+    case tk::Role::TextInput:
+        return GTK_ACCESSIBLE_ROLE_TEXT_BOX;
+    case tk::Role::StaticText:
+        return GTK_ACCESSIBLE_ROLE_LABEL;
+    case tk::Role::Image:
+        return GTK_ACCESSIBLE_ROLE_IMG;
+    case tk::Role::Link:
+        return GTK_ACCESSIBLE_ROLE_LINK;
+    case tk::Role::List:
+        return GTK_ACCESSIBLE_ROLE_LIST;
+    case tk::Role::ListItem:
+        return GTK_ACCESSIBLE_ROLE_LIST_ITEM;
+    case tk::Role::Grid:
+        return GTK_ACCESSIBLE_ROLE_GRID;
+    case tk::Role::GridCell:
+        return GTK_ACCESSIBLE_ROLE_GRID_CELL;
+    case tk::Role::Tab:
+        return GTK_ACCESSIBLE_ROLE_TAB;
+    case tk::Role::TabList:
+        return GTK_ACCESSIBLE_ROLE_TAB_LIST;
+    case tk::Role::TabPanel:
+        return GTK_ACCESSIBLE_ROLE_TAB_PANEL;
+    case tk::Role::Dialog:
+        return GTK_ACCESSIBLE_ROLE_DIALOG;
+    case tk::Role::MenuItem:
+        return GTK_ACCESSIBLE_ROLE_MENU_ITEM;
+    case tk::Role::Group:
+        return GTK_ACCESSIBLE_ROLE_GROUP;
+    case tk::Role::ProgressBar:
+        return GTK_ACCESSIBLE_ROLE_PROGRESS_BAR;
+    case tk::Role::Slider:
+        return GTK_ACCESSIBLE_ROLE_SLIDER;
+    case tk::Role::None:
+        return GTK_ACCESSIBLE_ROLE_GENERIC;
     }
     return GTK_ACCESSIBLE_ROLE_GENERIC;
 }
@@ -147,7 +169,9 @@ struct NodeData
 bool node_disabled(const AccessNode& n)
 {
     if (n.state.disabled)
+    {
         return true;
+    }
     return n.row_index == -1 && n.widget && !n.activate && !n.widget->enabled();
 }
 
@@ -241,8 +265,7 @@ void tk_access_node_class_init(TkAccessNodeClass* klass)
     G_OBJECT_CLASS(klass)->finalize = tk_access_node_finalize;
     GtkWidgetClass* widget_class = GTK_WIDGET_CLASS(klass);
     widget_class->measure = node_measure;
-    gtk_widget_class_install_action(widget_class, "activate", nullptr,
-                                    node_activate_action);
+    gtk_widget_class_install_action(widget_class, "activate", nullptr, node_activate_action);
 }
 
 gboolean node_get_platform_state(GtkAccessible*, GtkAccessiblePlatformState state)
@@ -264,9 +287,9 @@ GtkAccessible* node_get_next_accessible_sibling(GtkAccessible* self);
 // GtkWidget itself; see attach_accessible_bridge's construction call).
 void node_accessible_init(GtkAccessibleInterface* iface)
 {
-    iface->get_platform_state          = node_get_platform_state;
-    iface->get_accessible_parent       = node_get_accessible_parent;
-    iface->get_first_accessible_child  = node_get_first_accessible_child;
+    iface->get_platform_state = node_get_platform_state;
+    iface->get_accessible_parent = node_get_accessible_parent;
+    iface->get_first_accessible_child = node_get_first_accessible_child;
     iface->get_next_accessible_sibling = node_get_next_accessible_sibling;
 }
 
@@ -288,13 +311,19 @@ public:
     ~AccessBridge()
     {
         if (refresh_source_)
+        {
             g_source_remove(refresh_source_);
+        }
         // The node widgets can outlive the bridge while AT-SPI still holds
         // them. Clear their back-pointers, so the AT callbacks answer "none"
         // (they already check for a null bridge) rather than reach freed memory.
         for (const auto& entry : nodes_)
+        {
             if (NodeData* data = node_data(GTK_ACCESSIBLE(entry.second)))
+            {
                 data->bridge = nullptr;
+            }
+        }
     }
 
     void mark_dirty()
@@ -309,7 +338,9 @@ public:
     void schedule_refresh()
     {
         if (nodes_.empty() || refresh_source_)
+        {
             return;
+        }
         refresh_source_ = g_timeout_add(
             kRefreshDelayMs,
             [](gpointer p) -> gboolean
@@ -339,7 +370,9 @@ public:
     {
         rebuild_if_dirty();
         if (!tree_.widget)
+        {
             return nullptr;
+        }
         auto it = nodes_.find(key_for(tree_));
         return it != nodes_.end() ? GTK_ACCESSIBLE(g_object_ref(it->second)) : nullptr;
     }
@@ -365,7 +398,9 @@ public:
         rebuild_if_dirty();
         auto it = index_.find(key);
         if (it == index_.end() || it->second->children.empty())
+        {
             return nullptr;
+        }
         auto w = nodes_.find(key_for(it->second->children.front()));
         return w != nodes_.end() ? GTK_ACCESSIBLE(g_object_ref(w->second)) : nullptr;
     }
@@ -375,17 +410,25 @@ public:
         rebuild_if_dirty();
         auto pit = parent_of_.find(key);
         if (pit == parent_of_.end())
+        {
             return nullptr; // top-level node: no siblings, there's only one root
+        }
         auto parent_it = index_.find(pit->second);
         if (parent_it == index_.end())
+        {
             return nullptr;
+        }
         const auto& siblings = parent_it->second->children;
         for (std::size_t i = 0; i < siblings.size(); ++i)
         {
             if (!(key_for(siblings[i]) == key))
+            {
                 continue;
+            }
             if (i + 1 >= siblings.size())
+            {
                 return nullptr;
+            }
             auto w = nodes_.find(key_for(siblings[i + 1]));
             return w != nodes_.end() ? GTK_ACCESSIBLE(g_object_ref(w->second)) : nullptr;
         }
@@ -397,7 +440,9 @@ public:
         rebuild_if_dirty();
         auto it = index_.find(key);
         if (it != index_.end())
+        {
             tk::invoke_default_action(*it->second);
+        }
     }
 
     // Generalizes notify_current_row()'s active-descendant technique (below)
@@ -418,17 +463,20 @@ public:
         }
         auto it = nodes_.find(AccessKey{now, -1});
         if (it == nodes_.end())
+        {
             return;
+        }
         gtk_accessible_update_relation(GTK_ACCESSIBLE(root_marker_),
-                                       GTK_ACCESSIBLE_RELATION_ACTIVE_DESCENDANT,
-                                       it->second, -1);
+                                       GTK_ACCESSIBLE_RELATION_ACTIVE_DESCENDANT, it->second, -1);
     }
 
 private:
     void rebuild_if_dirty()
     {
         if (!dirty_)
+        {
             return;
+        }
         dirty_ = false;
 
         Widget* root = surface_.root();
@@ -461,13 +509,14 @@ private:
         parent_of_ = std::move(new_parent);
 
         for (auto& [key, node_ptr] : index_)
+        {
             ensure_node_widget(key, *node_ptr);
+        }
     }
 
-    void index_tree(
-        AccessNode& node,
-        std::unordered_map<AccessKey, const AccessNode*, AccessKeyHash>& index,
-        std::unordered_map<AccessKey, AccessKey, AccessKeyHash>& parent)
+    void index_tree(AccessNode& node,
+                    std::unordered_map<AccessKey, const AccessNode*, AccessKeyHash>& index,
+                    std::unordered_map<AccessKey, AccessKey, AccessKeyHash>& parent)
     {
         AccessKey key = key_for(node);
         index[key] = &node;
@@ -521,23 +570,27 @@ private:
 
     void push_if_changed(NodeData* data, GtkWidget* widget, const AccessNode& node)
     {
-        const bool first    = !data->pushed_once;
+        const bool first = !data->pushed_once;
         const bool disabled = node_disabled(node);
         auto* acc = GTK_ACCESSIBLE(widget);
 
         if (first || data->last_name != node.name)
         {
-            gtk_accessible_update_property(acc, GTK_ACCESSIBLE_PROPERTY_LABEL,
-                                           node.name.c_str(), -1);
+            gtk_accessible_update_property(acc, GTK_ACCESSIBLE_PROPERTY_LABEL, node.name.c_str(),
+                                           -1);
             data->last_name = node.name;
         }
         if (first || data->last_description != node.description)
         {
             if (node.description.empty())
+            {
                 gtk_accessible_reset_property(acc, GTK_ACCESSIBLE_PROPERTY_DESCRIPTION);
+            }
             else
+            {
                 gtk_accessible_update_property(acc, GTK_ACCESSIBLE_PROPERTY_DESCRIPTION,
                                                node.description.c_str(), -1);
+            }
             data->last_description = node.description;
         }
         // AccessNode::language is not mapped: GTK 4.22 has no per-object
@@ -547,23 +600,20 @@ private:
         // GTK's optional AccessKit backend doesn't set a node language either.
         if (first || data->last_checked != node.state.checked ||
             data->last_expanded != node.state.expanded ||
-            data->last_selected != node.state.selected ||
-            data->last_busy != node.state.busy || data->last_disabled != disabled)
+            data->last_selected != node.state.selected || data->last_busy != node.state.busy ||
+            data->last_disabled != disabled)
         {
             gtk_accessible_update_state(
-                acc,
-                GTK_ACCESSIBLE_STATE_CHECKED,
-                node.state.checked ? GTK_ACCESSIBLE_TRISTATE_TRUE
-                                   : GTK_ACCESSIBLE_TRISTATE_FALSE,
+                acc, GTK_ACCESSIBLE_STATE_CHECKED,
+                node.state.checked ? GTK_ACCESSIBLE_TRISTATE_TRUE : GTK_ACCESSIBLE_TRISTATE_FALSE,
                 GTK_ACCESSIBLE_STATE_EXPANDED, static_cast<int>(node.state.expanded),
                 GTK_ACCESSIBLE_STATE_SELECTED, static_cast<int>(node.state.selected),
                 GTK_ACCESSIBLE_STATE_BUSY, static_cast<int>(node.state.busy),
-                GTK_ACCESSIBLE_STATE_DISABLED, static_cast<int>(disabled),
-                -1);
-            data->last_checked  = node.state.checked;
+                GTK_ACCESSIBLE_STATE_DISABLED, static_cast<int>(disabled), -1);
+            data->last_checked = node.state.checked;
             data->last_expanded = node.state.expanded;
             data->last_selected = node.state.selected;
-            data->last_busy     = node.state.busy;
+            data->last_busy = node.state.busy;
             data->last_disabled = disabled;
         }
         if (first || data->last_modal != node.modal)
@@ -574,12 +624,9 @@ private:
         }
         if (node.value.present && (first || data->last_value_now != node.value.now))
         {
-            gtk_accessible_update_property(acc, GTK_ACCESSIBLE_PROPERTY_VALUE_MIN,
-                                           node.value.min,
-                                           GTK_ACCESSIBLE_PROPERTY_VALUE_MAX,
-                                           node.value.max,
-                                           GTK_ACCESSIBLE_PROPERTY_VALUE_NOW,
-                                           node.value.now, -1);
+            gtk_accessible_update_property(acc, GTK_ACCESSIBLE_PROPERTY_VALUE_MIN, node.value.min,
+                                           GTK_ACCESSIBLE_PROPERTY_VALUE_MAX, node.value.max,
+                                           GTK_ACCESSIBLE_PROPERTY_VALUE_NOW, node.value.now, -1);
             data->last_value_now = node.value.now;
         }
         // "Item N of M" for list rows; ARIA-style 1-based positions.
@@ -587,28 +634,23 @@ private:
         if (pos > 0 && (first || data->last_pos != pos))
         {
             gtk_accessible_update_relation(acc, GTK_ACCESSIBLE_RELATION_POS_IN_SET, pos,
-                                           GTK_ACCESSIBLE_RELATION_SET_SIZE,
-                                           node.row_set_size, -1);
+                                           GTK_ACCESSIBLE_RELATION_SET_SIZE, node.row_set_size, -1);
             data->last_pos = pos;
         }
         if (node.grid_row >= 0 &&
-            (first || data->last_grid_row != node.grid_row ||
-             data->last_grid_col != node.grid_col))
+            (first || data->last_grid_row != node.grid_row || data->last_grid_col != node.grid_col))
         {
             gtk_accessible_update_relation(acc, GTK_ACCESSIBLE_RELATION_ROW_INDEX,
-                                           node.grid_row + 1,
-                                           GTK_ACCESSIBLE_RELATION_COL_INDEX,
+                                           node.grid_row + 1, GTK_ACCESSIBLE_RELATION_COL_INDEX,
                                            node.grid_col + 1, -1);
             data->last_grid_row = node.grid_row;
             data->last_grid_col = node.grid_col;
         }
-        if (node.grid_col_count > 0 &&
-            (first || data->last_grid_rows != node.grid_row_count ||
-             data->last_grid_cols != node.grid_col_count))
+        if (node.grid_col_count > 0 && (first || data->last_grid_rows != node.grid_row_count ||
+                                        data->last_grid_cols != node.grid_col_count))
         {
             gtk_accessible_update_relation(acc, GTK_ACCESSIBLE_RELATION_ROW_COUNT,
-                                           node.grid_row_count,
-                                           GTK_ACCESSIBLE_RELATION_COL_COUNT,
+                                           node.grid_row_count, GTK_ACCESSIBLE_RELATION_COL_COUNT,
                                            node.grid_col_count, -1);
             data->last_grid_rows = node.grid_row_count;
             data->last_grid_cols = node.grid_col_count;
@@ -628,18 +670,24 @@ private:
     void hook_selection_changed(Widget* widget)
     {
         if (!widget || selection_hooked_.count(widget))
+        {
             return;
+        }
         selection_hooked_.insert(widget);
 
         if (auto* list = dynamic_cast<tk::ListView*>(widget))
         {
             list->on_selection_changed = [this, list](int idx)
-            { notify_current_row(list, idx); };
+            {
+                notify_current_row(list, idx);
+            };
         }
         else if (auto* grid = dynamic_cast<tk::GridView*>(widget))
         {
             grid->on_selection_changed = [this, grid](int idx)
-            { notify_current_row(grid, idx); };
+            {
+                notify_current_row(grid, idx);
+            };
         }
     }
 
@@ -647,7 +695,9 @@ private:
     {
         auto owner_it = nodes_.find(AccessKey{owner, -1});
         if (owner_it == nodes_.end())
+        {
             return;
+        }
         if (idx < 0)
         {
             gtk_accessible_reset_relation(GTK_ACCESSIBLE(owner_it->second),
@@ -656,10 +706,12 @@ private:
         }
         auto row_it = nodes_.find(AccessKey{owner, idx});
         if (row_it == nodes_.end())
+        {
             return;
+        }
         gtk_accessible_update_relation(GTK_ACCESSIBLE(owner_it->second),
-                                       GTK_ACCESSIBLE_RELATION_ACTIVE_DESCENDANT,
-                                       row_it->second, -1);
+                                       GTK_ACCESSIBLE_RELATION_ACTIVE_DESCENDANT, row_it->second,
+                                       -1);
     }
 
     Surface& surface_;
@@ -682,7 +734,9 @@ GtkAccessible* node_get_accessible_parent(GtkAccessible* self)
         return real_parent ? GTK_ACCESSIBLE(g_object_ref(real_parent)) : nullptr;
     }
     if (!data->bridge)
+    {
         return nullptr;
+    }
     return data->bridge->accessible_parent_for({data->key_widget, data->key_row_index});
 }
 
@@ -690,9 +744,13 @@ GtkAccessible* node_get_first_accessible_child(GtkAccessible* self)
 {
     NodeData* data = node_data(self);
     if (!data->bridge)
+    {
         return nullptr;
+    }
     if (data->is_root_marker)
+    {
         return data->bridge->root_child();
+    }
     return data->bridge->first_child_for({data->key_widget, data->key_row_index});
 }
 
@@ -700,7 +758,9 @@ GtkAccessible* node_get_next_accessible_sibling(GtkAccessible* self)
 {
     NodeData* data = node_data(self);
     if (data->is_root_marker || !data->bridge)
+    {
         return nullptr; // only ever one root marker per Surface
+    }
     return data->bridge->next_sibling_for({data->key_widget, data->key_row_index});
 }
 
@@ -708,7 +768,9 @@ void node_activate_action(GtkWidget* widget, const char*, GVariant*)
 {
     NodeData* data = TK_ACCESS_NODE(widget)->data;
     if (data->bridge)
+    {
         data->bridge->activate({data->key_widget, data->key_row_index});
+    }
 }
 
 } // namespace
@@ -717,8 +779,8 @@ void attach_accessible_bridge(Surface& surface)
 {
     GtkWidget* overlay = surface.widget();
 
-    GtkWidget* root_marker = GTK_WIDGET(g_object_new(
-        TK_TYPE_ACCESS_NODE, "accessible-role", GTK_ACCESSIBLE_ROLE_GROUP, nullptr));
+    GtkWidget* root_marker = GTK_WIDGET(
+        g_object_new(TK_TYPE_ACCESS_NODE, "accessible-role", GTK_ACCESSIBLE_ROLE_GROUP, nullptr));
     NodeData* root_data = node_data(GTK_ACCESSIBLE(root_marker));
     root_data->is_root_marker = true;
 
@@ -731,7 +793,10 @@ void attach_accessible_bridge(Surface& surface)
     // mechanism the way qt_accessible.cpp's QObject-keyed one does, since
     // tk::gtk4::Surface has no equivalent lifecycle signal of its own.
     g_object_set_data_full(G_OBJECT(root_marker), "tk-access-bridge", bridge,
-                           [](gpointer p) { delete static_cast<AccessBridge*>(p); });
+                           [](gpointer p)
+                           {
+                               delete static_cast<AccessBridge*>(p);
+                           });
     // Second, non-owning stash of the same pointer directly on `overlay` —
     // the root marker above owns the real (destroy-notify'd) reference;
     // this is just so notify_focus_changed(GtkWidget* overlay, ...) can find
@@ -744,28 +809,44 @@ void attach_accessible_bridge(Surface& surface)
     gtk_overlay_add_overlay(GTK_OVERLAY(overlay), root_marker);
     gtk_overlay_set_measure_overlay(GTK_OVERLAY(overlay), root_marker, FALSE);
 
-    surface.add_layout_listener([bridge] { bridge->mark_dirty(); });
-    surface.host().add_paint_listener([bridge] { bridge->schedule_refresh(); });
+    surface.add_layout_listener(
+        [bridge]
+        {
+            bridge->mark_dirty();
+        });
+    surface.host().add_paint_listener(
+        [bridge]
+        {
+            bridge->schedule_refresh();
+        });
 }
 
 void announce(GtkWidget* overlay, const std::string& text, bool assertive)
 {
     if (!overlay)
+    {
         return;
-    auto* bridge = static_cast<AccessBridge*>(
-        g_object_get_data(G_OBJECT(overlay), "tk-access-bridge"));
+    }
+    auto* bridge =
+        static_cast<AccessBridge*>(g_object_get_data(G_OBJECT(overlay), "tk-access-bridge"));
     if (bridge)
+    {
         bridge->announce(text, assertive);
+    }
 }
 
 void notify_focus_changed(GtkWidget* overlay, tk::Widget* now)
 {
     if (!overlay)
+    {
         return;
-    auto* bridge = static_cast<AccessBridge*>(
-        g_object_get_data(G_OBJECT(overlay), "tk-access-bridge"));
+    }
+    auto* bridge =
+        static_cast<AccessBridge*>(g_object_get_data(G_OBJECT(overlay), "tk-access-bridge"));
     if (bridge)
+    {
         bridge->notify_focus_changed(now);
+    }
 }
 
 } // namespace tk::gtk4

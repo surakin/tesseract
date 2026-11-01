@@ -302,7 +302,9 @@ pub fn decode_jwt_sub(jwt: &str) -> Option<String> {
 mod tests {
     use super::*;
 
-    fn transports(json: serde_json::Value) -> Vec<matrix_sdk::ruma::api::client::rtc::RtcTransport> {
+    fn transports(
+        json: serde_json::Value,
+    ) -> Vec<matrix_sdk::ruma::api::client::rtc::RtcTransport> {
         serde_json::from_value(json).unwrap()
     }
 
@@ -521,7 +523,15 @@ mod tests {
     async fn call_jwt(base: &str) -> anyhow::Result<LiveKitTransport> {
         let http = reqwest::Client::new();
         fetch_livekit_jwt(
-            &http, base, "!r:example.org", "slot", "tok", 60, "example.org", "mid", "DEV",
+            &http,
+            base,
+            "!r:example.org",
+            "slot",
+            "tok",
+            60,
+            "example.org",
+            "mid",
+            "DEV",
             "@a:example.org",
         )
         .await
@@ -529,8 +539,7 @@ mod tests {
 
     #[tokio::test]
     async fn fetch_jwt_uses_sfu_get_when_available() {
-        let (base, seen) =
-            serve(vec![(200, r#"{"jwt":"J","url":"wss://sfu.example.org"}"#)]).await;
+        let (base, seen) = serve(vec![(200, r#"{"jwt":"J","url":"wss://sfu.example.org"}"#)]).await;
         // Trailing slash on the service URL must not produce `//sfu/get`.
         let t = call_jwt(&format!("{base}/")).await.unwrap();
         assert_eq!(t.jwt, "J");
@@ -569,7 +578,10 @@ mod tests {
     async fn fetch_jwt_reports_legacy_failure() {
         let (base, _seen) = serve(vec![(404, ""), (403, "denied")]).await;
         let e = call_jwt(&base).await.unwrap_err().to_string();
-        assert!(e.contains("/get_token") && e.contains("403") && !e.contains("denied"), "{e}");
+        assert!(
+            e.contains("/get_token") && e.contains("403") && !e.contains("denied"),
+            "{e}"
+        );
     }
 
     #[tokio::test]

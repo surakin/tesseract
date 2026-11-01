@@ -1,13 +1,11 @@
 use std::{
     collections::HashSet,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
     },
     time::{Duration, Instant},
 };
-
-use base64ct::{Base64, Encoding as _};
 
 use anyhow::Context;
 use matrix_sdk::Room;
@@ -16,13 +14,28 @@ use tokio::task::AbortHandle;
 use tracing::{info, warn};
 
 use super::{
-    e2ee::{broadcast_key_to_members, E2eeManager},
-    livekit_room::{LiveKitRoom, MemberTransports, SharedKeys},
-    members::{desired_sfus, read_live_members, transport_map, LkFocus},
+    e2ee::{
+        decode_frame_key, recheck_device_id, ClientKeySender, KeyDelivery, ParkedKey, ParkedKeys,
+        RateLimiter, Recheck, Secret, SecretString,
+    },
+    identity::{classify_identity, IdentityShape},
+    key_rotation::{ActivationGate, KeyRotator, RotationAction, Sessions},
+    livekit_room::{LiveKitRoom, MemberTransports, PrimaryEnded, SharedKeys},
+    members::{desired_sfus, transport_map, JoinCheck, LkFocus},
+    mrtc_membership::{
+        can_send_member_event, can_send_slot, encryption_flipped_mid_call,
+        new_member_id as new_mrtc_member_id, open_slot as open_mrtc_slot, others_may_be_present,
+        plan_slot, send_invite, should_write_member_events, withdraw_invite, JoinParams, LeaveCode,
+        MrtcMembership, SlotPlan, SlotWatch,
+    },
     sfu_set::{SfuContext, SfuSet},
     signaling::{
         self, send_msc3401_call_open, send_msc3401_member_join, send_msc3401_member_leave,
-        DelayedRestart, RtcMemberEventContent,
+        DelayedRestart,
+    },
+    slots::{
+        hashed_identities, read_all_live_members, read_all_live_members_checked, read_slot,
+        read_slot_state, read_slot_state_keyed, stale_own_members,
     },
     transport::{fetch_livekit_jwt, fetch_livekit_service_url, livekit_room_alias},
     RtcParticipantInfo,
@@ -39,26 +52,17 @@ const DELAYED_LEAVE_HEARTBEAT: Duration = Duration::from_secs(5);
 const MEMBERSHIP_REFRESH: Duration = Duration::from_secs(3600);
 /// Safety net in case a member-change sync event is missed.
 const RECONCILE_INTERVAL: Duration = Duration::from_secs(30);
+/// The member list of a room that was never fully loaded is fetched when a call
+/// starts; the call does not wait longer than this for it.
+const INITIAL_MEMBERS_TIMEOUT: Duration = Duration::from_secs(8);
+/// While a new key waits to be put to use, sends that end are looked at at most
+/// this often.
+const GATE_RECHECK_COALESCE: Duration = Duration::from_millis(250);
 
-fn next_session_id() -> u64 {
+/// A fresh session id. Ids are process-wide and never 0, so the UI can tell a
+/// stale event of an earlier call from the current one.
+pub(crate) fn next_session_id() -> u64 {
     SESSION_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
-}
-
-/// Generate a UUID v4 string using OS-level randomness.
-fn new_member_id() -> String {
-    use rand::RngCore;
-    let mut b = [0u8; 16];
-    rand::thread_rng().fill_bytes(&mut b);
-    b[6] = (b[6] & 0x0f) | 0x40; // version 4
-    b[8] = (b[8] & 0x3f) | 0x80; // variant 10xx
-    format!(
-        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-        b[0], b[1], b[2], b[3],
-        b[4], b[5],
-        b[6], b[7],
-        b[8], b[9],
-        b[10], b[11], b[12], b[13], b[14], b[15]
-    )
 }
 
 /// An active MatrixRTC call session. Drop ends the session (aborts background
@@ -73,21 +77,34 @@ pub struct RtcSession {
     /// Our publishing connection plus the subscribe-only connections to the
     /// SFUs other members publish on.
     sfus: Arc<SfuSet>,
-    /// Delayed-leave heartbeat and hourly membership refresh.
-    membership_task: AbortHandle,
-    /// Follows call-member changes: connects/drops SFUs and keeps the E2EE
-    /// frame keys in step with the member set.
-    reconcile_task: AbortHandle,
-    /// The pending MSC4140 delayed leave, cancelled on a graceful hang-up.
-    delay_id: Arc<PLMutex<Option<String>>>,
-    e2ee: Arc<PLMutex<E2eeManager>>,
+    e2ee: Arc<PLMutex<KeyRotator>>,
+    /// The memberships and ring this call announced, the background tasks that
+    /// keep them alive, and the one way to take them back.
+    announced: Arc<Announced>,
+    /// The runtime the call runs on, for the leave that a drop sends.
+    runtime: tokio::runtime::Handle,
     /// Removes the encryption-key to-device handler when the session is dropped.
-    _enc_key_guard: matrix_sdk::event_handler::EventHandlerDropGuard,
+    _enc_key_guards: (
+        matrix_sdk::event_handler::EventHandlerDropGuard,
+        matrix_sdk::event_handler::EventHandlerDropGuard,
+    ),
     /// Removes the call-member state handler when the session is dropped.
     _member_guard: matrix_sdk::event_handler::EventHandlerDropGuard,
+    /// Removes the room-membership handler (a kick, ban or leave wakes the
+    /// reconcile loop) when the session is dropped.
+    _room_member_guard: matrix_sdk::event_handler::EventHandlerDropGuard,
 }
 
 impl RtcSession {
+    /// The synchronous, cheap first step of a hang-up: nothing of ours is sent
+    /// after this (mic, camera and screen share stop, nothing announces us any
+    /// more) and nothing the call receives reaches the UI. Needs a tokio
+    /// runtime context. The network-bound teardown is `end_call`.
+    pub fn stop_now(&self) {
+        self.announced.shutdown();
+        self.sfus.stop_media();
+    }
+
     pub fn mute_audio(&self, muted: bool) {
         self.sfus.primary.set_audio_muted(muted);
     }
@@ -150,9 +167,385 @@ impl RtcSession {
 }
 
 impl Drop for RtcSession {
+    /// Stops every background task and, when `end_call` did not already,
+    /// withdraws the memberships on the runtime in a detached task (a session
+    /// replaced or dropped without a hang-up must not keep announcing us). The
+    /// withdrawal is a no-op for whatever a delivered `end_call` took back and
+    /// finishes what a timed-out one left.
     fn drop(&mut self) {
-        self.membership_task.abort();
-        self.reconcile_task.abort();
+        self.announced.shutdown();
+        // The call is over: its members' first-seen join times go with it.
+        if let Some(user) = self.client.user_id() {
+            crate::client::rtc::slots::forget_join_times(user.as_str(), &self.room_id);
+        }
+        // Spawning on a runtime that has shut down drops the task; it never panics.
+        let announced = Arc::clone(&self.announced);
+        self.runtime.spawn(async move {
+            announced.withdraw(LeaveCode::Leave, None).await;
+        });
+    }
+}
+
+/// How the call's signalling reaches the room. The room in production; a
+/// recorder in tests.
+#[async_trait::async_trait]
+trait Signals: Send + Sync {
+    /// Send the legacy `call.member` leave for the LiveKit identity `member_id`.
+    async fn legacy_leave(&self, member_id: &str) -> anyhow::Result<()>;
+    /// Cancel a pending MSC4140 delayed event (best effort).
+    async fn cancel_delayed(&self, delay_id: &str);
+    /// Whether anyone else has joined the call.
+    async fn call_answered(&self) -> bool;
+    /// Send the withdrawal of our MatrixRTC invite.
+    async fn withdraw_invite(&self) -> anyhow::Result<()>;
+}
+
+struct RoomSignals {
+    room: Room,
+    user_id: String,
+}
+
+#[async_trait::async_trait]
+impl Signals for RoomSignals {
+    async fn legacy_leave(&self, member_id: &str) -> anyhow::Result<()> {
+        send_msc3401_member_leave(&self.room, &self.user_id, member_id).await
+    }
+
+    async fn cancel_delayed(&self, delay_id: &str) {
+        signaling::cancel_delayed_event(&self.room.client(), delay_id).await;
+    }
+
+    async fn call_answered(&self) -> bool {
+        let client = self.room.client();
+        match (client.user_id(), client.device_id()) {
+            (Some(u), Some(d)) => !read_all_live_members(&self.room, u, d).await.is_empty(),
+            // Unknown: leave the ring alone rather than cancel one someone answered.
+            _ => true,
+        }
+    }
+
+    async fn withdraw_invite(&self) -> anyhow::Result<()> {
+        withdraw_invite(&self.room).await
+    }
+}
+
+/// The memberships and ring a call announced, the background tasks that keep
+/// them alive, and how to take it all back. Each part is withdrawn once it is
+/// delivered, however many of `end_call`, a dropped session, an SFU disconnect,
+/// the reconcile loop and a failed setup ask: a request that was cancelled or
+/// failed is tried again by the next one.
+struct Announced {
+    signals: Arc<dyn Signals>,
+    /// LiveKit identities we sent a legacy `call.member` join for (the state key follows it).
+    legacy_ids: PLMutex<Vec<String>>,
+    /// The pending MSC4140 delayed leave of the legacy member.
+    delay_id: Arc<PLMutex<Option<String>>>,
+    /// Our sticky `m.rtc.member` membership, when this call also writes one.
+    /// Kept even when its join failed: the send may still have gone through.
+    mrtc: std::sync::OnceLock<Arc<MrtcMembership>>,
+    /// Whether the legacy leave has been delivered; held while it is sent and
+    /// while the heartbeat sends a join, so the two cannot interleave.
+    legacy_left: tokio::sync::Mutex<bool>,
+    /// We sent a MatrixRTC invite; whether it is settled (withdrawn, or the
+    /// call was answered) is the value, held while it is sent.
+    invite_sent: AtomicBool,
+    invite_settled: tokio::sync::Mutex<bool>,
+    /// The call is being torn down: nothing may announce us any more.
+    closed: AtomicBool,
+    /// The heartbeat and the sticky refresh: the tasks that send joins.
+    tasks: PLMutex<Vec<AbortHandle>>,
+    /// The reconcile loop, kept apart because it tears the call down itself
+    /// when the room turns encrypted and must not abort itself.
+    reconcile: PLMutex<Option<AbortHandle>>,
+}
+
+impl Announced {
+    fn new(signals: Arc<dyn Signals>) -> Self {
+        Self {
+            signals,
+            legacy_ids: PLMutex::new(Vec::new()),
+            delay_id: Arc::new(PLMutex::new(None)),
+            mrtc: std::sync::OnceLock::new(),
+            legacy_left: tokio::sync::Mutex::new(false),
+            invite_sent: AtomicBool::new(false),
+            invite_settled: tokio::sync::Mutex::new(false),
+            closed: AtomicBool::new(false),
+            tasks: PLMutex::new(Vec::new()),
+            reconcile: PLMutex::new(None),
+        }
+    }
+
+    /// Record a legacy join we are about to send, so a withdrawal covers it
+    /// even if the send times out after the homeserver processed it.
+    fn joined_legacy(&self, id: &str) {
+        let mut ids = self.legacy_ids.lock();
+        if !ids.iter().any(|i| i == id) {
+            ids.push(id.to_owned());
+        }
+    }
+
+    /// Record the sticky membership, so a withdrawal covers it.
+    fn set_membership(&self, membership: Arc<MrtcMembership>) {
+        let _ = self.mrtc.set(membership);
+    }
+
+    /// Record that we sent a MatrixRTC invite, so a withdrawal covers it.
+    fn invited(&self) {
+        self.invite_sent.store(true, Ordering::SeqCst);
+    }
+
+    fn is_closed(&self) -> bool {
+        self.closed.load(Ordering::SeqCst)
+    }
+
+    /// Hand a task that announces us over to be stopped by [`Self::close`].
+    /// A task registered after the call closed is stopped at once.
+    fn register_task(&self, task: AbortHandle) {
+        let mut tasks = self.tasks.lock();
+        if self.is_closed() {
+            task.abort();
+        } else {
+            tasks.push(task);
+        }
+    }
+
+    fn register_reconcile(&self, task: AbortHandle) {
+        let mut slot = self.reconcile.lock();
+        if self.is_closed() {
+            task.abort();
+        } else {
+            *slot = Some(task);
+        }
+    }
+
+    /// Stop everything that sends a join and refuse further ones. The reconcile
+    /// loop is left running: it may be the caller (see [`Self::shutdown`]).
+    fn close(&self) {
+        let mut tasks = self.tasks.lock();
+        self.closed.store(true, Ordering::SeqCst);
+        for task in tasks.drain(..) {
+            task.abort();
+        }
+    }
+
+    /// [`Self::close`] plus the reconcile loop: the first step of every
+    /// teardown that is not driven by that loop.
+    fn shutdown(&self) {
+        self.close();
+        if let Some(task) = self.reconcile.lock().take() {
+            task.abort();
+        }
+    }
+
+    /// The legacy-membership lock for sending a join, or `None` once the call
+    /// is closed or the legacy leave is delivered. Held across the send, so a
+    /// join cannot land after the leave.
+    async fn open_for_join(&self) -> Option<tokio::sync::MutexGuard<'_, bool>> {
+        let left = self.legacy_left.lock().await;
+        (!self.is_closed() && !*left).then_some(left)
+    }
+
+    /// Send the leave for a legacy identity we no longer use (a wrong guess at
+    /// our LiveKit identity) and stop tracking it once it is out.
+    async fn leave_legacy_identity(&self, id: &str) {
+        if send_legacy_leave(&*self.signals, id).await {
+            self.legacy_ids.lock().retain(|i| i != id);
+        }
+    }
+
+    /// Take back the legacy and the sticky membership and the ring. The delayed
+    /// leave is the fallback while the legacy leave has not got out, so it is
+    /// only cancelled once that has.
+    async fn withdraw(&self, code: LeaveCode, why: Option<&str>) {
+        {
+            let mut left = self.legacy_left.lock().await;
+            if !*left {
+                let ids = self.legacy_ids.lock().clone();
+                let mut all_sent = true;
+                for id in &ids {
+                    all_sent &= send_legacy_leave(&*self.signals, id).await;
+                }
+                if all_sent {
+                    *left = true;
+                    let pending = self.delay_id.lock().take();
+                    if let Some(id) = pending {
+                        self.signals.cancel_delayed(&id).await;
+                    }
+                }
+            }
+        }
+        if let Some(m) = self.mrtc.get() {
+            m.leave(code, why).await;
+        }
+        if self.invite_sent.load(Ordering::SeqCst) {
+            let mut settled = self.invite_settled.lock().await;
+            if !*settled {
+                // A call somebody joined needs no cancelled ring.
+                *settled = self.signals.call_answered().await
+                    || self.signals.withdraw_invite().await.is_ok();
+            }
+        }
+    }
+}
+
+/// Send the legacy member leave, once more if the first send fails.
+async fn send_legacy_leave(signals: &dyn Signals, member_id: &str) -> bool {
+    for attempt in 0..2 {
+        match signals.legacy_leave(member_id).await {
+            Ok(()) => return true,
+            Err(e) => warn!(
+                "rtc: legacy call-member leave failed (attempt {}): {e}",
+                attempt + 1
+            ),
+        }
+        if attempt == 0 {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+    }
+    false
+}
+
+/// What a call has connected to the SFUs: what a hang-up has to switch off.
+#[async_trait::async_trait]
+trait Connection: Send + Sync {
+    /// Stop sending anything (mic, camera, screen share) and stop passing
+    /// received media to the UI. Cheap and idempotent; needs a runtime context.
+    fn stop_media(&self);
+    /// Close the connections (bounded; a few seconds at most).
+    async fn disconnect(&self);
+}
+
+#[async_trait::async_trait]
+impl Connection for SfuSet {
+    fn stop_media(&self) {
+        SfuSet::stop_media(self);
+    }
+
+    async fn disconnect(&self) {
+        self.disconnect_all().await;
+    }
+}
+
+#[async_trait::async_trait]
+impl Connection for LiveKitRoom {
+    fn stop_media(&self) {
+        self.stop_local_media();
+    }
+
+    async fn disconnect(&self) {
+        LiveKitRoom::disconnect(self).await;
+    }
+}
+
+fn check_not_cancelled(cancelled: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<()> {
+    if cancelled() {
+        anyhow::bail!("the call was cancelled");
+    }
+    Ok(())
+}
+
+/// The connection of a setup that has not connected (yet).
+struct NoConnection;
+
+#[async_trait::async_trait]
+impl Connection for NoConnection {
+    fn stop_media(&self) {}
+
+    async fn disconnect(&self) {}
+}
+
+/// Take a call down. Everything that announces us stops, the media stops
+/// (synchronously, before any network wait), and then the memberships are taken
+/// back while the connections close, at the same time: a slow or offline
+/// homeserver never keeps the mic published. Returns whether the withdrawal was
+/// delivered within `limit`; the rest is finished by whoever withdraws next.
+async fn hang_up(
+    announced: &Announced,
+    connection: &dyn Connection,
+    code: LeaveCode,
+    why: Option<&str>,
+    limit: Duration,
+) -> bool {
+    announced.shutdown();
+    connection.stop_media();
+    let withdraw = async {
+        tokio::time::timeout(limit, announced.withdraw(code, why))
+            .await
+            .is_ok()
+    };
+    let (delivered, ()) = tokio::join!(withdraw, connection.disconnect());
+    delivered
+}
+
+/// How long the cleanup of a failed or abandoned setup waits for the
+/// memberships to be taken back.
+const SETUP_CLEANUP_LIMIT: Duration = Duration::from_secs(30);
+
+/// Takes a setup that does not finish back out: dropped without `defuse`
+/// (an early return, a panic, or the setup being cancelled by its deadline), it
+/// stops the media, closes the connection and withdraws what was announced.
+struct SetupGuard {
+    announced: Arc<Announced>,
+    connection: Arc<dyn Connection>,
+    armed: bool,
+}
+
+impl SetupGuard {
+    fn new(announced: Arc<Announced>) -> Self {
+        Self {
+            announced,
+            connection: Arc::new(NoConnection),
+            armed: true,
+        }
+    }
+
+    /// The setup connected: a failure from here on closes the connection too.
+    fn connected(&mut self, connection: Arc<dyn Connection>) {
+        self.connection = connection;
+    }
+
+    /// The setup succeeded; the session owns the cleanup from now on.
+    fn defuse(mut self) {
+        self.armed = false;
+    }
+
+    /// The setup failed on a path that can wait for its cleanup.
+    async fn fail(mut self, code: LeaveCode, why: &str) {
+        self.armed = false;
+        hang_up(
+            &self.announced,
+            &*self.connection,
+            code,
+            Some(why),
+            SETUP_CLEANUP_LIMIT,
+        )
+        .await;
+    }
+}
+
+impl Drop for SetupGuard {
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+        self.announced.shutdown();
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let _enter = runtime.enter();
+        self.connection.stop_media();
+        let announced = Arc::clone(&self.announced);
+        let connection = Arc::clone(&self.connection);
+        runtime.spawn(async move {
+            hang_up(
+                &announced,
+                &*connection,
+                LeaveCode::TransportError,
+                Some("the call could not be set up"),
+                SETUP_CLEANUP_LIMIT,
+            )
+            .await;
+        });
     }
 }
 
@@ -161,20 +554,31 @@ impl Drop for RtcSession {
 // ---------------------------------------------------------------------------
 
 /// Start a call in `room_id` under `slot_id` (typically `"call#default"`).
+/// `session_id` (from [`next_session_id`]) is the id every event of the call
+/// carries; the caller hands it to the UI before the call is up.
 ///
 /// Performs: discovery of our homeserver's SFU → JWT → membership join event
 /// (`multi_sfu`) → LiveKit connection on our SFU → E2EE key broadcast, then
 /// spawns the background tasks that keep the call in step with the room's
 /// other members (subscribing to their SFUs, key distribution, heartbeat).
+///
+/// `cancelled` says the call was hung up or replaced meanwhile: the setup then
+/// stops at its next step and takes back what it did. Every way out of this
+/// function after the first announcement (an error, a panic, the caller
+/// dropping the future at a deadline) takes the call back down.
 pub async fn start_call(
     client: &matrix_sdk::Client,
     http: &reqwest::Client,
     room_id: &str,
     slot_id: &str,
     audio_only: bool,
+    session_id: u64,
+    cancelled: &(dyn Fn() -> bool + Send + Sync),
 ) -> anyhow::Result<RtcSession> {
     use matrix_sdk::ruma::{
-        events::{call::member::CallMemberEventContent, SyncStateEvent},
+        events::{
+            call::member::CallMemberEventContent, room::member::SyncRoomMemberEvent, SyncStateEvent,
+        },
         MilliSecondsSinceUnixEpoch,
     };
 
@@ -188,8 +592,11 @@ pub async fn start_call(
     };
 
     let t_start = Instant::now();
-    let session_id = next_session_id();
-    let member_id = new_member_id();
+    // One id for this join: the /get_token request, the sticky `m.rtc.member`
+    // and the key events all name it, so that the LiveKit identity the JWT
+    // service derives from it (MSC4195: a hash of our user and this id) is the
+    // one our peers compute from our member event.
+    let member_id = new_mrtc_member_id();
     let join_ts = MilliSecondsSinceUnixEpoch::now();
 
     let room_oid: matrix_sdk::ruma::OwnedRoomId = room_id.parse().context("invalid room_id")?;
@@ -213,7 +620,26 @@ pub async fn start_call(
     let lk_alias = livekit_room_alias(room_id, slot_id);
     info!("rtc: publishing on local SFU {local_service_url}");
 
-    let initial_members = read_live_members(&room, uid, &own_device).await;
+    // A big room that was never fully loaded would fetch its member list here:
+    // the call does not wait for it past the timeout, and goes on with what the
+    // local store knows (the reconcile loop corrects it with the full list).
+    let mut members_read_complete = true;
+    let initial_members = match tokio::time::timeout(
+        INITIAL_MEMBERS_TIMEOUT,
+        read_all_live_members(&room, uid, &own_device),
+    )
+    .await
+    {
+        Ok(members) => members,
+        Err(_) => {
+            members_read_complete = false;
+            warn!("rtc: the room's member list is slow to load; starting with the members already known");
+            // These members are the first media key's recipients, so a sender the
+            // store does not know is left out until the reconcile loop's full read
+            // confirms it.
+            read_all_live_members_checked(&room, uid, &own_device, JoinCheck::KnownJoined).await
+        }
+    };
     info!(
         "rtc: {} other call member(s) already joined: {:?}",
         initial_members.len(),
@@ -226,14 +652,19 @@ pub async fn start_call(
     // Which SFU each member publishes on; lets the LiveKit layer ignore
     // participants that are not real publishers on the SFU they appear on.
     let member_transports = MemberTransports::default();
-    let local_focus = LkFocus {
+    let mut local_focus = LkFocus {
         service_url: local_service_url.clone(),
         alias: lk_alias.clone(),
+        sfu_url: None,
+        server_name: None,
     };
     member_transports.replace(transport_map(
         &initial_members,
         Some((join_ts, &local_focus)),
     ));
+    member_transports
+        .identities()
+        .replace(hashed_identities(&initial_members));
 
     // OpenID token → JWT
     let openid = get_openid_token(client).await?;
@@ -251,6 +682,14 @@ pub async fn start_call(
     )
     .await?;
     info!("rtc: focus discovery done at {:?}", t_start.elapsed());
+    check_not_cancelled(cancelled)?;
+    // Now that the SFU's WebSocket URL is known, a member that names only that
+    // URL as its transport can be recognised as being on our SFU.
+    local_focus.sfu_url = Some(lk_transport.server_url.clone());
+    member_transports.replace(transport_map(
+        &initial_members,
+        Some((join_ts, &local_focus)),
+    ));
 
     // ── E2EE negotiation ────────────────────────────────────────────────────
     // Only enable frame encryption when the Matrix room is encrypted.
@@ -279,52 +718,50 @@ pub async fn start_call(
     // Register BEFORE signaling so we keep any key events the peer sends
     // immediately on receiving our membership. Keys land in `shared` and are
     // applied to participants as they appear on any SFU.
-    let shared = SharedKeys::new();
+    let shared = SharedKeys::with_identities(member_transports.identities());
     let sfus_holder: Arc<PLMutex<Option<Arc<SfuSet>>>> = Arc::new(PLMutex::new(None));
-    let shared_h = shared.clone();
-    let holder_h = Arc::clone(&sfus_holder);
-    let room_h = room.clone();
-    let enc_key_handle = client.add_event_handler({
-        move |ev: matrix_sdk::ruma::events::ToDeviceEvent<
-            crate::client::rtc::signaling::RtcEncryptionKeyEventContent,
-        >,
+    // Keys from senders whose membership event we have not seen yet wait here
+    // (MSC4143) until `reconcile_loop` sees them join.
+    let parked: Arc<PLMutex<ParkedKeys>> = Arc::new(PLMutex::new(ParkedKeys::new()));
+    // Wakes the reconcile loop: a member change, or a parked key to judge again.
+    let (member_tx, member_rx) = tokio::sync::mpsc::channel::<()>(4);
+    let key_ctx = KeyCtx::new(
+        shared.clone(),
+        Arc::clone(&sfus_holder),
+        room.clone(),
+        Arc::clone(&parked),
+        uid.to_owned(),
+        own_device.clone(),
+        member_tx.clone(),
+    );
+    use crate::client::rtc::signaling::{MediaKeyStableEventContent, MediaKeyUnstableEventContent};
+    let ctx_a = key_ctx.clone();
+    let unstable_handle = client.add_event_handler(
+        move |ev: matrix_sdk::ruma::events::ToDeviceEvent<MediaKeyUnstableEventContent>,
               info: Option<matrix_sdk::deserialized_responses::EncryptionInfo>| {
-            let shared = shared_h.clone();
-            let holder = Arc::clone(&holder_h);
-            let room = room_h.clone();
-            async move {
-                let sender = ev.sender.to_string();
-                if let Err(why) = accept_key_event(&room, &ev, info.as_ref()).await {
-                    warn!("e2ee: ignoring key event from {sender}: {why}");
-                    return;
-                }
-                let index = ev.content.keys.index as i32;
-                let key_b64_len = ev.content.keys.key.len();
-                match Base64::decode_vec(&ev.content.keys.key) {
-                    Ok(raw_key) if raw_key.is_empty() => {
-                        warn!("e2ee: peer key from {sender} index={index} decoded to empty bytes — dropping");
-                    }
-                    Ok(raw_key) => {
-                        let set = holder.lock().clone();
-                        // accept_key_event checked the claimed device against
-                        // the one the event was actually sent from.
-                        let device = ev.content.member.claimed_device_id.as_str();
-                        match set {
-                            Some(set) => set.apply_key(&sender, device, index, raw_key),
-                            None => shared.store(&sender, device, index, raw_key),
-                        }
-                    }
-                    Err(e) => warn!(
-                        "e2ee: bad base64 in peer key from {sender} index={index} \
-                         key_b64_len={key_b64_len}: {e}"
-                    ),
-                }
-            }
-        }
-    });
-    let enc_key_guard = client.event_handler_drop_guard(enc_key_handle);
+            handle_key_event(ctx_a.clone(), ev.sender, ev.content.inner, info)
+        },
+    );
+    let ctx_b = key_ctx.clone();
+    let stable_handle = client.add_event_handler(
+        move |ev: matrix_sdk::ruma::events::ToDeviceEvent<MediaKeyStableEventContent>,
+              info: Option<matrix_sdk::deserialized_responses::EncryptionInfo>| {
+            handle_key_event(ctx_b.clone(), ev.sender, ev.content.inner, info)
+        },
+    );
+    let enc_key_guards = (
+        client.event_handler_drop_guard(unstable_handle),
+        client.event_handler_drop_guard(stable_handle),
+    );
 
     // ── Pre-flight Matrix signaling ───────────────────────────────────────
+    // From the first join on, a failed setup takes back everything announced so far.
+    let announced = Arc::new(Announced::new(Arc::new(RoomSignals {
+        room: room.clone(),
+        user_id: user_id.clone(),
+    })));
+    let mut guard = SetupGuard::new(Arc::clone(&announced));
+    check_not_cancelled(cancelled)?;
     if let Some(ref pid) = preflight_identity {
         info!("rtc: pre-flight signaling with identity={pid}");
         if signaling::should_open_call_slot(
@@ -333,7 +770,9 @@ pub async fn start_call(
         ) {
             signaling::start_msc3401_call_slot(&room, "").await?;
         }
-        send_msc3401_member_join(
+        // Recorded before the send: a join that timed out may still have landed.
+        announced.joined_legacy(pid);
+        if let Err(e) = send_msc3401_member_join(
             &room,
             "",
             &device_id,
@@ -344,13 +783,96 @@ pub async fn start_call(
             audio_only,
             None,
         )
-        .await?;
+        .await
+        {
+            guard
+                .fail(LeaveCode::TransportError, "could not announce the call")
+                .await;
+            return Err(e);
+        }
     }
+
+    // MSC4143: open the room's m.call slot for clients that read it, or fix one
+    // that does not fit the room (see `plan_slot`). Best effort: the legacy
+    // events above are what this call runs on.
+    let mut slot_written_at = None;
+    let slot_usable = {
+        let (state, slot_key) = read_slot_state_keyed(&room).await;
+        match plan_slot(
+            &state,
+            use_e2ee,
+            can_send_slot(&room).await,
+            others_may_be_present(initial_members.len(), members_read_complete),
+        ) {
+            SlotPlan::Use => true,
+            SlotPlan::Write => match open_mrtc_slot(&room, slot_key).await {
+                Ok(()) => {
+                    info!("rtc: wrote the m.rtc.slot ({state:?} before)");
+                    slot_written_at = Some(Instant::now());
+                    true
+                }
+                Err(e) => {
+                    warn!("rtc: could not write the m.rtc.slot (non-fatal): {e}");
+                    false
+                }
+            },
+            SlotPlan::Skip => {
+                info!("rtc: leaving the room's m.rtc.slot alone ({state:?}); this call is legacy-only");
+                false
+            }
+        }
+    };
+
+    // MatrixRTC membership next to the legacy one, like Element Call's
+    // compatibility mode: a sticky m.rtc.member while the slot is usable.
+    // `mrtc` is the membership that joined; `announced` also keeps one whose
+    // join failed, since the send may still have gone through.
+    let mrtc: Option<Arc<MrtcMembership>> = if should_write_member_events(
+        client.supports_sticky_events().await.unwrap_or(false),
+        slot_usable,
+        can_send_member_event(&room).await,
+    ) {
+        let membership = Arc::new(MrtcMembership::new(
+            room.clone(),
+            JoinParams {
+                member_id: member_id.clone(),
+                user_id: user_id.clone(),
+                device_id: device_id.clone(),
+                sfu_url: lk_transport.server_url.clone(),
+                service_url: local_service_url.clone(),
+                audio_only,
+            },
+        ));
+        announced.set_membership(Arc::clone(&membership));
+        match membership.join().await {
+            Ok(()) => {
+                // A session of ours that ended without leaving (a restart) is
+                // still joined for minutes under another member id: withdraw it
+                // now that we are in, never before, so a failed join leaves it alone.
+                let stale = stale_own_members(
+                    &super::sticky::live_entries(&room),
+                    &user_id,
+                    &device_id,
+                    membership.member_id(),
+                    super::sticky::now_ms(),
+                );
+                membership.withdraw_stale(&stale).await;
+                Some(membership)
+            }
+            Err(e) => {
+                warn!("rtc: MatrixRTC join failed (non-fatal): {e}");
+                None
+            }
+        }
+    } else {
+        None
+    };
 
     // MSC4075: ring the room only if nobody else is in the call yet, and
     // never in a dedicated call room (joining there isn't calling anyone).
+    // An unfinished member read counts as "somebody may be in it": no ring on a guess.
     if signaling::should_ring_room(
-        !initial_members.is_empty(),
+        others_may_be_present(initial_members.len(), members_read_complete),
         signaling::is_call_room(&room).await,
     ) {
         if let Err(e) =
@@ -359,25 +881,78 @@ pub async fn start_call(
             warn!("rtc: send_rtc_notification failed (non-fatal): {e}");
         }
     }
+    // The MatrixRTC invite (sticky) rings a DM for clients that read it.
+    if mrtc.is_some()
+        && signaling::should_ring_room(
+            !initial_members.is_empty(),
+            signaling::is_call_room(&room).await,
+        )
+        && room.is_direct().await.unwrap_or(false)
+    {
+        // Recorded before the send: an invite that timed out may still have landed.
+        announced.invited();
+        if let Err(e) = send_invite(&room, super::sticky::now_ms()).await {
+            warn!("rtc: MatrixRTC invite failed (non-fatal): {e}");
+        }
+    }
 
     // ── Connect to our SFU ────────────────────────────────────────────────
+    // A hang-up during the announcements above must not connect the mic.
+    if cancelled() {
+        guard.fail(LeaveCode::Leave, "the call was cancelled").await;
+        anyhow::bail!("the call was cancelled");
+    }
     let sink = super::sink_for_client(&client);
-    let lk = Arc::new(
-        LiveKitRoom::connect(
-            &lk_transport.server_url,
-            &lk_transport.jwt,
-            session_id,
-            sink.clone(),
-            use_e2ee,
-            shared.clone(),
-            &local_service_url,
-            member_transports.clone(),
-        )
-        .await?,
-    );
+    // A lost connection to our SFU ends the call for good (the UI is told by
+    // the connection itself): take back what it announced and stop the tasks
+    // that would keep announcing it. A hang-up closes the call first, so this
+    // does nothing then, and the UI is not told of an end it asked for.
+    let on_primary_ended: PrimaryEnded = {
+        let announced = Arc::clone(&announced);
+        let holder = Arc::clone(&sfus_holder);
+        Arc::new(move || primary_ended(&announced, &holder))
+    };
+    let lk = match LiveKitRoom::connect(
+        &lk_transport.server_url,
+        &lk_transport.jwt,
+        session_id,
+        sink.clone(),
+        use_e2ee,
+        shared.clone(),
+        &local_service_url,
+        member_transports.clone(),
+        on_primary_ended,
+    )
+    .await
+    {
+        Ok(lk) => Arc::new(lk),
+        Err(e) => {
+            guard
+                .fail(LeaveCode::TransportError, "could not connect to the SFU")
+                .await;
+            return Err(e);
+        }
+    };
+    // From here the mic is published: every way out closes the connection.
+    guard.connected(Arc::clone(&lk) as Arc<dyn Connection>);
+    if cancelled() {
+        guard.fail(LeaveCode::Leave, "the call was cancelled").await;
+        anyhow::bail!("the call was cancelled");
+    }
     info!("rtc: livekit connect done at {:?}", t_start.elapsed());
     let lk_identity = lk.local_identity().to_owned();
     info!("rtc: lk connected, identity={lk_identity} (preflight={preflight_identity:?})");
+    // Peers find our tracks by the identity they derive from our member event.
+    match classify_identity(&lk_identity, &user_id, &device_id, &member_id) {
+        IdentityShape::Hashed => info!("rtc: LiveKit identity is the MSC4195 hash of our member id"),
+        IdentityShape::Legacy => {
+            info!("rtc: LiveKit identity is the legacy user:device form (older JWT service)");
+        }
+        IdentityShape::Unexpected => warn!(
+            "rtc: LiveKit identity {lk_identity} is neither the hash of our member id ({member_id}) nor \
+             user:device; MatrixRTC peers may not match our tracks to our member event"
+        ),
+    }
 
     // ── Correct signaling if the actual identity differs from preflight ───
     // Normally they match. A mismatch would indicate a JWT service change or
@@ -387,24 +962,42 @@ pub async fn start_call(
             "rtc: identity mismatch — preflight={preflight_identity:?} actual={lk_identity}; \
              re-sending signaling"
         );
-        if signaling::should_open_call_slot(
-            signaling::call_slot_exists(&room, "").await,
-            !initial_members.is_empty(),
-        ) {
-            signaling::start_msc3401_call_slot(&room, "").await?;
+        // The re-sent join may land even when the send reports a failure.
+        announced.joined_legacy(&lk_identity);
+        let resent: anyhow::Result<()> = async {
+            if signaling::should_open_call_slot(
+                signaling::call_slot_exists(&room, "").await,
+                !initial_members.is_empty(),
+            ) {
+                signaling::start_msc3401_call_slot(&room, "").await?;
+            }
+            send_msc3401_member_join(
+                &room,
+                "",
+                &device_id,
+                &lk_identity,
+                &local_service_url,
+                &lk_alias,
+                &user_id,
+                audio_only,
+                None,
+            )
+            .await
         }
-        send_msc3401_member_join(
-            &room,
-            "",
-            &device_id,
-            &lk_identity,
-            &local_service_url,
-            &lk_alias,
-            &user_id,
-            audio_only,
-            None,
-        )
-        .await?;
+        .await;
+        if let Err(e) = resent {
+            guard
+                .fail(
+                    LeaveCode::TransportError,
+                    "could not update the call membership",
+                )
+                .await;
+            return Err(e);
+        }
+        // The membership under the wrong identity would otherwise stay as a ghost.
+        if let Some(wrong) = preflight_identity.as_deref() {
+            announced.leave_legacy_identity(wrong).await;
+        }
     }
 
     let sfus = Arc::new(SfuSet::new(
@@ -426,26 +1019,37 @@ pub async fn start_call(
     ));
     // Keys that arrived while connecting only sit in the shared store.
     *sfus_holder.lock() = Some(Arc::clone(&sfus));
+    guard.connected(Arc::clone(&sfus) as Arc<dyn Connection>);
     sfus.apply_all_keys();
 
     // ── Our frame key ─────────────────────────────────────────────────────
-    let e2ee = Arc::new(PLMutex::new(E2eeManager::new()));
+    let e2ee = Arc::new(PLMutex::new(KeyRotator::new(
+        initial_members
+            .iter()
+            .map(|m| (m.key(), m.session_tag()))
+            .collect(),
+        Instant::now(),
+    )));
+    // Keys go out from a worker of their own, never from the call's setup or
+    // from the reconcile loop.
+    let delivery = KeyDelivery::new();
     if use_e2ee {
-        let (idx, key_b64, raw) = {
-            let mgr = e2ee.lock();
-            (mgr.own_index(), mgr.own_key_b64(), *mgr.own_raw_key())
-        };
+        announced.register_task(delivery.spawn(Arc::new(ClientKeySender::new(
+            client.clone(),
+            room_id.to_owned(),
+            lk_identity.clone(),
+            mrtc.as_ref().map(|m| m.member_id().to_owned()),
+        ))));
+        let (idx, key_b64, raw) = e2ee.lock().initial();
         // Set our own key first so the FrameCryptor can start encrypting
         // before we broadcast (avoids sending the key before frames are ready).
-        sfus.primary.set_own_frame_key(&raw, idx as i32);
-        let recipients: Vec<(String, String)> =
-            initial_members.iter().map(|m| m.key()).collect();
-        broadcast_key_to_members(client, &recipients, room_id, &lk_identity, &key_b64, idx).await;
+        sfus.primary.set_own_frame_key(raw.as_slice(), idx as i32);
+        let recipients: Vec<(String, String)> = initial_members.iter().map(|m| m.key()).collect();
+        delivery.enqueue(&recipients, idx, &key_b64);
     }
 
     // ── Background tasks ──────────────────────────────────────────────────
-    let delay_id = Arc::new(PLMutex::new(None));
-    let membership_task = spawn_membership_task(
+    announced.register_task(spawn_membership_task(
         room.clone(),
         lk_identity.clone(),
         local_service_url.clone(),
@@ -453,18 +1057,56 @@ pub async fn start_call(
         device_id.clone(),
         user_id.clone(),
         audio_only,
-        Arc::clone(&delay_id),
-    );
+        Arc::clone(&announced),
+    ));
 
-    let (member_tx, member_rx) = tokio::sync::mpsc::channel::<()>(4);
     let member_tx_h = member_tx.clone();
-    let member_handle = room.add_event_handler(move |_ev: SyncStateEvent<CallMemberEventContent>| {
-        let tx = member_tx_h.clone();
+    let member_handle = room.add_event_handler(
+        move |_ev: SyncStateEvent<signaling::CallMemberRawEventContent>| {
+            let tx = member_tx_h.clone();
+            async move {
+                let _ = tx.try_send(());
+            }
+        },
+    );
+    let member_guard = client.event_handler_drop_guard(member_handle);
+    // A kick, ban or leave is an m.room.member change, not a call.member one: wake
+    // the loop on those too, so the user stops receiving keys and the leave rotation
+    // happens at once instead of at the next 30 s pass. A profile change does not.
+    let member_tx_r = member_tx.clone();
+    let room_member_handle = room.add_event_handler(move |ev: SyncRoomMemberEvent| {
+        let tx = member_tx_r.clone();
         async move {
-            let _ = tx.try_send(());
+            let prev = match &ev {
+                SyncRoomMemberEvent::Original(o) => o.prev_content().map(|c| c.membership.clone()),
+                SyncRoomMemberEvent::Redacted(_) => None,
+            };
+            if membership_event_matters(ev.membership(), prev.as_ref()) {
+                let _ = tx.try_send(());
+            }
         }
     });
-    let member_guard = client.event_handler_drop_guard(member_handle);
+    let room_member_guard = client.event_handler_drop_guard(room_member_handle);
+    // MatrixRTC members arrive as sticky events: wake the reconcile loop on those too.
+    {
+        let mut changes = room.sticky_events().subscribe();
+        let tx = member_tx.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    changed = changes.recv() => {
+                        match changed {
+                            Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                                let _ = tx.try_send(());
+                            }
+                            Err(_) => break,
+                        }
+                    }
+                    _ = tx.closed() => break,
+                }
+            }
+        });
+    }
     let reconcile_task = tokio::spawn(reconcile_loop(
         room.clone(),
         client.clone(),
@@ -475,18 +1117,29 @@ pub async fn start_call(
         join_ts,
         Arc::clone(&sfus),
         Arc::clone(&e2ee),
+        delivery,
         use_e2ee,
-        room_id.to_owned(),
-        lk_identity.clone(),
         initial_members.iter().map(|m| m.key()).collect(),
         member_rx,
+        key_ctx,
+        mrtc.clone(),
+        Arc::clone(&announced),
+        session_id,
+        slot_written_at,
     ))
     .abort_handle();
+    announced.register_reconcile(reconcile_task);
+
+    if let Some(m) = &mrtc {
+        let m = Arc::clone(m);
+        announced.register_task(tokio::spawn(async move { m.run_refresh().await }).abort_handle());
+    }
 
     info!(
         "rtc: session {session_id} started in {room_id}/{slot_id} after {:?}",
         t_start.elapsed()
     );
+    guard.defuse();
     Ok(RtcSession {
         id: session_id,
         room_id: room_id.to_owned(),
@@ -495,38 +1148,87 @@ pub async fn start_call(
         device_id,
         client: client.clone(),
         sfus,
-        membership_task,
-        reconcile_task,
-        delay_id,
         e2ee,
-        _enc_key_guard: enc_key_guard,
+        announced,
+        runtime: tokio::runtime::Handle::current(),
+        _enc_key_guards: enc_key_guards,
         _member_guard: member_guard,
+        _room_member_guard: room_member_guard,
     })
 }
 
-/// Gracefully leave the call: send disconnect events, tear down LiveKit, abort tasks.
+/// Our connection to our own SFU is gone. Takes back the call's announcements
+/// and returns whether the call ended on its own, so the UI must be told. A
+/// hang-up closes the call before it disconnects: that end is the UI's own and
+/// needs no event, which would otherwise reach a newer call's session.
+fn primary_ended(announced: &Arc<Announced>, holder: &Arc<PLMutex<Option<Arc<SfuSet>>>>) -> bool {
+    if announced.is_closed() {
+        return false;
+    }
+    warn!("rtc: lost the connection to our SFU; taking back the call's announcements");
+    announced.shutdown();
+    // The call is over: nothing the other connections still deliver reaches the UI.
+    if let Some(set) = holder.lock().as_ref() {
+        set.end_events();
+    }
+    let announced = Arc::clone(announced);
+    let holder = Arc::clone(holder);
+    tokio::spawn(async move {
+        let set = holder.lock().clone();
+        if let Some(set) = set {
+            set.disconnect_all().await;
+        }
+        announced
+            .withdraw(
+                LeaveCode::TransportError,
+                Some("lost the connection to the SFU"),
+            )
+            .await;
+    });
+    true
+}
+
+/// Whether an `m.room.member` event can change who is a call member: anything
+/// but a join that stays a join (a profile change).
+fn membership_event_matters(
+    now: &matrix_sdk::ruma::events::room::member::MembershipState,
+    before: Option<&matrix_sdk::ruma::events::room::member::MembershipState>,
+) -> bool {
+    use matrix_sdk::ruma::events::room::member::MembershipState::Join;
+    !(*now == Join && before == Some(&Join))
+}
+
+/// How long `end_call` waits for the memberships to be taken back before it
+/// stops blocking the caller. The session's drop finishes what is left.
+const END_CALL_WITHDRAW_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Gracefully leave the call: stop the media, close LiveKit and send the leave
+/// events at the same time (a slow homeserver never keeps the mic published),
+/// abort tasks. The caller drops the session right after, which finishes any
+/// withdrawal that did not get out within [`END_CALL_WITHDRAW_TIMEOUT`] (offline).
 pub async fn end_call(session: &RtcSession) {
     let t0 = Instant::now();
-    session.membership_task.abort();
-    session.reconcile_task.abort();
-    let pending_leave = session.delay_id.lock().take();
-    if let Some(id) = pending_leave {
-        signaling::cancel_delayed_event(&session.client, &id).await;
+    // Every task that could announce us again stops before the leaves go out.
+    // The leave below is delivered even when this aborts the reconcile task in
+    // the middle of its own: whichever did not get out is sent here. It runs
+    // next to the SFU disconnect, which `hang_up` starts only after the call is
+    // closed, so a hang-up is not reported as a lost connection.
+    // Legacy leave (state key must match the join: the LiveKit identity, not
+    // the Matrix device id), its delayed fallback, the sticky leave and the ring.
+    let delivered = hang_up(
+        &session.announced,
+        &*session.sfus,
+        LeaveCode::Leave,
+        None,
+        END_CALL_WITHDRAW_TIMEOUT,
+    )
+    .await;
+    if !delivered {
+        warn!(
+            "rtc: taking back the call's announcements is taking long; finishing in the background"
+        );
     }
-    let room_oid: matrix_sdk::ruma::OwnedRoomId =
-        session.room_id.parse().unwrap_or_else(|_| unreachable!());
-    if let Some(room) = session.client.get_room(&room_oid) {
-        let user_id = session
-            .client
-            .user_id()
-            .map(|u| u.to_string())
-            .unwrap_or_default();
-        // MSC3401 leave — state key must match the join (uses session member_id, not Matrix device_id)
-        let _ = send_msc3401_member_leave(&room, &user_id, &session.member_id).await;
-    }
-    info!("rtc: leave event sent after {:?}", t0.elapsed());
-    session.sfus.disconnect_all().await;
-    info!("rtc: livekit disconnected after {:?}", t0.elapsed());
+    info!("rtc: left the call after {:?}", t0.elapsed());
 }
 
 /// The event-content checks for a frame-key to-device event (MSC4143).
@@ -562,27 +1264,601 @@ fn check_key_event_fields(
     Ok(())
 }
 
-/// Whether a frame-key to-device event may be used for this call: the content
-/// checks above, plus the sender must be joined to the room. Anything else
-/// could inject keys for other calls or from outsiders.
-async fn accept_key_event(
-    room: &Room,
-    ev: &matrix_sdk::ruma::events::ToDeviceEvent<
-        crate::client::rtc::signaling::RtcEncryptionKeyEventContent,
-    >,
-    info: Option<&matrix_sdk::deserialized_responses::EncryptionInfo>,
+/// MSC4153 on the receiving side: with `exclude_insecure` on (the same switch
+/// that limits whom we send keys to), a key must come from a device its owner
+/// cross-signed. `UnverifiedIdentity` is fine: the device is signed, we just
+/// haven't verified the person.
+fn check_device_trusted(
+    state: &matrix_sdk::deserialized_responses::VerificationState,
+    exclude_insecure: bool,
 ) -> Result<(), String> {
-    use matrix_sdk::ruma::events::room::member::MembershipState;
+    use matrix_sdk::deserialized_responses::{VerificationLevel, VerificationState};
+    if !exclude_insecure {
+        return Ok(());
+    }
+    // An allow-list: anything not known to be a cross-signed device is out,
+    // including a previously verified identity that has changed.
+    match state {
+        VerificationState::Verified
+        | VerificationState::Unverified(VerificationLevel::UnverifiedIdentity) => Ok(()),
+        _ => Err("sending device is not cross-signed by its owner".to_owned()),
+    }
+}
 
-    check_key_event_fields(
+/// Whether `(user, device)` is one of the live call members `(user_id, device_id)`.
+fn is_live_member(members: &[(String, String)], user: &str, device: &str) -> bool {
+    members.iter().any(|(u, d)| u == user && d == device)
+}
+
+/// A frame key that passed the content checks.
+#[derive(Debug)]
+struct AcceptedKey {
+    /// The device the key came from (authenticated by decryption).
+    device: String,
+    index: u8,
+    key_b64: SecretString,
+}
+
+/// The event-content checks for either key-event shape. With a `member_id`
+/// (MSC4143) a visible `m.rtc.member` of that id must be from the same user
+/// and device; an id we have not seen yet passes, and the caller parks the key
+/// until the member shows up. Without one (Element's legacy shape) the
+/// claimed-device rules of [`check_key_event_fields`] apply.
+fn evaluate_key_event(
+    expected_room: &str,
+    c: &crate::client::rtc::model::MediaKeyContent,
+    sender: &str,
+    sender_device: Option<Option<&str>>,
+    members: &[crate::client::rtc::members::CallMember],
+) -> Result<AcceptedKey, String> {
+    use crate::client::rtc::members::MemberSource;
+    use crate::client::rtc::signaling::RtcEncryptionKeyEventContent;
+
+    let device = match sender_device {
+        None => return Err("sent unencrypted".to_owned()),
+        Some(None) => return Err("sender device is unknown".to_owned()),
+        Some(Some(d)) => d,
+    };
+    if c.room_id != expected_room {
+        return Err(format!("for another room ({})", c.room_id));
+    }
+    let (index, key_b64) = c
+        .media_key_parts()
+        .ok_or_else(|| "carries no key".to_owned())?;
+    match &c.member_id {
+        Some(id) => {
+            // Member ids are visible to everyone, so another user may have
+            // published an event with the same id: only the sender's own
+            // entry counts, and an id only others hold is a mismatch.
+            let owners: Vec<&crate::client::rtc::members::CallMember> = members
+                .iter()
+                .filter(|m| m.source == MemberSource::MatrixRtc && m.member_id == *id)
+                .collect();
+            if !owners.is_empty() {
+                let mine: Vec<_> = owners.iter().filter(|m| m.user_id == sender).collect();
+                if mine.is_empty() {
+                    return Err(format!("member {id} belongs to another user"));
+                }
+                if !mine.iter().any(|m| m.device_id == device) {
+                    return Err(format!("member {id} joined from another device"));
+                }
+            }
+        }
+        None => {
+            let (Some(keys), Some(member), Some(session)) = (&c.keys, &c.member, &c.session) else {
+                return Err("legacy key event is incomplete".to_owned());
+            };
+            let legacy = RtcEncryptionKeyEventContent {
+                keys: keys.clone(),
+                room_id: c.room_id.clone(),
+                member: member.clone(),
+                session: session.clone(),
+                sent_ts: 0,
+            };
+            check_key_event_fields(expected_room, &legacy, Some(Some(device)))?;
+        }
+    }
+    Ok(AcceptedKey {
+        device: device.to_owned(),
+        index,
+        key_b64,
+    })
+}
+
+/// Why a frame-key event was not accepted.
+#[derive(Debug, PartialEq, Eq)]
+enum KeyRejection {
+    /// It never will be.
+    Final(String),
+    /// The sending device is not known yet (or not far enough along to be
+    /// judged): worth judging again once it is.
+    Retry(String),
+}
+
+/// Whether a key failed because its sending device is just not known (yet),
+/// as opposed to being known and wrong. `sender_device` is as in
+/// [`check_key_event_fields`]; `state` is the event's verification state.
+fn device_not_known_yet(
+    sender_device: Option<Option<&str>>,
+    state: Option<&matrix_sdk::deserialized_responses::VerificationState>,
+) -> bool {
+    use matrix_sdk::deserialized_responses::{
+        DeviceLinkProblem, VerificationLevel, VerificationState,
+    };
+    matches!(sender_device, Some(None))
+        || matches!(
+            state,
+            Some(VerificationState::Unverified(VerificationLevel::None(
+                DeviceLinkProblem::MissingDevice
+            )))
+        )
+}
+
+/// The verdict on a frame-key event from what the event and the room say, with
+/// no I/O: the content checks and the device-trust check, and whether a
+/// failure can still clear up. `info` is the sending device
+/// and the event's verification state, `None` when it arrived unencrypted.
+fn judge_key_event(
+    expected_room: &str,
+    c: &crate::client::rtc::model::MediaKeyContent,
+    sender: &str,
+    info: Option<(
+        Option<&str>,
+        &matrix_sdk::deserialized_responses::VerificationState,
+    )>,
+    members: &[crate::client::rtc::members::CallMember],
+    exclude_insecure: bool,
+) -> Result<AcceptedKey, KeyRejection> {
+    let not_yet = device_not_known_yet(info.map(|(d, _)| d), info.map(|(_, s)| s));
+    let reject = |why: String| {
+        if not_yet {
+            KeyRejection::Retry(why)
+        } else {
+            KeyRejection::Final(why)
+        }
+    };
+    let accepted = evaluate_key_event(expected_room, c, sender, info.map(|(d, _)| d), members)
+        .map_err(reject)?;
+    if let Some((_, state)) = info {
+        check_device_trusted(state, exclude_insecure).map_err(reject)?;
+    }
+    Ok(accepted)
+}
+
+/// [`judge_key_event`] for a decrypted to-device event.
+fn accept_key_event(
+    room: &Room,
+    sender: &matrix_sdk::ruma::UserId,
+    content: &crate::client::rtc::model::MediaKeyContent,
+    info: Option<&matrix_sdk::deserialized_responses::EncryptionInfo>,
+    members: &[crate::client::rtc::members::CallMember],
+) -> Result<AcceptedKey, KeyRejection> {
+    judge_key_event(
         room.room_id().as_str(),
-        &ev.content,
-        info.map(|i| i.sender_device.as_deref().map(|d| d.as_str())),
-    )?;
-    match room.get_member(&ev.sender).await {
-        Ok(Some(m)) if *m.membership() == MembershipState::Join => Ok(()),
-        Ok(_) => Err("sender is not joined to the room".to_owned()),
-        Err(e) => Err(format!("could not look up the sender's membership: {e}")),
+        content,
+        sender.as_str(),
+        info.map(|i| {
+            (
+                i.sender_device.as_deref().map(|d| d.as_str()),
+                &i.verification_state,
+            )
+        }),
+        members,
+        crate::client::identity::exclude_insecure_devices(),
+    )
+}
+
+/// The longest base64 key we look at: a 32-byte key is 44 characters.
+const MAX_KEY_B64_LEN: usize = 256;
+/// The longest `member_id` we look at (the longest real one is a UUID).
+const MAX_MEMBER_ID_LEN: usize = 512;
+
+/// The checks a key event must pass before anything is read from the room:
+/// encrypted, for this room, and of a sane size. Anyone who can message us
+/// can send events, so nothing here may cost more than a comparison.
+fn cheap_key_checks(
+    expected_room: &str,
+    content: &crate::client::rtc::model::MediaKeyContent,
+    encrypted: bool,
+) -> Result<(), String> {
+    if !encrypted {
+        return Err("sent unencrypted".to_owned());
+    }
+    if content.room_id != expected_room {
+        return Err(format!("for another room ({})", content.room_id));
+    }
+    let (_, key_b64) = content
+        .media_key_parts()
+        .ok_or_else(|| "carries no key".to_owned())?;
+    if key_b64.len() > MAX_KEY_B64_LEN {
+        return Err(format!("key is {} characters long", key_b64.len()));
+    }
+    if content
+        .member_id
+        .as_ref()
+        .is_some_and(|id| id.len() > MAX_MEMBER_ID_LEN)
+    {
+        return Err("member id is too long".to_owned());
+    }
+    Ok(())
+}
+
+/// Whether the sender of a key is joined to the room.
+#[derive(Debug, PartialEq, Eq)]
+enum SenderJoin {
+    Joined,
+    NotJoined,
+    /// The lookup failed: nothing is known about the sender.
+    Unknown(String),
+}
+
+/// The verdict on a member lookup: only a definite answer rules a sender out.
+fn classify_sender<E: std::fmt::Display>(
+    found: Result<Option<matrix_sdk::ruma::events::room::member::MembershipState>, E>,
+) -> SenderJoin {
+    use matrix_sdk::ruma::events::room::member::MembershipState;
+    match found {
+        Ok(Some(MembershipState::Join)) => SenderJoin::Joined,
+        Ok(_) => SenderJoin::NotJoined,
+        Err(e) => SenderJoin::Unknown(format!("could not look up the sender's membership: {e}")),
+    }
+}
+
+/// The sender must be joined to the room: anything else could inject keys
+/// from outsiders.
+async fn sender_is_joined(room: &Room, sender: &matrix_sdk::ruma::UserId) -> SenderJoin {
+    classify_sender(
+        room.get_member(sender)
+            .await
+            .map(|m| m.map(|m| m.membership().clone())),
+    )
+}
+
+/// The verification state of a device we now know, the way the crypto layer
+/// states it for a decrypted event.
+fn verification_state_for_device(
+    verified: bool,
+    cross_signed_by_owner: bool,
+    identity_has_violation: bool,
+) -> matrix_sdk::deserialized_responses::VerificationState {
+    use matrix_sdk::deserialized_responses::{VerificationLevel, VerificationState};
+    if verified {
+        VerificationState::Verified
+    } else if cross_signed_by_owner {
+        VerificationState::Unverified(if identity_has_violation {
+            VerificationLevel::VerificationViolation
+        } else {
+            VerificationLevel::UnverifiedIdentity
+        })
+    } else {
+        VerificationState::Unverified(VerificationLevel::UnsignedDevice)
+    }
+}
+
+/// `info` as it would read now: the sending device, found by the Olm key the
+/// event came from, and its trust as the crypto store has it. `None` while
+/// the device is still not known.
+async fn refreshed_encryption_info(
+    client: &matrix_sdk::Client,
+    info: &matrix_sdk::deserialized_responses::EncryptionInfo,
+) -> Option<matrix_sdk::deserialized_responses::EncryptionInfo> {
+    use matrix_sdk::deserialized_responses::AlgorithmInfo;
+    let AlgorithmInfo::OlmV1Curve25519AesSha2 {
+        curve25519_public_key_base64: curve,
+    } = &info.algorithm_info
+    else {
+        return None;
+    };
+    let devices = client
+        .encryption()
+        .get_user_devices(&info.sender)
+        .await
+        .ok()?;
+    let device = devices
+        .devices()
+        .find(|d| d.curve25519_key().is_some_and(|k| k.to_base64() == *curve))?;
+    let violation = client
+        .encryption()
+        .get_user_identity(&info.sender)
+        .await
+        .ok()
+        .flatten()
+        .is_some_and(|i| i.has_verification_violation());
+    Some(matrix_sdk::deserialized_responses::EncryptionInfo {
+        sender_device: Some(device.device_id().to_owned()),
+        verification_state: verification_state_for_device(
+            device.is_verified(),
+            device.is_cross_signed_by_owner(),
+            violation,
+        ),
+        ..info.clone()
+    })
+}
+
+/// Most one log line per sender and this long, for events we ignore or park.
+const IGNORED_KEY_WARN_INTERVAL: Duration = Duration::from_secs(10);
+/// A sender whose unknown device we ask the homeserver about at most this often.
+const DEVICE_QUERY_INTERVAL: Duration = Duration::from_secs(30);
+/// Senders remembered by the two limiters above.
+const LIMITER_SENDERS: usize = 256;
+
+/// Everything a key-event handler needs; cloned per event.
+#[derive(Clone)]
+struct KeyCtx {
+    shared: SharedKeys,
+    holder: Arc<PLMutex<Option<Arc<SfuSet>>>>,
+    room: Room,
+    parked: Arc<PLMutex<ParkedKeys>>,
+    own_user: matrix_sdk::ruma::OwnedUserId,
+    own_device: matrix_sdk::ruma::OwnedDeviceId,
+    /// Wakes the reconcile loop, which judges parked keys again.
+    wake: tokio::sync::mpsc::Sender<()>,
+    ignored_warns: Arc<PLMutex<RateLimiter>>,
+    parked_notes: Arc<PLMutex<RateLimiter>>,
+    device_queries: Arc<PLMutex<RateLimiter>>,
+}
+
+impl KeyCtx {
+    fn new(
+        shared: SharedKeys,
+        holder: Arc<PLMutex<Option<Arc<SfuSet>>>>,
+        room: Room,
+        parked: Arc<PLMutex<ParkedKeys>>,
+        own_user: matrix_sdk::ruma::OwnedUserId,
+        own_device: matrix_sdk::ruma::OwnedDeviceId,
+        wake: tokio::sync::mpsc::Sender<()>,
+    ) -> Self {
+        Self {
+            shared,
+            holder,
+            room,
+            parked,
+            own_user,
+            own_device,
+            wake,
+            ignored_warns: Arc::new(PLMutex::new(RateLimiter::new(
+                IGNORED_KEY_WARN_INTERVAL,
+                LIMITER_SENDERS,
+            ))),
+            parked_notes: Arc::new(PLMutex::new(RateLimiter::new(
+                IGNORED_KEY_WARN_INTERVAL,
+                LIMITER_SENDERS,
+            ))),
+            device_queries: Arc::new(PLMutex::new(RateLimiter::new(
+                DEVICE_QUERY_INTERVAL,
+                LIMITER_SENDERS,
+            ))),
+        }
+    }
+
+    /// Say why a key event was ignored, once per sender per interval.
+    fn warn_ignored(&self, sender: &str, why: &str) {
+        if self.ignored_warns.lock().allow(sender, Instant::now()) {
+            warn!("e2ee: ignoring key event from {sender}: {why}");
+        }
+    }
+
+    /// Whether to log that a key from `sender` was parked: once per sender per
+    /// interval, since a member can send these as fast as it likes.
+    fn note_parked(&self, sender: &str) -> bool {
+        self.parked_notes.lock().allow(sender, Instant::now())
+    }
+
+    /// Ask the homeserver for the devices of `sender` (once in a while), then
+    /// have the parked keys judged again.
+    fn query_devices_of(&self, sender: &matrix_sdk::ruma::UserId) {
+        if !self
+            .device_queries
+            .lock()
+            .allow(sender.as_str(), Instant::now())
+        {
+            return;
+        }
+        let client = self.room.client();
+        let sender = sender.to_owned();
+        let wake = self.wake.clone();
+        tokio::spawn(async move {
+            if let Err(e) = client.encryption().request_user_identity(&sender).await {
+                warn!("e2ee: could not query the devices of {sender}: {e}");
+            }
+            let _ = wake.try_send(());
+        });
+    }
+
+    /// A key that passed the checks: use it for its member, or park it until
+    /// that member's membership shows up.
+    fn apply_or_park(
+        &self,
+        sender: &str,
+        accepted: AcceptedKey,
+        members: &[crate::client::rtc::members::CallMember],
+    ) {
+        let index = accepted.index as i32;
+        let key_b64_len = accepted.key_b64.len();
+        let raw_key = match decode_frame_key(&accepted.key_b64) {
+            Ok(k) => k,
+            Err(e) => {
+                warn!("e2ee: dropping peer key from {sender} index={index} key_b64_len={key_b64_len}: {e}");
+                return;
+            }
+        };
+        let device = accepted.device.as_str();
+        // The hashed identities of `members` are installed by the caller (the
+        // key handler, or the reconcile loop for a recheck) before this runs.
+        let keys: Vec<(String, String)> = members.iter().map(|m| m.key()).collect();
+        if !is_live_member(&keys, sender, device) {
+            if self.note_parked(sender) {
+                info!("e2ee: parking key from {sender}/{device}: no live membership yet");
+            }
+            self.parked.lock().park(
+                ParkedKey {
+                    user_id: sender.to_owned(),
+                    device_id: device.to_owned(),
+                    index,
+                    raw_key,
+                    recheck: None,
+                },
+                Instant::now(),
+            );
+            return;
+        }
+        let set = self.holder.lock().clone();
+        match set {
+            Some(set) => set.apply_key(sender, device, index, raw_key),
+            None => self.shared.store(sender, device, index, raw_key),
+        }
+    }
+
+    /// Keep a key whose sending device is not known yet, to judge it again at
+    /// the next reconcile pass, and ask the homeserver for the sender's devices.
+    fn park_for_recheck(
+        &self,
+        sender: &matrix_sdk::ruma::UserId,
+        content: crate::client::rtc::model::MediaKeyContent,
+        info: matrix_sdk::deserialized_responses::EncryptionInfo,
+        at: Instant,
+    ) {
+        use matrix_sdk::deserialized_responses::AlgorithmInfo;
+        let AlgorithmInfo::OlmV1Curve25519AesSha2 {
+            curve25519_public_key_base64: curve,
+        } = &info.algorithm_info
+        else {
+            self.warn_ignored(
+                sender.as_str(),
+                "sender device is unknown and cannot be looked up",
+            );
+            return;
+        };
+        if self.note_parked(sender.as_str()) {
+            info!("e2ee: parking key from {sender}: sending device not known yet");
+        }
+        let key = ParkedKey {
+            user_id: sender.to_string(),
+            device_id: recheck_device_id(curve),
+            index: 0,
+            raw_key: Secret::new(Vec::new()),
+            recheck: Some(Recheck { content, info }),
+        };
+        self.parked.lock().park(key, at);
+    }
+}
+
+async fn handle_key_event(
+    ctx: KeyCtx,
+    sender_id: matrix_sdk::ruma::OwnedUserId,
+    content: crate::client::rtc::model::MediaKeyContent,
+    info: Option<matrix_sdk::deserialized_responses::EncryptionInfo>,
+) {
+    let sender = sender_id.to_string();
+    // Cheapest first: anyone may send us this event, so nothing is read from
+    // the room until the event has earned it.
+    if let Err(why) = cheap_key_checks(ctx.room.room_id().as_str(), &content, info.is_some()) {
+        ctx.warn_ignored(&sender, &why);
+        return;
+    }
+    match sender_is_joined(&ctx.room, &sender_id).await {
+        SenderJoin::Joined => {}
+        SenderJoin::NotJoined => {
+            ctx.warn_ignored(&sender, "sender is not joined to the room");
+            return;
+        }
+        SenderJoin::Unknown(why) => {
+            ctx.warn_ignored(&sender, &why);
+            return;
+        }
+    }
+    // The stamp is taken before the read: this task and the reconcile loop both
+    // write the identity table, and the older read must not win.
+    let stamp = ctx.shared.identities().stamp();
+    let members = read_all_live_members(&ctx.room, &ctx.own_user, &ctx.own_device).await;
+    ctx.shared
+        .identities()
+        .replace_stamped(stamp, hashed_identities(&members));
+    match accept_key_event(&ctx.room, &sender_id, &content, info.as_ref(), &members) {
+        Ok(accepted) => ctx.apply_or_park(&sender, accepted, &members),
+        Err(KeyRejection::Retry(why)) => {
+            if let Some(info) = info {
+                tracing::debug!("e2ee: key from {sender} cannot be judged yet: {why}");
+                ctx.park_for_recheck(&sender_id, content, info, Instant::now());
+                ctx.query_devices_of(&sender_id);
+            }
+        }
+        Err(KeyRejection::Final(why)) => ctx.warn_ignored(&sender, &why),
+    }
+}
+
+/// Judge the keys parked for want of a known sending device again: the ones
+/// whose device is known now are used (or parked for their membership), the
+/// ones that turn out to be untrustworthy are dropped, and the rest wait on
+/// until their time is up.
+async fn recheck_parked_keys(ctx: &KeyCtx, members: &[crate::client::rtc::members::CallMember]) {
+    let waiting = ctx.parked.lock().take_rechecks(Instant::now());
+    if waiting.is_empty() {
+        return;
+    }
+    let client = ctx.room.client();
+    for (parked_at, key) in waiting {
+        let Some(recheck) = key.recheck else { continue };
+        let Ok(sender_id) = matrix_sdk::ruma::UserId::parse(&key.user_id) else {
+            continue;
+        };
+        let Some(info) = refreshed_encryption_info(&client, &recheck.info).await else {
+            ctx.parked.lock().park(
+                ParkedKey {
+                    recheck: Some(recheck),
+                    ..key
+                },
+                parked_at,
+            );
+            continue;
+        };
+        match sender_is_joined(&ctx.room, &sender_id).await {
+            SenderJoin::Joined => {}
+            SenderJoin::NotJoined => {
+                ctx.warn_ignored(&key.user_id, "sender is not joined to the room");
+                continue;
+            }
+            SenderJoin::Unknown(why) => {
+                // A failed lookup says nothing: judge it again at the next pass.
+                tracing::debug!(
+                    "e2ee: {why}; keeping the key from {} to judge again",
+                    key.user_id
+                );
+                ctx.parked.lock().park(
+                    ParkedKey {
+                        recheck: Some(recheck),
+                        ..key
+                    },
+                    parked_at,
+                );
+                continue;
+            }
+        }
+        match accept_key_event(
+            &ctx.room,
+            &sender_id,
+            &recheck.content,
+            Some(&info),
+            members,
+        ) {
+            Ok(accepted) => {
+                tracing::debug!(
+                    "e2ee: judged the key from {} now that its device is known",
+                    key.user_id
+                );
+                ctx.apply_or_park(&key.user_id, accepted, members);
+            }
+            Err(KeyRejection::Retry(_)) => {
+                ctx.parked.lock().park(
+                    ParkedKey {
+                        recheck: Some(recheck),
+                        ..key
+                    },
+                    parked_at,
+                );
+            }
+            Err(KeyRejection::Final(why)) => ctx.warn_ignored(&key.user_id, &why),
+        }
     }
 }
 
@@ -592,7 +1868,8 @@ async fn accept_key_event(
 
 /// Keeps our membership alive: heartbeats the MSC4140 delayed leave every few
 /// seconds and resends the membership event hourly (with a fresh `expires` and
-/// the original `created_ts`, so peers see a stable join age).
+/// the original `created_ts`, so peers see a stable join age). Sends nothing
+/// once `announced` is closed.
 fn spawn_membership_task(
     room: Room,
     member_id: String,
@@ -601,11 +1878,15 @@ fn spawn_membership_task(
     device_id: String,
     user_id: String,
     audio_only: bool,
-    delay_id: Arc<PLMutex<Option<String>>>,
+    announced: Arc<Announced>,
 ) -> AbortHandle {
     tokio::spawn(async move {
         let client = room.client();
+        let delay_id = &announced.delay_id;
         let mut delayed_ok = true;
+        if announced.is_closed() {
+            return;
+        }
         let first = signaling::schedule_delayed_msc3401_leave(
             &room,
             &user_id,
@@ -622,6 +1903,9 @@ fn spawn_membership_task(
         interval.tick().await; // skip the immediate 0-delay first tick
         loop {
             interval.tick().await;
+            if announced.is_closed() {
+                return;
+            }
             let _job = crate::client::activity::begin(
                 "rtc-membership-refresh",
                 "Calls",
@@ -660,6 +1944,11 @@ fn spawn_membership_task(
                 }
                 // Without our original join time a resend would reset our age.
                 let Some(ts) = created_ts else { continue };
+                // Held until the resend and its delayed leave are out, so a
+                // teardown's leave cannot be overtaken by them.
+                let Some(_open) = announced.open_for_join().await else {
+                    return;
+                };
                 let sent = send_msc3401_member_join(
                     &room,
                     "",
@@ -695,6 +1984,44 @@ fn spawn_membership_task(
     .abort_handle()
 }
 
+/// Hand the rotator's decisions on: keys to the delivery worker, activations to the gate.
+fn apply_key_actions(
+    actions: Vec<RotationAction>,
+    delivery: &KeyDelivery,
+    gate: &mut ActivationGate,
+    now: Instant,
+) {
+    for action in actions {
+        match action {
+            RotationAction::Send { index, key_b64, to } => delivery.enqueue(&to, index, &key_b64),
+            RotationAction::Activate { index, raw_key } => gate.hold(index, raw_key, now),
+        }
+    }
+}
+
+/// Put the held key to use if its delivery has settled (or the wait is over),
+/// and tell the rotator, which then counts it as the key in use.
+fn release_gate(
+    gate: &mut ActivationGate,
+    delivery: &KeyDelivery,
+    e2ee: &Arc<PLMutex<KeyRotator>>,
+    sfus: &Arc<SfuSet>,
+) {
+    let now = Instant::now();
+    let Some((index, raw_key)) = gate.release(|i| delivery.settled(i), now) else {
+        return;
+    };
+    sfus.primary
+        .set_own_frame_key(raw_key.as_slice(), index as i32);
+    let (more, live) = {
+        let mut rotator = e2ee.lock();
+        let more = rotator.activated(index, now);
+        (more, rotator.live_indices())
+    };
+    apply_key_actions(more, delivery, gate, now);
+    delivery.retain_indices(&live);
+}
+
 /// Follows the room's call members: connects to the SFUs they publish on,
 /// drops SFUs nobody uses any more, and keeps the E2EE key distribution in
 /// step (send our key to new members, rotate when someone leaves).
@@ -708,21 +2035,50 @@ async fn reconcile_loop(
     member_transports: MemberTransports,
     join_ts: matrix_sdk::ruma::MilliSecondsSinceUnixEpoch,
     sfus: Arc<SfuSet>,
-    e2ee: Arc<PLMutex<E2eeManager>>,
+    e2ee: Arc<PLMutex<KeyRotator>>,
+    delivery: KeyDelivery,
     use_e2ee: bool,
-    room_id: String,
-    lk_identity: String,
     mut previous: HashSet<(String, String)>,
     mut changes: tokio::sync::mpsc::Receiver<()>,
+    key_ctx: KeyCtx,
+    mrtc: Option<Arc<MrtcMembership>>,
+    announced: Arc<Announced>,
+    session_id: u64,
+    slot_written_at: Option<Instant>,
 ) {
     let mut interval = tokio::time::interval(RECONCILE_INTERVAL);
     interval.tick().await;
     let mut first = true;
+    // A new key that waits for its first delivery round before it is used.
+    let mut gate = ActivationGate::default();
+    let mut slot_watch = SlotWatch::default();
+    if let Some(at) = slot_written_at {
+        slot_watch.wrote_slot(at);
+    }
     loop {
         if !first {
+            let key_deadline = e2ee
+                .lock()
+                .next_deadline()
+                .map(tokio::time::Instant::from_std)
+                .unwrap_or_else(|| tokio::time::Instant::now() + RECONCILE_INTERVAL);
+            let gate_deadline = gate.deadline().map(tokio::time::Instant::from_std);
+            let mut only_the_gate = false;
             tokio::select! {
                 _ = changes.recv() => {}
                 _ = interval.tick() => {}
+                _ = tokio::time::sleep_until(key_deadline), if use_e2ee => {}
+                _ = async {
+                    delivery.progressed().await;
+                    // Sends end one after the other: look once for the burst.
+                    tokio::time::sleep(GATE_RECHECK_COALESCE).await;
+                }, if gate_deadline.is_some() => { only_the_gate = true; }
+                _ = tokio::time::sleep_until(gate_deadline.unwrap_or(key_deadline)), if gate_deadline.is_some() => {}
+            }
+            // A send ended while a key waits to be used: that is all there is to look at.
+            if only_the_gate {
+                release_gate(&mut gate, &delivery, &e2ee, &sfus);
+                continue;
             }
             // Coalesce a burst of member events into one pass.
             while changes.try_recv().is_ok() {}
@@ -734,8 +2090,71 @@ async fn reconcile_loop(
             "Calls",
             crate::client::activity::JobKind::Periodic,
         );
-        let members = read_live_members(&room, &own_user, &own_device).await;
+        // Media keeps flowing unencrypted once the room turns encrypted; the
+        // call cannot be repaired from here, so end it and say why.
+        if encryption_flipped_mid_call(use_e2ee, room.encryption_state().is_encrypted()) {
+            warn!("rtc: the room became encrypted during a call without frame encryption; ending the call");
+            // Nothing may announce us again. This loop is left running: it is
+            // the caller and returns below.
+            announced.close();
+            sfus.stop_media();
+            // The UI leaves the call and the media stops first, so neither waits
+            // for the network; the leaves below may take a while offline. The
+            // reason goes out before the disconnect, whose own end event would say less.
+            if let Some(sink) = super::sink_for_client(&client) {
+                sink.on_session_ended(session_id, "encryption_error");
+            }
+            sfus.disconnect_all().await;
+            announced
+                .withdraw(LeaveCode::SlotClosed, Some("the room became encrypted"))
+                .await;
+            return;
+        }
+        // A leave the watch asked for that did not go out is asked for again on
+        // every pass (`has_left` is set by the attempt, not by the delivery).
+        if let Some(m) = mrtc
+            .as_ref()
+            .filter(|m| !m.has_left() || slot_watch.leave_due())
+        {
+            let slot = read_slot_state(&room).await;
+            if let Some((code, why)) = slot_watch.observe(
+                &slot,
+                m.encrypted_at_join(),
+                room.encryption_state().is_encrypted(),
+                Instant::now(),
+            ) {
+                if m.leave(code, Some(why)).await {
+                    slot_watch.delivered();
+                }
+            }
+        }
+        let stamp = member_transports.identities().stamp();
+        let members = read_all_live_members(&room, &own_user, &own_device).await;
         let current: HashSet<(String, String)> = members.iter().map(|m| m.key()).collect();
+        // Hashed LiveKit identities must resolve before any key is applied, or a
+        // key for a member who is already connected matches nobody.
+        let hashed = hashed_identities(&members);
+        let have_hashed = !hashed.is_empty();
+        member_transports
+            .identities()
+            .replace_stamped(stamp, hashed);
+        if have_hashed {
+            sfus.apply_all_keys();
+        }
+        sfus.forget_departed_keys(&current);
+        let released = key_ctx
+            .parked
+            .lock()
+            .take_for(&current.iter().cloned().collect::<Vec<_>>(), Instant::now());
+        for k in released {
+            info!(
+                "e2ee: applying parked key from {}/{}",
+                k.user_id, k.device_id
+            );
+            sfus.apply_key(&k.user_id, &k.device_id, k.index, k.raw_key);
+        }
+        // Keys whose sending device was not known when they arrived.
+        recheck_parked_keys(&key_ctx, &members).await;
         let joined: Vec<(String, String)> = current.difference(&previous).cloned().collect();
         let someone_left = previous.difference(&current).next().is_some();
         if !joined.is_empty() || someone_left {
@@ -747,24 +2166,22 @@ async fn reconcile_loop(
             );
         }
 
-        if use_e2ee && someone_left {
-            // Forward secrecy: leavers must not decrypt future media.
-            let (idx, key_b64, raw) = {
-                let mut mgr = e2ee.lock();
-                let (idx, key_b64) = mgr.rotate();
-                (idx, key_b64, *mgr.own_raw_key())
+        if use_e2ee {
+            let now = Instant::now();
+            let sessions: Sessions = members.iter().map(|m| (m.key(), m.session_tag())).collect();
+            delivery.retain_recipients(&current);
+            let actions = {
+                let mut rotator = e2ee.lock();
+                let mut a = rotator.on_members_changed(&sessions, now);
+                a.extend(rotator.poll(now));
+                a
             };
-            sfus.primary.set_own_frame_key(&raw, idx as i32);
-            let everyone: Vec<(String, String)> = current.iter().cloned().collect();
-            broadcast_key_to_members(&client, &everyone, &room_id, &lk_identity, &key_b64, idx)
-                .await;
-        } else if use_e2ee && !joined.is_empty() {
-            let (idx, key_b64) = {
-                let mgr = e2ee.lock();
-                (mgr.own_index(), mgr.own_key_b64())
-            };
-            broadcast_key_to_members(&client, &joined, &room_id, &lk_identity, &key_b64, idx)
-                .await;
+            // Sending is the delivery worker's job: nothing here waits on the
+            // network. A new key is only put to use once its delivery has
+            // settled (see `ActivationGate`).
+            apply_key_actions(actions, &delivery, &mut gate, now);
+            delivery.retain_indices(&e2ee.lock().live_indices());
+            release_gate(&mut gate, &delivery, &e2ee, &sfus);
         }
 
         member_transports.replace(transport_map(&members, Some((join_ts, &local_focus))));
@@ -779,151 +2196,59 @@ async fn reconcile_loop(
 }
 
 // ---------------------------------------------------------------------------
-// Invitation watcher (registered once at sync start)
+// Invitation watchers (registered once at sync start)
 // ---------------------------------------------------------------------------
 
-/// Register a global m.rtc.member handler that fires `on_invitation` when
-/// another user opens a call slot. Called from sync.rs::start_sync.
-pub fn register_invitation_handler(client: &matrix_sdk::Client) -> matrix_sdk::event_handler::EventHandlerHandle {
+/// Register a handler for MSC3401 `org.matrix.msc3401.call.member` events.
+/// Element Web uses this format.
+pub fn register_msc3401_invitation_handler(
+    client: &matrix_sdk::Client,
+) -> matrix_sdk::event_handler::EventHandlerHandle {
     use matrix_sdk::ruma::events::SyncStateEvent;
 
     let client_clone = client.clone();
     client.add_event_handler(
-        move |ev: SyncStateEvent<RtcMemberEventContent>, room: Room| {
+        move |ev: SyncStateEvent<signaling::CallMemberRawEventContent>, room: Room| {
             let client = client_clone.clone();
             async move {
-                let own_user = client.user_id().map(|u| u.to_string()).unwrap_or_default();
-                let own_device = client
-                    .device_id()
-                    .map(|d| d.to_string())
-                    .unwrap_or_default();
-                let sender = ev.sender().to_string();
+                let (Some(own_user), Some(own_device)) = (
+                    client.user_id().map(|u| u.to_owned()),
+                    client.device_id().map(|d| d.to_owned()),
+                ) else {
+                    return;
+                };
                 let room_id = room.room_id().to_string();
-
-                // Ignore only events from our own device (state key = member_id we sent).
-                let (content, event_state_key) = match &ev {
-                    SyncStateEvent::Original(o) => (&o.content, &o.state_key),
-                    SyncStateEvent::Redacted(_) => {
-                        info!("rtc: redacted m.rtc.member from {sender} in {room_id}");
-                        return;
-                    }
+                let SyncStateEvent::Original(o) = &ev else {
+                    return;
                 };
 
-                // MSC4143 state key = member_id; our member_id is set per-session so we
-                // can't compare it here. Fall back to ignoring our own user+device combo
-                // via the device_id field in the content.
-                if sender == own_user && content.device_id == own_device {
+                // A leave (empty content), a membership whose lifetime has passed
+                // and our own device are not live invitations. The expiry also
+                // covers stale timeline replay redelivered when a room is
+                // (re-)opened. Read from the raw JSON: ruma's typed model drops
+                // the events of newer clients.
+                let content = serde_json::Value::Object(o.content.fields.clone());
+                let live = super::members::members_from_event_json(
+                    &content,
+                    o.state_key.as_ref(),
+                    &o.sender,
+                    o.origin_server_ts,
+                    Some((&own_user, &own_device)),
+                    super::sticky::now_ms(),
+                );
+                if live.is_empty() {
                     return;
                 }
-
-                // Leave events only carry `disconnect_reason` — all join-state
-                // fields are empty. Don't surface these as new invitations.
-                let is_join = !content.application.kind.is_empty()
-                    || content.focus_active.is_some()
-                    || !content.slot_id.is_empty();
-
-                if !is_join {
-                    return;
-                }
-
-                // Best-effort staleness filter: RtcMemberEventContent (MSC4143) has no
-                // expires/created_ts TTL to check (unlike MSC3401's CallMemberEventContent
-                // in register_msc3401_invitation_handler above), so we can't detect a
-                // membership that's expired without ever being cleanly left. What we CAN
-                // detect is a historical timeline replay of an already-ended call: if the
-                // room's current state for this state_key has since moved on to a leave,
-                // this delivered event is stale and must not raise a fresh banner. This
-                // does not cover the crash / never-left case, where current state still
-                // shows a join too.
-                if let Ok(Some(raw_current)) = room
-                    .get_state_event_static_for_key::<RtcMemberEventContent, _>(event_state_key)
+                // An ignored user's call does not ring.
+                if super::sticky::ignored_users(&client)
                     .await
+                    .contains(o.sender.as_str())
                 {
-                    use matrix_sdk::deserialized_responses::SyncOrStrippedState;
-                    if let Ok(SyncOrStrippedState::Sync(SyncStateEvent::Original(cur))) =
-                        raw_current.deserialize()
-                    {
-                        let cur_is_join = !cur.content.application.kind.is_empty()
-                            || cur.content.focus_active.is_some()
-                            || !cur.content.slot_id.is_empty();
-                        if !cur_is_join {
-                            return;
-                        }
-                    }
-                }
-
-                // slot_id is present in our events; Element Call omits it and
-                // uses the room-scope default slot implicitly.
-                let slot_id = if content.slot_id.is_empty() {
-                    "call#default".to_owned()
-                } else {
-                    content.slot_id.clone()
-                };
-                if let Some(sink) = super::sink_for_client(&client) {
-                    sink.on_invitation(&room_id, &slot_id, &sender, "", 0, "");
-                }
-            }
-        },
-    )
-}
-
-/// Register a handler for MSC3401 `org.matrix.msc3401.call.member` events.
-/// Element Web uses this format. Called alongside `register_invitation_handler`.
-pub fn register_msc3401_invitation_handler(client: &matrix_sdk::Client) -> matrix_sdk::event_handler::EventHandlerHandle {
-    use matrix_sdk::ruma::events::{
-        call::member::{Application, CallMemberEventContent},
-        SyncStateEvent,
-    };
-
-    let client_clone = client.clone();
-    client.add_event_handler(
-        move |ev: SyncStateEvent<CallMemberEventContent>, room: Room| {
-            let client = client_clone.clone();
-            async move {
-                let own_user = client.user_id().map(|u| u.to_string()).unwrap_or_default();
-                let own_device = client
-                    .device_id()
-                    .map(|d| d.to_string())
-                    .unwrap_or_default();
-                let sender = ev.sender().to_string();
-                let room_id = room.room_id().to_string();
-
-                // Ignore only events from our own device (not from ourselves on Element/another device).
-                let own_state_key = format!("_{}_{}_m.call", own_user, own_device);
-                let (content, event_state_key, origin_server_ts) = match &ev {
-                    SyncStateEvent::Original(o) => {
-                        (&o.content, o.state_key.as_ref(), o.origin_server_ts)
-                    }
-                    SyncStateEvent::Redacted(_) => return,
-                };
-
-                if event_state_key == own_state_key {
                     return;
                 }
-
-                // Empty variant = leave; a join whose TTL (created_ts/origin_server_ts +
-                // expires, default 4h) has passed is equally not a live invitation. This
-                // also covers stale timeline replay redelivered via
-                // ClientFfi::sync_room_subscriptions when a room is (re-)opened.
-                if content.active_memberships(Some(origin_server_ts)).is_empty() {
-                    return;
-                }
-
-                let call_id = content
-                    .memberships()
-                    .into_iter()
-                    .find_map(|m| {
-                        if let Application::Call(app) = m.application() {
-                            Some(app.call_id.clone())
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or_default();
-
-                let slot_id = call_id;
+                let slot_id = super::members::call_id_of(&content);
                 if let Some(sink) = super::sink_for_client(&client) {
-                    sink.on_invitation(&room_id, &slot_id, &sender, "", 0, "");
+                    sink.on_invitation(&room_id, &slot_id, o.sender.as_str(), "", 0, "");
                 }
             }
         },
@@ -933,7 +2258,9 @@ pub fn register_msc3401_invitation_handler(client: &matrix_sdk::Client) -> matri
 /// Register a handler for stable `m.rtc.notification` and unstable
 /// `org.matrix.msc4075.rtc.notification` events (MSC4075).
 /// Fires `on_invitation` when a ring notification arrives from another user.
-pub fn register_rtc_notification_handler(client: &matrix_sdk::Client) -> Vec<matrix_sdk::event_handler::EventHandlerHandle> {
+pub fn register_rtc_notification_handler(
+    client: &matrix_sdk::Client,
+) -> Vec<matrix_sdk::event_handler::EventHandlerHandle> {
     use matrix_sdk::ruma::events::{
         rtc::notification::{CallIntent, NotificationType, RtcNotificationEventContent},
         SyncMessageLikeEvent,
@@ -985,6 +2312,18 @@ pub fn register_rtc_notification_handler(client: &matrix_sdk::Client) -> Vec<mat
                 // TODO MSC4075: send m.call.ring.ack once caller device_id is available
                 // (the stable notification event does not carry caller device_id)
 
+                // An ignored user's call does not ring (the sticky path has the same rule).
+                if super::sticky::ignored_users(&client)
+                    .await
+                    .contains(&sender)
+                {
+                    return;
+                }
+                // The same event may also be a sticky invite the sticky-map
+                // watcher announces under its real slot: announce it only once.
+                if !super::invites::claim_legacy_ring(&room, &notification_event_id) {
+                    return;
+                }
                 if let Some(sink) = super::sink_for_client(&client) {
                     sink.on_invitation(
                         &room_id,
@@ -1041,6 +2380,18 @@ pub fn register_rtc_notification_handler(client: &matrix_sdk::Client) -> Vec<mat
                 let sender = orig.sender.to_string();
                 let room_id = room.room_id().to_string();
 
+                // An ignored user's call does not ring (the sticky path has the same rule).
+                if super::sticky::ignored_users(&client)
+                    .await
+                    .contains(&sender)
+                {
+                    return;
+                }
+                // The same event may also be a sticky invite the sticky-map
+                // watcher announces under its real slot: announce it only once.
+                if !super::invites::claim_legacy_ring(&room, &notification_event_id) {
+                    return;
+                }
                 if let Some(sink) = super::sink_for_client(&client) {
                     sink.on_invitation(
                         &room_id,
@@ -1099,7 +2450,10 @@ mod invitation_staleness_tests {
 
     fn call_member_content(created_ts: MilliSecondsSinceUnixEpoch) -> CallMemberEventContent {
         CallMemberEventContent::new(
-            Application::Call(CallApplicationContent::new("123456".to_owned(), CallScope::Room)),
+            Application::Call(CallApplicationContent::new(
+                "123456".to_owned(),
+                CallScope::Room,
+            )),
             owned_device_id!("ABCDE"),
             ActiveFocus::Livekit(ActiveLivekitFocus::new()),
             vec![Focus::Livekit(LivekitFocus::new(
@@ -1179,8 +2533,18 @@ mod key_event_tests {
 
     #[test]
     fn rejects_other_room_or_application() {
-        assert!(check_key_event_fields("!r:x.org", &content("!other:x.org", "m.call", "DEV"), Some(Some("DEV"))).is_err());
-        assert!(check_key_event_fields("!r:x.org", &content("!r:x.org", "m.whiteboard", "DEV"), Some(Some("DEV"))).is_err());
+        assert!(check_key_event_fields(
+            "!r:x.org",
+            &content("!other:x.org", "m.call", "DEV"),
+            Some(Some("DEV"))
+        )
+        .is_err());
+        assert!(check_key_event_fields(
+            "!r:x.org",
+            &content("!r:x.org", "m.whiteboard", "DEV"),
+            Some(Some("DEV"))
+        )
+        .is_err());
     }
 
     #[test]
@@ -1208,6 +2572,383 @@ mod key_event_tests {
         assert!(e.contains("CLAIMED") && e.contains("ACTUAL"), "{e}");
     }
 
+    fn media(v: serde_json::Value) -> crate::client::rtc::model::MediaKeyContent {
+        serde_json::from_value(v).unwrap()
+    }
+
+    fn mrtc_member(
+        user: &str,
+        device: &str,
+        member_id: &str,
+    ) -> crate::client::rtc::members::CallMember {
+        use crate::client::rtc::members::{CallMember, MemberSource};
+        CallMember {
+            user_id: user.into(),
+            device_id: device.into(),
+            state_key: member_id.into(),
+            joined_at: matrix_sdk::ruma::MilliSecondsSinceUnixEpoch::now(),
+            focus_selection: "multi_sfu".into(),
+            foci_preferred: vec![],
+            member_id: member_id.into(),
+            source: MemberSource::MatrixRtc,
+            intent: None,
+            capabilities: None,
+            claimed_at_ms: None,
+        }
+    }
+
+    fn stable(room: &str, member_id: &str) -> crate::client::rtc::model::MediaKeyContent {
+        media(serde_json::json!({
+            "room_id": room, "member_id": member_id,
+            "media_key": { "index": 4, "key": "AAAA" }
+        }))
+    }
+
+    #[test]
+    fn stable_shape_from_the_member_s_own_device_is_accepted() {
+        let members = vec![mrtc_member("@a:x.org", "DEV", "mid1")];
+        let ok = evaluate_key_event(
+            "!r:x.org",
+            &stable("!r:x.org", "mid1"),
+            "@a:x.org",
+            Some(Some("DEV")),
+            &members,
+        )
+        .unwrap();
+        assert_eq!(
+            (ok.device.as_str(), ok.index, ok.key_b64.as_str()),
+            ("DEV", 4, "AAAA")
+        );
+    }
+
+    #[test]
+    fn a_squatted_member_id_does_not_block_the_real_owner() {
+        // Mallory published a member event with the victim's (visible) member id.
+        let members = vec![
+            mrtc_member("@mallory:x.org", "M", "mid1"),
+            mrtc_member("@a:x.org", "DEV", "mid1"),
+        ];
+        let ok = evaluate_key_event(
+            "!r:x.org",
+            &stable("!r:x.org", "mid1"),
+            "@a:x.org",
+            Some(Some("DEV")),
+            &members,
+        )
+        .unwrap();
+        assert_eq!(ok.device, "DEV");
+        // ...and Mallory's own key under that id still only works from Mallory's device.
+        let e = evaluate_key_event(
+            "!r:x.org",
+            &stable("!r:x.org", "mid1"),
+            "@mallory:x.org",
+            Some(Some("OTHER")),
+            &members,
+        )
+        .unwrap_err();
+        assert!(e.contains("another device"), "{e}");
+    }
+
+    #[test]
+    fn stable_shape_for_another_users_member_id_is_rejected() {
+        let members = vec![mrtc_member("@a:x.org", "DEV", "mid1")];
+        let e = evaluate_key_event(
+            "!r:x.org",
+            &stable("!r:x.org", "mid1"),
+            "@mallory:x.org",
+            Some(Some("DEV")),
+            &members,
+        )
+        .unwrap_err();
+        assert!(e.contains("another user"), "{e}");
+    }
+
+    #[test]
+    fn stable_shape_from_a_different_device_than_the_member_event_is_rejected() {
+        let members = vec![mrtc_member("@a:x.org", "DEV", "mid1")];
+        let e = evaluate_key_event(
+            "!r:x.org",
+            &stable("!r:x.org", "mid1"),
+            "@a:x.org",
+            Some(Some("OTHER")),
+            &members,
+        )
+        .unwrap_err();
+        assert!(e.contains("another device"), "{e}");
+    }
+
+    #[test]
+    fn stable_shape_with_an_unseen_member_id_is_left_to_parking() {
+        let ok = evaluate_key_event(
+            "!r:x.org",
+            &stable("!r:x.org", "unseen"),
+            "@a:x.org",
+            Some(Some("DEV")),
+            &[],
+        )
+        .unwrap();
+        assert_eq!(ok.device, "DEV");
+    }
+
+    #[test]
+    fn stable_shape_still_needs_encryption_and_the_right_room() {
+        let c = stable("!r:x.org", "m");
+        assert_eq!(
+            evaluate_key_event("!r:x.org", &c, "@a:x.org", None, &[]).unwrap_err(),
+            "sent unencrypted"
+        );
+        assert!(evaluate_key_event("!r:x.org", &c, "@a:x.org", Some(None), &[]).is_err());
+        assert!(
+            evaluate_key_event("!other:x.org", &c, "@a:x.org", Some(Some("DEV")), &[]).is_err()
+        );
+    }
+
+    #[test]
+    fn legacy_shape_keeps_the_claimed_device_rules() {
+        let c = media(serde_json::json!({
+            "room_id": "!r:x.org",
+            "keys": { "key": "BBBB", "index": 7 },
+            "member": { "claimed_device_id": "DEV", "id": "@a:x.org:DEV" },
+            "session": { "call_id": "", "application": "m.call", "scope": "m.room" }
+        }));
+        let ok = evaluate_key_event("!r:x.org", &c, "@a:x.org", Some(Some("DEV")), &[]).unwrap();
+        assert_eq!((ok.index, ok.key_b64.as_str()), (7, "BBBB"));
+        assert!(evaluate_key_event("!r:x.org", &c, "@a:x.org", Some(Some("ACTUAL")), &[]).is_err());
+    }
+
+    #[test]
+    fn event_without_any_key_is_rejected() {
+        let c = media(serde_json::json!({ "room_id": "!r:x.org", "member_id": "m" }));
+        assert!(evaluate_key_event("!r:x.org", &c, "@a:x.org", Some(Some("DEV")), &[]).is_err());
+    }
+
+    #[test]
+    fn strict_mode_rejects_devices_their_owner_did_not_sign() {
+        use matrix_sdk::deserialized_responses::{VerificationLevel, VerificationState};
+        let unsigned = VerificationState::Unverified(VerificationLevel::UnsignedDevice);
+        assert_eq!(
+            check_device_trusted(&unsigned, true).unwrap_err(),
+            "sending device is not cross-signed by its owner"
+        );
+        let mismatched = VerificationState::Unverified(VerificationLevel::MismatchedSender);
+        assert!(check_device_trusted(&mismatched, true).is_err());
+    }
+
+    #[test]
+    fn strict_mode_rejects_a_changed_identity_that_was_verified() {
+        use matrix_sdk::deserialized_responses::{VerificationLevel, VerificationState};
+        let violation = VerificationState::Unverified(VerificationLevel::VerificationViolation);
+        assert!(check_device_trusted(&violation, true).is_err());
+        assert!(check_device_trusted(&violation, false).is_ok());
+    }
+
+    #[test]
+    fn strict_mode_accepts_cross_signed_devices_of_unverified_users() {
+        use matrix_sdk::deserialized_responses::{VerificationLevel, VerificationState};
+        assert!(check_device_trusted(&VerificationState::Verified, true).is_ok());
+        let unverified_user = VerificationState::Unverified(VerificationLevel::UnverifiedIdentity);
+        assert!(check_device_trusted(&unverified_user, true).is_ok());
+    }
+
+    #[test]
+    fn lax_mode_accepts_any_device() {
+        use matrix_sdk::deserialized_responses::{VerificationLevel, VerificationState};
+        let unsigned = VerificationState::Unverified(VerificationLevel::UnsignedDevice);
+        assert!(check_device_trusted(&unsigned, false).is_ok());
+    }
+
+    #[test]
+    fn is_live_member_matches_user_and_device() {
+        let members = vec![("@a:x.org".to_owned(), "DEV".to_owned())];
+        assert!(is_live_member(&members, "@a:x.org", "DEV"));
+        assert!(!is_live_member(&members, "@a:x.org", "OTHER"));
+        assert!(!is_live_member(&members, "@b:x.org", "DEV"));
+    }
+
+    // ── Judging a key whose sending device may not be known yet ────────────────
+
+    use matrix_sdk::deserialized_responses::{
+        DeviceLinkProblem, VerificationLevel, VerificationState,
+    };
+
+    fn missing() -> VerificationState {
+        VerificationState::Unverified(VerificationLevel::None(DeviceLinkProblem::MissingDevice))
+    }
+
+    fn judge(
+        device: Option<&str>,
+        state: &VerificationState,
+        strict: bool,
+    ) -> Result<AcceptedKey, KeyRejection> {
+        let c = stable("!r:x.org", "unseen");
+        judge_key_event(
+            "!r:x.org",
+            &c,
+            "@a:x.org",
+            Some((device, state)),
+            &[],
+            strict,
+        )
+    }
+
+    #[test]
+    fn a_key_from_a_device_not_known_yet_is_worth_judging_again() {
+        // Strict or not, the verdict has to wait for the device.
+        for strict in [true, false] {
+            assert!(
+                matches!(judge(None, &missing(), strict), Err(KeyRejection::Retry(_))),
+                "strict={strict}"
+            );
+        }
+        assert!(device_not_known_yet(Some(None), None));
+        assert!(device_not_known_yet(Some(Some("DEV")), Some(&missing())));
+        assert!(!device_not_known_yet(
+            Some(Some("DEV")),
+            Some(&VerificationState::Verified)
+        ));
+        assert!(!device_not_known_yet(None, None), "unencrypted is final");
+    }
+
+    #[test]
+    fn a_known_device_that_is_not_trusted_is_rejected_outright() {
+        let unsigned = VerificationState::Unverified(VerificationLevel::UnsignedDevice);
+        assert!(matches!(
+            judge(Some("DEV"), &unsigned, true),
+            Err(KeyRejection::Final(_))
+        ));
+        let violation = VerificationState::Unverified(VerificationLevel::VerificationViolation);
+        assert!(matches!(
+            judge(Some("DEV"), &violation, true),
+            Err(KeyRejection::Final(_))
+        ));
+        let mismatched = VerificationState::Unverified(VerificationLevel::MismatchedSender);
+        assert!(matches!(
+            judge(Some("DEV"), &mismatched, true),
+            Err(KeyRejection::Final(_))
+        ));
+    }
+
+    #[test]
+    fn an_insecure_source_is_final() {
+        let insecure = VerificationState::Unverified(VerificationLevel::None(
+            DeviceLinkProblem::InsecureSource,
+        ));
+        // Not a device we are waiting to learn about: this will not get better.
+        assert!(!device_not_known_yet(Some(Some("DEV")), Some(&insecure)));
+        assert!(matches!(
+            judge(Some("DEV"), &insecure, true),
+            Err(KeyRejection::Final(_))
+        ));
+    }
+
+    #[test]
+    fn a_known_trusted_device_is_accepted_and_lax_mode_ignores_trust() {
+        assert!(judge(Some("DEV"), &VerificationState::Verified, true).is_ok());
+        let unsigned = VerificationState::Unverified(VerificationLevel::UnsignedDevice);
+        assert!(judge(Some("DEV"), &unsigned, false).is_ok());
+    }
+
+    #[test]
+    fn an_unencrypted_key_is_final() {
+        let c = stable("!r:x.org", "m");
+        assert_eq!(
+            judge_key_event("!r:x.org", &c, "@a:x.org", None, &[], true).unwrap_err(),
+            KeyRejection::Final("sent unencrypted".to_owned())
+        );
+    }
+
+    #[test]
+    fn a_wrong_member_is_final_for_a_known_device() {
+        let members = vec![mrtc_member("@a:x.org", "DEV", "mid1")];
+        let c = stable("!r:x.org", "mid1");
+        let r = judge_key_event(
+            "!r:x.org",
+            &c,
+            "@a:x.org",
+            Some((Some("OTHER"), &VerificationState::Verified)),
+            &members,
+            true,
+        );
+        assert!(matches!(r, Err(KeyRejection::Final(_))));
+    }
+
+    #[test]
+    fn a_device_found_later_is_judged_by_how_the_crypto_layer_states_it() {
+        use VerificationLevel::*;
+        assert_eq!(
+            verification_state_for_device(true, false, false),
+            VerificationState::Verified
+        );
+        assert_eq!(
+            verification_state_for_device(true, true, true),
+            VerificationState::Verified
+        );
+        assert_eq!(
+            verification_state_for_device(false, true, false),
+            VerificationState::Unverified(UnverifiedIdentity)
+        );
+        assert_eq!(
+            verification_state_for_device(false, true, true),
+            VerificationState::Unverified(VerificationViolation)
+        );
+        assert_eq!(
+            verification_state_for_device(false, false, false),
+            VerificationState::Unverified(UnsignedDevice)
+        );
+        // ...so strict mode takes the first two kinds and refuses the rest.
+        assert!(
+            check_device_trusted(&verification_state_for_device(false, true, false), true).is_ok()
+        );
+        assert!(
+            check_device_trusted(&verification_state_for_device(false, true, true), true).is_err()
+        );
+        assert!(
+            check_device_trusted(&verification_state_for_device(false, false, false), true)
+                .is_err()
+        );
+    }
+
+    // ── Checks before the room is read ─────────────────────────────────────────
+
+    #[test]
+    fn cheap_checks_turn_away_bad_events_without_the_room() {
+        let ok = stable("!r:x.org", "m");
+        assert!(cheap_key_checks("!r:x.org", &ok, true).is_ok());
+        assert_eq!(
+            cheap_key_checks("!r:x.org", &ok, false).unwrap_err(),
+            "sent unencrypted"
+        );
+        assert!(cheap_key_checks("!other:x.org", &ok, true)
+            .unwrap_err()
+            .contains("another room"));
+        let none = media(serde_json::json!({ "room_id": "!r:x.org", "member_id": "m" }));
+        assert_eq!(
+            cheap_key_checks("!r:x.org", &none, true).unwrap_err(),
+            "carries no key"
+        );
+    }
+
+    #[test]
+    fn cheap_checks_cap_the_size_of_what_we_look_at() {
+        let long_key = media(serde_json::json!({
+            "room_id": "!r:x.org", "member_id": "m",
+            "media_key": { "index": 1, "key": "A".repeat(MAX_KEY_B64_LEN + 1) }
+        }));
+        assert!(cheap_key_checks("!r:x.org", &long_key, true)
+            .unwrap_err()
+            .contains("characters"));
+        let long_id = media(serde_json::json!({
+            "room_id": "!r:x.org", "member_id": "m".repeat(MAX_MEMBER_ID_LEN + 1),
+            "media_key": { "index": 1, "key": "AAAA" }
+        }));
+        assert!(cheap_key_checks("!r:x.org", &long_id, true).is_err());
+        let edge = media(serde_json::json!({
+            "room_id": "!r:x.org", "member_id": "m".repeat(MAX_MEMBER_ID_LEN),
+            "media_key": { "index": 1, "key": "A".repeat(MAX_KEY_B64_LEN) }
+        }));
+        assert!(cheap_key_checks("!r:x.org", &edge, true).is_ok());
+    }
+
     #[test]
     fn unencrypted_is_rejected_before_other_checks() {
         // Wrong room and wrong application, but the unencrypted verdict wins.
@@ -1220,34 +2961,57 @@ mod key_event_tests {
 }
 
 #[cfg(test)]
-mod id_tests {
+mod sender_membership_tests {
     use super::*;
+    use matrix_sdk::ruma::events::room::member::MembershipState;
 
     #[test]
-    fn member_id_is_a_v4_uuid() {
-        for _ in 0..50 {
-            let id = new_member_id();
-            let parts: Vec<&str> = id.split('-').collect();
+    fn only_a_definite_answer_rules_a_sender_out() {
+        assert_eq!(
+            classify_sender::<String>(Ok(Some(MembershipState::Join))),
+            SenderJoin::Joined
+        );
+        for gone in [
+            MembershipState::Leave,
+            MembershipState::Ban,
+            MembershipState::Invite,
+        ] {
             assert_eq!(
-                parts.iter().map(|p| p.len()).collect::<Vec<_>>(),
-                vec![8, 4, 4, 4, 12],
-                "{id}"
-            );
-            assert!(id.chars().all(|c| c == '-' || c.is_ascii_hexdigit()), "{id}");
-            assert!(id.chars().all(|c| !c.is_ascii_uppercase()), "{id}");
-            assert!(parts[2].starts_with('4'), "version nibble: {id}");
-            assert!(
-                matches!(parts[3].chars().next(), Some('8' | '9' | 'a' | 'b')),
-                "variant nibble: {id}"
+                classify_sender::<String>(Ok(Some(gone))),
+                SenderJoin::NotJoined
             );
         }
+        assert_eq!(classify_sender::<String>(Ok(None)), SenderJoin::NotJoined);
+        // A failed request is not "not joined": the parked key must survive it.
+        assert!(matches!(
+            classify_sender(Err("timed out")),
+            SenderJoin::Unknown(_)
+        ));
     }
 
     #[test]
-    fn member_ids_are_unique() {
-        let ids: std::collections::HashSet<String> = (0..200).map(|_| new_member_id()).collect();
-        assert_eq!(ids.len(), 200);
+    fn a_profile_change_does_not_wake_the_reconcile_loop_but_a_kick_does() {
+        use MembershipState::{Ban, Invite, Join, Leave};
+        assert!(
+            !membership_event_matters(&Join, Some(&Join)),
+            "a new display name"
+        );
+        assert!(
+            membership_event_matters(&Leave, Some(&Join)),
+            "a leave or a kick"
+        );
+        assert!(membership_event_matters(&Ban, Some(&Join)));
+        assert!(membership_event_matters(&Join, Some(&Invite)), "a join");
+        assert!(
+            membership_event_matters(&Join, None),
+            "no previous state to compare with"
+        );
     }
+}
+
+#[cfg(test)]
+mod id_tests {
+    use super::*;
 
     #[test]
     fn session_ids_strictly_increase() {
@@ -1263,5 +3027,502 @@ mod id_tests {
         assert!(DELAYED_LEAVE_HEARTBEAT < DELAYED_LEAVE_DELAY);
         // ...and the membership must be resent well inside its 4 h validity.
         assert!(MEMBERSHIP_REFRESH < Duration::from_secs(4 * 3600));
+    }
+}
+
+#[cfg(test)]
+mod announced_tests {
+    use super::*;
+    use crate::client::rtc::mrtc_membership::StickySink;
+    use serde_json::Value;
+    use std::sync::{atomic::AtomicUsize, Mutex};
+
+    type Log = Arc<Mutex<Vec<String>>>;
+
+    /// Records every send in one shared log, so the order across the legacy,
+    /// sticky and invite parts can be asserted.
+    struct FakeSignals {
+        log: Log,
+        legacy_failures: AtomicUsize,
+        invite_failures: AtomicUsize,
+        answered: AtomicBool,
+        /// The next legacy leave never finishes (a request stuck in flight).
+        hang_first_legacy: AtomicBool,
+    }
+
+    /// Count one failure off `n`; whether there was one left.
+    fn take_one(n: &AtomicUsize) -> bool {
+        let left = n.load(Ordering::SeqCst);
+        n.store(left.saturating_sub(1), Ordering::SeqCst);
+        left > 0
+    }
+
+    #[async_trait::async_trait]
+    impl Signals for FakeSignals {
+        async fn legacy_leave(&self, member_id: &str) -> anyhow::Result<()> {
+            let fail = take_one(&self.legacy_failures);
+            let hang = self.hang_first_legacy.swap(false, Ordering::SeqCst);
+            if hang {
+                self.log
+                    .lock()
+                    .unwrap()
+                    .push(format!("legacy-leave {member_id} (hung)"));
+                std::future::pending::<()>().await;
+            }
+            self.log.lock().unwrap().push(format!(
+                "legacy-leave {member_id}{}",
+                if fail { " (failed)" } else { "" }
+            ));
+            if fail {
+                anyhow::bail!("offline");
+            }
+            Ok(())
+        }
+
+        async fn cancel_delayed(&self, delay_id: &str) {
+            self.log
+                .lock()
+                .unwrap()
+                .push(format!("cancel-delayed {delay_id}"));
+        }
+
+        async fn call_answered(&self) -> bool {
+            self.answered.load(Ordering::SeqCst)
+        }
+
+        async fn withdraw_invite(&self) -> anyhow::Result<()> {
+            let fail = take_one(&self.invite_failures);
+            self.log.lock().unwrap().push(format!(
+                "withdraw-invite{}",
+                if fail { " (failed)" } else { "" }
+            ));
+            if fail {
+                anyhow::bail!("offline");
+            }
+            Ok(())
+        }
+    }
+
+    struct LogSticky(Log);
+
+    #[async_trait::async_trait]
+    impl StickySink for LogSticky {
+        async fn send(&self, _t: &str, content: Value, _d: Duration) -> anyhow::Result<()> {
+            let kind = if content["member"]["membership"] == "leave" {
+                "sticky-leave"
+            } else {
+                "sticky-join"
+            };
+            self.0.lock().unwrap().push(kind.to_owned());
+            Ok(())
+        }
+    }
+
+    fn fake(legacy_failures: usize, invite_failures: usize) -> (Announced, Log, Arc<FakeSignals>) {
+        let log: Log = Arc::default();
+        let signals = Arc::new(FakeSignals {
+            log: log.clone(),
+            legacy_failures: AtomicUsize::new(legacy_failures),
+            invite_failures: AtomicUsize::new(invite_failures),
+            answered: AtomicBool::new(false),
+            hang_first_legacy: AtomicBool::new(false),
+        });
+        (Announced::new(signals.clone()), log, signals)
+    }
+
+    fn with_sticky(a: &Announced, log: &Log) {
+        a.set_membership(Arc::new(MrtcMembership::with_sink(
+            Arc::new(LogSticky(log.clone())),
+            JoinParams {
+                member_id: "m1".into(),
+                user_id: "@a:x".into(),
+                device_id: "D".into(),
+                sfu_url: "wss://s".into(),
+                service_url: "https://j".into(),
+                audio_only: false,
+            },
+            true,
+        )));
+    }
+
+    fn entries(log: &Log) -> Vec<String> {
+        log.lock().unwrap().clone()
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn withdraw_takes_back_legacy_then_delayed_then_sticky_then_invite() {
+        let (a, log, _) = fake(0, 0);
+        with_sticky(&a, &log);
+        a.joined_legacy("id1");
+        a.joined_legacy("id2");
+        a.joined_legacy("id1"); // recorded once
+        *a.delay_id.lock() = Some("delay9".into());
+        a.invited();
+        a.withdraw(LeaveCode::Leave, None).await;
+        assert_eq!(
+            entries(&log),
+            [
+                "legacy-leave id1",
+                "legacy-leave id2",
+                "cancel-delayed delay9",
+                "sticky-leave",
+                "withdraw-invite"
+            ]
+        );
+        assert!(a.delay_id.lock().is_none());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_delivered_withdrawal_is_not_repeated() {
+        let (a, log, _) = fake(0, 0);
+        with_sticky(&a, &log);
+        a.joined_legacy("id1");
+        a.invited();
+        a.withdraw(LeaveCode::Leave, None).await;
+        let first = entries(&log);
+        a.withdraw(LeaveCode::Leave, None).await;
+        a.withdraw(LeaveCode::SlotClosed, Some("again")).await;
+        assert_eq!(
+            entries(&log),
+            first,
+            "end_call then drop sends nothing twice"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_failed_legacy_leave_is_retried_once_then_again_by_the_next_withdrawal() {
+        let (a, log, _) = fake(3, 0);
+        a.joined_legacy("id1");
+        *a.delay_id.lock() = Some("delay9".into());
+        a.withdraw(LeaveCode::Leave, None).await;
+        assert_eq!(
+            entries(&log),
+            ["legacy-leave id1 (failed)", "legacy-leave id1 (failed)"],
+            "one retry, and the delayed leave stays as the fallback"
+        );
+        assert_eq!(a.delay_id.lock().as_deref(), Some("delay9"));
+        // The next request (the session's drop) retries and, with one failure
+        // left, succeeds on its own retry.
+        a.withdraw(LeaveCode::Leave, None).await;
+        assert_eq!(
+            entries(&log)[2..],
+            [
+                "legacy-leave id1 (failed)",
+                "legacy-leave id1",
+                "cancel-delayed delay9"
+            ]
+        );
+        a.withdraw(LeaveCode::Leave, None).await;
+        assert_eq!(entries(&log).len(), 5, "delivered: nothing more");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_withdrawal_cut_short_by_end_calls_timeout_is_finished_by_the_drop() {
+        let (a, log, signals) = fake(0, 0);
+        with_sticky(&a, &log);
+        a.joined_legacy("id1");
+        a.invited();
+        signals.hang_first_legacy.store(true, Ordering::SeqCst);
+        let cut = tokio::time::timeout(
+            END_CALL_WITHDRAW_TIMEOUT,
+            a.withdraw(LeaveCode::Leave, None),
+        )
+        .await;
+        assert!(cut.is_err(), "end_call stops waiting");
+        assert_eq!(entries(&log), ["legacy-leave id1 (hung)"]);
+        // The session's drop asks again and completes every part.
+        a.withdraw(LeaveCode::Leave, None).await;
+        assert_eq!(
+            entries(&log)[1..],
+            ["legacy-leave id1", "sticky-leave", "withdraw-invite"]
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_invite_is_withdrawn_only_for_a_call_nobody_joined() {
+        let (a, log, signals) = fake(0, 0);
+        a.invited();
+        signals.answered.store(true, Ordering::SeqCst);
+        a.withdraw(LeaveCode::Leave, None).await;
+        assert!(
+            entries(&log).is_empty(),
+            "an answered call keeps its ring record"
+        );
+
+        let (a, log, _) = fake(0, 0);
+        a.withdraw(LeaveCode::Leave, None).await;
+        assert!(
+            entries(&log).is_empty(),
+            "no invite was sent, none is withdrawn"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_failed_invite_withdrawal_is_attempted_again() {
+        let (a, log, _) = fake(0, 1);
+        a.invited();
+        a.withdraw(LeaveCode::Leave, None).await;
+        a.withdraw(LeaveCode::Leave, None).await;
+        a.withdraw(LeaveCode::Leave, None).await;
+        assert_eq!(
+            entries(&log),
+            ["withdraw-invite (failed)", "withdraw-invite"]
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_sticky_leave_is_sent_even_when_its_join_never_confirmed() {
+        // The membership is recorded before its join; a withdrawal covers it.
+        let (a, log, _) = fake(0, 0);
+        with_sticky(&a, &log);
+        a.withdraw(LeaveCode::TransportError, Some("lost")).await;
+        assert_eq!(entries(&log), ["sticky-leave"]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_wrong_identity_stays_tracked_until_its_leave_is_out() {
+        let (a, log, _) = fake(2, 0);
+        a.joined_legacy("wrong");
+        a.joined_legacy("right");
+        a.leave_legacy_identity("wrong").await;
+        assert_eq!(
+            a.legacy_ids.lock().clone(),
+            ["wrong", "right"],
+            "both sends failed"
+        );
+        a.leave_legacy_identity("wrong").await;
+        assert_eq!(a.legacy_ids.lock().clone(), ["right"]);
+        assert_eq!(entries(&log).len(), 3);
+    }
+
+    #[tokio::test]
+    async fn nothing_joins_once_the_call_is_closed() {
+        let (a, _, _) = fake(0, 0);
+        assert!(a.open_for_join().await.is_some());
+        a.close();
+        assert!(a.is_closed());
+        assert!(
+            a.open_for_join().await.is_none(),
+            "the heartbeat must not send a join"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn nothing_joins_after_the_legacy_leave_is_out() {
+        let (a, _, _) = fake(0, 0);
+        a.joined_legacy("id1");
+        a.withdraw(LeaveCode::Leave, None).await;
+        assert!(a.open_for_join().await.is_none());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_hang_up_disconnect_is_not_reported_as_an_end() {
+        let (a, _, _) = fake(0, 0);
+        let a = Arc::new(a);
+        let holder = Arc::new(PLMutex::new(None));
+        // The hang-up closes the call before it disconnects.
+        a.shutdown();
+        assert!(!primary_ended(&a, &holder), "the UI asked for this end");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_lost_connection_is_reported_and_closes_the_call() {
+        let (a, _, _) = fake(0, 0);
+        let a = Arc::new(a);
+        let holder = Arc::new(PLMutex::new(None));
+        assert!(primary_ended(&a, &holder));
+        assert!(a.is_closed(), "nothing announces us again");
+        // A second disconnect event of the same call is not reported twice.
+        assert!(!primary_ended(&a, &holder));
+    }
+
+    #[tokio::test]
+    async fn closing_stops_the_announcing_tasks_and_a_late_task_at_once() {
+        let (a, _, _) = fake(0, 0);
+        let heartbeat = tokio::spawn(std::future::pending::<()>());
+        let reconcile = tokio::spawn(std::future::pending::<()>());
+        a.register_task(heartbeat.abort_handle());
+        a.register_reconcile(reconcile.abort_handle());
+        a.close();
+        assert!(heartbeat.await.unwrap_err().is_cancelled());
+        // The reconcile loop is the one task a teardown it drives must not abort.
+        tokio::task::yield_now().await;
+        assert!(!reconcile.is_finished());
+        a.shutdown();
+        assert!(reconcile.await.unwrap_err().is_cancelled());
+
+        let late = tokio::spawn(std::future::pending::<()>());
+        a.register_task(late.abort_handle());
+        assert!(
+            late.await.unwrap_err().is_cancelled(),
+            "registered after the close"
+        );
+        let late_reconcile = tokio::spawn(std::future::pending::<()>());
+        a.register_reconcile(late_reconcile.abort_handle());
+        assert!(late_reconcile.await.unwrap_err().is_cancelled());
+    }
+
+    /// Records when the media stopped and the connection closed.
+    struct FakeConnection {
+        log: Log,
+        announced: Arc<Announced>,
+        started: tokio::time::Instant,
+    }
+
+    #[async_trait::async_trait]
+    impl Connection for FakeConnection {
+        fn stop_media(&self) {
+            self.log.lock().unwrap().push(format!(
+                "stop-media (call closed: {}, after {:?})",
+                self.announced.is_closed(),
+                self.started.elapsed()
+            ));
+        }
+
+        async fn disconnect(&self) {
+            self.log
+                .lock()
+                .unwrap()
+                .push(format!("disconnect after {:?}", self.started.elapsed()));
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_hang_up_stops_the_media_and_closes_the_sfus_without_waiting_for_the_homeserver() {
+        let (a, log, signals) = fake(0, 0);
+        let a = Arc::new(a);
+        a.joined_legacy("id1");
+        // The homeserver never answers the leave.
+        signals.hang_first_legacy.store(true, Ordering::SeqCst);
+        let conn = FakeConnection {
+            log: log.clone(),
+            announced: Arc::clone(&a),
+            started: tokio::time::Instant::now(),
+        };
+        let delivered = hang_up(&a, &conn, LeaveCode::Leave, None, END_CALL_WITHDRAW_TIMEOUT).await;
+        assert!(!delivered, "the withdrawal was cut short");
+        assert_eq!(
+            entries(&log),
+            [
+                "stop-media (call closed: true, after 0ns)",
+                "legacy-leave id1 (hung)",
+                "disconnect after 0ns",
+            ],
+            "media off first, then the leave and the disconnect together, none waiting for the other"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_hang_up_with_a_working_homeserver_delivers_everything() {
+        let (a, log, _) = fake(0, 0);
+        let a = Arc::new(a);
+        a.joined_legacy("id1");
+        let conn = FakeConnection {
+            log: log.clone(),
+            announced: Arc::clone(&a),
+            started: tokio::time::Instant::now(),
+        };
+        assert!(hang_up(&a, &conn, LeaveCode::Leave, None, END_CALL_WITHDRAW_TIMEOUT).await);
+        let e = entries(&log);
+        assert_eq!(e[0], "stop-media (call closed: true, after 0ns)");
+        assert!(
+            e.contains(&"legacy-leave id1".to_owned())
+                && e.contains(&"disconnect after 0ns".to_owned())
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_setup_that_is_abandoned_takes_its_connection_and_announcements_back() {
+        let (a, log, _) = fake(0, 0);
+        let a = Arc::new(a);
+        a.joined_legacy("id1");
+        let mut guard = SetupGuard::new(Arc::clone(&a));
+        guard.connected(Arc::new(FakeConnection {
+            log: log.clone(),
+            announced: Arc::clone(&a),
+            started: tokio::time::Instant::now(),
+        }));
+        // An early return, a panic or the setup's deadline all end like this.
+        drop(guard);
+        assert_eq!(
+            entries(&log),
+            ["stop-media (call closed: true, after 0ns)"],
+            "the media stops before the guard's drop returns"
+        );
+        tokio::time::sleep(Duration::from_millis(1)).await;
+        let e = entries(&log);
+        assert!(e.contains(&"legacy-leave id1".to_owned()), "{e:?}");
+        assert!(e.contains(&"disconnect after 0ns".to_owned()), "{e:?}");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_setup_that_succeeded_is_left_alone_by_its_guard() {
+        let (a, log, _) = fake(0, 0);
+        let a = Arc::new(a);
+        a.joined_legacy("id1");
+        let mut guard = SetupGuard::new(Arc::clone(&a));
+        guard.connected(Arc::new(FakeConnection {
+            log: log.clone(),
+            announced: Arc::clone(&a),
+            started: tokio::time::Instant::now(),
+        }));
+        guard.defuse();
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        assert!(entries(&log).is_empty());
+        assert!(!a.is_closed());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_failed_setup_is_cleaned_up_before_its_error_is_returned() {
+        let (a, log, _) = fake(0, 0);
+        let a = Arc::new(a);
+        a.joined_legacy("id1");
+        let mut guard = SetupGuard::new(Arc::clone(&a));
+        guard.connected(Arc::new(FakeConnection {
+            log: log.clone(),
+            announced: Arc::clone(&a),
+            started: tokio::time::Instant::now(),
+        }));
+        guard
+            .fail(
+                LeaveCode::TransportError,
+                "could not update the call membership",
+            )
+            .await;
+        let e = entries(&log);
+        assert!(
+            e.contains(&"disconnect after 0ns".to_owned())
+                && e.contains(&"legacy-leave id1".to_owned())
+        );
+        // And nothing is repeated by a second cleanup.
+        let before = e.len();
+        a.withdraw(LeaveCode::Leave, None).await;
+        assert_eq!(entries(&log).len(), before);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_setup_cut_off_by_its_deadline_is_cleaned_up_by_the_guard() {
+        let (a, log, _) = fake(0, 0);
+        let a = Arc::new(a);
+        a.joined_legacy("id1");
+        let (announced, log2) = (Arc::clone(&a), log.clone());
+        let setup = async move {
+            let mut guard = SetupGuard::new(Arc::clone(&announced));
+            guard.connected(Arc::new(FakeConnection {
+                log: log2,
+                announced: Arc::clone(&announced),
+                started: tokio::time::Instant::now(),
+            }));
+            std::future::pending::<()>().await;
+            guard.defuse();
+        };
+        assert!(tokio::time::timeout(Duration::from_secs(75), setup)
+            .await
+            .is_err());
+        tokio::time::sleep(Duration::from_millis(1)).await;
+        let e = entries(&log);
+        assert!(e.iter().any(|l| l.starts_with("stop-media")), "{e:?}");
+        assert!(e.contains(&"legacy-leave id1".to_owned()), "{e:?}");
+        assert!(e.iter().any(|l| l.starts_with("disconnect")), "{e:?}");
     }
 }

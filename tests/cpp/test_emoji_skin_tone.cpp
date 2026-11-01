@@ -24,8 +24,7 @@ namespace emoji = tesseract::emoji;
 //  emoji:: tone table
 // ─────────────────────────────────────────────────────────────────────────
 
-TEST_CASE("Skin tone lookup: bases, variants and emoji without tones",
-          "[emoji][skin_tone]")
+TEST_CASE("Skin tone lookup: bases, variants and emoji without tones", "[emoji][skin_tone]")
 {
     CHECK(emoji::supports_skin_tone("👍"));
     CHECK(emoji::supports_skin_tone("👍🏽"));
@@ -40,25 +39,26 @@ TEST_CASE("Skin tone lookup: bases, variants and emoji without tones",
     CHECK(emoji::base_glyph("🍕") == "🍕");
 }
 
-TEST_CASE("Skin tone variants come from the data, not codepoint insertion",
-          "[emoji][skin_tone]")
+TEST_CASE("Skin tone variants come from the data, not codepoint insertion", "[emoji][skin_tone]")
 {
     // VS16 base: the toned form drops U+FE0F.
     CHECK(emoji::with_skin_tone("☝️", SkinTone::Medium) == "☝🏽");
     // ZWJ multi-person sequence: both people get the tone.
-    CHECK(emoji::with_skin_tone("🧑‍🤝‍🧑", SkinTone::Light) == "🧑🏻‍🤝‍🧑🏻");
+    CHECK(emoji::with_skin_tone("🧑‍🤝‍🧑", SkinTone::Light) ==
+          "🧑🏻‍🤝‍🧑🏻");
     // Qualified base ("person: blond hair" → "person: light skin tone, blond hair").
     CHECK(emoji::with_skin_tone("👱", SkinTone::Light) == "👱🏻");
 }
 
-TEST_CASE("Every tone-capable picker entry round-trips through base_glyph",
-          "[emoji][skin_tone]")
+TEST_CASE("Every tone-capable picker entry round-trips through base_glyph", "[emoji][skin_tone]")
 {
     int bases = 0;
     for (const auto& e : emoji::all())
     {
         if (!emoji::supports_skin_tone(e.glyph))
+        {
             continue;
+        }
         ++bases;
         for (SkinTone t : emoji::kSkinTones)
         {
@@ -70,11 +70,12 @@ TEST_CASE("Every tone-capable picker entry round-trips through base_glyph",
     CHECK(bases >= 300);
 }
 
-TEST_CASE("Skin tone keys round-trip; unknown keys mean no tone",
-          "[emoji][skin_tone]")
+TEST_CASE("Skin tone keys round-trip; unknown keys mean no tone", "[emoji][skin_tone]")
 {
     for (SkinTone t : emoji::kSkinTones)
+    {
         CHECK(emoji::skin_tone_from_key(emoji::skin_tone_key(t)) == t);
+    }
     CHECK(std::string(emoji::skin_tone_key(SkinTone::None)).empty());
     CHECK(emoji::skin_tone_from_key("medium_dark") == SkinTone::MediumDark);
     CHECK(emoji::skin_tone_from_key("purple") == SkinTone::None);
@@ -84,13 +85,11 @@ TEST_CASE("Skin tone keys round-trip; unknown keys mean no tone",
 //  Prefs
 // ─────────────────────────────────────────────────────────────────────────
 
-TEST_CASE("Prefs emoji_skin_tone round-trips and is omitted when empty",
-          "[prefs][skin_tone]")
+TEST_CASE("Prefs emoji_skin_tone round-trips and is omitted when empty", "[prefs][skin_tone]")
 {
     tesseract::PrefsData p;
     p.emoji_skin_tone = "medium";
-    CHECK(tesseract::Prefs::parse(tesseract::Prefs::serialize(p)).emoji_skin_tone ==
-          "medium");
+    CHECK(tesseract::Prefs::parse(tesseract::Prefs::serialize(p)).emoji_skin_tone == "medium");
 
     p.emoji_skin_tone.clear();
     auto j = nlohmann::json::parse(tesseract::Prefs::serialize(p));
@@ -121,14 +120,16 @@ TEST_CASE("Prefs serialize overlays onto the stored event, keeping unknown keys"
 //  :shortcode: autocomplete
 // ─────────────────────────────────────────────────────────────────────────
 
-TEST_CASE("ShortcodeEngine returns tone-capable glyphs in the given tone",
-          "[shortcode][skin_tone]")
+TEST_CASE("ShortcodeEngine returns tone-capable glyphs in the given tone", "[shortcode][skin_tone]")
 {
     tesseract::views::ShortcodeEngine engine;
     auto has = [](const auto& results, const std::string& glyph)
     {
         return std::any_of(results.begin(), results.end(),
-                           [&](const auto& s) { return s.glyph == glyph; });
+                           [&](const auto& s)
+                           {
+                               return s.glyph == glyph;
+                           });
     };
     auto plain = engine.lookup("thumbs_up", {});
     CHECK(has(plain, "👍"));
@@ -176,7 +177,10 @@ struct GridStage
         grid->set_spacing(2, 2);
         tk::LayoutCtx lc{surface->factory(), tk::Theme::light()};
         grid->arrange(lc, {0, 0, 400, 300});
-        grid->on_cell_clicked = [this](int i) { clicks.push_back(i); };
+        grid->on_cell_clicked = [this](int i)
+        {
+            clicks.push_back(i);
+        };
         grid->on_cell_context_requested = [this](int i)
         {
             contexts.push_back(i);
@@ -202,8 +206,7 @@ TEST_CASE("GridView long press fires the context request and eats the click",
     CHECK(st.clicks.empty());
 }
 
-TEST_CASE("GridView unhandled long press stays a normal click",
-          "[tk][gridview][skin_tone]")
+TEST_CASE("GridView unhandled long press stays a normal click", "[tk][gridview][skin_tone]")
 {
     GridStage st;
     st.handled = false; // e.g. an emoji without tones
@@ -277,12 +280,25 @@ struct PickerStage
         picker->measure(lc, {EmojiPicker::kWidth, EmojiPicker::kHeight});
         picker->arrange(lc, {0, 0, EmojiPicker::kWidth, EmojiPicker::kHeight});
         for (const auto& ch : picker->children())
+        {
             if (auto* g = dynamic_cast<tk::GridView*>(ch.get()))
+            {
                 grid = g;
+            }
+        }
         REQUIRE(grid);
-        picker->on_selected = [this](const std::string& g) { selected.push_back(g); };
-        picker->on_skin_tone_changed = [this](SkinTone t) { tone_changes.push_back(t); };
-        picker->on_dismiss = [this] { ++dismissed; };
+        picker->on_selected = [this](const std::string& g)
+        {
+            selected.push_back(g);
+        };
+        picker->on_skin_tone_changed = [this](SkinTone t)
+        {
+            tone_changes.push_back(t);
+        };
+        picker->on_dismiss = [this]
+        {
+            ++dismissed;
+        };
     }
 
     // Index of `base` on the default (Smileys & People) page.
@@ -290,16 +306,19 @@ struct PickerStage
     {
         auto entries = emoji::by_category(emoji::Category::SmileysPeople);
         for (std::size_t i = 0; i < entries.size(); ++i)
+        {
             if (entries[i]->glyph == base)
+            {
                 return static_cast<int>(i);
+            }
+        }
         return -1;
     }
 };
 
 } // namespace
 
-TEST_CASE("EmojiPicker set_skin_tone re-tones tone-capable cells only",
-          "[view][emoji][skin_tone]")
+TEST_CASE("EmojiPicker set_skin_tone re-tones tone-capable cells only", "[view][emoji][skin_tone]")
 {
     PickerStage st;
     const int thumbs = PickerStage::index_of("👍");
@@ -314,8 +333,7 @@ TEST_CASE("EmojiPicker set_skin_tone re-tones tone-capable cells only",
     CHECK(st.tone_changes.empty()); // host-set, not user-picked
 }
 
-TEST_CASE("EmojiPicker tone menu opens only for tone-capable emoji",
-          "[view][emoji][skin_tone]")
+TEST_CASE("EmojiPicker tone menu opens only for tone-capable emoji", "[view][emoji][skin_tone]")
 {
     PickerStage st;
     CHECK_FALSE(st.grid->on_cell_context_requested(PickerStage::index_of("😀")));
@@ -338,7 +356,9 @@ TEST_CASE("EmojiPicker picking a tone sets the default and inserts the variant",
     tk::KeyEvent right;
     right.key = tk::Key::Right;
     for (int i = 0; i < 3; ++i)
+    {
         CHECK(st.picker->on_key_down(right));
+    }
     tk::KeyEvent enter;
     enter.key = tk::Key::Enter;
     CHECK(st.picker->on_key_down(enter));
@@ -376,8 +396,7 @@ TEST_CASE("EmojiPicker Escape and outside clicks close only the tone menu",
     CHECK(st.dismissed == 0);
 }
 
-TEST_CASE("Emoji 18.0 additions and renamed-flag shortcodes",
-          "[emoji][skin_tone]")
+TEST_CASE("Emoji 18.0 additions and renamed-flag shortcodes", "[emoji][skin_tone]")
 {
     CHECK(emoji::with_skin_tone("🫹", SkinTone::Medium) == "🫹🏽"); // leftwards thumb sign
     CHECK(emoji::with_skin_tone("🫺", SkinTone::Dark) == "🫺🏿");   // rightwards thumb sign
@@ -385,7 +404,10 @@ TEST_CASE("Emoji 18.0 additions and renamed-flag shortcodes",
     // Pre-18.0 canonical shortcode of a renamed flag still resolves.
     auto hits = emoji::by_shortcode_prefix("flag_st_helena");
     CHECK(std::any_of(hits.begin(), hits.end(),
-                      [](const auto& h) { return h.first->glyph == "🇸🇭"; }));
+                      [](const auto& h)
+                      {
+                          return h.first->glyph == "🇸🇭";
+                      }));
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -434,8 +456,7 @@ struct VersionHost : TestHost
 
 } // namespace
 
-TEST_CASE("Emoji versions are recorded per entry and per tone variant",
-          "[emoji][emoji_version]")
+TEST_CASE("Emoji versions are recorded per entry and per tone variant", "[emoji][emoji_version]")
 {
     CHECK(emoji::emoji_version("🫹") == 180);
     CHECK(emoji::emoji_version("🫹🏽") == 180);
@@ -470,14 +491,17 @@ TEST_CASE("detect_emoji_version walks versions newest first and stops early",
 
     ProbeFactory none;
     for (auto v : emoji::emoji_versions())
+    {
         for (auto g : emoji::glyphs_introduced_in(v))
+        {
             none.rejected.emplace(g);
+        }
+    }
     // Nothing drawable at all: unfiltered rather than an empty picker.
     CHECK(tk::detect_emoji_version(none) == tk::kAllEmojiVersions);
 }
 
-TEST_CASE("offered_emoji falls back to the base, then hides",
-          "[emoji][emoji_version]")
+TEST_CASE("offered_emoji falls back to the base, then hides", "[emoji][emoji_version]")
 {
     // Handshake (E3.0) with tones from E14.0.
     CHECK(tk::offered_emoji("🤝", SkinTone::Medium, 180) == "🤝🏽");
@@ -488,8 +512,7 @@ TEST_CASE("offered_emoji falls back to the base, then hides",
     CHECK_FALSE(tk::all_skin_tones_supported("🤝", 130));
 }
 
-TEST_CASE("EmojiPicker hides emoji newer than the platform font",
-          "[view][emoji][emoji_version]")
+TEST_CASE("EmojiPicker hides emoji newer than the platform font", "[view][emoji][emoji_version]")
 {
     auto surface = TestSurface::create(320, 360);
     VersionHost host{nullptr};
@@ -502,22 +525,33 @@ TEST_CASE("EmojiPicker hides emoji newer than the platform font",
     picker.arrange(lc, {0, 0, EmojiPicker::kWidth, EmojiPicker::kHeight});
     tk::GridView* grid = nullptr;
     for (const auto& ch : picker.children())
+    {
         if (auto* g = dynamic_cast<tk::GridView*>(ch.get()))
+        {
             grid = g;
+        }
+    }
     REQUIRE(grid);
 
     std::vector<std::string> shown;
-    picker.on_selected = [&](const std::string& g) { shown.push_back(g); };
+    picker.on_selected = [&](const std::string& g)
+    {
+        shown.push_back(g);
+    };
     auto page = [&]
     {
         shown.clear();
         const int n = static_cast<int>(grid->adapter()->count());
         for (int i = 0; i < n; ++i)
+        {
             grid->on_cell_clicked(i);
+        }
         return shown;
     };
     auto contains = [](const std::vector<std::string>& v, const std::string& g)
-    { return std::find(v.begin(), v.end(), g) != v.end(); };
+    {
+        return std::find(v.begin(), v.end(), g) != v.end();
+    };
 
     auto smileys = page();
     CHECK_FALSE(contains(smileys, "🫹"));
@@ -546,9 +580,10 @@ TEST_CASE("ShortcodeEngine leaves out emoji newer than the platform font",
     auto glyphs = [&](std::uint16_t max_version)
     {
         std::vector<std::string> out;
-        for (const auto& s : engine.lookup("leftwards_thumb", {}, 8,
-                                           SkinTone::None, max_version))
+        for (const auto& s : engine.lookup("leftwards_thumb", {}, 8, SkinTone::None, max_version))
+        {
             out.push_back(s.glyph);
+        }
         return out;
     };
     CHECK(glyphs(180) == std::vector<std::string>{"🫹"});
@@ -568,8 +603,8 @@ TEST_CASE("Backend probe: a real emoji renders, a noncharacter doesn't",
     // everything because it bundles an emoji font covering the whole table.
     CHECK_FALSE(surface->factory().can_render_emoji("\xF0\x9F\xBF\xBE")); // U+1FFFE
 #endif
-    INFO("detected Emoji version on this machine: "
-         << tk::detect_emoji_version(surface->factory()));
+    INFO(
+        "detected Emoji version on this machine: " << tk::detect_emoji_version(surface->factory()));
     CHECK(tk::detect_emoji_version(surface->factory()) > 0);
 }
 
@@ -584,8 +619,7 @@ TEST_CASE("Tone menu buttons are hit-testable right after opening, before paint"
     const tk::Point dark{menu.x + SkinTonePopover::kPadding +
                              5 * (SkinTonePopover::kButtonSize + SkinTonePopover::kGap) +
                              SkinTonePopover::kButtonSize / 2,
-                         menu.y + SkinTonePopover::kPadding +
-                             SkinTonePopover::kButtonSize / 2};
+                         menu.y + SkinTonePopover::kPadding + SkinTonePopover::kButtonSize / 2};
     tk::Widget* hit = st.picker->dispatch_pointer_down(dark);
     REQUIRE(hit != nullptr);
     CHECK(hit != st.picker); // a button, not the "outside the menu" close path
@@ -628,8 +662,7 @@ TEST_CASE("Tone menu opened without focus inside the picker leaves focus alone",
 
 #include <tesseract/account_session.h>
 
-TEST_CASE("A stale echo inside the window doesn't revert a local tone change",
-          "[skin_tone][sync]")
+TEST_CASE("A stale echo inside the window doesn't revert a local tone change", "[skin_tone][sync]")
 {
     using namespace std::chrono_literals;
     tesseract::AccountSession a;
@@ -644,8 +677,7 @@ TEST_CASE("A stale echo inside the window doesn't revert a local tone change",
     CHECK(a.emoji_skin_tone == SkinTone::Light); // parked stale value dropped
 }
 
-TEST_CASE("Another device's newer tone wins once the window has passed",
-          "[skin_tone][sync]")
+TEST_CASE("Another device's newer tone wins once the window has passed", "[skin_tone][sync]")
 {
     using namespace std::chrono_literals;
     tesseract::AccountSession a;

@@ -156,14 +156,6 @@ msgstr "Парольна фраза"
 msgid "Recovery passphrase"
 msgstr "Фраза відновлення"
 
-#: ui/linux-gtk/src/MainWindow.cpp:3171
-msgid "Save message keys"
-msgstr "Зберегти ключі повідомлень"
-
-#: ui/linux-gtk/src/MainWindow.cpp:3200
-msgid "Open message keys"
-msgstr "Відкрити ключі повідомлень"
-
 #: ui/linux-gtk/src/MainWindow.cpp:3231 ui/linux-qt/src/SettingsWidget.cpp:176
 #: ui/macos/src/MainWindowController.mm:6748 ui/windows/src/MainWindow.cpp:6440
 msgid "Message keys exported successfully."
@@ -253,18 +245,6 @@ msgstr "Відео (*.mp4 *.webm *.mkv);;Усі файли (*.*)"
 msgid "Already in Saved Stickers"
 msgstr "Уже є у збережених стікерах"
 
-#: ui/linux-qt/src/MainWindow.cpp:2207
-msgid "Restoring sessions…"
-msgstr "Відновлення сеансів…"
-
-#: ui/linux-qt/src/MainWindow.cpp:2439
-msgid "Already signed in as %1"
-msgstr "Ви вже ввійшли як %1"
-
-#: ui/linux-qt/src/MainWindow.cpp:2458
-msgid "Sign-in failed: %1"
-msgstr "Не вдалося ввійти: %1"
-
 #: ui/linux-qt/src/MainWindow.cpp:3091
 msgid "Images (*.png *.jpg *.jpeg *.gif *.webp)"
 msgstr "Зображення (*.png *.jpg *.jpeg *.gif *.webp)"
@@ -273,9 +253,9 @@ msgstr "Зображення (*.png *.jpg *.jpeg *.gif *.webp)"
 msgid "Add Account"
 msgstr "Додати обліковий запис"
 
-#: ui/linux-qt/src/MainWindow.cpp:4523
-msgid "Signed out of %1"
-msgstr "Ви вийшли з облікового запису %1"
+#: ui/shared/app/ShellBase_accounts.cpp:1479
+msgid "Signed out of {0}"
+msgstr "Ви вийшли з облікового запису {0}"
 
 #: ui/linux-qt/src/SettingsWidget.cpp:161
 #: ui/shared/app/SettingsController.cpp:795
@@ -2760,11 +2740,6 @@ msgstr "{0} ({1})"
 msgid "{0}'s verified digital identity was reset."
 msgstr "Перевірену цифрову ідентичність {0} скинуто."
 
-#: ui/shared/views/IdentityChangeBanner.cpp:61
-#, c++-format
-msgid "{0}'s digital identity was reset."
-msgstr "Цифрову ідентичність {0} скинуто."
-
 #: ui/shared/views/IdentityChangeBanner.cpp:71
 #: ui/shared/views/UserProfilePanel.cpp:203
 msgid "Withdraw verification"
@@ -3481,11 +3456,6 @@ msgid_plural "{0} reactions"
 msgstr[0] "{0} реакція"
 msgstr[1] "{0} реакції"
 msgstr[2] "{0} реакцій"
-
-#: ui/shared/views/MessageListView.cpp:3724
-#, c++-format
-msgid "View profile of {0}"
-msgstr "Переглянути профіль {0}"
 
 #: ui/shared/views/MessageListView.cpp:3739
 msgid "Reveal spoiler"
@@ -5132,8 +5102,8 @@ msgid "Encryption"
 msgstr "Шифрування"
 
 #: ui/shared/views/settings/PrivacySection.cpp:216
-msgid "Exclude unconfirmed devices (takes effect after restart)"
-msgstr "Виключити непідтверджені пристрої (набуде чинності після перезапуску)"
+msgid "Exclude unconfirmed devices"
+msgstr "Виключити непідтверджені пристрої"
 
 #: ui/shared/views/settings/PrivacySection.cpp:226
 msgid "Only send encrypted messages to devices their owner has confirmed, and hide messages sent from devices that aren't. This device must be confirmed to send, and people whose clients don't confirm their devices won't see your messages."
@@ -5225,10 +5195,6 @@ msgstr "Заблокував(-ла): {0}"
 #: ui/shared/views/settings/RoomModerationSection.cpp:57
 msgid "Unban"
 msgstr "Зняти блокування"
-
-#: ui/shared/views/settings/RoomModerationSection.cpp:62
-msgid "Unban (you don't have permission to lift this ban)"
-msgstr "Зняти блокування (у вас немає дозволу скасувати це блокування)"
 
 #: ui/shared/views/settings/RoomModerationSection.cpp:73
 msgid "Banned users"
@@ -7383,3 +7349,287 @@ msgstr "Показувати лише відстежувані гілки"
 #: ui/shared/views/ThreadListView.cpp
 msgid "Show all threads"
 msgstr "Показувати всі гілки"
+
+#: ui/shared/views/UserProfilePanel.cpp
+msgid "Rooms in common"
+msgstr "Спільні кімнати"
+
+#: ui/shared/views/LoginView.cpp
+msgid "Your homeserver is where your account lives — similar to choosing an email provider. Not sure? Use \"Find a server\" to browse some. Any server works with anyone on Matrix."
+msgstr "Ваш домашній сервер — це місце, де зберігається ваш обліковий запис, схоже на вибір поштового провайдера. Не знаєте, що обрати? Скористайтеся «Знайти сервер», щоб переглянути кілька. Будь-який сервер працює з усіма в Matrix."
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Couldn't load the server list. Check your connection and try again."
+msgstr "Не вдалося завантажити список серверів. Перевірте з'єднання та спробуйте ще раз."
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Currently unreachable"
+msgstr "Наразі недоступний"
+
+#: ui/shared/views/LoginView.cpp
+msgid "Find a server"
+msgstr "Знайти сервер"
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Invite or community only"
+msgstr "Лише за запрошенням або для спільноти"
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Loading servers…"
+msgstr "Завантаження серверів…"
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "No servers match your search."
+msgstr "Жоден сервер не відповідає вашому пошуку."
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Open registration"
+msgstr "Відкрита реєстрація"
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Open registration only"
+msgstr "Лише відкрита реєстрація"
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Server list from {0}"
+msgstr "Список серверів із {0}"
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Rules"
+msgstr "Правила"
+
+#: ui/shared/views/LoginView.cpp
+msgid "Run by the Matrix.org Foundation. The largest public server."
+msgstr "Підтримується Matrix.org Foundation. Найбільший публічний сервер."
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Search servers"
+msgstr "Пошук серверів"
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Search servers…"
+msgstr "Пошук серверів…"
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Sign up"
+msgstr "Зареєструватися"
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Website"
+msgstr "Вебсайт"
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "{0} · Established"
+msgstr "{0} · Усталений"
+
+#: ui/shared/views/MediaTransportBar.cpp
+msgid "Seek"
+msgstr "Позиція відтворення"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "Timeline width"
+msgstr "Ширина стрічки"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "Timeline position"
+msgstr "Розташування стрічки"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "Left"
+msgstr "Ліворуч"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "Centered"
+msgstr "По центру"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "{0}%"
+msgstr "{0}%"
+
+#: ui/shared/views/RoomHeader.cpp
+msgid "This room is connected to another chat app. Your messages are sent there too, and that app's own rules apply, not just Matrix's."
+msgstr "Ця кімната підключена до іншого чат-застосунку. Ваші повідомлення надсилаються і туди, і діють власні правила цього застосунку, а не лише Matrix."
+
+#: ui/shared/views/RoomHeader.cpp
+msgid "This room is connected to {0}. Your messages are sent there too, and {0}'s own rules apply, not just Matrix's."
+msgstr "Ця кімната підключена до {0}. Ваші повідомлення надсилаються і туди, і діють власні правила {0}, а не лише Matrix."
+
+#: ui/shared/views/RoomListView.cpp
+msgid "Pin to sidebar"
+msgstr "Закріпити на бічній панелі"
+
+#: ui/shared/views/SpacePickerView.cpp
+msgid "Unpin from sidebar"
+msgstr "Відкріпити від бічної панелі"
+
+#: ui/shared/views/RoomListView.cpp
+msgid "Leave space"
+msgstr "Вийти з простору"
+
+#: ui/shared/views/SpacePickerView.cpp
+msgid "Home (all rooms)"
+msgstr "Головна (усі кімнати)"
+
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "Don't send to people with unconfirmed devices"
+msgstr "Не надсилати людям із непідтвердженими пристроями"
+
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "Refuse to send a message while someone you confirmed has a device they haven't confirmed, or their digital identity has changed. Turn this off to send to every device regardless; you will no longer be warned about identity changes when sending."
+msgstr "Відмовлятися надсилати повідомлення, поки в когось, кого ви підтвердили, є непідтверджений пристрій або змінилася його цифрова ідентичність. Вимкніть, щоб надсилати на всі пристрої без обмежень; про зміни ідентичності під час надсилання вас більше не попереджатимуть."
+
+#: ui/shared/views/send_block.cpp
+msgid "This device must be confirmed before it can send messages"
+msgstr "Цей пристрій потрібно підтвердити, перш ніж він зможе надсилати повідомлення"
+
+#: ui/shared/views/send_block.cpp
+msgid "someone in this room"
+msgstr "хтось у цій кімнаті"
+
+#: ui/shared/views/send_block.cpp
+#, c++-format
+msgid "{0} has a device that isn't confirmed by its owner"
+msgid_plural "{0} have devices that aren't confirmed by their owners"
+msgstr[0] "У {0} є пристрій, який власник не підтвердив"
+msgstr[1] "У {0} є пристрої, які власники не підтвердили"
+msgstr[2] "У {0} є пристрої, які власники не підтвердили"
+
+#: ui/shared/views/send_block.cpp
+#, c++-format
+msgid "{0}, so the message wasn't sent."
+msgstr "{0}, тому повідомлення не надіслано."
+
+#: ui/shared/views/send_block.cpp
+#, c++-format
+msgid "{0}, so the message wasn't sent. It can be sent once they confirm or sign out that device. You can also discard the message, or turn off this check in Settings."
+msgstr "{0}, тому повідомлення не надіслано. Його можна буде надіслати, коли вони підтвердять цей пристрій або вийдуть із нього. Ви також можете скасувати повідомлення або вимкнути цю перевірку в налаштуваннях."
+
+#: ui/shared/app/RoomPane.cpp
+msgid "The check that blocked this message is turned off, but the change takes effect after you restart Tesseract."
+msgstr "Перевірку, яка заблокувала це повідомлення, вимкнено, але зміна набуде чинності після перезапуску Tesseract."
+
+#: ui/shared/app/RoomPane.cpp
+msgid "Withdraw verification and send"
+msgstr "Відкликати перевірку та надіслати"
+
+#: ui/shared/views/send_block.cpp
+#, c++-format
+msgid "{0}'s digital identity was reset"
+msgid_plural "The digital identities of {0} were reset"
+msgstr[0] "Цифрову ідентичність {0} скинуто"
+msgstr[1] "Цифрові ідентичності {0} скинуто"
+msgstr[2] "Цифрові ідентичності {0} скинуто"
+
+#: ui/shared/views/send_block.cpp
+#, c++-format
+msgid "{0}, so the message wasn't sent. You can withdraw your verification, which lets it go through; you can verify them again later from their profile."
+msgstr "{0}, тому повідомлення не надіслано. Ви можете відкликати свою перевірку, щоб воно пішло; пізніше їх можна перевірити знову в їхньому профілі."
+
+#: ui/shared/views/IdentityChangeBanner.cpp:61
+#, c++-format
+msgid "{0}'s digital identity was reset."
+msgstr "Цифрову ідентичність {0} скинуто."
+
+#: ui/shared/views/MessageListView.cpp:3724
+#, c++-format
+msgid "View profile of {0}"
+msgstr "Переглянути профіль {0}"
+
+msgid "Applying encryption settings…"
+msgstr "Застосування налаштувань шифрування…"
+
+msgid "Your accounts are reconnecting. This takes a few seconds."
+msgstr "Ваші облікові записи перепідключаються. Це займе кілька секунд."
+
+msgid "Encryption settings applied."
+msgstr "Налаштування шифрування застосовано."
+
+msgid "Encryption settings applied, but reloading failed: {0}"
+msgstr "Налаштування шифрування застосовано, але перезавантаження не вдалося: {0}"
+
+msgid "Encryption settings will apply once the call ends."
+msgstr "Налаштування шифрування застосуються після завершення дзвінка."
+
+msgid "Encryption settings will apply once you finish confirming your device."
+msgstr "Налаштування шифрування застосуються, коли ви завершите підтвердження пристрою."
+
+#: ui/shared/app/SettingsController.cpp
+msgid "The device is still signed in. Finish signing it out in the browser first."
+msgstr "Пристрій досі підключено. Спершу завершіть вихід у браузері."
+
+#: ui/shared/app/SettingsController.cpp
+msgid "The server does not provide an account-management page."
+msgstr "Сервер не надає сторінки керування обліковим записом."
+
+#: ui/shared/views/MessageActions.cpp
+msgid "Report message"
+msgstr "Поскаржитися на повідомлення"
+
+#: ui/shared/views/RoomView.cpp
+msgid "Report this message?"
+msgstr "Поскаржитися на це повідомлення?"
+
+#: ui/shared/views/RoomView.cpp
+msgid "The report is sent to your homeserver's administrators, not to this room's moderators. The message stays visible."
+msgstr "Скаргу буде надіслано адміністраторам вашого домашнього сервера, а не модераторам цієї кімнати. Повідомлення залишиться видимим."
+
+#: ui/shared/views/RoomView.cpp
+msgid "Report"
+msgstr "Поскаржитися"
+
+#: ui/shared/app/RoomPane.cpp
+msgid "Message reported"
+msgstr "Скаргу надіслано"
+
+#: ui/shared/app/RoomPane.cpp
+msgid "Couldn't report message: {0}"
+msgstr "Не вдалося надіслати скаргу: {0}"
+
+msgid "Detect automatically"
+msgstr "Визначати автоматично"
+
+msgid "Show timezone difference next to names"
+msgstr "Показувати різницю часових поясів поруч з іменами"
+
+msgid "{0} ({1} from you): {2}"
+msgstr "{0} ({1} від вас): {2}"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "The theme follows your system's high contrast setting."
+msgstr "Тема відповідає налаштуванню високої контрастності вашої системи."
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Forwarded from {0}"
+msgstr "Переслано від {0}"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Forwarded message"
+msgstr "Переслане повідомлення"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "forwarded from {0}"
+msgstr "переслано від {0}"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "forwarded message"
+msgstr "переслане повідомлення"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "View original message"
+msgstr "Переглянути початкове повідомлення"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Sender"
+msgstr "Відправник"
+
+msgid "Expand"
+msgstr "Розгорнути"
+
+msgid "Collapse"
+msgstr "Згорнути"
+
+msgid "Expand code block"
+msgstr "Розгорнути блок коду"
+
+msgid "Collapse code block"
+msgstr "Згорнути блок коду"

@@ -33,12 +33,18 @@ const FontConfig& font_config()
 void set_font_config(FontConfig cfg)
 {
     if (cfg.base_pt != 0)
+    {
         cfg.base_pt = std::clamp(cfg.base_pt, kFontBaseMinPt, kFontBaseMaxPt);
+    }
     for (int& d : cfg.delta_pt)
+    {
         d = std::clamp(d, kFontDeltaMinPt, kFontDeltaMaxPt);
+    }
     cfg.family[idx(FontCategory::Emoji)].clear();
     if (cfg == g_config)
+    {
         return;
+    }
     g_config = std::move(cfg);
     ++g_generation;
 }
@@ -87,10 +93,11 @@ std::string_view font_role_family(FontRole role)
 {
     const FontCategory cat = font_category(role);
     if (cat == FontCategory::Emoji)
+    {
         return {};
+    }
     const std::string& own = g_config.family[idx(cat)];
-    return own.empty() ? std::string_view(g_config.ui_family)
-                       : std::string_view(own);
+    return own.empty() ? std::string_view(g_config.ui_family) : std::string_view(own);
 }
 
 std::string_view font_mono_family()
@@ -127,27 +134,31 @@ float font_height_scale(FontRole role)
     const auto idx = static_cast<std::size_t>(role);
     Entry* e = idx < cache.size() ? &cache[idx] : nullptr;
     if (e && e->generation == g_generation && e->system_base == g_system_base_pt)
+    {
         return e->scale;
+    }
 
     float scale = 1.0f;
     if (g_system_base_pt > 0 && !g_config.is_default())
     {
         const int now = font_role_pt_with(g_config, role, g_system_base_pt);
-        const int stock =
-            font_role_pt_with(FontConfig{}, role, g_system_base_pt);
+        const int stock = font_role_pt_with(FontConfig{}, role, g_system_base_pt);
         if (stock > 0)
+        {
             scale = std::max(1.0f, static_cast<float>(now) / stock);
+        }
     }
     if (e)
+    {
         *e = {g_generation, g_system_base_pt, scale};
+    }
     return scale;
 }
 
 CachedTextLayout::CachedTextLayout() = default;
 CachedTextLayout::~CachedTextLayout() = default;
 CachedTextLayout::CachedTextLayout(CachedTextLayout&&) noexcept = default;
-CachedTextLayout& CachedTextLayout::operator=(CachedTextLayout&&) noexcept =
-    default;
+CachedTextLayout& CachedTextLayout::operator=(CachedTextLayout&&) noexcept = default;
 
 TextLayout* CachedTextLayout::get() const
 {

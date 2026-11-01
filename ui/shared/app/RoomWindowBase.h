@@ -74,7 +74,10 @@ public:
     // Called by ShellBase on the UI thread when SDK events arrive for this
     // room. Forwarded to pane_ so ShellBase::dispatch_to_secondary_windows_'s
     // existing call sites need no changes.
-    void on_room_info_updated(const RoomInfo& r) { pane_->on_room_info_updated(r); }
+    void on_room_info_updated(const RoomInfo& r)
+    {
+        pane_->on_room_info_updated(r);
+    }
     void on_timeline_reset(std::vector<views::MessageRowData> rows)
     {
         pane_->on_timeline_reset(std::move(rows));
@@ -95,21 +98,26 @@ public:
     {
         pane_->on_message_updated(idx, std::move(row));
     }
-    void on_message_removed(std::size_t idx) { pane_->on_message_removed(idx); }
+    void on_message_removed(std::size_t idx)
+    {
+        pane_->on_message_removed(idx);
+    }
     void on_typing_changed(const std::string& text, bool visible)
     {
         pane_->on_typing_changed(text, visible);
     }
-    void on_identity_status_changed(
-        const std::string& room_id,
-        const std::vector<tesseract::IdentityWarning>& warnings)
+    void on_identity_status_changed(const std::string& room_id,
+                                    const std::vector<tesseract::IdentityWarning>& warnings)
     {
         pane_->on_identity_status_changed(room_id, warnings);
     }
 
     // Thread view delivery — called by ShellBase when SDK events arrive for
     // the thread this pop-out has open (popout_thread_root() matches).
-    const std::string& popout_thread_root() const { return pane_->thread_root(); }
+    const std::string& popout_thread_root() const
+    {
+        return pane_->thread_root();
+    }
     void apply_thread_reset_(std::vector<views::MessageRowData> rows)
     {
         pane_->apply_thread_reset_(std::move(rows));
@@ -130,13 +138,15 @@ public:
     {
         pane_->apply_thread_update_(index, std::move(row));
     }
-    void apply_thread_remove_(std::size_t index) { pane_->apply_thread_remove_(index); }
+    void apply_thread_remove_(std::size_t index)
+    {
+        pane_->apply_thread_remove_(index);
+    }
     void ensure_thread_reply_details_(const std::string& event_id)
     {
         pane_->ensure_thread_reply_details_(event_id);
     }
-    void retry_stale_thread_reply_previews_(
-        const std::vector<std::string>& new_event_ids)
+    void retry_stale_thread_reply_previews_(const std::vector<std::string>& new_event_ids)
     {
         pane_->retry_stale_thread_reply_previews_(new_event_ids);
     }
@@ -147,12 +157,10 @@ public:
     // for subclasses without a GIF strip; the Qt/GTK/Win32 pop-outs override to
     // forward into their GifController. Not part of RoomPane — the GIF strip
     // controller stays a per-platform member.
-    virtual void on_gif_results(std::uint64_t /*request_id*/,
-                                std::vector<GifResult> /*results*/)
+    virtual void on_gif_results(std::uint64_t /*request_id*/, std::vector<GifResult> /*results*/)
     {
     }
-    virtual void on_gif_search_failed(std::uint64_t /*request_id*/,
-                                      const std::string& /*message*/)
+    virtual void on_gif_search_failed(std::uint64_t /*request_id*/, const std::string& /*message*/)
     {
     }
 
@@ -166,8 +174,7 @@ public:
     {
         return pane_->handle_forward_done_(request_id);
     }
-    bool handle_forward_failed_(std::uint64_t request_id,
-                                const std::string& message)
+    bool handle_forward_failed_(std::uint64_t request_id, const std::string& message)
     {
         return pane_->handle_forward_failed_(request_id, message);
     }
@@ -182,7 +189,10 @@ public:
     // Returns true if this secondary window is currently on-screen (not
     // minimized, not hidden). Default: true — conservative, so platforms
     // that do not override never accidentally starve the animation timer.
-    virtual bool is_visible() const { return true; }
+    virtual bool is_visible() const
+    {
+        return true;
+    }
 
     // Platform overrides.
     virtual void bring_to_front() = 0;
@@ -238,8 +248,7 @@ protected:
     // validated against available screens. Returns {valid=false} when there
     // is no saved entry — callers should fall back to their platform default.
     // Intended for use in the subclass constructor, after shell_ is set.
-    Settings::WindowGeometry get_saved_popout_geometry_(int default_w,
-                                                        int default_h) const;
+    Settings::WindowGeometry get_saved_popout_geometry_(int default_w, int default_h) const;
 
     // Write the current native window position/size into Settings and
     // schedule a debounced save. Call from resize/move callbacks.
@@ -251,8 +260,7 @@ protected:
     // to target_dpi before clamping. Pass target_dpi=0 to skip rescaling
     // (equivalent to the no-target_dpi overload). Win32 callers should pass
     // GetDpiForMonitor(...) for the monitor at the saved position.
-    Settings::WindowGeometry get_saved_popout_geometry_(int default_w,
-                                                        int default_h,
+    Settings::WindowGeometry get_saved_popout_geometry_(int default_w, int default_h,
                                                         int target_dpi) const;
 
     // Remove this room's entry from Settings::popout_windows and save.
@@ -264,10 +272,9 @@ protected:
     std::string owner_user_id_;
     // Weak: holding the session would stall its logout drain.
     std::weak_ptr<AccountSession> owner_;
-    views::RoomView* room_view_ =
-        nullptr; // borrowed; owned by surface widget tree. Also handed to
-                 // pane_ via attach() — kept here too since platform ctors
-                 // read this member directly throughout their own wiring.
+    views::RoomView* room_view_ = nullptr; // borrowed; owned by surface widget tree. Also handed to
+    // pane_ via attach() — kept here too since platform ctors
+    // read this member directly throughout their own wiring.
     // Media viewer — set by the subclass ctor before init_pane_()/attach().
     // When non-null, media click callbacks are wired (by pane_) to open it.
     views::MediaViewerOverlay* media_viewer_ = nullptr; // borrowed

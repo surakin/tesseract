@@ -193,15 +193,15 @@ impl ClientFfi {
             #[cfg(debug_assertions)]
             "recovery/recover".to_string(),
         );
-        match self
-            .rt
-            .block_on(async move {
-                // Same as enable_recovery: don't race matrix-sdk's login-time
-                // cross-signing / backup setup.
-                client.encryption().wait_for_e2ee_initialization_tasks().await;
-                client.encryption().recovery().recover(&key).await
-            })
-        {
+        match self.rt.block_on(async move {
+            // Same as enable_recovery: don't race matrix-sdk's login-time
+            // cross-signing / backup setup.
+            client
+                .encryption()
+                .wait_for_e2ee_initialization_tasks()
+                .await;
+            client.encryption().recovery().recover(&key).await
+        }) {
             Ok(()) => {
                 // Unlike enable_recovery(), recover() has no progress stream, so
                 // drive the encryption-setup overlay to its terminal Done step
@@ -266,7 +266,10 @@ impl ClientFfi {
             // alongside it makes both create an identity: the server keeps one,
             // this device the other, and recovery then stores the wrong one in
             // secret storage. Let it finish first.
-            client.encryption().wait_for_e2ee_initialization_tasks().await;
+            client
+                .encryption()
+                .wait_for_e2ee_initialization_tasks()
+                .await;
 
             // Make the Fresh path self-contained. The login-time auto-bootstrap
             // of cross-signing can be cancelled (e.g. the session is invalidated
@@ -407,7 +410,10 @@ impl ClientFfi {
         );
         match self.rt.block_on(async move {
             // Same as enable_recovery: don't race matrix-sdk's login-time setup.
-            client.encryption().wait_for_e2ee_initialization_tasks().await;
+            client
+                .encryption()
+                .wait_for_e2ee_initialization_tasks()
+                .await;
             client.encryption().recovery().disable().await
         }) {
             Ok(()) => ok(""),
@@ -561,9 +567,7 @@ impl ClientFfi {
 /// The FFI encoding of a [`RecoveryState`] shared by `recovery_state()` and the
 /// `on_recovery_state_changed` watcher: 0 = Unknown, 1 = Disabled,
 /// 2 = Enabled, 3 = Incomplete.
-pub(super) fn recovery_state_code(
-    state: matrix_sdk::encryption::recovery::RecoveryState,
-) -> u8 {
+pub(super) fn recovery_state_code(state: matrix_sdk::encryption::recovery::RecoveryState) -> u8 {
     use matrix_sdk::encryption::recovery::RecoveryState;
     match state {
         RecoveryState::Unknown => 0,
@@ -583,7 +587,11 @@ pub(crate) fn backup_marked_disabled(
     legacy: Option<&serde_json::Value>,
 ) -> bool {
     if let Some(v) = key_backup {
-        return v.get("enabled").and_then(serde_json::Value::as_bool).map(|e| !e).unwrap_or(false);
+        return v
+            .get("enabled")
+            .and_then(serde_json::Value::as_bool)
+            .map(|e| !e)
+            .unwrap_or(false);
     }
     legacy
         .and_then(|v| v.get("disabled"))
@@ -598,8 +606,14 @@ mod backup_marked_disabled_tests {
 
     #[test]
     fn stable_event_decides_when_present() {
-        assert!(backup_marked_disabled(Some(&json!({"enabled": false})), None));
-        assert!(!backup_marked_disabled(Some(&json!({"enabled": true})), None));
+        assert!(backup_marked_disabled(
+            Some(&json!({"enabled": false})),
+            None
+        ));
+        assert!(!backup_marked_disabled(
+            Some(&json!({"enabled": true})),
+            None
+        ));
         // The stable event wins over the unstable one.
         assert!(!backup_marked_disabled(
             Some(&json!({"enabled": true})),
@@ -609,15 +623,24 @@ mod backup_marked_disabled_tests {
 
     #[test]
     fn unstable_event_is_the_fallback() {
-        assert!(backup_marked_disabled(None, Some(&json!({"disabled": true}))));
-        assert!(!backup_marked_disabled(None, Some(&json!({"disabled": false}))));
+        assert!(backup_marked_disabled(
+            None,
+            Some(&json!({"disabled": true}))
+        ));
+        assert!(!backup_marked_disabled(
+            None,
+            Some(&json!({"disabled": false}))
+        ));
         assert!(!backup_marked_disabled(None, None));
     }
 
     #[test]
     fn unreadable_content_is_not_disabled() {
         assert!(!backup_marked_disabled(Some(&json!({})), None));
-        assert!(!backup_marked_disabled(Some(&json!({"enabled": "no"})), None));
+        assert!(!backup_marked_disabled(
+            Some(&json!({"enabled": "no"})),
+            None
+        ));
     }
 }
 

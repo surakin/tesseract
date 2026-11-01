@@ -31,8 +31,7 @@ void MruSwitcher::set_avatar_provider(AvatarProvider p)
 
 void MruSwitcher::begin_cycle()
 {
-    rooms_ = recent_provider_ ? recent_provider_()
-                              : std::vector<tesseract::RoomInfo>{};
+    rooms_ = recent_provider_ ? recent_provider_() : std::vector<tesseract::RoomInfo>{};
     if (rooms_.size() < 2)
     {
         // Nothing to switch to — matches Alt-Tab with no other window.
@@ -101,9 +100,10 @@ void MruSwitcher::close_()
 std::string MruSwitcher::access_name_for_widget_row(std::size_t index) const
 {
     if (index >= rooms_.size())
+    {
         return {};
-    return rooms_[index].name.empty() ? tk::tr("Unnamed room")
-                                      : rooms_[index].name;
+    }
+    return rooms_[index].name.empty() ? tk::tr("Unnamed room") : rooms_[index].name;
 }
 
 // ── Layout + paint ────────────────────────────────────────────────────────
@@ -125,11 +125,11 @@ void MruSwitcher::arrange(tk::LayoutCtx&, tk::Rect bounds)
     // applies below it for a narrow window.
     constexpr float kChipPadX = 12.0f;
     const float n = static_cast<float>(rooms_.size());
-    const float content_w =
-        n > 0.0f ? 2 * kChipPadX + n * kChipW + std::max(0.0f, n - 1.0f) * kChipGap
-                 : kChipW + 2 * kChipPadX;
-    const float cw = std::min(std::min(content_w, kCardW),
-                              std::max(0.0f, bounds.w - 2 * kCardMargin));
+    const float content_w = n > 0.0f
+                                ? 2 * kChipPadX + n * kChipW + std::max(0.0f, n - 1.0f) * kChipGap
+                                : kChipW + 2 * kChipPadX;
+    const float cw =
+        std::min(std::min(content_w, kCardW), std::max(0.0f, bounds.w - 2 * kCardMargin));
     const float ch = kStripH;
     const float cx = bounds.x + (bounds.w - cw) * 0.5f;
     // Bias slightly above centre, matching QuickSwitcher's card placement.
@@ -149,8 +149,7 @@ void MruSwitcher::paint(tk::PaintCtx& ctx)
     ctx.canvas.fill_rect(bounds_, tk::Color::rgba(0, 0, 0, 160));
 
     ctx.canvas.fill_rounded_rect(card_rect_, 10.0f, ctx.theme.palette.chrome_bg);
-    ctx.canvas.stroke_rounded_rect(card_rect_, 10.0f,
-                                   ctx.theme.palette.popup_border, 1.0f);
+    ctx.canvas.stroke_rounded_rect(card_rect_, 10.0f, ctx.theme.palette.popup_border, 1.0f);
 
     chips_.clear();
 
@@ -163,11 +162,11 @@ void MruSwitcher::paint(tk::PaintCtx& ctx)
     style.highlight_index = selected_;
     style.highlight_fill = ctx.theme.palette.sidebar_selected;
     style.highlight_border = true;
-    style.highlight_border_color = ctx.theme.palette.accent;
+    style.highlight_border_color = tk::on_selected(ctx.theme, ctx.theme.palette.accent);
 
     chip_areas_.paint(ctx); // hover/press fill, behind the chips
-    paint_room_chips(ctx, card_rect_, rooms_, avatar_provider_,
-                     on_room_avatar_needed, style, chips_);
+    paint_room_chips(ctx, card_rect_, rooms_, avatar_provider_, on_room_avatar_needed, style,
+                     chips_);
     chip_areas_.sync(*this, chips_,
                      [this](std::size_t index, const std::string&)
                      {

@@ -41,21 +41,21 @@
 {
     NSMenuItem* item = (NSMenuItem*)sender;
     NSInteger tag = item.tag;
-    if (self.windowCallbacks && tag >= 0 &&
-        tag < (NSInteger)self.windowCallbacks.count)
+    if (self.windowCallbacks && tag >= 0 && tag < (NSInteger)self.windowCallbacks.count)
     {
         void (^cb)(void) = self.windowCallbacks[tag];
         if (cb)
+        {
             cb();
+        }
     }
 }
 - (void)buttonClicked:(id)sender
 {
     (void)sender;
     NSEvent* event = [NSApp currentEvent];
-    BOOL isRightClick =
-        event && (event.type == NSEventTypeRightMouseUp ||
-                  (event.modifierFlags & NSEventModifierFlagControl) != 0);
+    BOOL isRightClick = event && (event.type == NSEventTypeRightMouseUp ||
+                                  (event.modifierFlags & NSEventModifierFlagControl) != 0);
     if (isRightClick)
     {
         // Temporarily assign the menu so AppKit shows it, then clear it so
@@ -74,13 +74,12 @@
 }
 @end
 
-MacOSTrayIcon::MacOSTrayIcon(std::function<void()> on_show,
-                             std::function<void()> on_quit)
+MacOSTrayIcon::MacOSTrayIcon(std::function<void()> on_show, std::function<void()> on_quit)
 {
     TesseractTrayBridge* b = [[TesseractTrayBridge alloc] init];
 
-    NSStatusItem* item = [[NSStatusBar systemStatusBar]
-        statusItemWithLength:NSSquareStatusItemLength];
+    NSStatusItem* item =
+        [[NSStatusBar systemStatusBar] statusItemWithLength:NSSquareStatusItemLength];
     if (!item)
     {
         bridge_ = nil;
@@ -151,8 +150,7 @@ void MacOSTrayIcon::set_tooltip(const std::string& text)
 {
     if (bridge_ && bridge_.statusItem)
     {
-        bridge_.statusItem.button.toolTip =
-            [NSString stringWithUTF8String:text.c_str()];
+        bridge_.statusItem.button.toolTip = [NSString stringWithUTF8String:text.c_str()];
     }
 }
 
@@ -180,13 +178,13 @@ void MacOSTrayIcon::set_unread(bool has_unread, bool has_highlight)
                          fraction:1.0];
 
     // Dot at ~38% of the icon edge, anchored bottom-right with a small inset.
-    CGFloat side  = MIN(size.width, size.height);
-    CGFloat dot   = static_cast<CGFloat>(tesseract::badge_dot_px(static_cast<int>(side)));
+    CGFloat side = MIN(size.width, size.height);
+    CGFloat dot = static_cast<CGFloat>(tesseract::badge_dot_px(static_cast<int>(side)));
     CGFloat inset = static_cast<CGFloat>(tesseract::badge_inset_px(static_cast<int>(side)));
     NSRect dotRect = NSMakeRect(size.width - dot - inset, inset, dot, dot);
 
-    const unsigned int rgb = has_highlight ? tesseract::kBadgeColorMention
-                                           : tesseract::kBadgeColorUnread;
+    const unsigned int rgb =
+        has_highlight ? tesseract::kBadgeColorMention : tesseract::kBadgeColorUnread;
     NSColor* fill = [NSColor colorWithSRGBRed:((rgb >> 16) & 0xFF) / 255.0
                                         green:((rgb >> 8) & 0xFF) / 255.0
                                          blue:(rgb & 0xFF) / 255.0
@@ -212,7 +210,9 @@ void MacOSTrayIcon::rebuild_menu(
     std::vector<std::pair<std::string, std::function<void()>>> window_items)
 {
     if (!bridge_)
+    {
         return;
+    }
 
     NSMenu* menu = [[NSMenu alloc] initWithTitle:@""];
 
@@ -225,7 +225,9 @@ void MacOSTrayIcon::rebuild_menu(
     NSMutableArray<void (^)(void)>* cbs =
         [NSMutableArray arrayWithCapacity:(NSUInteger)window_items.size()];
     if (!window_items.empty())
+    {
         [menu addItem:[NSMenuItem separatorItem]];
+    }
     for (NSInteger i = 0; i < (NSInteger)window_items.size(); ++i)
     {
         auto& [label, cb] = window_items[static_cast<std::size_t>(i)];
@@ -234,8 +236,11 @@ void MacOSTrayIcon::rebuild_menu(
                                            action:@selector(activateWindow:)
                                     keyEquivalent:@""];
         item.target = bridge_;
-        item.tag    = i;
-        [cbs addObject:[cb = std::move(cb)] { cb(); }];
+        item.tag = i;
+        [cbs addObject:[cb = std::move(cb)]
+             {
+                 cb();
+             }];
     }
     bridge_.windowCallbacks = cbs;
 

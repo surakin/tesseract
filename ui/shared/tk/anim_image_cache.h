@@ -65,15 +65,13 @@ public:
     // default) for the existing unwindowed behavior — decode everything up
     // front, retain it all — which remains correct for short animations
     // where windowing isn't worth the complexity.
-    void store(const CacheKey& key,
-               std::vector<std::unique_ptr<tk::Image>> frames,
+    void store(const CacheKey& key, std::vector<std::unique_ptr<tk::Image>> frames,
                std::vector<int> delays_ms, std::int64_t now_ms,
-               std::shared_ptr<AnimDecodeSession> session = nullptr,
-               std::size_t total_frames = 0);
+               std::shared_ptr<AnimDecodeSession> session = nullptr, std::size_t total_frames = 0);
 
     // Append one more frame + delay to an already-stored entry, for streamed
     // decode (see ShellBase::decode_image_streamed_ /
-    // make_streamed_decode_callbacks_): the caller store()s frame 0 as soon
+    // make_streamed_decode_callbacks_windowed_): the caller store()s frame 0 as soon
     // as it's decoded so something paints
     // immediately, then append_frame()s each subsequent frame as it arrives.
     // Safe no-op if `key` isn't present (the entry was evicted/cleared, e.g.
@@ -91,8 +89,7 @@ public:
     // entry's later frames (top-ups, or extra frames from the initial
     // batch) need the stronger check append_frame_from_session() below
     // provides instead.
-    void append_frame(const CacheKey& key, std::unique_ptr<tk::Image> frame,
-                      int delay_ms);
+    void append_frame(const CacheKey& key, std::unique_ptr<tk::Image> frame, int delay_ms);
 
     // Like append_frame(), but for a frame produced by a specific
     // AnimDecodeSession's decode_next_batch() call: only appends if
@@ -107,8 +104,7 @@ public:
     // a different session.
     void append_frame_from_session(const CacheKey& key,
                                    const std::shared_ptr<AnimDecodeSession>& session,
-                                   std::unique_ptr<tk::Image> frame,
-                                   int delay_ms);
+                                   std::unique_ptr<tk::Image> frame, int delay_ms);
 
     bool has(const CacheKey& key) const;
 
@@ -231,8 +227,7 @@ private:
         std::size_t current = 0;
         std::int64_t next_advance_ms = 0;
         // Visibility-clock timestamp of the last current_frame() call.
-        mutable std::int64_t last_seen_ms =
-            std::numeric_limits<std::int64_t>::min();
+        mutable std::int64_t last_seen_ms = std::numeric_limits<std::int64_t>::min();
         // Non-null opts this entry into windowed playback — see store()'s
         // doc comment.
         std::shared_ptr<AnimDecodeSession> session;
@@ -271,16 +266,14 @@ private:
 
     // Shared by append_frame() and the internal top-up-delivery path: push
     // one frame onto `entry`. Caller holds mu_.
-    void push_frame_locked_(Entry& entry, std::unique_ptr<tk::Image> frame,
-                            int delay_ms);
+    void push_frame_locked_(Entry& entry, std::unique_ptr<tk::Image> frame, int delay_ms);
 
     // Shared by append_frame() and append_frame_from_session(): handles the
     // `restarting` placeholder-replacement case, else defers to
     // push_frame_locked_(). Caller holds mu_ and has already resolved
     // `entry` (including, for append_frame_from_session(), verified the
     // session identity).
-    void append_frame_locked_(Entry& entry, std::unique_ptr<tk::Image> frame,
-                              int delay_ms);
+    void append_frame_locked_(Entry& entry, std::unique_ptr<tk::Image> frame, int delay_ms);
 
     // Windowed-entry bookkeeping run from advance(), caller holds mu_:
     // drop frames more than kKeepBehindFrames behind `entry.current`,
@@ -297,7 +290,7 @@ private:
     std::unordered_map<CacheKey, Entry, CacheKeyHash> entries_;
     std::function<std::int64_t()> clock_;
     std::size_t max_bytes_;
-    mutable std::size_t hits_   = 0;
+    mutable std::size_t hits_ = 0;
     mutable std::size_t misses_ = 0;
     std::int64_t ttl_ms_;
 };

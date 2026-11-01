@@ -4,7 +4,7 @@
 #include "canvas_cairo.h"
 #include "emoji_support.h"
 #include "device_listing.h"
-#include "gst_device_listing.h"
+#include "platform/linux/gst_device_listing.h"
 #include "gtk_accessible.h"
 #include "emoji_segmentation.h"
 #include "pill.h"
@@ -70,7 +70,9 @@ public:
     virtual ~GtkOcclusionClient()
     {
         if (auto r = registry_.lock())
+        {
             std::erase(r->clients, this);
+        }
     }
     GtkOcclusionClient(const GtkOcclusionClient&) = delete;
     GtkOcclusionClient& operator=(const GtkOcclusionClient&) = delete;
@@ -82,7 +84,9 @@ public:
     {
         GtkWidget* w = occlusion_widget_();
         if (!w || !occlusion_query_ || occlusion_query_())
+        {
             return;
+        }
         gtk_widget_insert_before(w, overlay, nullptr);
     }
 
@@ -91,7 +95,9 @@ protected:
     {
         occlusion_query_ = std::move(fn);
         if (auto r = registry_.lock())
+        {
             r->dirty = true;
+        }
     }
     // The control's own GtkOverlay child.
     virtual GtkWidget* occlusion_widget_() const = 0;
@@ -112,11 +118,13 @@ static int gtk_theme_base_pt()
         g_object_get(settings, "gtk-font-name", &font_name, nullptr);
         if (font_name)
         {
-            if (PangoFontDescription* d =
-                    pango_font_description_from_string(font_name))
+            if (PangoFontDescription* d = pango_font_description_from_string(font_name))
             {
                 const int sz = pango_font_description_get_size(d);
-                if (sz > 0) base_pt = std::max(sz / PANGO_SCALE, 8);
+                if (sz > 0)
+                {
+                    base_pt = std::max(sz / PANGO_SCALE, 8);
+                }
                 pango_font_description_free(d);
             }
             g_free(font_name);
@@ -129,11 +137,11 @@ static int gtk_theme_base_pt()
 // scoped by `css_class` so `role`'s size, family and weight reach one native
 // control. A bare selector would hit every control; gtk_widget_get_style_context
 // (per-widget scoping) is deprecated in GTK4.
-static void apply_role_font_css(GtkCssProvider*& provider,
-                                const std::string& css_class, FontRole role)
+static void apply_role_font_css(GtkCssProvider*& provider, const std::string& css_class,
+                                FontRole role)
 {
-    std::string rule = "." + css_class + " { font-size: " +
-                       std::to_string(font_role_pt(role, gtk_theme_base_pt())) +
+    std::string rule = "." + css_class +
+                       " { font-size: " + std::to_string(font_role_pt(role, gtk_theme_base_pt())) +
                        "pt;";
     const std::string_view family = font_role_family(role);
     if (!family.empty())
@@ -142,15 +150,15 @@ static void apply_role_font_css(GtkCssProvider*& provider,
         rule += " font-family: \"" + std::string(esc) + "\";";
         g_free(esc);
     }
-    rule += font_role_is_semibold(role) ? " font-weight: 600; }"
-                                        : " font-weight: 400; }";
+    rule += font_role_is_semibold(role) ? " font-weight: 600; }" : " font-weight: 400; }";
     if (!provider)
     {
         provider = gtk_css_provider_new();
         if (GdkDisplay* dpy = gdk_display_get_default())
-            gtk_style_context_add_provider_for_display(
-                dpy, GTK_STYLE_PROVIDER(provider),
-                GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+        {
+            gtk_style_context_add_provider_for_display(dpy, GTK_STYLE_PROVIDER(provider),
+                                                       GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+        }
     }
     gtk_css_provider_load_from_string(provider, rule.c_str());
 }
@@ -158,10 +166,13 @@ static void apply_role_font_css(GtkCssProvider*& provider,
 static void release_role_font_css(GtkCssProvider*& provider)
 {
     if (!provider)
+    {
         return;
+    }
     if (GdkDisplay* dpy = gdk_display_get_default())
-        gtk_style_context_remove_provider_for_display(
-            dpy, GTK_STYLE_PROVIDER(provider));
+    {
+        gtk_style_context_remove_provider_for_display(dpy, GTK_STYLE_PROVIDER(provider));
+    }
     g_object_unref(provider);
     provider = nullptr;
 }
@@ -183,8 +194,8 @@ public:
     // may be null for callers that don't care (focus then simply stays put).
     GtkNativeTextField(GtkWidget* overlay, GtkWidget* canvas,
                        std::weak_ptr<GtkOcclusionRegistry> occlusion)
-        : GtkOcclusionClient(std::move(occlusion)), overlay_(overlay),
-          canvas_(canvas), entry_(gtk_entry_new())
+        : GtkOcclusionClient(std::move(occlusion)), overlay_(overlay), canvas_(canvas),
+          entry_(gtk_entry_new())
     {
         gtk_widget_set_halign(entry_, GTK_ALIGN_START);
         gtk_widget_set_valign(entry_, GTK_ALIGN_START);
@@ -212,34 +223,27 @@ public:
         // the compact style (min-height:0 + tight padding) for all of them.
         set_compact(true);
 
-        changed_id_ = g_signal_connect(
-            entry_, "changed", G_CALLBACK(&GtkNativeTextField::on_changed_cb),
-            this);
+        changed_id_ = g_signal_connect(entry_, "changed",
+                                       G_CALLBACK(&GtkNativeTextField::on_changed_cb), this);
         g_signal_connect(entry_, "notify::cursor-position",
                          G_CALLBACK(&GtkNativeTextField::refresh_image_cb), this);
         g_signal_connect(entry_, "notify::selection-bound",
                          G_CALLBACK(&GtkNativeTextField::refresh_image_cb), this);
-        activate_id_ = g_signal_connect(
-            entry_, "activate", G_CALLBACK(&GtkNativeTextField::on_activate_cb),
-            this);
+        activate_id_ = g_signal_connect(entry_, "activate",
+                                        G_CALLBACK(&GtkNativeTextField::on_activate_cb), this);
 
         // Intercept Up / Down / Escape for a popup the field drives (the
         // Ctrl+K quick switcher). Capture phase so it wins over the entry's
         // default caret handling.
         GtkEventController* key = gtk_event_controller_key_new();
         gtk_event_controller_set_propagation_phase(key, GTK_PHASE_CAPTURE);
-        g_signal_connect(key, "key-pressed",
-                         G_CALLBACK(&GtkNativeTextField::on_key_pressed_cb),
+        g_signal_connect(key, "key-pressed", G_CALLBACK(&GtkNativeTextField::on_key_pressed_cb),
                          this);
         gtk_widget_add_controller(entry_, key);
 
         GtkEventController* focus = gtk_event_controller_focus_new();
-        g_signal_connect(focus, "enter",
-                         G_CALLBACK(&GtkNativeTextField::on_focus_enter_cb),
-                         this);
-        g_signal_connect(focus, "leave",
-                         G_CALLBACK(&GtkNativeTextField::on_focus_leave_cb),
-                         this);
+        g_signal_connect(focus, "enter", G_CALLBACK(&GtkNativeTextField::on_focus_enter_cb), this);
+        g_signal_connect(focus, "leave", G_CALLBACK(&GtkNativeTextField::on_focus_leave_cb), this);
         gtk_widget_add_controller(entry_, focus);
 
         // Observe every press, even one that doesn't change focus (the
@@ -250,10 +254,8 @@ public:
         // comment for why this is needed (dismissing a register_popup()'d
         // popup on a click into an already-focused field).
         GtkGesture* click = gtk_gesture_click_new();
-        gtk_event_controller_set_propagation_phase(
-            GTK_EVENT_CONTROLLER(click), GTK_PHASE_CAPTURE);
-        g_signal_connect(click, "pressed",
-                         G_CALLBACK(&GtkNativeTextField::on_pointer_down_cb),
+        gtk_event_controller_set_propagation_phase(GTK_EVENT_CONTROLLER(click), GTK_PHASE_CAPTURE);
+        g_signal_connect(click, "pressed", G_CALLBACK(&GtkNativeTextField::on_pointer_down_cb),
                          this);
         gtk_widget_add_controller(entry_, GTK_EVENT_CONTROLLER(click));
     }
@@ -287,7 +289,9 @@ public:
     void set_font_role(FontRole role) override
     {
         if (!entry_)
+        {
             return;
+        }
         if (font_css_class_.empty())
         {
             font_css_class_ = "tesseract-native-textfield-" +
@@ -465,7 +469,9 @@ public:
     void set_compact(bool compact) override
     {
         if (!entry_)
+        {
             return;
+        }
         // Register the compact CSS class once for the whole display.
         static bool css_installed = false;
         if (compact && !css_installed)
@@ -476,25 +482,28 @@ public:
             // GtkText node: a chunky theme can put the tall min-height on the
             // inner `text` node, which `entry { min-height:0 }` alone does not
             // reach (this left the field ~100px tall even with compact applied).
-            gtk_css_provider_load_from_string(css,
-                "entry.tesseract-compact {"
-                "  min-height: 0;"
-                "  padding: 4px 8px;"
-                "}"
-                "entry.tesseract-compact > text {"
-                "  min-height: 0;"
-                "  margin: 0;"
-                "  padding: 0;"
-                "}");
-            gtk_style_context_add_provider_for_display(
-                gdk_display_get_default(), GTK_STYLE_PROVIDER(css),
-                GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+            gtk_css_provider_load_from_string(css, "entry.tesseract-compact {"
+                                                   "  min-height: 0;"
+                                                   "  padding: 4px 8px;"
+                                                   "}"
+                                                   "entry.tesseract-compact > text {"
+                                                   "  min-height: 0;"
+                                                   "  margin: 0;"
+                                                   "  padding: 0;"
+                                                   "}");
+            gtk_style_context_add_provider_for_display(gdk_display_get_default(),
+                                                       GTK_STYLE_PROVIDER(css),
+                                                       GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
             g_object_unref(css);
         }
         if (compact)
+        {
             gtk_widget_add_css_class(entry_, "tesseract-compact");
+        }
         else
+        {
             gtk_widget_remove_css_class(entry_, "tesseract-compact");
+        }
     }
 
 protected:
@@ -560,9 +569,8 @@ private:
             self->on_submit_();
         }
     }
-    static gboolean on_key_pressed_cb(GtkEventControllerKey*, guint keyval,
-                                      guint /*keycode*/, GdkModifierType /*state*/,
-                                      gpointer p)
+    static gboolean on_key_pressed_cb(GtkEventControllerKey*, guint keyval, guint /*keycode*/,
+                                      GdkModifierType /*state*/, gpointer p)
     {
         auto* self = static_cast<GtkNativeTextField*>(p);
         if (!self->popup_nav_)
@@ -614,10 +622,12 @@ private:
         // fallback constant.
         if (!self->blink_timer_id_)
         {
-            self->blink_timer_id_ =
-                g_timeout_add(530, &GtkNativeTextField::on_blink_tick_cb, self);
+            self->blink_timer_id_ = g_timeout_add(530, &GtkNativeTextField::on_blink_tick_cb, self);
         }
-        if (self->on_focus_changed_) self->on_focus_changed_(true);
+        if (self->on_focus_changed_)
+        {
+            self->on_focus_changed_(true);
+        }
     }
     static void on_focus_leave_cb(GtkEventControllerFocus*, gpointer p)
     {
@@ -628,13 +638,19 @@ private:
             self->blink_timer_id_ = 0;
         }
         self->refresh_image();
-        if (self->on_focus_changed_) self->on_focus_changed_(false);
+        if (self->on_focus_changed_)
+        {
+            self->on_focus_changed_(false);
+        }
     }
-    static void on_pointer_down_cb(GtkGestureClick*, gint /*n_press*/,
-                                   gdouble /*x*/, gdouble /*y*/, gpointer p)
+    static void on_pointer_down_cb(GtkGestureClick*, gint /*n_press*/, gdouble /*x*/, gdouble /*y*/,
+                                   gpointer p)
     {
         auto* self = static_cast<GtkNativeTextField*>(p);
-        if (self->on_pointer_down_) self->on_pointer_down_();
+        if (self->on_pointer_down_)
+        {
+            self->on_pointer_down_();
+        }
     }
 
     // Renders entry_ into a fresh cached_image_ and notifies
@@ -738,8 +754,7 @@ private:
             }
             return;
         }
-        cairo_surface_t* surf =
-            cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
+        cairo_surface_t* surf = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
         cairo_surface_set_device_scale(surf, scale, scale);
         cairo_t* cr = cairo_create(surf);
         cairo_translate(cr, -bounds.origin.x, -bounds.origin.y);
@@ -823,24 +838,23 @@ public:
     // may be null for callers that don't care (focus then simply stays put).
     GtkNativeTextArea(GtkWidget* overlay, GtkWidget* canvas,
                       std::weak_ptr<GtkOcclusionRegistry> occlusion)
-        : GtkOcclusionClient(std::move(occlusion)), overlay_(overlay),
-          canvas_(canvas), scroll_(gtk_scrolled_window_new()),
-          view_(gtk_text_view_new())
+        : GtkOcclusionClient(std::move(occlusion)), overlay_(overlay), canvas_(canvas),
+          scroll_(gtk_scrolled_window_new()), view_(gtk_text_view_new())
     {
         gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(view_), GTK_WRAP_WORD_CHAR);
         gtk_text_view_set_top_margin(GTK_TEXT_VIEW(view_), 6);
         gtk_text_view_set_bottom_margin(GTK_TEXT_VIEW(view_), 6);
         gtk_text_view_set_left_margin(GTK_TEXT_VIEW(view_), 8);
         gtk_text_view_set_right_margin(GTK_TEXT_VIEW(view_), 8);
-        gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll_),
-                                       GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+        gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll_), GTK_POLICY_NEVER,
+                                       GTK_POLICY_AUTOMATIC);
         // "compose-area" triggers the transparent-background rule in
         // theme_css_provider_ so the canvas-painted card fill shows through.
         gtk_widget_add_css_class(view_, "compose-area");
         // Unique class for set_font_role's per-instance font-size provider —
         // see font_css_class_.
-        font_css_class_ = "tesseract-native-textarea-" +
-                          std::to_string(reinterpret_cast<std::uintptr_t>(this));
+        font_css_class_ =
+            "tesseract-native-textarea-" + std::to_string(reinterpret_cast<std::uintptr_t>(this));
         gtk_widget_add_css_class(view_, font_css_class_.c_str());
         gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll_), view_);
         gtk_widget_set_halign(scroll_, GTK_ALIGN_START);
@@ -881,9 +895,8 @@ public:
         gtk_label_set_wrap_mode(GTK_LABEL(placeholder_label_), PANGO_WRAP_WORD_CHAR);
         gtk_overlay_add_overlay(GTK_OVERLAY(overlay_), placeholder_label_);
 
-        changed_id_ = g_signal_connect(
-            buffer_, "changed", G_CALLBACK(&GtkNativeTextArea::on_changed_cb),
-            this);
+        changed_id_ = g_signal_connect(buffer_, "changed",
+                                       G_CALLBACK(&GtkNativeTextArea::on_changed_cb), this);
         g_signal_connect(buffer_, "notify::cursor-position",
                          G_CALLBACK(&GtkNativeTextArea::on_cursor_position_changed_cb), this);
         g_signal_connect(buffer_, "notify::has-selection",
@@ -893,42 +906,33 @@ public:
         // without this, the captured image goes stale after scrolling to
         // content that was never visible in a prior capture.
         g_signal_connect(gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(scroll_)),
-                         "value-changed",
-                         G_CALLBACK(&GtkNativeTextArea::on_vadjustment_changed_cb), this);
+                         "value-changed", G_CALLBACK(&GtkNativeTextArea::on_vadjustment_changed_cb),
+                         this);
 
         // Intercept Enter (without Shift) for submit.
         GtkEventController* key = gtk_event_controller_key_new();
-        g_signal_connect(key, "key-pressed",
-                         G_CALLBACK(&GtkNativeTextArea::on_key_pressed_cb),
+        g_signal_connect(key, "key-pressed", G_CALLBACK(&GtkNativeTextArea::on_key_pressed_cb),
                          this);
         gtk_widget_add_controller(view_, key);
 
         GtkEventController* focus = gtk_event_controller_focus_new();
-        g_signal_connect(focus, "enter",
-                         G_CALLBACK(&GtkNativeTextArea::on_focus_enter_cb),
-                         this);
-        g_signal_connect(focus, "leave",
-                         G_CALLBACK(&GtkNativeTextArea::on_focus_leave_cb),
-                         this);
+        g_signal_connect(focus, "enter", G_CALLBACK(&GtkNativeTextArea::on_focus_enter_cb), this);
+        g_signal_connect(focus, "leave", G_CALLBACK(&GtkNativeTextArea::on_focus_leave_cb), this);
         gtk_widget_add_controller(view_, focus);
 
         // Observe every press, even one that doesn't change focus — see
         // GtkNativeTextField's identical controller for the rationale.
         GtkGesture* click = gtk_gesture_click_new();
-        gtk_event_controller_set_propagation_phase(
-            GTK_EVENT_CONTROLLER(click), GTK_PHASE_CAPTURE);
-        g_signal_connect(click, "pressed",
-                         G_CALLBACK(&GtkNativeTextArea::on_pointer_down_cb),
+        gtk_event_controller_set_propagation_phase(GTK_EVENT_CONTROLLER(click), GTK_PHASE_CAPTURE);
+        g_signal_connect(click, "pressed", G_CALLBACK(&GtkNativeTextArea::on_pointer_down_cb),
                          this);
         gtk_widget_add_controller(view_, GTK_EVENT_CONTROLLER(click));
 
         // Image-paste interception. The "paste-clipboard" action runs before
         // the default text-paste, so we can check for image content,
         // suppress the default, and fire our handler instead.
-        paste_id_ =
-            g_signal_connect(view_, "paste-clipboard",
-                             G_CALLBACK(&GtkNativeTextArea::on_paste_cb), this);
-
+        paste_id_ = g_signal_connect(view_, "paste-clipboard",
+                                     G_CALLBACK(&GtkNativeTextArea::on_paste_cb), this);
     }
 
     ~GtkNativeTextArea() override
@@ -955,8 +959,7 @@ public:
         }
         if (placeholder_label_)
         {
-            gtk_overlay_remove_overlay(GTK_OVERLAY(overlay_),
-                                       placeholder_label_);
+            gtk_overlay_remove_overlay(GTK_OVERLAY(overlay_), placeholder_label_);
         }
         release_role_font_css(font_css_);
     }
@@ -980,10 +983,8 @@ public:
             // Constrain wrapping to the field's content width (matches
             // view_'s 8px left/right margins). natural_height() measures
             // against this same stored width, so the two stay in sync.
-            placeholder_content_w_ =
-                std::max(1, static_cast<int>(std::round(r.w)) - 16);
-            gtk_widget_set_size_request(placeholder_label_,
-                                        placeholder_content_w_, -1);
+            placeholder_content_w_ = std::max(1, static_cast<int>(std::round(r.w)) - 16);
+            gtk_widget_set_size_request(placeholder_label_, placeholder_content_w_, -1);
         }
         // GtkTextView draws text top-aligned. Centre the scroller within
         // the rect when its natural height is shorter than the rect (a
@@ -995,16 +996,14 @@ public:
         int y = static_cast<int>(std::floor(r.y)) + (rh - h) / 2;
         gtk_widget_set_margin_start(scroll_, static_cast<int>(std::floor(r.x)));
         gtk_widget_set_margin_top(scroll_, y);
-        gtk_widget_set_size_request(scroll_, static_cast<int>(std::round(r.w)),
-                                    h);
+        gtk_widget_set_size_request(scroll_, static_cast<int>(std::round(r.w)), h);
         // Applied rect, in the same units as `r` — see rendered_image_rect().
         applied_rect_ = {r.x, static_cast<float>(y), r.w, static_cast<float>(h)};
         // Align placeholder label with the text content area (matching the
         // text view's 8 px left-margin and 6 px top-margin).
         if (placeholder_label_)
         {
-            gtk_widget_set_margin_start(placeholder_label_,
-                                        static_cast<int>(std::floor(r.x)) + 8);
+            gtk_widget_set_margin_start(placeholder_label_, static_cast<int>(std::floor(r.x)) + 8);
             gtk_widget_set_margin_top(placeholder_label_, y + 6);
         }
         refresh_image();
@@ -1016,8 +1015,7 @@ public:
             return;
         }
         g_signal_handler_block(buffer_, changed_id_);
-        gtk_text_buffer_set_text(buffer_, text.c_str(),
-                                 static_cast<int>(text.size()));
+        gtk_text_buffer_set_text(buffer_, text.c_str(), static_cast<int>(text.size()));
         g_signal_handler_unblock(buffer_, changed_id_);
         // changed signal was blocked; sync placeholder visibility manually.
         if (placeholder_label_)
@@ -1120,11 +1118,9 @@ public:
         {
             return 0.f;
         }
-        const bool buffer_empty =
-            !buffer_ || gtk_text_buffer_get_char_count(buffer_) == 0;
+        const bool buffer_empty = !buffer_ || gtk_text_buffer_get_char_count(buffer_) == 0;
         const char* placeholder_text =
-            placeholder_label_ ? gtk_label_get_text(GTK_LABEL(placeholder_label_))
-                               : nullptr;
+            placeholder_label_ ? gtk_label_get_text(GTK_LABEL(placeholder_label_)) : nullptr;
         if (buffer_empty && placeholder_text && placeholder_text[0] != '\0')
         {
             const int vmargins = gtk_text_view_get_top_margin(GTK_TEXT_VIEW(view_)) +
@@ -1154,13 +1150,12 @@ public:
             }
             int minimum = 0, natural = 0, mb = 0, nb = 0;
             gtk_widget_measure(placeholder_label_, GTK_ORIENTATION_VERTICAL,
-                               placeholder_content_w_ > 0 ? placeholder_content_w_ : -1,
-                               &minimum, &natural, &mb, &nb);
+                               placeholder_content_w_ > 0 ? placeholder_content_w_ : -1, &minimum,
+                               &natural, &mb, &nb);
             return static_cast<float>(natural + vmargins);
         }
         int minimum = 0, natural = 0, mb = 0, nb = 0;
-        gtk_widget_measure(view_, GTK_ORIENTATION_VERTICAL, -1, &minimum,
-                           &natural, &mb, &nb);
+        gtk_widget_measure(view_, GTK_ORIENTATION_VERTICAL, -1, &minimum, &natural, &mb, &nb);
         return static_cast<float>(natural);
     }
     void set_on_changed(std::function<void(const std::string&)> cb) override
@@ -1189,29 +1184,27 @@ public:
         {
             return;
         }
-        gtk_text_buffer_insert_at_cursor(buffer_, text.c_str(),
-                                         static_cast<int>(text.size()));
+        gtk_text_buffer_insert_at_cursor(buffer_, text.c_str(), static_cast<int>(text.size()));
     }
 
     tk::Rect cursor_rect() const override
     {
         GdkRectangle rect;
-        gtk_text_view_get_cursor_locations(GTK_TEXT_VIEW(view_), nullptr, &rect,
-                                           nullptr);
+        gtk_text_view_get_cursor_locations(GTK_TEXT_VIEW(view_), nullptr, &rect, nullptr);
         int wx, wy;
-        gtk_text_view_buffer_to_window_coords(GTK_TEXT_VIEW(view_),
-                                              GTK_TEXT_WINDOW_TEXT, rect.x,
+        gtk_text_view_buffer_to_window_coords(GTK_TEXT_VIEW(view_), GTK_TEXT_WINDOW_TEXT, rect.x,
                                               rect.y, &wx, &wy);
         double ox = 0, oy = 0;
-        GtkWidget* toplevel = gtk_widget_get_root(view_)
-                                  ? GTK_WIDGET(gtk_widget_get_root(view_))
-                                  : nullptr;
+        GtkWidget* toplevel =
+            gtk_widget_get_root(view_) ? GTK_WIDGET(gtk_widget_get_root(view_)) : nullptr;
         if (toplevel)
         {
             graphene_point_t pt_in{static_cast<float>(wx), static_cast<float>(wy)};
             graphene_point_t pt_out{};
             if (!gtk_widget_compute_point(view_, toplevel, &pt_in, &pt_out))
+            {
                 pt_out = {};
+            }
             ox = pt_out.x;
             oy = pt_out.y;
         }
@@ -1247,11 +1240,9 @@ public:
             return {};
         }
         GdkRectangle rect;
-        gtk_text_view_get_cursor_locations(GTK_TEXT_VIEW(view_), nullptr, &rect,
-                                           nullptr);
+        gtk_text_view_get_cursor_locations(GTK_TEXT_VIEW(view_), nullptr, &rect, nullptr);
         int wx = 0, wy = 0;
-        gtk_text_view_buffer_to_window_coords(GTK_TEXT_VIEW(view_),
-                                              GTK_TEXT_WINDOW_TEXT, rect.x,
+        gtk_text_view_buffer_to_window_coords(GTK_TEXT_VIEW(view_), GTK_TEXT_WINDOW_TEXT, rect.x,
                                               rect.y, &wx, &wy);
         graphene_point_t pt_in{static_cast<float>(wx), static_cast<float>(wy)};
         graphene_point_t pt_out{};
@@ -1364,10 +1355,8 @@ public:
         {
             pill_factory_ = tk::cairo_pango::make_factory();
         }
-        const tk::LineMetrics lm =
-            tk::role_line_metrics(*pill_factory_, tk::FontRole::Body);
-        const float scale =
-            static_cast<float>(gtk_widget_get_scale_factor(view_));
+        const tk::LineMetrics lm = tk::role_line_metrics(*pill_factory_, tk::FontRole::Body);
+        const float scale = static_cast<float>(gtk_widget_get_scale_factor(view_));
 
         tk::PillSpec spec;
         spec.text = is_room ? "room" : display_name;
@@ -1389,8 +1378,8 @@ public:
         spec.fg = mention_colors_.fg;
         spec.initials_bg = mention_colors_.initials_bg;
         spec.initials_fg = mention_colors_.initials_fg;
-        tk::ImageRef pinned = tk::render_pill_bitmap_cached(
-            *pill_factory_, pill_cache_, spec, lm.ascent, lm.descent, scale);
+        tk::ImageRef pinned = tk::render_pill_bitmap_cached(*pill_factory_, pill_cache_, spec,
+                                                            lm.ascent, lm.descent, scale);
         if (!pinned)
         {
             // No pill chrome in this fallback, so the '@' is the only visual
@@ -1415,8 +1404,7 @@ public:
         gtk_text_buffer_get_iter_at_offset(buffer_, &c, ce);
         gtk_text_buffer_delete(buffer_, &a, &c);
 
-        GtkTextChildAnchor* anchor =
-            gtk_text_buffer_create_child_anchor(buffer_, &a);
+        GtkTextChildAnchor* anchor = gtk_text_buffer_create_child_anchor(buffer_, &a);
         auto* data = new MentionData{user_id, display_name, is_room};
         g_object_set_data_full(G_OBJECT(anchor), "tesseract-mention", data,
                                &GtkNativeTextArea::free_mention_data);
@@ -1424,22 +1412,20 @@ public:
         // GTK calls the GDestroyNotify when the anchor itself is finalized
         // (mention deleted/edited away), dropping the pin automatically.
         g_object_set_data_full(G_OBJECT(anchor), "tesseract-mention-pill-pin",
-                               new tk::ImageRef(pinned),
-                               &GtkNativeTextArea::free_pill_pin);
+                               new tk::ImageRef(pinned), &GtkNativeTextArea::free_pill_pin);
 
         cairo_surface_t* surface = tk::cairo_pango::to_native_image(*pinned);
         G_GNUC_BEGIN_IGNORE_DEPRECATIONS
-        GdkPixbuf* pixbuf = gdk_pixbuf_get_from_surface(
-            surface, 0, 0, cairo_image_surface_get_width(surface),
-            cairo_image_surface_get_height(surface));
+        GdkPixbuf* pixbuf =
+            gdk_pixbuf_get_from_surface(surface, 0, 0, cairo_image_surface_get_width(surface),
+                                        cairo_image_surface_get_height(surface));
         GdkTexture* tex = gdk_texture_new_for_pixbuf(pixbuf);
         G_GNUC_END_IGNORE_DEPRECATIONS
         g_object_unref(pixbuf);
         GtkWidget* pic = gtk_picture_new_for_paintable(GDK_PAINTABLE(tex));
         g_object_unref(tex);
-        gtk_widget_set_size_request(
-            pic, static_cast<int>(pinned->width() / scale),
-            static_cast<int>(pinned->height() / scale));
+        gtk_widget_set_size_request(pic, static_cast<int>(pinned->width() / scale),
+                                    static_cast<int>(pinned->height() / scale));
         // Non-owning: refresh_mention_avatar() looks the picture widget back
         // up from its anchor to swap its paintable in place once a not-yet-
         // cached avatar decodes. The anchor (not the widget) owns this data
@@ -1465,8 +1451,7 @@ public:
         GtkTextIter rise_end = rise_start;
         gtk_text_iter_forward_char(&rise_end);
         GtkTextTag* rise_tag = gtk_text_buffer_create_tag(
-            buffer_, nullptr, "rise",
-            -static_cast<gint>(lm.descent * PANGO_SCALE), nullptr);
+            buffer_, nullptr, "rise", -static_cast<gint>(lm.descent * PANGO_SCALE), nullptr);
         gtk_text_buffer_apply_tag(buffer_, rise_tag, &rise_start, &rise_end);
 
         // Trailing space after the pill so typing continues as normal text.
@@ -1522,8 +1507,7 @@ public:
         gtk_text_buffer_get_iter_at_offset(buffer_, &c, ce);
         gtk_text_buffer_delete(buffer_, &a, &c);
 
-        GtkTextChildAnchor* anchor =
-            gtk_text_buffer_create_child_anchor(buffer_, &a);
+        GtkTextChildAnchor* anchor = gtk_text_buffer_create_child_anchor(buffer_, &a);
         auto* data = new EmoticonData{shortcode, mxc_url};
         g_object_set_data_full(G_OBJECT(anchor), "tesseract-emoticon", data,
                                &GtkNativeTextArea::free_emoticon_data);
@@ -1535,9 +1519,9 @@ public:
         // of GTK4 versions this project actually targets (no minimum pin
         // newer than plain "gtk4" in CMakeLists.txt).
         G_GNUC_BEGIN_IGNORE_DEPRECATIONS
-        GdkPixbuf* pixbuf = gdk_pixbuf_get_from_surface(
-            surface, 0, 0, cairo_image_surface_get_width(surface),
-            cairo_image_surface_get_height(surface));
+        GdkPixbuf* pixbuf =
+            gdk_pixbuf_get_from_surface(surface, 0, 0, cairo_image_surface_get_width(surface),
+                                        cairo_image_surface_get_height(surface));
         GdkTexture* tex = gdk_texture_new_for_pixbuf(pixbuf);
         G_GNUC_END_IGNORE_DEPRECATIONS
         g_object_unref(pixbuf);
@@ -1596,8 +1580,8 @@ public:
             GtkTextChildAnchor* a = gtk_text_iter_get_child_anchor(&it);
             if (a)
             {
-                auto* d = static_cast<MentionData*>(
-                    g_object_get_data(G_OBJECT(a), "tesseract-mention"));
+                auto* d =
+                    static_cast<MentionData*>(g_object_get_data(G_OBJECT(a), "tesseract-mention"));
                 auto* e = static_cast<EmoticonData*>(
                     g_object_get_data(G_OBJECT(a), "tesseract-emoticon"));
                 if (d)
@@ -1645,8 +1629,7 @@ public:
     // each matching anchor's GtkPicture paintable in place rather than
     // reading the anchor's data — no buffer text touched, so this is safe
     // regardless of what's been typed since insert_mention.
-    void refresh_mention_avatar(const std::string& user_id,
-                                const tk::Image* avatar) override
+    void refresh_mention_avatar(const std::string& user_id, const tk::Image* avatar) override
     {
         if (!buffer_ || !avatar)
         {
@@ -1656,10 +1639,8 @@ public:
         {
             pill_factory_ = tk::cairo_pango::make_factory();
         }
-        const tk::LineMetrics lm =
-            tk::role_line_metrics(*pill_factory_, tk::FontRole::Body);
-        const float scale =
-            static_cast<float>(gtk_widget_get_scale_factor(view_));
+        const tk::LineMetrics lm = tk::role_line_metrics(*pill_factory_, tk::FontRole::Body);
+        const float scale = static_cast<float>(gtk_widget_get_scale_factor(view_));
         GtkTextIter it;
         gtk_text_buffer_get_start_iter(buffer_, &it);
         while (!gtk_text_iter_is_end(&it))
@@ -1667,10 +1648,10 @@ public:
             GtkTextChildAnchor* a = gtk_text_iter_get_child_anchor(&it);
             if (a)
             {
-                auto* d = static_cast<MentionData*>(
-                    g_object_get_data(G_OBJECT(a), "tesseract-mention"));
-                auto* pic = static_cast<GtkWidget*>(g_object_get_data(
-                    G_OBJECT(a), "tesseract-mention-pic"));
+                auto* d =
+                    static_cast<MentionData*>(g_object_get_data(G_OBJECT(a), "tesseract-mention"));
+                auto* pic = static_cast<GtkWidget*>(
+                    g_object_get_data(G_OBJECT(a), "tesseract-mention-pic"));
                 if (d && pic && !d->is_room && d->user_id == user_id)
                 {
                     tk::PillSpec spec;
@@ -1682,30 +1663,25 @@ public:
                     spec.initials_bg = mention_colors_.initials_bg;
                     spec.initials_fg = mention_colors_.initials_fg;
                     tk::ImageRef pinned = tk::render_pill_bitmap_cached(
-                        *pill_factory_, pill_cache_, spec, lm.ascent,
-                        lm.descent, scale);
+                        *pill_factory_, pill_cache_, spec, lm.ascent, lm.descent, scale);
                     if (pinned)
                     {
-                        cairo_surface_t* surface =
-                            tk::cairo_pango::to_native_image(*pinned);
+                        cairo_surface_t* surface = tk::cairo_pango::to_native_image(*pinned);
                         G_GNUC_BEGIN_IGNORE_DEPRECATIONS
                         GdkPixbuf* pixbuf = gdk_pixbuf_get_from_surface(
-                            surface, 0, 0,
-                            cairo_image_surface_get_width(surface),
+                            surface, 0, 0, cairo_image_surface_get_width(surface),
                             cairo_image_surface_get_height(surface));
                         GdkTexture* tex = gdk_texture_new_for_pixbuf(pixbuf);
                         G_GNUC_END_IGNORE_DEPRECATIONS
                         g_object_unref(pixbuf);
-                        gtk_picture_set_paintable(GTK_PICTURE(pic),
-                                                  GDK_PAINTABLE(tex));
+                        gtk_picture_set_paintable(GTK_PICTURE(pic), GDK_PAINTABLE(tex));
                         g_object_unref(tex);
                         // Re-pin the new render; the old ImageRef this
                         // anchor pinned is dropped when
                         // "tesseract-mention-pill-pin" is overwritten.
-                        g_object_set_data_full(
-                            G_OBJECT(a), "tesseract-mention-pill-pin",
-                            new tk::ImageRef(pinned),
-                            &GtkNativeTextArea::free_pill_pin);
+                        g_object_set_data_full(G_OBJECT(a), "tesseract-mention-pill-pin",
+                                               new tk::ImageRef(pinned),
+                                               &GtkNativeTextArea::free_pill_pin);
                     }
                 }
             }
@@ -1725,10 +1701,8 @@ public:
         {
             pill_factory_ = tk::cairo_pango::make_factory();
         }
-        const tk::LineMetrics lm =
-            tk::role_line_metrics(*pill_factory_, tk::FontRole::Body);
-        const float scale =
-            static_cast<float>(gtk_widget_get_scale_factor(view_));
+        const tk::LineMetrics lm = tk::role_line_metrics(*pill_factory_, tk::FontRole::Body);
+        const float scale = static_cast<float>(gtk_widget_get_scale_factor(view_));
         GtkTextIter it;
         gtk_text_buffer_get_start_iter(buffer_, &it);
         while (!gtk_text_iter_is_end(&it))
@@ -1736,10 +1710,10 @@ public:
             GtkTextChildAnchor* a = gtk_text_iter_get_child_anchor(&it);
             if (a)
             {
-                auto* d = static_cast<MentionData*>(
-                    g_object_get_data(G_OBJECT(a), "tesseract-mention"));
-                auto* pic = static_cast<GtkWidget*>(g_object_get_data(
-                    G_OBJECT(a), "tesseract-mention-pic"));
+                auto* d =
+                    static_cast<MentionData*>(g_object_get_data(G_OBJECT(a), "tesseract-mention"));
+                auto* pic = static_cast<GtkWidget*>(
+                    g_object_get_data(G_OBJECT(a), "tesseract-mention-pic"));
                 if (d && pic && d->is_room)
                 {
                     tk::PillSpec spec;
@@ -1752,27 +1726,22 @@ public:
                     spec.initials_bg = mention_colors_.initials_bg;
                     spec.initials_fg = mention_colors_.initials_fg;
                     tk::ImageRef pinned = tk::render_pill_bitmap_cached(
-                        *pill_factory_, pill_cache_, spec, lm.ascent,
-                        lm.descent, scale);
+                        *pill_factory_, pill_cache_, spec, lm.ascent, lm.descent, scale);
                     if (pinned)
                     {
-                        cairo_surface_t* surface =
-                            tk::cairo_pango::to_native_image(*pinned);
+                        cairo_surface_t* surface = tk::cairo_pango::to_native_image(*pinned);
                         G_GNUC_BEGIN_IGNORE_DEPRECATIONS
                         GdkPixbuf* pixbuf = gdk_pixbuf_get_from_surface(
-                            surface, 0, 0,
-                            cairo_image_surface_get_width(surface),
+                            surface, 0, 0, cairo_image_surface_get_width(surface),
                             cairo_image_surface_get_height(surface));
                         GdkTexture* tex = gdk_texture_new_for_pixbuf(pixbuf);
                         G_GNUC_END_IGNORE_DEPRECATIONS
                         g_object_unref(pixbuf);
-                        gtk_picture_set_paintable(GTK_PICTURE(pic),
-                                                  GDK_PAINTABLE(tex));
+                        gtk_picture_set_paintable(GTK_PICTURE(pic), GDK_PAINTABLE(tex));
                         g_object_unref(tex);
-                        g_object_set_data_full(
-                            G_OBJECT(a), "tesseract-mention-pill-pin",
-                            new tk::ImageRef(pinned),
-                            &GtkNativeTextArea::free_pill_pin);
+                        g_object_set_data_full(G_OBJECT(a), "tesseract-mention-pill-pin",
+                                               new tk::ImageRef(pinned),
+                                               &GtkNativeTextArea::free_pill_pin);
                     }
                 }
             }
@@ -1811,24 +1780,21 @@ public:
         // Match the canvas's emoji-run size (canvas_cairo build_rich_text) so
         // a composed emoji is the same size in the input as in a message row —
         // shared tweak knob + GTK stock compensation.
-        const int emoji_pt = std::max(
-            static_cast<int>(
-                font_role_pt(FontRole::InlineEmoji, base_pt) *
-                    tk::cairo_pango::kGtkEmojiStockComp * kEmojiSizeAdjust +
-                0.5),
-            6);
+        const int emoji_pt =
+            std::max(static_cast<int>(font_role_pt(FontRole::InlineEmoji, base_pt) *
+                                          tk::cairo_pango::kGtkEmojiStockComp * kEmojiSizeAdjust +
+                                      0.5),
+                     6);
         if (buffer_)
         {
             if (!emoji_tag_)
             {
-                emoji_tag_ = gtk_text_buffer_create_tag(
-                    buffer_, nullptr, "size-points",
-                    static_cast<gdouble>(emoji_pt), nullptr);
+                emoji_tag_ = gtk_text_buffer_create_tag(buffer_, nullptr, "size-points",
+                                                        static_cast<gdouble>(emoji_pt), nullptr);
             }
             else
             {
-                g_object_set(emoji_tag_, "size-points",
-                             static_cast<gdouble>(emoji_pt), nullptr);
+                g_object_set(emoji_tag_, "size-points", static_cast<gdouble>(emoji_pt), nullptr);
             }
         }
     }
@@ -1902,10 +1868,8 @@ private:
         gtk_text_buffer_remove_tag(buffer_, emoji_tag_, &start, &end);
         for (const auto& r : tk::find_emoji_byte_ranges(t))
         {
-            int cs = utf8_byte_to_char_offset(t.c_str(),
-                                              static_cast<int>(r.start_byte));
-            int ce = utf8_byte_to_char_offset(t.c_str(),
-                                              static_cast<int>(r.end_byte));
+            int cs = utf8_byte_to_char_offset(t.c_str(), static_cast<int>(r.start_byte));
+            int ce = utf8_byte_to_char_offset(t.c_str(), static_cast<int>(r.end_byte));
             GtkTextIter a, b;
             gtk_text_buffer_get_iter_at_offset(buffer_, &a, cs);
             gtk_text_buffer_get_iter_at_offset(buffer_, &b, ce);
@@ -1945,8 +1909,7 @@ private:
         if (self->blink_timer_id_)
         {
             g_source_remove(self->blink_timer_id_);
-            self->blink_timer_id_ =
-                g_timeout_add(530, &GtkNativeTextArea::on_blink_tick_cb, self);
+            self->blink_timer_id_ = g_timeout_add(530, &GtkNativeTextArea::on_blink_tick_cb, self);
         }
         self->request_capture();
     }
@@ -2019,9 +1982,8 @@ private:
         }
         return G_SOURCE_REMOVE;
     }
-    static gboolean on_key_pressed_cb(GtkEventControllerKey*, guint keyval,
-                                      guint /*keycode*/, GdkModifierType state,
-                                      gpointer p)
+    static gboolean on_key_pressed_cb(GtkEventControllerKey*, guint keyval, guint /*keycode*/,
+                                      GdkModifierType state, gpointer p)
     {
         auto* self = static_cast<GtkNativeTextArea*>(p);
         if (self->popup_nav_)
@@ -2076,8 +2038,7 @@ private:
             }
         }
         bool is_return =
-            (keyval == GDK_KEY_Return || keyval == GDK_KEY_KP_Enter ||
-             keyval == GDK_KEY_ISO_Enter);
+            (keyval == GDK_KEY_Return || keyval == GDK_KEY_KP_Enter || keyval == GDK_KEY_ISO_Enter);
         bool shift = (state & GDK_SHIFT_MASK) != 0;
         if (is_return && !shift)
         {
@@ -2100,10 +2061,12 @@ private:
         // re-render rationale, mirrored here for the multi-line control.
         if (!self->blink_timer_id_)
         {
-            self->blink_timer_id_ =
-                g_timeout_add(530, &GtkNativeTextArea::on_blink_tick_cb, self);
+            self->blink_timer_id_ = g_timeout_add(530, &GtkNativeTextArea::on_blink_tick_cb, self);
         }
-        if (self->on_focus_changed_) self->on_focus_changed_(true);
+        if (self->on_focus_changed_)
+        {
+            self->on_focus_changed_(true);
+        }
     }
     static void on_focus_leave_cb(GtkEventControllerFocus*, gpointer p)
     {
@@ -2115,13 +2078,19 @@ private:
             self->blink_timer_id_ = 0;
         }
         self->refresh_image();
-        if (self->on_focus_changed_) self->on_focus_changed_(false);
+        if (self->on_focus_changed_)
+        {
+            self->on_focus_changed_(false);
+        }
     }
-    static void on_pointer_down_cb(GtkGestureClick*, gint /*n_press*/,
-                                   gdouble /*x*/, gdouble /*y*/, gpointer p)
+    static void on_pointer_down_cb(GtkGestureClick*, gint /*n_press*/, gdouble /*x*/, gdouble /*y*/,
+                                   gpointer p)
     {
         auto* self = static_cast<GtkNativeTextArea*>(p);
-        if (self->on_pointer_down_) self->on_pointer_down_();
+        if (self->on_pointer_down_)
+        {
+            self->on_pointer_down_();
+        }
     }
 
     // Renders scroll_ (the scroller + its text-view content) into a fresh
@@ -2182,8 +2151,7 @@ private:
             }
             return;
         }
-        cairo_surface_t* surf =
-            cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
+        cairo_surface_t* surf = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
         cairo_surface_set_device_scale(surf, scale, scale);
         cairo_t* cr = cairo_create(surf);
         cairo_translate(cr, -bounds.origin.x, -bounds.origin.y);
@@ -2249,14 +2217,12 @@ private:
         }
 
         // GTK4 already exposes a unified "image" content type via texture.
-        gboolean has_image =
-            gdk_content_formats_contain_gtype(fmts, GDK_TYPE_TEXTURE);
+        gboolean has_image = gdk_content_formats_contain_gtype(fmts, GDK_TYPE_TEXTURE);
         if (!has_image)
         {
             // Some sources advertise mime types only.
             const char* image_mimes[] = {
-                "image/png", "image/jpeg", "image/webp",
-                "image/bmp", "image/gif",
+                "image/png", "image/jpeg", "image/webp", "image/bmp", "image/gif",
             };
             for (const char* m : image_mimes)
             {
@@ -2273,23 +2239,20 @@ private:
             // the async callback will deliver bytes via on_image_paste_.
             g_signal_stop_emission_by_name(view, "paste-clipboard");
 
-            gdk_clipboard_read_texture_async(
-                clip, nullptr, &GtkNativeTextArea::on_texture_ready_cb,
-                new ImagePasteHandler(self->on_image_paste_));
+            gdk_clipboard_read_texture_async(clip, nullptr, &GtkNativeTextArea::on_texture_ready_cb,
+                                             new ImagePasteHandler(self->on_image_paste_));
             return;
         }
 
         // Files copied in a file manager (Nautilus/Dolphin "Copy", not a
         // drag) advertise GDK_TYPE_FILE_LIST rather than an image type.
-        if (self->on_file_paste_ &&
-            gdk_content_formats_contain_gtype(fmts, GDK_TYPE_FILE_LIST))
+        if (self->on_file_paste_ && gdk_content_formats_contain_gtype(fmts, GDK_TYPE_FILE_LIST))
         {
             g_signal_stop_emission_by_name(view, "paste-clipboard");
 
-            gdk_clipboard_read_value_async(
-                clip, GDK_TYPE_FILE_LIST, G_PRIORITY_DEFAULT, nullptr,
-                &GtkNativeTextArea::on_file_list_ready_cb,
-                new FilePasteHandler(self->on_file_paste_));
+            gdk_clipboard_read_value_async(clip, GDK_TYPE_FILE_LIST, G_PRIORITY_DEFAULT, nullptr,
+                                           &GtkNativeTextArea::on_file_list_ready_cb,
+                                           new FilePasteHandler(self->on_file_paste_));
         }
     }
 
@@ -2305,11 +2268,11 @@ private:
         {
             return std::nullopt;
         }
-        GFileInfo* info = g_file_query_info(
-            file,
-            G_FILE_ATTRIBUTE_STANDARD_SIZE "," G_FILE_ATTRIBUTE_STANDARD_NAME
-            "," G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE,
-            G_FILE_QUERY_INFO_NONE, nullptr, nullptr);
+        GFileInfo* info = g_file_query_info(file,
+                                            G_FILE_ATTRIBUTE_STANDARD_SIZE
+                                            "," G_FILE_ATTRIBUTE_STANDARD_NAME
+                                            "," G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE,
+                                            G_FILE_QUERY_INFO_NONE, nullptr, nullptr);
         if (!info)
         {
             return std::nullopt;
@@ -2337,16 +2300,13 @@ private:
 
         const char* declared = g_file_info_get_content_type(info);
         gchar* guessed = g_content_type_guess(g_file_info_get_name(info),
-                                              static_cast<const guchar*>(data),
-                                              len, nullptr);
+                                              static_cast<const guchar*>(data), len, nullptr);
         const char* content_type = declared ? declared : guessed;
-        gchar* mime_c =
-            content_type ? g_content_type_get_mime_type(content_type) : nullptr;
+        gchar* mime_c = content_type ? g_content_type_get_mime_type(content_type) : nullptr;
         std::string mime = mime_c ? mime_c : "application/octet-stream";
 
         std::vector<std::uint8_t> bytes(static_cast<const std::uint8_t*>(data),
-                                        static_cast<const std::uint8_t*>(data) +
-                                            len);
+                                        static_cast<const std::uint8_t*>(data) + len);
 
         char* basename = g_file_get_basename(file);
         std::string filename = basename ? basename : "";
@@ -2355,23 +2315,25 @@ private:
             g_free(basename);
         }
 
-        if (mime_c) g_free(mime_c);
-        if (guessed) g_free(guessed);
+        if (mime_c)
+        {
+            g_free(mime_c);
+        }
+        if (guessed)
+        {
+            g_free(guessed);
+        }
         g_bytes_unref(gb);
         g_object_unref(info);
 
-        return tk::FileDropPayload{std::move(bytes), std::move(mime),
-                                   std::move(filename)};
+        return tk::FileDropPayload{std::move(bytes), std::move(mime), std::move(filename)};
     }
 
-    static void on_file_list_ready_cb(GObject* source, GAsyncResult* res,
-                                      gpointer p)
+    static void on_file_list_ready_cb(GObject* source, GAsyncResult* res, gpointer p)
     {
-        std::unique_ptr<FilePasteHandler> handler(
-            static_cast<FilePasteHandler*>(p));
+        std::unique_ptr<FilePasteHandler> handler(static_cast<FilePasteHandler*>(p));
         GError* err = nullptr;
-        const GValue* value =
-            gdk_clipboard_read_value_finish(GDK_CLIPBOARD(source), res, &err);
+        const GValue* value = gdk_clipboard_read_value_finish(GDK_CLIPBOARD(source), res, &err);
         if (!value || err)
         {
             if (err)
@@ -2400,14 +2362,11 @@ private:
         }
     }
 
-    static void on_texture_ready_cb(GObject* source, GAsyncResult* res,
-                                    gpointer p)
+    static void on_texture_ready_cb(GObject* source, GAsyncResult* res, gpointer p)
     {
-        std::unique_ptr<ImagePasteHandler> handler(
-            static_cast<ImagePasteHandler*>(p));
+        std::unique_ptr<ImagePasteHandler> handler(static_cast<ImagePasteHandler*>(p));
         GError* err = nullptr;
-        GdkTexture* tex =
-            gdk_clipboard_read_texture_finish(GDK_CLIPBOARD(source), res, &err);
+        GdkTexture* tex = gdk_clipboard_read_texture_finish(GDK_CLIPBOARD(source), res, &err);
         if (err)
         {
             g_error_free(err);
@@ -2423,8 +2382,7 @@ private:
         if (gb)
         {
             gsize len = 0;
-            const guint8* raw =
-                static_cast<const guint8*>(g_bytes_get_data(gb, &len));
+            const guint8* raw = static_cast<const guint8*>(g_bytes_get_data(gb, &len));
             std::vector<std::uint8_t> bytes(raw, raw + len);
             (*handler)(std::move(bytes), "image/png");
             g_bytes_unref(gb);
@@ -2467,9 +2425,8 @@ private:
     // set_font_role) only ever matches this one text view, not every
     // textview on the display.
     std::string font_css_class_;
-    tk::MentionColors mention_colors_{
-        Color{0x2E, 0x3B, 0x5E}, Color{0xA8, 0xC5, 0xFF},
-        Color{0x1F, 0x3A, 0x66}, Color{0xBF, 0xD8, 0xFF}};
+    tk::MentionColors mention_colors_{Color{0x2E, 0x3B, 0x5E}, Color{0xA8, 0xC5, 0xFF},
+                                      Color{0x1F, 0x3A, 0x66}, Color{0xBF, 0xD8, 0xFF}};
     // Lazily created — CanvasFactory is a stateless-ish per-backend wrapper,
     // cheap to own here rather than threading a Surface reference through
     // just for this one rasterization call.
@@ -2513,8 +2470,14 @@ Rect intersect_rect(const Rect& a, const Rect& b)
     float y0 = std::max(a.y, b.y);
     float x1 = std::min(a.right(), b.right());
     float y1 = std::min(a.bottom(), b.bottom());
-    if (x1 < x0) x1 = x0;
-    if (y1 < y0) y1 = y0;
+    if (x1 < x0)
+    {
+        x1 = x0;
+    }
+    if (y1 < y0)
+    {
+        y1 = y0;
+    }
     return {x0, y0, x1 - x0, y1 - y0};
 }
 } // namespace
@@ -2546,6 +2509,14 @@ public:
     ~GtkPopupSurfaceHandle() override
     {
         uninstall_click_watch_();
+        if (round_css_)
+        {
+            if (GdkDisplay* dpy = gdk_display_get_default())
+            {
+                gtk_style_context_remove_provider_for_display(dpy, GTK_STYLE_PROVIDER(round_css_));
+            }
+            g_object_unref(round_css_);
+        }
         if (popover_)
         {
             gtk_widget_unparent(popover_);
@@ -2558,21 +2529,55 @@ public:
         gtk_popover_set_child(GTK_POPOVER(popover_), surface_->widget());
     }
 
-    void set_rect(Rect anchor_world_rect, Size size,
-                  tk::PopupPlacement placement) override
+    // Strip the GtkPopover's own frame and padding and clip it to a rounded
+    // rect, for content that paints its own rounded card; keep a drop shadow.
+    void set_corner_radius(float radius_dip) override
+    {
+        if (radius_dip <= 0.f)
+        {
+            return;
+        }
+        char cls[48];
+        std::snprintf(cls, sizeof(cls), "tk-rounded-popup-%p", static_cast<void*>(this));
+        for (char* c = cls; *c; ++c)
+        {
+            if (*c == 'x' || *c == '.')
+            {
+                *c = '-';
+            }
+        }
+        if (!round_css_)
+        {
+            round_css_ = gtk_css_provider_new();
+            if (GdkDisplay* dpy = gdk_display_get_default())
+            {
+                gtk_style_context_add_provider_for_display(dpy, GTK_STYLE_PROVIDER(round_css_),
+                                                           GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+            }
+        }
+        const std::string rule =
+            std::string("popover.") + cls +
+            " > contents { background: none; "
+            "border: none; padding: 0; border-radius: " +
+            std::to_string(static_cast<int>(radius_dip + 0.5f)) +
+            "px; overflow: hidden; box-shadow: 0 1px 8px rgba(0, 0, 0, 0.25); }";
+        gtk_css_provider_load_from_string(round_css_, rule.c_str());
+        gtk_widget_add_css_class(popover_, cls);
+    }
+
+    void set_rect(Rect anchor_world_rect, Size size, tk::PopupPlacement placement) override
     {
         // GtkPopover auto-flips to the other side when the preferred one
         // doesn't fit, so this is just the preference, not a hard fallback
         // computation like the Qt backend needs.
-        gtk_popover_set_position(GTK_POPOVER(popover_),
-                                 placement == tk::PopupPlacement::PreferAbove
-                                     ? GTK_POS_TOP
-                                     : GTK_POS_BOTTOM);
+        gtk_popover_set_position(GTK_POPOVER(popover_), placement == tk::PopupPlacement::PreferAbove
+                                                            ? GTK_POS_TOP
+                                                            : GTK_POS_BOTTOM);
         gtk_widget_set_size_request(surface_->widget(), std::max(1, int(size.w)),
                                     std::max(1, int(size.h)));
         GdkRectangle r{int(anchor_world_rect.x), int(anchor_world_rect.y),
-                      std::max(1, int(anchor_world_rect.w)),
-                      std::max(1, int(anchor_world_rect.h))};
+                       std::max(1, int(anchor_world_rect.w)),
+                       std::max(1, int(anchor_world_rect.h))};
         gtk_popover_set_pointing_to(GTK_POPOVER(popover_), &r);
         // Explicit, not left to GTK's "resize" signal — that only fires when
         // the size actually changes, but the popup's content can change
@@ -2583,7 +2588,9 @@ public:
     void set_visible(bool visible) override
     {
         if (visible == visible_)
+        {
             return;
+        }
         visible_ = visible;
         if (visible)
         {
@@ -2598,12 +2605,10 @@ public:
             if (on_dismiss_requested && !click_controller_)
             {
                 GtkGesture* click = gtk_gesture_click_new();
-                gtk_event_controller_set_propagation_phase(
-                    GTK_EVENT_CONTROLLER(click), GTK_PHASE_CAPTURE);
-                g_signal_connect(
-                    click, "pressed",
-                    G_CALLBACK(&GtkPopupSurfaceHandle::on_pointer_down_cb),
-                    this);
+                gtk_event_controller_set_propagation_phase(GTK_EVENT_CONTROLLER(click),
+                                                           GTK_PHASE_CAPTURE);
+                g_signal_connect(click, "pressed",
+                                 G_CALLBACK(&GtkPopupSurfaceHandle::on_pointer_down_cb), this);
                 click_controller_ = GTK_EVENT_CONTROLLER(click);
                 gtk_widget_add_controller(parent_overlay_, click_controller_);
             }
@@ -2618,6 +2623,11 @@ public:
     bool visible() const override
     {
         return visible_;
+    }
+
+    tk::Host* popup_host() override
+    {
+        return &surface_->host();
     }
 
     void set_theme(const Theme& theme) override
@@ -2650,21 +2660,26 @@ public:
     }
 
 private:
-    static void on_pointer_down_cb(GtkGestureClick*, gint /*n_press*/,
-                                   gdouble x, gdouble y, gpointer p)
+    static void on_pointer_down_cb(GtkGestureClick*, gint /*n_press*/, gdouble x, gdouble y,
+                                   gpointer p)
     {
         auto* self = static_cast<GtkPopupSurfaceHandle*>(p);
         if (!self->visible_ || !self->popover_)
+        {
             return;
+        }
         graphene_rect_t bounds;
-        if (!gtk_widget_compute_bounds(self->popover_, self->parent_overlay_,
-                                       &bounds))
+        if (!gtk_widget_compute_bounds(self->popover_, self->parent_overlay_, &bounds))
+        {
             return;
+        }
         graphene_point_t pt{static_cast<float>(x), static_cast<float>(y)};
         if (!graphene_rect_contains_point(&bounds, &pt))
         {
             if (self->on_dismiss_requested)
+            {
                 self->on_dismiss_requested();
+            }
         }
     }
 
@@ -2679,6 +2694,7 @@ private:
 
     GtkWidget* parent_overlay_ = nullptr;
     GtkWidget* popover_ = nullptr;
+    GtkCssProvider* round_css_ = nullptr;
     std::unique_ptr<Surface> surface_;
     bool visible_ = false;
     GtkEventController* click_controller_ = nullptr;
@@ -2687,8 +2703,7 @@ private:
 class Host : public tk::Host, public tk::AnimDamageSink
 {
 public:
-    Host(GtkWidget* overlay, GtkWidget* drawing_area, const Theme& theme,
-         bool transparent = false)
+    Host(GtkWidget* overlay, GtkWidget* drawing_area, const Theme& theme, bool transparent = false)
         : overlay_(overlay), drawing_area_(drawing_area), theme_(&theme),
           factory_(tk::cairo_pango::make_factory()), transparent_(transparent)
     {
@@ -2699,16 +2714,30 @@ public:
     void apply_cursor_(tk::CursorShape shape) override
     {
         if (!overlay_)
+        {
             return;
+        }
         const char* name = "default";
         switch (shape)
         {
-        case tk::CursorShape::Default:  name = "default"; break;
-        case tk::CursorShape::Pointer:  name = "pointer"; break;
-        case tk::CursorShape::Text:     name = "text"; break;
-        case tk::CursorShape::Grab:     name = "grab"; break;
-        case tk::CursorShape::Grabbing: name = "grabbing"; break;
-        case tk::CursorShape::ResizeH:  name = "col-resize"; break;
+        case tk::CursorShape::Default:
+            name = "default";
+            break;
+        case tk::CursorShape::Pointer:
+            name = "pointer";
+            break;
+        case tk::CursorShape::Text:
+            name = "text";
+            break;
+        case tk::CursorShape::Grab:
+            name = "grab";
+            break;
+        case tk::CursorShape::Grabbing:
+            name = "grabbing";
+            break;
+        case tk::CursorShape::ResizeH:
+            name = "col-resize";
+            break;
         }
         gtk_widget_set_cursor_from_name(overlay_, name);
     }
@@ -2740,15 +2769,18 @@ public:
             std::vector<FontFamilyInfo> out;
             PangoFontFamily** fams = nullptr;
             int n = 0;
-            pango_font_map_list_families(pango_cairo_font_map_get_default(),
-                                         &fams, &n);
+            pango_font_map_list_families(pango_cairo_font_map_get_default(), &fams, &n);
             for (int i = 0; i < n; ++i)
+            {
                 out.push_back({pango_font_family_get_name(fams[i]),
                                pango_font_family_is_monospace(fams[i]) != FALSE});
+            }
             g_free(fams);
             std::sort(out.begin(), out.end(),
                       [](const FontFamilyInfo& a, const FontFamilyInfo& b)
-                      { return a.name < b.name; });
+                      {
+                          return a.name < b.name;
+                      });
             return out;
         }();
         return cached;
@@ -2814,9 +2846,8 @@ public:
         const float ox = ov.visible.x - ov.world.x;
         const float oy = ov.visible.y - ov.world.y;
         Rect local_full{-ox, -oy, ov.world.w, ov.world.h};
-        canvas->push_clip_rounded_rect(local_full, 8.0f);
+        ClipScope clip(*canvas, local_full, 8.0f);
         canvas->draw_image(*frame, local_full);
-        canvas->pop_clip();
     }
 
     bool pointer_ctrl_held() const override
@@ -2907,19 +2938,20 @@ public:
     bool is_network_available() const override
     {
         GNetworkMonitor* monitor = g_network_monitor_get_default();
-        if (!monitor) return true;
+        if (!monitor)
+        {
+            return true;
+        }
         return g_network_monitor_get_network_available(monitor) != FALSE;
     }
 
     std::unique_ptr<NativeTextField> make_text_field() override
     {
-        return std::make_unique<GtkNativeTextField>(overlay_, drawing_area_,
-                                                    occlusion_);
+        return std::make_unique<GtkNativeTextField>(overlay_, drawing_area_, occlusion_);
     }
     std::unique_ptr<NativeTextArea> make_text_area() override
     {
-        return std::make_unique<GtkNativeTextArea>(overlay_, drawing_area_,
-                                                   occlusion_);
+        return std::make_unique<GtkNativeTextArea>(overlay_, drawing_area_, occlusion_);
     }
 
     std::unique_ptr<tk::PopupSurfaceHandle> make_popup_surface() override
@@ -2932,12 +2964,11 @@ public:
     std::unique_ptr<VideoPlayer> make_video_player() override;
     std::unique_ptr<AudioPlayback> make_audio_playback() override;
 
-    std::vector<tk::DeviceListing> enumerate_audio_inputs()  const override;
+    std::vector<tk::DeviceListing> enumerate_audio_inputs() const override;
     std::vector<tk::DeviceListing> enumerate_audio_outputs() const override;
-    std::vector<tk::DeviceListing> enumerate_cameras()       const override;
+    std::vector<tk::DeviceListing> enumerate_cameras() const override;
 
-    EncodedImage encode_for_send(const std::uint8_t* data, std::size_t len,
-                                 bool compress) override
+    EncodedImage encode_for_send(const std::uint8_t* data, std::size_t len, bool compress) override
     {
         EncodedImage out{};
         if (!data || len == 0)
@@ -3017,12 +3048,11 @@ public:
         GdkPixbuf* scaled = pixbuf;
         if (src_w > kMaxW || src_h > kMaxH)
         {
-            double s = std::min({1.0, static_cast<double>(kMaxW) / src_w,
-                                 static_cast<double>(kMaxH) / src_h});
+            double s = std::min(
+                {1.0, static_cast<double>(kMaxW) / src_w, static_cast<double>(kMaxH) / src_h});
             int dst_w = std::max(1, static_cast<int>(std::round(src_w * s)));
             int dst_h = std::max(1, static_cast<int>(std::round(src_h * s)));
-            scaled = gdk_pixbuf_scale_simple(pixbuf, dst_w, dst_h,
-                                             GDK_INTERP_BILINEAR);
+            scaled = gdk_pixbuf_scale_simple(pixbuf, dst_w, dst_h, GDK_INTERP_BILINEAR);
             g_object_unref(pixbuf);
             if (!scaled)
             {
@@ -3037,17 +3067,15 @@ public:
         {
             const int fw = gdk_pixbuf_get_width(scaled);
             const int fh = gdk_pixbuf_get_height(scaled);
-            GdkPixbuf* flat =
-                gdk_pixbuf_new(GDK_COLORSPACE_RGB, /*has_alpha=*/FALSE, 8, fw,
-                               fh);
+            GdkPixbuf* flat = gdk_pixbuf_new(GDK_COLORSPACE_RGB, /*has_alpha=*/FALSE, 8, fw, fh);
             if (!flat)
             {
                 g_object_unref(scaled);
                 return EncodedImage{};
             }
             gdk_pixbuf_fill(flat, 0xFFFFFFFF); // opaque white background
-            gdk_pixbuf_composite(scaled, flat, 0, 0, fw, fh, 0.0, 0.0, 1.0, 1.0,
-                                 GDK_INTERP_NEAREST, 255);
+            gdk_pixbuf_composite(scaled, flat, 0, 0, fw, fh, 0.0, 0.0, 1.0, 1.0, GDK_INTERP_NEAREST,
+                                 255);
             g_object_unref(scaled);
             scaled = flat;
         }
@@ -3055,8 +3083,8 @@ public:
         gchar* buffer = nullptr;
         gsize buf_size = 0;
         err = nullptr;
-        gboolean saved = gdk_pixbuf_save_to_buffer(
-            scaled, &buffer, &buf_size, "jpeg", &err, "quality", "75", NULL);
+        gboolean saved = gdk_pixbuf_save_to_buffer(scaled, &buffer, &buf_size, "jpeg", &err,
+                                                   "quality", "75", NULL);
         if (!saved)
         {
             if (err)
@@ -3068,8 +3096,7 @@ public:
         }
 
         out.bytes.assign(reinterpret_cast<const std::uint8_t*>(buffer),
-                         reinterpret_cast<const std::uint8_t*>(buffer) +
-                             buf_size);
+                         reinterpret_cast<const std::uint8_t*>(buffer) + buf_size);
         out.mime = "image/jpeg";
         out.width = static_cast<std::uint32_t>(gdk_pixbuf_get_width(scaled));
         out.height = static_cast<std::uint32_t>(gdk_pixbuf_get_height(scaled));
@@ -3081,26 +3108,37 @@ public:
     void set_clipboard_text(std::string_view text) override
     {
         if (!drawing_area_)
+        {
             return;
+        }
         GdkDisplay* display = gtk_widget_get_display(drawing_area_);
         if (!display)
+        {
             return;
+        }
         GdkClipboard* cb = gdk_display_get_clipboard(display);
         if (cb)
+        {
             gdk_clipboard_set_text(cb, std::string(text).c_str());
+        }
     }
 
-    bool
-    set_clipboard_image(std::span<const std::uint8_t> encoded_bytes) override
+    bool set_clipboard_image(std::span<const std::uint8_t> encoded_bytes) override
     {
         if (encoded_bytes.empty() || !drawing_area_)
+        {
             return false;
+        }
         GdkDisplay* display = gtk_widget_get_display(drawing_area_);
         if (!display)
+        {
             return false;
+        }
         GdkClipboard* cb = gdk_display_get_clipboard(display);
         if (!cb)
+        {
             return false;
+        }
 
         // Decode the encoded blob straight into a GdkTexture (GTK 4.6+). Its
         // built-in loaders cover PNG/JPEG/TIFF; anything it can't decode (e.g.
@@ -3112,7 +3150,9 @@ public:
         if (!tex)
         {
             if (err)
+            {
                 g_error_free(err);
+            }
             return false;
         }
         gdk_clipboard_set_texture(cb, tex);
@@ -3132,7 +3172,7 @@ public:
     {
         return root_.get();
     }
-    const Theme& theme() const
+    const Theme& theme() const override
     {
         return *theme_;
     }
@@ -3154,26 +3194,16 @@ public:
         int w = gtk_widget_get_width(drawing_area_);
         int h = gtk_widget_get_height(drawing_area_);
         LayoutCtx ctx{*factory_, *theme_};
-        Rect bounds{0, 0, static_cast<float>(std::max(0, w)),
-                    static_cast<float>(std::max(0, h))};
+        Rect bounds{0, 0, static_cast<float>(std::max(0, w)), static_cast<float>(std::max(0, h))};
         begin_relayout_pass_();
         root_->measure(ctx, {bounds.w, bounds.h});
         root_->arrange(ctx, bounds);
         end_relayout_pass_();
-        if (on_layout_)
-        {
-            on_layout_();
-        }
         for (auto& cb : layout_listeners_)
         {
             cb();
         }
         gtk_widget_queue_draw(drawing_area_);
-    }
-
-    void set_on_layout(std::function<void()> cb)
-    {
-        on_layout_ = std::move(cb);
     }
 
     void add_layout_listener(std::function<void()> cb)
@@ -3202,12 +3232,11 @@ public:
         }
 
         GError* err = nullptr;
-        GFileInfo* info =
-            g_file_query_info(file,
-                              G_FILE_ATTRIBUTE_STANDARD_SIZE
-                              "," G_FILE_ATTRIBUTE_STANDARD_NAME
-                              "," G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE,
-                              G_FILE_QUERY_INFO_NONE, nullptr, &err);
+        GFileInfo* info = g_file_query_info(file,
+                                            G_FILE_ATTRIBUTE_STANDARD_SIZE
+                                            "," G_FILE_ATTRIBUTE_STANDARD_NAME
+                                            "," G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE,
+                                            G_FILE_QUERY_INFO_NONE, nullptr, &err);
         if (err)
         {
             g_error_free(err);
@@ -3216,7 +3245,9 @@ public:
         if (!info)
         {
             if (on_file_drop_error_)
+            {
                 on_file_drop_error_(tk::tr("Could not read file"));
+            }
             return false;
         }
         const goffset sz = g_file_info_get_size(info);
@@ -3235,7 +3266,9 @@ public:
         if (!gb)
         {
             if (on_file_drop_error_)
+            {
                 on_file_drop_error_(tk::tr("Could not read file"));
+            }
             g_object_unref(info);
             return false;
         }
@@ -3251,17 +3284,14 @@ public:
 
         const char* declared = g_file_info_get_content_type(info);
         gchar* guessed = g_content_type_guess(g_file_info_get_name(info),
-                                              static_cast<const guchar*>(data),
-                                              len, nullptr);
+                                              static_cast<const guchar*>(data), len, nullptr);
         const char* content_type = declared ? declared : guessed;
 
-        gchar* mime_c =
-            content_type ? g_content_type_get_mime_type(content_type) : nullptr;
+        gchar* mime_c = content_type ? g_content_type_get_mime_type(content_type) : nullptr;
         std::string mime = mime_c ? mime_c : "application/octet-stream";
 
         std::vector<std::uint8_t> bytes(static_cast<const std::uint8_t*>(data),
-                                        static_cast<const std::uint8_t*>(data) +
-                                            len);
+                                        static_cast<const std::uint8_t*>(data) + len);
 
         char* basename = g_file_get_basename(file);
         std::string filename = basename ? basename : "";
@@ -3270,8 +3300,7 @@ public:
             g_free(basename);
         }
 
-        tk::FileDropPayload payload{std::move(bytes), std::move(mime),
-                                    std::move(filename)};
+        tk::FileDropPayload payload{std::move(bytes), std::move(mime), std::move(filename)};
         const bool claimed = dispatch_file_drop(pos, payload) != nullptr;
 
         if (mime_c)
@@ -3319,8 +3348,7 @@ public:
         popup_trigger_ = pending_popup_trigger_;
         refresh_popup_shield_();
         root_->paint_overlay(ctx);
-        const Rect surface_bounds{0, 0, static_cast<float>(w),
-                                  static_cast<float>(h)};
+        const Rect surface_bounds{0, 0, static_cast<float>(w), static_cast<float>(h)};
         paint_tooltip_overlay(ctx, surface_bounds);
         paint_focus_overlay(ctx);
         paint_toast_overlay(ctx, surface_bounds);
@@ -3336,17 +3364,20 @@ public:
 
     void on_pointer_down(double x, double y)
     {
-        dispatch_pointer_down(
-            {static_cast<float>(x), static_cast<float>(y)});
+        dispatch_pointer_down({static_cast<float>(x), static_cast<float>(y)});
     }
 
     void on_right_click(double x, double y)
     {
         if (!root_)
+        {
             return;
+        }
         Point pt{static_cast<float>(x), static_cast<float>(y)};
         if (dispatch_right_click(pt))
+        {
             request_repaint();
+        }
     }
 
     void on_pointer_up(double x, double y)
@@ -3356,11 +3387,13 @@ public:
 
     void on_pointer_move(double x, double y)
     {
-        dispatch_pointer_move(
-            {static_cast<float>(x), static_cast<float>(y)});
+        dispatch_pointer_move({static_cast<float>(x), static_cast<float>(y)});
     }
 
-    void on_pointer_leave() { dispatch_pointer_leave(); }
+    void on_pointer_leave()
+    {
+        dispatch_pointer_leave();
+    }
 
     void on_wheel(double x, double y, double dx, double dy, bool is_touchpad = false)
     {
@@ -3380,9 +3413,8 @@ public:
             x = gtk_widget_get_width(drawing_area_) * 0.5;
             y = gtk_widget_get_height(drawing_area_) * 0.5;
         }
-        if (dispatch_wheel(
-                {static_cast<float>(x), static_cast<float>(y)},
-                static_cast<float>(dx), static_cast<float>(dy), is_touchpad))
+        if (dispatch_wheel({static_cast<float>(x), static_cast<float>(y)}, static_cast<float>(dx),
+                           static_cast<float>(dy), is_touchpad))
         {
             request_repaint();
             on_pointer_move(x, y);
@@ -3426,23 +3458,31 @@ public:
         }
         live_overlays_.clear();
         if (overlay_ && popup_shield_)
+        {
             gtk_overlay_remove_overlay(GTK_OVERLAY(overlay_), popup_shield_);
+        }
         popup_shield_ = nullptr;
         overlay_ = nullptr;
         drawing_area_ = nullptr;
     }
 
 protected:
-    Widget* input_root_() const override { return root_.get(); }
+    Widget* input_root_() const override
+    {
+        return root_.get();
+    }
 
 public:
     std::uint16_t supported_emoji_version() override
     {
-        return tk::cached_emoji_version([] { return tk::cairo_pango::make_factory(); });
+        return tk::cached_emoji_version(
+            []
+            {
+                return tk::cairo_pango::make_factory();
+            });
     }
 
 protected:
-
     // Announces ordinary tk-level Tab-focus moves to AT-SPI/Orca — without
     // this, only ListView/GridView row navigation was ever reported (see
     // notify_current_row() in gtk_accessible.cpp), and nothing (a plain
@@ -3471,19 +3511,24 @@ private:
     {
         const Widget* p = popup();
         const Rect r = p ? p->bounds() : Rect{};
-        if (!occlusion_->dirty && p == shield_popup_ &&
-            r.x == shield_rect_.x && r.y == shield_rect_.y &&
-            r.w == shield_rect_.w && r.h == shield_rect_.h)
+        if (!occlusion_->dirty && p == shield_popup_ && r.x == shield_rect_.x &&
+            r.y == shield_rect_.y && r.w == shield_rect_.w && r.h == shield_rect_.h)
+        {
             return;
+        }
         occlusion_->dirty = false;
         shield_popup_ = p;
         shield_rect_ = r;
         if (!overlay_)
+        {
             return;
+        }
         if (!p)
         {
             if (popup_shield_)
+            {
                 gtk_widget_set_visible(popup_shield_, FALSE);
+            }
             return;
         }
         ensure_popup_shield_();
@@ -3492,7 +3537,9 @@ private:
         gtk_widget_insert_before(popup_shield_, overlay_, nullptr);
         const std::vector<GtkOcclusionClient*> clients = occlusion_->clients;
         for (GtkOcclusionClient* c : clients)
+        {
             c->raise_if_popup_owned(overlay_);
+        }
     }
     // Creates popup_shield_ on first use. Defined after the pointer
     // callbacks it attaches.
@@ -3501,8 +3548,7 @@ private:
     // Shared by both the create and reposition paths in sync_anim_overlays_.
     void position_anim_overlay_(GtkWidget* w, const Rect& visible)
     {
-        gtk_widget_set_margin_start(w,
-                                    static_cast<int>(std::floor(visible.x)));
+        gtk_widget_set_margin_start(w, static_cast<int>(std::floor(visible.x)));
         gtk_widget_set_margin_top(w, static_cast<int>(std::floor(visible.y)));
         gtk_widget_set_size_request(w, static_cast<int>(std::ceil(visible.w)),
                                     static_cast<int>(std::ceil(visible.h)));
@@ -3515,13 +3561,11 @@ private:
     bool transparent_ = false;
     // Declared before root_ so it outlives every native control root_'s
     // widgets own (they unregister from it on destruction).
-    std::shared_ptr<GtkOcclusionRegistry> occlusion_ =
-        std::make_shared<GtkOcclusionRegistry>();
-    GtkWidget* popup_shield_ = nullptr; // owned by overlay_
+    std::shared_ptr<GtkOcclusionRegistry> occlusion_ = std::make_shared<GtkOcclusionRegistry>();
+    GtkWidget* popup_shield_ = nullptr;    // owned by overlay_
     const Widget* shield_popup_ = nullptr; // identity only, never deref'd
     Rect shield_rect_{};
     std::unique_ptr<Widget> root_;
-    std::function<void()> on_layout_;
     std::vector<std::function<void()>> layout_listeners_;
     double last_pointer_x_ = -1;
     double last_pointer_y_ = -1;
@@ -3542,8 +3586,7 @@ private:
     // Scratch, rebuilt every on_draw(); consumed and left populated by
     // sync_anim_overlays_() (overwritten wholesale next on_draw(), so it
     // doesn't need clearing there).
-    std::unordered_map<tk::CacheKey, PaintedAnim, tk::CacheKeyHash>
-        painted_this_pass_;
+    std::unordered_map<tk::CacheKey, PaintedAnim, tk::CacheKeyHash> painted_this_pass_;
 
     struct AnimOverlay
     {
@@ -3554,8 +3597,7 @@ private:
     // Persists across paints — this is the whole point. One entry per
     // currently-animating, currently-visible image; bounded in practice by
     // how many such images can be on screen at once, not by list length.
-    std::unordered_map<tk::CacheKey, AnimOverlay, tk::CacheKeyHash>
-        live_overlays_;
+    std::unordered_map<tk::CacheKey, AnimOverlay, tk::CacheKeyHash> live_overlays_;
 };
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -3582,8 +3624,7 @@ struct AnimOverlayDrawCtx
     tk::CacheKey key;
 };
 
-void anim_overlay_draw_cb(GtkDrawingArea*, cairo_t* cr, int /*w*/, int /*h*/,
-                          gpointer p)
+void anim_overlay_draw_cb(GtkDrawingArea*, cairo_t* cr, int /*w*/, int /*h*/, gpointer p)
 {
     auto* ctx = static_cast<AnimOverlayDrawCtx*>(p);
     ctx->host->draw_anim_overlay_(cr, ctx->key);
@@ -3606,11 +3647,9 @@ void ensure_anim_overlay_css()
     }
     installed = true;
     GtkCssProvider* css = gtk_css_provider_new();
-    gtk_css_provider_load_from_string(
-        css, ".tesseract-anim-overlay { background: none; }");
-    gtk_style_context_add_provider_for_display(
-        gdk_display_get_default(), GTK_STYLE_PROVIDER(css),
-        GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    gtk_css_provider_load_from_string(css, ".tesseract-anim-overlay { background: none; }");
+    gtk_style_context_add_provider_for_display(gdk_display_get_default(), GTK_STYLE_PROVIDER(css),
+                                               GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     g_object_unref(css);
 }
 
@@ -3631,11 +3670,12 @@ void scale_factor_cb(GObject* obj, GParamSpec*, gpointer p)
     auto* host = static_cast<Host*>(p);
     const int scale = gtk_widget_get_scale_factor(GTK_WIDGET(obj));
     if (Widget* r = host->root())
+    {
         r->apply_scale_change(static_cast<float>(scale));
+    }
 }
 
-void click_pressed_cb(GtkGestureClick* g, int /*n_press*/, double x, double y,
-                      gpointer p)
+void click_pressed_cb(GtkGestureClick* g, int /*n_press*/, double x, double y, gpointer p)
 {
     auto* host = static_cast<Host*>(p);
     host->set_last_pointer_state_(
@@ -3643,8 +3683,7 @@ void click_pressed_cb(GtkGestureClick* g, int /*n_press*/, double x, double y,
     host->on_pointer_down(x, y);
 }
 
-void click_released_cb(GtkGestureClick* g, int /*n_press*/, double x, double y,
-                       gpointer p)
+void click_released_cb(GtkGestureClick* g, int /*n_press*/, double x, double y, gpointer p)
 {
     auto* host = static_cast<Host*>(p);
     host->set_last_pointer_state_(
@@ -3652,8 +3691,7 @@ void click_released_cb(GtkGestureClick* g, int /*n_press*/, double x, double y,
     host->on_pointer_up(x, y);
 }
 
-void click_pressed_secondary_cb(GtkGestureClick*, int /*n_press*/, double x,
-                                 double y, gpointer p)
+void click_pressed_secondary_cb(GtkGestureClick*, int /*n_press*/, double x, double y, gpointer p)
 {
     static_cast<Host*>(p)->on_right_click(x, y);
 }
@@ -3670,8 +3708,7 @@ void leave_cb(GtkEventControllerMotion*, gpointer p)
     static_cast<Host*>(p)->on_pointer_leave();
 }
 
-gboolean scroll_cb(GtkEventControllerScroll* controller, double dx, double dy,
-                   gpointer p)
+gboolean scroll_cb(GtkEventControllerScroll* controller, double dx, double dy, gpointer p)
 {
     Host* host = static_cast<Host*>(p);
     const bool is_touchpad =
@@ -3679,15 +3716,13 @@ gboolean scroll_cb(GtkEventControllerScroll* controller, double dx, double dy,
     if (is_touchpad)
     {
         // Surface-unit deltas are already near-pixel — no notch scaling.
-        host->on_wheel(host->last_pointer_x(), host->last_pointer_y(), dx, dy,
-                       true);
+        host->on_wheel(host->last_pointer_x(), host->last_pointer_y(), dx, dy, true);
     }
     else
     {
         // Wheel-unit scroll reports 1.0 per notch; scale to px like Qt/Win32
         // (90 px/notch).
-        host->on_wheel(host->last_pointer_x(), host->last_pointer_y(),
-                       dx * 90.0, dy * 90.0, false);
+        host->on_wheel(host->last_pointer_x(), host->last_pointer_y(), dx * 90.0, dy * 90.0, false);
     }
     return TRUE;
 }
@@ -3699,10 +3734,8 @@ static void shield_to_canvas(GtkEventController* c, double& x, double& y)
 {
     GtkWidget* shield = gtk_event_controller_get_widget(c);
     GtkWidget* overlay = gtk_widget_get_parent(shield);
-    GtkWidget* canvas =
-        overlay ? gtk_overlay_get_child(GTK_OVERLAY(overlay)) : nullptr;
-    const graphene_point_t in =
-        GRAPHENE_POINT_INIT(static_cast<float>(x), static_cast<float>(y));
+    GtkWidget* canvas = overlay ? gtk_overlay_get_child(GTK_OVERLAY(overlay)) : nullptr;
+    const graphene_point_t in = GRAPHENE_POINT_INIT(static_cast<float>(x), static_cast<float>(y));
     graphene_point_t out;
     if (canvas && gtk_widget_compute_point(shield, canvas, &in, &out))
     {
@@ -3711,29 +3744,26 @@ static void shield_to_canvas(GtkEventController* c, double& x, double& y)
     }
 }
 
-void shield_click_pressed_cb(GtkGestureClick* g, int n_press, double x,
-                             double y, gpointer p)
+void shield_click_pressed_cb(GtkGestureClick* g, int n_press, double x, double y, gpointer p)
 {
     shield_to_canvas(GTK_EVENT_CONTROLLER(g), x, y);
     click_pressed_cb(g, n_press, x, y, p);
 }
 
-void shield_click_released_cb(GtkGestureClick* g, int n_press, double x,
-                              double y, gpointer p)
+void shield_click_released_cb(GtkGestureClick* g, int n_press, double x, double y, gpointer p)
 {
     shield_to_canvas(GTK_EVENT_CONTROLLER(g), x, y);
     click_released_cb(g, n_press, x, y, p);
 }
 
-void shield_click_pressed_secondary_cb(GtkGestureClick* g, int n_press,
-                                       double x, double y, gpointer p)
+void shield_click_pressed_secondary_cb(GtkGestureClick* g, int n_press, double x, double y,
+                                       gpointer p)
 {
     shield_to_canvas(GTK_EVENT_CONTROLLER(g), x, y);
     click_pressed_secondary_cb(g, n_press, x, y, p);
 }
 
-void shield_motion_cb(GtkEventControllerMotion* m, double x, double y,
-                      gpointer p)
+void shield_motion_cb(GtkEventControllerMotion* m, double x, double y, gpointer p)
 {
     shield_to_canvas(GTK_EVENT_CONTROLLER(m), x, y);
     motion_cb(m, x, y, p);
@@ -3744,7 +3774,9 @@ void shield_motion_cb(GtkEventControllerMotion* m, double x, double y,
 void Host::ensure_popup_shield_()
 {
     if (popup_shield_ || !overlay_)
+    {
         return;
+    }
     // Draws nothing (no draw func); opacity 0 is belt-and-braces. Mirrors
     // the drawing area's controller set in Surface::Surface. scroll_cb reads
     // the pointer position motion cached, so it needs no translation.
@@ -3757,19 +3789,15 @@ void Host::ensure_popup_shield_()
     gtk_widget_set_visible(w, FALSE);
 
     GtkGesture* click = gtk_gesture_click_new();
-    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(click),
-                                  GDK_BUTTON_PRIMARY);
-    g_signal_connect(click, "pressed", G_CALLBACK(&shield_click_pressed_cb),
-                     this);
-    g_signal_connect(click, "released", G_CALLBACK(&shield_click_released_cb),
-                     this);
+    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(click), GDK_BUTTON_PRIMARY);
+    g_signal_connect(click, "pressed", G_CALLBACK(&shield_click_pressed_cb), this);
+    g_signal_connect(click, "released", G_CALLBACK(&shield_click_released_cb), this);
     gtk_widget_add_controller(w, GTK_EVENT_CONTROLLER(click));
 
     GtkGesture* click_secondary = gtk_gesture_click_new();
-    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(click_secondary),
-                                  GDK_BUTTON_SECONDARY);
-    g_signal_connect(click_secondary, "pressed",
-                     G_CALLBACK(&shield_click_pressed_secondary_cb), this);
+    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(click_secondary), GDK_BUTTON_SECONDARY);
+    g_signal_connect(click_secondary, "pressed", G_CALLBACK(&shield_click_pressed_secondary_cb),
+                     this);
     gtk_widget_add_controller(w, GTK_EVENT_CONTROLLER(click_secondary));
 
     GtkEventController* motion = gtk_event_controller_motion_new();
@@ -3777,10 +3805,9 @@ void Host::ensure_popup_shield_()
     g_signal_connect(motion, "leave", G_CALLBACK(&leave_cb), this);
     gtk_widget_add_controller(w, motion);
 
-    GtkEventController* scroll = gtk_event_controller_scroll_new(
-        static_cast<GtkEventControllerScrollFlags>(
-            GTK_EVENT_CONTROLLER_SCROLL_VERTICAL |
-            GTK_EVENT_CONTROLLER_SCROLL_HORIZONTAL));
+    GtkEventController* scroll =
+        gtk_event_controller_scroll_new(static_cast<GtkEventControllerScrollFlags>(
+            GTK_EVENT_CONTROLLER_SCROLL_VERTICAL | GTK_EVENT_CONTROLLER_SCROLL_HORIZONTAL));
     g_signal_connect(scroll, "scroll", G_CALLBACK(&scroll_cb), this);
     gtk_widget_add_controller(w, scroll);
 
@@ -3795,27 +3822,46 @@ Key key_from_gdk(guint keyval)
 {
     switch (keyval)
     {
-    case GDK_KEY_Escape: return Key::Escape;
+    case GDK_KEY_Escape:
+        return Key::Escape;
     case GDK_KEY_Return:
     case GDK_KEY_KP_Enter:
-    case GDK_KEY_ISO_Enter: return Key::Enter;
-    case GDK_KEY_space: return Key::Space;
-    case GDK_KEY_Tab: return Key::Tab;
-    case GDK_KEY_ISO_Left_Tab: return Key::Backtab;
-    case GDK_KEY_Up: return Key::Up;
-    case GDK_KEY_Down: return Key::Down;
-    case GDK_KEY_Left: return Key::Left;
-    case GDK_KEY_Right: return Key::Right;
-    case GDK_KEY_Home: return Key::Home;
-    case GDK_KEY_End: return Key::End;
-    case GDK_KEY_Page_Up: return Key::PageUp;
-    case GDK_KEY_Page_Down: return Key::PageDown;
-    case GDK_KEY_BackSpace: return Key::Backspace;
-    case GDK_KEY_Delete: return Key::Delete;
-    case GDK_KEY_Menu: return Key::Menu;
-    case GDK_KEY_F10: return Key::F10;
-    case GDK_KEY_F1: return Key::F1;
-    default: return Key::Unknown;
+    case GDK_KEY_ISO_Enter:
+        return Key::Enter;
+    case GDK_KEY_space:
+        return Key::Space;
+    case GDK_KEY_Tab:
+        return Key::Tab;
+    case GDK_KEY_ISO_Left_Tab:
+        return Key::Backtab;
+    case GDK_KEY_Up:
+        return Key::Up;
+    case GDK_KEY_Down:
+        return Key::Down;
+    case GDK_KEY_Left:
+        return Key::Left;
+    case GDK_KEY_Right:
+        return Key::Right;
+    case GDK_KEY_Home:
+        return Key::Home;
+    case GDK_KEY_End:
+        return Key::End;
+    case GDK_KEY_Page_Up:
+        return Key::PageUp;
+    case GDK_KEY_Page_Down:
+        return Key::PageDown;
+    case GDK_KEY_BackSpace:
+        return Key::Backspace;
+    case GDK_KEY_Delete:
+        return Key::Delete;
+    case GDK_KEY_Menu:
+        return Key::Menu;
+    case GDK_KEY_F10:
+        return Key::F10;
+    case GDK_KEY_F1:
+        return Key::F1;
+    default:
+        return Key::Unknown;
     }
 }
 
@@ -3829,8 +3875,7 @@ std::string character_text_from_gdk(guint keyval)
 
     char buf[7]{};
     int len = g_unichar_to_utf8(ch, buf);
-    return len > 0 ? std::string(buf, static_cast<std::size_t>(len))
-                   : std::string{};
+    return len > 0 ? std::string(buf, static_cast<std::size_t>(len)) : std::string{};
 }
 
 KeyEvent translate_key_event(guint keyval, GdkModifierType state)
@@ -3863,14 +3908,17 @@ guint latin_shortcut_keyval(guint keyval, guint keycode)
     // named keys (Ctrl+arrows, Ctrl+Tab autorepeat) and anything else.
     if (keyval < 0x80 || key_from_gdk(keyval) != Key::Unknown ||
         !g_unichar_isalpha(gdk_keyval_to_unicode(keyval)))
+    {
         return keyval;
+    }
     GdkDisplay* display = gdk_display_get_default();
     GdkKeymapKey* keys = nullptr;
     guint* keyvals = nullptr;
     int n = 0;
-    if (!display ||
-        !gdk_display_map_keycode(display, keycode, &keys, &keyvals, &n))
+    if (!display || !gdk_display_map_keycode(display, keycode, &keys, &keyvals, &n))
+    {
         return keyval;
+    }
     guint latin = keyval;
     for (int i = 0; i < n; ++i)
     {
@@ -3886,8 +3934,8 @@ guint latin_shortcut_keyval(guint keyval, guint keycode)
     return latin;
 }
 
-gboolean key_pressed_cb(GtkEventControllerKey*, guint keyval, guint keycode,
-                        GdkModifierType state, gpointer p)
+gboolean key_pressed_cb(GtkEventControllerKey*, guint keyval, guint keycode, GdkModifierType state,
+                        gpointer p)
 {
     Host* host = static_cast<Host*>(p);
     if (!host)
@@ -3895,7 +3943,9 @@ gboolean key_pressed_cb(GtkEventControllerKey*, guint keyval, guint keycode,
         return FALSE;
     }
     if (state & (GDK_CONTROL_MASK | GDK_META_MASK))
+    {
         keyval = latin_shortcut_keyval(keyval, keycode);
+    }
     KeyEvent event = translate_key_event(keyval, state);
     if (event.key == Key::Unknown)
     {
@@ -3908,8 +3958,7 @@ gboolean key_pressed_cb(GtkEventControllerKey*, guint keyval, guint keycode,
 // GdkFileList (multi-file drag from Nautilus) or a single GFile (URI
 // drag from Firefox etc.). Iterates over every dropped file; the shell
 // dispatches by mime.
-gboolean drop_cb(GtkDropTarget* /*target*/, const GValue* value, double x,
-                 double y, gpointer p)
+gboolean drop_cb(GtkDropTarget* /*target*/, const GValue* value, double x, double y, gpointer p)
 {
     Host* host = static_cast<Host*>(p);
     if (!host || !value)
@@ -3944,8 +3993,7 @@ gboolean drop_cb(GtkDropTarget* /*target*/, const GValue* value, double x,
     return any ? TRUE : FALSE;
 }
 
-GdkDragAction drop_enter_cb(GtkDropTarget* /*target*/, double /*x*/,
-                            double /*y*/, gpointer p)
+GdkDragAction drop_enter_cb(GtkDropTarget* /*target*/, double /*x*/, double /*y*/, gpointer p)
 {
     return p ? GDK_ACTION_COPY : static_cast<GdkDragAction>(0);
 }
@@ -3954,8 +4002,7 @@ GdkDragAction drop_enter_cb(GtkDropTarget* /*target*/, double /*x*/,
 // the target. Feeds the shared per-widget drag-hover dispatch (the
 // per-widget replacement for the old whole-surface "Drop to attach"
 // overlay); the OS-level accept/reject decision stays in drop_enter_cb.
-GdkDragAction drop_motion_cb(GtkDropTarget* /*target*/, double x, double y,
-                             gpointer p)
+GdkDragAction drop_motion_cb(GtkDropTarget* /*target*/, double x, double y, gpointer p)
 {
     Host* host = static_cast<Host*>(p);
     if (host)
@@ -3987,8 +4034,7 @@ void Host::sync_anim_overlays_()
         {
             if (overlay_ && it->second.widget)
             {
-                gtk_overlay_remove_overlay(GTK_OVERLAY(overlay_),
-                                           it->second.widget);
+                gtk_overlay_remove_overlay(GTK_OVERLAY(overlay_), it->second.widget);
             }
             it = live_overlays_.erase(it);
         }
@@ -4017,8 +4063,7 @@ void Host::sync_anim_overlays_()
             gtk_widget_set_valign(w, GTK_ALIGN_START);
             gtk_widget_add_css_class(w, "tesseract-anim-overlay");
             auto* dctx = new AnimOverlayDrawCtx{this, key};
-            gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(w),
-                                           &anim_overlay_draw_cb, dctx,
+            gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(w), &anim_overlay_draw_cb, dctx,
                                            &anim_overlay_draw_ctx_free);
             gtk_overlay_add_overlay(GTK_OVERLAY(overlay_), w);
             position_anim_overlay_(w, painted.visible);
@@ -4044,32 +4089,25 @@ Surface::Surface(const Theme& theme, bool transparent)
 
     host_ = std::make_unique<Host>(overlay, drawing_area, theme, transparent);
 
-    gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(drawing_area), &draw_cb,
-                                   host_.get(), nullptr);
-    g_signal_connect(drawing_area, "resize", G_CALLBACK(&resize_cb),
+    gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(drawing_area), &draw_cb, host_.get(), nullptr);
+    g_signal_connect(drawing_area, "resize", G_CALLBACK(&resize_cb), host_.get());
+    g_signal_connect(drawing_area, "notify::scale-factor", G_CALLBACK(&scale_factor_cb),
                      host_.get());
-    g_signal_connect(drawing_area, "notify::scale-factor",
-                     G_CALLBACK(&scale_factor_cb), host_.get());
 
     // Mouse events: GtkGestureClick for press/release, motion controller
     // for hover. Both attached to the drawing area; the overlaid native
     // widgets get their own input independently.
     GtkGesture* click = gtk_gesture_click_new();
-    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(click),
-                                  GDK_BUTTON_PRIMARY);
-    g_signal_connect(click, "pressed", G_CALLBACK(&click_pressed_cb),
-                     host_.get());
-    g_signal_connect(click, "released", G_CALLBACK(&click_released_cb),
-                     host_.get());
+    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(click), GDK_BUTTON_PRIMARY);
+    g_signal_connect(click, "pressed", G_CALLBACK(&click_pressed_cb), host_.get());
+    g_signal_connect(click, "released", G_CALLBACK(&click_released_cb), host_.get());
     gtk_widget_add_controller(drawing_area, GTK_EVENT_CONTROLLER(click));
 
     GtkGesture* click_secondary = gtk_gesture_click_new();
-    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(click_secondary),
-                                  GDK_BUTTON_SECONDARY);
-    g_signal_connect(click_secondary, "pressed",
-                     G_CALLBACK(&click_pressed_secondary_cb), host_.get());
-    gtk_widget_add_controller(drawing_area,
-                              GTK_EVENT_CONTROLLER(click_secondary));
+    gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(click_secondary), GDK_BUTTON_SECONDARY);
+    g_signal_connect(click_secondary, "pressed", G_CALLBACK(&click_pressed_secondary_cb),
+                     host_.get());
+    gtk_widget_add_controller(drawing_area, GTK_EVENT_CONTROLLER(click_secondary));
 
     GtkEventController* motion = gtk_event_controller_motion_new();
     g_signal_connect(motion, "motion", G_CALLBACK(&motion_cb), host_.get());
@@ -4083,17 +4121,15 @@ Surface::Surface(const Theme& theme, bool transparent)
     // reports a touchpad's native GDK_SCROLL_UNIT_SURFACE (near-pixel,
     // continuous) deltas, which scroll_cb below detects via
     // gtk_event_controller_scroll_get_unit() to drive trackpad momentum.
-    GtkEventController* scroll = gtk_event_controller_scroll_new(
-        static_cast<GtkEventControllerScrollFlags>(
-            GTK_EVENT_CONTROLLER_SCROLL_VERTICAL |
-            GTK_EVENT_CONTROLLER_SCROLL_HORIZONTAL));
+    GtkEventController* scroll =
+        gtk_event_controller_scroll_new(static_cast<GtkEventControllerScrollFlags>(
+            GTK_EVENT_CONTROLLER_SCROLL_VERTICAL | GTK_EVENT_CONTROLLER_SCROLL_HORIZONTAL));
     g_signal_connect(scroll, "scroll", G_CALLBACK(&scroll_cb), host_.get());
     gtk_widget_add_controller(drawing_area, scroll);
 
     GtkEventController* key = gtk_event_controller_key_new();
     gtk_event_controller_set_propagation_phase(key, GTK_PHASE_BUBBLE);
-    g_signal_connect(key, "key-pressed", G_CALLBACK(&key_pressed_cb),
-                     host_.get());
+    g_signal_connect(key, "key-pressed", G_CALLBACK(&key_pressed_cb), host_.get());
     gtk_widget_add_controller(drawing_area, key);
 
     // Drop target — accepts both single-file (Firefox URI) and
@@ -4116,8 +4152,7 @@ Surface::Surface(const Theme& theme, bool transparent)
     GtkDropTarget* drop = gtk_drop_target_new(G_TYPE_INVALID, GDK_ACTION_COPY);
     GType drop_types[] = {GDK_TYPE_FILE_LIST, G_TYPE_FILE};
     gtk_drop_target_set_gtypes(drop, drop_types, G_N_ELEMENTS(drop_types));
-    gtk_event_controller_set_propagation_phase(GTK_EVENT_CONTROLLER(drop),
-                                               GTK_PHASE_CAPTURE);
+    gtk_event_controller_set_propagation_phase(GTK_EVENT_CONTROLLER(drop), GTK_PHASE_CAPTURE);
     g_signal_connect(drop, "drop", G_CALLBACK(&drop_cb), host_.get());
     g_signal_connect(drop, "enter", G_CALLBACK(&drop_enter_cb), host_.get());
     g_signal_connect(drop, "motion", G_CALLBACK(&drop_motion_cb), host_.get());
@@ -4186,8 +4221,14 @@ void Surface::set_theme(const Theme& t)
 
 void Surface::apply_scale_change(float scale)
 {
-    if (Widget* r = root()) r->apply_scale_change(scale);
-    if (on_scale_changed_) on_scale_changed_(scale);
+    if (Widget* r = root())
+    {
+        r->apply_scale_change(scale);
+    }
+    if (on_scale_changed_)
+    {
+        on_scale_changed_(scale);
+    }
 }
 
 void Surface::set_on_scale_changed(std::function<void(float)> cb)
@@ -4203,11 +4244,6 @@ void Surface::set_anim_cache(const AnimImageCache* cache)
 void Surface::update_anim_regions()
 {
     host_->invalidate_anim_damage();
-}
-
-void Surface::set_on_layout(std::function<void()> cb)
-{
-    host_->set_on_layout(std::move(cb));
 }
 
 void Surface::add_layout_listener(std::function<void()> cb)
@@ -4229,13 +4265,15 @@ std::unique_ptr<tk::AudioPlayer> Host::make_audio_player()
 }
 
 // Defined in audio_capture_gtk.cpp.
-std::unique_ptr<tk::AudioCapture>
-make_audio_capture_gtk(tk::AudioCapturePostFn post);
+std::unique_ptr<tk::AudioCapture> make_audio_capture_gtk(tk::AudioCapturePostFn post);
 
 std::unique_ptr<tk::AudioCapture> Host::make_audio_capture()
 {
     return make_audio_capture_gtk(
-        [this](std::function<void()> fn) { post_to_ui(std::move(fn)); });
+        [this](std::function<void()> fn)
+        {
+            post_to_ui(std::move(fn));
+        });
 }
 
 // Defined in video_gtk.cpp.
@@ -4256,7 +4294,7 @@ std::unique_ptr<::tk::AudioPlayback> Host::make_audio_playback()
 // ─────────────────────────────────────────────────────────────────────────
 
 // Enumeration itself is shared with the Qt6 shell — see
-// ui/shared/tk/gst_device_listing.cpp.
+// ui/shared/platform/linux/gst_device_listing.cpp.
 
 std::vector<tk::DeviceListing> Host::enumerate_audio_inputs() const
 {

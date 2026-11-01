@@ -23,11 +23,9 @@ std::int64_t AnimImageCache::vis_now_() const
         .count();
 }
 
-void AnimImageCache::store(const CacheKey& key,
-                           std::vector<std::unique_ptr<tk::Image>> frames,
+void AnimImageCache::store(const CacheKey& key, std::vector<std::unique_ptr<tk::Image>> frames,
                            std::vector<int> delays_ms, std::int64_t now_ms,
-                           std::shared_ptr<AnimDecodeSession> session,
-                           std::size_t total_frames)
+                           std::shared_ptr<AnimDecodeSession> session, std::size_t total_frames)
 {
     if (frames.empty())
     {
@@ -55,8 +53,7 @@ void AnimImageCache::store(const CacheKey& key,
     entry.delays_ms = std::move(delays_ms);
     entry.window_start = 0;
     entry.current = 0;
-    entry.next_advance_ms =
-        now_ms + (entry.delays_ms.empty() ? 100 : entry.delays_ms[0]);
+    entry.next_advance_ms = now_ms + (entry.delays_ms.empty() ? 100 : entry.delays_ms[0]);
     // Treat a freshly stored entry as visible so the timer keeps running until
     // the first paint refreshes (or fails to refresh) this stamp.
     entry.last_seen_ms = vis_now_();
@@ -80,8 +77,7 @@ std::size_t AnimImageCache::entry_bytes_locked_(const Entry& entry)
     return total;
 }
 
-void AnimImageCache::push_frame_locked_(Entry& entry,
-                                        std::unique_ptr<tk::Image> frame,
+void AnimImageCache::push_frame_locked_(Entry& entry, std::unique_ptr<tk::Image> frame,
                                         int delay_ms)
 {
     if (!frame)
@@ -92,8 +88,7 @@ void AnimImageCache::push_frame_locked_(Entry& entry,
     entry.delays_ms.push_back(delay_ms);
 }
 
-void AnimImageCache::append_frame_locked_(Entry& entry,
-                                          std::unique_ptr<tk::Image> frame,
+void AnimImageCache::append_frame_locked_(Entry& entry, std::unique_ptr<tk::Image> frame,
                                           int delay_ms)
 {
     if (entry.restarting)
@@ -112,8 +107,7 @@ void AnimImageCache::append_frame_locked_(Entry& entry,
     push_frame_locked_(entry, std::move(frame), delay_ms);
 }
 
-void AnimImageCache::append_frame(const CacheKey& key,
-                                  std::unique_ptr<tk::Image> frame,
+void AnimImageCache::append_frame(const CacheKey& key, std::unique_ptr<tk::Image> frame,
                                   int delay_ms)
 {
     std::lock_guard<std::mutex> lock(mu_);
@@ -125,9 +119,9 @@ void AnimImageCache::append_frame(const CacheKey& key,
     append_frame_locked_(it->second, std::move(frame), delay_ms);
 }
 
-void AnimImageCache::append_frame_from_session(
-    const CacheKey& key, const std::shared_ptr<AnimDecodeSession>& session,
-    std::unique_ptr<tk::Image> frame, int delay_ms)
+void AnimImageCache::append_frame_from_session(const CacheKey& key,
+                                               const std::shared_ptr<AnimDecodeSession>& session,
+                                               std::unique_ptr<tk::Image> frame, int delay_ms)
 {
     std::lock_guard<std::mutex> lock(mu_);
     auto it = entries_.find(key);
@@ -168,8 +162,7 @@ std::vector<AnimImageCache::TopupRequest> AnimImageCache::collect_topups()
             continue;
         }
         const bool low_on_resident_frames =
-            entry.frames.empty() ||
-            (entry.frames.size() - 1 - entry.current) <= kLookaheadFrames;
+            entry.frames.empty() || (entry.frames.size() - 1 - entry.current) <= kLookaheadFrames;
         if (!low_on_resident_frames)
         {
             continue;
@@ -200,9 +193,8 @@ void AnimImageCache::trim_window_locked_(Entry& entry)
     const std::size_t drop = entry.current - kKeepBehindFrames;
     entry.frames.erase(entry.frames.begin(),
                        entry.frames.begin() + static_cast<std::ptrdiff_t>(drop));
-    entry.delays_ms.erase(
-        entry.delays_ms.begin(),
-        entry.delays_ms.begin() + static_cast<std::ptrdiff_t>(drop));
+    entry.delays_ms.erase(entry.delays_ms.begin(),
+                          entry.delays_ms.begin() + static_cast<std::ptrdiff_t>(drop));
     entry.window_start += drop;
     entry.current -= drop;
 }
@@ -286,8 +278,7 @@ bool AnimImageCache::advance(std::int64_t now_ms)
         {
             continue;
         }
-        if (entry.frames.empty() ||
-            entry.delays_ms.size() != entry.frames.size())
+        if (entry.frames.empty() || entry.delays_ms.size() != entry.frames.size())
         {
             continue;
         }
@@ -308,8 +299,7 @@ bool AnimImageCache::advance(std::int64_t now_ms)
         }
         while (now_ms >= entry.next_advance_ms)
         {
-            const bool at_resident_end =
-                (entry.current == entry.frames.size() - 1);
+            const bool at_resident_end = (entry.current == entry.frames.size() - 1);
             if (entry.session && at_resident_end)
             {
                 // entry.topping_up is checked (and this branch bails) before
@@ -429,7 +419,9 @@ void AnimImageCache::sweep()
     }
     std::sort(evictable.begin(), evictable.end(),
               [](const auto& a, const auto& b)
-              { return a->second.last_seen_ms < b->second.last_seen_ms; });
+              {
+                  return a->second.last_seen_ms < b->second.last_seen_ms;
+              });
 
     for (auto it : evictable)
     {
@@ -452,8 +444,8 @@ void AnimImageCache::clear()
 {
     std::lock_guard<std::mutex> lock(mu_);
     entries_.clear();
-    hits_           = 0;
-    misses_         = 0;
+    hits_ = 0;
+    misses_ = 0;
 }
 
 bool AnimImageCache::empty() const

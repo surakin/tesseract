@@ -58,8 +58,7 @@ KeyEvent seq_key(Key k)
 std::vector<MediaViewerItem> three_images()
 {
     return {image_item("mxc://x/a", "", "a", 3200, 1800),
-            image_item("mxc://x/b", "", "b", 640, 360),
-            image_item("mxc://x/c", "", "c", 640, 360)};
+            image_item("mxc://x/b", "", "b", 640, 360), image_item("mxc://x/c", "", "c", 640, 360)};
 }
 
 void click_at(MediaViewerOverlay& overlay, Point p)
@@ -73,8 +72,7 @@ void click_at(MediaViewerOverlay& overlay, Point p)
 
 // ── nav buttons and counter ───────────────────────────────────────────────
 
-TEST_CASE("a single item shows neither nav buttons nor a counter",
-          "[mediaviewer][sequence]")
+TEST_CASE("a single item shows neither nav buttons nor a counter", "[mediaviewer][sequence]")
 {
     SeqStage st;
     MediaViewerOverlay overlay;
@@ -86,8 +84,7 @@ TEST_CASE("a single item shows neither nav buttons nor a counter",
     CHECK(overlay.counter_text_for_test().empty());
 }
 
-TEST_CASE("a sequence shows nav buttons, a counter and accessible names",
-          "[mediaviewer][sequence]")
+TEST_CASE("a sequence shows nav buttons, a counter and accessible names", "[mediaviewer][sequence]")
 {
     SeqStage st;
     MediaViewerOverlay overlay;
@@ -105,8 +102,7 @@ TEST_CASE("a sequence shows nav buttons, a counter and accessible names",
     CHECK(overlay.next_btn_for_test()->bounds().x + 44.0f == 600.0f - 16.0f);
 }
 
-TEST_CASE("a sequence inset keeps the image clear of the nav buttons",
-          "[mediaviewer][sequence]")
+TEST_CASE("a sequence inset keeps the image clear of the nav buttons", "[mediaviewer][sequence]")
 {
     SeqStage st;
     MediaViewerOverlay overlay;
@@ -114,14 +110,14 @@ TEST_CASE("a sequence inset keeps the image clear of the nav buttons",
     st.run(overlay);
     const Rect single = overlay.image_rect();
 
-    overlay.open_sequence({image_item("mxc://x/a", "", "", 3200, 1800),
-                           image_item("mxc://x/b", "", "", 3200, 1800)},
-                          0);
+    overlay.open_sequence(
+        {image_item("mxc://x/a", "", "", 3200, 1800), image_item("mxc://x/b", "", "", 3200, 1800)},
+        0);
     st.run(overlay);
     const Rect seq = overlay.image_rect();
     CHECK(seq.w < single.w);
-    CHECK(seq.x >= overlay.prev_btn_for_test()->bounds().x +
-                       overlay.prev_btn_for_test()->bounds().w);
+    CHECK(seq.x >=
+          overlay.prev_btn_for_test()->bounds().x + overlay.prev_btn_for_test()->bounds().w);
     CHECK(seq.x + seq.w <= overlay.next_btn_for_test()->bounds().x);
 }
 
@@ -172,8 +168,7 @@ TEST_CASE("a single item ignores the navigation keys", "[mediaviewer][sequence][
     CHECK(overlay.index() == 0);
 }
 
-TEST_CASE("arrows navigate an image at fit and pan it when zoomed",
-          "[mediaviewer][sequence][keys]")
+TEST_CASE("arrows navigate an image at fit and pan it when zoomed", "[mediaviewer][sequence][keys]")
 {
     SeqStage st;
     MediaViewerOverlay overlay;
@@ -244,7 +239,10 @@ TEST_CASE("re-opening while full-screen tells the shell to leave full-screen",
     SeqStage st;
     MediaViewerOverlay overlay;
     std::vector<bool> requests;
-    overlay.on_request_fullscreen = [&](bool on) { requests.push_back(on); };
+    overlay.on_request_fullscreen = [&](bool on)
+    {
+        requests.push_back(on);
+    };
     overlay.open_sequence(three_images(), 0);
     st.run(overlay);
     click_at(overlay, {454.0f, 26.0f}); // full-screen button
@@ -410,9 +408,8 @@ TEST_CASE("hovering a nav button keeps the full-screen chrome up",
 
 namespace
 {
-MessageRowData::GalleryItemRow gal_row(MessageRowData::GalleryItemRow::Kind kind,
-                                       std::string body, std::string filename,
-                                       const char* mxc)
+MessageRowData::GalleryItemRow gal_row(MessageRowData::GalleryItemRow::Kind kind, std::string body,
+                                       std::string filename, const char* mxc)
 {
     MessageRowData::GalleryItemRow r;
     r.kind = kind;
@@ -471,8 +468,7 @@ TEST_CASE("items_from_gallery maps kinds and fields", "[mediaviewer][items][gall
     CHECK(items[3].caption == "shared caption");
 }
 
-TEST_CASE("items_from_gallery keeps every kind in cell order",
-          "[mediaviewer][items][gallery]")
+TEST_CASE("items_from_gallery keeps every kind in cell order", "[mediaviewer][items][gallery]")
 {
     using Row = MessageRowData::GalleryItemRow;
     MessageListView::GalleryHit hit;

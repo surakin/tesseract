@@ -27,15 +27,16 @@ tesseract::KnockRequestInfo knock(const std::string& uid, const std::string& nam
 
 struct KnockStage : vt::Stage
 {
-    std::unique_ptr<KnockRequestsPanel> panel =
-        tk::create_root_widget<KnockRequestsPanel>(&host);
-    void run() { mount(*panel, {0, 0, 800, 600}); }
+    std::unique_ptr<KnockRequestsPanel> panel = tk::create_root_widget<KnockRequestsPanel>(&host);
+    void run()
+    {
+        mount(*panel, {0, 0, 800, 600});
+    }
 };
 
 } // namespace
 
-TEST_CASE("KnockRequestsPanel starts closed and hidden; open/close toggles",
-          "[tk][view][knock]")
+TEST_CASE("KnockRequestsPanel starts closed and hidden; open/close toggles", "[tk][view][knock]")
 {
     KnockStage s;
     CHECK_FALSE(s.panel->is_open());
@@ -68,8 +69,7 @@ TEST_CASE("KnockRequestsPanel exposes count in its name and an empty "
     CHECK(vt::has_name(*s.panel, "@b:x"));
 }
 
-TEST_CASE("KnockRequestsPanel row buttons fire per-user callbacks",
-          "[tk][view][knock]")
+TEST_CASE("KnockRequestsPanel row buttons fire per-user callbacks", "[tk][view][knock]")
 {
     KnockStage s;
     s.panel->open("!r:x");
@@ -78,8 +78,14 @@ TEST_CASE("KnockRequestsPanel row buttons fire per-user callbacks",
     s.run();
 
     std::vector<std::string> accepted, declined, banned;
-    s.panel->on_accept = [&](std::string u) { accepted.push_back(u); };
-    s.panel->on_decline = [&](std::string u) { declined.push_back(u); };
+    s.panel->on_accept = [&](std::string u)
+    {
+        accepted.push_back(u);
+    };
+    s.panel->on_decline = [&](std::string u)
+    {
+        declined.push_back(u);
+    };
     s.panel->on_decline_and_ban = [&](std::string u, std::string r)
     {
         banned.push_back(u + "|" + r);
@@ -100,13 +106,15 @@ TEST_CASE("KnockRequestsPanel row buttons fire per-user callbacks",
     CHECK(banned == std::vector<std::string>{"@a:x|"});
 }
 
-TEST_CASE("KnockRequestsPanel hides Deny & Ban without ban permission",
-          "[tk][view][knock]")
+TEST_CASE("KnockRequestsPanel hides Deny & Ban without ban permission", "[tk][view][knock]")
 {
     KnockStage s;
     s.panel->open("!r:x");
     int layout_changed = 0;
-    s.panel->on_layout_changed = [&] { ++layout_changed; };
+    s.panel->on_layout_changed = [&]
+    {
+        ++layout_changed;
+    };
     s.panel->set_requests({knock("@a:x", "Alice")});
     s.run();
     CHECK(vt::nodes_named(*s.panel, "Deny & Ban").empty());
@@ -119,14 +127,16 @@ TEST_CASE("KnockRequestsPanel hides Deny & Ban without ban permission",
     CHECK(layout_changed >= 2);
 }
 
-TEST_CASE("KnockRequestsPanel close button and backdrop click close it",
-          "[tk][view][knock]")
+TEST_CASE("KnockRequestsPanel close button and backdrop click close it", "[tk][view][knock]")
 {
     KnockStage s;
     s.panel->open("!r:x");
     s.run();
     int closed = 0;
-    s.panel->on_close = [&] { ++closed; };
+    s.panel->on_close = [&]
+    {
+        ++closed;
+    };
 
     REQUIRE(vt::press(*s.panel, "Close"));
     CHECK(closed == 1);
@@ -157,7 +167,9 @@ TEST_CASE("KnockRequestsPanel input is ignored while closed; wheel scrolls "
     s.panel->open("!r:x");
     std::vector<tesseract::KnockRequestInfo> many;
     for (int i = 0; i < 12; ++i)
+    {
         many.push_back(knock("@u" + std::to_string(i) + ":x", "User " + std::to_string(i)));
+    }
     s.panel->set_requests(many);
     s.run();
     CHECK(s.panel->on_wheel({0, 0}, 0, 5));
@@ -165,6 +177,10 @@ TEST_CASE("KnockRequestsPanel input is ignored while closed; wheel scrolls "
     CHECK(s.panel->on_wheel({0, 0}, 0, -50)); // clamps at the top
     s.run();
     s.panel->on_theme_changed(tk::Theme::dark());
-    s.panel->set_avatar_provider([](const std::string&) -> const tk::Image* { return nullptr; });
+    s.panel->set_avatar_provider(
+        [](const std::string&) -> const tk::Image*
+        {
+            return nullptr;
+        });
     s.run();
 }

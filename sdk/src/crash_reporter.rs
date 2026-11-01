@@ -72,7 +72,11 @@ fn write_panic_report(path: &str, info: &std::panic::PanicHookInfo<'_>) {
     // there is nothing more useful to do — the process aborts regardless
     // once this hook returns and unwinding continues across the FFI
     // boundary.
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
         let _ = writeln!(
             f,
             "\n--- Rust panic ---\nthread: {thread_name}\nlocation: {location}\nmessage: {message}\nbacktrace:\n{backtrace}\n"

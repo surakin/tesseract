@@ -25,15 +25,25 @@ struct AsStage : vt::Stage
         tk::create_root_widget<AppearanceSection>(&host, binder);
     AsStage()
     {
-        binder.on_changed = [this](SettingKey k) { keys.push_back(k); };
+        binder.on_changed = [this](SettingKey k)
+        {
+            keys.push_back(k);
+        };
         mount(*sec, {0, 0, 700, 1200});
     }
-    void run() { relayout_paint(*sec, {0, 0, 700, 1200}); }
+    void run()
+    {
+        relayout_paint(*sec, {0, 0, 700, 1200});
+    }
     tk::CheckButton* check(const std::string& label)
     {
         for (auto* c : vt::find_all<tk::CheckButton>(*sec))
+        {
             if (c->access_name() == label)
+            {
                 return c;
+            }
+        }
         return nullptr;
     }
 };
@@ -47,8 +57,8 @@ TEST_CASE("AppearanceSection checkboxes write Settings and report their keys; "
     AsStage s;
     auto& st = Settings::instance();
     st.group_unread_rooms = st.group_inactive_rooms = st.autoscroll_unread_rooms =
-        st.show_room_join_leave_events = st.animate_avatars =
-            st.show_sender_status_in_timeline = false;
+        st.show_room_join_leave_events = st.animate_avatars = st.show_sender_status_in_timeline =
+            false;
     s.binder.reload();
 
     auto fire = [&](const char* label)
@@ -63,10 +73,10 @@ TEST_CASE("AppearanceSection checkboxes write Settings and report their keys; "
     fire("Show room join/leave events");
     fire("Animate avatars");
     fire("Show status emoji next to names");
-    CHECK(s.keys == std::vector<SettingKey>{
-                        SettingKey::GroupUnread, SettingKey::GroupInactive,
-                        SettingKey::AutoscrollUnread, SettingKey::ShowMembershipEvents,
-                        SettingKey::AnimateAvatars, SettingKey::ShowSenderStatus});
+    CHECK(s.keys ==
+          std::vector<SettingKey>{SettingKey::GroupUnread, SettingKey::GroupInactive,
+                                  SettingKey::AutoscrollUnread, SettingKey::ShowMembershipEvents,
+                                  SettingKey::AnimateAvatars, SettingKey::ShowSenderStatus});
     CHECK(st.group_unread_rooms);
     CHECK(st.group_inactive_rooms);
     CHECK(st.autoscroll_unread_rooms);
@@ -85,12 +95,11 @@ TEST_CASE("AppearanceSection checkboxes write Settings and report their keys; "
     CHECK(s.check("Group inactive rooms")->checked());
 }
 
-TEST_CASE("AppearanceSection combos map to settings enums",
-          "[tk][view][appearance]")
+TEST_CASE("AppearanceSection combos map to settings enums", "[tk][view][appearance]")
 {
     AsStage s;
     auto combos = vt::find_all<tk::ComboBox>(*s.sec);
-    REQUIRE(combos.size() == 3); // accent, message layout, inactive period
+    REQUIRE(combos.size() == 4); // accent, message layout, timeline position, inactive period
 
     auto& st = Settings::instance();
     std::vector<Settings::ThemeAccent> accents;
@@ -112,11 +121,15 @@ TEST_CASE("AppearanceSection combos map to settings enums",
         combos[1]->on_changed(v);
         layouts.push_back(st.message_layout);
     }
-    CHECK(layouts == std::vector<Settings::MessageLayout>{
-                         Settings::MessageLayout::Bubbles, Settings::MessageLayout::Irc,
-                         Settings::MessageLayout::Classic});
+    CHECK(layouts == std::vector<Settings::MessageLayout>{Settings::MessageLayout::Bubbles,
+                                                          Settings::MessageLayout::Irc,
+                                                          Settings::MessageLayout::Classic});
 
-    combos[2]->on_changed("90");
+    combos[2]->on_changed("center");
+    CHECK(st.timeline_column_anchor == Settings::TimelineColumnAnchor::Center);
+    combos[2]->on_changed("left");
+
+    combos[3]->on_changed("90");
     CHECK(st.inactive_room_threshold_days == 90);
 
     st.theme_accent = Settings::ThemeAccent::Violet;
@@ -125,19 +138,21 @@ TEST_CASE("AppearanceSection combos map to settings enums",
     s.binder.reload();
     CHECK(combos[0]->selected_value() == "violet");
     CHECK(combos[1]->selected_value() == "irc");
-    CHECK(combos[2]->selected_value() == "30");
+    CHECK(combos[2]->selected_value() == "left");
+    CHECK(combos[3]->selected_value() == "30");
     s.run();
 }
 
-TEST_CASE("AppearanceSection theme picker: click, hover and arrow keys",
-          "[tk][view][appearance]")
+TEST_CASE("AppearanceSection theme picker: click, hover and arrow keys", "[tk][view][appearance]")
 {
     AsStage s;
     std::vector<Settings::ThemePreference> prefs;
     s.binder.on_changed = [&](SettingKey k)
     {
         if (k == SettingKey::Theme)
+        {
             prefs.push_back(Settings::instance().theme_pref);
+        }
     };
     Settings::instance().theme_pref = Settings::ThemePreference::Light;
     s.binder.reload();
@@ -147,6 +162,7 @@ TEST_CASE("AppearanceSection theme picker: click, hover and arrow keys",
     // three radio buttons sit side by side in the first group.
     bool found = false;
     for (float y = 20; y < 200 && !found; y += 6)
+    {
         for (float x = 20; x < 400 && !found; x += 10)
         {
             s.host.dispatch_pointer_move({x, y});
@@ -154,6 +170,7 @@ TEST_CASE("AppearanceSection theme picker: click, hover and arrow keys",
             s.host.dispatch_pointer_up({x, y});
             found = !prefs.empty();
         }
+    }
     REQUIRE(found);
     CHECK(prefs[0] != Settings::ThemePreference::Light); // only changes fire
 
@@ -166,8 +183,7 @@ TEST_CASE("AppearanceSection theme picker: click, hover and arrow keys",
     s.run();
 }
 
-TEST_CASE("AppearanceSection room list density radio fires its callback",
-          "[tk][view][appearance]")
+TEST_CASE("AppearanceSection room list density radio fires its callback", "[tk][view][appearance]")
 {
     AsStage s;
     Settings::instance().room_list_density = Settings::RoomListDensity::Normal;
@@ -176,8 +192,12 @@ TEST_CASE("AppearanceSection room list density radio fires its callback",
 
     tk::RadioButton* compact = nullptr;
     for (auto* b : vt::find_all<tk::RadioButton>(*s.sec))
+    {
         if (b->access_name() == "Compact")
+        {
             compact = b;
+        }
+    }
     REQUIRE(compact);
     CHECK(compact->access_default_action());
     CHECK(s.keys == std::vector<SettingKey>{SettingKey::RoomListDensity});

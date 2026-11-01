@@ -18,6 +18,15 @@ namespace tesseract::views
 
 namespace
 {
+// Topic spans for painting: syntax colours are dropped in High Contrast.
+std::vector<tk::TextSpan> themed_spans(std::vector<tk::TextSpan> spans, const tk::Theme& theme)
+{
+    if (theme.high_contrast)
+    {
+        flatten_span_colours(spans);
+    }
+    return spans;
+}
 
 constexpr float kRoomHeaderPadX = 16.0f;
 constexpr float kRoomHeaderAvatarSize = 40.0f;
@@ -35,9 +44,11 @@ constexpr float kCalBtnMargin = 8.0f;
 // few pixels above the app's absolute minimum width.
 constexpr float kRoomHeaderMinTextW = 160.0f;
 
-constexpr float kLockW   = 10.0f;
-constexpr float kLockH   = 12.0f;
-constexpr float kLockGap =  4.0f;
+constexpr float kLockW = 10.0f;
+constexpr float kLockH = 12.0f;
+constexpr float kLockGap = 4.0f;
+constexpr float kBridgeIconPx = 16.0f;
+constexpr float kBridgeIconGap = 6.0f;
 
 // Vertical offsets for the name/topic block (from the top of the strip).
 // Two-line layout (with topic): name at 12 px, topic at 34 px.
@@ -58,14 +69,15 @@ constexpr float kThreadDotSize = 8.0f;
 void draw_thread_unread_dot(tk::PaintCtx& ctx, tk::Rect btn, bool mention)
 {
     if (btn.w <= 0.0f || btn.h <= 0.0f)
+    {
         return;
-    const tk::Rect dot{btn.x + btn.w - kThreadDotSize - 2.0f, btn.y + 2.0f,
-                       kThreadDotSize, kThreadDotSize};
+    }
+    const tk::Rect dot{btn.x + btn.w - kThreadDotSize - 2.0f, btn.y + 2.0f, kThreadDotSize,
+                       kThreadDotSize};
     const tk::Rect ring{dot.x - 1.5f, dot.y - 1.5f, dot.w + 3.0f, dot.h + 3.0f};
     ctx.canvas.fill_rounded_rect(ring, ring.w * 0.5f, ctx.theme.palette.chrome_bg);
     ctx.canvas.fill_rounded_rect(dot, dot.w * 0.5f,
-                                 mention ? ctx.theme.palette.accent
-                                         : ctx.theme.palette.unread_bg);
+                                 mention ? ctx.theme.palette.accent : ctx.theme.palette.unread_bg);
 }
 
 // The clickable title block (avatar + name + topic): hover fill and a
@@ -77,21 +89,31 @@ class InfoArea : public tk::Widget
 public:
     std::function<bool(tk::Point world)> declines_press;
 
-    tk::Size measure(tk::LayoutCtx&, tk::Size) override { return {0.0f, 0.0f}; }
+    tk::Size measure(tk::LayoutCtx&, tk::Size) override
+    {
+        return {0.0f, 0.0f};
+    }
 
     // RoomHeader places its name/topic labels (our children) itself; the base
     // arrange would reset them all to this rect. Only record our own bounds.
-    void arrange(tk::LayoutCtx&, tk::Rect bounds) override { bounds_ = bounds; }
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override
+    {
+        bounds_ = bounds;
+    }
 
     // RoomHeader paints the avatar and labels itself, in its own order; this
     // widget only supplies the hover fill behind them.
-    void paint(tk::PaintCtx& ctx) override { paint_hover_fill(ctx); }
+    void paint(tk::PaintCtx& ctx) override
+    {
+        paint_hover_fill(ctx);
+    }
 
     bool on_pointer_down(tk::Point local) override
     {
-        if (declines_press &&
-            declines_press({bounds_.x + local.x, bounds_.y + local.y}))
+        if (declines_press && declines_press({bounds_.x + local.x, bounds_.y + local.y}))
+        {
             return false;
+        }
         return tk::Widget::on_pointer_down(local);
     }
 };
@@ -106,7 +128,9 @@ RoomHeader::RoomHeader()
     {
         auto area = tk::create_widget<InfoArea>(this);
         area->declines_press = [this](tk::Point world)
-        { return topic_link_at_(world); };
+        {
+            return topic_link_at_(world);
+        };
         area->set_hoverable(true, tk::HoverStyle::Fill)
             .set_hover_radius(6.0f)
             .set_pointer_only(true)
@@ -114,20 +138,28 @@ RoomHeader::RoomHeader()
                 [this]
                 {
                     if (!condensed_ && on_info_requested)
+                    {
                         on_info_requested();
+                    }
                 });
         info_area_ = add_child(std::move(area));
     }
 
     // Leading back button — narrow-window layout only, hidden otherwise.
-    auto back = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
-                                              tk::Button::Variant::Icon);
+    auto back =
+        tk::create_widget<tk::Button>(this, "", std::function<void()>{}, tk::Button::Variant::Icon);
     back_btn_ = add_child(std::move(back));
     back_btn_->set_visible(false);
     back_btn_->set_icon(kArrowLeftSvg, 18.0f);
     back_btn_->set_accessible_name(tk::tr("Back"));
     back_btn_->set_on_click(
-        [this] { if (on_back_requested) on_back_requested(); });
+        [this]
+        {
+            if (on_back_requested)
+            {
+                on_back_requested();
+            }
+        });
 
     auto name = tk::create_widget<tk::Label>(this, "", tk::FontRole::Title);
     name->set_trim(tk::TextTrim::Ellipsis);
@@ -141,13 +173,17 @@ RoomHeader::RoomHeader()
     // Calendar / threads action buttons. Icon-variant buttons paint only their
     // hover/press background; this view draws the glyph itself in paint(). Both
     // start hidden until the shell enables them (MSC3030 support / thread roots).
-    auto cal = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
-                                            tk::Button::Variant::Icon);
+    auto cal =
+        tk::create_widget<tk::Button>(this, "", std::function<void()>{}, tk::Button::Variant::Icon);
     calendar_btn_ = add_child(std::move(cal));
     calendar_btn_->set_visible(false);
     calendar_btn_->set_icon(kJumpToDateSvg, 18.0f);
     calendar_btn_->set_accessible_name(tk::tr("Jump to Date"));
-    calendar_btn_->set_on_click([this] { show_date_picker_(); });
+    calendar_btn_->set_on_click(
+        [this]
+        {
+            show_date_picker_();
+        });
 
     title_target_ = add_child(tk::create_widget<tk::KeyboardTarget>(this));
     title_target_->set_accessible_name(tk::tr("Room info"));
@@ -155,12 +191,16 @@ RoomHeader::RoomHeader()
     title_target_->on_activate = [this]
     {
         if (!condensed_ && on_info_requested)
+        {
             on_info_requested();
+        }
     };
     title_target_->on_link_activated = [this](const std::string& url)
     {
         if (on_link_clicked)
+        {
             on_link_clicked(url);
+        }
     };
 
     date_picker_ = std::make_unique<DatePickerView>();
@@ -168,43 +208,66 @@ RoomHeader::RoomHeader()
     {
         hide_date_picker_();
         if (on_date_jump)
+        {
             on_date_jump(local_midnight_ms(y, m, d));
+        }
     };
-    date_picker_->on_dismiss = [this] { hide_date_picker_(); };
+    date_picker_->on_dismiss = [this]
+    {
+        hide_date_picker_();
+    };
 
-    auto thr = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
-                                            tk::Button::Variant::Icon);
+    auto thr =
+        tk::create_widget<tk::Button>(this, "", std::function<void()>{}, tk::Button::Variant::Icon);
     threads_btn_ = add_child(std::move(thr));
     threads_btn_->set_visible(false);
     threads_btn_->set_icon(kThreadListSvg, 18.0f);
     threads_btn_->set_accessible_name(tk::tr("Threads"));
     threads_btn_->set_on_click(
-        [this] { if (on_threads_requested) on_threads_requested(); });
+        [this]
+        {
+            if (on_threads_requested)
+            {
+                on_threads_requested();
+            }
+        });
 
-    auto srch = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
-                                             tk::Button::Variant::Icon);
+    auto srch =
+        tk::create_widget<tk::Button>(this, "", std::function<void()>{}, tk::Button::Variant::Icon);
     search_btn_ = add_child(std::move(srch));
     search_btn_->set_visible(false);
     search_btn_->set_icon(kSearchSvg, 18.0f);
     search_btn_->set_accessible_name(tk::tr("Search"));
     search_btn_->set_on_click(
-        [this] { if (on_search_requested) on_search_requested(); });
+        [this]
+        {
+            if (on_search_requested)
+            {
+                on_search_requested();
+            }
+        });
 
-    auto call = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
-                                             tk::Button::Variant::Icon);
+    auto call =
+        tk::create_widget<tk::Button>(this, "", std::function<void()>{}, tk::Button::Variant::Icon);
     call_btn_ = add_child(std::move(call));
     call_btn_->set_visible(false);
     call_btn_->set_icon(kPhoneSvg, 18.0f);
     call_btn_->set_accessible_name(tk::tr("Call"));
     call_btn_->set_on_click(
-        [this] { if (on_call_requested) on_call_requested(call_btn_->bounds()); });
+        [this]
+        {
+            if (on_call_requested)
+            {
+                on_call_requested(call_btn_->bounds());
+            }
+        });
 
     // Overflow trigger — takes over whichever action button(s) don't fit at
     // the current width (see arrange()). Hidden whenever everything fits.
     // The actual popup is owned by whoever handles on_overflow_requested
     // (RoomView) — see that callback's doc comment for why.
-    auto more = tk::create_widget<tk::Button>(this, "", std::function<void()>{},
-                                             tk::Button::Variant::Icon);
+    auto more =
+        tk::create_widget<tk::Button>(this, "", std::function<void()>{}, tk::Button::Variant::Icon);
     more_btn_ = add_child(std::move(more));
     more_btn_->set_visible(false);
     more_btn_->set_icon(kMoreSvg, 18.0f);
@@ -213,7 +276,9 @@ RoomHeader::RoomHeader()
         [this]
         {
             if (on_overflow_requested)
+            {
                 on_overflow_requested(overflow_items_, more_btn_->bounds());
+            }
         });
 }
 
@@ -222,6 +287,9 @@ void RoomHeader::set_room(const tesseract::RoomInfo& info)
     display_name_ = info.name;
     avatar_url_ = info.effective_avatar_url();
     encrypted_ = info.is_encrypted;
+    bridged_ = info.is_bridged && !info.bridge_overridden;
+    bridge_network_name_ = info.bridge_network_name;
+    bridge_network_avatar_url_ = info.bridge_network_avatar_url;
     if (name_label_)
     {
         name_label_->set_text(display_name_);
@@ -230,12 +298,13 @@ void RoomHeader::set_room(const tesseract::RoomInfo& info)
     // Skip the expensive topic rebuild when topic content hasn't changed.
     // Read receipts, typing indicators, and membership events fire this path
     // frequently; guarding here eliminates redundant CTFramesetter work.
-    const bool topic_changed =
-        (info.topic != topic_) || (info.topic_html != topic_html_);
+    const bool topic_changed = (info.topic != topic_) || (info.topic_html != topic_html_);
     topic_ = info.topic;
     topic_html_ = info.topic_html;
     if (!topic_changed)
+    {
         return;
+    }
 
     topic_layout_.reset();
     topic_dirty_ = true;
@@ -290,7 +359,9 @@ void RoomHeader::set_room(const tesseract::RoomInfo& info)
                     topic_display_spans_.push_back(span);
                 }
                 if (!topic_multiline_)
+                {
                     topic_display_spans_ = topic_spans_;
+                }
                 topic_label_->set_visible(false);
             }
             else
@@ -298,8 +369,7 @@ void RoomHeader::set_room(const tesseract::RoomInfo& info)
                 topic_display_spans_.clear();
                 const auto nl = topic_.find('\n');
                 topic_multiline_ = (nl != std::string::npos);
-                const std::string display =
-                    topic_multiline_ ? topic_.substr(0, nl) + "…" : topic_;
+                const std::string display = topic_multiline_ ? topic_.substr(0, nl) + "…" : topic_;
                 topic_label_->set_text(display);
                 topic_label_->set_visible(!topic_.empty());
             }
@@ -339,7 +409,9 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     // Re-placed over the title area at the end of the full (non-condensed)
     // layout below; condensed mode has no room-info click to stand in for.
     if (info_area_)
+    {
         info_area_->arrange(ctx, {});
+    }
     if (title_target_)
     {
         title_target_->arrange(ctx, {});
@@ -379,7 +451,9 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         // The trigger just vanished — an already-open menu would otherwise
         // keep floating with nothing left anchoring it.
         if (on_overflow_should_close)
+        {
             on_overflow_should_close();
+        }
     };
 
     if (condensed_ && bounds.h <= 0.0f)
@@ -421,8 +495,7 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
             }
         }
 
-        const bool needs_rebuild =
-            topic_dirty_ || (topic_rect_.w != last_topic_w_);
+        const bool needs_rebuild = topic_dirty_ || (topic_rect_.w != last_topic_w_);
         if (needs_rebuild)
         {
             topic_dirty_ = false;
@@ -437,7 +510,7 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
                 ts.trim = tk::TextTrim::Ellipsis;
                 ts.max_width = topic_rect_.w;
                 topic_layout_ =
-                    ctx.factory.build_rich_text(topic_display_spans_, ts);
+                    ctx.factory.build_rich_text(themed_spans(topic_display_spans_, ctx.theme), ts);
                 if (topic_multiline_)
                 {
                     topic_truncated_ = true;
@@ -449,7 +522,7 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
                         tk::TextStyle ts_nat{};
                         ts_nat.role = tk::FontRole::SidebarPreview;
                         auto nat = ctx.factory.build_rich_text(
-                            topic_display_spans_, ts_nat);
+                            themed_spans(topic_display_spans_, ctx.theme), ts_nat);
                         topic_natural_w_ = nat ? nat->measure().w : 0.0f;
                     }
                     topic_truncated_ = topic_natural_w_ > topic_rect_.w;
@@ -484,15 +557,13 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     if (back_btn_)
     {
         back_btn_->set_visible(show_back_btn_);
-        back_btn_->arrange(ctx,
-                           show_back_btn_
-                               ? tk::Rect{bounds.x + kCalBtnMargin, btn_y,
-                                          kCalBtnSize, kCalBtnSize}
-                               : tk::Rect{});
+        back_btn_->arrange(ctx, show_back_btn_ ? tk::Rect{bounds.x + kCalBtnMargin, btn_y,
+                                                          kCalBtnSize, kCalBtnSize}
+                                               : tk::Rect{});
     }
 
-    const float text_x = bounds.x + kRoomHeaderPadX + lead_reserve +
-                         kRoomHeaderAvatarSize + kRoomHeaderAvatarGap;
+    const float text_x =
+        bounds.x + kRoomHeaderPadX + lead_reserve + kRoomHeaderAvatarSize + kRoomHeaderAvatarGap;
 
     // Determine which action buttons fit at the current width, collapsing
     // the lowest-priority ones into the overflow ("more") menu when they
@@ -500,28 +571,29 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     // call; collapsing follows that same order from the right inward
     // (calendar collapses first, call last) so buttons vanish/reappear as a
     // clean contiguous block instead of leaving gaps.
-    const bool wanted[4] = {show_calendar_btn_, show_threads_btn_,
-                            show_search_btn_, show_call_btn_};
+    const bool wanted[4] = {show_calendar_btn_, show_threads_btn_, show_search_btn_,
+                            show_call_btn_};
     bool show_now[4] = {false, false, false, false};
     bool show_more = false;
 
     auto reserve_for_slots = [](int n)
     {
         return n == 0 ? kCalBtnMargin
-                      : kCalBtnMargin + n * kCalBtnSize + (n - 1) * 8.0f +
-                            kCalBtnMargin;
+                      : kCalBtnMargin + n * kCalBtnSize + (n - 1) * 8.0f + kCalBtnMargin;
     };
-    const int wanted_count = (wanted[0] ? 1 : 0) + (wanted[1] ? 1 : 0) +
-                             (wanted[2] ? 1 : 0) + (wanted[3] ? 1 : 0);
-    const float budget = std::max(
-        0.0f, bounds.w - kRoomHeaderPadX - lead_reserve -
-                  kRoomHeaderAvatarSize - kRoomHeaderAvatarGap - kRoomHeaderMinTextW);
+    const int wanted_count =
+        (wanted[0] ? 1 : 0) + (wanted[1] ? 1 : 0) + (wanted[2] ? 1 : 0) + (wanted[3] ? 1 : 0);
+    const float budget =
+        std::max(0.0f, bounds.w - kRoomHeaderPadX - lead_reserve - kRoomHeaderAvatarSize -
+                           kRoomHeaderAvatarGap - kRoomHeaderMinTextW);
 
     int shown_slot_count = wanted_count;
     if (reserve_for_slots(wanted_count) <= budget)
     {
         for (int i = 0; i < 4; ++i)
+        {
             show_now[i] = wanted[i];
+        }
     }
     else
     {
@@ -535,7 +607,9 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         for (int i = 3; i >= 0; --i)
         {
             if (!wanted[i])
+            {
                 continue;
+            }
             if (reserve_for_slots(accepted + 2) <= budget)
             {
                 show_now[i] = true;
@@ -549,29 +623,34 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         shown_slot_count = accepted + 1; // + the "more" trigger itself
     }
     const float right_reserve = reserve_for_slots(shown_slot_count);
-    const float text_w = std::max(0.0f, bounds.w - kRoomHeaderPadX - lead_reserve -
-                                            kRoomHeaderAvatarSize -
-                                            kRoomHeaderAvatarGap - right_reserve);
+    const float text_w =
+        std::max(0.0f, bounds.w - kRoomHeaderPadX - lead_reserve - kRoomHeaderAvatarSize -
+                           kRoomHeaderAvatarGap - right_reserve);
 
     const bool has_topic = !topic_.empty() || !topic_html_.empty();
     const bool show_label = has_topic && topic_html_.empty();
 
-    const float name_y =
-        has_topic ? bounds.y + kNameY_Pair : bounds.y + kNameY_Single;
+    const float name_y = has_topic ? bounds.y + kNameY_Pair : bounds.y + kNameY_Single;
+
+    // Leading badges, left to right: bridge, lock, then the name.
+    const bool show_bridge = bridged_ && text_w >= kBridgeIconPx + kBridgeIconGap;
+    const float bridge_reserve = show_bridge ? (kBridgeIconPx + kBridgeIconGap) : 0.0f;
+    bridge_icon_rect_ = show_bridge
+                            ? tk::Rect{text_x, name_y + (kRoomHeaderNameH - kBridgeIconPx) * 0.5f,
+                                       kBridgeIconPx, kBridgeIconPx}
+                            : tk::Rect{};
 
     const float lock_reserve = encrypted_ ? (kLockW + kLockGap) : 0.0f;
     lock_icon_rect_ = encrypted_
-                          ? tk::Rect{text_x,
-                                     name_y + (kRoomHeaderNameH - kLockH) * 0.5f,
-                                     kLockW, kLockH}
+                          ? tk::Rect{text_x + bridge_reserve,
+                                     name_y + (kRoomHeaderNameH - kLockH) * 0.5f, kLockW, kLockH}
                           : tk::Rect{};
 
     if (name_label_)
     {
+        const float lead = bridge_reserve + lock_reserve;
         name_label_->arrange(
-            ctx,
-            {text_x + lock_reserve, name_y,
-             std::max(0.0f, text_w - lock_reserve), kRoomHeaderNameH});
+            ctx, {text_x + lead, name_y, std::max(0.0f, text_w - lead), kRoomHeaderNameH});
     }
 
     topic_rect_ = {text_x, bounds.y + kTopicY, text_w, kTopicH};
@@ -604,7 +683,7 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
             ts.trim = tk::TextTrim::Ellipsis;
             ts.max_width = text_w;
             topic_layout_ =
-                ctx.factory.build_rich_text(topic_display_spans_, ts);
+                ctx.factory.build_rich_text(themed_spans(topic_display_spans_, ctx.theme), ts);
 
             if (topic_multiline_)
             {
@@ -616,9 +695,8 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
                 {
                     tk::TextStyle ts_nat{};
                     ts_nat.role = tk::FontRole::SidebarPreview;
-                    auto nat =
-                        ctx.factory.build_rich_text(topic_display_spans_,
-                                                    ts_nat);
+                    auto nat = ctx.factory.build_rich_text(
+                        themed_spans(topic_display_spans_, ctx.theme), ts_nat);
                     topic_natural_w_ = nat ? nat->measure().w : 0.0f;
                 }
                 topic_truncated_ = topic_natural_w_ > text_w;
@@ -691,9 +769,8 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     {
         threads_btn_->set_visible(show_now[1]);
         threads_btn_->arrange(ctx, show_now[1] ? thr_r : tk::Rect{});
-        threads_btn_->set_accessible_name(threads_unread_
-                                              ? tk::tr("Threads (unread messages)")
-                                              : tk::tr("Threads"));
+        threads_btn_->set_accessible_name(threads_unread_ ? tk::tr("Threads (unread messages)")
+                                                          : tk::tr("Threads"));
     }
 
     // Search: next slot.
@@ -702,7 +779,9 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     {
         srch_r = {right_edge - kCalBtnSize, btn_y, kCalBtnSize, kCalBtnSize};
         if (show_now[3])
+        {
             right_edge = srch_r.x - 8.0f;
+        }
     }
     if (search_btn_)
     {
@@ -728,16 +807,21 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     {
         float title_right = bounds.x + bounds.w - kCalBtnMargin;
         for (tk::Button* b : {calendar_btn_, more_btn_, threads_btn_, search_btn_, call_btn_})
+        {
             if (b && b->visible() && b->bounds().w > 0.0f)
+            {
                 title_right = std::min(title_right, b->bounds().x - 4.0f);
+            }
+        }
         const float title_x = bounds.x + kRoomHeaderPadX + lead_reserve - 4.0f;
         if (title_right > title_x)
         {
-            const tk::Rect title_r{title_x, bounds.y + 4.0f, title_right - title_x,
-                                   kHeight - 8.0f};
+            const tk::Rect title_r{title_x, bounds.y + 4.0f, title_right - title_x, kHeight - 8.0f};
             title_target_->arrange(ctx, title_r);
             if (info_area_)
+            {
                 info_area_->arrange(ctx, title_r);
+            }
         }
     }
 
@@ -748,37 +832,66 @@ void RoomHeader::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     overflow_items_.clear();
     if (wanted[1] && !show_now[1])
     {
-        overflow_items_.push_back(
-            {{}, kThreadListSvg, tk::tr("Threads"), false,
-             [this] { if (on_threads_requested) on_threads_requested(); }});
+        overflow_items_.push_back({{},
+                                   kThreadListSvg,
+                                   tk::tr("Threads"),
+                                   false,
+                                   [this]
+                                   {
+                                       if (on_threads_requested)
+                                       {
+                                           on_threads_requested();
+                                       }
+                                   }});
     }
     if (wanted[2] && !show_now[2])
     {
-        overflow_items_.push_back(
-            {{}, kSearchSvg, tk::tr("Search"), false,
-             [this] { if (on_search_requested) on_search_requested(); }});
+        overflow_items_.push_back({{},
+                                   kSearchSvg,
+                                   tk::tr("Search"),
+                                   false,
+                                   [this]
+                                   {
+                                       if (on_search_requested)
+                                       {
+                                           on_search_requested();
+                                       }
+                                   }});
     }
     if (wanted[3] && !show_now[3])
     {
-        overflow_items_.push_back(
-            {{}, kPhoneSvg, tk::tr("Call"), false,
-             [this]
-             {
-                 if (on_call_requested)
-                     on_call_requested(call_btn_ ? call_btn_->bounds() : tk::Rect{});
-             }});
+        overflow_items_.push_back({{},
+                                   kPhoneSvg,
+                                   tk::tr("Call"),
+                                   false,
+                                   [this]
+                                   {
+                                       if (on_call_requested)
+                                       {
+                                           on_call_requested(call_btn_ ? call_btn_->bounds()
+                                                                       : tk::Rect{});
+                                       }
+                                   }});
     }
     if (wanted[0] && !show_now[0])
     {
-        overflow_items_.push_back({{}, kJumpToDateSvg, tk::tr("Jump to Date"),
-                                   false, [this] { show_date_picker_(); }});
+        overflow_items_.push_back({{},
+                                   kJumpToDateSvg,
+                                   tk::tr("Jump to Date"),
+                                   false,
+                                   [this]
+                                   {
+                                       show_date_picker_();
+                                   }});
     }
 
     // If a resize means every button fits again, an already-open popup
     // (owned by whoever handles on_overflow_requested) would otherwise keep
     // floating with nothing left to anchor it to.
     if (!show_more && on_overflow_should_close)
+    {
         on_overflow_should_close();
+    }
 }
 
 void RoomHeader::paint(tk::PaintCtx& ctx)
@@ -803,8 +916,7 @@ void RoomHeader::paint(tk::PaintCtx& ctx)
         {
             if (topic_layout_)
             {
-                ctx.canvas.draw_text(*topic_layout_,
-                                     {topic_rect_.x, topic_rect_.y},
+                ctx.canvas.draw_text(*topic_layout_, {topic_rect_.x, topic_rect_.y},
                                      ctx.theme.palette.text_primary);
             }
         }
@@ -825,18 +937,18 @@ void RoomHeader::paint(tk::PaintCtx& ctx)
 
     // Hover/press fill for the clickable title block, behind avatar + text.
     if (info_area_)
+    {
         info_area_->paint(ctx);
+    }
 
     // Avatar — circle-cropped image or initials disc.
-    const tk::Point avatar_centre{
-        bounds_.x + kRoomHeaderPadX + lead_reserve + kRoomHeaderAvatarSize * 0.5f,
-        bounds_.y + kHeight * 0.5f};
+    const tk::Point avatar_centre{bounds_.x + kRoomHeaderPadX + lead_reserve +
+                                      kRoomHeaderAvatarSize * 0.5f,
+                                  bounds_.y + kHeight * 0.5f};
     const tk::Image* avatar_img =
-        (avatar_provider_ && !avatar_url_.empty()) ? avatar_provider_(avatar_url_)
-                                                   : nullptr;
-    draw_avatar(ctx.canvas, avatar_img, avatar_centre, kRoomHeaderAvatarSize,
-                display_name_, ctx.theme.palette.avatar_initials_bg,
-                ctx.theme.palette.avatar_initials_text);
+        (avatar_provider_ && !avatar_url_.empty()) ? avatar_provider_(avatar_url_) : nullptr;
+    draw_avatar(ctx.canvas, avatar_img, avatar_centre, kRoomHeaderAvatarSize, display_name_,
+                ctx.theme.palette.avatar_initials_bg, ctx.theme.palette.avatar_initials_text);
 
     if (name_label_)
     {
@@ -845,8 +957,30 @@ void RoomHeader::paint(tk::PaintCtx& ctx)
 
     if (encrypted_)
     {
-        draw_lock_icon(ctx.canvas, lock_icon_rect_,
-                       ctx.theme.palette.text_secondary);
+        draw_lock_icon(ctx.canvas, lock_icon_rect_, ctx.theme.palette.text_secondary);
+    }
+
+    if (bridged_ && bridge_icon_rect_.w > 0.0f)
+    {
+        const tk::Image* logo = (avatar_provider_ && !bridge_network_avatar_url_.empty())
+                                    ? avatar_provider_(bridge_network_avatar_url_)
+                                    : nullptr;
+        if (!logo && !bridge_network_avatar_url_.empty() && on_bridge_avatar_needed)
+        {
+            on_bridge_avatar_needed(bridge_network_avatar_url_);
+        }
+        if (logo)
+        {
+            ctx.canvas.draw_circle_image(*logo,
+                                         {bridge_icon_rect_.x + kBridgeIconPx * 0.5f,
+                                          bridge_icon_rect_.y + kBridgeIconPx * 0.5f},
+                                         kBridgeIconPx);
+        }
+        else
+        {
+            bridge_icon_cache_.draw(ctx.canvas, ctx.factory, kCableSvg, bridge_icon_rect_,
+                                    kBridgeIconPx, ctx.theme.palette.text_secondary);
+        }
     }
 
     // Topic: rich text (HTML) if present, plain label otherwise.
@@ -878,7 +1012,9 @@ void RoomHeader::paint(tk::PaintCtx& ctx)
     {
         threads_btn_->paint(ctx);
         if (threads_unread_)
+        {
             draw_thread_unread_dot(ctx, threads_btn_->bounds(), threads_mention_);
+        }
     }
 
     // Search button — shown when the shell enables room search.
@@ -891,9 +1027,8 @@ void RoomHeader::paint(tk::PaintCtx& ctx)
     if (call_btn_ && call_btn_->visible())
     {
         // Active call: use accent colour to indicate in-progress.
-        call_btn_->set_icon_color_override(
-            call_active_ ? ctx.theme.palette.accent
-                        : ctx.theme.palette.text_primary);
+        call_btn_->set_icon_color_override(call_active_ ? ctx.theme.palette.accent
+                                                        : ctx.theme.palette.text_primary);
         call_btn_->paint(ctx);
     }
 
@@ -904,9 +1039,10 @@ void RoomHeader::paint(tk::PaintCtx& ctx)
         more_btn_->paint(ctx);
         // Threads collapsed into the overflow menu → carry the unread dot on
         // the "…" trigger so the signal survives narrow widths.
-        if (threads_unread_ && show_threads_btn_ &&
-            (!threads_btn_ || !threads_btn_->visible()))
+        if (threads_unread_ && show_threads_btn_ && (!threads_btn_ || !threads_btn_->visible()))
+        {
             draw_thread_unread_dot(ctx, more_btn_->bounds(), threads_mention_);
+        }
     }
 
     // Register the date picker as the active popup so the host calls
@@ -915,24 +1051,50 @@ void RoomHeader::paint(tk::PaintCtx& ctx)
     // already-open check (see its doc comment) actually run instead of
     // being pre-empted by an outside-click dismiss on the same press.
     if (date_picker_visible_ && date_picker_ && ctx.host)
+    {
         ctx.host->register_popup(date_picker_.get(), calendar_btn_);
+    }
+}
+
+std::string RoomHeader::bridge_tooltip_() const
+{
+    if (bridge_network_name_.empty())
+    {
+        return tk::tr("This room is connected to another chat app. Your messages are sent there "
+                      "too, and that app's own rules apply, not just Matrix's.");
+    }
+    return tk::trf(tk::tr("This room is connected to {0}. Your messages are sent there too, and "
+                          "{0}'s own rules apply, not just Matrix's."),
+                   {bridge_network_name_});
 }
 
 std::size_t RoomHeader::access_row_count() const
 {
     access_rows_.clear();
     if (encrypted_ && !condensed_)
+    {
         access_rows_.push_back({tk::Role::Image, tk::tr("Encrypted room"), {}, lock_icon_rect_});
+    }
+    if (bridged_ && !condensed_ && bridge_icon_rect_.w > 0.0f)
+    {
+        access_rows_.push_back({tk::Role::Image, bridge_tooltip_(), {}, bridge_icon_rect_});
+    }
     if (!topic_spans_.empty())
     {
         std::string text;
         for (const auto& span : topic_spans_)
+        {
             text += span.text;
+        }
         access_rows_.push_back({tk::Role::StaticText, text, {}, topic_rect_});
         for (const auto& span : topic_spans_)
+        {
             if (!span.url.empty())
+            {
                 access_rows_.push_back({tk::Role::Link, span.text.empty() ? span.url : span.text,
                                         span.url, topic_rect_});
+            }
+        }
     }
     return access_rows_.size();
 }
@@ -950,7 +1112,9 @@ std::string RoomHeader::access_name_for_widget_row(std::size_t i) const
 bool RoomHeader::access_activate_widget_row(std::size_t i)
 {
     if (i >= access_rows_.size() || access_rows_[i].url.empty() || !on_link_clicked)
+    {
         return false;
+    }
     const std::string url = access_rows_[i].url;
     on_link_clicked(url);
     return true;
@@ -961,8 +1125,7 @@ tk::Rect RoomHeader::access_rect_for_widget_row(std::size_t i) const
     return i < access_rows_.size() ? access_rows_[i].rect : tk::Rect{};
 }
 
-void RoomHeader::draw_lock_icon(tk::Canvas& canvas, tk::Rect rect,
-                                tk::Color tint)
+void RoomHeader::draw_lock_icon(tk::Canvas& canvas, tk::Rect rect, tk::Color tint)
 {
     // 10×12 icon box, pixel-snapped and centred in `rect`.
     const float ox = std::floor(rect.x + (rect.w - 10.0f) * 0.5f);
@@ -985,9 +1148,10 @@ bool RoomHeader::topic_link_at_(tk::Point world) const
     // unbounded call would resolve a press anywhere in the header (room name,
     // avatar) to whatever topic link happens to be nearest.
     if (!topic_layout_ || !rect_contains(topic_rect_, world))
+    {
         return false;
-    return !topic_layout_->link_at({world.x - topic_rect_.x, world.y - topic_rect_.y})
-                .empty();
+    }
+    return !topic_layout_->link_at({world.x - topic_rect_.x, world.y - topic_rect_.y}).empty();
 }
 
 bool RoomHeader::on_pointer_down(tk::Point local)
@@ -997,9 +1161,13 @@ bool RoomHeader::on_pointer_down(tk::Point local)
     // only for a press on a topic hyperlink (info_area_ declines those):
     // capture it so on_pointer_up can open the link.
     if (condensed_)
+    {
         return false;
+    }
     if (!topic_link_at_({bounds_.x + local.x, bounds_.y + local.y}))
+    {
         return false;
+    }
     press_info_ = true;
     return true;
 }
@@ -1007,21 +1175,29 @@ bool RoomHeader::on_pointer_down(tk::Point local)
 void RoomHeader::on_pointer_up(tk::Point local, bool inside_self)
 {
     if (!press_info_)
+    {
         return;
+    }
     press_info_ = false;
     if (!inside_self)
+    {
         return;
+    }
 
     // `local` is widget-local but topic_rect_ is in world coordinates (set in
     // arrange() from bounds_.{x,y}); convert to world first, else links are
     // unhittable on any layout whose origin isn't (0,0).
     const tk::Point world{bounds_.x + local.x, bounds_.y + local.y};
     if (!topic_link_at_(world))
+    {
         return;
-    const std::string url = topic_layout_->link_at(
-        {world.x - topic_rect_.x, world.y - topic_rect_.y});
+    }
+    const std::string url =
+        topic_layout_->link_at({world.x - topic_rect_.x, world.y - topic_rect_.y});
     if (!url.empty() && on_link_clicked)
+    {
         on_link_clicked(url);
+    }
 }
 
 tk::Widget* RoomHeader::dispatch_pointer_move(tk::Point world, bool* dirty)
@@ -1058,20 +1234,45 @@ bool RoomHeader::on_pointer_move(tk::Point local)
     // widgets via the host's topmost-hovered-button tracking; this handler only
     // owns the topic tooltip. topic_rect_ already excludes the button reserve,
     // so it never overlaps the action buttons.
-    const bool new_hover_topic = world.x >= topic_rect_.x &&
-                                 world.x < topic_rect_.x + topic_rect_.w &&
-                                 world.y >= topic_rect_.y &&
-                                 world.y < topic_rect_.y + topic_rect_.h;
+    const bool new_hover_topic =
+        world.x >= topic_rect_.x && world.x < topic_rect_.x + topic_rect_.w &&
+        world.y >= topic_rect_.y && world.y < topic_rect_.y + topic_rect_.h;
 
     if (new_hover_topic && !hover_topic_ && topic_truncated_)
     {
-        if (host_) host_->show_tooltip(this, topic_, topic_rect_);
+        if (host_)
+        {
+            host_->show_tooltip(this, topic_, topic_rect_);
+        }
     }
     else if (!new_hover_topic && hover_topic_)
     {
-        if (host_) host_->hide_tooltip(this);
+        if (host_)
+        {
+            host_->hide_tooltip(this);
+        }
     }
     hover_topic_ = new_hover_topic;
+
+    const bool new_hover_bridge =
+        bridged_ && bridge_icon_rect_.w > 0.0f && world.x >= bridge_icon_rect_.x &&
+        world.x < bridge_icon_rect_.x + bridge_icon_rect_.w && world.y >= bridge_icon_rect_.y &&
+        world.y < bridge_icon_rect_.y + bridge_icon_rect_.h;
+    if (new_hover_bridge && !hover_bridge_)
+    {
+        if (host_)
+        {
+            host_->show_tooltip(this, bridge_tooltip_(), bridge_icon_rect_);
+        }
+    }
+    else if (!new_hover_bridge && hover_bridge_)
+    {
+        if (host_)
+        {
+            host_->hide_tooltip(this);
+        }
+    }
+    hover_bridge_ = new_hover_bridge;
 
     // Cursor: switch to pointer when hovering a link in the topic layout.
     std::string new_link_url;
@@ -1083,7 +1284,10 @@ bool RoomHeader::on_pointer_move(tk::Point local)
     if (new_link_url != hover_link_url_)
     {
         hover_link_url_ = new_link_url;
-        if (on_link_hovered) on_link_hovered(hover_link_url_);
+        if (on_link_hovered)
+        {
+            on_link_hovered(hover_link_url_);
+        }
     }
 
     return true;
@@ -1098,10 +1302,18 @@ void RoomHeader::on_pointer_leave()
         host_->hide_tooltip(this);
     }
     hover_topic_ = false;
+    if (hover_bridge_ && host_)
+    {
+        host_->hide_tooltip(this);
+    }
+    hover_bridge_ = false;
     if (!hover_link_url_.empty())
     {
         hover_link_url_.clear();
-        if (on_link_hovered) on_link_hovered({});
+        if (on_link_hovered)
+        {
+            on_link_hovered({});
+        }
     }
     // Host calls request_repaint() after dispatching pointer-leave.
 }
@@ -1112,7 +1324,9 @@ void RoomHeader::paint_overlay(tk::PaintCtx& ctx)
     // DatePickerView is not in the widget tree, so the tree traversal inside
     // root_->paint_overlay() never reaches it. We must call it explicitly here.
     if (date_picker_visible_ && date_picker_)
+    {
         date_picker_->paint_overlay(ctx);
+    }
 }
 
 void RoomHeader::on_popup_dismiss()
@@ -1133,7 +1347,9 @@ void RoomHeader::show_date_picker_()
         return;
     }
     if (!calendar_btn_ || !date_picker_)
+    {
         return;
+    }
 
     apply_picker_max_();
 
@@ -1146,23 +1362,31 @@ void RoomHeader::show_date_picker_()
         {px, btn.y + btn.h + 4.0f, DatePickerView::kWidth, DatePickerView::kHeight});
     date_picker_visible_ = true;
     if (on_date_picker_opened)
+    {
         on_date_picker_opened();
+    }
 }
 
 void RoomHeader::set_jump_to_date_max_ts(std::uint64_t ts_ms)
 {
     if (jump_max_ts_ == ts_ms)
+    {
         return;
+    }
     jump_max_ts_ = ts_ms;
     if (date_picker_)
+    {
         apply_picker_max_();
+    }
 }
 
 void RoomHeader::reset_jump_to_date()
 {
     jump_max_ts_ = 0;
     if (date_picker_)
+    {
         date_picker_->reset_view();
+    }
 }
 
 void RoomHeader::apply_picker_max_()

@@ -33,9 +33,6 @@
     <key>NSScreenCaptureUsageDescription</key><string>Tesseract needs screen recording access to share your screen during calls.</string>
     <key>NSLocationWhenInUseUsageDescription</key><string>Tesseract needs location access to share your current location in a chat.</string>
 
-    <!-- Prevent LaunchServices from opening a second instance via Finder/Dock. -->
-    <key>LSMultipleInstancesProhibited</key><true/>
-
     <!-- matrix: URI scheme handler (MSC2312). -->
     <key>CFBundleURLTypes</key>
     <array>

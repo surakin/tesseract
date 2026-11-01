@@ -566,7 +566,13 @@ mod tests {
             done_rx: std::sync::Mutex::new(Some(done_rx)),
             cancel_tx,
         });
-        Ends { scanned_tx, check_rx, auth_tx, done_tx, cancel_rx }
+        Ends {
+            scanned_tx,
+            check_rx,
+            auth_tx,
+            done_tx,
+            cancel_rx,
+        }
     }
 
     #[test]
@@ -577,7 +583,11 @@ mod tests {
         assert!(c.qr_grant_wait_scanned().ok);
         let again = c.qr_grant_wait_scanned();
         assert!(!again.ok);
-        assert!(again.message.contains("already called"), "{}", again.message);
+        assert!(
+            again.message.contains("already called"),
+            "{}",
+            again.message
+        );
     }
 
     #[test]
@@ -601,7 +611,11 @@ mod tests {
         drop(ends.scanned_tx);
         let r = c.qr_grant_wait_scanned();
         assert!(!r.ok);
-        assert!(r.message.contains("before the QR code was scanned"), "{}", r.message);
+        assert!(
+            r.message.contains("before the QR code was scanned"),
+            "{}",
+            r.message
+        );
     }
 
     #[test]
@@ -612,7 +626,11 @@ mod tests {
         assert_eq!(ends.check_rx.try_recv().unwrap(), 42);
         let again = c.qr_grant_submit_check_code(43);
         assert!(!again.ok);
-        assert!(again.message.contains("already submitted"), "{}", again.message);
+        assert!(
+            again.message.contains("already submitted"),
+            "{}",
+            again.message
+        );
     }
 
     #[test]
@@ -629,7 +647,9 @@ mod tests {
     fn await_auth_returns_the_verification_uri() {
         let mut c = ClientFfi::new();
         let ends = install_handle(&mut c);
-        ends.auth_tx.send("https://auth.example.org/device".to_owned()).unwrap();
+        ends.auth_tx
+            .send("https://auth.example.org/device".to_owned())
+            .unwrap();
         let a = c.qr_grant_wait_auth();
         assert!(a.ok);
         assert!(a.message.is_empty());
@@ -655,10 +675,15 @@ mod tests {
         let ends = install_handle(&mut c);
         ends.done_tx.send(Ok(())).unwrap();
         assert!(c.qr_grant_wait_complete().ok);
-        assert!(c.qr_grant_wait_complete().message.contains("already called"));
+        assert!(c
+            .qr_grant_wait_complete()
+            .message
+            .contains("already called"));
 
         let ends = install_handle(&mut c);
-        ends.done_tx.send(Err("homeserver said no".to_owned())).unwrap();
+        ends.done_tx
+            .send(Err("homeserver said no".to_owned()))
+            .unwrap();
         let r = c.qr_grant_wait_complete();
         assert!(!r.ok);
         assert_eq!(r.message, "homeserver said no");
@@ -667,7 +692,11 @@ mod tests {
         drop(ends.done_tx);
         let r = c.qr_grant_wait_complete();
         assert!(!r.ok);
-        assert!(r.message.contains("panicked or was cancelled"), "{}", r.message);
+        assert!(
+            r.message.contains("panicked or was cancelled"),
+            "{}",
+            r.message
+        );
     }
 
     #[test]

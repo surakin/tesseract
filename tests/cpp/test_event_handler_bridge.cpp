@@ -27,31 +27,38 @@ namespace
 tesseract_ffi::TimelineEvent make_ffi_event(const std::string& msg_type)
 {
     tesseract_ffi::TimelineEvent ev{};
-    ev.msg_type             = msg_type;
-    ev.event_id             = "$evt:server";
-    ev.room_id              = "!room:server";
-    ev.sender               = "@alice:server";
-    ev.sender_name          = "Alice";
-    ev.sender_avatar_url    = "mxc://server/avatar";
-    ev.body                 = "body text";
-    ev.formatted_body       = "<p>body text</p>";
-    ev.timestamp            = 1700000000000ULL;
-    ev.in_reply_to_id       = "$reply_to";
+    ev.msg_type = msg_type;
+    ev.event_id = "$evt:server";
+    ev.room_id = "!room:server";
+    ev.sender = "@alice:server";
+    ev.sender_name = "Alice";
+    ev.sender_avatar_url = "mxc://server/avatar";
+    ev.body = "body text";
+    ev.formatted_body = "<p>body text</p>";
+    ev.timestamp = 1700000000000ULL;
+    ev.in_reply_to_id = "$reply_to";
     ev.in_reply_to_sender_name = "Bob";
-    ev.in_reply_to_body     = "earlier message";
+    ev.in_reply_to_body = "earlier message";
     ev.in_reply_to_image_url = "mxc://server/img";
     ev.in_reply_to_image_encrypted_json = R"({"enc":"json"})";
-    ev.is_edited            = true;
-    ev.thread_root_id       = "$root";
-    ev.is_thread_root       = true;
-    ev.thread_reply_count   = 7;
+    ev.is_edited = true;
+    ev.forwarded = true;
+    ev.forwarded_sender = "@orig:other";
+    ev.forwarded_sender_name = "Orig";
+    ev.forwarded_room_id = "!origroom:other";
+    ev.forwarded_event_id = "$orig";
+    ev.forwarded_origin_ts = 1690000000000LL;
+    ev.thread_root_id = "$root";
+    ev.is_thread_root = true;
+    ev.thread_reply_count = 7;
     ev.thread_latest_sender_name = "Carol";
-    ev.thread_latest_body   = "latest reply";
-    ev.thread_latest_ts     = 1700000100000ULL;
-    ev.pending_state        = "sending";
-    ev.pending_error        = "oops";
-    ev.pending_recoverable  = true;
-    ev.pending_txn_id       = "txn-abc";
+    ev.thread_latest_body = "latest reply";
+    ev.thread_latest_ts = 1700000100000ULL;
+    ev.pending_state = "sending";
+    ev.pending_error = "oops";
+    ev.pending_recoverable = true;
+    ev.pending_txn_id = "txn-abc";
+    ev.pending_error_users.push_back(rust::String("@carol:server"));
     return ev;
 }
 
@@ -79,17 +86,16 @@ TEST_CASE("make_event dispatches m.emote to EmoteEvent", "[ffi][make_event]")
     CHECK(dynamic_cast<tesseract::EmoteEvent*>(ev.get()) != nullptr);
 }
 
-TEST_CASE("make_event dispatches m.image to ImageEvent with media fields",
-          "[ffi][make_event]")
+TEST_CASE("make_event dispatches m.image to ImageEvent with media fields", "[ffi][make_event]")
 {
     auto ffi = make_ffi_event("m.image");
-    ffi.source_url      = "mxc://server/image";
+    ffi.source_url = "mxc://server/image";
     ffi.image_thumbnail_url = "mxc://server/thumb";
-    ffi.width           = 800;
-    ffi.height          = 600;
-    ffi.image_filename  = "photo.png";
-    ffi.blurhash        = "L6PZfSi_.AyE_3t7t7R**0o#DgR4";
-    ffi.image_animated  = true;
+    ffi.width = 800;
+    ffi.height = 600;
+    ffi.image_filename = "photo.png";
+    ffi.blurhash = "L6PZfSi_.AyE_3t7t7R**0o#DgR4";
+    ffi.image_animated = true;
     auto ev = tesseract::make_event(ffi);
     auto* img = dynamic_cast<tesseract::ImageEvent*>(ev.get());
     REQUIRE(img != nullptr);
@@ -106,9 +112,9 @@ TEST_CASE("make_event dispatches m.image to ImageEvent with media fields",
 TEST_CASE("make_event dispatches m.sticker to StickerEvent", "[ffi][make_event]")
 {
     auto ffi = make_ffi_event("m.sticker");
-    ffi.source_url        = "mxc://server/sticker";
-    ffi.width             = 256;
-    ffi.height            = 256;
+    ffi.source_url = "mxc://server/sticker";
+    ffi.width = 256;
+    ffi.height = 256;
     ffi.sticker_info_json = R"({"w":256,"h":256})";
     auto ev = tesseract::make_event(ffi);
     auto* st = dynamic_cast<tesseract::StickerEvent*>(ev.get());
@@ -118,8 +124,7 @@ TEST_CASE("make_event dispatches m.sticker to StickerEvent", "[ffi][make_event]"
     CHECK(st->info_json == R"({"w":256,"h":256})");
 }
 
-TEST_CASE("make_event dispatches m.redacted to RedactedEvent",
-          "[ffi][make_event]")
+TEST_CASE("make_event dispatches m.redacted to RedactedEvent", "[ffi][make_event]")
 {
     auto ev = tesseract::make_event(make_ffi_event("m.redacted"));
     CHECK(ev->type == tesseract::EventType::Redacted);
@@ -133,11 +138,10 @@ TEST_CASE("make_event dispatches m.utd to UtdEvent", "[ffi][make_event]")
     CHECK(dynamic_cast<tesseract::UtdEvent*>(ev.get()) != nullptr);
 }
 
-TEST_CASE("make_event dispatches m.file to FileEvent with metadata",
-          "[ffi][make_event]")
+TEST_CASE("make_event dispatches m.file to FileEvent with metadata", "[ffi][make_event]")
 {
     auto ffi = make_ffi_event("m.file");
-    ffi.file_url  = "mxc://server/doc";
+    ffi.file_url = "mxc://server/doc";
     ffi.file_name = "report.pdf";
     ffi.file_size = 12345;
     auto ev = tesseract::make_event(ffi);
@@ -148,15 +152,14 @@ TEST_CASE("make_event dispatches m.file to FileEvent with metadata",
     REQUIRE(f->source);
 }
 
-TEST_CASE("make_event dispatches m.audio to AudioEvent with metadata",
-          "[ffi][make_event]")
+TEST_CASE("make_event dispatches m.audio to AudioEvent with metadata", "[ffi][make_event]")
 {
     auto ffi = make_ffi_event("m.audio");
-    ffi.audio_url         = "mxc://server/clip";
-    ffi.audio_mime        = "audio/mpeg";
+    ffi.audio_url = "mxc://server/clip";
+    ffi.audio_mime = "audio/mpeg";
     ffi.audio_duration_ms = 90000;
-    ffi.file_name         = "song.mp3";
-    ffi.file_size         = 500000;
+    ffi.file_name = "song.mp3";
+    ffi.file_size = 500000;
     auto ev = tesseract::make_event(ffi);
     auto* a = dynamic_cast<tesseract::AudioEvent*>(ev.get());
     REQUIRE(a != nullptr);
@@ -166,14 +169,13 @@ TEST_CASE("make_event dispatches m.audio to AudioEvent with metadata",
     CHECK(a->file_size == 500000);
 }
 
-TEST_CASE("make_event dispatches m.voice to VoiceEvent with waveform",
-          "[ffi][make_event]")
+TEST_CASE("make_event dispatches m.voice to VoiceEvent with waveform", "[ffi][make_event]")
 {
     auto ffi = make_ffi_event("m.voice");
-    ffi.audio_url         = "mxc://server/voice";
-    ffi.audio_mime        = "audio/ogg";
+    ffi.audio_url = "mxc://server/voice";
+    ffi.audio_mime = "audio/ogg";
     ffi.audio_duration_ms = 5000;
-    ffi.audio_waveform    = rust::Vec<std::uint16_t>{};
+    ffi.audio_waveform = rust::Vec<std::uint16_t>{};
     ffi.audio_waveform.push_back(10);
     ffi.audio_waveform.push_back(20);
     ffi.audio_waveform.push_back(30);
@@ -187,23 +189,22 @@ TEST_CASE("make_event dispatches m.voice to VoiceEvent with waveform",
     CHECK(v->waveform[2] == 30);
 }
 
-TEST_CASE("make_event dispatches m.video to VideoEvent with vendor hints",
-          "[ffi][make_event]")
+TEST_CASE("make_event dispatches m.video to VideoEvent with vendor hints", "[ffi][make_event]")
 {
     auto ffi = make_ffi_event("m.video");
-    ffi.source_url           = "mxc://server/movie";
-    ffi.video_thumbnail_url  = "mxc://server/mthumb";
-    ffi.video_mime           = "video/mp4";
-    ffi.width                = 1280;
-    ffi.height               = 720;
-    ffi.video_duration_ms    = 60000;
-    ffi.image_filename       = "clip.mp4";
-    ffi.video_autoplay       = true;
-    ffi.video_loop           = true;
-    ffi.video_no_audio       = true;
-    ffi.video_hide_controls  = true;
-    ffi.video_gif            = true;
-    ffi.blurhash             = "L9AB:rb_~Wxu#k%MR*j[";
+    ffi.source_url = "mxc://server/movie";
+    ffi.video_thumbnail_url = "mxc://server/mthumb";
+    ffi.video_mime = "video/mp4";
+    ffi.width = 1280;
+    ffi.height = 720;
+    ffi.video_duration_ms = 60000;
+    ffi.image_filename = "clip.mp4";
+    ffi.video_autoplay = true;
+    ffi.video_loop = true;
+    ffi.video_no_audio = true;
+    ffi.video_hide_controls = true;
+    ffi.video_gif = true;
+    ffi.blurhash = "L9AB:rb_~Wxu#k%MR*j[";
     auto ev = tesseract::make_event(ffi);
     auto* v = dynamic_cast<tesseract::VideoEvent*>(ev.get());
     REQUIRE(v != nullptr);
@@ -220,12 +221,11 @@ TEST_CASE("make_event dispatches m.video to VideoEvent with vendor hints",
     CHECK(v->blurhash == "L9AB:rb_~Wxu#k%MR*j[");
 }
 
-TEST_CASE("make_event dispatches m.location to LocationEvent",
-          "[ffi][make_event]")
+TEST_CASE("make_event dispatches m.location to LocationEvent", "[ffi][make_event]")
 {
     auto ffi = make_ffi_event("m.location");
-    ffi.location_lat         = 40.7128;
-    ffi.location_lon         = -74.0060;
+    ffi.location_lat = 40.7128;
+    ffi.location_lon = -74.0060;
     ffi.location_description = "New York";
     auto ev = tesseract::make_event(ffi);
     auto* loc = dynamic_cast<tesseract::LocationEvent*>(ev.get());
@@ -244,7 +244,10 @@ TEST_CASE("make_event dispatches m.poll to PollEvent", "[ffi][make_event][poll]"
     ffi.poll_results_visible = true;
     ffi.poll_total_votes = 3;
     tesseract_ffi::PollAnswerFfi a;
-    a.id = "a"; a.text = "Pizza"; a.votes = 2; a.mine = true;
+    a.id = "a";
+    a.text = "Pizza";
+    a.votes = 2;
+    a.mine = true;
     ffi.poll_answers.push_back(a);
 
     auto ev = tesseract::make_event(ffi);
@@ -262,15 +265,14 @@ TEST_CASE("make_event dispatches m.poll to PollEvent", "[ffi][make_event][poll]"
     CHECK(p.answers[0].mine);
 }
 
-TEST_CASE("make_event carries live-location share fields",
-          "[ffi][make_event][location]")
+TEST_CASE("make_event carries live-location share fields", "[ffi][make_event][location]")
 {
     auto ffi = make_ffi_event("m.location");
-    ffi.location_live_share      = true;
-    ffi.location_live            = true;
-    ffi.location_awaiting_fix    = true;
+    ffi.location_live_share = true;
+    ffi.location_live = true;
+    ffi.location_awaiting_fix = true;
     ffi.location_live_expires_ms = 61000;
-    ffi.location_updated_ms      = 5000;
+    ffi.location_updated_ms = 5000;
     auto ev = tesseract::make_event(ffi);
     auto* loc = dynamic_cast<tesseract::LocationEvent*>(ev.get());
     REQUIRE(loc != nullptr);
@@ -287,8 +289,7 @@ TEST_CASE("make_event carries live-location share fields",
     CHECK_FALSE(p->awaiting_fix);
 }
 
-TEST_CASE("make_event dispatches m.room.member to MembershipStateEvent",
-          "[ffi][make_event]")
+TEST_CASE("make_event dispatches m.room.member to MembershipStateEvent", "[ffi][make_event]")
 {
     auto ffi = make_ffi_event("m.room.member");
     ffi.membership_action = "kicked";
@@ -306,8 +307,7 @@ TEST_CASE("make_event dispatches m.room.member to MembershipStateEvent",
     CHECK(mem->reason == "spamming");
 }
 
-TEST_CASE("parse_membership_action round-trips every known discriminant",
-          "[ffi][make_event]")
+TEST_CASE("parse_membership_action round-trips every known discriminant", "[ffi][make_event]")
 {
     using tesseract::MembershipAction;
     CHECK(tesseract::parse_membership_action("joined") == MembershipAction::Joined);
@@ -325,50 +325,45 @@ TEST_CASE("parse_membership_action round-trips every known discriminant",
     CHECK(tesseract::parse_membership_action("invitation_revoked") ==
           MembershipAction::InvitationRevoked);
     CHECK(tesseract::parse_membership_action("knocked") == MembershipAction::Knocked);
-    CHECK(tesseract::parse_membership_action("knock_accepted") ==
-          MembershipAction::KnockAccepted);
+    CHECK(tesseract::parse_membership_action("knock_accepted") == MembershipAction::KnockAccepted);
     CHECK(tesseract::parse_membership_action("knock_retracted") ==
           MembershipAction::KnockRetracted);
-    CHECK(tesseract::parse_membership_action("knock_denied") ==
-          MembershipAction::KnockDenied);
+    CHECK(tesseract::parse_membership_action("knock_denied") == MembershipAction::KnockDenied);
     CHECK(tesseract::parse_membership_action("avatar_changed") == MembershipAction::AvatarChanged);
     CHECK(tesseract::parse_membership_action("avatar_removed") == MembershipAction::AvatarRemoved);
     CHECK(tesseract::parse_membership_action("display_name_changed") ==
           MembershipAction::DisplayNameChanged);
     CHECK(tesseract::parse_membership_action("display_name_removed") ==
           MembershipAction::DisplayNameRemoved);
-    CHECK(tesseract::parse_membership_action("profile_changed") == MembershipAction::ProfileChanged);
+    CHECK(tesseract::parse_membership_action("profile_changed") ==
+          MembershipAction::ProfileChanged);
     // Unreachable in practice (Rust only ever emits a known discriminant);
     // must not crash on garbage input.
     CHECK(tesseract::parse_membership_action("garbage") == MembershipAction::Joined);
 }
 
-TEST_CASE("make_event dispatches virtual.date_divider to DaySeparatorEvent",
-          "[ffi][make_event]")
+TEST_CASE("make_event dispatches virtual.date_divider to DaySeparatorEvent", "[ffi][make_event]")
 {
     auto ev = tesseract::make_event(make_ffi_event("virtual.date_divider"));
     CHECK(ev->type == tesseract::EventType::DaySeparator);
     CHECK(dynamic_cast<tesseract::DaySeparatorEvent*>(ev.get()) != nullptr);
 }
 
-TEST_CASE("make_event dispatches virtual.read_marker to ReadMarkerEvent",
-          "[ffi][make_event]")
+TEST_CASE("make_event dispatches virtual.read_marker to ReadMarkerEvent", "[ffi][make_event]")
 {
     auto ev = tesseract::make_event(make_ffi_event("virtual.read_marker"));
     CHECK(ev->type == tesseract::EventType::ReadMarker);
     CHECK(dynamic_cast<tesseract::ReadMarkerEvent*>(ev.get()) != nullptr);
 }
 
-TEST_CASE("make_event dispatches virtual.timeline_start to TimelineStartEvent",
-          "[ffi][make_event]")
+TEST_CASE("make_event dispatches virtual.timeline_start to TimelineStartEvent", "[ffi][make_event]")
 {
     auto ev = tesseract::make_event(make_ffi_event("virtual.timeline_start"));
     CHECK(ev->type == tesseract::EventType::TimelineStart);
     CHECK(dynamic_cast<tesseract::TimelineStartEvent*>(ev.get()) != nullptr);
 }
 
-TEST_CASE("make_event falls back to UnhandledEvent for unknown msg_type",
-          "[ffi][make_event]")
+TEST_CASE("make_event falls back to UnhandledEvent for unknown msg_type", "[ffi][make_event]")
 {
     auto ev = tesseract::make_event(make_ffi_event("m.future_type_we_dont_know"));
     auto* u = dynamic_cast<tesseract::UnhandledEvent*>(ev.get());
@@ -403,6 +398,14 @@ TEST_CASE("assign_base copies every shared base field", "[ffi][assign_base]")
     CHECK(ev->in_reply_to_image_encrypted_json == R"({"enc":"json"})");
     CHECK(ev->is_edited);
 
+    // MSC4553 forward attribution.
+    CHECK(ev->forwarded);
+    CHECK(ev->forwarded_sender == "@orig:other");
+    CHECK(ev->forwarded_sender_name == "Orig");
+    CHECK(ev->forwarded_room_id == "!origroom:other");
+    CHECK(ev->forwarded_event_id == "$orig");
+    CHECK(ev->forwarded_origin_ts == 1690000000000LL);
+
     // Thread fields — the regression guard that would have caught any
     // future drop of these when assign_base evolves.
     CHECK(ev->thread_root_id == "$root");
@@ -416,6 +419,8 @@ TEST_CASE("assign_base copies every shared base field", "[ffi][assign_base]")
     CHECK(ev->pending_error == "oops");
     CHECK(ev->pending_recoverable);
     CHECK(ev->pending_txn_id == "txn-abc");
+    REQUIRE(ev->pending_error_users.size() == 1);
+    CHECK(ev->pending_error_users[0] == "@carol:server");
 }
 
 TEST_CASE("assign_base populates reactions", "[ffi][assign_base]")
@@ -479,10 +484,10 @@ TEST_CASE("assign_base populates read receipts", "[ffi][assign_base]")
 TEST_CASE("from_ffi copies PinnedEvent fields", "[ffi][pinned]")
 {
     tesseract_ffi::PinnedEvent in{};
-    in.event_id     = "$pinned:server";
-    in.sender_name  = "Alice";
+    in.event_id = "$pinned:server";
+    in.sender_name = "Alice";
     in.body_preview = "Important announcement";
-    in.timestamp    = 1700000000000ULL;
+    in.timestamp = 1700000000000ULL;
 
     auto out = tesseract::from_ffi(in);
     CHECK(out.event_id == "$pinned:server");
@@ -497,17 +502,17 @@ TEST_CASE("from_ffi(RoomInfo) propagates pinned_events", "[ffi][pinned]")
     in.id = "!room:server";
 
     tesseract_ffi::PinnedEvent p1{};
-    p1.event_id    = "$a:s";
+    p1.event_id = "$a:s";
     p1.sender_name = "Alice";
     p1.body_preview = "first";
-    p1.timestamp   = 1000;
+    p1.timestamp = 1000;
     in.pinned_events.push_back(std::move(p1));
 
     tesseract_ffi::PinnedEvent p2{};
-    p2.event_id    = "$b:s";
+    p2.event_id = "$b:s";
     p2.sender_name = "Bob";
     p2.body_preview = "second";
-    p2.timestamp   = 2000;
+    p2.timestamp = 2000;
     in.pinned_events.push_back(std::move(p2));
 
     auto out = tesseract::from_ffi(in);

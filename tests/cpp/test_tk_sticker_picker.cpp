@@ -67,13 +67,11 @@ TEST_CASE("PackUsage operators behave like a bitset", "[image_pack]")
     REQUIRE(!any(none & PackUsage::Sticker));
 }
 
-TEST_CASE("PackUsageFilter maps to the FFI tags expected by Rust",
-          "[image_pack]")
+TEST_CASE("PackUsageFilter maps to the FFI tags expected by Rust", "[image_pack]")
 {
-    REQUIRE(std::string(tesseract::pack_usage_filter_to_str(
-                PackUsageFilter::Sticker)) == "sticker");
-    REQUIRE(std::string(tesseract::pack_usage_filter_to_str(
-                PackUsageFilter::Emoticon)) == "emoticon");
-    REQUIRE(std::string(tesseract::pack_usage_filter_to_str(
-                PackUsageFilter::Any)) == "any");
+    REQUIRE(std::string(tesseract::pack_usage_filter_to_str(PackUsageFilter::Sticker)) ==
+            "sticker");
+    REQUIRE(std::string(tesseract::pack_usage_filter_to_str(PackUsageFilter::Emoticon)) ==
+            "emoticon");
+    REQUIRE(std::string(tesseract::pack_usage_filter_to_str(PackUsageFilter::Any)) == "any");
 }

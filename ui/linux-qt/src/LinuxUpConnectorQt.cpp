@@ -32,7 +32,7 @@ public:
 
 public slots:
     void Message(const QString& token, const QByteArray& message,
-                 const QString& /*id*/);  // out-of-line: UpSharedBusQt is incomplete here
+                 const QString& /*id*/); // out-of-line: UpSharedBusQt is incomplete here
     void NewEndpoint(const QString& token, const QString& endpoint);
     void Unregistered(const QString& token);
 
@@ -103,13 +103,12 @@ public:
             {
                 continue; // skip unique names
             }
-            QDBusInterface iface(
-                svc, QStringLiteral("/org/unifiedpush/Distributor"),
-                QStringLiteral("org.freedesktop.DBus.Introspectable"),
-                QDBusConnection::sessionBus());
+            QDBusInterface iface(svc, QStringLiteral("/org/unifiedpush/Distributor"),
+                                 QStringLiteral("org.freedesktop.DBus.Introspectable"),
+                                 QDBusConnection::sessionBus());
             QDBusReply<QString> xml = iface.call(QStringLiteral("Introspect"));
-            if (xml.isValid() && xml.value().contains(QStringLiteral(
-                                     "org.unifiedpush.Distributor1")))
+            if (xml.isValid() &&
+                xml.value().contains(QStringLiteral("org.unifiedpush.Distributor1")))
             {
                 return svc;
             }
@@ -121,10 +120,9 @@ public:
     // (so the worker is drained on shutdown) and hops the result back to the
     // main thread via post_to_ui. Falls back to QtConcurrent + QFutureWatcher
     // when no thunks are wired (e.g. tests).
-    void find_distributor_async(
-        const std::string& token,
-        std::function<void(std::function<void()>)> run_async,
-        std::function<void(std::function<void()>)> post_to_ui)
+    void find_distributor_async(const std::string& token,
+                                std::function<void(std::function<void()>)> run_async,
+                                std::function<void(std::function<void()>)> post_to_ui)
     {
         std::string tok = token;
         if (run_async && post_to_ui)
@@ -138,39 +136,39 @@ public:
                     {
                         return;
                     }
-                    pti([this, tok, dist = dist.toStdString()]()
-                    {
-                        auto it = routes_.find(tok);
-                        if (it == routes_.end())
+                    pti(
+                        [this, tok, dist = dist.toStdString()]()
                         {
-                            return; // connector stopped before scan finished
-                        }
-                        it->second->set_distributor(dist);
-                        distributor_register(QString::fromStdString(dist), tok);
-                    });
+                            auto it = routes_.find(tok);
+                            if (it == routes_.end())
+                            {
+                                return; // connector stopped before scan finished
+                            }
+                            it->second->set_distributor(dist);
+                            distributor_register(QString::fromStdString(dist), tok);
+                        });
                 });
             return;
         }
 
         auto* watcher = new QFutureWatcher<QString>(this);
-        QObject::connect(
-            watcher, &QFutureWatcher<QString>::finished, this,
-            [this, watcher, tok]()
-            {
-                QString dist = watcher->result();
-                watcher->deleteLater();
-                if (dist.isEmpty())
-                {
-                    return;
-                }
-                auto it = routes_.find(tok);
-                if (it == routes_.end())
-                {
-                    return; // connector stopped before scan finished
-                }
-                it->second->set_distributor(dist.toStdString());
-                distributor_register(dist, tok);
-            });
+        QObject::connect(watcher, &QFutureWatcher<QString>::finished, this,
+                         [this, watcher, tok]()
+                         {
+                             QString dist = watcher->result();
+                             watcher->deleteLater();
+                             if (dist.isEmpty())
+                             {
+                                 return;
+                             }
+                             auto it = routes_.find(tok);
+                             if (it == routes_.end())
+                             {
+                                 return; // connector stopped before scan finished
+                             }
+                             it->second->set_distributor(dist.toStdString());
+                             distributor_register(dist, tok);
+                         });
         watcher->setFuture(QtConcurrent::run(
             [this]()
             {
@@ -183,9 +181,8 @@ public:
         QDBusInterface dist(svc, QStringLiteral("/org/unifiedpush/Distributor"),
                             QStringLiteral("org.unifiedpush.Distributor1"),
                             QDBusConnection::sessionBus());
-        dist.asyncCall(
-            QStringLiteral("Register"), QStringLiteral("im.gnomos.Tesseract"),
-            QString::fromStdString(token), QStringLiteral("Tesseract"));
+        dist.asyncCall(QStringLiteral("Register"), QStringLiteral("im.gnomos.Tesseract"),
+                       QString::fromStdString(token), QStringLiteral("Tesseract"));
     }
 
     void distributor_unregister(const QString& svc, const std::string& token)
@@ -193,8 +190,7 @@ public:
         QDBusInterface dist(svc, QStringLiteral("/org/unifiedpush/Distributor"),
                             QStringLiteral("org.unifiedpush.Distributor1"),
                             QDBusConnection::sessionBus());
-        dist.asyncCall(QStringLiteral("Unregister"),
-                       QString::fromStdString(token));
+        dist.asyncCall(QStringLiteral("Unregister"), QString::fromStdString(token));
     }
 
     void dispatch_new_endpoint(const QString& token, const QString& endpoint)
@@ -242,31 +238,26 @@ bool UpSharedBusQt::acquire()
         return active_;
     }
     auto reg = QDBusConnection::sessionBus().interface()->registerService(
-        QStringLiteral("im.gnomos.Tesseract"),
-        QDBusConnectionInterface::DontQueueService,
+        QStringLiteral("im.gnomos.Tesseract"), QDBusConnectionInterface::DontQueueService,
         QDBusConnectionInterface::DontAllowReplacement);
-    active_ = reg.isValid() &&
-              reg.value() == QDBusConnectionInterface::ServiceRegistered;
+    active_ = reg.isValid() && reg.value() == QDBusConnectionInterface::ServiceRegistered;
     if (active_)
     {
         host_ = new QObject(this);
         new UpConnector1Adaptor(host_, this);
-        QDBusConnection::sessionBus().registerObject(
-            QStringLiteral("/org/unifiedpush/Connector"), host_,
-            QDBusConnection::ExportAdaptors);
+        QDBusConnection::sessionBus().registerObject(QStringLiteral("/org/unifiedpush/Connector"),
+                                                     host_, QDBusConnection::ExportAdaptors);
     }
     return active_;
 }
 
-void UpConnector1Adaptor::Message(const QString& token,
-                                   const QByteArray& message,
-                                   const QString& /*id*/)
+void UpConnector1Adaptor::Message(const QString& token, const QByteArray& message,
+                                  const QString& /*id*/)
 {
     bus_->dispatch_message(token, message);
 }
 
-void UpConnector1Adaptor::NewEndpoint(const QString& token,
-                                      const QString& endpoint)
+void UpConnector1Adaptor::NewEndpoint(const QString& token, const QString& endpoint)
 {
     bus_->dispatch_new_endpoint(token, endpoint);
 }
@@ -292,8 +283,7 @@ LinuxUpConnectorQt::~LinuxUpConnectorQt()
     stop();
 }
 
-void LinuxUpConnectorQt::start(tesseract::Client* client,
-                               const std::string& user_id)
+void LinuxUpConnectorQt::start(tesseract::Client* client, const std::string& user_id)
 {
     if (!core_.begin(client, user_id))
     {
@@ -308,9 +298,8 @@ void LinuxUpConnectorQt::start(tesseract::Client* client,
     }
 
     bus.add_route(core_.token(), this);
-    bus.find_distributor_async(
-        core_.token(), run_async_,
-        post_to_ui_); // non-blocking; callback sets distributor
+    bus.find_distributor_async(core_.token(), run_async_,
+                               post_to_ui_); // non-blocking; callback sets distributor
 }
 
 void LinuxUpConnectorQt::stop()
@@ -335,8 +324,7 @@ void LinuxUpConnectorQt::logout()
     UpSharedBusQt& bus = UpSharedBusQt::get();
     if (!distributor_service_.empty())
     {
-        bus.distributor_unregister(QString::fromStdString(distributor_service_),
-                                   core_.token());
+        bus.distributor_unregister(QString::fromStdString(distributor_service_), core_.token());
     }
     core_.remove_pusher();
     stop();
@@ -357,8 +345,8 @@ void LinuxUpConnectorQt::on_unregistered()
     // Re-register so the distributor issues a fresh endpoint.
     if (!distributor_service_.empty())
     {
-        UpSharedBusQt::get().distributor_register(
-            QString::fromStdString(distributor_service_), core_.token());
+        UpSharedBusQt::get().distributor_register(QString::fromStdString(distributor_service_),
+                                                  core_.token());
     }
 }
 
@@ -369,8 +357,8 @@ void LinuxUpConnectorQt::set_enabled(bool enabled)
 
 void LinuxUpConnectorQt::on_message(const QByteArray& message)
 {
-    core_.on_message(std::string_view(message.constData(),
-                                      static_cast<std::size_t>(message.size())));
+    core_.on_message(
+        std::string_view(message.constData(), static_cast<std::size_t>(message.size())));
 }
 
 #include "LinuxUpConnectorQt.moc"

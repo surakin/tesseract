@@ -13,7 +13,7 @@
 
 #include "app/AccountManager.h"
 #include "app/EventHandlerBase.h"
-#include "app/SettingsController.h"
+#include "views/settings/SettingsController.h"
 #include "app/ShellBase.h"
 #include "tk/canvas.h"
 #include "tk/host.h"
@@ -46,9 +46,6 @@
 namespace gtk4
 {
 
-class LoginView;
-class SettingsWidget;
-
 // ---------------------------------------------------------------------------
 
 class MainWindow : public tesseract::ShellBase
@@ -59,12 +56,13 @@ public:
     // restore completes: if a saved session silently restores, it stays
     // hidden (tray-only); if there's nothing to restore (or it fails), the
     // no-accounts branch force-shows it so the user can log in.
-    explicit MainWindow(tesseract::AccountManager& account_manager,
-                        GtkApplication* app, bool start_hidden = false
+    explicit MainWindow(tesseract::AccountManager& account_manager, GtkApplication* app,
+                        bool start_hidden = false
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
-                        , std::filesystem::path screenshot_dir = {}
+                        ,
+                        std::filesystem::path screenshot_dir = {}
 #endif
-                        );
+    );
     ~MainWindow();
 
     GtkWidget* widget() const
@@ -100,9 +98,6 @@ public:
         open_quick_switch_();
     }
 
-    // These are called from internal async callbacks (paginate/subscribe workers).
-    void push_paginate_result(std::string room_id, bool reached_start);
-
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
     void start_screenshot_mode();
     // ScreenshotHost adapter hooks (see GtkScreenshotHost in MainWindow.cpp).
@@ -117,113 +112,62 @@ private:
     // timeline-reset + message insert/update/remove are now concrete in
     // ShellBase (they drive room_view_ + request_relayout_ directly).
     bool is_main_window_visible_() const override;
-    void handle_sync_error_ui_(std::string context, std::string user_id,
-                               std::string description,
+    bool is_main_window_focused_() const override;
+    void handle_sync_error_ui_(std::string context, std::string user_id, std::string description,
                                bool soft_logout) override;
-    void refresh_user_strip_() override;
-    void request_relogin_(const std::string& user_id) override;
-    void
-    handle_backup_progress_ui_(tesseract::BackupProgress progress) override;
-    void refresh_pickers_packs_() override;
-    void handle_notification_ui_(std::string user_id, std::string room_id,
-                                 std::string room_name, std::string sender,
-                                 std::string body, bool is_mention,
-                                 std::vector<uint8_t> avatar_bytes,
-                                 std::vector<uint8_t> image_bytes,
-                                 std::string event_id) override;
     void on_room_list_state_ui_() override;
     void on_inflight_ui_() override;
     void on_low_power_mode_ui_(bool active) override;
-    std::uint64_t shell_extra_memory_bytes_() const override;
     void refresh_low_power_icon_();
-    void on_launch_at_login_pref_ui_(bool enabled) override;
     bool tray_available_() const override;
-    void on_tray_available_ui_(bool available) override;
-    void on_server_info_ready_ui_() override;
-    void on_own_extended_profile_ready_ui_() override;
-    void open_app_settings_ui_() override { open_settings_(); }
+    void open_app_settings_ui_() override
+    {
+        open_settings_();
+    }
     void close_app_settings_ui_() override;
     void rebind_login_client_ui_() override;
-    void raise_main_window_ui_() override { present(); }
-    void open_quick_switch_ui_() override { open_quick_switch_(); }
-    void open_message_search_ui_() override { open_message_search_(); }
-    void on_profile_field_result_ui_(const std::string& key, bool ok,
-                                     const std::string& error) override;
+    void raise_main_window_ui_() override
+    {
+        present();
+    }
     void draw_inflight_dot_(cairo_t* cr);
-    void update_typing_bar_(const std::string& text, bool visible) override;
-    void on_active_room_bot_commands_changed_ui_() override;
     void on_show_status_message_ui_(const std::string& msg) override;
     void on_restore_status_ui_() override;
     void on_startup_restore_progress_ui_(const std::string& status) override;
     std::vector<tk::Rect> get_screen_work_areas_() const override;
 
     // user_id identifies which account's snapshot this is (for caching).
-    void push_rooms(std::string user_id,
-                    std::vector<tesseract::RoomInfo> rooms);
-    void push_error(std::string description);
-    void push_backup_progress(tesseract::BackupProgress progress);
+    void push_rooms(std::string user_id, std::vector<tesseract::RoomInfo> rooms);
     void push_room_list_state(tesseract::RoomListState state);
-    void push_notification(const std::string& user_id,
-                           const std::string& room_id,
-                           const std::string& room_name,
-                           const std::string& sender, const std::string& body,
-                           bool is_mention, std::vector<uint8_t> avatar_bytes,
-                           std::vector<uint8_t> image_bytes,
-                           std::string event_id);
     static void on_login_clicked(GtkButton*, gpointer user_data);
-    void on_send_clicked();
-    void build_sticker_context_menu();
 
 private:
-    static void on_msg_right_click_(GtkGestureClick* gesture, int n_press,
-                                    double x, double y, gpointer user_data);
-    static void on_sticker_save_activate_(GSimpleAction* action,
-                                          GVariant* parameter,
-                                          gpointer user_data);
-    static void on_copy_action_(GSimpleAction* action, GVariant* parameter,
-                                gpointer user_data);
+    static void on_msg_right_click_(GtkGestureClick* gesture, int n_press, double x, double y,
+                                    gpointer user_data);
+    static void on_copy_action_(GSimpleAction* action, GVariant* parameter, gpointer user_data);
     void open_settings_();
-    // Switches to the "main" stack page and tears down login_view_ if it
+    // Switches to the "main" stack page and tears down the login view if it
     // exists — the single choke point for "login (or whatever else) is no
-    // longer showing, main app is". See ensure_login_view_()/
-    // teardown_login_view_(): both LoginView and SettingsWidget are seldom
-    // used, so they're built on first need and torn down once no longer
-    // needed rather than kept alive (native controls, decoded icon, full
-    // widget tree) for the whole app session. See
+    // longer showing, main app is". ShellBase::ensure_login_view_ creates the
+    // login page on first need (through create_login_surface_ui_) and
+    // teardown_login_view_ destroys it, rather than keeping its native
+    // controls and widget tree alive for the whole session. See
     // ui/shared/app/DeferredTeardown.h for why teardown is deferred rather
     // than synchronous.
-    void show_main_content_();
-    void ensure_login_view_();
-    void teardown_login_view_();
-    void teardown_settings_view_();
+    void show_main_content_() override;
     // Close the settings page: back to the login view if it was opened from
     // there, otherwise to the main content.
     void leave_settings_();
 
-    // Ctrl+K quick switcher — open focuses the native search field; close
-    // hides it and relayouts.
-    void open_quick_switch_();
-    void close_quick_switch_();
-
-    // Ctrl+Shift+F global message search — open focuses the native search
-    // field; close hides it and relayouts.
-    void open_message_search_();
-    void close_message_search_();
-    void close_forward_picker_();
     void focus_forward_picker_field_() override;
     void hide_forward_picker_field_() override;
-    // Ctrl+F per-room "find in conversation" search bar.
-    void open_find_in_room_();
-    void close_find_in_room_();
 
-    static gboolean on_window_key_pressed_(GtkEventControllerKey*, guint keyval,
-                                           guint, GdkModifierType,
-                                           gpointer user_data);
+    static gboolean on_window_key_pressed_(GtkEventControllerKey*, guint keyval, guint,
+                                           GdkModifierType, gpointer user_data);
     // Commits the Ctrl+Tab MRU room switcher on Ctrl release — see the
     // key_ctl setup in the ctor for why this is attached to window_.
-    static void on_window_key_released_(GtkEventControllerKey*, guint keyval,
-                                        guint, GdkModifierType,
-                                        gpointer user_data);
+    static void on_window_key_released_(GtkEventControllerKey*, guint keyval, guint,
+                                        GdkModifierType, gpointer user_data);
     // Global shortcuts bound from views/shortcut_registry.h: each native
     // binding carries the KeyEvent it forwards to main_app_->
     // dispatch_key_down (owned by its GtkCallbackAction, freed with it).
@@ -234,141 +178,130 @@ private:
     };
     static GtkShortcutTrigger* gtk_trigger_from_chord_(const tk::KeyChord& chord);
     static gboolean on_registry_shortcut_(GtkWidget*, GVariant*, gpointer user_data);
-    static gboolean on_window_close_request_(GtkWindow* window,
-                                             gpointer user_data);
+    static gboolean on_window_close_request_(GtkWindow* window, gpointer user_data);
 
     void start_tray_if_needed_();
     void start_search_provider_if_needed_();
     void start_mpris_if_needed_();
 
     // Multi-account management.
-    void switch_active_account(const std::string& user_id);
-    void begin_add_account();
-    void logout_active_account();
-    void on_login_cancelled();
-    void rebuild_account_picker();
-    void open_account_picker(double anchor_x, double anchor_y);
+    std::unique_ptr<tk::SurfaceBase> create_login_surface_ui_() override;
+    void unmount_login_surface_ui_() override;
+    void show_login_page_ui_() override;
+    tk::gtk4::Surface* login_native_() const
+    {
+        return static_cast<tk::gtk4::Surface*>(login_surface_.get());
+    }
+    void start_platform_services_ui_() override;
+    bool main_window_foreground_for_tray_() const override;
+    std::vector<std::uint8_t> encode_selfie_jpeg_(const std::uint8_t* bgra, std::uint32_t w,
+                                                  std::uint32_t h) override;
+    void repaint_settings_ui_() override;
+    void update_settings_anim_regions_() override;
+    std::unique_ptr<tk::SurfaceBase> create_settings_surface_ui_() override;
+    void unmount_settings_surface_ui_() override;
+    void settings_view_created_ui_(tesseract::views::SettingsView& view) override;
+    tk::SurfaceBase* main_surface_() override;
+    void grab_main_surface_focus_() override;
+    tk::gtk4::Surface* settings_native_() const
+    {
+        return static_cast<tk::gtk4::Surface*>(settings_surface_.get());
+    }
+    void hide_main_window_for_tray_() override;
+    void show_main_window_for_tray_(const std::string& token) override;
 
     void show_rooms(const std::vector<tesseract::RoomInfo>& rooms);
-    void refresh_room_list();
     // Push ShellBase::compose_window_title_()'s string to the OS window title.
     void apply_window_title_ui_(const std::string& title) override;
     void ensure_row_media(const tesseract::Event& ev);
-    void clear_messages();
-    void request_more_history(const std::string& room_id);
     void update_room_header(const tesseract::RoomInfo& info);
     void do_login();
-    // Bind the UI to the now-active account `uid` and finish startup (settings
-    // controller, status, main surface, tray). Shared by the cold restore path
-    // and the secondary-window bind path in do_login().
-    void finish_login_ui_(const std::string& uid);
     void do_logout();
-    void on_login_succeeded();
-    void wire_key_dialog_callbacks_();
-    // No pure-virtual bind_*_() hook exists for HistoryExportController (by
-    // design — see HistoryExportController.h), so this is called explicitly
-    // right after ensure_history_export_controller_() at each login/
-    // account-switch call site.
-    void wire_history_export_dialog_callbacks_();
+    bool has_save_file_dialog_() const override;
+    void prompt_passphrase_(std::string title, std::function<void(std::string)> cb) override;
+    void pick_save_file_(std::string title, std::string suggested_name,
+                         std::function<void(std::string)> cb) override;
+    void pick_open_file_(std::string title, std::function<void(std::string)> cb) override;
+    void pick_folder_(std::string title, std::function<void(std::string)> cb) override;
+    void show_message_dialog_(std::string title, std::string text, bool is_error) override;
     void navigate_to_room(const std::string& room_id);
-    void handle_notification(const std::string& user_id,
-                             const std::string& room_id,
-                             const std::string& room_name,
-                             const std::string& sender, const std::string& body,
-                             bool is_mention, std::vector<uint8_t> avatar_bytes,
-                             std::vector<uint8_t> image_bytes,
-                             std::string event_id);
-    void populate_user_strip();
 
     // ShellBase virtual hooks (GTK4 implementations).
     void navigate_to_room_(const std::string& room_id) override
     {
         navigate_to_room(room_id);
     }
-    void apply_theme_ui_(const tk::Theme& t) override;
+    void apply_native_theme_(const tk::Theme& t) override;
+    void after_theme_applied_(const tk::Theme& t) override;
+    void for_each_shell_surface_(const std::function<void(tk::SurfaceBase&)>& fn) override;
     tk::ThemeMode os_color_scheme_() const override;
     std::optional<tk::Color> os_accent_color_() const override;
     // XDG Desktop Portal (org.freedesktop.appearance/color-scheme) — the
     // source of truth for the OS light/dark preference. GtkSettings'
     // gtk-application-prefer-dark-theme is app-controlled (we write it
-    // ourselves in apply_theme_ui_) and isn't kept in sync with the desktop
+    // ourselves in after_theme_applied_) and isn't kept in sync with the desktop
     // by plain GTK4 (only libadwaita apps get that), so it's kept only as a
-    // last-resort fallback when the portal is unreachable.
+    // last-resort fallback until the portal answers (or when it is unreachable).
+    // The reads are asynchronous; the answer re-applies the theme.
     void read_portal_color_scheme_();
+    void apply_portal_color_scheme_(GVariant* value);
     // org.freedesktop.appearance/accent-color — portal-only, no fallback
     // (there's no GTK property carrying an accent colour outside
     // libadwaita, which this build doesn't link). An accent-less desktop
     // keeps rendering AccentTheme::System identically to Blue.
     void read_portal_accent_color_();
-    static void on_portal_setting_changed_(GDBusConnection*, const char*,
-                                           const char*, const char*,
-                                           const char*, GVariant* parameters,
-                                           gpointer user_data);
+    void apply_portal_accent_(GVariant* value);
+    static void on_portal_setting_changed_(GDBusConnection*, const char*, const char*, const char*,
+                                           const char*, GVariant* parameters, gpointer user_data);
     void post_to_ui_(std::function<void()> fn) override;
     void post_to_ui_after_(int ms, std::function<void()> fn) override;
     void request_relayout_() override;
     void request_repaint_() override;
-    void on_rooms_updated_() override;
-    void on_invites_updated_() override;
-    void on_my_knocks_updated_() override;
     void on_space_children_cache_ready_ui_() override;
     void on_space_unjoined_summaries_ready_ui_(const std::string&) override;
-    void on_tray_unread_changed_(bool has_unread,
-                                 bool has_highlight) override;
-    void on_account_badges_changed_(bool other_accounts_unread) override;
-    void on_media_bytes_ready_(const tk::CacheKey& cache_key, MediaKind kind,
-                               std::vector<uint8_t> bytes) override;
-    DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w,
-                               int max_h) override;
+    void on_tray_unread_changed_(bool has_unread, bool has_highlight) override;
+    std::unique_ptr<tk::Image> decode_avatar_(const std::vector<std::uint8_t>& bytes) override;
+    void ingest_tile_media_(const tk::CacheKey& key, std::vector<std::uint8_t> bytes) override;
+    DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w, int max_h) override;
     bool decode_image_streamed_(
         const std::vector<uint8_t>& bytes, int max_w, int max_h,
         const std::function<void(std::unique_ptr<tk::Image>, int)>& on_first_frame,
-        const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame)
-        override;
+        const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame) override;
     bool decode_image_streamed_windowed_(
         const std::vector<uint8_t>& bytes, int max_w, int max_h,
         const std::function<void(std::unique_ptr<tk::Image>, int,
-                                 std::shared_ptr<tk::AnimDecodeSession>,
-                                 std::size_t)>& on_first_frame,
-        const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame)
-        override;
-    void pick_image_file_(
-        std::function<void(std::vector<uint8_t>, std::string)> cb) override;
-    void bind_settings_controller_() override;
+                                 std::shared_ptr<tk::AnimDecodeSession>, std::size_t)>&
+            on_first_frame,
+        const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame) override;
+    void pick_image_file_(std::function<void(std::vector<uint8_t>, std::string)> cb) override;
     std::int64_t monotonic_ms_() override;
     void start_anim_tick_() override;
     void stop_anim_tick_() override;
-    void repaint_anim_frame_() override;
+    void update_main_anim_regions_() override;
     void start_inflight_tick_() override;
     void stop_inflight_tick_() override;
     void repaint_inflight_spinner_() override;
-    void repaint_pickers_() override;
 
     // Room-selection hooks (ShellBase::on_room_selected_).
-    void hide_compose_popups_() override;
-    void restart_mark_read_timer_(int delay_ms) override;
 
     // Tab management hooks.
-    float get_message_scroll_fraction_() override;
-    void set_message_scroll_fraction_(float t) override;
-    void decode_video_first_frame_(
-        std::vector<std::uint8_t> bytes,
-        std::function<void(std::vector<std::uint8_t>)> done) override;
+    void decode_video_first_frame_(std::vector<std::uint8_t> bytes,
+                                   std::function<void(std::vector<std::uint8_t>)> done) override;
 
-    // Extract media metadata from a dropped file on a background thread, then
-    // post via g_idle_add. When `target` is non-null the result goes to that
-    // compose bar (a pop-out window's), guarded by `target_alive`; otherwise to
-    // the main window's. Overrides the ShellBase drag-and-drop probe hook.
-    void extract_drop_media_(std::uint32_t pending_gen,
-                             std::vector<std::uint8_t> bytes,
-                             std::string mime,
-                             tesseract::views::ComposeBar* target = nullptr,
-                             std::shared_ptr<bool> target_alive = nullptr)
-        override;
+    // Platform probe called by ShellBase::extract_drop_media_ for video/audio:
+    // extracts media metadata on a background thread, then posts via
+    // g_idle_add. When `target` is non-null the result goes to that compose bar
+    // (a pop-out window's), guarded by `target_alive`; otherwise to the main
+    // window's.
+    void probe_drop_video_(std::uint32_t pending_gen, std::vector<std::uint8_t> bytes,
+                           tesseract::views::ComposeBar* target,
+                           std::shared_ptr<bool> target_alive) override;
+    void probe_drop_audio_(std::uint32_t pending_gen, std::vector<std::uint8_t> bytes,
+                           tesseract::views::ComposeBar* target,
+                           std::shared_ptr<bool> target_alive) override;
     void cache_rgba_image_(const tk::CacheKey& key, int w, int h,
                            std::vector<uint8_t> rgba) override;
-    tesseract::RoomWindowBase*
-    create_secondary_room_window_(const std::string& room_id) override;
+    tesseract::RoomWindowBase* create_secondary_room_window_(const std::string& room_id) override;
     void raise_and_activate_() override;
     void activate_for_notification_(const std::string& token) override;
     void set_window_fullscreen_(bool on) override;
@@ -376,24 +309,18 @@ private:
     bool spawn_relaunch_(const std::vector<std::string>& args) override;
     void quit_app_() override;
     bool is_ctrl_held_() const override;
-    void switch_active_account_(const std::string& user_id) override;
-    void refresh_account_ui_after_switch_() override;
-    void spawn_main_window_(
-        std::shared_ptr<tesseract::AccountSession> account) override;
-    std::unique_ptr<tesseract::IEventHandler>
-    make_account_bridge_(const std::string& uid) override;
-    void install_account_notifier_(
-        tesseract::AccountSession& session) override;
-    void install_account_up_connector_(
-        tesseract::AccountSession& session) override;
+    bool click_modifier_held_() const override;
+    void spawn_main_window_(std::shared_ptr<tesseract::AccountSession> account) override;
+    std::unique_ptr<tesseract::IEventHandler> make_account_bridge_(const std::string& uid) override;
+    void install_account_notifier_(tesseract::AccountSession& session) override;
+    void install_account_up_connector_(tesseract::AccountSession& session) override;
     std::unique_ptr<tk::AudioPlayback> make_call_audio_output_() override;
     tesseract::CallWindowBase* create_call_window_() override;
     tesseract::AuxWindowBase* create_aux_window_(std::string title,
-                                                 std::unique_ptr<tk::Widget> root,
-                                                 int width, int height) override;
+                                                 std::unique_ptr<tk::Widget> root, int width,
+                                                 int height) override;
 
     void start_anim_tick_if_needed_();
-    void invalidate_anim_consumers_();
     static gboolean on_tk_anim_tick_(gpointer user_data);
     static gboolean on_tk_inflight_tick_(gpointer user_data);
 
@@ -412,8 +339,6 @@ private:
     GtkWidget* content_stack_ = nullptr;
     std::unique_ptr<tk::gtk4::Surface> branding_surface_;
     tesseract::views::BrandView* branding_view_ = nullptr; // borrowed, owned by branding_surface_
-    std::unique_ptr<LoginView> login_view_;
-    std::unique_ptr<SettingsWidget> settings_widget_;
 
     // Single surface hosting the full main-app widget tree.
     // main_app_ / room_view_ live in ShellBase (assigned in the constructor).
@@ -428,114 +353,27 @@ private:
     // from whatever control anchored it.
     void dismiss_popups_on_resize_();
 
-    // Borrowed pointers into main_app_ (extracted in constructor).
-    tesseract::views::RoomListView* room_list_view_ = nullptr;
-    // Borrowed from main_app_->room_view()->compose_bar()->text_area() —
-    // see ComposeBar::text_area(). Quick switcher's, message search's,
-    // forward picker's, find-in-room's, room-info topic-edit, Room Settings
-    // name/topic, and image-pack name/shortcode/rename/paste-catcher fields
-    // are all self-owned too — see QuickSwitcher::search_field() /
-    // MessageSearchView::search_field() / ForwardRoomPicker::search_field() /
-    // RoomSearchBar::search_field() / RoomInfoPanel::topic_field() /
-    // RoomSettingsView::name_field()/topic_field() /
-    // ImagePackEditorView::new_pack_name_field()/shortcode_field()/
-    // pack_name_field()/paste_catcher().
-    tk::TextArea* room_text_area_ = nullptr;
-
-    // ── Shortcode popup ───────────────────────────────────────────────────
-    std::unique_ptr<tk::PopupSurfaceHandle> shortcode_popup_;
-    tesseract::views::ShortcodePopup* shortcode_popup_widget_ = nullptr;
-    std::unique_ptr<tesseract::views::ShortcodeController> shortcode_controller_;
-
-    void show_shortcode_popup_(tk::Rect cursor_local, int rows);
-    void hide_shortcode_popup_();
-    bool shortcode_popup_visible_() const
-    {
-        return shortcode_popup_ && shortcode_popup_->visible();
-    }
-
-    // ── Slash-command popup ───────────────────────────────────────────────
-    std::unique_ptr<tk::PopupSurfaceHandle> slash_popup_;
-    tesseract::views::SlashCommandPopup* slash_popup_widget_ = nullptr;
-    std::unique_ptr<tesseract::views::SlashCommandController> slash_controller_;
-
-    void show_slash_popup_(tk::Rect cursor_local, int rows);
-    void hide_slash_popup_();
-    bool slash_popup_visible_() const
-    {
-        return slash_popup_ && slash_popup_->visible();
-    }
-
     // ── GIF picker (/gif <query>) ────────────────────────────────────────────
-    std::unique_ptr<tk::PopupSurfaceHandle> gif_popup_;
-    tesseract::views::GifPopup* gif_popup_widget_ = nullptr;
-    std::unique_ptr<tesseract::views::GifController> gif_controller_;
-    std::unordered_map<tk::CacheKey, std::unique_ptr<tk::Image>, tk::CacheKeyHash>
-        gif_previews_;
-    std::unordered_set<std::string> gif_preview_inflight_;
-    std::unordered_set<std::string> gif_anim_inflight_;
-    // Two-stage GIF strip cell provider (body parameterised on a repaint
-    // callback). Shared by this window's strip and every pop-out's via the
-    // gif_strip_image_ override.
-    std::function<const tk::Image*(const tesseract::GifResult&,
-                                   const std::function<void()>&)>
-        gif_strip_provider_;
-    const tk::Image*
-    gif_strip_image_(const tesseract::GifResult& result,
-                     const std::function<void()>& repaint) override;
-    void show_gif_popup_();
-    void hide_gif_popup_();
-    bool gif_popup_visible_() const
+    std::unique_ptr<tk::Image> make_image_from_bgra_(int w, int h,
+                                                     const std::uint8_t* bgra) override;
+    bool make_image_from_bgra_on_worker_() const override
     {
-        return gif_popup_ && gif_popup_->visible();
+        return true;
     }
-    void handle_gif_results_ui_(std::uint64_t request_id,
-                                std::vector<tesseract::GifResult> results) override;
-    void handle_gif_search_failed_ui_(std::uint64_t request_id,
-                                      std::string message) override;
-
-    // ── @mention popup ────────────────────────────────────────────────────
-    std::unique_ptr<tk::PopupSurfaceHandle> mention_popup_;
-    tesseract::views::MentionPopup* mention_popup_widget_ = nullptr;
-    std::unique_ptr<tesseract::views::MentionController> mention_controller_;
-
-    void show_mention_popup_(tk::Rect cursor_local, int rows);
-    void hide_mention_popup_();
-    bool mention_popup_visible_() const
-    {
-        return mention_popup_ && mention_popup_->visible();
-    }
-
-    tesseract::views::MediaViewerOverlay* media_viewer_ = nullptr;
-
-    tesseract::views::RoomMediaView* room_media_view_ = nullptr;
-
-    GtkWidget* sticker_ctx_menu_ = nullptr;
-    GSimpleActionGroup* sticker_ctx_actions_ = nullptr;
-    std::string ctx_sticker_event_id_;
+    DecodedImage decode_inline_fallback_(const std::vector<std::uint8_t>& bytes, int max_w,
+                                         int max_h) override;
 
     GtkWidget* copy_ctx_menu_ = nullptr;
     GSimpleActionGroup* copy_ctx_actions_ = nullptr;
     void build_copy_context_menu_();
-    std::string ctx_sticker_mxc_url_;
-    std::string ctx_sticker_body_;
-    std::string ctx_sticker_info_json_;
     GtkWidget* status_bar_ = nullptr;
     GtkWidget* status_row_ = nullptr; // status_bar_ + inflight dot; hidden in full-screen
     GtkWidget* inflight_dot_ = nullptr;
     GtkWidget* low_power_label_ = nullptr;
 
-    guint sync_status_debounce_id_ = 0;
-    guint mark_read_timer_id_ = 0;
-    void refresh_sync_status();
-    static gboolean on_sync_status_debounce_(gpointer user_data);
+    void show_sync_status_text_(const std::string& text) override;
 
-    GtkWidget*       user_popover_      = nullptr;
-
-    // Account-picker popover (left-click, only when ≥2 accounts).
-    GtkWidget* account_picker_popover_ = nullptr;
-    std::unique_ptr<tk::gtk4::Surface> account_picker_surface_;
-    tesseract::views::AccountPicker* account_picker_ = nullptr;
+    GtkWidget* user_popover_ = nullptr;
 
     GtkCssProvider* theme_css_provider_ = nullptr;
     gulong prefer_dark_notify_id_ = 0;
@@ -548,7 +386,7 @@ private:
 
     // Cached org.freedesktop.appearance accent-color portal value
     // (portal_accent_valid_ == false -> portal reported none).
-    bool      portal_accent_valid_ = false;
+    bool portal_accent_valid_ = false;
     tk::Color portal_accent_{};
 
     std::unique_ptr<GtkSniTrayIcon> tray_;
@@ -558,9 +396,6 @@ private:
     guint tk_anim_tick_id_ = 0;
     guint tk_inflight_tick_id_ = 0;
     guint presence_tick_id_ = 0;
-
-    guint scroll_debounce_id_ = 0;
-
 };
 
 } // namespace gtk4

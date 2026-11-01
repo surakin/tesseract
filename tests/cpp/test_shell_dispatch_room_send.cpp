@@ -35,21 +35,23 @@ struct SendShell : tesseract::test::TestShellBase
     }
 
     bool avatar_picker_opened = false;
-    void pick_image_file_(
-        std::function<void(std::vector<uint8_t>, std::string)>) override
+    void pick_image_file_(std::function<void(std::vector<uint8_t>, std::string)>) override
     {
         // Record but never invoke the callback (i.e. simulate a still-open
         // picker), so no async upload work is queued during the test.
         avatar_picker_opened = true;
     }
-    void apply_thread_messages_(
-        const std::string&,
-        std::vector<tesseract::views::MessageRowData>, bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
 
     void on_show_status_message_ui_(const std::string& msg) override
     {
@@ -68,8 +70,7 @@ struct SendShell : tesseract::test::TestShellBase
 
 } // namespace
 
-TEST_CASE("dispatch_room_send_ with no client is treated as handled",
-          "[shell][dispatch_room_send]")
+TEST_CASE("dispatch_room_send_ with no client is treated as handled", "[shell][dispatch_room_send]")
 {
     SendShell s;
     // client_ defaults to nullptr.
@@ -92,8 +93,7 @@ TEST_CASE("dispatch_room_send_ routes /myroomavatar to the avatar picker",
     CHECK(s.pending_room_actions_.empty());
 }
 
-TEST_CASE("dispatch_room_send_ routes /leave to a Leave room action",
-          "[shell][dispatch_room_send]")
+TEST_CASE("dispatch_room_send_ routes /leave to a Leave room action", "[shell][dispatch_room_send]")
 {
     // Declared first so it outlives the shell's queued work, which uses it.
     tesseract::Client client;
@@ -133,12 +133,10 @@ TEST_CASE("report_unsent_message_ surfaces a failed send and ignores success "
     SendShell s;
 
     s.report_unsent_message_("@a:x", "!r:x", "hello", tesseract::Result{true, ""});
-    s.report_unsent_message_("@a:x", "!r:x", "hello",
-                             tesseract::Result{false, "cancelled"});
+    s.report_unsent_message_("@a:x", "!r:x", "hello", tesseract::Result{false, "cancelled"});
     CHECK(s.status_messages.empty());
 
-    s.report_unsent_message_("@a:x", "!r:x", "hello",
-                             tesseract::Result{false, "boom"});
+    s.report_unsent_message_("@a:x", "!r:x", "hello", tesseract::Result{false, "boom"});
     REQUIRE_FALSE(s.status_messages.empty());
     CHECK(s.status_messages.front() == "Message not sent: boom");
 }
@@ -151,10 +149,10 @@ TEST_CASE("dispatch_room_send_ routes /poll to the create-poll dialog",
     SendShell s;
     auto sess = std::make_shared<tesseract::AccountSession>();
     sess->user_id = "@a:x";
-    sess->client  = std::make_unique<tesseract::Client>();
+    sess->client = std::make_unique<tesseract::Client>();
     s.active_account_ = sess;
-    s.client_         = sess->client.get();
-    s.main_app_       = app.get();
+    s.client_ = sess->client.get();
+    s.main_app_ = app.get();
 
     REQUIRE(app->create_poll_dialog());
     CHECK_FALSE(app->create_poll_dialog()->is_open());

@@ -37,11 +37,16 @@ public:
     bool handle_key(Widget& owner, WidgetRowAccessibility& rows, const KeyEvent& e);
 
     // Ring around the current row, or around the owner when there is none.
-    void paint_ring(PaintCtx& ctx, const Widget& owner,
-                    const WidgetRowAccessibility& rows) const;
+    void paint_ring(PaintCtx& ctx, const Widget& owner, const WidgetRowAccessibility& rows) const;
 
-    void reset() { index_ = -1; }
-    int index() const { return index_; }
+    void reset()
+    {
+        index_ = -1;
+    }
+    int index() const
+    {
+        return index_;
+    }
 
 private:
     void land_(Widget& owner, const WidgetRowAccessibility& rows, int index);

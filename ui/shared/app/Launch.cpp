@@ -1,5 +1,5 @@
 #include "app/Launch.h"
-#include "app/font_prefs.h"
+#include "views/font_prefs.h"
 
 #include "tk/i18n.h"
 
@@ -17,10 +17,6 @@ namespace tesseract
 
 namespace
 {
-
-std::string g_launch_language;
-Settings::ProxyMode g_launch_proxy_mode = Settings::ProxyMode::System;
-std::string g_launch_proxy_url;
 
 std::string help_for(std::string_view id)
 {
@@ -71,8 +67,8 @@ std::string help_for(std::string_view id)
     return {};
 }
 
-void write_or_default(const std::function<void(std::string_view)>& fn,
-                      std::FILE* fallback, std::string_view text)
+void write_or_default(const std::function<void(std::string_view)>& fn, std::FILE* fallback,
+                      std::string_view text)
 {
     if (fn)
     {
@@ -86,7 +82,9 @@ void write_or_default(const std::function<void(std::string_view)>& fn,
 int run_logout_all(const LaunchHooks& hooks)
 {
     auto err = [&hooks](const std::string& line)
-    { write_or_default(hooks.write_stderr, stderr, line + "\n"); };
+    {
+        write_or_default(hooks.write_stderr, stderr, line + "\n");
+    };
 
     if (hooks.acquire_instance_lock && !hooks.acquire_instance_lock())
     {
@@ -131,13 +129,11 @@ int run_logout_all(const LaunchHooks& hooks)
 std::string launch_help_text(std::string_view program_name)
 {
     const auto specs = launch_option_specs(help_for);
-    return cli::format_usage(specs, program_name,
-                             tk::tr("[OPTIONS] [MATRIX-URI]"),
+    return cli::format_usage(specs, program_name, tk::tr("[OPTIONS] [MATRIX-URI]"),
                              tk::tr("Usage:"), tk::tr("Options:"));
 }
 
-LaunchPlan prepare_launch(const std::vector<std::string>& args,
-                          const LaunchHooks& hooks)
+LaunchPlan prepare_launch(const std::vector<std::string>& args, const LaunchHooks& hooks)
 {
     LaunchPlan plan;
     plan.args = parse_launch_args(args);
@@ -154,8 +150,11 @@ LaunchPlan prepare_launch(const std::vector<std::string>& args,
     // Before any surface is built: fonts are read when each is first created.
     apply_font_prefs(Settings::instance().fonts);
     install_crash_handler(Settings::instance().crash_reporting_enabled);
-    // Before any account restores: the mode is read when each client is built.
+    // Before any account restores: the mode is read when each client is built
+    // (and again on each in-place client reload after a Settings change).
     Client::set_exclude_insecure_devices(Settings::instance().exclude_insecure_devices);
+    Client::set_block_sends_on_unverified_devices(
+        Settings::instance().block_sends_on_unverified_devices);
     // Also before any runtime threads: it edits the process environment.
     {
         const auto& s = Settings::instance();
@@ -164,12 +163,12 @@ LaunchPlan prepare_launch(const std::vector<std::string>& args,
         // the baseline is the requested setting either way; only an unknown
         // mode value falls back to System.
         const bool manual = s.proxy_mode == Settings::ProxyMode::Manual;
-        g_launch_proxy_mode = (ok || manual) ? s.proxy_mode : Settings::ProxyMode::System;
-        g_launch_proxy_url = (ok || manual) ? s.proxy_url : std::string();
+        set_launch_proxy((ok || manual) ? s.proxy_mode : Settings::ProxyMode::System,
+                         (ok || manual) ? s.proxy_url : std::string());
     }
     {
         std::string lang = Settings::instance().language;
-        g_launch_language = lang;
+        set_launch_language(lang);
         if ((lang == "auto" || lang.empty()) && hooks.detect_system_lang)
         {
             lang = hooks.detect_system_lang();
@@ -185,15 +184,13 @@ LaunchPlan prepare_launch(const std::vector<std::string>& args,
 
     if (plan.args.version)
     {
-        write_or_default(hooks.write_stdout, stdout,
-                         std::string(kAppName) + " " + kVersion + "\n");
+        write_or_default(hooks.write_stdout, stdout, std::string(kAppName) + " " + kVersion + "\n");
         plan.exit_code = 0;
         return plan;
     }
     if (plan.args.help)
     {
-        write_or_default(hooks.write_stdout, stdout,
-                         launch_help_text(hooks.program_name));
+        write_or_default(hooks.write_stdout, stdout, launch_help_text(hooks.program_name));
         plan.exit_code = 0;
         return plan;
     }
@@ -210,20 +207,6 @@ LaunchPlan prepare_launch(const std::vector<std::string>& args,
         return plan;
     }
     return plan;
-}
-
-const std::string& launch_language()
-{
-    return g_launch_language;
-}
-
-bool proxy_changed_since_launch(Settings::ProxyMode mode, const std::string& url)
-{
-    if (mode != g_launch_proxy_mode)
-    {
-        return true;
-    }
-    return mode == Settings::ProxyMode::Manual && url != g_launch_proxy_url;
 }
 
 void apply_proxy_live(Settings::ProxyMode mode, const std::string& url)

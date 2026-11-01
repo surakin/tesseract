@@ -23,18 +23,38 @@ namespace
 // inert) so tests can assert the guard actually elides redundant ones.
 struct TrackingNativeTextField : public tk::NativeTextField
 {
-    void set_rect(tk::Rect r) override { last_rect = r; }
-    void set_text(std::string t) override { text_ = std::move(t); }
-    std::string text() const override { return text_; }
-    void set_placeholder(std::string) override {}
-    void set_enabled(bool) override {}
-    void set_password(bool) override {}
+    void set_rect(tk::Rect r) override
+    {
+        last_rect = r;
+    }
+    void set_text(std::string t) override
+    {
+        text_ = std::move(t);
+    }
+    std::string text() const override
+    {
+        return text_;
+    }
+    void set_placeholder(std::string) override
+    {
+    }
+    void set_enabled(bool) override
+    {
+    }
+    void set_password(bool) override
+    {
+    }
     void set_on_changed(std::function<void(const std::string&)> cb) override
     {
         on_changed_ = std::move(cb);
     }
-    void set_on_submit(std::function<void()>) override {}
-    void set_focused(bool f) override { focused_ = f; }
+    void set_on_submit(std::function<void()>) override
+    {
+    }
+    void set_focused(bool f) override
+    {
+        focused_ = f;
+    }
     void set_visible(bool v) override
     {
         ++set_visible_calls;
@@ -56,7 +76,9 @@ struct TrackingNativeTextField : public tk::NativeTextField
 
 struct TrackingTextFieldHost : public TestHost
 {
-    TrackingTextFieldHost() : TestHost(nullptr) {}
+    TrackingTextFieldHost() : TestHost(nullptr)
+    {
+    }
 
     std::unique_ptr<tk::NativeTextField> make_text_field() override
     {
@@ -92,7 +114,7 @@ TEST_CASE("TextField::set_visible() is a no-op when the value doesn't change",
     REQUIRE(host.field->set_visible_calls == 1);
 
     REQUIRE(host.field->visible_); // starts visible
-    field.set_visible(true); // already visible — must not reach the native control
+    field.set_visible(true);       // already visible — must not reach the native control
     CHECK(host.field->visible_);
     CHECK(host.field->set_visible_calls == 1); // unchanged from the baseline above
 }
@@ -134,7 +156,11 @@ TEST_CASE("TextField defers native creation until arrange() or "
     field.set_text("hello");
     field.set_placeholder("type here");
     std::string changed_to;
-    field.set_on_changed([&](const std::string& t) { changed_to = t; });
+    field.set_on_changed(
+        [&](const std::string& t)
+        {
+            changed_to = t;
+        });
     REQUIRE(host.field == nullptr); // still not created — setters alone don't trigger it
     CHECK(field.text() == "hello"); // read back from the buffer
 
@@ -149,7 +175,7 @@ TEST_CASE("TextField defers native creation until arrange() or "
     REQUIRE(field.text() == "hello"); // now reads through to the native control
 
     host.field->on_changed_("typed"); // simulate a native-side edit
-    CHECK(changed_to == "typed"); // buffered on_changed was replayed, not dropped
+    CHECK(changed_to == "typed");     // buffered on_changed was replayed, not dropped
 }
 
 TEST_CASE("TextField insets the native control inside its own rect so an "

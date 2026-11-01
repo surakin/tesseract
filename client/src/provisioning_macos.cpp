@@ -5,20 +5,24 @@
 namespace tesseract::detail
 {
 
-std::optional<std::string> read_provisioned_homeserver_raw()
+namespace
+{
+
+std::optional<std::string> read_preference(CFStringRef key)
 {
     // CFPreferences consults managed (MDM) preferences before user ones.
-    CFPropertyListRef value = CFPreferencesCopyAppValue(CFSTR("DefaultHomeserver"),
-                                                        kCFPreferencesCurrentApplication);
+    CFPropertyListRef value = CFPreferencesCopyAppValue(key, kCFPreferencesCurrentApplication);
     if (!value)
+    {
         return std::nullopt;
+    }
 
     std::optional<std::string> result;
     if (CFGetTypeID(value) == CFStringGetTypeID())
     {
         auto str = static_cast<CFStringRef>(value);
-        CFIndex max = CFStringGetMaximumSizeForEncoding(CFStringGetLength(str),
-                                                        kCFStringEncodingUTF8) + 1;
+        CFIndex max =
+            CFStringGetMaximumSizeForEncoding(CFStringGetLength(str), kCFStringEncodingUTF8) + 1;
         std::string buf(static_cast<size_t>(max), '\0');
         if (CFStringGetCString(str, buf.data(), max, kCFStringEncodingUTF8))
         {
@@ -28,6 +32,13 @@ std::optional<std::string> read_provisioned_homeserver_raw()
     }
     CFRelease(value);
     return result;
+}
+
+} // namespace
+
+ProvisionedValues read_platform_provisioning_raw()
+{
+    return {read_preference(CFSTR("DefaultHomeserver")), read_preference(CFSTR("DefaultUsername"))};
 }
 
 } // namespace tesseract::detail

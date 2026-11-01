@@ -76,8 +76,7 @@ struct FixedHeightAdapter : ListAdapter
                    bool /*hovered*/) override
     {
         Color c = selected ? Color::rgb(0x0084FF)
-                           : (index % 2 == 0 ? Color::rgb(0xEEEEEE)
-                                             : Color::rgb(0xFFFFFF));
+                           : (index % 2 == 0 ? Color::rgb(0xEEEEEE) : Color::rgb(0xFFFFFF));
         ctx.canvas.fill_rect(bounds, c);
     }
 };
@@ -86,7 +85,7 @@ struct FixedHeightAdapter : ListAdapter
 // row-anchored scroll preservation (vs. the keyless height-delta fallback).
 struct KeyedVarAdapter : ListAdapter
 {
-    std::vector<float>       heights;
+    std::vector<float> heights;
     std::vector<std::string> keys;
 
     std::size_t count() const override
@@ -111,11 +110,11 @@ struct KeyedVarAdapter : ListAdapter
 // (incremental) height invalidation.
 struct CountingAdapter : ListAdapter
 {
-    std::vector<float>       heights;
+    std::vector<float> heights;
     std::vector<std::string> keys;
-    mutable std::vector<int>  measures; // per-index measure count
-    std::size_t back = 0; // span extends `back` rows before i
-    std::size_t fwd  = 1; // span extends `fwd` rows after i
+    mutable std::vector<int> measures; // per-index measure count
+    std::size_t back = 0;              // span extends `back` rows before i
+    std::size_t fwd = 1;               // span extends `fwd` rows after i
 
     std::size_t count() const override
     {
@@ -124,7 +123,9 @@ struct CountingAdapter : ListAdapter
     float measure_row_height(std::size_t i, LayoutCtx&, float) override
     {
         if (measures.size() < heights.size())
+        {
             measures.resize(heights.size(), 0);
+        }
         ++measures[i];
         return heights[i];
     }
@@ -135,8 +136,7 @@ struct CountingAdapter : ListAdapter
     {
         return i < keys.size() ? keys[i] : std::string{};
     }
-    void height_dependency_span(std::size_t i, std::size_t& lo,
-                                std::size_t& hi) const override
+    void height_dependency_span(std::size_t i, std::size_t& lo, std::size_t& hi) const override
     {
         lo = (i >= back) ? i - back : 0;
         hi = std::min(i + 1 + fwd, heights.size());
@@ -157,10 +157,10 @@ struct CountingAdapter : ListAdapter
 // relocate rows across the rebuild.
 struct WidthWrapAdapter : ListAdapter
 {
-    std::size_t              n = 20;
+    std::size_t n = 20;
     std::vector<std::string> keys;
-    float                    wide_h   = 25.0f;
-    float                    narrow_h = 50.0f;
+    float wide_h = 25.0f;
+    float narrow_h = 50.0f;
 
     std::size_t count() const override
     {
@@ -194,8 +194,7 @@ struct FixedGridAdapter : tk::GridAdapter
 
 } // namespace
 
-TEST_CASE("ListView lays out variable + fixed rows + reports content height",
-          "[tk][listview]")
+TEST_CASE("ListView lays out variable + fixed rows + reports content height", "[tk][listview]")
 {
     TkListsStage st;
     auto list_owner = tk::create_root_widget<ListView>(nullptr);
@@ -283,9 +282,15 @@ TEST_CASE("ListView arrow-key navigation fires on_selection_changed "
     REQUIRE(list.has_focus());
 
     std::vector<int> changes;
-    list.on_selection_changed = [&](int idx) { changes.push_back(idx); };
+    list.on_selection_changed = [&](int idx)
+    {
+        changes.push_back(idx);
+    };
     int clicked = -1;
-    list.on_row_clicked = [&](int idx) { clicked = idx; };
+    list.on_row_clicked = [&](int idx)
+    {
+        clicked = idx;
+    };
 
     CHECK(list.on_key_down({Key::Down}));
     CHECK(list.selected_index() == 0);
@@ -306,7 +311,10 @@ TEST_CASE("ListView::set_selected_index fires on_selection_changed only "
     auto list_owner = tk::create_root_widget<ListView>(nullptr);
     ListView& list = *list_owner;
     int fires = 0;
-    list.on_selection_changed = [&](int) { ++fires; };
+    list.on_selection_changed = [&](int)
+    {
+        ++fires;
+    };
 
     list.set_selected_index(2);
     CHECK(fires == 1);
@@ -329,7 +337,10 @@ TEST_CASE("ListView::set_selected_index(idx, force=true) re-fires "
     auto list_owner = tk::create_root_widget<ListView>(nullptr);
     ListView& list = *list_owner;
     int fires = 0;
-    list.on_selection_changed = [&](int) { ++fires; };
+    list.on_selection_changed = [&](int)
+    {
+        ++fires;
+    };
 
     list.set_selected_index(0);
     CHECK(fires == 1);
@@ -352,11 +363,11 @@ TEST_CASE("ListView::set_focus_on_click(false) disables focus_on_click() "
     ad.n = 5;
     ad.row_h = 20.0f;
     list.set_adapter(&ad);
-    CHECK(list.focusable()); // Tab-navigable whenever non-empty
+    CHECK(list.focusable());      // Tab-navigable whenever non-empty
     CHECK(list.focus_on_click()); // default: click also claims focus
 
     list.set_focus_on_click(false);
-    CHECK(list.focusable()); // stays Tab-reachable...
+    CHECK(list.focusable());            // stays Tab-reachable...
     CHECK_FALSE(list.focus_on_click()); // ...but click no longer grabs focus
 
     int clicked = -1;
@@ -373,8 +384,7 @@ TEST_CASE("ListView::set_focus_on_click(false) disables focus_on_click() "
     CHECK(clicked == 2);
 }
 
-TEST_CASE("ListView pointer_up outside the row doesn't fire click",
-          "[tk][listview]")
+TEST_CASE("ListView pointer_up outside the row doesn't fire click", "[tk][listview]")
 {
     TkListsStage st;
     auto list_owner = tk::create_root_widget<ListView>(nullptr);
@@ -419,8 +429,7 @@ TEST_CASE("ListView::scroll_to_bottom snaps to the end", "[tk][listview]")
 //  RoomListView
 // ─────────────────────────────────────────────────────────────────────────
 
-TEST_CASE("RoomListView paints rows + tracks selection by room ID",
-          "[tk][view][roomlist]")
+TEST_CASE("RoomListView paints rows + tracks selection by room ID", "[tk][view][roomlist]")
 {
     TkListsStage st;
     auto view_owner = tk::create_root_widget<RoomListView>(nullptr);
@@ -431,11 +440,10 @@ TEST_CASE("RoomListView paints rows + tracks selection by room ID",
                              .name = "Alpha room",
                              .notification_count = 2,
                              .last_message_body = "preview a"});
-    rooms.push_back(RoomInfo{.id = "!b:example.org",
-                             .name = "Beta room",
-                             .last_message_body = "preview b"});
-    rooms.push_back(RoomInfo{
-        .id = "!c:example.org", .name = "Gamma room", .notification_count = 99});
+    rooms.push_back(
+        RoomInfo{.id = "!b:example.org", .name = "Beta room", .last_message_body = "preview b"});
+    rooms.push_back(
+        RoomInfo{.id = "!c:example.org", .name = "Gamma room", .notification_count = 99});
     view.set_rooms(rooms);
 
     std::string selected;
@@ -497,9 +505,8 @@ TEST_CASE("RoomListView collapsed section shows mention rooms, hides silent room
     // "mention" has highlight_count but no notification_count.
     // "silent" has neither.  Both go into the "Rooms" section.
     std::vector<RoomInfo> rooms = {
-        RoomInfo{.id = "!mention:x", .name = "Mention room",
-                 .highlight_count = 1},
-        RoomInfo{.id = "!silent:x",  .name = "Silent room"},
+        RoomInfo{.id = "!mention:x", .name = "Mention room", .highlight_count = 1},
+        RoomInfo{.id = "!silent:x", .name = "Silent room"},
     };
     view.set_rooms(rooms);
 
@@ -509,7 +516,7 @@ TEST_CASE("RoomListView collapsed section shows mention rooms, hides silent room
     {
         auto ids = view.visible_room_ids();
         REQUIRE(std::find(ids.begin(), ids.end(), "!mention:x") != ids.end());
-        REQUIRE(std::find(ids.begin(), ids.end(), "!silent:x")  != ids.end());
+        REQUIRE(std::find(ids.begin(), ids.end(), "!silent:x") != ids.end());
     }
 
     // Click the Rooms section header (y ≈ 50) to collapse it.
@@ -523,12 +530,11 @@ TEST_CASE("RoomListView collapsed section shows mention rooms, hides silent room
         // Mention room (highlight_count > 0) must still be visible.
         CHECK(std::find(ids.begin(), ids.end(), "!mention:x") != ids.end());
         // Silent room (zero counts) must be hidden.
-        CHECK(std::find(ids.begin(), ids.end(), "!silent:x")  == ids.end());
+        CHECK(std::find(ids.begin(), ids.end(), "!silent:x") == ids.end());
     }
 }
 
-TEST_CASE("RoomListView preserves selection after rooms swap",
-          "[tk][view][roomlist]")
+TEST_CASE("RoomListView preserves selection after rooms swap", "[tk][view][roomlist]")
 {
     TkListsStage st;
     auto view_owner = tk::create_root_widget<RoomListView>(nullptr);
@@ -554,8 +560,7 @@ TEST_CASE("RoomListView preserves selection after rooms swap",
     CHECK(view.selected_room_id() == "!b:x");
 }
 
-TEST_CASE("RoomListView search field always visible",
-          "[tk][view][roomlist][search]")
+TEST_CASE("RoomListView search field always visible", "[tk][view][roomlist][search]")
 {
     TkListsStage st;
     TestHost host(nullptr);
@@ -588,8 +593,8 @@ TEST_CASE("RoomListView search field visible when content overflows viewport",
     std::vector<RoomInfo> rooms;
     for (int i = 0; i < 6; ++i)
     {
-        rooms.push_back(RoomInfo{.id = "!" + std::to_string(i) + ":x",
-                                 .name = "Room " + std::to_string(i)});
+        rooms.push_back(
+            RoomInfo{.id = "!" + std::to_string(i) + ":x", .name = "Room " + std::to_string(i)});
     }
     view.set_rooms(rooms);
     st.run(view, {0, 0, 260, 200});
@@ -603,9 +608,8 @@ TEST_CASE("RoomListView search field visible when content overflows viewport",
     CHECK(r.y < 36.0f);
 }
 
-TEST_CASE(
-    "RoomListView set_search_text filters rows by name case-insensitively",
-    "[tk][view][roomlist][search]")
+TEST_CASE("RoomListView set_search_text filters rows by name case-insensitively",
+          "[tk][view][roomlist][search]")
 {
     TkListsStage st;
     auto view_owner = tk::create_root_widget<RoomListView>(nullptr);
@@ -686,11 +690,10 @@ TEST_CASE("RoomListView sections classify Favorites / DMs / Rooms / Spaces",
     auto view_owner = tk::create_root_widget<RoomListView>(nullptr);
     RoomListView& view = *view_owner;
     std::vector<RoomInfo> rooms = {
-        RoomInfo{
-            .id = "!fav:x", .name = "Fav", .is_favorite = true},    // favorite
-        RoomInfo{.id = "!dm:x", .name = "DM", .is_direct = true},   // direct
-        RoomInfo{.id = "!r:x", .name = "Room"},                     // regular
-        RoomInfo{.id = "!sp:x", .name = "Space", .is_space = true}, // space
+        RoomInfo{.id = "!fav:x", .name = "Fav", .is_favorite = true}, // favorite
+        RoomInfo{.id = "!dm:x", .name = "DM", .is_direct = true},     // direct
+        RoomInfo{.id = "!r:x", .name = "Room"},                       // regular
+        RoomInfo{.id = "!sp:x", .name = "Space", .is_space = true},   // space
     };
     view.set_rooms(rooms);
     // Each room type lands in its own section; all selectable by ID.
@@ -766,8 +769,7 @@ TEST_CASE("RoomListView collapse section hides rooms; expand restores them",
     CHECK(selected == "!b:x");
 }
 
-TEST_CASE("RoomListView search shows rooms in collapsed sections",
-          "[tk][view][roomlist][sections]")
+TEST_CASE("RoomListView search shows rooms in collapsed sections", "[tk][view][roomlist][sections]")
 {
     TkListsStage st;
     auto view_owner = tk::create_root_widget<RoomListView>(nullptr);
@@ -800,8 +802,7 @@ TEST_CASE("RoomListView search shows rooms in collapsed sections",
     CHECK(selected == "!a:x");
 }
 
-TEST_CASE("RoomListView empty sections produce no header row",
-          "[tk][view][roomlist][sections]")
+TEST_CASE("RoomListView empty sections produce no header row", "[tk][view][roomlist][sections]")
 {
     TkListsStage st;
     auto view_owner = tk::create_root_widget<RoomListView>(nullptr);
@@ -881,8 +882,7 @@ TEST_CASE("MessageListView::edit_last_own picks the newest own editable "
 {
     using K = MessageRowData::Kind;
     using P = MessageRowData::PendingState;
-    auto mk = [](const char* id, const char* body, bool own,
-                 K k = MessageRowData::Kind::Text,
+    auto mk = [](const char* id, const char* body, bool own, K k = MessageRowData::Kind::Text,
                  P p = MessageRowData::PendingState::None)
     {
         MessageRowData m{};
@@ -906,8 +906,7 @@ TEST_CASE("MessageListView::edit_last_own picks the newest own editable "
         });
         std::string got_id, got_body;
         bool got_is_caption = true;
-        view.on_edit_requested =
-            [&](const std::string& id, const std::string& b, bool is_caption)
+        view.on_edit_requested = [&](const std::string& id, const std::string& b, bool is_caption)
         {
             got_id = id;
             got_body = b;
@@ -929,8 +928,7 @@ TEST_CASE("MessageListView::edit_last_own picks the newest own editable "
         });
         std::string got_id, got_body;
         bool got_is_caption = false;
-        view.on_edit_requested =
-            [&](const std::string& id, const std::string& b, bool is_caption)
+        view.on_edit_requested = [&](const std::string& id, const std::string& b, bool is_caption)
         {
             got_id = id;
             got_body = b;
@@ -942,6 +940,36 @@ TEST_CASE("MessageListView::edit_last_own picks the newest own editable "
         CHECK(got_is_caption);
     }
 
+    SECTION("skips an own forwarded message and edits the older one")
+    {
+        MessageListView view;
+        MessageRowData fwd = mk("$f", "forwarded text", true);
+        fwd.forwarded = true;
+        view.set_messages({mk("$a", "my first", true), fwd});
+        std::string got_id;
+        view.on_edit_requested = [&](const std::string& id, const std::string&, bool)
+        {
+            got_id = id;
+        };
+        CHECK(view.edit_last_own());
+        CHECK(got_id == "$a");
+    }
+
+    SECTION("returns false when the only own message is a forward")
+    {
+        MessageListView view;
+        MessageRowData fwd = mk("$f", "forwarded text", true);
+        fwd.forwarded = true;
+        view.set_messages({fwd});
+        bool fired = false;
+        view.on_edit_requested = [&](const std::string&, const std::string&, bool)
+        {
+            fired = true;
+        };
+        CHECK_FALSE(view.edit_last_own());
+        CHECK_FALSE(fired);
+    }
+
     SECTION("returns false when there is no editable own message")
     {
         MessageListView view;
@@ -950,8 +978,7 @@ TEST_CASE("MessageListView::edit_last_own picks the newest own editable "
             mk("$y", "my voice clip", true, K::Voice),
         });
         bool fired = false;
-        view.on_edit_requested =
-            [&](const std::string&, const std::string&, bool)
+        view.on_edit_requested = [&](const std::string&, const std::string&, bool)
         {
             fired = true;
         };
@@ -967,8 +994,7 @@ TEST_CASE("MessageListView::edit_last_own picks the newest own editable "
     }
 }
 
-TEST_CASE("MessageListView measures Image rows taller than text rows",
-          "[tk][view][messagelist]")
+TEST_CASE("MessageListView measures Image rows taller than text rows", "[tk][view][messagelist]")
 {
     TkListsStage st;
     MessageListView view;
@@ -995,8 +1021,7 @@ TEST_CASE("MessageListView measures Image rows taller than text rows",
     CHECK(view.content_height() > 200.0f);
 }
 
-TEST_CASE("MessageListView click fires on_message_clicked with event_id",
-          "[tk][view][messagelist]")
+TEST_CASE("MessageListView click fires on_message_clicked with event_id", "[tk][view][messagelist]")
 {
     TkListsStage st;
     MessageListView view;
@@ -1052,8 +1077,7 @@ MessageRowData make_row_with_reactions()
 // First paint the view as hovered so the chip geometry is captured,
 // then a second paint to make hover state stick. Pointer-move on the
 // hovered row records the chip rects we'll then hit-test against.
-void paint_with_hover(TkListsStage& st, MessageListView& view, Rect bounds,
-                      tk::Point local_in_row)
+void paint_with_hover(TkListsStage& st, MessageListView& view, Rect bounds, tk::Point local_in_row)
 {
     st.run(view, bounds);
     // Short content is bottom-anchored — shift the caller's top-relative
@@ -1093,8 +1117,7 @@ TEST_CASE("MessageListView paints + pseudo-chip only on hover",
     CHECK(view.hovered_row_geom().chips.size() == 2);
 }
 
-TEST_CASE("MessageListView resolves chip hover target",
-          "[tk][view][messagelist][reactions]")
+TEST_CASE("MessageListView resolves chip hover target", "[tk][view][messagelist][reactions]")
 {
     TkListsStage st;
     MessageListView view;
@@ -1140,8 +1163,8 @@ TEST_CASE("MessageListView reaction-chip click fires on_reaction_toggled",
     paint_with_hover(st, view, {0, 0, 320, 200}, {50, 20});
 
     std::string got_event, got_key, got_source;
-    view.on_reaction_toggled = [&](const std::string& ev, const std::string& k,
-                                   const std::string& src)
+    view.on_reaction_toggled =
+        [&](const std::string& ev, const std::string& k, const std::string& src)
     {
         got_event = ev;
         got_key = k;
@@ -1184,8 +1207,8 @@ TEST_CASE("MessageListView MSC4027 chip click forwards source mxc",
     paint_with_hover(st, view, {0, 0, 320, 200}, {50, 20});
 
     std::string got_event, got_key, got_source;
-    view.on_reaction_toggled = [&](const std::string& ev, const std::string& k,
-                                   const std::string& src)
+    view.on_reaction_toggled =
+        [&](const std::string& ev, const std::string& k, const std::string& src)
     {
         got_event = ev;
         got_key = k;
@@ -1268,18 +1291,16 @@ TEST_CASE("MessageListView read receipts paint inside existing row bounds",
     CHECK(with_h == plain_h);
 }
 
-TEST_CASE(
-    "MessageListView paints read-receipt cluster + overflow at bottom-right",
-    "[tk][view][messagelist][receipts]")
+TEST_CASE("MessageListView paints read-receipt cluster + overflow at bottom-right",
+          "[tk][view][messagelist][receipts]")
 {
     TkListsStage st;
     MessageListView view;
     MessageRowData m = make_text_row("$evt", "hi");
     // Seven receipts — five render as discs, with a "+2" pill to the left.
     m.read_receipts = {
-        make_receipt("@a:x", "Alice"), make_receipt("@b:x", "Bob"),
-        make_receipt("@c:x", "Carol"), make_receipt("@d:x", "Dave"),
-        make_receipt("@e:x", "Eve"),   make_receipt("@f:x", "Frank"),
+        make_receipt("@a:x", "Alice"), make_receipt("@b:x", "Bob"), make_receipt("@c:x", "Carol"),
+        make_receipt("@d:x", "Dave"),  make_receipt("@e:x", "Eve"), make_receipt("@f:x", "Frank"),
         make_receipt("@g:x", "Grace"),
     };
     view.set_messages({m});
@@ -1350,8 +1371,7 @@ TEST_CASE("MessageListView + button click fires on_add_reaction_requested",
     paint_with_hover(st, view, {0, 0, 320, 200}, {50, 20});
 
     std::string got_event;
-    view.on_add_reaction_requested =
-        [&](const std::string& ev, tk::Rect /*anchor*/)
+    view.on_add_reaction_requested = [&](const std::string& ev, tk::Rect /*anchor*/)
     {
         got_event = ev;
     };
@@ -1386,8 +1406,10 @@ TEST_CASE("MessageListView action-pill react button fires "
     paint_with_hover(st, view, {0, 0, 320, 200}, {50, 20});
 
     std::string got_event;
-    view.on_add_reaction_requested =
-        [&](const std::string& ev, tk::Rect /*anchor*/) { got_event = ev; };
+    view.on_add_reaction_requested = [&](const std::string& ev, tk::Rect /*anchor*/)
+    {
+        got_event = ev;
+    };
 
     auto react = view.hovered_row_geom().react_button;
     REQUIRE(react.w > 0);
@@ -1504,7 +1526,11 @@ TEST_CASE("ListView::preserve_top_through on a never-laid-out view leaves "
     ad.row_h = 25.0f;
     list.set_adapter(&ad);
 
-    list.preserve_top_through([&] { list.invalidate_data(); });
+    list.preserve_top_through(
+        [&]
+        {
+            list.invalidate_data();
+        });
 
     auto lc = st.layout_ctx();
     list.arrange(lc, {0, 0, 200, 100});
@@ -1523,7 +1549,9 @@ TEST_CASE("ListView row anchor keeps the hovered row's screen Y when a row "
     KeyedVarAdapter ad;
     ad.heights.assign(20, 25.0f);
     for (int i = 0; i < 20; ++i)
+    {
         ad.keys.push_back("k" + std::to_string(i));
+    }
     list.set_adapter(&ad);
 
     auto lc = st.layout_ctx();
@@ -1550,8 +1578,7 @@ TEST_CASE("ListView row anchor keeps the hovered row's screen Y when a row "
     CHECK(list.scroll_y() == 350.0f);
 }
 
-TEST_CASE("ListView row anchor ignores growth strictly below the anchor",
-          "[tk][listview][anchor]")
+TEST_CASE("ListView row anchor ignores growth strictly below the anchor", "[tk][listview][anchor]")
 {
     TkListsStage st;
     auto list_owner = tk::create_root_widget<ListView>(nullptr);
@@ -1559,7 +1586,9 @@ TEST_CASE("ListView row anchor ignores growth strictly below the anchor",
     KeyedVarAdapter ad;
     ad.heights.assign(20, 25.0f);
     for (int i = 0; i < 20; ++i)
+    {
         ad.keys.push_back("k" + std::to_string(i));
+    }
     list.set_adapter(&ad);
 
     auto lc = st.layout_ctx();
@@ -1590,7 +1619,9 @@ TEST_CASE("ListView row anchor keeps the keyed row stable across a prepend",
     KeyedVarAdapter ad;
     ad.heights.assign(20, 25.0f);
     for (int i = 0; i < 20; ++i)
+    {
         ad.keys.push_back("k" + std::to_string(i));
+    }
     list.set_adapter(&ad);
 
     auto lc = st.layout_ctx();
@@ -1654,7 +1685,9 @@ TEST_CASE("ListView bottom-anchored: a viewport height shrink keeps the "
     KeyedVarAdapter ad;
     ad.heights.assign(20, 25.0f); // 500 px content
     for (int i = 0; i < 20; ++i)
+    {
         ad.keys.push_back("k" + std::to_string(i));
+    }
     list.set_adapter(&ad);
     list.set_anchor_content_bottom(true);
 
@@ -1684,7 +1717,9 @@ TEST_CASE("ListView bottom-anchored: a width shrink pins the bottom-visible "
     WidthWrapAdapter ad;
     ad.n = 20;
     for (int i = 0; i < 20; ++i)
+    {
         ad.keys.push_back("k" + std::to_string(i));
+    }
     list.set_adapter(&ad);
     list.set_anchor_content_bottom(true);
 
@@ -1714,7 +1749,9 @@ TEST_CASE("ListView top-anchored list is unaffected by a viewport height "
     KeyedVarAdapter ad;
     ad.heights.assign(20, 25.0f);
     for (int i = 0; i < 20; ++i)
+    {
         ad.keys.push_back("k" + std::to_string(i));
+    }
     list.set_adapter(&ad);
     // No set_anchor_content_bottom — default top-anchored list (room list etc.).
 
@@ -1737,7 +1774,9 @@ TEST_CASE("ListView stick-to-bottom still wins over resize bottom-anchoring",
     KeyedVarAdapter ad;
     ad.heights.assign(20, 25.0f);
     for (int i = 0; i < 20; ++i)
+    {
         ad.keys.push_back("k" + std::to_string(i));
+    }
     list.set_adapter(&ad);
     list.set_anchor_content_bottom(true);
 
@@ -1881,8 +1920,7 @@ TEST_CASE("ListView::on_near_bottom: latch does not re-arm on pure resize",
     // Scroll back above threshold: remaining must be >= 200.
     // From clamped scroll_y=1500, -700 → 800, remaining=1800-1100=700 ✓
     list.on_wheel({50, 50}, 0, -700);
-    CHECK(fires ==
-          1); // latch re-arms (was_near_bottom_ → false) but no fire yet
+    CHECK(fires == 1); // latch re-arms (was_near_bottom_ → false) but no fire yet
 
     // Cross back in — remaining < 200 requires scroll_y > 1300 (strict).
     // From 800, +601 → 1401, remaining=1800-1701=99 < 200 → fires.
@@ -1890,8 +1928,7 @@ TEST_CASE("ListView::on_near_bottom: latch does not re-arm on pure resize",
     CHECK(fires == 2);
 }
 
-TEST_CASE("ListView::on_near_bottom re-arms when content is appended",
-          "[tk][listview][nearBottom]")
+TEST_CASE("ListView::on_near_bottom re-arms when content is appended", "[tk][listview][nearBottom]")
 {
     TkListsStage st;
     auto list_owner = tk::create_root_widget<ListView>(nullptr);
@@ -1930,9 +1967,8 @@ TEST_CASE("ListView::on_near_bottom re-arms when content is appended",
     CHECK(fires == 2);
 }
 
-TEST_CASE(
-    "ListView::on_near_bottom not fired when content fits within viewport",
-    "[tk][listview][nearBottom]")
+TEST_CASE("ListView::on_near_bottom not fired when content fits within viewport",
+          "[tk][listview][nearBottom]")
 {
     TkListsStage st;
     auto list_owner = tk::create_root_widget<ListView>(nullptr);
@@ -1957,9 +1993,8 @@ TEST_CASE(
     CHECK(fires == 0);
 }
 
-TEST_CASE(
-    "MessageListView::insert_message(0) inserts at front and preserves scroll",
-    "[tk][view][messagelist][insert]")
+TEST_CASE("MessageListView::insert_message(0) inserts at front and preserves scroll",
+          "[tk][view][messagelist][insert]")
 {
     TkListsStage st;
     MessageListView view;
@@ -2068,7 +2103,9 @@ TEST_CASE("MessageListView::append_messages does not follow to the new "
 
     std::vector<MessageRowData> seed;
     for (int i = 0; i < 20; ++i)
+    {
         seed.push_back(make_text_row(("$s" + std::to_string(i)).c_str(), "row"));
+    }
     view.set_messages(std::move(seed), false);
     st.run(view, {0, 0, 320, 200});
 
@@ -2085,7 +2122,9 @@ TEST_CASE("MessageListView::append_messages does not follow to the new "
 
     std::vector<MessageRowData> more;
     for (int i = 0; i < 5; ++i)
+    {
         more.push_back(make_text_row(("$more" + std::to_string(i)).c_str(), "row"));
+    }
     view.append_messages(std::move(more));
     st.run(view, {0, 0, 320, 200});
 
@@ -2255,8 +2294,7 @@ TEST_CASE("MessageListView scroll-to-bottom pill: hidden at bottom, "
     REQUIRE(hit != nullptr);
     REQUIRE(hit != &view); // the pill child captured the press, not the list
     tk::Point ws = hit->world_to_local(world);
-    const bool inside = ws.x >= 0 && ws.y >= 0 && ws.x < hit->bounds().w &&
-                        ws.y < hit->bounds().h;
+    const bool inside = ws.x >= 0 && ws.y >= 0 && ws.x < hit->bounds().w && ws.y < hit->bounds().h;
     hit->on_pointer_up(ws, inside);
     st.run(view, {0, 0, 320, 200});
     CHECK_FALSE(view.pill_visible());
@@ -2307,8 +2345,7 @@ void click_world(MessageListView& view, tk::Point world)
     REQUIRE(hit != nullptr);
     REQUIRE(hit != &view);
     tk::Point ws = hit->world_to_local(world);
-    const bool inside = ws.x >= 0 && ws.y >= 0 && ws.x < hit->bounds().w &&
-                        ws.y < hit->bounds().h;
+    const bool inside = ws.x >= 0 && ws.y >= 0 && ws.x < hit->bounds().w && ws.y < hit->bounds().h;
     hit->on_pointer_up(ws, inside);
 }
 
@@ -2316,8 +2353,12 @@ int index_of_marker(const MessageListView& view)
 {
     const auto& m = view.messages();
     for (std::size_t i = 0; i < m.size(); ++i)
+    {
         if (m[i].kind == MessageRowData::Kind::ReadMarker)
+        {
             return static_cast<int>(i);
+        }
+    }
     return -1;
 }
 
@@ -2345,8 +2386,7 @@ TEST_CASE("MessageListView unread pill: shown while the divider is above "
     CHECK(marker <= last);
 }
 
-TEST_CASE("MessageListView unread pill: × dismisses it",
-          "[tk][view][messagelist][unread]")
+TEST_CASE("MessageListView unread pill: × dismisses it", "[tk][view][messagelist][unread]")
 {
     TkListsStage st;
     MessageListView view;
@@ -2395,7 +2435,10 @@ TEST_CASE("MessageListView unread pill: fully-read event older than the "
     CHECK_FALSE(view.unread_pill_visible()); // nobody can perform the jump
 
     std::string jumped;
-    view.on_jump_to_unread = [&](const std::string& eid) { jumped = eid; };
+    view.on_jump_to_unread = [&](const std::string& eid)
+    {
+        jumped = eid;
+    };
     st.run(view, {0, 0, 320, 200});
     REQUIRE(view.unread_pill_visible());
     const tk::Rect r = view.unread_pill_bounds();
@@ -2491,7 +2534,9 @@ TEST_CASE("MessageListView unread pill: a fully-read event inside the loaded "
 {
     auto rows = unread_rows(80, -1);
     for (std::size_t i = 0; i < rows.size(); ++i)
+    {
         rows[i].timestamp_ms = 1'000'000 + i * 1000;
+    }
 
     TkListsStage st;
     MessageListView view;
@@ -2655,8 +2700,8 @@ TEST_CASE("MessageListView begin_switch_loading clears the old room's rows at on
     REQUIRE(view.messages().size() == 1);
 
     view.begin_switch_loading();
-    CHECK(view.messages().empty());   // previous room gone immediately
-    CHECK(view.is_switch_loading());  // holding the loading view
+    CHECK(view.messages().empty());  // previous room gone immediately
+    CHECK(view.is_switch_loading()); // holding the loading view
 }
 
 TEST_CASE("MessageListView switch-loading spinner is delayed, not immediate",
@@ -2677,8 +2722,8 @@ TEST_CASE("MessageListView switch-loading spinner is delayed, not immediate",
     REQUIRE(spinner_fn);                                 // a delayed timer armed
     CHECK(delay_ms > 0);
 
-    spinner_fn();                                        // the delay elapses
-    CHECK(view.switch_spinner_visible_for_test());       // spinner now due
+    spinner_fn();                                  // the delay elapses
+    CHECK(view.switch_spinner_visible_for_test()); // spinner now due
 }
 
 TEST_CASE("MessageListView populated set_messages cancels switch-loading",
@@ -2687,7 +2732,10 @@ TEST_CASE("MessageListView populated set_messages cancels switch-loading",
     MessageListView view;
     std::function<void()> spinner_fn;
     view.set_post_delayed(
-        [&](int, std::function<void()> fn) { spinner_fn = std::move(fn); });
+        [&](int, std::function<void()> fn)
+        {
+            spinner_fn = std::move(fn);
+        });
 
     view.begin_switch_loading();
     REQUIRE(view.is_switch_loading());
@@ -2702,7 +2750,9 @@ TEST_CASE("MessageListView populated set_messages cancels switch-loading",
 
     // A late spinner timer from the now-superseded switch must not resurrect it.
     if (spinner_fn)
+    {
         spinner_fn();
+    }
     CHECK_FALSE(view.switch_spinner_visible_for_test());
 }
 
@@ -2712,7 +2762,10 @@ TEST_CASE("MessageListView end_switch_loading clears the loading state",
     MessageListView view;
     std::function<void()> spinner_fn;
     view.set_post_delayed(
-        [&](int, std::function<void()> fn) { spinner_fn = std::move(fn); });
+        [&](int, std::function<void()> fn)
+        {
+            spinner_fn = std::move(fn);
+        });
 
     view.begin_switch_loading();
     REQUIRE(view.is_switch_loading());
@@ -2722,7 +2775,9 @@ TEST_CASE("MessageListView end_switch_loading clears the loading state",
 
     // A late spinner timer from the aborted switch must not resurrect it.
     if (spinner_fn)
+    {
         spinner_fn();
+    }
     CHECK_FALSE(view.switch_spinner_visible_for_test());
 }
 
@@ -2732,7 +2787,10 @@ TEST_CASE("MessageListView second begin_switch_loading supersedes the first time
     MessageListView view;
     std::vector<std::function<void()>> timers;
     view.set_post_delayed(
-        [&](int, std::function<void()> fn) { timers.push_back(std::move(fn)); });
+        [&](int, std::function<void()> fn)
+        {
+            timers.push_back(std::move(fn));
+        });
 
     view.begin_switch_loading(); // arms timer 0
     view.begin_switch_loading(); // supersedes → arms timer 1
@@ -2753,7 +2811,10 @@ TEST_CASE("MessageListView room-switch gate does not hold a known-dimension imag
     // media_w/media_h so its box is reserved up front — the gate must reveal
     // immediately instead of waiting on the decode.
     view.set_image_provider(
-        [](const std::string&, bool) -> const tk::Image* { return nullptr; });
+        [](const std::string&, bool) -> const tk::Image*
+        {
+            return nullptr;
+        });
 
     view.set_messages({gate_image_row()}, /*room_switch=*/true);
     st.run(view, {0, 0, 400, 600});
@@ -2769,7 +2830,11 @@ TEST_CASE("MessageListView keeps the hovered message put when a preview card "
     // A text-only URL preview grows the row without an image to paint (a fake
     // tk::Image would crash the real Qt draw path).
     const tesseract::views::UrlPreviewData* preview = nullptr;
-    view.set_preview_provider([&](const std::string&) { return preview; });
+    view.set_preview_provider(
+        [&](const std::string&)
+        {
+            return preview;
+        });
 
     // A link row at the top (preview starts unloaded → no card height), then
     // plenty of distinct text rows so the list scrolls.
@@ -2808,14 +2873,14 @@ TEST_CASE("MessageListView keeps the hovered message put when a preview card "
     st.run(view, {0, 0, 360, 300});
     REQUIRE(view.hovered_row_geom().row_index != static_cast<std::size_t>(-1));
     REQUIRE(view.hovered_row_geom().row_index > 0); // a text row, not the link
-    const float y_before  = view.hovered_row_geom().row_bounds.y;
+    const float y_before = view.hovered_row_geom().row_bounds.y;
     const float ch_before = view.content_height();
 
     // The preview card finishes loading → the link row grows downward.
     tesseract::views::UrlPreviewData card;
-    card.title       = "Example";
+    card.title = "Example";
     card.description = "An example page";
-    preview          = &card;
+    preview = &card;
     view.notify_url_preview_ready("http://example.com/page");
     st.run(view, {0, 0, 360, 300});
 
@@ -2838,7 +2903,9 @@ TEST_CASE("MessageListView stacks one card per MSC4095 bundled URL preview",
         MessageListView view;
         view.set_preview_provider(
             [](const std::string&) -> const tesseract::views::UrlPreviewData*
-            { return nullptr; });
+            {
+                return nullptr;
+            });
         MessageRowData row{};
         row.kind = MessageRowData::Kind::Text;
         row.event_id = "$m";
@@ -2864,8 +2931,8 @@ TEST_CASE("MessageListView stacks one card per MSC4095 bundled URL preview",
     const float h1 = height_with(1);
     const float h2 = height_with(2);
 
-    CHECK(h1 > h0);                       // one card adds height
-    CHECK(h2 > h1);                       // a second card adds more
+    CHECK(h1 > h0); // one card adds height
+    CHECK(h2 > h1); // a second card adds more
     // The second card costs about the same as the first (one card height +
     // inter-card gap; the first also pays the gap-above-stack).
     CHECK(std::abs((h2 - h1) - (h1 - h0)) <= 10.0f);
@@ -2878,7 +2945,9 @@ TEST_CASE("MessageListView opens a bundled preview card at the message's own lin
     MessageListView view;
     view.set_preview_provider(
         [](const std::string&) -> const tesseract::views::UrlPreviewData*
-        { return nullptr; });
+        {
+            return nullptr;
+        });
     MessageRowData row{};
     row.kind = MessageRowData::Kind::Text;
     row.event_id = "$m";
@@ -2896,7 +2965,10 @@ TEST_CASE("MessageListView opens a bundled preview card at the message's own lin
     st.run(view, {0, 0, 400, 400});
 
     std::vector<std::string> opened;
-    view.on_link_clicked = [&](const std::string& url) { opened.push_back(url); };
+    view.on_link_clicked = [&](const std::string& url)
+    {
+        opened.push_back(url);
+    };
 
     const auto& hits = view.preview_card_hits_for_test();
     REQUIRE(hits.size() == 1);
@@ -2909,8 +2981,7 @@ TEST_CASE("MessageListView opens a bundled preview card at the message's own lin
     CHECK(opened == std::vector<std::string>{"https://a.example/post"});
 }
 
-TEST_CASE("MessageListView non-switch set_messages is never gated",
-          "[tk][view][messagelist][gate]")
+TEST_CASE("MessageListView non-switch set_messages is never gated", "[tk][view][messagelist][gate]")
 {
     TkListsStage st;
     MessageListView view;
@@ -2925,8 +2996,7 @@ TEST_CASE("MessageListView non-switch set_messages is never gated",
     CHECK(any_image_painted(view)); // painted immediately
 }
 
-TEST_CASE("MessageListView room-switch gate reveals on timeout",
-          "[tk][view][messagelist][gate]")
+TEST_CASE("MessageListView room-switch gate reveals on timeout", "[tk][view][messagelist][gate]")
 {
     TkListsStage st;
     MessageListView view;
@@ -2953,9 +3023,8 @@ TEST_CASE("MessageListView room-switch gate reveals on timeout",
     CHECK(any_image_painted(view)); // revealed despite null provider
 }
 
-TEST_CASE(
-    "MessageListView room-switch gate timeout wins even before first paint",
-    "[tk][view][messagelist][gate]")
+TEST_CASE("MessageListView room-switch gate timeout wins even before first paint",
+          "[tk][view][messagelist][gate]")
 {
     TkListsStage st;
     MessageListView view;
@@ -3085,8 +3154,7 @@ TEST_CASE("GridView::on_pointer_move updates hovered_index", "[tk][gridview]")
     CHECK(grid.hovered_index() == 1);
 }
 
-TEST_CASE("GridView::on_pointer_leave clears hovered_index to -1",
-          "[tk][gridview]")
+TEST_CASE("GridView::on_pointer_leave clears hovered_index to -1", "[tk][gridview]")
 {
     TkListsStage st;
     auto grid_owner = tk::create_root_widget<GridView>(nullptr);
@@ -3107,8 +3175,7 @@ TEST_CASE("GridView::on_pointer_leave clears hovered_index to -1",
     CHECK(grid.hovered_index() == -1);
 }
 
-TEST_CASE("GridView pointer in inter-cell gap reports hovered_index == -1",
-          "[tk][gridview]")
+TEST_CASE("GridView pointer in inter-cell gap reports hovered_index == -1", "[tk][gridview]")
 {
     TkListsStage st;
     auto grid_owner = tk::create_root_widget<GridView>(nullptr);
@@ -3131,8 +3198,7 @@ TEST_CASE("GridView pointer in inter-cell gap reports hovered_index == -1",
     CHECK(grid.hovered_index() == -1);
 }
 
-TEST_CASE("GridView::rect_at returns correct widget-local cell rect",
-          "[tk][gridview]")
+TEST_CASE("GridView::rect_at returns correct widget-local cell rect", "[tk][gridview]")
 {
     TkListsStage st;
     auto grid_owner = tk::create_root_widget<GridView>(nullptr);
@@ -3224,8 +3290,8 @@ TEST_CASE("GridView::visible_range excludes cells scrolled below the "
     REQUIRE(grid.scroll_y() == 34.0f);
     {
         auto [first, last] = grid.visible_range();
-        CHECK(first == 11);        // row 1's first cell
-        CHECK(last == 99);         // last item overall (row 9 only has 12 cells: 99..99)
+        CHECK(first == 11); // row 1's first cell
+        CHECK(last == 99);  // last item overall (row 9 only has 12 cells: 99..99)
     }
 }
 
@@ -3332,9 +3398,15 @@ TEST_CASE("GridView arrow-key navigation fires on_selection_changed "
     REQUIRE(grid.has_focus());
 
     std::vector<int> changes;
-    grid.on_selection_changed = [&](int idx) { changes.push_back(idx); };
+    grid.on_selection_changed = [&](int idx)
+    {
+        changes.push_back(idx);
+    };
     int clicked = -1;
-    grid.on_cell_clicked = [&](int idx) { clicked = idx; };
+    grid.on_cell_clicked = [&](int idx)
+    {
+        clicked = idx;
+    };
 
     CHECK(grid.on_key_down({Key::Right}));
     CHECK(grid.selected_index() == 0);
@@ -3355,7 +3427,10 @@ TEST_CASE("GridView::set_selected_index fires on_selection_changed only "
     auto grid_owner = tk::create_root_widget<GridView>(nullptr);
     GridView& grid = *grid_owner;
     int fires = 0;
-    grid.on_selection_changed = [&](int) { ++fires; };
+    grid.on_selection_changed = [&](int)
+    {
+        ++fires;
+    };
 
     grid.set_selected_index(2);
     CHECK(fires == 1);
@@ -3463,8 +3538,7 @@ TEST_CASE("ListView::erase_row shifts offsets and measures only the gap",
     CHECK(list.row_world_rect(4).y == 80.0f); // 4*20
 }
 
-TEST_CASE("ListView::insert_row keeps the anchored row pixel-stable",
-          "[tk][listview][incremental]")
+TEST_CASE("ListView::insert_row keeps the anchored row pixel-stable", "[tk][listview][incremental]")
 {
     TkListsStage st;
     auto list_owner = tk::create_root_widget<ListView>(nullptr);
@@ -3472,7 +3546,9 @@ TEST_CASE("ListView::insert_row keeps the anchored row pixel-stable",
     CountingAdapter ad;
     ad.heights.assign(20, 20.0f);
     for (int i = 0; i < 20; ++i)
+    {
         ad.keys.push_back("k" + std::to_string(i));
+    }
     ad.fwd = 1;
     list.set_adapter(&ad);
 
@@ -3497,8 +3573,7 @@ TEST_CASE("ListView::insert_row keeps the anchored row pixel-stable",
     CHECK(list.row_world_rect(11).y == anchored_y);
 }
 
-TEST_CASE("ListView::invalidate_data still re-measures every row",
-          "[tk][listview][incremental]")
+TEST_CASE("ListView::invalidate_data still re-measures every row", "[tk][listview][incremental]")
 {
     TkListsStage st;
     auto list_owner = tk::create_root_widget<ListView>(nullptr);
@@ -3515,5 +3590,7 @@ TEST_CASE("ListView::invalidate_data still re-measures every row",
     list.arrange(lc, {0, 0, 200, 100});
 
     for (std::size_t i = 0; i < 8; ++i)
+    {
         CHECK(ad.measure_of(i) == 1);
+    }
 }

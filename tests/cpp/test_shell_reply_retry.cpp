@@ -26,7 +26,10 @@ namespace tesseract
 // isn't available here).
 struct RoomPaneReplyRetryTestAccess
 {
-    static views::RoomView*& room_view(RoomPane& p) { return p.room_view_; }
+    static views::RoomView*& room_view(RoomPane& p)
+    {
+        return p.room_view_;
+    }
 };
 
 } // namespace tesseract
@@ -51,15 +54,17 @@ struct ReplyRetryShell : tesseract::test::TestShellBase
     void spawn_main_window_(std::shared_ptr<tesseract::AccountSession>) override
     {
     }
-    void apply_thread_messages_(
-        const std::string&, std::vector<tesseract::views::MessageRowData>,
-        bool) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
     void apply_thread_message_insert_(const std::string&, std::size_t,
                                       tesseract::views::MessageRowData) override
     {
     }
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
 
     using ShellBase::reply_details_requested_;
     using ShellBase::reply_details_key_;
@@ -72,17 +77,15 @@ std::string key(const std::string& event_id)
     return ReplyRetryShell::reply_details_key_("", event_id);
 }
 
-std::unique_ptr<RoomPane> make_pane(ReplyRetryShell& s,
-                                    const std::string& room_id)
+std::unique_ptr<RoomPane> make_pane(ReplyRetryShell& s, const std::string& room_id)
 {
     return std::make_unique<RoomPane>(
-        RoomPane::Deps{.shell = &s, .repaint = [] {}, .relayout = [] {}},
-        room_id);
+        RoomPane::Deps{.shell = &s, .repaint = [] {}, .relayout = [] {}}, room_id);
 }
 
-tesseract::views::MessageRowData
-make_reply_row(const std::string& event_id, const std::string& in_reply_to_id,
-               const std::string& in_reply_to_sender_name)
+tesseract::views::MessageRowData make_reply_row(const std::string& event_id,
+                                                const std::string& in_reply_to_id,
+                                                const std::string& in_reply_to_sender_name)
 {
     tesseract::views::MessageRowData row;
     row.event_id = event_id;
@@ -153,14 +156,13 @@ TEST_CASE("retry_stale_reply_previews_ (thread overload) retries an "
     // Empty room_id forces the re-triggered ensure_reply_details_ call to be
     // a guaranteed no-op (same early-return as the empty-room_id case above)
     // instead of reaching for client_, which stays null here.
-    pane->retry_stale_reply_previews_(view.message_list(), /*room_id=*/"",
-                                      "$thread_root_event", {"$missing"});
+    pane->retry_stale_reply_previews_(view.message_list(), /*room_id=*/"", "$thread_root_event",
+                                      {"$missing"});
 
     CHECK(s.reply_details_requested_.count(key("$reply1")) == 0);
 }
 
-TEST_CASE("retry_stale_reply_previews_ leaves unrelated rows untouched",
-          "[shell][reply_retry]")
+TEST_CASE("retry_stale_reply_previews_ leaves unrelated rows untouched", "[shell][reply_retry]")
 {
     ReplyRetryShell s;
     auto pane = make_pane(s, "!room:example.org");

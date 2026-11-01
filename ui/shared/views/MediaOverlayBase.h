@@ -42,10 +42,22 @@ public:
     // Test-only accessors for the chrome buttons — e.g. to verify their
     // accessible names without duplicating the layout math needed to
     // click-test them via pointer events.
-    tk::Button* close_btn_for_test() const { return close_btn_; }
-    tk::Button* save_btn_for_test() const { return save_btn_; }
-    tk::Button* copy_btn_for_test() const { return copy_btn_; }
-    tk::Button* external_btn_for_test() const { return external_btn_; }
+    tk::Button* close_btn_for_test() const
+    {
+        return close_btn_;
+    }
+    tk::Button* save_btn_for_test() const
+    {
+        return save_btn_;
+    }
+    tk::Button* copy_btn_for_test() const
+    {
+        return copy_btn_;
+    }
+    tk::Button* external_btn_for_test() const
+    {
+        return external_btn_;
+    }
 
     // Fires when the overlay should be dismissed (× button, outside click).
     std::function<void()> on_close;
@@ -117,7 +129,9 @@ protected:
 
     // Called when full-screen state changes so subclasses can collapse /
     // restore their margins and caption / controls layout.
-    virtual void on_fullscreen_changed_(bool /*fullscreen*/) {}
+    virtual void on_fullscreen_changed_(bool /*fullscreen*/)
+    {
+    }
 
     // True while the top-right chrome cluster should be drawn: always in
     // windowed mode, and in full-screen only until the auto-hide timer lapses
@@ -166,7 +180,10 @@ protected:
     // seek). Reached via on_key_down below — the overlay is never focused
     // itself, so keys arrive through the root broadcast whenever the focused
     // chrome button (if any) doesn't consume them.
-    virtual bool on_content_key_(const tk::KeyEvent&) { return false; }
+    virtual bool on_content_key_(const tk::KeyEvent&)
+    {
+        return false;
+    }
 
 public:
     // Any key re-reveals auto-hidden full-screen chrome (like moving the
@@ -174,18 +191,18 @@ public:
     bool on_key_down(const tk::KeyEvent& e) override
     {
         if (!is_open_)
+        {
             return false;
+        }
         note_activity_();
         return on_content_key_(e);
     }
 
 protected:
-
     // Forwarded pointer-up after a pending close/save press has been ruled
     // out. Return true if a content press was consumed; return false to let
     // the base resolve a pending outside-tap.
-    virtual bool
-    on_content_pointer_up_(tk::Point world, tk::Point local, bool inside_self)
+    virtual bool on_content_pointer_up_(tk::Point world, tk::Point local, bool inside_self)
     {
         (void)world;
         (void)local;
@@ -206,7 +223,9 @@ protected:
 
     // The copy button was clicked. Only called while wants_copy_button_() is
     // true; default no-op.
-    virtual void fire_copy_() {}
+    virtual void fire_copy_()
+    {
+    }
 
     // Opt-in flag for the "open in the system's default app" chrome button.
     virtual bool wants_external_button_() const
@@ -216,11 +235,15 @@ protected:
 
     // The external-open button was clicked. Only called while
     // wants_external_button_() is true; default no-op.
-    virtual void fire_external_() {}
+    virtual void fire_external_()
+    {
+    }
 
     // Called by paint_chrome_buttons_ when the canvas DPI scale changes, so
     // subclasses can invalidate their own cached icons (e.g. play_icon_).
-    virtual void on_icon_scale_changed_() {}
+    virtual void on_icon_scale_changed_()
+    {
+    }
 
     // ── shared pointer dispatch ─────────────────────────────────────────
     // Subclasses override Widget::on_pointer_down / on_pointer_up to call
@@ -240,8 +263,8 @@ protected:
     // current DPI scale. Shared helper for subclasses that need the same
     // icon-draw treatment for extra glyphs (e.g. the video play icon).
     void draw_icon_(tk::PaintCtx& ctx, tk::Rect box, float logical_px,
-                    std::unique_ptr<tk::Image>& cache,
-                    std::span<const std::uint8_t> svg, tk::Color tint);
+                    std::unique_ptr<tk::Image>& cache, std::span<const std::uint8_t> svg,
+                    tk::Color tint);
 
     float icon_scale_ = 0.0f;
 

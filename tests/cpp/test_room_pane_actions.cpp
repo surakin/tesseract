@@ -47,14 +47,17 @@ struct RpShell : tesseract::test::TestShellBase
         mut_pool_.drain();
         media_prefetch_pool_.drain();
     }
-    void apply_thread_messages_(
-        const std::string&, std::vector<tesseract::views::MessageRowData>,
-        bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
     void post_to_ui_(std::function<void()> fn) override
     {
         std::lock_guard<std::mutex> lk(mu);
@@ -69,7 +72,10 @@ struct RpShell : tesseract::test::TestShellBase
     {
         statuses.push_back(m);
     }
-    void request_repaint_() override { ++repaints; }
+    void request_repaint_() override
+    {
+        ++repaints;
+    }
     void pump()
     {
         for (int i = 0; i < 50; ++i)
@@ -83,9 +89,13 @@ struct RpShell : tesseract::test::TestShellBase
                 queue.clear();
             }
             if (q.empty())
+            {
                 break;
+            }
             for (auto& f : q)
+            {
                 f();
+            }
         }
     }
 
@@ -147,15 +157,28 @@ struct RpFx
             s.active_account_->user_id = "@me:x";
             s.active_account_->client = std::make_unique<tesseract::Client>();
         }
-        s.main_room_pane_ = std::make_unique<RoomPane>(
-            RoomPane::Deps{.shell = &s,
-                           .repaint = [this] { ++repaints; },
-                           .relayout = [this] { ++relayouts; }},
-            "!r:x");
+        s.main_room_pane_ = std::make_unique<RoomPane>(RoomPane::Deps{.shell = &s,
+                                                                      .repaint =
+                                                                          [this]
+                                                                      {
+                                                                          ++repaints;
+                                                                      },
+                                                                      .relayout =
+                                                                          [this]
+                                                                      {
+                                                                          ++relayouts;
+                                                                      }},
+                                                       "!r:x");
         s.main_room_pane_->attach({.room_view = view.get()});
     }
-    RoomPane& pane() { return *s.main_room_pane_; }
-    tesseract::views::MessageListView* ml() { return view->message_list(); }
+    RoomPane& pane()
+    {
+        return *s.main_room_pane_;
+    }
+    tesseract::views::MessageListView* ml()
+    {
+        return view->message_list();
+    }
 };
 
 MessageRowData rp_row(const std::string& id)
@@ -167,8 +190,7 @@ MessageRowData rp_row(const std::string& id)
 
 } // namespace
 
-TEST_CASE("sending: blank text is ignored, real text clears the composer",
-          "[roompane][compose]")
+TEST_CASE("sending: blank text is ignored, real text clears the composer", "[roompane][compose]")
 {
     RpFx f;
     f.view->set_current_text("   ");
@@ -181,8 +203,7 @@ TEST_CASE("sending: blank text is ignored, real text clears the composer",
     f.s.pump();
 }
 
-TEST_CASE("replying and editing clear the composer only for real content",
-          "[roompane][compose]")
+TEST_CASE("replying and editing clear the composer only for real content", "[roompane][compose]")
 {
     RpFx f;
     f.view->set_current_text("draft");
@@ -205,9 +226,10 @@ TEST_CASE("replying and editing clear the composer only for real content",
 TEST_CASE("edit prefill and cancel drive the composer text", "[roompane][compose]")
 {
     RpFx f;
-    f.view->on_edit_prefill("old text");
+    f.view->message_list()->on_edit_requested("$e", "old text", false);
     CHECK(f.view->compose_bar()->current_text() == "old text");
-    f.view->on_edit_cancelled();
+    CHECK(f.view->compose_bar()->has_editing());
+    f.view->compose_bar()->on_edit_cancelled();
     CHECK(f.view->compose_bar()->current_text().empty());
 }
 
@@ -219,7 +241,9 @@ TEST_CASE("a failed edit reports on the status line", "[roompane][compose]")
     f.s.pump();
     bool edit_failed = false;
     for (const auto& st : f.s.statuses)
+    {
         edit_failed |= st.rfind("Edit failed", 0) == 0;
+    }
     CHECK(edit_failed);
 }
 
@@ -276,8 +300,7 @@ TEST_CASE("read receipts from the visible range are deduplicated", "[roompane][r
     f.s.pump();
 }
 
-TEST_CASE("scrolling near the top paginates once and honours guards",
-          "[roompane][paginate]")
+TEST_CASE("scrolling near the top paginates once and honours guards", "[roompane][paginate]")
 {
     RpFx f;
     f.view->on_near_top();
@@ -291,8 +314,7 @@ TEST_CASE("scrolling near the top paginates once and honours guards",
     CHECK_FALSE(f.s.pagination_.at("!r:x").in_flight);
 }
 
-TEST_CASE("forward history only loads inside a focused timeline",
-          "[roompane][paginate]")
+TEST_CASE("forward history only loads inside a focused timeline", "[roompane][paginate]")
 {
     RpFx f;
     f.view->on_near_bottom();
@@ -306,7 +328,7 @@ TEST_CASE("forward history only loads inside a focused timeline",
     CHECK(f.s.pagination_.at("!r:x").fwd_in_flight);
     REQUIRE(f.s.pending_paginates_.size() == 1);
     CHECK_FALSE(f.s.pending_paginates_.begin()->second.second); // forward
-    f.view->on_near_bottom(); // already in flight
+    f.view->on_near_bottom();                                   // already in flight
     CHECK(f.s.pending_paginates_.size() == 1);
 
     f.view->on_return_to_live();
@@ -327,8 +349,7 @@ TEST_CASE("return to live clears the pending permalink scroll for the shown room
     CHECK(f.s.pending_scroll_room_event_id_.empty());
 }
 
-TEST_CASE("jumping to the first unread uses the focused-timeline path",
-          "[roompane][unread]")
+TEST_CASE("jumping to the first unread uses the focused-timeline path", "[roompane][unread]")
 {
     RpFx f;
     f.view->on_jump_to_unread("");
@@ -351,8 +372,7 @@ TEST_CASE("a date jump failure is reported", "[roompane][date]")
     f.s.pump();
 }
 
-TEST_CASE("the thread panel opens, switches and closes through RoomView",
-          "[roompane][thread]")
+TEST_CASE("the thread panel opens, switches and closes through RoomView", "[roompane][thread]")
 {
     using TP = tesseract::ThreadPanelController::ThreadPanel;
     RpFx f;
@@ -368,14 +388,15 @@ TEST_CASE("the thread panel opens, switches and closes through RoomView",
     f.view->on_thread_close_requested();
     CHECK(f.pane().thread_panel() != TP::Open);
     for (int i = 0; i < 3 && f.pane().thread_panel() != TP::Closed; ++i)
+    {
         f.view->on_threads_button_clicked();
+    }
     CHECK(f.pane().thread_panel() == TP::Closed);
     f.view->on_mark_all_read();
     f.s.pump();
 }
 
-TEST_CASE("thread sends need an open thread and clear the composer",
-          "[roompane][thread]")
+TEST_CASE("thread sends need an open thread and clear the composer", "[roompane][thread]")
 {
     RpFx f;
     f.view->set_current_text("reply");
@@ -417,8 +438,7 @@ TEST_CASE("opening a DM: existing, in flight, and failed creation", "[roompane][
     CHECK(f.s.dm_in_flight_user_ids_.empty()); // creation failed offline
 }
 
-TEST_CASE("member moderation and knock actions register shell requests",
-          "[roompane][moderation]")
+TEST_CASE("member moderation and knock actions register shell requests", "[roompane][moderation]")
 {
     RpFx f;
     f.view->on_kick_member("!r:x", "@u:x", "U", "spam");
@@ -454,8 +474,7 @@ TEST_CASE("room-info callbacks reach the shell", "[roompane][roominfo]")
     SUCCEED();
 }
 
-TEST_CASE("room-info callbacks degrade gracefully without a client",
-          "[roompane][roominfo]")
+TEST_CASE("room-info callbacks degrade gracefully without a client", "[roompane][roominfo]")
 {
     RpFx f(/*with_client=*/false);
     f.view->on_save_topic("!r:x", "t");
@@ -475,15 +494,18 @@ std::vector<std::uint8_t> animated_gif()
 {
     std::vector<std::uint8_t> b{'G', 'I', 'F', '8', '9', 'a', 1, 0, 1, 0, 0, 0, 0};
     for (int i = 0; i < 2; ++i)
+    {
         for (std::uint8_t v : {0x2C, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 2, 0x44, 0x01, 0})
+        {
             b.push_back(v);
+        }
+    }
     b.push_back(0x3B);
     return b;
 }
 } // namespace roompane_media_test
 
-TEST_CASE("sending media clears the composer and needs a room and client",
-          "[roompane][media]")
+TEST_CASE("sending media clears the composer and needs a room and client", "[roompane][media]")
 {
     RpFx f;
     f.view->set_current_text("caption");
@@ -511,8 +533,7 @@ TEST_CASE("sending media clears the composer and needs a room and client",
     CHECK(none.view->compose_bar()->current_text() == "caption");
 }
 
-TEST_CASE("an image whose metadata cannot be stripped is refused, not sent",
-          "[roompane][media]")
+TEST_CASE("an image whose metadata cannot be stripped is refused, not sent", "[roompane][media]")
 {
     RpFx f;
     f.view->set_current_text("caption");
@@ -546,8 +567,7 @@ TEST_CASE("a gallery with a refused image sends nothing and keeps the composer",
     CHECK(f.view->compose_bar()->current_text() == "caption");
 }
 
-TEST_CASE("sticker picks send through the client and drop the reply",
-          "[roompane][sticker]")
+TEST_CASE("sticker picks send through the client and drop the reply", "[roompane][sticker]")
 {
     RpFx f;
     tesseract::ImagePackImage img;
@@ -571,8 +591,7 @@ TEST_CASE("visible rows and avatars trigger lazy media", "[roompane][media]")
     SUCCEED();
 }
 
-TEST_CASE("in-room search queries mark this pane as the search target",
-          "[roompane][search]")
+TEST_CASE("in-room search queries mark this pane as the search target", "[roompane][search]")
 {
     RpFx f;
     f.view->on_room_search_query("needle");
@@ -584,8 +603,7 @@ TEST_CASE("in-room search queries mark this pane as the search target",
     CHECK(f.relayouts >= 1);
 }
 
-TEST_CASE("matrix links clicked in the timeline go through the shell",
-          "[roompane][links]")
+TEST_CASE("matrix links clicked in the timeline go through the shell", "[roompane][links]")
 {
     RpFx f;
     f.s.rooms_.clear();
@@ -610,8 +628,7 @@ TEST_CASE("identity warnings can be resolved", "[roompane][identity]")
     CHECK_FALSE(f.s.statuses.empty());
 }
 
-TEST_CASE("compose drafts are kept per room and replayed on return",
-          "[roompane][draft]")
+TEST_CASE("compose drafts are kept per room and replayed on return", "[roompane][draft]")
 {
     RpFx f;
     f.view->set_current_text("half a thought");
@@ -716,8 +733,7 @@ TEST_CASE("a failed upload for a room that is not on screen becomes that room's 
     CHECK(f.view->compose_bar()->pending_for_test(0)->filename == "report.pdf");
 }
 
-TEST_CASE("retargeting resets per-room caches and refreshes send busy",
-          "[roompane][retarget]")
+TEST_CASE("retargeting resets per-room caches and refreshes send busy", "[roompane][retarget]")
 {
     RpFx f;
     f.pane().retarget("!r:x"); // unchanged: nothing

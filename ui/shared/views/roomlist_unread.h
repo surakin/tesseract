@@ -24,16 +24,21 @@ enum class UnreadStyle
 /// quiet unread. Muted rooms never show the quiet-unread dot (the user silenced
 /// them on purpose) — but a mute that still produced a highlight/notification
 /// count is honoured, since that is an explicit signal.
-inline UnreadStyle unread_style_for(std::uint64_t notification_count,
-                                    std::uint64_t highlight_count,
+inline UnreadStyle unread_style_for(std::uint64_t notification_count, std::uint64_t highlight_count,
                                     std::uint64_t unread_count, bool muted)
 {
     if (highlight_count > 0)
+    {
         return UnreadStyle::Mention;
+    }
     if (notification_count > 0)
+    {
         return UnreadStyle::Count;
+    }
     if (unread_count > 0 && !muted)
+    {
         return UnreadStyle::Dot;
+    }
     return UnreadStyle::None;
 }
 

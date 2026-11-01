@@ -56,9 +56,13 @@ const char* low_power_value(LP pref)
 LP low_power_from_value(const std::string& v)
 {
     if (v == "on")
+    {
         return LP::On;
+    }
     if (v == "off")
+    {
         return LP::Off;
+    }
     return LP::Auto;
 }
 
@@ -96,8 +100,8 @@ GeneralSection::GeneralSection(SettingBinder& binder)
 
     auto start_minimized_cb = tk::create_widget<tk::CheckButton>(
         this, tk::tr("Start minimized to system tray"), s.start_minimized);
-    binder.bind(startup_group->add_widget(std::move(start_minimized_cb)),
-                &S::start_minimized, SettingKey::StartMinimized);
+    binder.bind(startup_group->add_widget(std::move(start_minimized_cb)), &S::start_minimized,
+                SettingKey::StartMinimized);
 
     startup_group->add_widget(
         tk::create_widget<tk::Label>(this, tk::tr("When I close the window")));
@@ -107,26 +111,30 @@ GeneralSection::GeneralSection(SettingBinder& binder)
     rebuild_close_action_options_();
 
     auto close_action_desc = tk::create_widget<tk::Label>(
-        this, close_action_description(s.close_action, tray_available_),
-        tk::FontRole::Small);
+        this, close_action_description(s.close_action, tray_available_), tk::FontRole::Small);
     close_action_desc->set_wrap(true);
     close_action_desc_ = startup_group->add_widget(std::move(close_action_desc));
 
     binder.bind<CA>(close_action_combo_, &S::close_action, SettingKey::CloseAction,
-                    {{CA::HideToTray, "tray"},
-                     {CA::Quit, "quit"},
-                     {CA::Minimize, "minimize"}});
+                    {{CA::HideToTray, "tray"}, {CA::Quit, "quit"}, {CA::Minimize, "minimize"}});
     // Runs after the binder's own on_changed hookup on every user change too,
     // so the description follows the selection.
     {
         auto bound = close_action_combo_->on_changed;
         close_action_combo_->on_changed = [this, bound](std::string v)
         {
-            if (bound) bound(v);
+            if (bound)
+            {
+                bound(v);
+            }
             refresh_close_action_();
         };
     }
-    binder.bind_custom([this] { refresh_close_action_(); });
+    binder.bind_custom(
+        [this]
+        {
+            refresh_close_action_();
+        });
 
     // ── Power ─────────────────────────────────────────────────────────────────
     power_group_ = add_group(tk::tr("Power"));
@@ -134,8 +142,7 @@ GeneralSection::GeneralSection(SettingBinder& binder)
     power_group_->set_visible(false);
     auto* power_group = power_group_;
 
-    power_group->add_widget(
-        tk::create_widget<tk::Label>(this, tk::tr("Low power mode")));
+    power_group->add_widget(tk::create_widget<tk::Label>(this, tk::tr("Low power mode")));
 
     auto combo = tk::create_widget<tk::ComboBox>(this);
     combo->set_options({
@@ -145,8 +152,8 @@ GeneralSection::GeneralSection(SettingBinder& binder)
     });
     low_power_combo_ = power_group->add_widget(std::move(combo));
 
-    auto desc = tk::create_widget<tk::Label>(
-        this, low_power_description(s.low_power_pref), tk::FontRole::Small);
+    auto desc = tk::create_widget<tk::Label>(this, low_power_description(s.low_power_pref),
+                                             tk::FontRole::Small);
     desc->set_wrap(true);
     low_power_desc_ = power_group->add_widget(std::move(desc));
 
@@ -156,18 +163,24 @@ GeneralSection::GeneralSection(SettingBinder& binder)
         auto bound = low_power_combo_->on_changed;
         low_power_combo_->on_changed = [this, bound](std::string v)
         {
-            if (bound) bound(v);
+            if (bound)
+            {
+                bound(v);
+            }
             if (low_power_desc_)
-                low_power_desc_->set_text(
-                    low_power_description(low_power_from_value(v)));
+            {
+                low_power_desc_->set_text(low_power_description(low_power_from_value(v)));
+            }
         };
     }
     binder.bind_custom(
         [this]
         {
             if (low_power_desc_)
+            {
                 low_power_desc_->set_text(low_power_description(
                     low_power_from_value(low_power_combo_->selected_value())));
+            }
         });
 }
 
@@ -179,7 +192,9 @@ void GeneralSection::set_launch_at_login(bool enabled)
 void GeneralSection::rebuild_close_action_options_()
 {
     if (!close_action_combo_)
+    {
         return;
+    }
     // HideToTray is only offered when a tray icon actually exists. Without one
     // the window would hide with no way back, so the option is dropped and the
     // shells fall back to a real quit (ITrayIcon::is_available()).
@@ -188,8 +203,9 @@ void GeneralSection::rebuild_close_action_options_()
         {tk::tr("Minimize to taskbar"), "minimize"},
     };
     if (tray_available_)
-        options.insert(options.begin(),
-                       {tk::tr("Hide to system tray"), "tray"});
+    {
+        options.insert(options.begin(), {tk::tr("Hide to system tray"), "tray"});
+    }
     close_action_combo_->set_options(std::move(options));
 }
 
@@ -204,22 +220,30 @@ void GeneralSection::set_tray_available(bool available)
 void GeneralSection::refresh_close_action_()
 {
     if (!close_action_combo_)
+    {
         return;
+    }
     // Move the selection onto an offered option so the combo never renders a
     // blank button. Persisting that resolution is the shell's job (it owns the
     // save); this only fixes up the display.
     if (!tray_available_ && close_action_combo_->selected_value() == "tray")
+    {
         close_action_combo_->set_selected_value("quit");
+    }
     if (close_action_desc_)
+    {
         close_action_desc_->set_text(close_action_description(
             tesseract::close_action_from_string(close_action_combo_->selected_value()),
             tray_available_));
+    }
 }
 
 void GeneralSection::set_low_power_available(bool available)
 {
     if (power_group_)
+    {
         power_group_->set_visible(available);
+    }
 }
 
 } // namespace tesseract::views

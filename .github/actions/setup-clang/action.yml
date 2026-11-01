@@ -1,0 +1,31 @@
+name: Set up clang for webrtc-sys
+description: >-
+  Installs a recent clang from apt.llvm.org and puts its unversioned
+  clang/clang++ first on PATH. webrtc-sys links Chromium's hermetic libc++ on
+  Linux and its build script refuses a clang older than 21, while the
+  ubuntu-24.04 runners ship clang 18.
+
+inputs:
+  version:
+    description: LLVM major version to install.
+    default: '21'
+
+runs:
+  using: composite
+  steps:
+    - name: Install clang ${{ inputs.version }}
+      shell: bash
+      run: |
+        curl -fsSL https://apt.llvm.org/llvm.sh -o llvm.sh
+        sudo bash llvm.sh "${{ inputs.version }}"
+        rm llvm.sh
+        # Ubuntu links only versioned names (clang-21, ...) into /usr/bin; the
+        # unversioned clang++ that webrtc-sys looks up lives in this directory.
+        echo "/usr/lib/llvm-${{ inputs.version }}/bin" >> "$GITHUB_PATH"
+
+    - name: Check clang version
+      shell: bash
+      run: |
+        export PATH="/usr/lib/llvm-${{ inputs.version }}/bin:$PATH"
+        clang++ --version
+        test "$(clang++ -dM -E -x c++ /dev/null | sed -n 's/^#define __clang_major__ //p')" -ge "${{ inputs.version }}"

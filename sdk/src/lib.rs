@@ -13,23 +13,32 @@ mod bot_commands;
 mod client;
 #[cfg(feature = "crash_handler")]
 mod crash_reporter;
+mod event_json;
 mod highlight;
 mod html_sanitize;
 mod image_packs;
+mod jxl;
 mod maps_link;
 mod markdown;
 mod matrix_uri;
-mod media_type_check;
 mod media_preview;
+mod media_type_check;
+mod msc;
 mod net_guard;
 mod net_proxy;
 mod oauth;
-mod upsert_media_store;
 #[cfg(feature = "legacy_login")]
 mod password_login;
-mod jxl;
 mod recent_emoji;
+#[cfg(feature = "request_log")]
+mod request_log;
+// Without the feature the call sites stay, as no-ops.
+#[cfg(not(feature = "request_log"))]
+mod request_log {
+    pub(crate) fn note(_msg: impl AsRef<str>) {}
+}
 mod text_utils;
+mod upsert_media_store;
 mod url_preview;
 mod waveform;
 mod waveform_store;
@@ -327,6 +336,7 @@ pub mod ffi {
         pub pending_error: String,
         pub pending_recoverable: bool,
         pub pending_txn_id: String,
+        pub pending_error_users: Vec<String>,
         pub location_lat: f64,
         pub location_lon: f64,
         pub location_description: String,
@@ -355,6 +365,12 @@ pub mod ffi {
         pub room_name_old: String,
         pub replacement_room_id: String,
         pub gallery_items: Vec<GalleryItemFfi>,
+        pub forwarded: bool,
+        pub forwarded_sender: String,
+        pub forwarded_sender_name: String,
+        pub forwarded_room_id: String,
+        pub forwarded_event_id: String,
+        pub forwarded_origin_ts: i64,
     }
 
     #[derive(Debug, PartialEq, Default)]
@@ -364,10 +380,44 @@ pub mod ffi {
     }
 
     #[derive(Debug, PartialEq, Default)]
+    pub struct RtcStartResult {
+        pub ok: bool,
+        pub message: String,
+        pub session_id: u64,
+    }
+
+    #[derive(Debug, PartialEq, Default)]
     pub struct UpdateResult {
         pub has_update: bool,
         pub version: String,
         pub url: String,
+    }
+
+    #[derive(Debug, PartialEq, Default)]
+    pub struct ServerListEntryFfi {
+        pub name: String,
+        pub client_domain: String,
+        pub homepage: String,
+        pub description: String,
+        pub jurisdiction: String,
+        pub languages: Vec<String>,
+        pub software: String,
+        pub reg_method: String,
+        pub reg_link: String,
+        pub rules: String,
+        pub privacy: String,
+        pub longstanding: bool,
+        pub online: bool,
+        pub is_public: bool,
+    }
+
+    #[derive(Debug, PartialEq, Default)]
+    pub struct ServerListFfi {
+        pub entries: Vec<ServerListEntryFfi>,
+        pub ok: bool,
+        pub from_cache: bool,
+        pub source_name: String,
+        pub source_url: String,
     }
 
     #[derive(Debug, PartialEq, Default)]
@@ -590,6 +640,7 @@ pub mod ffi {
         pub default_room_version: String,
         pub profile_fields_stable: bool,
         pub supports_invite_reason: bool,
+        pub supports_mutual_rooms: bool,
         pub server_name: String,
         pub server_version: String,
         pub upload_size_limit: u64,
@@ -726,12 +777,7 @@ pub mod ffi {
         pub fn on_image_packs_updated(&self) {}
         pub fn on_account_prefs_updated(&self, _json: &str) {}
         pub fn on_media_preview_config_updated(&self, _json: &str) {}
-        pub fn on_upload_progress(
-            &self,
-            _request_id: u64,
-            _current_bytes: u64,
-            _total_bytes: u64,
-        ) {
+        pub fn on_upload_progress(&self, _request_id: u64, _current_bytes: u64, _total_bytes: u64) {
         }
         pub fn on_threads_updated(&self, _room_id: &str) {}
         pub fn on_bot_commands_updated(&self, _room_id: &str) {}

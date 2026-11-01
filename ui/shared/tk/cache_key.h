@@ -34,6 +34,8 @@ enum class CacheUsage : std::uint8_t
     PickerSticker,  // mxc-keyed sticker decoded at the picker cell size.
                     // image_cache_ / anim_cache_. Uses id + w + h; the
                     // downloaded bytes are shared with CacheUsage::Media.
+    ServerIcon,     // homepage-URL-keyed favicon of a server in the login
+                    // view's server browser. media_disk_cache_ only.
 };
 
 // Typed replacement for the hand-rolled string-prefix scheme every
@@ -43,7 +45,7 @@ enum class CacheUsage : std::uint8_t
 // convention, so two different call sites can never collide by accident.
 struct CacheKey
 {
-    CacheUsage  usage = CacheUsage::Media;
+    CacheUsage usage = CacheUsage::Media;
     std::string id;
     int w = 0; // meaningful only for CacheUsage::Thumbnail
     int h = 0; // meaningful only for CacheUsage::Thumbnail
@@ -70,6 +72,7 @@ struct CacheKey
     static CacheKey gif_preview(std::string url);
     static CacheKey pill_bitmap(std::size_t hash);
     static CacheKey picker_sticker(std::string id, int w, int h);
+    static CacheKey server_icon(std::string homepage_url);
 };
 
 struct CacheKeyHash

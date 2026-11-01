@@ -2,6 +2,8 @@
 #include "app/shell_helpers.h"
 #include "app/media_preview_policy.h"
 #include "tk/blurhash.h"
+#include "platform/video_decode.h"
+#include "views/GifPopup.h"
 #include "views/MainAppWidget.h"
 #include <algorithm>
 #ifndef _WIN32
@@ -17,8 +19,7 @@ void ShellBase::ensure_room_avatar_(const RoomInfo& r)
     // media_fetches_in_flight_ without synchronization.
     const bool use_room_endpoint = !r.avatar_url.empty();
     const std::string mxc = use_room_endpoint ? r.avatar_url : r.dm_avatar_url;
-    if (mxc.empty() || media_decode_failed_.count(mxc) ||
-        media_fetch_backed_off_(mxc))
+    if (mxc.empty() || media_decode_failed_.count(mxc) || media_fetch_backed_off_(mxc))
     {
         return;
     }
@@ -54,20 +55,16 @@ void ShellBase::ensure_room_avatar_(const RoomInfo& r)
     // room-avatar endpoint (source = room_id). Room-list avatars are not
     // room-scoped, so they use group 0 (never cancelled on room switch).
     const std::string source = use_room_endpoint ? r.id : mxc;
-    const auto kind = use_room_endpoint
-                          ? tesseract::Client::MediaReqKind::RoomAvatar
-                          : tesseract::Client::MediaReqKind::MxcThumbnail;
-    fetch_media_pipeline_(mxc, tk::CacheKey::thumbnail(disk_id, avatar_px, avatar_px),
-                          tkey, /*group_id=*/0, kind, source,
-                          avatar_px, avatar_px,
-                          animated, MediaKind::RoomAvatar);
+    const auto kind = use_room_endpoint ? tesseract::Client::MediaReqKind::RoomAvatar
+                                        : tesseract::Client::MediaReqKind::MxcThumbnail;
+    fetch_media_pipeline_(mxc, tk::CacheKey::thumbnail(disk_id, avatar_px, avatar_px), tkey,
+                          /*group_id=*/0, kind, source, avatar_px, avatar_px, animated,
+                          MediaKind::RoomAvatar);
 }
 
-void ShellBase::ensure_user_avatar_(const std::string& mxc,
-                                    std::uint64_t group_id)
+void ShellBase::ensure_user_avatar_(const std::string& mxc, std::uint64_t group_id)
 {
-    if (mxc.empty() || media_decode_failed_.count(mxc) ||
-        media_fetch_backed_off_(mxc))
+    if (mxc.empty() || media_decode_failed_.count(mxc) || media_fetch_backed_off_(mxc))
     {
         return;
     }
@@ -93,11 +90,9 @@ void ShellBase::ensure_user_avatar_(const std::string& mxc,
     // them; account-wide callers (quick switcher roster, invites) pass the
     // default 0 — those avatars are reused across rooms and cheap to
     // re-fetch, so there's nothing to gain from cancelling on room switch.
-    fetch_media_pipeline_(mxc, tk::CacheKey::thumbnail(disk_id, avatar_px, avatar_px),
-                          tkey, group_id,
-                          tesseract::Client::MediaReqKind::MxcThumbnail, mxc,
-                          avatar_px, avatar_px,
-                          animated, MediaKind::UserAvatar);
+    fetch_media_pipeline_(mxc, tk::CacheKey::thumbnail(disk_id, avatar_px, avatar_px), tkey,
+                          group_id, tesseract::Client::MediaReqKind::MxcThumbnail, mxc, avatar_px,
+                          avatar_px, animated, MediaKind::UserAvatar);
 }
 
 bool ShellBase::animate_avatars_effective_() const
@@ -165,7 +160,9 @@ void ShellBase::deliver_animated_avatar_(const std::string& mxc, MediaKind kind,
                         return;
                     }
                     if (main_app_ && main_app_->room_view())
+                    {
                         main_app_->room_view()->notify_image_ready(mxc);
+                    }
                     notify_secondary_media_ready_(mxc, kind);
                     request_repaint_();
                 });
@@ -210,7 +207,9 @@ void ShellBase::request_own_room_avatar_(const std::string& room_id)
     const auto sess = active_account_;
     const std::string slot_key = sess ? sess->user_id + '\n' + room_id : std::string{};
     if (room_id.empty() || !sess || !sess->client)
+    {
         return;
+    }
     if (!own_room_avatar_in_flight_.insert(slot_key).second)
     {
         // A lookup is already running and may read state from before the
@@ -223,7 +222,9 @@ void ShellBase::request_own_room_avatar_(const std::string& room_id)
         {
             auto s = weak.lock();
             if (!s || !s->client)
+            {
                 return;
+            }
             std::string mxc = s->client->own_room_avatar(room_id);
             post_to_ui_alive_(
                 [this, room_id, slot_key, weak, mxc = std::move(mxc)]
@@ -240,10 +241,14 @@ void ShellBase::request_own_room_avatar_(const std::string& room_id)
                     {
                         slot = mxc;
                         if (room_id == current_room_id_)
+                        {
                             request_repaint_();
+                        }
                     }
                     if (own_room_avatar_dirty_.erase(slot_key) != 0)
+                    {
                         request_own_room_avatar_(room_id);
+                    }
                 });
         });
 }
@@ -251,26 +256,37 @@ void ShellBase::request_own_room_avatar_(const std::string& room_id)
 void ShellBase::note_member_event_(const std::string& room_id, const tesseract::Event& ev)
 {
     if (ev.type != tesseract::EventType::Membership)
+    {
         return;
+    }
     const auto& m = static_cast<const tesseract::MembershipStateEvent&>(ev);
 
     // The strip shows only the active room's own avatar; any other room is
     // re-read when it becomes active (strip_avatar_url_), so don't pay a store
     // read for the own join / profile events a sync or back-pagination
     // replays. Keep showing the old value until the re-read lands.
-    if (!my_user_id_.empty() && m.target_user_id == my_user_id_ &&
-        room_id == current_room_id_)
+    if (!my_user_id_.empty() && m.target_user_id == my_user_id_ && room_id == current_room_id_)
+    {
         request_own_room_avatar_(room_id);
+    }
 
     // Profile-only changes (display name / avatar by an already-joined member).
     using A = tesseract::MembershipAction;
     std::optional<std::string> name, avatar;
     switch (m.action)
     {
-    case A::AvatarChanged:      avatar = m.target_avatar_url; break;
-    case A::AvatarRemoved:      avatar = std::string{}; break;
-    case A::DisplayNameChanged: name = m.target_display_name; break;
-    case A::DisplayNameRemoved: name = std::string{}; break;
+    case A::AvatarChanged:
+        avatar = m.target_avatar_url;
+        break;
+    case A::AvatarRemoved:
+        avatar = std::string{};
+        break;
+    case A::DisplayNameChanged:
+        name = m.target_display_name;
+        break;
+    case A::DisplayNameRemoved:
+        name = std::string{};
+        break;
     case A::ProfileChanged:
         name = m.target_display_name;
         avatar = m.target_avatar_url;
@@ -284,26 +300,38 @@ void ShellBase::note_member_event_(const std::string& room_id, const tesseract::
     auto patch = [&](views::RoomView* rv)
     {
         if (!rv)
+        {
             return;
+        }
         if (auto* ml = rv->message_list())
+        {
             ml->update_member_profile(m.target_user_id, name, avatar);
+        }
         if (auto* tv = rv->thread_view())
+        {
             if (auto* tml = tv->message_list())
+            {
                 tml->update_member_profile(m.target_user_id, name, avatar);
+            }
+        }
     };
     if (main_window_shows_(room_id))
     {
         patch(room_view_);
         if (main_room_pane_)
+        {
             main_room_pane_->refresh_room_members_();
+        }
     }
     dispatch_to_secondary_windows_(room_id,
-        [&](RoomWindowBase* w)
-        {
-            patch(w->room_view());
-            if (w->pane())
-                w->pane()->refresh_room_members_();
-        });
+                                   [&](RoomWindowBase* w)
+                                   {
+                                       patch(w->room_view());
+                                       if (w->pane())
+                                       {
+                                           w->pane()->refresh_room_members_();
+                                       }
+                                   });
     request_repaint_();
 }
 
@@ -329,36 +357,51 @@ void ShellBase::on_avatar_animation_mode_changed_(bool evict)
 {
     ++avatar_mode_gen_;
     if (evict)
+    {
         evict_avatar_caches_();
+    }
     auto reset_tracking = [](views::RoomView* rv)
     {
         if (!rv)
+        {
             return;
+        }
         if (auto* ml = rv->message_list())
+        {
             ml->reset_visible_avatar_tracking();
+        }
         if (auto* tv = rv->thread_view())
+        {
             if (auto* tml = tv->message_list())
+            {
                 tml->reset_visible_avatar_tracking();
+            }
+        }
     };
     if (main_app_)
+    {
         reset_tracking(main_app_->room_view());
+    }
     for (const auto& [rid, w] : secondary_windows_)
     {
         if (w)
+        {
             reset_tracking(w->room_view());
+        }
     }
     if (main_app_)
+    {
         request_relayout_();
+    }
 }
 
-void ShellBase::ensure_media_image_(const std::string& url, int /*max_w*/,
-                                    int /*max_h*/, std::uint64_t group_id,
-                                    MediaKind kind)
+void ShellBase::ensure_media_image_(const std::string& url, int /*max_w*/, int /*max_h*/,
+                                    std::uint64_t group_id, MediaKind kind)
 {
     const tk::CacheKey mem_key = tk::CacheKey::media(url);
     if (url.empty() || account_manager_.image_cache().contains(mem_key) ||
-        account_manager_.anim_cache().has(mem_key) ||
-        media_decode_failed_.count(url) || media_fetch_backed_off_(url))
+        account_manager_.anim_cache().has(mem_key) || media_decode_failed_.count(url) ||
+        media_fetch_backed_off_(url))
     {
         return;
     }
@@ -384,8 +427,7 @@ void ShellBase::ensure_media_image_(const std::string& url, int /*max_w*/,
     // switch cancels it) for timeline media, or 0 for avatar/preview prefetch.
     fetch_media_pipeline_(url, tk::CacheKey::media(url), url, group_id,
                           tesseract::Client::MediaReqKind::SourceFull, url,
-                          /*w=*/0, /*h=*/0, /*animated=*/false,
-                          kind);
+                          /*w=*/0, /*h=*/0, /*animated=*/false, kind);
 }
 
 void ShellBase::ensure_picker_sticker_(const std::string& url)
@@ -400,16 +442,13 @@ void ShellBase::ensure_picker_sticker_(const std::string& url)
     // fetch of the same mxc (plain key) neither blocks nor satisfies this one.
     // Disk bytes are the plain media entry, shared with the timeline.
     const std::string flight_key = key.to_string();
-    if (media_fetch_backed_off_(flight_key) ||
-        !media_fetches_in_flight_.insert(flight_key).second)
+    if (media_fetch_backed_off_(flight_key) || !media_fetches_in_flight_.insert(flight_key).second)
     {
         return;
     }
     fetch_media_pipeline_(flight_key, tk::CacheKey::media(url), flight_key,
-                          /*group_id=*/0,
-                          tesseract::Client::MediaReqKind::SourceFull, url,
-                          /*w=*/0, /*h=*/0, /*animated=*/false,
-                          MediaKind::Sticker, key);
+                          /*group_id=*/0, tesseract::Client::MediaReqKind::SourceFull, url,
+                          /*w=*/0, /*h=*/0, /*animated=*/false, MediaKind::Sticker, key);
 }
 
 const tk::Image* ShellBase::viewer_image_lookup_(const std::string& mxc)
@@ -419,8 +458,7 @@ const tk::Image* ShellBase::viewer_image_lookup_(const std::string& mxc)
     // the same bound and cached under the fullres_key_ namespace so it
     // doesn't collide with the smaller inline-capped entry under the plain
     // key (see ensure_viewer_fullres_/decode_fullres_and_store_ below).
-    if (auto it = viewer_fullres_.find(tk::CacheKey::fullres(mxc));
-        it != viewer_fullres_.end())
+    if (auto it = viewer_fullres_.find(tk::CacheKey::fullres(mxc)); it != viewer_fullres_.end())
     {
         return it->second.get();
     }
@@ -467,8 +505,7 @@ void ShellBase::ensure_viewer_fullres_(const std::string& url)
     // Guard on both the still map (viewer_fullres_) and the fullres-keyed
     // anim_cache entry — an animated source decodes into the latter (see
     // decode_fullres_and_store_ below) rather than the former.
-    if (url.empty() || viewer_fullres_.count(fckey) ||
-        account_manager_.anim_cache().has(fckey) ||
+    if (url.empty() || viewer_fullres_.count(fckey) || account_manager_.anim_cache().has(fckey) ||
         media_decode_failed_.count(fkey) || media_fetch_backed_off_(fkey))
     {
         return;
@@ -520,18 +557,19 @@ void ShellBase::ensure_viewer_fullres_(const std::string& url)
                                                       /*persist=*/true);
                         },
                         // on_cancel: free the dedup key so a re-open re-requests.
-                        [this, fkey] { viewer_fullres_in_flight_.erase(fkey); });
-                    client_->fetch_media_async(
-                        id, /*group_id=*/0,
-                        tesseract::Client::MediaReqKind::SourceFull, url,
-                        /*w=*/0, /*h=*/0, /*animated=*/false);
+                        [this, fkey]
+                        {
+                            viewer_fullres_in_flight_.erase(fkey);
+                        });
+                    client_->fetch_media_async(id, /*group_id=*/0,
+                                               tesseract::Client::MediaReqKind::SourceFull, url,
+                                               /*w=*/0, /*h=*/0, /*animated=*/false);
                 });
         });
 }
 
 void ShellBase::decode_fullres_and_store_(std::string url, std::string fkey,
-                                          std::vector<std::uint8_t> bytes,
-                                          bool persist)
+                                          std::vector<std::uint8_t> bytes, bool persist)
 {
     run_async_(
         [this, url, fkey, persist, bytes = std::move(bytes)]() mutable
@@ -544,8 +582,8 @@ void ShellBase::decode_fullres_and_store_(std::string url, std::string fkey,
             // DecodedImage is move-only (holds unique_ptr<tk::Image>); wrap in a
             // shared_ptr so the post_to_ui_ std::function lambda stays
             // copy-constructible (mirrors decode_and_finalize_picker_).
-            auto d = std::make_shared<DecodedImage>(decode_image_(
-                bytes, visual::kViewerFullresMax, visual::kViewerFullresMax));
+            auto d = std::make_shared<DecodedImage>(
+                decode_image_(bytes, visual::kViewerFullresMax, visual::kViewerFullresMax));
             if (d->empty() && persist)
             {
                 evict_media_bytes_(fckey);
@@ -554,8 +592,7 @@ void ShellBase::decode_fullres_and_store_(std::string url, std::string fkey,
                 [this, url, fkey, fckey, d]() mutable
                 {
                     viewer_fullres_in_flight_.erase(fkey);
-                    if (viewer_fullres_.count(fckey) ||
-                        account_manager_.anim_cache().has(fckey))
+                    if (viewer_fullres_.count(fckey) || account_manager_.anim_cache().has(fckey))
                     {
                         return;
                     }
@@ -567,8 +604,7 @@ void ShellBase::decode_fullres_and_store_(std::string url, std::string fkey,
                     if (!d->frames.empty())
                     {
                         account_manager_.anim_cache().store(
-                            fckey, std::move(d->frames),
-                            std::move(d->delays_ms), monotonic_ms_());
+                            fckey, std::move(d->frames), std::move(d->delays_ms), monotonic_ms_());
                         start_anim_tick_();
                         request_relayout_();
                         notify_secondary_media_ready_(url, MediaKind::MediaImage);
@@ -606,7 +642,9 @@ void ShellBase::request_video_thumbnail_(const std::string& event_id,
                                          const std::string& source_token)
 {
     if (video_thumb_in_flight_.insert(event_id).second)
+    {
         generate_video_thumbnail_(event_id, source_token);
+    }
 }
 
 void ShellBase::generate_video_thumbnail_(const std::string& event_id,
@@ -623,16 +661,14 @@ void ShellBase::generate_video_thumbnail_(const std::string& event_id,
         {
             auto disk = load_media_bytes_(key);
             post_to_ui_alive_(
-                [this, event_id, source_token,
-                 disk = std::move(disk)]() mutable
+                [this, event_id, source_token, disk = std::move(disk)]() mutable
                 {
                     if (!disk.empty())
                     {
                         // Warm path: a prior session already generated this
                         // thumbnail. No network, no video decoder involved.
-                        decode_and_cache_video_thumbnail_(
-                            event_id, std::move(disk),
-                            /*persist=*/false);
+                        decode_and_cache_video_thumbnail_(event_id, std::move(disk),
+                                                          /*persist=*/false);
                         // This attempt has concluded — clear the in-flight
                         // guard so a later re-trigger (e.g. after the
                         // in-memory image_cache_ entry is evicted by its own
@@ -652,9 +688,8 @@ void ShellBase::generate_video_thumbnail_(const std::string& event_id,
                         {
                             if (!bytes.empty())
                             {
-                                decode_and_cache_video_thumbnail_(
-                                    event_id, std::move(bytes),
-                                    /*persist=*/true);
+                                decode_and_cache_video_thumbnail_(event_id, std::move(bytes),
+                                                                  /*persist=*/true);
                             }
                             // Concluded either way (success or decode/fetch
                             // failure) — see comment above.
@@ -664,9 +699,8 @@ void ShellBase::generate_video_thumbnail_(const std::string& event_id,
         });
 }
 
-void ShellBase::extract_video_first_frame_jpeg_(
-    const std::string& source_token,
-    std::function<void(std::vector<std::uint8_t>)> cb)
+void ShellBase::extract_video_first_frame_jpeg_(const std::string& source_token,
+                                                std::function<void(std::vector<std::uint8_t>)> cb)
 {
     if (!client_)
     {
@@ -674,7 +708,8 @@ void ShellBase::extract_video_first_frame_jpeg_(
         return;
     }
     const std::string src = source_token;
-    auto req_id = begin_media_req_(0,
+    auto req_id = begin_media_req_(
+        0,
         [this, cb, src](std::vector<std::uint8_t> prefix_bytes) mutable
         {
             if (prefix_bytes.empty())
@@ -686,12 +721,10 @@ void ShellBase::extract_video_first_frame_jpeg_(
             // fetch stops only at EOF or the cap), so a full-file fallback
             // could not decode any better.
             const bool whole_file =
-                prefix_bytes.size() <
-                tesseract::visual::kVideoThumbnailPrefixBytes;
+                prefix_bytes.size() < tesseract::visual::kVideoThumbnailPrefixBytes;
             decode_video_first_frame_(
                 std::move(prefix_bytes),
-                [this, cb, src, whole_file](
-                    std::vector<std::uint8_t> jpeg) mutable
+                [this, cb, src, whole_file](std::vector<std::uint8_t> jpeg) mutable
                 {
                     if (!jpeg.empty() || whole_file)
                     {
@@ -711,24 +744,22 @@ void ShellBase::extract_video_first_frame_jpeg_(
                                 cb({});
                                 return;
                             }
-                            auto full_req = begin_media_req_(0,
-                                [this, cb](
-                                    std::vector<std::uint8_t> full_bytes) mutable
+                            auto full_req = begin_media_req_(
+                                0,
+                                [this, cb](std::vector<std::uint8_t> full_bytes) mutable
                                 {
                                     if (full_bytes.empty())
                                     {
                                         cb({});
                                         return;
                                     }
-                                    decode_video_first_frame_(
-                                        std::move(full_bytes), cb);
+                                    decode_video_first_frame_(std::move(full_bytes), cb);
                                 });
                             client_->fetch_source_bytes_async(full_req, src);
                         });
                 });
         });
-    client_->fetch_source_prefix_async(
-        req_id, src, tesseract::visual::kVideoThumbnailPrefixBytes);
+    client_->fetch_source_prefix_async(req_id, src, tesseract::visual::kVideoThumbnailPrefixBytes);
 }
 
 // Deliver a dropped file's extracted MediaInfo to the right compose bar.
@@ -737,9 +768,8 @@ void ShellBase::extract_video_first_frame_jpeg_(
 // pop-out window's compose bar, guarded by `alive`) takes precedence;
 // otherwise the main window's room_view_ compose bar, resolved at run time
 // to avoid a dangling pointer and guarded on this shell's lifetime.
-void ShellBase::post_pending_attachment_(views::MediaInfo info,
-                                          views::ComposeBar* target,
-                                          std::shared_ptr<bool> alive)
+void ShellBase::post_pending_attachment_(views::MediaInfo info, views::ComposeBar* target,
+                                         std::shared_ptr<bool> alive)
 {
     if (target)
     {
@@ -747,27 +777,248 @@ void ShellBase::post_pending_attachment_(views::MediaInfo info,
         // `alive` is a genuinely independent shared_ptr<bool> (not this
         // shell's own guard) — the pop-out it guards is a different object
         // with its own lifetime; see RoomPane's media_extract_alive_.
-        post_to_ui_([target, alive = std::move(alive),
-                     info = std::move(info)]() mutable
-        {
-            if (alive && *alive)
-                target->update_pending_attachment(info);
-        });
+        post_to_ui_(
+            [target, alive = std::move(alive), info = std::move(info)]() mutable
+            {
+                if (alive && *alive)
+                {
+                    target->update_pending_attachment(info);
+                }
+            });
         return;
     }
     // Main window: resolve compose_bar() at run time to avoid any raw-pointer
     // lifetime hazard. guarded() is evaluated here, on the calling thread, at
     // the point the shell's liveness is read.
-    post_to_ui_alive_([this, info = std::move(info)]() mutable
+    post_to_ui_alive_(
+        [this, info = std::move(info)]() mutable
+        {
+            if (room_view_)
+            {
+                room_view_->compose_bar()->update_pending_attachment(info);
+            }
+        });
+}
+
+// ── Decoded media landing in the caches ────────────────────────────────────
+
+std::unique_ptr<tk::Image> ShellBase::decode_avatar_(const std::vector<std::uint8_t>& bytes)
+{
+    DecodedImage d = decode_image_(bytes, tesseract::visual::kAvatarCacheSize,
+                                   tesseract::visual::kAvatarCacheSize);
+    if (d.still)
     {
+        return std::move(d.still);
+    }
+    if (!d.frames.empty())
+    {
+        return std::move(d.frames.front());
+    }
+    return nullptr;
+}
+
+void ShellBase::on_media_decode_failed_(const tk::CacheKey& key, MediaKind kind)
+{
+    media_decode_failed_.insert(key.id);
+    if (kind == MediaKind::MediaImage || kind == MediaKind::Sticker || kind == MediaKind::Reaction)
+    {
+        account_manager_.media_disk_cache().evict(key);
+    }
+}
+
+void ShellBase::repaint_after_media_(MediaKind kind, const tk::CacheKey&)
+{
+    switch (kind)
+    {
+    case MediaKind::RoomAvatar:
+        request_repaint_();
+        repaint_settings_ui_();
+        break;
+    case MediaKind::UserAvatar:
+        request_repaint_();
+        repaint_settings_ui_();
+        if (account_picker_popup_ && account_picker_popup_->visible())
+        {
+            account_picker_popup_->request_relayout();
+        }
+        if (compose_popups_)
+        {
+            compose_popups_->on_avatar_loaded();
+        }
+        break;
+    default:
+        schedule_relayout_();
+        if (compose_popups_)
+        {
+            compose_popups_->on_image_loaded();
+        }
+        repaint_settings_ui_();
+        break;
+    }
+}
+
+void ShellBase::on_media_bytes_ready_(const tk::CacheKey& cache_key, MediaKind kind,
+                                      std::vector<uint8_t> bytes)
+{
+    // Called on the UI thread (already posted via post_to_ui_ in ShellBase).
+    if (bytes.empty() || !ui_ready_() || !accept_media_bytes_(cache_key, kind, bytes))
+    {
+        return;
+    }
+
+    switch (kind)
+    {
+    case MediaKind::RoomAvatar:
+    case MediaKind::UserAvatar:
+    {
+        if (account_manager_.thumbnail_cache().contains(cache_key))
+        {
+            return;
+        }
+        // Decode off the UI thread: a burst of avatar fetches (e.g. after a
+        // room switch) would otherwise block the event queue and delay
+        // anything queued behind it, such as a just-sent message's local echo.
+        run_async_(
+            [this, cache_key, kind, bytes = std::move(bytes)]() mutable
+            {
+                auto img = std::make_shared<std::unique_ptr<tk::Image>>(decode_avatar_(bytes));
+                post_to_ui_alive_(
+                    [this, cache_key, kind, img]() mutable
+                    {
+                        if (!ui_ready_() || account_manager_.thumbnail_cache().contains(cache_key))
+                        {
+                            return;
+                        }
+                        if (!*img)
+                        {
+                            on_media_decode_failed_(cache_key, kind);
+                            return;
+                        }
+                        account_manager_.thumbnail_cache().store(cache_key, std::move(*img));
+                        // Clears a room-switch-gate pending entry waiting on
+                        // this avatar (see RoomSwitchGateKeeper); avatars are
+                        // fixed-size so no re-measure is triggered by this.
+                        if (room_view_)
+                        {
+                            room_view_->notify_image_ready(cache_key.id);
+                        }
+                        // Patches mention pills whose avatar was pending.
+                        if (main_room_pane_)
+                        {
+                            main_room_pane_->notify_avatar_media_ready_(kind);
+                        }
+                        repaint_after_media_(kind, cache_key);
+                        notify_secondary_media_ready_(cache_key.id, kind);
+                    });
+            });
+        return;
+    }
+    case MediaKind::Tile:
+        if (account_manager_.image_cache().contains(cache_key))
+        {
+            return;
+        }
+        ingest_tile_media_(cache_key, std::move(bytes));
+        return;
+    case MediaKind::MediaImage:
+    case MediaKind::MediaThumbnail:
+    case MediaKind::Sticker:
+    case MediaKind::Reaction:
+        break;
+    }
+
+    // Inline media: a still goes to the thumbnail or image cache, an animation
+    // to the animation cache (decoded in a window when the source is long).
+    const bool is_thumb = (kind == MediaKind::MediaThumbnail);
+    tk::PixmapCache& still_cache =
+        is_thumb ? account_manager_.thumbnail_cache() : account_manager_.image_cache();
+    if (still_cache.contains(cache_key) || account_manager_.anim_cache().has(cache_key))
+    {
+        return;
+    }
+    const auto [max_w, max_h] = media_decode_clamp_(kind, cache_key);
+
+    // Runs once the first frame (or the still) is in a cache.
+    auto finish_first_frame = [this, cache_key, kind]()
+    {
+        if (!ui_ready_())
+        {
+            return;
+        }
         if (room_view_)
-            room_view_->compose_bar()->update_pending_attachment(info);
-    });
+        {
+            room_view_->notify_image_ready(cache_key.id);
+        }
+        repaint_after_media_(kind, cache_key);
+        notify_secondary_media_ready_(cache_key.id, kind);
+    };
+
+    // Low power mode skips the windowed animation decode and stores the first
+    // frame only.
+    const bool low_power_now = low_power_active();
+    run_async_(
+        [this, cache_key, kind, is_thumb, max_w, max_h, finish_first_frame, low_power_now,
+         bytes = std::move(bytes)]() mutable
+        {
+            if (!low_power_now)
+            {
+                auto cb = make_streamed_decode_callbacks_windowed_(cache_key, is_thumb,
+                                                                   finish_first_frame);
+                if (decode_image_streamed_windowed_(bytes, max_w, max_h, cb.on_first, cb.on_extra))
+                {
+                    return;
+                }
+            }
+            auto d = std::make_shared<DecodedImage>(
+                low_power_now ? decode_image_(bytes, max_w, max_h)
+                              : decode_inline_fallback_(bytes, max_w, max_h));
+            post_to_ui_alive_(
+                [this, cache_key, kind, is_thumb, d, finish_first_frame]() mutable
+                {
+                    auto& cache = is_thumb ? account_manager_.thumbnail_cache()
+                                           : account_manager_.image_cache();
+                    if (cache.contains(cache_key) || account_manager_.anim_cache().has(cache_key))
+                    {
+                        return;
+                    }
+                    if (!d->frames.empty())
+                    {
+                        account_manager_.anim_cache().store(cache_key, std::move(d->frames),
+                                                            std::move(d->delays_ms),
+                                                            monotonic_ms_());
+                        start_anim_tick_();
+                        account_manager_.image_cache().evict(cache_key);
+                    }
+                    else if (d->still)
+                    {
+                        cache.store(cache_key, std::move(d->still));
+                    }
+                    else
+                    {
+                        on_media_decode_failed_(cache_key, kind);
+                        return;
+                    }
+                    finish_first_frame();
+                });
+        });
+}
+
+void ShellBase::extract_drop_media_(std::uint32_t pending_gen, std::vector<std::uint8_t> bytes,
+                                    std::string mime, views::ComposeBar* target,
+                                    std::shared_ptr<bool> alive)
+{
+    if (mime.starts_with("video/"))
+    {
+        probe_drop_video_(pending_gen, std::move(bytes), target, std::move(alive));
+    }
+    else if (mime.starts_with("audio/"))
+    {
+        probe_drop_audio_(pending_gen, std::move(bytes), target, std::move(alive));
+    }
 }
 
 void ShellBase::decode_and_cache_video_thumbnail_(std::string event_id,
-                                                   std::vector<std::uint8_t> bytes,
-                                                   bool persist)
+                                                  std::vector<std::uint8_t> bytes, bool persist)
 {
     run_async_(
         [this, event_id, bytes = std::move(bytes), persist]() mutable
@@ -777,29 +1028,28 @@ void ShellBase::decode_and_cache_video_thumbnail_(std::string event_id,
             {
                 store_media_bytes_(key, bytes);
             }
-            auto d = std::make_shared<DecodedImage>(decode_image_(
-                bytes, visual::kMaxInlineImageWidth, visual::kMaxInlineImageHeight));
+            auto d = std::make_shared<DecodedImage>(
+                decode_image_(bytes, visual::kMaxInlineImageWidth, visual::kMaxInlineImageHeight));
             post_to_ui_alive_(
                 [this, key, d]() mutable
                 {
                     if (d->still && !account_manager_.image_cache().contains(key))
                     {
-                        account_manager_.image_cache().store(key,
-                                                             std::move(d->still));
+                        account_manager_.image_cache().store(key, std::move(d->still));
                         request_relayout_();
                     }
                 });
         });
 }
 
-void ShellBase::ensure_media_thumbnail_(const std::string& url, int w, int h,
-                                        bool animated, std::uint64_t group_id)
+void ShellBase::ensure_media_thumbnail_(const std::string& url, int w, int h, bool animated,
+                                        std::uint64_t group_id)
 {
     const tk::CacheKey mem_key = tk::CacheKey::media(url);
     if (url.empty() || account_manager_.image_cache().contains(mem_key) ||
         account_manager_.thumbnail_cache().contains(mem_key) ||
-        account_manager_.anim_cache().has(mem_key) ||
-        media_decode_failed_.count(url) || media_fetch_backed_off_(url))
+        account_manager_.anim_cache().has(mem_key) || media_decode_failed_.count(url) ||
+        media_fetch_backed_off_(url))
     {
         return;
     }
@@ -819,8 +1069,7 @@ void ShellBase::ensure_media_thumbnail_(const std::string& url, int w, int h,
     }
     fetch_media_pipeline_(url, tk::CacheKey::thumbnail(url, w, h), tkey, group_id,
                           tesseract::Client::MediaReqKind::SourceThumb, url,
-                          static_cast<std::uint32_t>(w),
-                          static_cast<std::uint32_t>(h), animated,
+                          static_cast<std::uint32_t>(w), static_cast<std::uint32_t>(h), animated,
                           MediaKind::MediaThumbnail);
 }
 
@@ -841,8 +1090,7 @@ const tk::Image* ShellBase::shell_sticker_(const std::string& mxc)
 }
 
 void ShellBase::decode_and_finalize_picker_(std::string url, bool is_sticker,
-                                            std::vector<std::uint8_t> bytes,
-                                            bool persist)
+                                            std::vector<std::uint8_t> bytes, bool persist)
 {
     // Decode OFF the UI thread. Picker cells are bounded; reuse the inline-image
     // bound so picker bitmaps are reusable by the message list (same shared
@@ -863,16 +1111,14 @@ void ShellBase::decode_and_finalize_picker_(std::string url, bool is_sticker,
     const int max_w = is_sticker ? visual::kStickerSize : visual::kMaxInlineImageWidth;
     const int max_h = is_sticker ? visual::kStickerSize : visual::kMaxInlineImageHeight;
     run_async_(
-        [this, url, is_sticker, persist, max_w, max_h,
-         bytes = std::move(bytes)]() mutable
+        [this, url, is_sticker, persist, max_w, max_h, bytes = std::move(bytes)]() mutable
         {
             const tk::CacheKey mem_key = tk::CacheKey::media(url);
             if (persist)
             {
                 store_media_bytes_(mem_key, bytes);
             }
-            auto d = std::make_shared<DecodedImage>(
-                decode_image_(bytes, max_w, max_h));
+            auto d = std::make_shared<DecodedImage>(decode_image_(bytes, max_w, max_h));
             if (d->empty())
             {
                 evict_media_bytes_(mem_key);
@@ -900,8 +1146,7 @@ void ShellBase::ensure_picker_image_(const std::string& url, bool is_sticker)
     {
         return;
     }
-    auto& inflight =
-        is_sticker ? sticker_fetches_in_flight_ : emoji_fetches_in_flight_;
+    auto& inflight = is_sticker ? sticker_fetches_in_flight_ : emoji_fetches_in_flight_;
     if (!inflight.insert(url).second)
     {
         return;
@@ -918,15 +1163,13 @@ void ShellBase::ensure_picker_image_(const std::string& url, bool is_sticker)
                 {
                     if (!disk.empty())
                     {
-                        decode_and_finalize_picker_(url, is_sticker,
-                                                    std::move(disk),
+                        decode_and_finalize_picker_(url, is_sticker, std::move(disk),
                                                     /*persist=*/false);
                         return;
                     }
                     if (!client_)
                     {
-                        (is_sticker ? sticker_fetches_in_flight_
-                                    : emoji_fetches_in_flight_)
+                        (is_sticker ? sticker_fetches_in_flight_ : emoji_fetches_in_flight_)
                             .erase(url);
                         return;
                     }
@@ -936,37 +1179,33 @@ void ShellBase::ensure_picker_image_(const std::string& url, bool is_sticker)
                         {
                             if (net.empty())
                             {
-                                (is_sticker ? sticker_fetches_in_flight_
-                                            : emoji_fetches_in_flight_)
+                                (is_sticker ? sticker_fetches_in_flight_ : emoji_fetches_in_flight_)
                                     .erase(url);
                                 return;
                             }
-                            decode_and_finalize_picker_(url, is_sticker,
-                                                        std::move(net),
+                            decode_and_finalize_picker_(url, is_sticker, std::move(net),
                                                         /*persist=*/true);
                         });
-                    client_->fetch_media_async(
-                        id, /*group_id=*/0,
-                        tesseract::Client::MediaReqKind::SourceFull, url, 0, 0,
-                        false);
+                    client_->fetch_media_async(id, /*group_id=*/0,
+                                               tesseract::Client::MediaReqKind::SourceFull, url, 0,
+                                               0, false);
                 });
         });
 }
 
-void ShellBase::finalize_picker_image_(std::string url, bool is_sticker,
-                                       DecodedImage d)
+void ShellBase::finalize_picker_image_(std::string url, bool is_sticker, DecodedImage d)
 {
-    (is_sticker ? sticker_fetches_in_flight_ : emoji_fetches_in_flight_)
-        .erase(url);
+    (is_sticker ? sticker_fetches_in_flight_ : emoji_fetches_in_flight_).erase(url);
     const tk::CacheKey mem_key = tk::CacheKey::media(url);
-    if (account_manager_.image_cache().contains(mem_key) || account_manager_.anim_cache().has(mem_key))
+    if (account_manager_.image_cache().contains(mem_key) ||
+        account_manager_.anim_cache().has(mem_key))
     {
         return;
     }
     if (!d.frames.empty())
     {
         account_manager_.anim_cache().store(mem_key, std::move(d.frames), std::move(d.delays_ms),
-                          monotonic_ms_());
+                                            monotonic_ms_());
         start_anim_tick_();
     }
     else if (d.still)
@@ -994,9 +1233,8 @@ void ShellBase::ensure_tile_async(int z, int x, int y)
     }
 
     const std::string url = tesseract::views::tile_url({z, x, y});
-    const std::filesystem::path disk_path =
-        tesseract::cache_dir() / "tiles" / std::to_string(z) /
-        std::to_string(x) / (std::to_string(y) + ".png");
+    const std::filesystem::path disk_path = tesseract::cache_dir() / "tiles" / std::to_string(z) /
+                                            std::to_string(x) / (std::to_string(y) + ".png");
 
     // Read the on-disk tile cache. On a miss, fall back to a non-blocking
     // network fetch (fetch_url_async) so the 30 s tile timeout never pins a
@@ -1011,12 +1249,22 @@ void ShellBase::ensure_tile_async(int z, int x, int y)
     {
         shell_helpers::write_tile_disk(disk_path, net);
     };
-    spec.erase_inflight_ = [this, key] { tile_fetches_in_flight_.erase(key); };
+    spec.erase_inflight_ = [this, key]
+    {
+        tile_fetches_in_flight_.erase(key);
+    };
     spec.start_fetch_ = [this, url](std::uint64_t id)
-    { client_->fetch_url_async(id, /*group_id=*/0, url); };
-    spec.on_empty_ = [this, key] { tile_fetch_failed_.insert(key); };
+    {
+        client_->fetch_url_async(id, /*group_id=*/0, url);
+    };
+    spec.on_empty_ = [this, key]
+    {
+        tile_fetch_failed_.insert(key);
+    };
     spec.deliver_ = [this, tile_key](std::vector<std::uint8_t>&& bytes)
-    { on_media_bytes_ready_(tile_key, MediaKind::Tile, std::move(bytes)); };
+    {
+        on_media_bytes_ready_(tile_key, MediaKind::Tile, std::move(bytes));
+    };
     run_media_fetch_(std::move(spec));
 }
 
@@ -1043,25 +1291,29 @@ void ShellBase::ensure_url_preview_(const std::string& url)
         [this, url](std::string&& json)
         {
             url_preview_in_flight_.erase(url);
-            url_previews_.emplace(url,
-                                  tesseract::Client::parse_url_preview(json));
+            url_previews_.emplace(url, tesseract::Client::parse_url_preview(json));
             if (!url_previews_.at(url).failed)
+            {
                 on_url_preview_ready_(url, url_previews_.at(url));
+            }
             else
+            {
                 on_url_preview_failed_(url);
+            }
         },
-        [this, url] { url_preview_in_flight_.erase(url); });
+        [this, url]
+        {
+            url_preview_in_flight_.erase(url);
+        });
     client_->get_url_preview_async(id, group, url);
 }
 
-void ShellBase::ensure_blurhash_image_(const std::string& event_id,
-                                       const std::string& hash, int media_w,
-                                       int media_h)
+void ShellBase::ensure_blurhash_image_(const std::string& event_id, const std::string& hash,
+                                       int media_w, int media_h)
 {
     const std::string bh_key = "blurhash::" + event_id;
     const tk::CacheKey key = tk::CacheKey::blurhash(event_id);
-    if (account_manager_.image_cache().contains(key) ||
-        !blurhash_attempted_.insert(bh_key).second)
+    if (account_manager_.image_cache().contains(key) || !blurhash_attempted_.insert(bh_key).second)
     {
         return;
     }
@@ -1100,15 +1352,13 @@ void ShellBase::ensure_row_media_(const Event& ev, bool fetch_avatars)
     if (!waveform_store_inited_)
     {
         waveform_store_inited_ = true;
-        tesseract::init_waveform_cache(
-            (tesseract::cache_dir() / "waveforms.db").string());
+        tesseract::init_waveform_cache((tesseract::cache_dir() / "waveforms.db").string());
     }
     // MSC4278: gate media (image/sticker/video thumbnails + URL previews)
     // behind the media-preview config. A suppressed item is not fetched until
     // the user reveals it individually. Sender avatars, reactions, voice/audio,
     // and the BlurHash placeholder are not gated.
-    const std::string& gate_room =
-        ev.room_id.empty() ? current_room_id_ : ev.room_id;
+    const std::string& gate_room = ev.room_id.empty() ? current_room_id_ : ev.room_id;
     // Inline media (image/sticker/video) is large, slow, and room-specific, so
     // it is grouped under the originating room and cancelled when the user
     // switches away — see cancel_media_group_ in after_active_room_changed_.
@@ -1125,9 +1375,8 @@ void ShellBase::ensure_row_media_(const Event& ev, bool fetch_avatars)
         }
         if (ev.type == EventType::Membership)
         {
-            ensure_user_avatar_(
-                static_cast<const MembershipStateEvent&>(ev).target_avatar_url,
-                media_group);
+            ensure_user_avatar_(static_cast<const MembershipStateEvent&>(ev).target_avatar_url,
+                                media_group);
         }
     }
 
@@ -1135,8 +1384,7 @@ void ShellBase::ensure_row_media_(const Event& ev, bool fetch_avatars)
     // mode), so it is fetched here just like revealed media — otherwise the
     // placeholder would be gone but the bytes never fetched.
     const bool preview =
-        media_allowed_(gate_room, !my_user_id_.empty() &&
-                                      ev.sender == my_user_id_) ||
+        media_allowed_(gate_room, !my_user_id_.empty() && ev.sender == my_user_id_) ||
         revealed_events_.count(ev.event_id) != 0;
 
     if (ev.type == EventType::Image)
@@ -1145,18 +1393,16 @@ void ShellBase::ensure_row_media_(const Event& ev, bool fetch_avatars)
         if (preview && img.thumbnail)
         {
             // animated=true so capable servers keep animated GIFs moving.
-            ensure_media_thumbnail_(img.thumbnail->fetch_token(),
-                                    visual::kMaxInlineImageWidth,
-                                    visual::kMaxInlineImageHeight, true,
-                                    media_group);
+            ensure_media_thumbnail_(img.thumbnail->fetch_token(), visual::kMaxInlineImageWidth,
+                                    visual::kMaxInlineImageHeight, true, media_group);
         }
-        if (preview &&
-            (!img.thumbnail || tesseract::Settings::instance().prefetch_full_media))
+        if (preview && (!img.thumbnail || tesseract::Settings::instance().prefetch_full_media))
         {
             if (img.source)
-                ensure_media_image_(img.source->fetch_token(),
-                                    visual::kMaxInlineImageWidth,
+            {
+                ensure_media_image_(img.source->fetch_token(), visual::kMaxInlineImageWidth,
                                     visual::kMaxInlineImageHeight, media_group);
+            }
         }
     }
     else if (ev.type == EventType::Sticker)
@@ -1164,35 +1410,33 @@ void ShellBase::ensure_row_media_(const Event& ev, bool fetch_avatars)
         const auto& s = static_cast<const StickerEvent&>(ev);
         if (preview && s.thumbnail)
         {
-            ensure_media_image_(s.thumbnail->fetch_token(),
-                                visual::kStickerSize, visual::kStickerSize,
-                                media_group, MediaKind::Sticker);
+            ensure_media_image_(s.thumbnail->fetch_token(), visual::kStickerSize,
+                                visual::kStickerSize, media_group, MediaKind::Sticker);
         }
-        if (preview &&
-            (!s.thumbnail || tesseract::Settings::instance().prefetch_full_media))
+        if (preview && (!s.thumbnail || tesseract::Settings::instance().prefetch_full_media))
         {
             if (s.source)
-                ensure_media_image_(s.source->fetch_token(),
-                                    visual::kStickerSize, visual::kStickerSize,
-                                    media_group, MediaKind::Sticker);
+            {
+                ensure_media_image_(s.source->fetch_token(), visual::kStickerSize,
+                                    visual::kStickerSize, media_group, MediaKind::Sticker);
+            }
         }
     }
     else if (ev.type == EventType::Voice)
     {
         const auto& v = static_cast<const VoiceEvent&>(ev);
-        if (v.source)
+        // No client in screenshot mode (or before sign-in): nothing to fetch.
+        if (v.source && client_)
         {
             const std::string src = v.source->fetch_token();
-            const bool audio_new =
-                voice_prefetched_.insert(src).second;
+            const bool audio_new = voice_prefetched_.insert(src).second;
             const bool waveform_new =
-                v.waveform.empty() &&
-                voice_waveform_in_flight_.insert(src).second;
+                v.waveform.empty() && voice_waveform_in_flight_.insert(src).second;
 
             if (audio_new || waveform_new)
             {
                 const std::string event_id = ev.event_id;
-                const std::string room_id  = current_room_id_;
+                const std::string room_id = current_room_id_;
                 // Non-blocking full-source download (bulk lane). The Opus decode
                 // for the waveform is CPU work, so it runs on the io pool inside
                 // the completion — never on the UI thread. group 0: voice isn't
@@ -1200,50 +1444,47 @@ void ShellBase::ensure_row_media_(const Event& ev, bool fetch_avatars)
                 // permanent, so it is not cancelled on switch.
                 auto id = begin_media_req_(
                     /*group_id=*/0,
-                    [this, src, event_id, room_id,
-                     waveform_new](std::vector<std::uint8_t>&& bytes)
+                    [this, src, event_id, room_id, waveform_new](std::vector<std::uint8_t>&& bytes)
                     {
                         if (!waveform_new || bytes.empty())
+                        {
                             return; // audio cache warmed; nothing more to do.
+                        }
                         run_async_(
-                            [this, src, event_id, room_id,
-                             bytes = std::move(bytes)]() mutable
+                            [this, src, event_id, room_id, bytes = std::move(bytes)]() mutable
                             {
-                                auto waveform =
-                                    tesseract::load_voice_waveform(src);
+                                auto waveform = tesseract::load_voice_waveform(src);
                                 if (waveform.empty())
                                 {
-                                    waveform =
-                                        tesseract::compute_waveform_from_ogg(
-                                            bytes);
+                                    waveform = tesseract::compute_waveform_from_ogg(bytes);
                                     if (!waveform.empty())
-                                        tesseract::store_voice_waveform(
-                                            src, waveform);
+                                    {
+                                        tesseract::store_voice_waveform(src, waveform);
+                                    }
                                 }
                                 if (waveform.empty())
+                                {
                                     return;
+                                }
                                 post_to_ui_alive_(
                                     [this, room_id, event_id,
                                      waveform = std::move(waveform)]() mutable
                                     {
-                                        handle_voice_waveform_ready_ui_(
-                                            room_id, event_id,
-                                            std::move(waveform));
+                                        handle_voice_waveform_ready_ui_(room_id, event_id,
+                                                                        std::move(waveform));
                                     });
                             });
                     });
-                client_->fetch_media_async(
-                    id, /*group_id=*/0,
-                    tesseract::Client::MediaReqKind::SourceFull, src, 0, 0,
-                    false);
+                client_->fetch_media_async(id, /*group_id=*/0,
+                                           tesseract::Client::MediaReqKind::SourceFull, src, 0, 0,
+                                           false);
             }
         }
     }
     else if (ev.type == EventType::Audio)
     {
         const auto& a = static_cast<const AudioEvent&>(ev);
-        if (a.source &&
-            tesseract::Settings::instance().prefetch_full_media)
+        if (a.source && client_ && tesseract::Settings::instance().prefetch_full_media)
         {
             const std::string src = a.source->fetch_token();
             if (voice_prefetched_.insert(src).second)
@@ -1252,10 +1493,9 @@ void ShellBase::ensure_row_media_(const Event& ev, bool fetch_avatars)
                 // the bytes (playback re-reads from the warmed cache).
                 auto id = begin_media_req_(
                     /*group_id=*/0, [](std::vector<std::uint8_t>&&) {});
-                client_->fetch_media_async(
-                    id, /*group_id=*/0,
-                    tesseract::Client::MediaReqKind::SourceFull, src, 0, 0,
-                    false);
+                client_->fetch_media_async(id, /*group_id=*/0,
+                                           tesseract::Client::MediaReqKind::SourceFull, src, 0, 0,
+                                           false);
             }
         }
     }
@@ -1264,10 +1504,8 @@ void ShellBase::ensure_row_media_(const Event& ev, bool fetch_avatars)
         const auto& vid = static_cast<const VideoEvent&>(ev);
         if (preview && vid.thumbnail)
         {
-            ensure_media_thumbnail_(vid.thumbnail->fetch_token(),
-                                    visual::kMaxInlineImageWidth,
-                                    visual::kMaxInlineImageHeight, false,
-                                    media_group);
+            ensure_media_thumbnail_(vid.thumbnail->fetch_token(), visual::kMaxInlineImageWidth,
+                                    visual::kMaxInlineImageHeight, false, media_group);
         }
         if (preview && !vid.thumbnail && vid.source)
         {
@@ -1281,8 +1519,7 @@ void ShellBase::ensure_row_media_(const Event& ev, bool fetch_avatars)
             // Custom-emoji reaction images are row-scoped like the rest of
             // this event's media (a room with heavy reaction use can have
             // dozens of distinct ones), so they share the room's cancel group.
-            ensure_media_image_(r.source->fetch_token(), 20, 20, media_group,
-                                MediaKind::Reaction);
+            ensure_media_image_(r.source->fetch_token(), 20, 20, media_group, MediaKind::Reaction);
         }
     }
 
@@ -1326,23 +1563,18 @@ void ShellBase::ensure_row_media_(const Event& ev, bool fetch_avatars)
             for (const auto& p : ev.bundled_url_previews)
             {
                 if (p.image)
-                    ensure_media_thumbnail_(p.image->fetch_token(), 64, 64,
-                                            false, media_group);
+                {
+                    ensure_media_thumbnail_(p.image->fetch_token(), 64, 64, false, media_group);
+                }
                 else if (!p.matched_url.empty() && !p.has_content())
+                {
                     ensure_url_preview_(p.matched_url);
+                }
             }
         }
         else
         {
-            std::string url;
-            if (!ev.formatted_body.empty())
-            {
-                url = views::first_url_from_html(ev.formatted_body);
-            }
-            if (url.empty() && !ev.body.empty())
-            {
-                url = views::first_url_from_plain(ev.body);
-            }
+            std::string url = views::first_preview_url(ev.formatted_body, ev.body);
             if (!url.empty())
             {
                 ensure_url_preview_(url);
@@ -1351,8 +1583,7 @@ void ShellBase::ensure_row_media_(const Event& ev, bool fetch_avatars)
     }
 }
 
-void ShellBase::ensure_row_media_(const views::MessageRowData& row,
-                                   bool fetch_avatars)
+void ShellBase::ensure_row_media_(const views::MessageRowData& row, bool fetch_avatars)
 {
     using Kind = views::MessageRowData::Kind;
 
@@ -1362,145 +1593,144 @@ void ShellBase::ensure_row_media_(const views::MessageRowData& row,
     {
         ensure_user_avatar_(row.sender_avatar_url, media_group);
         for (const auto& rr : row.read_receipts)
+        {
             ensure_user_avatar_(rr.avatar_url, media_group);
+        }
         ensure_user_avatar_(row.membership_target_avatar_url, media_group);
     }
 
-    const bool preview =
-        media_allowed_(current_room_id_,
-                       !my_user_id_.empty() && row.is_own) ||
-        revealed_events_.count(row.event_id) != 0;
+    const bool preview = media_allowed_(current_room_id_, !my_user_id_.empty() && row.is_own) ||
+                         revealed_events_.count(row.event_id) != 0;
 
     if (row.kind == Kind::Image)
     {
         if (preview && row.thumbnail)
-            ensure_media_thumbnail_(row.thumbnail->fetch_token(),
-                                    visual::kMaxInlineImageWidth,
-                                    visual::kMaxInlineImageHeight,
-                                    row.image_animated, media_group);
-        if (preview &&
-            (!row.thumbnail ||
-             tesseract::Settings::instance().prefetch_full_media))
+        {
+            ensure_media_thumbnail_(row.thumbnail->fetch_token(), visual::kMaxInlineImageWidth,
+                                    visual::kMaxInlineImageHeight, row.image_animated, media_group);
+        }
+        if (preview && (!row.thumbnail || tesseract::Settings::instance().prefetch_full_media))
         {
             if (row.source)
-                ensure_media_image_(row.source->fetch_token(),
-                                    visual::kMaxInlineImageWidth,
+            {
+                ensure_media_image_(row.source->fetch_token(), visual::kMaxInlineImageWidth,
                                     visual::kMaxInlineImageHeight, media_group);
+            }
         }
     }
     else if (row.kind == Kind::Sticker)
     {
         if (preview && row.thumbnail)
-            ensure_media_image_(row.thumbnail->fetch_token(),
-                                visual::kStickerSize, visual::kStickerSize,
-                                media_group, MediaKind::Sticker);
-        if (preview &&
-            (!row.thumbnail ||
-             tesseract::Settings::instance().prefetch_full_media))
+        {
+            ensure_media_image_(row.thumbnail->fetch_token(), visual::kStickerSize,
+                                visual::kStickerSize, media_group, MediaKind::Sticker);
+        }
+        if (preview && (!row.thumbnail || tesseract::Settings::instance().prefetch_full_media))
         {
             if (row.source)
-                ensure_media_image_(row.source->fetch_token(),
-                                    visual::kStickerSize, visual::kStickerSize,
-                                    media_group, MediaKind::Sticker);
+            {
+                ensure_media_image_(row.source->fetch_token(), visual::kStickerSize,
+                                    visual::kStickerSize, media_group, MediaKind::Sticker);
+            }
         }
     }
     else if (row.kind == Kind::Voice)
     {
-        if (row.audio_source)
+        // No client in screenshot mode (or before sign-in): nothing to fetch.
+        if (row.audio_source && client_)
         {
-            const std::string src   = row.audio_source->fetch_token();
-            const bool audio_new    = voice_prefetched_.insert(src).second;
-            const bool waveform_new = row.waveform.empty() &&
-                                      voice_waveform_in_flight_.insert(src).second;
+            const std::string src = row.audio_source->fetch_token();
+            const bool audio_new = voice_prefetched_.insert(src).second;
+            const bool waveform_new =
+                row.waveform.empty() && voice_waveform_in_flight_.insert(src).second;
             if (audio_new || waveform_new)
             {
                 const std::string event_id = row.event_id;
-                const std::string room_id  = current_room_id_;
+                const std::string room_id = current_room_id_;
                 auto id = begin_media_req_(
                     /*group_id=*/0,
-                    [this, src, event_id, room_id,
-                     waveform_new](std::vector<std::uint8_t>&& bytes)
+                    [this, src, event_id, room_id, waveform_new](std::vector<std::uint8_t>&& bytes)
                     {
                         if (!waveform_new || bytes.empty())
+                        {
                             return;
+                        }
                         run_async_(
-                            [this, src, event_id, room_id,
-                             bytes = std::move(bytes)]() mutable
+                            [this, src, event_id, room_id, bytes = std::move(bytes)]() mutable
                             {
-                                auto waveform =
-                                    tesseract::load_voice_waveform(src);
+                                auto waveform = tesseract::load_voice_waveform(src);
                                 if (waveform.empty())
                                 {
-                                    waveform =
-                                        tesseract::compute_waveform_from_ogg(
-                                            bytes);
+                                    waveform = tesseract::compute_waveform_from_ogg(bytes);
                                     if (!waveform.empty())
-                                        tesseract::store_voice_waveform(
-                                            src, waveform);
+                                    {
+                                        tesseract::store_voice_waveform(src, waveform);
+                                    }
                                 }
                                 if (waveform.empty())
+                                {
                                     return;
+                                }
                                 post_to_ui_alive_(
                                     [this, room_id, event_id,
                                      waveform = std::move(waveform)]() mutable
                                     {
-                                        handle_voice_waveform_ready_ui_(
-                                            room_id, event_id,
-                                            std::move(waveform));
+                                        handle_voice_waveform_ready_ui_(room_id, event_id,
+                                                                        std::move(waveform));
                                     });
                             });
                     });
-                client_->fetch_media_async(
-                    id, /*group_id=*/0,
-                    tesseract::Client::MediaReqKind::SourceFull, src, 0, 0,
-                    false);
+                client_->fetch_media_async(id, /*group_id=*/0,
+                                           tesseract::Client::MediaReqKind::SourceFull, src, 0, 0,
+                                           false);
             }
         }
     }
     else if (row.kind == Kind::Audio)
     {
-        if (row.audio_source &&
-            tesseract::Settings::instance().prefetch_full_media)
+        if (row.audio_source && client_ && tesseract::Settings::instance().prefetch_full_media)
         {
             const std::string src = row.audio_source->fetch_token();
             if (voice_prefetched_.insert(src).second)
             {
                 auto id = begin_media_req_(
                     /*group_id=*/0, [](std::vector<std::uint8_t>&&) {});
-                client_->fetch_media_async(
-                    id, /*group_id=*/0,
-                    tesseract::Client::MediaReqKind::SourceFull, src, 0, 0,
-                    false);
+                client_->fetch_media_async(id, /*group_id=*/0,
+                                           tesseract::Client::MediaReqKind::SourceFull, src, 0, 0,
+                                           false);
             }
         }
     }
     else if (row.kind == Kind::Video)
     {
         if (preview && row.video_has_server_thumbnail && row.thumbnail)
-            ensure_media_thumbnail_(row.thumbnail->fetch_token(),
-                                    visual::kMaxInlineImageWidth,
-                                    visual::kMaxInlineImageHeight, false,
-                                    media_group);
+        {
+            ensure_media_thumbnail_(row.thumbnail->fetch_token(), visual::kMaxInlineImageWidth,
+                                    visual::kMaxInlineImageHeight, false, media_group);
+        }
         if (preview && !row.video_has_server_thumbnail && row.source)
+        {
             request_video_thumbnail_(row.event_id, row.source->fetch_token());
+        }
     }
 
     for (const auto& r : row.reactions)
     {
         if (r.source)
+        {
             // Same room-scoped cancel group as the rest of this row's media —
             // see the comment in the Event overload above.
-            ensure_media_image_(r.source->fetch_token(), 20, 20, media_group,
-                                MediaKind::Reaction);
+            ensure_media_image_(r.source->fetch_token(), 20, 20, media_group, MediaKind::Reaction);
+        }
     }
 
     if (!row.blurhash.empty())
-        ensure_blurhash_image_(row.event_id, row.blurhash,
-                               row.media_w, row.media_h);
+    {
+        ensure_blurhash_image_(row.event_id, row.blurhash, row.media_w, row.media_h);
+    }
 
-    if (preview &&
-        (row.kind == Kind::Text || row.kind == Kind::Notice ||
-         row.kind == Kind::Emote || row.kind == Kind::Unhandled))
+    if (preview && (row.kind == Kind::Text || row.kind == Kind::Notice || row.kind == Kind::Emote ||
+                    row.kind == Kind::Unhandled))
     {
         if (row.bundled_previews_present)
         {
@@ -1510,27 +1740,29 @@ void ShellBase::ensure_row_media_(const views::MessageRowData& row,
             for (const auto& p : row.bundled_previews)
             {
                 if (p.image_source)
-                    ensure_media_thumbnail_(p.image_source->fetch_token(), 64,
-                                            64, false, media_group);
+                {
+                    ensure_media_thumbnail_(p.image_source->fetch_token(), 64, 64, false,
+                                            media_group);
+                }
                 else if (!p.matched_url.empty() && !p.has_content())
+                {
                     ensure_url_preview_(p.matched_url);
+                }
             }
         }
         else
         {
-            std::string url;
-            if (!row.formatted_body.empty())
-                url = views::first_url_from_html(row.formatted_body);
-            if (url.empty() && !row.body.empty())
-                url = views::first_url_from_plain(row.body);
+            std::string url = views::first_preview_url(row.formatted_body, row.body);
             if (!url.empty())
+            {
                 ensure_url_preview_(url);
+            }
         }
     }
 }
 
-std::vector<std::uint64_t> ShellBase::resolve_visible_request_ids_(
-    const std::vector<std::string>& keys) const
+std::vector<std::uint64_t>
+ShellBase::resolve_visible_request_ids_(const std::vector<std::string>& keys) const
 {
     std::vector<std::uint64_t> ids;
     ids.reserve(keys.size());
@@ -1540,7 +1772,9 @@ std::vector<std::uint64_t> ShellBase::resolve_visible_request_ids_(
         // simply absent from the reverse map and skipped.
         auto it = media_key_to_req_.find(k);
         if (it != media_key_to_req_.end())
+        {
             ids.push_back(it->second);
+        }
     }
     return ids;
 }
@@ -1553,38 +1787,43 @@ std::vector<std::uint64_t> ShellBase::resolve_visible_request_ids_(
 // no in-flight fetch (already cached, or never requested) are skipped.
 void ShellBase::on_visible_rows_changed_(const std::vector<std::string>& keys)
 {
-    if (client_ && active_media_group_ != 0 && !keys.empty() &&
-        !media_key_to_req_.empty())
+    if (client_ && active_media_group_ != 0 && !keys.empty() && !media_key_to_req_.empty())
     {
         auto ids = resolve_visible_request_ids_(keys);
         if (!ids.empty())
+        {
             client_->prioritize_media(active_media_group_, ids);
+        }
     }
 
     // Lazy media fetch: rows outside the initial prefetch window enter the
     // viewport as the user scrolls. Fetch their media now, deduped by
     // media_prepped_event_ids_ so each event is only processed once.
     if (!room_view_ || !room_view_->message_list())
+    {
         return;
+    }
     auto* ml = room_view_->message_list();
     auto [first, last] = ml->visible_range();
     if (first < 0)
+    {
         return;
+    }
     const auto& msgs = ml->messages();
     for (int i = first; i <= last && i < static_cast<int>(msgs.size()); ++i)
     {
         const auto& row = msgs[static_cast<std::size_t>(i)];
         if (media_prepped_event_ids_.insert(row.event_id).second)
+        {
             ensure_row_media_(row, /*fetch_avatars=*/true);
+        }
     }
 }
 
 tesseract::Settings::MediaPreviews
-ShellBase::effective_preview_mode_(const std::string& room_id,
-                                   std::string& join_rule_out) const
+ShellBase::effective_preview_mode_(const std::string& room_id, std::string& join_rule_out) const
 {
-    tesseract::Settings::MediaPreviews mode =
-        tesseract::Settings::instance().media_previews;
+    tesseract::Settings::MediaPreviews mode = tesseract::Settings::instance().media_previews;
     join_rule_out.clear();
 
     auto it = room_preview_overrides_.find(room_id);
@@ -1617,8 +1856,7 @@ bool ShellBase::media_allowed_(const std::string& room_id, bool is_own) const
                                          /*revealed=*/false);
 }
 
-bool ShellBase::media_preview_hidden_(const std::string& room_id,
-                                      const std::string& event_id,
+bool ShellBase::media_preview_hidden_(const std::string& room_id, const std::string& event_id,
                                       bool is_own) const
 {
     if (revealed_events_.count(event_id) != 0)
@@ -1652,7 +1890,9 @@ void ShellBase::handle_room_preview_override_ready_ui_(std::uint64_t request_id,
 {
     auto it = pending_preview_overrides_.find(request_id);
     if (it == pending_preview_overrides_.end())
+    {
         return;
+    }
     std::string room_id = std::move(it->second);
     pending_preview_overrides_.erase(it);
 
@@ -1662,8 +1902,7 @@ void ShellBase::handle_room_preview_override_ready_ui_(std::uint64_t request_id,
 
     // Now that the join rule + override are known, fetch any media that turned
     // out to be allowed in this room and re-evaluate the placeholders.
-    if (room_view_ && room_id == current_room_id_ &&
-        should_auto_preview_(room_id))
+    if (room_view_ && room_id == current_room_id_ && should_auto_preview_(room_id))
     {
         if (auto* ml = room_view_->message_list())
         {
@@ -1676,13 +1915,13 @@ void ShellBase::handle_room_preview_override_ready_ui_(std::uint64_t request_id,
     request_relayout_();
 }
 
-void ShellBase::handle_room_media_preview_override_updated_ui_(
-    std::string user_id, std::string room_id, std::string override_json)
+void ShellBase::handle_room_media_preview_override_updated_ui_(std::string user_id,
+                                                               std::string room_id,
+                                                               std::string override_json)
 {
     // Only the active account's rooms drive the UI (mirrors
     // handle_media_preview_config_updated_ui_'s account guard).
-    if (!active_account_ || !client_ || active_account_->user_id != user_id ||
-        room_id.empty())
+    if (!active_account_ || !client_ || active_account_->user_id != user_id || room_id.empty())
     {
         return;
     }
@@ -1690,8 +1929,7 @@ void ShellBase::handle_room_media_preview_override_updated_ui_(
     room_preview_overrides_[room_id] = tesseract::MediaPreviewOverride::from_json(override_json);
     seed_room_media_section_(room_id);
 
-    if (room_view_ && room_id == current_room_id_ &&
-        should_auto_preview_(room_id))
+    if (room_view_ && room_id == current_room_id_ && should_auto_preview_(room_id))
     {
         if (auto* ml = room_view_->message_list())
         {
@@ -1709,15 +1947,21 @@ void ShellBase::handle_room_security_state_ready_ui_(std::uint64_t request_id,
 {
     auto it = pending_security_state_requests_.find(request_id);
     if (it == pending_security_state_requests_.end())
+    {
         return;
+    }
     std::string room_id = std::move(it->second);
     pending_security_state_requests_.erase(it);
 
     if (!room_view_)
+    {
         return;
+    }
     auto* v = room_view_->room_settings_view();
     if (!v || !v->is_open() || v->room_id() != room_id)
+    {
         return;
+    }
     v->set_security_state(state.is_encrypted, state.join_rule, state.guest_access,
                           state.history_visibility);
     request_relayout_();
@@ -1732,35 +1976,40 @@ void ShellBase::reveal_media_fetch_(const views::MessageRowData& row)
     if (row.kind == K::Image)
     {
         if (row.thumbnail)
-            ensure_media_thumbnail_(row.thumbnail->fetch_token(),
-                                    visual::kMaxInlineImageWidth,
-                                    visual::kMaxInlineImageHeight, true,
-                                    media_group);
+        {
+            ensure_media_thumbnail_(row.thumbnail->fetch_token(), visual::kMaxInlineImageWidth,
+                                    visual::kMaxInlineImageHeight, true, media_group);
+        }
         else if (row.source)
-            ensure_media_image_(row.source->fetch_token(),
-                                visual::kMaxInlineImageWidth,
+        {
+            ensure_media_image_(row.source->fetch_token(), visual::kMaxInlineImageWidth,
                                 visual::kMaxInlineImageHeight, media_group);
+        }
     }
     else if (row.kind == K::Sticker)
     {
         if (row.thumbnail)
-            ensure_media_image_(row.thumbnail->fetch_token(),
-                                visual::kStickerSize, visual::kStickerSize,
-                                media_group, MediaKind::Sticker);
+        {
+            ensure_media_image_(row.thumbnail->fetch_token(), visual::kStickerSize,
+                                visual::kStickerSize, media_group, MediaKind::Sticker);
+        }
         else if (row.source)
-            ensure_media_image_(row.source->fetch_token(),
-                                visual::kStickerSize, visual::kStickerSize,
-                                media_group, MediaKind::Sticker);
+        {
+            ensure_media_image_(row.source->fetch_token(), visual::kStickerSize,
+                                visual::kStickerSize, media_group, MediaKind::Sticker);
+        }
     }
     else if (row.kind == K::Video)
     {
         if (row.video_has_server_thumbnail && row.thumbnail)
-            ensure_media_thumbnail_(row.thumbnail->fetch_token(),
-                                    visual::kMaxInlineImageWidth,
-                                    visual::kMaxInlineImageHeight, false,
-                                    media_group);
+        {
+            ensure_media_thumbnail_(row.thumbnail->fetch_token(), visual::kMaxInlineImageWidth,
+                                    visual::kMaxInlineImageHeight, false, media_group);
+        }
         else if (!row.video_has_server_thumbnail && row.source)
+        {
             request_video_thumbnail_(row.event_id, row.source->fetch_token());
+        }
     }
 }
 
@@ -1772,7 +2021,9 @@ void ShellBase::wire_media_preview_gating_(views::MessageListView* ml)
     }
     ml->set_media_hidden_predicate(
         [this](const std::string& event_id, bool is_own)
-        { return media_preview_hidden_(current_room_id_, event_id, is_own); });
+        {
+            return media_preview_hidden_(current_room_id_, event_id, is_own);
+        });
     ml->on_reveal_media = [this, ml](const std::string& event_id)
     {
         revealed_events_.insert(event_id);
@@ -1796,8 +2047,7 @@ void ShellBase::apply_media_preview_config_()
 
     if (client_)
     {
-        tesseract::MediaPreviewConfig::Mode m =
-            tesseract::MediaPreviewConfig::Mode::On;
+        tesseract::MediaPreviewConfig::Mode m = tesseract::MediaPreviewConfig::Mode::On;
         switch (mode)
         {
         case tesseract::Settings::MediaPreviews::Off:
@@ -1840,12 +2090,13 @@ void ShellBase::apply_media_preview_config_()
 // Each of the five on_accept completion callbacks calls this — never
 // called on every combo pick (that would violate the "nothing applies
 // until Accept" contract every other room-settings field follows).
-void ShellBase::commit_room_media_preview_override_(
-    const std::string& room_id, bool has_override,
-    tesseract::MediaPreviewConfig::Mode mode)
+void ShellBase::commit_room_media_preview_override_(const std::string& room_id, bool has_override,
+                                                    tesseract::MediaPreviewConfig::Mode mode)
 {
     if (room_id.empty())
+    {
         return;
+    }
 
     // Called once, on the UI thread, after a successful Accept whose
     // RoomSettingsChanges.media_override was set — the actual server write
@@ -1863,12 +2114,13 @@ void ShellBase::commit_room_media_preview_override_(
     tesseract::MediaPreviewOverride ov = room_preview_overrides_[room_id];
     ov.has_media_previews = has_override;
     if (has_override)
+    {
         ov.media_previews = mode;
+    }
     room_preview_overrides_[room_id] = ov;
 
     // Fetch media that just became allowed in the open room.
-    if (room_id == current_room_id_ && room_view_ &&
-        should_auto_preview_(room_id))
+    if (room_id == current_room_id_ && room_view_ && should_auto_preview_(room_id))
     {
         if (auto* ml = room_view_->message_list())
         {
@@ -1892,10 +2144,14 @@ void ShellBase::commit_room_media_preview_override_(
 void ShellBase::seed_room_media_section_(const std::string& room_id)
 {
     if (!room_view_)
+    {
         return;
+    }
     auto* v = room_view_->room_settings_view();
     if (!v || !v->is_open() || v->room_id() != room_id)
+    {
         return;
+    }
     auto it = room_preview_overrides_.find(room_id);
     if (it == room_preview_overrides_.end())
     {
@@ -1913,24 +2169,24 @@ void ShellBase::seed_room_media_section_(const std::string& room_id)
 // lands in handle_room_security_state_ready_ui_, which pushes it into
 // RoomSettingsView via set_security_state if the dialog is still open.
 void ShellBase::fetch_room_security_state_(const std::string& room_id,
-    const std::shared_ptr<AccountSession>& on_behalf_of)
+                                           const std::shared_ptr<AccountSession>& on_behalf_of)
 {
     const auto acting = acting_session_(on_behalf_of);
     Client* const acting_client = acting_client_(on_behalf_of);
     EventAccountScope acting_scope(*this, acting ? acting->user_id : std::string{});
     if (!acting_client || room_id.empty())
+    {
         return;
+    }
     auto req_id = next_request_id_++;
     pending_security_state_requests_[req_id] = room_id;
     acting_client->fetch_room_security_state_async(req_id, room_id);
 }
 
-void ShellBase::handle_media_preview_config_updated_ui_(std::string user_id,
-                                                        std::string /*json*/)
+void ShellBase::handle_media_preview_config_updated_ui_(std::string user_id, std::string /*json*/)
 {
     // Only the active account's config drives the UI.
-    if (!active_account_ || !client_ ||
-        active_account_->user_id != user_id)
+    if (!active_account_ || !client_ || active_account_->user_id != user_id)
     {
         return;
     }
@@ -1965,14 +2221,15 @@ void ShellBase::handle_media_preview_config_fetched_ui_(std::uint64_t /*request_
     request_relayout_();
 }
 
-void ShellBase::on_url_preview_ready_(const std::string& url,
-                                      const Client::UrlPreview& preview)
+void ShellBase::on_url_preview_ready_(const std::string& url, const Client::UrlPreview& preview)
 {
     tesseract::views::UrlPreviewData d;
     d.title = preview.title;
     d.description = preview.description;
     if (!preview.image_mxc.empty())
+    {
         d.image_source = tesseract::MediaSource::plain(preview.image_mxc);
+    }
     d.image_w = preview.image_w;
     d.image_h = preview.image_h;
     url_preview_data_.emplace(url, std::move(d));
@@ -2017,12 +2274,13 @@ void ShellBase::on_url_preview_failed_(const std::string& url)
     }
 }
 
-void ShellBase::handle_media_ready_ui_(std::uint64_t request_id,
-                                       std::vector<std::uint8_t> bytes)
+void ShellBase::handle_media_ready_ui_(std::uint64_t request_id, std::vector<std::uint8_t> bytes)
 {
     auto it = pending_media_.find(request_id);
     if (it == pending_media_.end())
+    {
         return; // Cancelled / superseded — drop the late callback.
+    }
     PendingMediaReq req = std::move(it->second);
     pending_media_.erase(it);
     // Drop the reverse-map entry only if it still points at this request (a
@@ -2031,27 +2289,33 @@ void ShellBase::handle_media_ready_ui_(std::uint64_t request_id,
     {
         auto mit = media_key_to_req_.find(req.priority_key);
         if (mit != media_key_to_req_.end() && mit->second == request_id)
+        {
             media_key_to_req_.erase(mit);
+        }
     }
     on_inflight_ui_();
     if (req.on_bytes)
+    {
         req.on_bytes(std::move(bytes));
+    }
 }
 
-void ShellBase::handle_media_chunk_ui_(std::uint64_t request_id,
-                                       std::vector<std::uint8_t> chunk,
-                                       std::uint8_t status,
-                                       std::uint64_t total_size)
+void ShellBase::handle_media_chunk_ui_(std::uint64_t request_id, std::vector<std::uint8_t> chunk,
+                                       std::uint8_t status, std::uint64_t total_size)
 {
     auto it = pending_media_streams_.find(request_id);
     if (it == pending_media_streams_.end())
+    {
         return; // Cancelled / unknown — drop the late callback.
+    }
     // status: 0 STREAM_CHUNK, 1 STREAM_DONE, 2 STREAM_FAILED,
     // 3 STREAM_FAILED_HASH — see IEventHandler::on_media_chunk.
     if (status == 0)
     {
         if (it->second.on_chunk)
+        {
             it->second.on_chunk(std::move(chunk), total_size);
+        }
         return;
     }
     PendingMediaStream req = std::move(it->second);
@@ -2060,7 +2324,9 @@ void ShellBase::handle_media_chunk_ui_(std::uint64_t request_id,
     if (status == 1)
     {
         if (req.on_done)
+        {
             req.on_done();
+        }
     }
     else if (req.on_failed)
     {
@@ -2068,12 +2334,13 @@ void ShellBase::handle_media_chunk_ui_(std::uint64_t request_id,
     }
 }
 
-void ShellBase::handle_url_preview_ready_ui_(std::uint64_t request_id,
-                                             std::string preview_json)
+void ShellBase::handle_url_preview_ready_ui_(std::uint64_t request_id, std::string preview_json)
 {
     auto it = pending_media_.find(request_id);
     if (it == pending_media_.end())
+    {
         return;
+    }
     PendingMediaReq req = std::move(it->second);
     pending_media_.erase(it);
     // Keep the reverse map in lockstep with pending_media_ at every removal
@@ -2083,10 +2350,276 @@ void ShellBase::handle_url_preview_ready_ui_(std::uint64_t request_id,
     {
         auto mit = media_key_to_req_.find(req.priority_key);
         if (mit != media_key_to_req_.end() && mit->second == request_id)
+        {
             media_key_to_req_.erase(mit);
+        }
     }
     on_inflight_ui_();
     if (req.on_preview)
+    {
         req.on_preview(std::move(preview_json));
+    }
 }
+
+// ── GIF strip ──────────────────────────────────────────────────────────────
+
+void ShellBase::fetch_gif_source_(const std::string& url,
+                                  std::function<void(std::vector<std::uint8_t>)> on_bytes)
+{
+    const tk::CacheKey disk_key = tk::CacheKey::gif_source(url);
+    const auto req_id =
+        begin_media_req_(0,
+                         [on_bytes = std::move(on_bytes)](std::vector<std::uint8_t>&& bytes)
+                         {
+                             on_bytes(std::move(bytes));
+                         });
+    // The session, not a raw Client*: sign-out waits for its holders to drop.
+    auto sess = active_account_;
+    if (!sess || !sess->client)
+    {
+        handle_media_ready_ui_(req_id, {});
+        return;
+    }
+    run_async_(
+        [this, sess, req_id, url, disk_key]()
+        {
+            auto bytes = account_manager_.media_disk_cache().load(disk_key);
+            if (!bytes.empty())
+            {
+                post_to_ui_alive_(
+                    [this, req_id, bytes = std::move(bytes)]() mutable
+                    {
+                        handle_media_ready_ui_(req_id, std::move(bytes));
+                    });
+                return;
+            }
+            sess->client->fetch_url_async(req_id, 0, url);
+        });
+}
+
+void ShellBase::reset_gif_failures_()
+{
+    gif_anim_unavailable_.clear();
+    gif_preview_unavailable_.clear();
+}
+
+void ShellBase::reset_gif_strip_state_()
+{
+    // A request still in flight lands harmlessly: its erase is a no-op and its
+    // result only fills the by-URL cache or re-marks the URL unavailable.
+    gif_preview_inflight_.clear();
+    gif_anim_inflight_.clear();
+    reset_gif_failures_();
+}
+
+const tk::Image* ShellBase::gif_strip_image_(const GifResult& result,
+                                             const std::function<void()>& repaint)
+{
+    using Cell = views::GifPopup;
+    const int decode_w = static_cast<int>(Cell::kCellW) * 2;
+    const int decode_h = static_cast<int>(Cell::kCellH) * 2;
+
+    const tk::CacheKey strip_key = tk::CacheKey::media(result.strip_url);
+    if (const tk::Image* f = account_manager_.anim_cache().current_frame(strip_key))
+    {
+        start_anim_tick_();
+        return f;
+    }
+
+    // Stage 1: the static preview, shown as soon as it lands.
+    if (!gif_previews_.count(tk::CacheKey::gif_preview(result.preview_url)) &&
+        !gif_preview_unavailable_.count(result.preview_url) &&
+        gif_preview_inflight_.insert(result.preview_url).second)
+    {
+        const std::string url = result.preview_url;
+        fetch_gif_source_(
+            url,
+            [this, url, repaint, decode_w, decode_h](std::vector<std::uint8_t> bytes)
+            {
+                if (bytes.empty())
+                {
+                    // Dead URL or offline: remember it, or every repaint
+                    // would start the same failing fetch again.
+                    gif_preview_inflight_.erase(url);
+                    gif_preview_unavailable_.insert(url);
+                    return;
+                }
+                // The in-flight flag stays set until the decode lands, so a
+                // repaint in between does not start another fetch.
+                run_async_(
+                    [this, url, repaint, decode_w, decode_h, bytes = std::move(bytes)]() mutable
+                    {
+                        account_manager_.media_disk_cache().store(tk::CacheKey::gif_source(url),
+                                                                  bytes);
+                        auto d = std::make_shared<DecodedImage>(
+                            decode_image_(bytes, decode_w, decode_h));
+                        post_to_ui_alive_(
+                            [this, url, d, repaint]() mutable
+                            {
+                                gif_preview_inflight_.erase(url);
+                                if (d->still)
+                                {
+                                    gif_previews_[tk::CacheKey::gif_preview(url)] =
+                                        std::move(d->still);
+                                }
+                                else
+                                {
+                                    gif_preview_unavailable_.insert(url);
+                                }
+                                repaint();
+                            });
+                    });
+            });
+    }
+
+    // Stage 2: the animation (MP4 or an animated image) replaces the preview.
+    if (!gif_anim_unavailable_.count(result.strip_url) &&
+        gif_anim_inflight_.insert(result.strip_url).second)
+    {
+        const std::string anim_url = result.strip_url;
+        const std::string anim_mime = result.strip_mime;
+        const std::string preview_url = result.preview_url;
+        auto store_frames =
+            [this, anim_url, repaint](std::vector<std::unique_ptr<tk::Image>> frames,
+                                      std::vector<int> delays) mutable
+        {
+            gif_anim_inflight_.erase(anim_url);
+            if (!frames.empty())
+            {
+                account_manager_.anim_cache().store(tk::CacheKey::media(anim_url),
+                                                    std::move(frames), std::move(delays),
+                                                    monotonic_ms_());
+                start_anim_tick_();
+            }
+            else
+            {
+                gif_anim_unavailable_.insert(anim_url);
+            }
+            repaint();
+        };
+        fetch_gif_source_(
+            anim_url,
+            [this, anim_url, anim_mime, preview_url, repaint, decode_w, decode_h,
+             store_frames](std::vector<std::uint8_t> bytes) mutable
+            {
+                if (bytes.empty())
+                {
+                    gif_anim_inflight_.erase(anim_url);
+                    gif_anim_unavailable_.insert(anim_url);
+                    return;
+                }
+                run_async_(
+                    [this, anim_url, anim_mime, preview_url, decode_w, decode_h, store_frames,
+                     bytes = std::move(bytes)]() mutable
+                    {
+                        account_manager_.media_disk_cache().store(
+                            tk::CacheKey::gif_source(anim_url), bytes);
+                        if (anim_mime == "video/mp4")
+                        {
+                            auto dvf =
+                                std::make_shared<tk::DecodedVideoFrames>(tk::decode_video_frames(
+                                    bytes.data(), bytes.size(), decode_w, decode_h));
+                            // Wrap each frame as a backend image: on this
+                            // worker when the backend allows it (a burst of
+                            // results would otherwise copy every frame on the
+                            // UI thread), otherwise on the UI thread.
+                            struct Wrapped
+                            {
+                                std::vector<std::unique_ptr<tk::Image>> imgs;
+                                std::vector<int> delays;
+                            };
+                            auto wrap = [this](const tk::DecodedVideoFrames& v)
+                            {
+                                auto w = std::make_shared<Wrapped>();
+                                for (const auto& f : v.frames)
+                                {
+                                    if (auto img = make_image_from_bgra_(f.w, f.h, f.bgra.data()))
+                                    {
+                                        w->imgs.push_back(std::move(img));
+                                        w->delays.push_back(f.delay_ms);
+                                    }
+                                }
+                                return w;
+                            };
+                            if (make_image_from_bgra_on_worker_())
+                            {
+                                auto w = wrap(*dvf);
+                                post_to_ui_alive_(
+                                    [w, store_frames]() mutable
+                                    {
+                                        store_frames(std::move(w->imgs), std::move(w->delays));
+                                    });
+                                return;
+                            }
+                            post_to_ui_alive_(
+                                [dvf, wrap, store_frames]() mutable
+                                {
+                                    auto w = wrap(*dvf);
+                                    store_frames(std::move(w->imgs), std::move(w->delays));
+                                });
+                            return;
+                        }
+                        auto d = std::make_shared<DecodedImage>(
+                            decode_image_(bytes, decode_w, decode_h));
+                        post_to_ui_alive_(
+                            [this, preview_url, d, store_frames]() mutable
+                            {
+                                if (d->frames.empty() && d->still)
+                                {
+                                    // Not animated: keep it as the preview
+                                    // when the preview fetch has not landed.
+                                    gif_previews_.try_emplace(
+                                        tk::CacheKey::gif_preview(preview_url),
+                                        std::move(d->still));
+                                }
+                                store_frames(std::move(d->frames), std::move(d->delays_ms));
+                            });
+                    });
+            });
+    }
+
+    if (auto it = gif_previews_.find(tk::CacheKey::gif_preview(result.preview_url));
+        it != gif_previews_.end())
+    {
+        return it->second.get();
+    }
+    return nullptr;
+}
+
+void ShellBase::refresh_pickers_packs_()
+{
+    if (!room_view_)
+    {
+        return;
+    }
+    room_view_->set_current_room_parent_spaces(parent_spaces_for_room_(current_room_id_));
+    room_view_->refresh_stickers();
+    room_view_->refresh_emoticon_packs();
+    if (auto* ep = room_view_->emoji_picker())
+    {
+        ep->invalidate_image_cache();
+    }
+    if (auto* sp = room_view_->sticker_picker())
+    {
+        sp->invalidate_image_cache();
+    }
+}
+
+void ShellBase::repaint_pickers_()
+{
+    if (room_view_)
+    {
+        if (auto* ep = room_view_->emoji_picker())
+        {
+            ep->invalidate_image_cache();
+        }
+        if (auto* sp = room_view_->sticker_picker())
+        {
+            sp->invalidate_image_cache();
+        }
+    }
+    request_relayout_();
+    repaint_pickers_native_();
+}
+
 } // namespace tesseract

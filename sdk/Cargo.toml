@@ -1,6 +1,6 @@
 [package]
 name    = "tesseract-sdk-ffi"
-version = "0.9.4"
+version = "0.9.6"
 edition = "2021"
 
 [lib]
@@ -12,6 +12,20 @@ crate-type = ["staticlib"]
 # without OIDC/MAS. No optional dependencies — matrix-sdk's matrix_auth() API
 # is already part of the base crate.
 legacy_login = []
+
+# Community homeserver list for the login view's "Find a server" browser
+# (sdk/src/client/server_list.rs). No optional dependencies. Without it
+# `load_server_list` is a stub reporting failure (the cxx bridge can't be
+# cfg-gated: cxxbridge doesn't see Cargo features). Enabled by
+# TESSERACT_ENABLE_SERVER_BROWSER (root CMakeLists.txt); standalone cargo runs
+# need `--features server_browser` to build/test it.
+server_browser = []
+
+# Per-request timing log (sdk/src/request_log.rs): when the app is launched with
+# TESSERACT_REQUEST_LOG set it writes every homeserver request's duration plus
+# a periodic per-endpoint summary. Off by default; enabled by
+# TESSERACT_ENABLE_REQUEST_LOG (root CMakeLists.txt) or `--features request_log`.
+request_log = []
 
 # Optional local crash handler: a Rust panic hook (sdk/src/crash_reporter.rs)
 # that complements the native signal/SEH handler on the C++ side
@@ -30,13 +44,13 @@ jemalloc = ["dep:tikv-jemallocator"]
 cxx        = "1.0"
 zeroize    = "1.9"
 tokio      = { version = "1", features = ["full"] }
-matrix-sdk    = { version = "0.19", features = ["unstable-msc4426", "unstable-msc4274", "e2e-encryption", "bundled-sqlite", "local-server", "markdown", "qrcode", "experimental-send-custom-to-device", "experimental-element-recent-emojis"] }
+matrix-sdk    = { version = "0.19", features = ["unstable-msc4354", "unstable-msc4426", "unstable-msc4274", "e2e-encryption", "bundled-sqlite", "local-server", "markdown", "qrcode", "experimental-send-custom-to-device", "experimental-element-recent-emojis"] }
 qrcode        = "0.14"
 # Needed for `UtdCause` in the timeline converter — matrix-sdk doesn't
 # re-export the crypto types module.
 matrix-sdk-base = "0.19"
 async-trait = "0.1"
-matrix-sdk-ui = { version = "0.19", features = ["unstable-msc4426", "unstable-msc4274"] }
+matrix-sdk-ui = { version = "0.19", features = ["unstable-msc4354", "unstable-msc4426", "unstable-msc4274"] }
 # Enable decryption of `m.sticker` events sent in encrypted rooms (MSC2545
 # implementations that wrap the media source as an `EncryptedFile`).
 ruma          = { version = "0.17", default-features = false, features = ["api", "compat-encrypted-stickers", "unstable-msc3245-v1-compat", "unstable-msc2448", "unstable-msc4075", "unstable-msc4095", "unstable-msc3417", "unstable-msc4334", "unstable-msc4274", "html"] }
@@ -82,12 +96,12 @@ zip            = { version = "2", default-features = false, features = ["deflate
 # built against. Cargo.lock is committed (see root .gitignore) as the
 # primary pin; these exact versions are the last combination verified to
 # build cleanly — bump both together and rebuild before loosening either.
-livekit   = { version = "=0.7.53", features = ["rustls-tls-native-roots"] }
+livekit   = { version = "=0.9.7", features = ["rustls-tls-native-roots"] }
 rustls    = { version = "0.23", features = ["aws_lc_rs"] }
 hkdf      = { version = "0.12" }
 base64ct  = { version = "1",    features = ["alloc"] }
 rand      = { version = "0.8" }
-webrtc-sys = { version = "=0.3.39" }
+webrtc-sys = { version = "=0.3.51" }
 img-parts = "0.4.0"
 little_exif = "0.6.23"
 # /myroomavatar <url>: decode, square-crop, resize and re-encode a fetched image.

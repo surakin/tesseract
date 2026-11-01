@@ -18,8 +18,7 @@ public:
     static constexpr float kWidth = 280.0f;
     static constexpr int kMaxRows = 8;
 
-    using ImageProvider =
-        std::function<const tk::Image*(const std::string& url)>;
+    using ImageProvider = std::function<const tk::Image*(const std::string& url)>;
 
     void set_suggestions(std::vector<ShortcodeSuggestion> suggestions);
     void set_image_provider(ImageProvider p)
@@ -35,16 +34,27 @@ protected:
     {
         return suggestions_.size();
     }
-    void paint_row(tk::PaintCtx& ctx, const tk::Rect& row, size_t index,
-                   bool selected, bool hovered) override;
+    void paint_row(tk::PaintCtx& ctx, const tk::Rect& row, size_t index, bool selected,
+                   bool hovered) override;
     void on_row_activated(size_t index) override
     {
         if (on_accepted)
+        {
             on_accepted(suggestions_[index]);
+        }
     }
-    float row_height() const override { return kRowHeight; }
-    float width() const override { return kWidth; }
-    int max_visible_rows() const override { return kMaxRows; }
+    float row_height() const override
+    {
+        return kRowHeight;
+    }
+    float width() const override
+    {
+        return kWidth;
+    }
+    int max_visible_rows() const override
+    {
+        return kMaxRows;
+    }
 
 public:
     // tk::WidgetRowAccessibility — suggestions_[index].shortcode is
@@ -57,8 +67,7 @@ public:
     }
     std::string access_name_for_widget_row(std::size_t index) const override
     {
-        return index < suggestions_.size() ? suggestions_[index].shortcode
-                                           : std::string{};
+        return index < suggestions_.size() ? suggestions_[index].shortcode : std::string{};
     }
 
 private:

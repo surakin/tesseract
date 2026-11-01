@@ -45,8 +45,7 @@ protected:
 
 public:
     using RoomsProvider = std::function<std::vector<tesseract::RoomInfo>()>;
-    using AvatarProvider =
-        std::function<const tk::Image*(const std::string& mxc_url)>;
+    using AvatarProvider = std::function<const tk::Image*(const std::string& mxc_url)>;
 
     // ── Data ──────────────────────────────────────────────────────────────
     void set_recent_provider(RoomsProvider p);
@@ -85,15 +84,20 @@ public:
     void on_pointer_up(tk::Point local, bool inside_self) override;
 
     // ── tk::WidgetRowAccessibility ────────────────────────────────────────
-    tk::Role access_role() const override { return tk::Role::List; }
-    std::size_t access_row_count() const override { return rooms_.size(); }
+    tk::Role access_role() const override
+    {
+        return tk::Role::List;
+    }
+    std::size_t access_row_count() const override
+    {
+        return rooms_.size();
+    }
     tk::Role access_role_for_widget_row(std::size_t index) const override
     {
         return index < rooms_.size() ? tk::Role::ListItem : tk::Role::None;
     }
     std::string access_name_for_widget_row(std::size_t index) const override;
-    tk::AccessState
-    access_state_for_widget_row(std::size_t index) const override
+    tk::AccessState access_state_for_widget_row(std::size_t index) const override
     {
         tk::AccessState s;
         s.selected = static_cast<int>(index) == selected_;
@@ -102,7 +106,9 @@ public:
     bool access_activate_widget_row(std::size_t index) override
     {
         if (index >= rooms_.size())
+        {
             return false;
+        }
         selected_ = static_cast<int>(index);
         commit(); // fires on_room_selected + closes, same as a chip click
         return true;

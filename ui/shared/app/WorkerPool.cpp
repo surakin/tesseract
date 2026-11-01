@@ -20,16 +20,24 @@ WorkerPool::WorkerPool(int threads)
                     std::function<void()> notify;
                     {
                         std::unique_lock<std::mutex> lk(mu_);
-                        cv_.wait(lk, [this] { return stop_ || !queue_.empty(); });
+                        cv_.wait(lk,
+                                 [this]
+                                 {
+                                     return stop_ || !queue_.empty();
+                                 });
                         if (stop_ && queue_.empty())
+                        {
                             return;
+                        }
                         task = std::move(queue_.front());
                         queue_.pop_front();
                         pending_.fetch_sub(1, std::memory_order_relaxed);
                         notify = on_change_;
                     }
                     if (notify)
+                    {
                         notify();
+                    }
                     // A throwing task must not take the process down, and must
                     // not skip the in_flight_ decrement below.
                     try
@@ -85,7 +93,9 @@ void WorkerPool::drain()
         // Joining a pool thread from one of its own tasks would deadlock.
         assert(!t.joinable() || t.get_id() != std::this_thread::get_id());
         if (t.joinable())
+        {
             t.join();
+        }
     }
 }
 
@@ -100,7 +110,9 @@ void WorkerPool::post(std::function<void()> fn)
     {
         std::lock_guard<std::mutex> lk(mu_);
         if (stop_)
+        {
             return;
+        }
         pending_.fetch_add(1, std::memory_order_relaxed);
         in_flight_.fetch_add(1, std::memory_order_relaxed);
         queue_.push_back(std::move(fn));
@@ -108,7 +120,9 @@ void WorkerPool::post(std::function<void()> fn)
     }
     cv_.notify_one();
     if (notify)
+    {
         notify();
+    }
 }
 
 } // namespace tesseract

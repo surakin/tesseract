@@ -19,10 +19,8 @@ public:
     // Feed decoded S16LE PCM samples to the output device.
     // `sample_rate` and `num_channels` must stay constant across calls.
     // Called on the UI thread (post-marshalled by EventHandlerBase).
-    virtual void push_frame(const std::int16_t* samples,
-                            std::size_t         sample_count,
-                            std::uint32_t       sample_rate,
-                            std::uint32_t       num_channels) = 0;
+    virtual void push_frame(const std::int16_t* samples, std::size_t sample_count,
+                            std::uint32_t sample_rate, std::uint32_t num_channels) = 0;
 };
 
 // Factory declarations — each defined in audio_playback_<platform>.cpp.

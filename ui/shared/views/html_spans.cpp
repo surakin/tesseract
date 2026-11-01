@@ -4,7 +4,9 @@
 #include "tesseract/client.h"
 #include "tesseract/highlight.h"
 
+#include <algorithm>
 #include <cctype>
+#include <charconv>
 #include <cstdint>
 #include <cstring>
 #include <optional>
@@ -106,9 +108,8 @@ void decode_entity(const char*& p, const char* end, std::string& out)
                     }
                     else
                     {
-                        cp += static_cast<uint32_t>(
-                            std::tolower(static_cast<unsigned char>(*p)) - 'a' +
-                            10);
+                        cp += static_cast<uint32_t>(std::tolower(static_cast<unsigned char>(*p)) -
+                                                    'a' + 10);
                     }
                 }
                 // else: keep consuming digits but stop accumulating so the
@@ -205,16 +206,17 @@ void decode_entity(const char*& p, const char* end, std::string& out)
 
 struct Tag
 {
-    std::string name;           // lower-cased tag name
-    std::string href;           // non-empty only for <a href="http(s)://...">
-    std::string spoiler_reason; // value of data-mx-spoiler (may be empty)
-    std::string code_lang; // language token from class="language-X" on pre/code
-    std::string img_src;        // <img src="..."> (MSC2545 inline emoticon)
-    std::string img_alt;        // <img alt="..."> falling back to title="..."
-    bool has_spoiler = false;   // true when data-mx-spoiler attribute present
+    std::string name;            // lower-cased tag name
+    std::string href;            // non-empty only for <a href="http(s)://...">
+    std::string spoiler_reason;  // value of data-mx-spoiler (may be empty)
+    std::string code_lang;       // language token from class="language-X" on pre/code
+    std::string img_src;         // <img src="..."> (MSC2545 inline emoticon)
+    std::string img_alt;         // <img alt="..."> falling back to title="..."
+    bool has_spoiler = false;    // true when data-mx-spoiler attribute present
     bool is_mx_emoticon = false; // <img data-mx-emoticon> attribute present
     bool closing = false;
     bool self_closing = false;
+    int list_start = 1; // <ol start="N">, clamped; 1 when absent or unparsable
     TableAlign cell_align = TableAlign::Default; // <td>/<th> text-align
 };
 
@@ -227,19 +229,31 @@ static TableAlign parse_cell_align(std::string_view style, std::string_view alig
     {
         // Trim ASCII whitespace.
         while (!v.empty() && std::isspace(static_cast<unsigned char>(v.front())))
+        {
             v.remove_prefix(1);
+        }
         while (!v.empty() && std::isspace(static_cast<unsigned char>(v.back())))
+        {
             v.remove_suffix(1);
+        }
         std::string lc;
         lc.reserve(v.size());
         for (char c : v)
+        {
             lc += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
         if (lc == "left")
+        {
             return TableAlign::Left;
+        }
         if (lc == "center" || lc == "centre")
+        {
             return TableAlign::Center;
+        }
         if (lc == "right")
+        {
             return TableAlign::Right;
+        }
         return TableAlign::Default;
     };
 
@@ -248,31 +262,38 @@ static TableAlign parse_cell_align(std::string_view style, std::string_view alig
     while (i < style.size())
     {
         const std::size_t semi = style.find(';', i);
-        std::string_view decl = style.substr(
-            i, semi == std::string_view::npos ? std::string_view::npos : semi - i);
+        std::string_view decl =
+            style.substr(i, semi == std::string_view::npos ? std::string_view::npos : semi - i);
         const std::size_t colon = decl.find(':');
         if (colon != std::string_view::npos)
         {
             std::string_view prop = decl.substr(0, colon);
-            while (!prop.empty() &&
-                   std::isspace(static_cast<unsigned char>(prop.front())))
+            while (!prop.empty() && std::isspace(static_cast<unsigned char>(prop.front())))
+            {
                 prop.remove_prefix(1);
-            while (!prop.empty() &&
-                   std::isspace(static_cast<unsigned char>(prop.back())))
+            }
+            while (!prop.empty() && std::isspace(static_cast<unsigned char>(prop.back())))
+            {
                 prop.remove_suffix(1);
+            }
             std::string prop_lc;
             for (char c : prop)
-                prop_lc +=
-                    static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            {
+                prop_lc += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            }
             if (prop_lc == "text-align")
             {
                 TableAlign a = classify(decl.substr(colon + 1));
                 if (a != TableAlign::Default)
+                {
                     return a;
+                }
             }
         }
         if (semi == std::string_view::npos)
+        {
             break;
+        }
         i = semi + 1;
     }
 
@@ -293,8 +314,7 @@ static std::string lang_from_class(std::string_view cls)
             ++i;
         }
         std::size_t j = i;
-        while (j < cls.size() &&
-               !std::isspace(static_cast<unsigned char>(cls[j])))
+        while (j < cls.size() && !std::isspace(static_cast<unsigned char>(cls[j])))
         {
             ++j;
         }
@@ -314,8 +334,7 @@ static std::string lang_from_class(std::string_view cls)
             for (char c : tok.substr(prefix.size()))
             {
                 unsigned char uc = static_cast<unsigned char>(c);
-                if (std::isalnum(uc) || c == '+' || c == '#' || c == '.' ||
-                    c == '-' || c == '_')
+                if (std::isalnum(uc) || c == '+' || c == '#' || c == '.' || c == '-' || c == '_')
                 {
                     out += static_cast<char>(std::tolower(uc));
                 }
@@ -330,8 +349,7 @@ static std::string lang_from_class(std::string_view cls)
 // Scan [p, end) for the attribute named `target` (case-insensitive).
 // Returns the attribute value when found (empty string for boolean attributes
 // with no value), or std::nullopt when the attribute is absent entirely.
-static std::optional<std::string> extract_attr(const char* p, const char* end,
-                                               const char* target)
+static std::optional<std::string> extract_attr(const char* p, const char* end, const char* target)
 {
     const std::size_t tlen = std::strlen(target);
     while (p < end)
@@ -387,8 +405,8 @@ static std::optional<std::string> extract_attr(const char* p, const char* end,
         else if (has_value)
         {
             // Unquoted value.
-            while (p < end && !std::isspace(static_cast<unsigned char>(*p)) &&
-                   *p != '>' && *p != '/')
+            while (p < end && !std::isspace(static_cast<unsigned char>(*p)) && *p != '>' &&
+                   *p != '/')
             {
                 value += *p++;
             }
@@ -400,9 +418,8 @@ static std::optional<std::string> extract_attr(const char* p, const char* end,
             bool match = true;
             for (std::size_t i = 0; i < tlen && match; ++i)
             {
-                match =
-                    (std::tolower(static_cast<unsigned char>(name_start[i])) ==
-                     static_cast<unsigned char>(target[i]));
+                match = (std::tolower(static_cast<unsigned char>(name_start[i])) ==
+                         static_cast<unsigned char>(target[i]));
             }
             if (match)
             {
@@ -456,11 +473,9 @@ Tag parse_tag(const char*& p, const char* end)
         return t;
     }
 
-    while (p < end &&
-           (std::isalnum(static_cast<unsigned char>(*p)) || *p == '-'))
+    while (p < end && (std::isalnum(static_cast<unsigned char>(*p)) || *p == '-'))
     {
-        t.name +=
-            static_cast<char>(std::tolower(static_cast<unsigned char>(*p++)));
+        t.name += static_cast<char>(std::tolower(static_cast<unsigned char>(*p++)));
     }
 
     // Record attribute start for href extraction on <a> tags.
@@ -500,10 +515,42 @@ Tag parse_tag(const char*& p, const char* end)
     if (t.name == "a" && !t.closing)
     {
         auto href = extract_attr(attr_start, attr_end, "href");
-        if (href &&
-            (href->rfind("http://", 0) == 0 || href->rfind("https://", 0) == 0))
+        if (href && (href->rfind("http://", 0) == 0 || href->rfind("https://", 0) == 0))
         {
             t.href = std::move(*href);
+        }
+    }
+
+    // For opening <ol> tags read the start attribute (MSC4313). Follows HTML's
+    // "rules for parsing integers": leading whitespace, optional sign, digits,
+    // trailing junk ignored. HTML allows 0 and negative values.
+    if (t.name == "ol" && !t.closing)
+    {
+        if (auto start = extract_attr(attr_start, attr_end, "start"))
+        {
+            std::string_view v = *start;
+            while (!v.empty() && std::isspace(static_cast<unsigned char>(v.front())))
+            {
+                v.remove_prefix(1);
+            }
+            if (!v.empty() && v.front() == '+')
+            {
+                v.remove_prefix(1);
+            }
+            long long n = 0;
+            const char* b = v.data();
+            const char* e = v.data() + v.size();
+            auto r = std::from_chars(b, e, n);
+            if (r.ec == std::errc{} && r.ptr != b)
+            {
+                t.list_start =
+                    static_cast<int>(std::clamp<long long>(n, -1'000'000'000LL, 1'000'000'000LL));
+            }
+            else if (r.ec == std::errc::result_out_of_range)
+            {
+                // Digits too large for long long: saturate by sign.
+                t.list_start = *b == '-' ? -1'000'000'000 : 1'000'000'000;
+            }
         }
     }
 
@@ -534,8 +581,7 @@ Tag parse_tag(const char*& p, const char* end)
     // tag, whether written self-closed ("<img .../>") or bare ("<img ...>").
     if (t.name == "img" && !t.closing)
     {
-        t.is_mx_emoticon =
-            extract_attr(attr_start, attr_end, "data-mx-emoticon").has_value();
+        t.is_mx_emoticon = extract_attr(attr_start, attr_end, "data-mx-emoticon").has_value();
         if (auto src = extract_attr(attr_start, attr_end, "src"))
         {
             t.img_src = std::move(*src);
@@ -609,7 +655,9 @@ static tk::PillKind pill_kind_for_link(const std::string& url)
     // case it to match the plain-text heuristic rather than silently
     // dropping back to a plain, non-pill link.
     if (is_room_mention_sentinel_href(url))
+    {
         return tk::PillKind::Room;
+    }
 
     using Kind = tesseract::Client::MatrixLink::Kind;
     switch (tesseract::Client::parse_matrix_link(url).kind)
@@ -636,11 +684,58 @@ static tk::PillKind pill_kind_for_link(const std::string& url)
 static std::string strip_leading_at(std::string s)
 {
     if (!s.empty() && s.front() == '@')
+    {
         s.erase(0, 1);
+    }
     return s;
 }
 
 } // namespace
+
+// Bare http(s):// and matrix: URLs in HTML text nodes (senders such as Element
+// leave them unwrapped in formatted_body). Only plain text runs are split;
+// existing links, code, pills and images are left alone.
+static std::vector<tk::TextSpan> linkify_bare_urls(std::vector<tk::TextSpan> spans)
+{
+    std::vector<tk::TextSpan> out;
+    out.reserve(spans.size());
+    for (auto& sp : spans)
+    {
+        if (!sp.url.empty() || sp.code || sp.is_image || sp.is_mention || sp.text.empty())
+        {
+            out.push_back(std::move(sp));
+            continue;
+        }
+        const auto found = tesseract::find_url_spans(sp.text);
+        if (found.empty())
+        {
+            out.push_back(std::move(sp));
+            continue;
+        }
+        auto piece = [&](std::size_t from, std::size_t to, const std::string& url)
+        {
+            tk::TextSpan n = sp;
+            n.text = sp.text.substr(from, to - from);
+            n.url = url;
+            out.push_back(std::move(n));
+        };
+        std::size_t pos = 0;
+        for (const auto& us : found)
+        {
+            if (us.start > pos)
+            {
+                piece(pos, us.start, {});
+            }
+            piece(us.start, us.end, us.url);
+            pos = us.end;
+        }
+        if (pos < sp.text.size())
+        {
+            piece(pos, sp.text.size(), {});
+        }
+    }
+    return out;
+}
 
 // Split plain (non-link, non-code) spans on a word-bounded literal "@room"
 // token, flagging that token as a mention pill. `@room` mentions arrive as
@@ -649,11 +744,12 @@ static std::string strip_leading_at(std::string s)
 // Declared in html_spans.h — also called directly on plain (non-HTML)
 // m.body spans by MessageListView, so a plain m.text @room mention (no
 // formatted_body) still renders as a pill.
-std::vector<tk::TextSpan>
-split_room_mentions(std::vector<tk::TextSpan> spans, bool dark)
+std::vector<tk::TextSpan> split_room_mentions(std::vector<tk::TextSpan> spans, bool dark)
 {
     auto is_word = [](unsigned char ch)
-    { return std::isalnum(ch) != 0 || ch == '_'; };
+    {
+        return std::isalnum(ch) != 0 || ch == '_';
+    };
     std::vector<tk::TextSpan> out;
     out.reserve(spans.size());
     for (auto& sp : spans)
@@ -676,8 +772,7 @@ split_room_mentions(std::vector<tk::TextSpan> spans, bool dark)
             }
             std::size_t after = pos + 5;
             bool left_ok = (pos == 0) || !is_word((unsigned char)t[pos - 1]);
-            bool right_ok =
-                (after >= t.size()) || !is_word((unsigned char)t[after]);
+            bool right_ok = (after >= t.size()) || !is_word((unsigned char)t[after]);
             if (left_ok && right_ok)
             {
                 if (pos > emitted)
@@ -702,11 +797,11 @@ split_room_mentions(std::vector<tk::TextSpan> spans, bool dark)
                 m.is_image = true;
                 m.image_alt = "room"; // the pill shape conveys "mention", not the '@'
                 m.has_color = true;
-                m.color = dark ? tk::Color{0xA8, 0xC5, 0xFF, 0xFF}
-                               : tk::Color{0x1B, 0x4A, 0xC2, 0xFF};
+                m.color =
+                    dark ? tk::Color{0xA8, 0xC5, 0xFF, 0xFF} : tk::Color{0x1B, 0x4A, 0xC2, 0xFF};
                 m.has_background = true;
-                m.background = dark ? tk::Color{0x2E, 0x3B, 0x5E, 0xFF}
-                                    : tk::Color{0xDB, 0xE5, 0xFF, 0xFF};
+                m.background =
+                    dark ? tk::Color{0x2E, 0x3B, 0x5E, 0xFF} : tk::Color{0xDB, 0xE5, 0xFF, 0xFF};
                 out.push_back(std::move(m));
                 emitted = after;
                 i = after;
@@ -776,11 +871,10 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
             // no text content of its own, not a compatible formatting run
             // to merge with, even when the surrounding formatting matches.
             if (!prev.is_image && prev.url == s.url && prev.spoiler == s.spoiler &&
-                prev.spoiler_reason == s.spoiler_reason &&
-                prev.bold == s.bold && prev.semibold == s.semibold &&
-                prev.italic == s.italic &&
-                prev.code == s.code && prev.strikethrough == s.strikethrough &&
-                prev.is_mention == s.is_mention && prev.pill_kind == s.pill_kind)
+                prev.spoiler_reason == s.spoiler_reason && prev.bold == s.bold &&
+                prev.semibold == s.semibold && prev.italic == s.italic && prev.code == s.code &&
+                prev.strikethrough == s.strikethrough && prev.is_mention == s.is_mention &&
+                prev.pill_kind == s.pill_kind)
             {
                 prev.text += cur_text;
                 cur_text.clear();
@@ -813,11 +907,10 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
             sp.is_image = true;
             sp.image_alt = strip_leading_at(cur_text);
             sp.has_color = true;
-            sp.color = dark ? tk::Color{0xA8, 0xC5, 0xFF, 0xFF}
-                            : tk::Color{0x1B, 0x4A, 0xC2, 0xFF};
+            sp.color = dark ? tk::Color{0xA8, 0xC5, 0xFF, 0xFF} : tk::Color{0x1B, 0x4A, 0xC2, 0xFF};
             sp.has_background = true;
-            sp.background = dark ? tk::Color{0x2E, 0x3B, 0x5E, 0xFF}
-                                 : tk::Color{0xDB, 0xE5, 0xFF, 0xFF};
+            sp.background =
+                dark ? tk::Color{0x2E, 0x3B, 0x5E, 0xFF} : tk::Color{0xDB, 0xE5, 0xFF, 0xFF};
         }
         else
         {
@@ -831,7 +924,7 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
     // decoded) source text and, if a language is known, run it through the
     // syntax highlighter to emit per-token colored spans. Unknown/empty
     // language → a single uncolored monospace span (the legacy behaviour).
-    bool        in_code_block = false;
+    bool in_code_block = false;
     std::string code_buf;
     std::string code_lang;
 
@@ -855,11 +948,11 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
             for (auto& h : hl)
             {
                 tk::TextSpan sp;
-                sp.text       = std::move(h.text);
-                sp.code       = true;
+                sp.text = std::move(h.text);
+                sp.code = true;
                 sp.code_block = true;
-                sp.has_color  = true;
-                sp.color      = tk::Color{h.r, h.g, h.b, 255};
+                sp.has_color = true;
+                sp.color = tk::Color{h.r, h.g, h.b, 255};
                 spans.push_back(std::move(sp));
             }
         }
@@ -879,8 +972,7 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
                     emit_code_block();
                     in_code_block = false;
                 }
-                else if (!tag.closing && tag.name == "code" &&
-                         code_lang.empty())
+                else if (!tag.closing && tag.name == "code" && code_lang.empty())
                 {
                     // Language carried on the inner <code class="language-X">.
                     code_lang = tag.code_lang;
@@ -978,8 +1070,7 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
                     code_lang = tag.code_lang; // inner <code> may set it later
                     continue;
                 }
-                else if (tag.name == "del" || tag.name == "s" ||
-                         tag.name == "strike")
+                else if (tag.name == "del" || tag.name == "s" || tag.name == "strike")
                 {
                     ns.strikethrough = true;
                 }
@@ -1086,7 +1177,9 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
                 // cleanly in Element but was gaining a leading space per line
                 // here.
                 if (!just_broke_line && (cur_text.empty() || cur_text.back() != ' '))
+                {
                     cur_text += ' ';
+                }
             }
             else
             {
@@ -1120,7 +1213,7 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
         }
     }
 
-    return split_room_mentions(std::move(spans), dark);
+    return split_room_mentions(linkify_bare_urls(std::move(spans)), dark);
 }
 
 // ── URL extraction helpers ────────────────────────────────────────────────
@@ -1129,40 +1222,153 @@ std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark)
 // are Matrix entity references, not web pages — skip them for URL preview.
 static bool is_matrix_to_url(const std::string& url)
 {
-    return url.rfind("https://matrix.to", 0) == 0 ||
-           url.rfind("http://matrix.to", 0) == 0;
+    return url.rfind("https://matrix.to", 0) == 0 || url.rfind("http://matrix.to", 0) == 0;
 }
 
-std::string first_url_from_html(std::string_view html)
+// Decode every HTML entity in `s` (attribute values reach us undecoded).
+static std::string decode_entities(std::string_view s)
 {
-    // Walk the HTML looking for the first <a href="http(s)://..."> tag that
-    // is not a matrix.to permalink.
+    std::string out;
+    const char* p = s.data();
+    const char* end = p + s.size();
+    while (p < end)
+    {
+        if (*p == '&')
+        {
+            decode_entity(p, end, out);
+        }
+        else
+        {
+            out += *p++;
+        }
+    }
+    return out;
+}
+
+// Compare form of a URL for "is the link text the URL itself": no scheme, no
+// trailing slash, surrounding whitespace trimmed.
+static std::string_view url_compare_form(std::string_view s)
+{
+    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front())))
+    {
+        s.remove_prefix(1);
+    }
+    while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back())))
+    {
+        s.remove_suffix(1);
+    }
+    for (std::string_view scheme : {"https://", "http://"})
+    {
+        if (s.substr(0, scheme.size()) == scheme)
+        {
+            s.remove_prefix(scheme.size());
+            break;
+        }
+    }
+    while (!s.empty() && s.back() == '/')
+    {
+        s.remove_suffix(1);
+    }
+    return s;
+}
+
+// Walk the HTML for the first <a href="http(s)://..."> whose visible text is
+// the URL itself (an autolinked bare URL), skipping matrix.to permalinks and
+// links inside <pre>/<code> (a URL shown as code was not meant as a link to
+// preview; Tesseract's own renderer never emits one, another client could).
+// The href of every link with other text (Markdown `[text](url)`) is added to
+// `embedded`: the author chose to hide that URL, so it gets no preview.
+static std::string first_bare_url_from_html(std::string_view html,
+                                            std::vector<std::string>& embedded)
+{
     const char* p = html.data();
     const char* end = p + html.size();
+    int code_depth = 0;
+    std::string href; // href of the <a> being read; empty outside one
+    std::string text; // its visible text so far
     while (p < end)
     {
         if (*p == '<')
         {
             Tag tag = parse_tag(p, end);
-            if (!tag.href.empty() && !is_matrix_to_url(tag.href))
+            if (tag.name == "pre" || tag.name == "code")
             {
-                return tag.href;
+                if (tag.closing)
+                {
+                    if (code_depth > 0)
+                    {
+                        --code_depth;
+                    }
+                }
+                else
+                {
+                    ++code_depth;
+                }
+                continue;
             }
+            if (tag.name != "a")
+            {
+                continue;
+            }
+            if (!tag.closing)
+            {
+                href.clear();
+                text.clear();
+                if (code_depth == 0 && !tag.href.empty() && !is_matrix_to_url(tag.href))
+                {
+                    href = decode_entities(tag.href);
+                }
+            }
+            else if (!href.empty())
+            {
+                if (url_compare_form(text) == url_compare_form(href))
+                {
+                    return href;
+                }
+                embedded.push_back(std::move(href));
+                href.clear();
+            }
+        }
+        else if (!href.empty() && *p == '&')
+        {
+            decode_entity(p, end, text);
         }
         else
         {
+            if (!href.empty())
+            {
+                text += *p;
+            }
             ++p;
         }
     }
     return {};
 }
 
-std::string first_url_from_plain(std::string_view text)
+std::string first_preview_url(std::string_view html, std::string_view body)
 {
-    for (const auto& s : tesseract::find_url_spans(text))
+    std::vector<std::string> embedded;
+    if (!html.empty())
     {
-        if (!is_matrix_to_url(s.url))
-            return s.url;
+        std::string url = first_bare_url_from_html(html, embedded);
+        if (!url.empty())
+        {
+            return url;
+        }
+    }
+    // The plain body still carries embedded links' URLs (`[text](url)`, or a
+    // `text (url)` fallback), so those are skipped here too.
+    for (const auto& s : tesseract::find_preview_url_spans(body))
+    {
+        if (is_matrix_to_url(s.url))
+        {
+            continue;
+        }
+        if (std::find(embedded.begin(), embedded.end(), s.url) != embedded.end())
+        {
+            continue;
+        }
+        return s.url;
     }
     return {};
 }
@@ -1171,7 +1377,9 @@ std::vector<tk::TextSpan> autolink_plain_to_spans(std::string_view text)
 {
     auto url_spans = tesseract::find_url_spans(text);
     if (url_spans.empty())
+    {
         return {};
+    }
 
     std::vector<tk::TextSpan> spans;
     std::size_t pos = 0;
@@ -1185,7 +1393,7 @@ std::vector<tk::TextSpan> autolink_plain_to_spans(std::string_view text)
         }
         tk::TextSpan link;
         link.text = std::string(text.substr(us.start, us.end - us.start));
-        link.url  = us.url;
+        link.url = us.url;
         spans.push_back(std::move(link));
         pos = us.end;
     }
@@ -1208,7 +1416,9 @@ std::vector<tk::TextSpan> autolink_plain_to_spans(std::string_view text)
 std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
 {
     if (html.empty())
+    {
         return {};
+    }
 
     std::vector<BodyBlock> blocks;
 
@@ -1217,10 +1427,15 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
     // are maintained as we descend into nested structures.
     struct BlockCtx
     {
-        enum Kind { BQ, UL, OL };
+        enum Kind
+        {
+            BQ,
+            UL,
+            OL
+        };
         Kind kind;
-        int  level;    // 1-based nesting depth
-        int  counter;  // next item number for OL; unused for BQ/UL
+        int level;   // 1-based nesting depth
+        int counter; // next item number for OL; unused for BQ/UL
         // Opened past kMaxBlockNesting: kept so its closing tag still matches,
         // but it adds no indent and no list of its own.
         bool flattened = false;
@@ -1235,18 +1450,18 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
     // BodyBlock{Kind::Table} on </table>. While inside a cell the shared
     // inline machinery (flush(), the format stack, cur.spans / cur_text) is
     // reused as scratch; commit_cell() moves the result into cur_row.
-    int       table_depth = 0;     // >0 inside <table>; >1 = nested (flattened)
-    bool      in_thead    = false; // inside <thead>
+    int table_depth = 0;   // >0 inside <table>; >1 = nested (flattened)
+    bool in_thead = false; // inside <thead>
     BodyTable tbl;
     std::vector<TableCell> cur_row;
-    bool                   cur_row_is_header = false;
+    bool cur_row_is_header = false;
 
     // Suppress leading paragraph separator inside each block.
     bool first_in_block = true;
 
     // Current block being assembled.
     BodyBlock cur;
-    cur.kind  = BodyBlock::Kind::Paragraph;
+    cur.kind = BodyBlock::Kind::Paragraph;
     cur.level = 0;
     cur.index = 0;
 
@@ -1267,7 +1482,9 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
     auto flush = [&]()
     {
         if (cur_text.empty())
+        {
             return;
+        }
         const FmtState& s = stack.back();
         if (!cur.spans.empty())
         {
@@ -1275,12 +1492,10 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
             // Never append text into an image span — see html_to_spans()'s
             // identical guard.
             if (!prev.is_image && prev.url == s.url && prev.spoiler == s.spoiler &&
-                prev.spoiler_reason == s.spoiler_reason &&
-                prev.bold == s.bold && prev.semibold == s.semibold &&
-                prev.italic == s.italic &&
-                prev.code == s.code &&
-                prev.strikethrough == s.strikethrough &&
-                prev.is_mention == s.is_mention && prev.pill_kind == s.pill_kind)
+                prev.spoiler_reason == s.spoiler_reason && prev.bold == s.bold &&
+                prev.semibold == s.semibold && prev.italic == s.italic && prev.code == s.code &&
+                prev.strikethrough == s.strikethrough && prev.is_mention == s.is_mention &&
+                prev.pill_kind == s.pill_kind)
             {
                 prev.text += cur_text;
                 cur_text.clear();
@@ -1288,29 +1503,28 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
             }
         }
         tk::TextSpan sp;
-        sp.url           = s.url;
-        sp.spoiler       = s.spoiler;
+        sp.url = s.url;
+        sp.spoiler = s.spoiler;
         sp.spoiler_reason = s.spoiler_reason;
-        sp.bold          = s.bold;
-        sp.semibold      = s.semibold;
-        sp.italic        = s.italic;
-        sp.code          = s.code;
+        sp.bold = s.bold;
+        sp.semibold = s.semibold;
+        sp.italic = s.italic;
+        sp.code = s.code;
         sp.strikethrough = s.strikethrough;
         if (s.is_mention)
         {
             // See html_to_spans()'s identical flush() for why mentions are
             // is_image leaves now (image_alt carries the label) rather than
             // colored text.
-            sp.is_mention    = true;
-            sp.pill_kind     = s.pill_kind;
-            sp.is_image      = true;
-            sp.image_alt     = strip_leading_at(cur_text);
-            sp.has_color     = true;
-            sp.color         = dark ? tk::Color{0xA8, 0xC5, 0xFF, 0xFF}
-                                    : tk::Color{0x1B, 0x4A, 0xC2, 0xFF};
+            sp.is_mention = true;
+            sp.pill_kind = s.pill_kind;
+            sp.is_image = true;
+            sp.image_alt = strip_leading_at(cur_text);
+            sp.has_color = true;
+            sp.color = dark ? tk::Color{0xA8, 0xC5, 0xFF, 0xFF} : tk::Color{0x1B, 0x4A, 0xC2, 0xFF};
             sp.has_background = true;
-            sp.background    = dark ? tk::Color{0x2E, 0x3B, 0x5E, 0xFF}
-                                    : tk::Color{0xDB, 0xE5, 0xFF, 0xFF};
+            sp.background =
+                dark ? tk::Color{0x2E, 0x3B, 0x5E, 0xFF} : tk::Color{0xDB, 0xE5, 0xFF, 0xFF};
         }
         else
         {
@@ -1320,9 +1534,16 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
         cur_text.clear();
     };
 
+    // True from a list item's <li> until the item block is committed; lets an
+    // empty <li></li> survive commit_block() so its number still shows (MSC4313).
+    bool li_pending = false;
+
     // commit_block() — trim, @room-split, and push cur to blocks; reset cur.
     auto commit_block = [&]()
     {
+        const bool keep_empty_item = li_pending && (cur.kind == BodyBlock::Kind::OrderedItem ||
+                                                    cur.kind == BodyBlock::Kind::UnorderedItem);
+        li_pending = false;
         flush();
         if (!cur.spans.empty() && !cur.spans.back().is_image)
         {
@@ -1332,9 +1553,13 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
             // trailing-newline trimming.
             std::string& t = cur.spans.back().text;
             while (!t.empty() && t.back() == '\n')
+            {
                 t.pop_back();
+            }
             if (t.empty())
+            {
                 cur.spans.pop_back();
+            }
         }
         // Trim CSS-collapsible leading whitespace from the first span so that
         // all text-layout backends share identical byte offsets in
@@ -1350,27 +1575,35 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
             // before it, e.g. a message that opens with a custom emoji)
             // gets silently erased entirely.
             if (cur.spans.front().is_image)
+            {
                 break;
-            std::string& t   = cur.spans.front().text;
-            const auto   nsp = t.find_first_not_of(' ');
+            }
+            std::string& t = cur.spans.front().text;
+            const auto nsp = t.find_first_not_of(' ');
             if (nsp == std::string::npos)
             {
                 cur.spans.erase(cur.spans.begin());
                 continue;
             }
             if (nsp > 0)
+            {
                 t.erase(0, nsp);
+            }
             break;
         }
         if (!cur.spans.empty())
         {
-            cur.spans = split_room_mentions(std::move(cur.spans), dark);
+            cur.spans = split_room_mentions(linkify_bare_urls(std::move(cur.spans)), dark);
             blocks.push_back(std::move(cur));
         }
-        cur        = BodyBlock{};
-        cur.kind   = BodyBlock::Kind::Paragraph;
-        cur.level  = 0;
-        cur.index  = 0;
+        else if (keep_empty_item)
+        {
+            blocks.push_back(std::move(cur));
+        }
+        cur = BodyBlock{};
+        cur.kind = BodyBlock::Kind::Paragraph;
+        cur.level = 0;
+        cur.index = 0;
     };
 
     // commit_cell() — finish the current <td>/<th> and append it to cur_row.
@@ -1384,28 +1617,38 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
         {
             std::string& t = cur.spans.back().text;
             while (!t.empty() && t.back() == '\n')
+            {
                 t.pop_back();
+            }
             if (t.empty())
+            {
                 cur.spans.pop_back();
+            }
         }
         while (!cur.spans.empty())
         {
             if (cur.spans.front().is_image)
+            {
                 break;
-            std::string& t   = cur.spans.front().text;
-            const auto   nsp = t.find_first_not_of(' ');
+            }
+            std::string& t = cur.spans.front().text;
+            const auto nsp = t.find_first_not_of(' ');
             if (nsp == std::string::npos)
             {
                 cur.spans.erase(cur.spans.begin());
                 continue;
             }
             if (nsp > 0)
+            {
                 t.erase(0, nsp);
+            }
             break;
         }
         TableCell cell;
         if (!cur.spans.empty())
-            cell.spans = split_room_mentions(std::move(cur.spans), dark);
+        {
+            cell.spans = split_room_mentions(linkify_bare_urls(std::move(cur.spans)), dark);
+        }
         cur_row.push_back(std::move(cell));
         cur.spans.clear();
         cur_text.clear();
@@ -1419,33 +1662,39 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
         {
             tbl.rows.push_back(std::move(cur_row));
             if (cur_row_is_header)
+            {
                 ++tbl.header_rows;
+            }
             cur_row.clear();
         }
         std::size_t ncols = 0;
         for (const auto& r : tbl.rows)
+        {
             ncols = std::max(ncols, r.size());
+        }
         if (ncols != 0)
         {
             for (auto& r : tbl.rows)
+            {
                 r.resize(ncols);
+            }
             tbl.col_align.resize(ncols, TableAlign::Default);
             BodyBlock b;
-            b.kind  = BodyBlock::Kind::Table;
+            b.kind = BodyBlock::Kind::Table;
             b.table = std::move(tbl);
             blocks.push_back(std::move(b));
         }
-        tbl               = BodyTable{};
+        tbl = BodyTable{};
         cur_row.clear();
         cur_row_is_header = false;
-        in_thead          = false;
-        cur               = BodyBlock{};
-        cur.kind          = BodyBlock::Kind::Paragraph;
-        first_in_block    = true;
+        in_thead = false;
+        cur = BodyBlock{};
+        cur.kind = BodyBlock::Kind::Paragraph;
+        first_in_block = true;
     };
 
     // Code-block capture — same as html_to_spans().
-    bool        in_code_block = false;
+    bool in_code_block = false;
     std::string code_buf;
     std::string code_lang;
 
@@ -1456,12 +1705,14 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
         // Build the code-block block.
         std::vector<tesseract::HighlightSpan> hl;
         if (!code_lang.empty())
+        {
             hl = tesseract::highlight_code(code_buf, code_lang, dark);
+        }
         if (hl.empty())
         {
             tk::TextSpan sp;
-            sp.text       = code_buf;
-            sp.code       = true;
+            sp.text = code_buf;
+            sp.code = true;
             sp.code_block = true;
             cur.spans.push_back(std::move(sp));
         }
@@ -1470,11 +1721,11 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
             for (auto& h : hl)
             {
                 tk::TextSpan sp;
-                sp.text      = std::move(h.text);
-                sp.code      = true;
+                sp.text = std::move(h.text);
+                sp.code = true;
                 sp.code_block = true;
-                sp.has_color  = true;
-                sp.color      = tk::Color{h.r, h.g, h.b, 255};
+                sp.has_color = true;
+                sp.color = tk::Color{h.r, h.g, h.b, 255};
                 cur.spans.push_back(std::move(sp));
             }
         }
@@ -1489,9 +1740,13 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
     auto inner_list = [&]() -> BlockCtx*
     {
         for (int i = static_cast<int>(bctx.size()) - 1; i >= 0; --i)
+        {
             if (!bctx[i].flattened &&
                 (bctx[i].kind == BlockCtx::UL || bctx[i].kind == BlockCtx::OL))
+            {
                 return &bctx[i];
+            }
+        }
         return nullptr;
     };
 
@@ -1500,7 +1755,12 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
     {
         int d = 0;
         for (const auto& c : bctx)
-            if (c.kind == BlockCtx::BQ && !c.flattened) ++d;
+        {
+            if (c.kind == BlockCtx::BQ && !c.flattened)
+            {
+                ++d;
+            }
+        }
         return d;
     };
 
@@ -1509,8 +1769,12 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
     {
         int d = 0;
         for (const auto& c : bctx)
+        {
             if ((c.kind == BlockCtx::UL || c.kind == BlockCtx::OL) && !c.flattened)
+            {
                 ++d;
+            }
+        }
         return d;
     };
 
@@ -1524,7 +1788,7 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
 
     // ── Main loop ─────────────────────────────────────────────────────────────
 
-    const char* p   = html.data();
+    const char* p = html.data();
     const char* end = p + html.size();
 
     while (p < end)
@@ -1538,11 +1802,10 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
                 if (tag.closing && tag.name == "pre")
                 {
                     emit_code_block();
-                    in_code_block  = false;
+                    in_code_block = false;
                     first_in_block = true;
                 }
-                else if (!tag.closing && tag.name == "code" &&
-                         code_lang.empty())
+                else if (!tag.closing && tag.name == "code" && code_lang.empty())
                 {
                     code_lang = tag.code_lang;
                 }
@@ -1572,7 +1835,9 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
                     // See html_to_spans()'s identical branch for why
                     // just_broke_line also gates this collapse.
                     if (!just_broke_line && (cur_text.empty() || cur_text.back() != ' '))
+                    {
                         cur_text += ' ';
+                    }
                 }
                 else
                 {
@@ -1586,7 +1851,9 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
         // ── Tag dispatch ─────────────────────────────────────────────────────
         Tag tag = parse_tag(p, end);
         if (tag.name.empty())
+        {
             continue;
+        }
 
         // ── Block-level tags ─────────────────────────────────────────────────
 
@@ -1597,14 +1864,12 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
         // swallow the structural tags here and let the text flow inline into
         // the cell. <p> is handled as a soft line break by the inline branch
         // (see in_block_container()); <div> already is (generic inline tag).
-        if (table_depth > 0 &&
-            (tag.name == "blockquote" || tag.name == "ul" ||
-             tag.name == "ol" || tag.name == "li" || tag.name == "pre" ||
-             (tag.name.size() == 2 && tag.name[0] == 'h' &&
-              tag.name[1] >= '1' && tag.name[1] <= '6')))
+        if (table_depth > 0 && (tag.name == "blockquote" || tag.name == "ul" || tag.name == "ol" ||
+                                tag.name == "li" || tag.name == "pre" ||
+                                (tag.name.size() == 2 && tag.name[0] == 'h' && tag.name[1] >= '1' &&
+                                 tag.name[1] <= '6')))
         {
-            if (tag.name == "li" && !tag.closing &&
-                (!cur.spans.empty() || !cur_text.empty()))
+            if (tag.name == "li" && !tag.closing && (!cur.spans.empty() || !cur_text.empty()))
             {
                 // Keep list items on separate lines within the cell.
                 flush();
@@ -1615,31 +1880,38 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
         }
 
         // Headings.
-        if (tag.name.size() == 2 && tag.name[0] == 'h' &&
-            tag.name[1] >= '1' && tag.name[1] <= '6')
+        if (tag.name.size() == 2 && tag.name[0] == 'h' && tag.name[1] >= '1' && tag.name[1] <= '6')
         {
             if (!tag.closing)
             {
                 commit_block();
-                cur.kind  = BodyBlock::Kind::Heading;
+                cur.kind = BodyBlock::Kind::Heading;
                 cur.level = tag.name[1] - '0';
                 // Push semibold so all heading text is semibold.
                 FmtState ns = stack.back();
                 ns.semibold = true;
                 if (stack.size() < kMaxTagDepth)
+                {
                     stack.push_back(ns);
+                }
                 else
+                {
                     ++dropped_opens;
+                }
                 first_in_block = true;
             }
             else
             {
                 commit_block();
                 if (dropped_opens > 0)
+                {
                     --dropped_opens;
+                }
                 else if (stack.size() > 1)
+                {
                     stack.pop_back();
-                cur.kind  = BodyBlock::Kind::Paragraph;
+                }
+                cur.kind = BodyBlock::Kind::Paragraph;
                 cur.level = 0;
                 first_in_block = true;
             }
@@ -1659,7 +1931,7 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
                 commit_block();
                 int depth = bq_depth() + 1;
                 bctx.push_back({BlockCtx::BQ, depth, 0});
-                cur.kind  = BodyBlock::Kind::Blockquote;
+                cur.kind = BodyBlock::Kind::Blockquote;
                 cur.level = depth;
                 first_in_block = true;
             }
@@ -1677,12 +1949,12 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
                 // Restore block kind from remaining context.
                 if (bq_depth() > 0)
                 {
-                    cur.kind  = BodyBlock::Kind::Blockquote;
+                    cur.kind = BodyBlock::Kind::Blockquote;
                     cur.level = bq_depth();
                 }
                 else
                 {
-                    cur.kind  = BodyBlock::Kind::Paragraph;
+                    cur.kind = BodyBlock::Kind::Paragraph;
                     cur.level = 0;
                 }
                 first_in_block = true;
@@ -1728,7 +2000,7 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
                     continue;
                 }
                 int depth = list_depth() + 1;
-                bctx.push_back({BlockCtx::OL, depth, 0});
+                bctx.push_back({BlockCtx::OL, depth, tag.list_start - 1});
             }
             else
             {
@@ -1753,22 +2025,23 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
                 BlockCtx* lc = inner_list();
                 if (lc && lc->kind == BlockCtx::OL)
                 {
-                    cur.kind  = BodyBlock::Kind::OrderedItem;
+                    cur.kind = BodyBlock::Kind::OrderedItem;
                     cur.index = ++lc->counter;
                     cur.level = lc->level;
                 }
                 else
                 {
-                    cur.kind  = BodyBlock::Kind::UnorderedItem;
+                    cur.kind = BodyBlock::Kind::UnorderedItem;
                     cur.index = 0;
                     cur.level = lc ? lc->level : 1;
                 }
+                li_pending = true;
                 first_in_block = true;
             }
             else
             {
                 commit_block();
-                cur.kind  = BodyBlock::Kind::Paragraph;
+                cur.kind = BodyBlock::Kind::Paragraph;
                 cur.level = 0;
                 first_in_block = true;
             }
@@ -1787,10 +2060,10 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
                 if (table_depth == 0)
                 {
                     commit_block();
-                    tbl              = BodyTable{};
+                    tbl = BodyTable{};
                     cur_row.clear();
                     cur_row_is_header = false;
-                    in_thead          = false;
+                    in_thead = false;
                     cur.spans.clear();
                     cur_text.clear();
                 }
@@ -1799,19 +2072,25 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
             else if (table_depth > 0)
             {
                 if (--table_depth == 0)
+                {
                     finalize_table();
+                }
             }
             continue;
         }
 
-        if (tag.name == "tbody" || tag.name == "caption" ||
-            tag.name == "colgroup" || tag.name == "col")
+        if (tag.name == "tbody" || tag.name == "caption" || tag.name == "colgroup" ||
+            tag.name == "col")
+        {
             continue; // structural / non-content — no action
+        }
 
         if (tag.name == "thead")
         {
             if (table_depth == 1)
+            {
                 in_thead = !tag.closing;
+            }
             continue;
         }
 
@@ -1826,13 +2105,15 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
                     cur.spans.clear();
                     cur_text.clear();
                     just_broke_line = false;
-                    first_in_block  = true;
+                    first_in_block = true;
                 }
                 else if (!cur_row.empty())
                 {
                     tbl.rows.push_back(std::move(cur_row));
                     if (cur_row_is_header)
+                    {
                         ++tbl.header_rows;
+                    }
                     cur_row.clear();
                     cur.spans.clear();
                     cur_text.clear();
@@ -1849,24 +2130,32 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
                 {
                     const std::size_t col = cur_row.size();
                     if (tbl.col_align.size() <= col)
+                    {
                         tbl.col_align.resize(col + 1, TableAlign::Default);
+                    }
                     if (tag.cell_align != TableAlign::Default &&
                         tbl.col_align[col] == TableAlign::Default)
+                    {
                         tbl.col_align[col] = tag.cell_align;
+                    }
 
                     cur.spans.clear();
                     cur_text.clear();
                     just_broke_line = false;
-                    first_in_block  = true;
+                    first_in_block = true;
 
                     if (tag.name == "th")
                     {
                         FmtState ns = stack.back();
                         ns.bold = true;
                         if (stack.size() < kMaxTagDepth)
+                        {
                             stack.push_back(ns);
+                        }
                         else
+                        {
                             ++dropped_opens;
+                        }
                     }
                 }
                 else
@@ -1875,9 +2164,13 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
                     if (tag.name == "th")
                     {
                         if (dropped_opens > 0)
+                        {
                             --dropped_opens;
+                        }
                         else if (stack.size() > 1)
+                        {
                             stack.pop_back();
+                        }
                     }
                 }
             }
@@ -1926,11 +2219,17 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
         {
             FmtState ns = stack.back();
             if (tag.name == "b" || tag.name == "strong")
+            {
                 ns.bold = true;
+            }
             else if (tag.name == "i" || tag.name == "em")
+            {
                 ns.italic = true;
+            }
             else if (tag.name == "code")
+            {
                 ns.code = true;
+            }
             else if (tag.name == "pre")
             {
                 flush();
@@ -1939,21 +2238,26 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
                 code_lang = tag.code_lang;
                 continue;
             }
-            else if (tag.name == "del" || tag.name == "s" ||
-                     tag.name == "strike")
+            else if (tag.name == "del" || tag.name == "s" || tag.name == "strike")
+            {
                 ns.strikethrough = true;
+            }
             else if (tag.name == "a" && !tag.href.empty())
             {
                 ns.url = tag.href;
                 ns.pill_kind = pill_kind_for_link(tag.href);
                 if (ns.pill_kind != tk::PillKind::Generic)
+                {
                     ns.is_mention = true;
+                }
                 if (is_room_mention_sentinel_href(tag.href))
+                {
                     ns.url.clear();
+                }
             }
             else if (tag.name == "span" && tag.has_spoiler)
             {
-                ns.spoiler        = true;
+                ns.spoiler = true;
                 ns.spoiler_reason = tag.spoiler_reason;
             }
             else if (tag.name == "p")
@@ -1978,17 +2282,25 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
                     first_in_block = true;
                 }
                 if (stack.size() < kMaxTagDepth)
+                {
                     stack.push_back(ns);
+                }
                 else
+                {
                     ++dropped_opens;
+                }
                 continue;
             }
             flush();
             first_in_block = false;
             if (stack.size() < kMaxTagDepth)
+            {
                 stack.push_back(ns);
+            }
             else
+            {
                 ++dropped_opens;
+            }
         }
         else if (tag.self_closing || tag.name == "br")
         {
@@ -2003,9 +2315,13 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
             {
                 flush();
                 if (in_block_container())
+                {
                     cur_text += '\n';
+                }
                 else
+                {
                     cur_text += '\n'; // paragraph end newline
+                }
                 just_broke_line = true;
                 flush();
             }
@@ -2014,15 +2330,21 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
                 flush();
             }
             if (dropped_opens > 0)
+            {
                 --dropped_opens;
+            }
             else if (stack.size() > 1)
+            {
                 stack.pop_back();
+            }
         }
     }
 
     // Flush any open code block (missing </pre>).
     if (in_code_block)
+    {
         emit_code_block();
+    }
 
     // Flush an unclosed <table>.
     if (table_depth > 0)
@@ -2035,14 +2357,44 @@ std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark)
     return blocks;
 }
 
+void flatten_span_colours(std::vector<tk::TextSpan>& spans)
+{
+    for (auto& sp : spans)
+    {
+        if (sp.is_mention || sp.is_image)
+        {
+            continue;
+        }
+        sp.has_color = false;
+        sp.has_background = false;
+    }
+}
+
+void flatten_block_colours(std::vector<BodyBlock>& blocks)
+{
+    for (auto& b : blocks)
+    {
+        flatten_span_colours(b.spans);
+        for (auto& row : b.table.rows)
+        {
+            for (auto& cell : row)
+            {
+                flatten_span_colours(cell.spans);
+            }
+        }
+    }
+}
+
 void neutralize_literal_carriers(std::vector<tk::TextSpan>& spans)
 {
-    static constexpr std::string_view kCarrier = "\xEF\xBF\xBC";      // U+FFFC
+    static constexpr std::string_view kCarrier = "\xEF\xBF\xBC";     // U+FFFC
     static constexpr std::string_view kReplacement = "\xEF\xBF\xBD"; // U+FFFD
     for (auto& sp : spans)
     {
         if (sp.is_image)
+        {
             continue;
+        }
         for (std::size_t pos = sp.text.find(kCarrier); pos != std::string::npos;
              pos = sp.text.find(kCarrier, pos + kReplacement.size()))
         {

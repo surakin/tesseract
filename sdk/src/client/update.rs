@@ -56,7 +56,9 @@ pub async fn check_github_release(
 /// Strips the trailing `-pkgrel` from an AUR `Version` field (format
 /// `pkgver-pkgrel`, e.g. `"0.8.20-1"`) to recover the plain pkgver.
 fn strip_pkgrel(version: &str) -> &str {
-    version.rsplit_once('-').map_or(version, |(pkgver, _)| pkgver)
+    version
+        .rsplit_once('-')
+        .map_or(version, |(pkgver, _)| pkgver)
 }
 
 pub async fn check_aur_package(

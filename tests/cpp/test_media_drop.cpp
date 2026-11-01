@@ -24,8 +24,7 @@ struct ProbeSpy
 
     tesseract::views::MediaInfoExtractor fn()
     {
-        return [this](std::uint32_t g, std::vector<std::uint8_t> b,
-                      std::string m)
+        return [this](std::uint32_t g, std::vector<std::uint8_t> b, std::string m)
         {
             ++calls;
             gen = g;
@@ -54,8 +53,7 @@ TEST_CASE("route_file_drop_to_compose_bar rejects a payload over the upload limi
     ComposeBar& bar = *bar_owner;
     ProbeSpy spy;
     std::vector<std::uint8_t> bytes(100, 0x00);
-    auto out =
-        route_file_drop_to_compose_bar(bar, bytes, "image/png", "x.png", 50, spy.fn());
+    auto out = route_file_drop_to_compose_bar(bar, bytes, "image/png", "x.png", 50, spy.fn());
     CHECK(out == FileDropOutcome::TooLarge);
     CHECK(bar.pending_for_test() == nullptr);
     CHECK(spy.calls == 0);
@@ -68,8 +66,7 @@ TEST_CASE("route_file_drop_to_compose_bar with a zero limit imposes no ceiling",
     ComposeBar& bar = *bar_owner;
     ProbeSpy spy;
     std::vector<std::uint8_t> bytes(100, 0x00);
-    auto out =
-        route_file_drop_to_compose_bar(bar, bytes, "image/png", "x.png", 0, spy.fn());
+    auto out = route_file_drop_to_compose_bar(bar, bytes, "image/png", "x.png", 0, spy.fn());
     CHECK(out == FileDropOutcome::Accepted);
     REQUIRE(bar.pending_for_test() != nullptr);
     CHECK(bar.pending_for_test()->kind == Kind::Image);
@@ -81,8 +78,7 @@ TEST_CASE("route_file_drop_to_compose_bar queues a still image without probing",
     auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
     ComposeBar& bar = *bar_owner;
     ProbeSpy spy;
-    auto out = route_file_drop_to_compose_bar(bar, {0x01, 0x02}, "image/png", "x.png", 0,
-                                  spy.fn());
+    auto out = route_file_drop_to_compose_bar(bar, {0x01, 0x02}, "image/png", "x.png", 0, spy.fn());
     CHECK(out == FileDropOutcome::Accepted);
     REQUIRE(bar.pending_for_test() != nullptr);
     CHECK(bar.pending_for_test()->kind == Kind::Image);
@@ -97,8 +93,12 @@ std::vector<std::uint8_t> gif_with_frames(int frames)
 {
     std::vector<std::uint8_t> b{'G', 'I', 'F', '8', '9', 'a', 1, 0, 1, 0, 0, 0, 0};
     for (int i = 0; i < frames; ++i)
+    {
         for (std::uint8_t v : {0x2C, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 2, 0x44, 0x01, 0})
+        {
             b.push_back(v);
+        }
+    }
     b.push_back(0x3B);
     return b;
 }
@@ -110,8 +110,8 @@ TEST_CASE("route_file_drop_to_compose_bar flags an animated gif at attach time, 
     auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
     ComposeBar& bar = *bar_owner;
     ProbeSpy spy;
-    auto out = route_file_drop_to_compose_bar(bar, gif_with_frames(3), "image/gif", "a.gif", 0,
-                                              spy.fn());
+    auto out =
+        route_file_drop_to_compose_bar(bar, gif_with_frames(3), "image/gif", "a.gif", 0, spy.fn());
     CHECK(out == FileDropOutcome::Accepted);
     REQUIRE(bar.pending_for_test() != nullptr);
     CHECK(bar.pending_for_test()->kind == Kind::Image);
@@ -134,8 +134,8 @@ TEST_CASE("route_file_drop_to_compose_bar flags an animated webp and a still web
 {
     const auto webp = [](std::uint8_t flags)
     {
-        std::vector<std::uint8_t> b{'R', 'I', 'F', 'F', 0x1a, 0, 0, 0, 'W', 'E', 'B', 'P',
-                                    'V', 'P', '8', 'X', 10, 0, 0, 0, flags};
+        std::vector<std::uint8_t> b{'R', 'I', 'F', 'F', 0x1a, 0,  0, 0, 'W', 'E',  'B',
+                                    'P', 'V', 'P', '8', 'X',  10, 0, 0, 0,   flags};
         b.resize(b.size() + 9, 0);
         return b;
     };
@@ -153,14 +153,12 @@ TEST_CASE("route_file_drop_to_compose_bar flags an animated webp and a still web
     }
 }
 
-TEST_CASE("route_file_drop_to_compose_bar queues a video and probes it",
-          "[view][media_drop]")
+TEST_CASE("route_file_drop_to_compose_bar queues a video and probes it", "[view][media_drop]")
 {
     auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
     ComposeBar& bar = *bar_owner;
     ProbeSpy spy;
-    auto out = route_file_drop_to_compose_bar(bar, {0x00, 0x01}, "video/mp4", "c.mp4", 0,
-                                  spy.fn());
+    auto out = route_file_drop_to_compose_bar(bar, {0x00, 0x01}, "video/mp4", "c.mp4", 0, spy.fn());
     CHECK(out == FileDropOutcome::Accepted);
     REQUIRE(bar.pending_for_test() != nullptr);
     CHECK(bar.pending_for_test()->kind == Kind::Video);
@@ -173,8 +171,7 @@ TEST_CASE("route_file_drop_to_compose_bar queues audio and probes it", "[view][m
     auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
     ComposeBar& bar = *bar_owner;
     ProbeSpy spy;
-    auto out = route_file_drop_to_compose_bar(bar, {0x00, 0x01}, "audio/ogg", "s.ogg", 0,
-                                  spy.fn());
+    auto out = route_file_drop_to_compose_bar(bar, {0x00, 0x01}, "audio/ogg", "s.ogg", 0, spy.fn());
     CHECK(out == FileDropOutcome::Accepted);
     REQUIRE(bar.pending_for_test() != nullptr);
     CHECK(bar.pending_for_test()->kind == Kind::Audio);
@@ -188,8 +185,8 @@ TEST_CASE("route_file_drop_to_compose_bar queues a generic file without probing"
     auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
     ComposeBar& bar = *bar_owner;
     ProbeSpy spy;
-    auto out = route_file_drop_to_compose_bar(bar, {0x25, 0x50}, "application/pdf",
-                                  "doc.pdf", 0, spy.fn());
+    auto out = route_file_drop_to_compose_bar(bar, {0x25, 0x50}, "application/pdf", "doc.pdf", 0,
+                                              spy.fn());
     CHECK(out == FileDropOutcome::Accepted);
     REQUIRE(bar.pending_for_test() != nullptr);
     CHECK(bar.pending_for_test()->kind == Kind::File);
@@ -201,8 +198,8 @@ TEST_CASE("route_file_drop_to_compose_bar tolerates a null probe", "[view][media
     auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
     ComposeBar& bar = *bar_owner;
     // Video/audio call the probe; a null probe must be a safe no-op.
-    auto out = route_file_drop_to_compose_bar(bar, {0x47, 0x49, 0x46}, "image/gif", "a.gif",
-                                  0, nullptr);
+    auto out =
+        route_file_drop_to_compose_bar(bar, {0x47, 0x49, 0x46}, "image/gif", "a.gif", 0, nullptr);
     CHECK(out == FileDropOutcome::Accepted);
     REQUIRE(bar.pending_for_test() != nullptr);
     CHECK(bar.pending_for_test()->kind == Kind::Image);
@@ -222,12 +219,11 @@ TEST_CASE("route_file_drop_to_compose_bar dropping multiple files appends, "
     ComposeBar& bar = *bar_owner;
     ProbeSpy spy;
 
-    CHECK(route_file_drop_to_compose_bar(bar, {0x01}, "image/png", "one.png", 0,
-                                         spy.fn()) == FileDropOutcome::Accepted);
-    CHECK(route_file_drop_to_compose_bar(bar, {0x02}, "image/png", "two.png", 0,
-                                         spy.fn()) == FileDropOutcome::Accepted);
-    CHECK(route_file_drop_to_compose_bar(bar, {0x03}, "application/pdf",
-                                         "three.pdf", 0,
+    CHECK(route_file_drop_to_compose_bar(bar, {0x01}, "image/png", "one.png", 0, spy.fn()) ==
+          FileDropOutcome::Accepted);
+    CHECK(route_file_drop_to_compose_bar(bar, {0x02}, "image/png", "two.png", 0, spy.fn()) ==
+          FileDropOutcome::Accepted);
+    CHECK(route_file_drop_to_compose_bar(bar, {0x03}, "application/pdf", "three.pdf", 0,
                                          spy.fn()) == FileDropOutcome::Accepted);
 
     REQUIRE(bar.pending_count() == 3);
@@ -245,14 +241,13 @@ TEST_CASE("route_file_drop_to_compose_bar rejects a drop once kMaxAttachments "
     ProbeSpy spy;
     for (std::size_t i = 0; i < ComposeBar::kMaxAttachments; ++i)
     {
-        REQUIRE(route_file_drop_to_compose_bar(bar, {0x00}, "application/pdf",
-                                               "f.pdf", 0,
+        REQUIRE(route_file_drop_to_compose_bar(bar, {0x00}, "application/pdf", "f.pdf", 0,
                                                spy.fn()) == FileDropOutcome::Accepted);
     }
     REQUIRE(bar.pending_count() == ComposeBar::kMaxAttachments);
 
-    auto out = route_file_drop_to_compose_bar(bar, {0x00}, "application/pdf",
-                                              "overflow.pdf", 0, spy.fn());
+    auto out =
+        route_file_drop_to_compose_bar(bar, {0x00}, "application/pdf", "overflow.pdf", 0, spy.fn());
     CHECK(out == FileDropOutcome::TooMany);
     CHECK(bar.pending_count() == ComposeBar::kMaxAttachments);
 }

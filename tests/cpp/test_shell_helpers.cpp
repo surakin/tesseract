@@ -36,8 +36,8 @@ Settings::WindowGeometry helpers_geo(int x, int y, int w, int h, bool valid = tr
 TEST_CASE("clamp_to_screens: an invalid saved geometry yields an invalid result",
           "[shell_helpers][geometry]")
 {
-    auto r = sh::clamp_to_screens(helpers_geo(10, 10, 800, 600, false), 1000, 700,
-                                  {{0, 0, 1920, 1080}});
+    auto r =
+        sh::clamp_to_screens(helpers_geo(10, 10, 800, 600, false), 1000, 700, {{0, 0, 1920, 1080}});
     CHECK_FALSE(r.valid);
 }
 
@@ -57,8 +57,7 @@ TEST_CASE("clamp_to_screens: a window on a second screen is kept when it exists"
           "[shell_helpers][geometry]")
 {
     auto saved = helpers_geo(2000, 50, 800, 600);
-    auto r = sh::clamp_to_screens(
-        saved, 1000, 700, {{0, 0, 1920, 1080}, {1920, 0, 1920, 1080}});
+    auto r = sh::clamp_to_screens(saved, 1000, 700, {{0, 0, 1920, 1080}, {1920, 0, 1920, 1080}});
     CHECK(r.x == 2000);
 }
 
@@ -103,8 +102,7 @@ TEST_CASE("clamp_to_screens: with no screens it centres within the default size"
     CHECK(r.x == (1000 - 400) / 2);
 }
 
-TEST_CASE("clamp_to_screens: only the title-bar strip must be visible",
-          "[shell_helpers][geometry]")
+TEST_CASE("clamp_to_screens: only the title-bar strip must be visible", "[shell_helpers][geometry]")
 {
     // The window body hangs far below the screen but its title bar is visible.
     auto saved = helpers_geo(100, 1000, 800, 600);
@@ -116,8 +114,7 @@ TEST_CASE("clamp_to_screens: only the title-bar strip must be visible",
     CHECK(r.y != 1100);
 }
 
-TEST_CASE("format_typing_text covers zero, one, two and many typists",
-          "[shell_helpers][typing]")
+TEST_CASE("format_typing_text covers zero, one, two and many typists", "[shell_helpers][typing]")
 {
     CHECK(sh::format_typing_text({}).empty());
 
@@ -148,8 +145,7 @@ TEST_CASE("media preview and presence enum mappings", "[shell_helpers][mapping]"
 
     using TS = tesseract::PresenceTracker::State;
     CHECK(sh::to_client_presence(TS::Online) == tesseract::PresenceState::Online);
-    CHECK(sh::to_client_presence(TS::Unavailable) ==
-          tesseract::PresenceState::Unavailable);
+    CHECK(sh::to_client_presence(TS::Unavailable) == tesseract::PresenceState::Unavailable);
     CHECK(sh::to_client_presence(TS::Offline) == tesseract::PresenceState::Offline);
 }
 
@@ -164,12 +160,11 @@ TEST_CASE("theme accent maps one-to-one", "[shell_helpers][mapping]")
 }
 
 #ifndef _WIN32
-TEST_CASE("write_private_text_file creates an owner-only file",
-          "[shell_helpers][private_file]")
+TEST_CASE("write_private_text_file creates an owner-only file", "[shell_helpers][private_file]")
 {
     namespace fs = std::filesystem;
-    const fs::path p = fs::temp_directory_path() /
-                       ("tesseract_private_" + std::to_string(::getpid()) + ".txt");
+    const fs::path p =
+        fs::temp_directory_path() / ("tesseract_private_" + std::to_string(::getpid()) + ".txt");
     fs::remove(p);
     std::string err;
     REQUIRE(sh::write_private_text_file(p.string(), "secret key", err));
@@ -178,8 +173,7 @@ TEST_CASE("write_private_text_file creates an owner-only file",
     REQUIRE(::stat(p.c_str(), &st) == 0);
     CHECK((st.st_mode & 0777) == 0600);
     std::ifstream in(p);
-    std::string content((std::istreambuf_iterator<char>(in)),
-                        std::istreambuf_iterator<char>());
+    std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     CHECK(content == "secret key");
     fs::remove(p);
 }
@@ -188,8 +182,8 @@ TEST_CASE("write_private_text_file tightens and truncates an existing file",
           "[shell_helpers][private_file]")
 {
     namespace fs = std::filesystem;
-    const fs::path p = fs::temp_directory_path() /
-                       ("tesseract_private2_" + std::to_string(::getpid()) + ".txt");
+    const fs::path p =
+        fs::temp_directory_path() / ("tesseract_private2_" + std::to_string(::getpid()) + ".txt");
     {
         std::ofstream(p) << "a much longer previous content";
     }
@@ -200,18 +194,16 @@ TEST_CASE("write_private_text_file tightens and truncates an existing file",
     REQUIRE(::stat(p.c_str(), &st) == 0);
     CHECK((st.st_mode & 0777) == 0600);
     std::ifstream in(p);
-    std::string content((std::istreambuf_iterator<char>(in)),
-                        std::istreambuf_iterator<char>());
+    std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     CHECK(content == "new");
     fs::remove(p);
 }
 
-TEST_CASE("write_private_text_file reports an unwritable path",
-          "[shell_helpers][private_file]")
+TEST_CASE("write_private_text_file reports an unwritable path", "[shell_helpers][private_file]")
 {
     std::string err;
-    CHECK_FALSE(sh::write_private_text_file(
-        "/nonexistent-dir-for-tesseract-test/key.txt", "x", err));
+    CHECK_FALSE(
+        sh::write_private_text_file("/nonexistent-dir-for-tesseract-test/key.txt", "x", err));
     CHECK_FALSE(err.empty());
 }
 #endif
@@ -267,8 +259,7 @@ fs::path tile_test_dir(const char* name)
 }
 } // namespace
 
-TEST_CASE("a map tile is stored and read back as the same PNG",
-          "[shell_helpers][tile_disk]")
+TEST_CASE("a map tile is stored and read back as the same PNG", "[shell_helpers][tile_disk]")
 {
     const fs::path dir = tile_test_dir("roundtrip");
     const fs::path p = dir / "2.png";
@@ -279,8 +270,7 @@ TEST_CASE("a map tile is stored and read back as the same PNG",
     fs::remove_all(dir);
 }
 
-TEST_CASE("a non-PNG tile is refused on store",
-          "[shell_helpers][tile_disk]")
+TEST_CASE("a non-PNG tile is refused on store", "[shell_helpers][tile_disk]")
 {
     const fs::path dir = tile_test_dir("refused");
     const fs::path p = dir / "2.png";
@@ -289,12 +279,13 @@ TEST_CASE("a non-PNG tile is refused on store",
     fs::remove_all(dir);
 }
 
-TEST_CASE("an empty or truncated tile on disk is dropped, not served",
-          "[shell_helpers][tile_disk]")
+TEST_CASE("an empty or truncated tile on disk is dropped, not served", "[shell_helpers][tile_disk]")
 {
     const fs::path dir = tile_test_dir("dropped");
     const fs::path empty = dir / "empty.png";
-    { std::ofstream f(empty, std::ios::binary); }
+    {
+        std::ofstream f(empty, std::ios::binary);
+    }
     CHECK(fs::exists(empty));
     CHECK(sh::read_tile_disk(empty).empty());
     CHECK_FALSE(fs::exists(empty));
@@ -309,8 +300,7 @@ TEST_CASE("an empty or truncated tile on disk is dropped, not served",
     fs::remove_all(dir);
 }
 
-TEST_CASE("a missing tile reads as empty and creates nothing",
-          "[shell_helpers][tile_disk]")
+TEST_CASE("a missing tile reads as empty and creates nothing", "[shell_helpers][tile_disk]")
 {
     const fs::path dir = tile_test_dir("missing");
     CHECK(sh::read_tile_disk(dir / "2.png").empty());
@@ -325,4 +315,35 @@ TEST_CASE("gallery_caption_or_fallback keeps a typed caption and counts items ot
     CHECK(gallery_caption_or_fallback("holiday", 3) == "holiday");
     CHECK(gallery_caption_or_fallback("", 3) == "Sent 3 items");
     CHECK(gallery_caption_or_fallback("", 1) == "Sent 1 item");
+}
+
+TEST_CASE("parse_mutual_rooms_json reads a page and reports errors",
+          "[shell_helpers][mutual_rooms]")
+{
+    auto p = sh::parse_mutual_rooms_json(
+        R"({"joined":["!a:x","!b:x"],"count":7,"next_batch":"tok","error":""})");
+    CHECK(p.error.empty());
+    CHECK(p.joined == std::vector<std::string>{"!a:x", "!b:x"});
+    CHECK(p.count == 7);
+    CHECK(p.next_batch == "tok");
+
+    p = sh::parse_mutual_rooms_json(R"({"joined":[],"count":0,"next_batch":"","error":"boom"})");
+    CHECK(p.error == "boom");
+    CHECK(p.joined.empty());
+
+    CHECK_FALSE(sh::parse_mutual_rooms_json("not json").error.empty());
+    CHECK_FALSE(sh::parse_mutual_rooms_json("").error.empty());
+}
+
+TEST_CASE("alias_server_via yields the alias's server and nothing for other ids",
+          "[shell][helpers]")
+{
+    CHECK(sh::alias_server_via("#room:server.org") == std::vector<std::string>{"server.org"});
+    CHECK(sh::alias_server_via("  #room:server.org \n") == std::vector<std::string>{"server.org"});
+    CHECK(sh::alias_server_via("#room:server.org:8448") ==
+          std::vector<std::string>{"server.org:8448"});
+    CHECK(sh::alias_server_via("!id:server.org").empty());
+    CHECK(sh::alias_server_via("#nocolon").empty());
+    CHECK(sh::alias_server_via("#room:").empty());
+    CHECK(sh::alias_server_via("").empty());
 }

@@ -4,6 +4,7 @@
 #include "media_utils.h"
 #include "shortcut_registry.h"
 #include "sidebar_metrics.h"
+#include "SpacePickerView.h"
 #include "tk/access_tree.h"
 #include "tk/i18n.h"
 #include "tk/keyboard_target.h"
@@ -19,16 +20,6 @@
 
 namespace tesseract::views
 {
-
-float MainAppWidget::user_strip_height()
-{
-    // The strip holds a name line and a status/ID line (UserInfo).
-    const float scale =
-        std::max(tk::font_height_scale(tk::FontRole::SidebarName),
-                 tk::font_height_scale(tk::FontRole::SidebarPreview));
-    return std::ceil(kUserStripBaseH * scale);
-}
-
 
 namespace
 {
@@ -46,12 +37,13 @@ public:
     SpaceNavWidget()
     {
         auto back = tk::create_widget<tk::Button>(
-            this,
-            "",
+            this, "",
             [this]
             {
                 if (on_back)
+                {
                     on_back();
+                }
             },
             tk::Button::Variant::Icon);
         back->set_accessible_name(tk::tr("Back"));
@@ -68,15 +60,16 @@ public:
         header_target_->on_activate = [this]
         {
             if (on_header)
+            {
                 on_header();
+            }
         };
     }
 
     std::function<void()> on_back;
     std::function<void()> on_header;
 
-    void set_avatar_provider(
-        std::function<const tk::Image*(const std::string&)> provider)
+    void set_avatar_provider(std::function<const tk::Image*(const std::string&)> provider)
     {
         avatar_provider_ = std::move(provider);
     }
@@ -86,7 +79,9 @@ public:
         space_name_ = std::string(name);
         avatar_url_ = std::string(avatar_url);
         if (name_lbl_)
+        {
             name_lbl_->set_text(space_name_);
+        }
     }
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override
@@ -99,16 +94,16 @@ public:
         bounds_ = bounds;
         const float btn_y = bounds.y + (kHeight - 24.0f) / 2.0f;
         if (back_btn_)
+        {
             back_btn_->arrange(ctx, {bounds.x + kPad, btn_y, kBtnW, 24.0f});
+        }
 
         constexpr float kNameH = 18.0f;
         const float name_x = bounds.x + kPad + kBtnW + kPad + kAvatarSize + kPad;
         const float name_w = std::max(0.0f, bounds.x + bounds.w - name_x - kPad);
         if (name_lbl_)
         {
-            name_lbl_->arrange(ctx,
-                               {name_x, bounds.y + (kHeight - kNameH) * 0.5f,
-                                name_w, kNameH});
+            name_lbl_->arrange(ctx, {name_x, bounds.y + (kHeight - kNameH) * 0.5f, name_w, kNameH});
         }
         if (header_target_)
         {
@@ -130,32 +125,30 @@ public:
             tk::Rect r = header_rect_();
             r.x += kPad;
             r.w = std::max(0.0f, r.w - 2.0f * kPad);
-            ctx.canvas.fill_rounded_rect(
-                r, kHoverRadius,
-                header_pressed_ ? pal.subtle_pressed : pal.subtle_hover);
+            ctx.canvas.fill_rounded_rect(r, kHoverRadius,
+                                         header_pressed_ ? pal.subtle_pressed : pal.subtle_hover);
+            tk::paint_hc_hover_outline(ctx.canvas, ctx.theme, r, kHoverRadius);
         }
 
         if (name_lbl_)
+        {
             name_lbl_->paint(ctx);
+        }
 
-        const tk::Point avatar_centre{
-            bounds_.x + kPad + kBtnW + kPad + kAvatarSize * 0.5f,
-            bounds_.y + kHeight * 0.5f};
+        const tk::Point avatar_centre{bounds_.x + kPad + kBtnW + kPad + kAvatarSize * 0.5f,
+                                      bounds_.y + kHeight * 0.5f};
         const bool has_provider = avatar_provider_ && !avatar_url_.empty();
-        const tk::Image* space_img =
-            has_provider ? avatar_provider_(avatar_url_) : nullptr;
+        const tk::Image* space_img = has_provider ? avatar_provider_(avatar_url_) : nullptr;
         if (has_provider || !space_name_.empty())
         {
-            draw_avatar(ctx.canvas, space_img, avatar_centre, kAvatarSize,
-                        space_name_, pal.avatar_initials_bg,
-                        pal.avatar_initials_text);
+            draw_avatar(ctx.canvas, space_img, avatar_centre, kAvatarSize, space_name_,
+                        pal.avatar_initials_bg, pal.avatar_initials_text);
         }
 
         if (back_btn_)
         {
             back_btn_->paint(ctx);
-            back_icon_.draw(ctx.canvas, ctx.factory, kArrowLeftSvg,
-                            back_btn_->bounds(), kNavIconPx,
+            back_icon_.draw(ctx.canvas, ctx.factory, kArrowLeftSvg, back_btn_->bounds(), kNavIconPx,
                             pal.text_primary);
         }
     }
@@ -163,9 +156,10 @@ public:
     bool on_pointer_down(tk::Point local) override
     {
         if (!on_header)
+        {
             return false;
-        if (point_in_rect({bounds_.x + local.x, bounds_.y + local.y},
-                          header_rect_()))
+        }
+        if (point_in_rect({bounds_.x + local.x, bounds_.y + local.y}, header_rect_()))
         {
             header_pressed_ = true;
             return true;
@@ -178,10 +172,11 @@ public:
         const bool was_pressed = header_pressed_;
         header_pressed_ = false;
         if (!was_pressed || !inside_self || !on_header)
+        {
             return;
+        }
 
-        if (point_in_rect({bounds_.x + local.x, bounds_.y + local.y},
-                          header_rect_()))
+        if (point_in_rect({bounds_.x + local.x, bounds_.y + local.y}, header_rect_()))
         {
             on_header();
         }
@@ -190,9 +185,8 @@ public:
     bool on_pointer_move(tk::Point local) override
     {
         const bool prev = header_hovered_;
-        header_hovered_ = on_header &&
-            point_in_rect({bounds_.x + local.x, bounds_.y + local.y},
-                          header_rect_());
+        header_hovered_ =
+            on_header && point_in_rect({bounds_.x + local.x, bounds_.y + local.y}, header_rect_());
         return header_hovered_ != prev;
     }
 
@@ -212,15 +206,21 @@ public:
     tk::Widget* dispatch_pointer_move(tk::Point world, bool* dirty = nullptr) override
     {
         if (!visible() || !contains_world(world))
+        {
             return nullptr;
+        }
         if (back_btn_ && back_btn_->visible())
         {
             if (tk::Widget* hit = back_btn_->dispatch_pointer_move(world, dirty))
+            {
                 return hit;
+            }
         }
         tk::Point local{world.x - bounds_.x, world.y - bounds_.y};
         if (on_pointer_move(local) && dirty)
+        {
             *dirty = true;
+        }
         return this;
     }
 
@@ -229,9 +229,7 @@ private:
 
     tk::Rect header_rect_() const
     {
-        return {bounds_.x + kPad + kBtnW,
-                bounds_.y,
-                std::max(0.0f, bounds_.w - kPad - kBtnW),
+        return {bounds_.x + kPad + kBtnW, bounds_.y, std::max(0.0f, bounds_.w - kPad - kBtnW),
                 kHeight};
     }
 
@@ -257,6 +255,10 @@ class MainAppWidget::SidebarWidget : public tk::Widget
 public:
     explicit SidebarWidget(tk::Host* host)
     {
+        auto picker = std::make_unique<SpacePickerView>();
+        picker_ = add_child(std::move(picker));
+        picker_->set_visible(false);
+
         auto nav = std::make_unique<SpaceNavWidget>();
         space_nav_ = add_child(std::move(nav));
         space_nav_->set_visible(false);
@@ -268,12 +270,29 @@ public:
         user_info_ = add_child(std::move(ui));
     }
 
-    SpaceNavWidget* space_nav() const { return space_nav_; }
-    RoomListView* room_list_view() const { return room_list_view_; }
-    UserInfo* user_info() const { return user_info_; }
+    SpacePickerView* space_picker() const
+    {
+        return picker_;
+    }
+    SpaceNavWidget* space_nav() const
+    {
+        return space_nav_;
+    }
+    RoomListView* room_list_view() const
+    {
+        return room_list_view_;
+    }
+    UserInfo* user_info() const
+    {
+        return user_info_;
+    }
+    // Height of the user-info strip as of the last arrange().
+    float user_strip_h() const
+    {
+        return user_strip_h_;
+    }
 
-    void set_space_nav(bool show, std::string_view space_name,
-                       std::string_view avatar_url)
+    void set_space_nav(bool show, std::string_view space_name, std::string_view avatar_url)
     {
         space_nav_visible_ = show;
         if (space_nav_)
@@ -284,11 +303,18 @@ public:
         }
     }
 
-    void set_avatar_provider(
-        std::function<const tk::Image*(const std::string&)> provider)
+    void set_avatar_provider(std::function<const tk::Image*(const std::string&)> provider)
     {
         if (space_nav_)
+        {
             space_nav_->set_avatar_provider(std::move(provider));
+        }
+    }
+
+    // Width of the space-picker column (0 hides it).
+    void set_picker_width(float w)
+    {
+        picker_w_ = w;
     }
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override
@@ -296,26 +322,47 @@ public:
         return {kSidebarW, constraints.h};
     }
 
+    // Vertical stack: [ picker | (space header + room list) ] over the
+    // full-width user-info strip, so the strip runs under the picker too.
     void arrange(tk::LayoutCtx& ctx, tk::Rect bounds) override
     {
         bounds_ = bounds;
 
+        // The strip is as tall as UserInfo needs for the current fonts, but
+        // never shorter than the design height.
+        if (user_info_)
+        {
+            user_strip_h_ = std::max(kUserStripBaseH,
+                                     std::ceil(user_info_->measure(ctx, {bounds.w, bounds.h}).h));
+        }
+        const float user_strip_y = bounds.y + bounds.h - user_strip_h_;
+        if (user_info_)
+        {
+            user_info_->arrange(ctx, {bounds.x, user_strip_y, bounds.w, user_strip_h_});
+        }
+
+        const float pw = std::min(picker_w_, bounds.w);
+        if (picker_)
+        {
+            picker_->set_visible(pw > 0.0f);
+            picker_->arrange(ctx, pw > 0.0f ? tk::Rect{bounds.x, bounds.y, pw,
+                                                       std::max(0.0f, user_strip_y - bounds.y)}
+                                            : tk::Rect{});
+        }
+
+        const float list_x = bounds.x + pw;
+        const float list_w = bounds.w - pw;
         float content_y = bounds.y;
         if (space_nav_visible_ && space_nav_)
         {
-            space_nav_->arrange(ctx, {bounds.x, bounds.y, bounds.w, kSpaceNavH});
+            space_nav_->arrange(ctx, {list_x, bounds.y, list_w, kSpaceNavH});
             content_y = bounds.y + kSpaceNavH;
         }
 
-        const float user_strip_y = bounds.y + bounds.h - MainAppWidget::user_strip_height();
-        if (user_info_)
-            user_info_->arrange(ctx, {bounds.x, user_strip_y, bounds.w, MainAppWidget::user_strip_height()});
-
         if (room_list_view_)
         {
-            room_list_view_->arrange(ctx,
-                                     {bounds.x, content_y, bounds.w,
-                                      std::max(0.0f, user_strip_y - content_y)});
+            room_list_view_->arrange(
+                ctx, {list_x, content_y, list_w, std::max(0.0f, user_strip_y - content_y)});
         }
     }
 
@@ -324,11 +371,9 @@ public:
         const auto& pal = ctx.theme.palette;
         ctx.canvas.fill_rect(bounds_, pal.sidebar_bg);
 
-        const float strip_y = bounds_.y + bounds_.h - MainAppWidget::user_strip_height();
-        ctx.canvas.fill_rect({bounds_.x, strip_y, bounds_.w, MainAppWidget::user_strip_height()},
-                             pal.sidebar_bg);
-        ctx.canvas.fill_rect({bounds_.x, strip_y, bounds_.w, 1.0f},
-                             pal.separator);
+        const float strip_y = bounds_.y + bounds_.h - user_strip_h_;
+        ctx.canvas.fill_rect({bounds_.x, strip_y, bounds_.w, user_strip_h_}, pal.sidebar_bg);
+        ctx.canvas.fill_rect({bounds_.x, strip_y, bounds_.w, 1.0f}, pal.separator);
 
         paint_children(ctx);
     }
@@ -336,10 +381,14 @@ public:
 private:
     static constexpr float kSidebarW = MainAppWidget::kSidebarW;
     static constexpr float kSpaceNavH = MainAppWidget::kSpaceNavH;
+    static constexpr float kUserStripBaseH = MainAppWidget::kUserStripBaseH;
 
     SpaceNavWidget* space_nav_ = nullptr;
     RoomListView* room_list_view_ = nullptr;
     UserInfo* user_info_ = nullptr;
+    float user_strip_h_ = kUserStripBaseH;
+    SpacePickerView* picker_ = nullptr;
+    float picker_w_ = 0.0f;
     bool space_nav_visible_ = false;
 };
 
@@ -362,8 +411,8 @@ public:
 
     void paint(tk::PaintCtx& ctx) override
     {
-        constexpr tk::Color kBg{0xFF, 0xB3, 0x00, 0xFF};
-        constexpr tk::Color kFg{0x33, 0x26, 0x00, 0xFF};
+        const tk::Color kBg = ctx.theme.palette.warning_bg;
+        const tk::Color kFg = ctx.theme.palette.warning_text;
         ctx.canvas.fill_rect(bounds_, kBg);
         if (!layout_)
         {
@@ -373,7 +422,8 @@ public:
             layout_ = ctx.factory.build_text(
                 no_network_
                     ? tk::tr("No internet connection \xe2\x80\x94 reconnecting\xe2\x80\xa6")
-                    : tk::tr("Can\xe2\x80\x99t reach the server \xe2\x80\x94 reconnecting\xe2\x80\xa6"),
+                    : tk::tr(
+                          "Can\xe2\x80\x99t reach the server \xe2\x80\x94 reconnecting\xe2\x80\xa6"),
                 st);
         }
         if (layout_)
@@ -389,7 +439,10 @@ public:
     // homeserver is unreachable.
     void set_no_network(bool no_network)
     {
-        if (no_network_ == no_network) return;
+        if (no_network_ == no_network)
+        {
+            return;
+        }
         no_network_ = no_network;
         layout_.reset();
     }
@@ -425,19 +478,37 @@ public:
         chat_content_ = add_child(std::move(content));
     }
 
-    OfflineBannerWidget* offline_banner() const { return offline_banner_; }
-    EncryptionReminderBanner* encryption_reminder() const { return reminder_banner_; }
-    tk::TabBar* tab_bar() const { return tab_bar_; }
-    ChatContentStack* chat_content() const { return chat_content_; }
+    OfflineBannerWidget* offline_banner() const
+    {
+        return offline_banner_;
+    }
+    EncryptionReminderBanner* encryption_reminder() const
+    {
+        return reminder_banner_;
+    }
+    tk::TabBar* tab_bar() const
+    {
+        return tab_bar_;
+    }
+    ChatContentStack* chat_content() const
+    {
+        return chat_content_;
+    }
 
     void set_offline(bool offline, bool no_network)
     {
-        if (!offline_banner_) return;
+        if (!offline_banner_)
+        {
+            return;
+        }
         offline_banner_->set_no_network(no_network);
         offline_banner_->set_visible(offline);
     }
 
-    bool reminder_requested() const { return reminder_requested_; }
+    bool reminder_requested() const
+    {
+        return reminder_requested_;
+    }
 
     void set_reminder_requested(bool show)
     {
@@ -454,7 +525,9 @@ public:
     {
         tab_bar_visible_ = visible;
         if (tab_bar_)
+        {
             tab_bar_->set_visible(visible);
+        }
     }
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override
@@ -469,8 +542,7 @@ public:
 
         if (offline_banner_ && offline_banner_->visible())
         {
-            offline_banner_->arrange(ctx,
-                                     {bounds.x, y, bounds.w, kOfflineBannerH});
+            offline_banner_->arrange(ctx, {bounds.x, y, bounds.w, kOfflineBannerH});
             y += kOfflineBannerH;
         }
 
@@ -491,9 +563,8 @@ public:
 
         if (chat_content_)
         {
-            chat_content_->arrange(ctx,
-                                   {bounds.x, y, bounds.w,
-                                    std::max(0.0f, bounds.y + bounds.h - y)});
+            chat_content_->arrange(
+                ctx, {bounds.x, y, bounds.w, std::max(0.0f, bounds.y + bounds.h - y)});
         }
     }
 
@@ -504,7 +575,9 @@ private:
     {
         const bool suppressed = reminder_suppressed && reminder_suppressed();
         if (reminder_banner_)
+        {
             reminder_banner_->set_visible(reminder_requested_ && !suppressed);
+        }
     }
 
     OfflineBannerWidget* offline_banner_ = nullptr;
@@ -519,7 +592,11 @@ class MainAppWidget::RootLayoutWidget : public tk::Widget
 {
 public:
     // Which pane is shown full-width while is_narrow(); irrelevant otherwise.
-    enum class Pane : std::uint8_t { List, Room };
+    enum class Pane : std::uint8_t
+    {
+        List,
+        Room
+    };
 
     explicit RootLayoutWidget(tk::Host* host)
     {
@@ -543,14 +620,17 @@ public:
         };
         grip_target_->on_key = [this](const tk::KeyEvent& e)
         {
-            if ((e.key != tk::Key::Left && e.key != tk::Key::Right) ||
-                e.ctrl || e.alt || e.meta)
+            if ((e.key != tk::Key::Left && e.key != tk::Key::Right) || e.ctrl || e.alt || e.meta)
+            {
                 return false;
+            }
             constexpr float kStep = 16.0f;
             if (collapsed_)
             {
                 if (e.key == tk::Key::Right)
+                {
                     collapsed_ = false;
+                }
             }
             else
             {
@@ -558,17 +638,57 @@ public:
                 const auto r = resolve_sidebar_drag(raw, max_sidebar_w_, collapsed_w_);
                 collapsed_ = r.collapsed;
                 if (!r.collapsed)
+                {
                     sidebar_w_ = r.width;
+                }
             }
             commit_keyboard_resize_();
             return true;
         };
     }
 
-    SidebarWidget* sidebar() const { return sidebar_; }
-    ChatPanelWidget* chat_panel() const { return chat_panel_; }
+    SidebarWidget* sidebar() const
+    {
+        return sidebar_;
+    }
+    ChatPanelWidget* chat_panel() const
+    {
+        return chat_panel_;
+    }
+    SpacePickerView* space_picker() const
+    {
+        return sidebar_->space_picker();
+    }
 
-    Pane active_pane() const { return active_pane_; }
+    // The picker only exists while at least one space is pinned, and only in
+    // the two-pane layout (the narrow layout shows a single full-width pane).
+    void set_picker_shown(bool shown)
+    {
+        if (picker_shown_ == shown)
+        {
+            return;
+        }
+        picker_shown_ = shown;
+        if (host())
+        {
+            host()->mark_needs_relayout();
+        }
+    }
+    bool picker_shown() const
+    {
+        return picker_shown_;
+    }
+    // Whether the layout has room for the picker column: not in the
+    // single-pane layout and not with the sidebar collapsed to icons.
+    bool picker_fits() const
+    {
+        return !is_narrow_ && !collapsed_;
+    }
+
+    Pane active_pane() const
+    {
+        return active_pane_;
+    }
     // Requests its own relayout on an actual change — a custom enum-based
     // pane switch, not a set_visible() cascade Widget's own automatic
     // invalidation would otherwise catch (see Widget::set_visible()'s doc
@@ -578,42 +698,72 @@ public:
     // call frames away.
     void set_active_pane(Pane p)
     {
-        if (p == active_pane_) return;
+        if (p == active_pane_)
+        {
+            return;
+        }
         active_pane_ = p;
-        if (host()) host()->mark_needs_relayout();
+        if (host())
+        {
+            host()->mark_needs_relayout();
+        }
     }
     // True below kNarrowBreakpoint, where only one pane is shown at a time.
-    bool is_narrow() const { return is_narrow_; }
+    bool is_narrow() const
+    {
+        return is_narrow_;
+    }
 
     // ── Resizable sidebar ────────────────────────────────────────────────
     void set_sidebar_width(float w)
     {
         sidebar_w_ = std::clamp(w, kSidebarMinExpandedW, 100000.0f);
-        if (host()) host()->mark_needs_relayout();
+        if (host())
+        {
+            host()->mark_needs_relayout();
+        }
     }
     void set_collapsed(bool c)
     {
-        if (collapsed_ == c) return;
+        if (collapsed_ == c)
+        {
+            return;
+        }
         collapsed_ = c;
         apply_icon_only_();
-        if (host()) host()->mark_needs_relayout();
+        if (host())
+        {
+            host()->mark_needs_relayout();
+        }
     }
-    float sidebar_width() const { return sidebar_w_; }
+    float sidebar_width() const
+    {
+        return sidebar_w_;
+    }
     // Width of the collapsed (icon-only) sidebar; narrower for the compact room list.
     void set_collapsed_width(float w)
     {
-        if (collapsed_w_ == w) return;
+        if (collapsed_w_ == w)
+        {
+            return;
+        }
         collapsed_w_ = w;
-        if (host()) host()->mark_needs_relayout();
+        if (host())
+        {
+            host()->mark_needs_relayout();
+        }
     }
-    bool  collapsed() const { return collapsed_; }
+    bool collapsed() const
+    {
+        return collapsed_;
+    }
 
     using Cursor = MainAppWidget::SidebarCursor;
 
     // Fired on drag-end / grip toggle (width, collapsed) and as the pointer
     // moves over the separator (which cursor the shell should show).
     std::function<void(float, bool)> on_resize_committed_;
-    std::function<void(Cursor)>      on_cursor_;
+    std::function<void(Cursor)> on_cursor_;
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override
     {
@@ -635,30 +785,36 @@ public:
             // shorter row into view.
             float longest = 0.0f;
             if (sidebar_ && sidebar_->room_list_view())
-                longest = sidebar_->room_list_view()->longest_visible_row_width(
-                    ctx.factory, ctx.theme);
-            max_sidebar_w_ = sidebar_max_width(bounds.w, longest);
+            {
+                longest =
+                    sidebar_->room_list_view()->longest_visible_row_width(ctx.factory, ctx.theme);
+            }
+            const float picker_w = picker_w_();
+            max_sidebar_w_ = sidebar_max_width(bounds.w - picker_w, longest);
             const bool shrank = last_root_w_ > 0.0f && bounds.w < last_root_w_;
             last_root_w_ = bounds.w;
             if (shrank)
-                sidebar_w_ = std::clamp(
-                    sidebar_w_, kSidebarMinExpandedW,
-                    std::max(max_sidebar_w_, kSidebarMinExpandedW));
+            {
+                sidebar_w_ = std::clamp(sidebar_w_, kSidebarMinExpandedW,
+                                        std::max(max_sidebar_w_, kSidebarMinExpandedW));
+            }
 
             apply_icon_only_();
             const float eff_w = collapsed_ ? collapsed_w_ : sidebar_w_;
+            const float pw = picker_w_();
 
             if (sidebar_)
             {
                 sidebar_->set_visible(true);
-                sidebar_->arrange(ctx, {bounds.x, bounds.y, eff_w, bounds.h});
+                sidebar_->set_picker_width(pw);
+                sidebar_->arrange(ctx, {bounds.x, bounds.y, pw + eff_w, bounds.h});
             }
             if (chat_panel_)
             {
-                const float chat_x = bounds.x + eff_w + kSepW;
+                const float chat_x = bounds.x + pw + eff_w + kSepW;
                 chat_panel_->set_visible(true);
-                chat_panel_->arrange(
-                    ctx, {chat_x, bounds.y, bounds.w - eff_w - kSepW, bounds.h});
+                chat_panel_->arrange(ctx,
+                                     {chat_x, bounds.y, bounds.w - pw - eff_w - kSepW, bounds.h});
             }
             if (grip_target_)
             {
@@ -668,7 +824,9 @@ public:
             return;
         }
         if (grip_target_)
+        {
             grip_target_->arrange(ctx, {}); // no separator in narrow mode
+        }
 
         // Narrow: only the active pane is shown, full width. Icon-only mode is
         // dropped here (it's a single full-width pane). Both children still get
@@ -679,6 +837,7 @@ public:
         if (sidebar_)
         {
             sidebar_->set_visible(!show_room);
+            sidebar_->set_picker_width(0.0f);
             sidebar_->arrange(ctx, !show_room ? bounds : tk::Rect{});
         }
         if (chat_panel_)
@@ -696,13 +855,17 @@ public:
         // after this whole subtree, so they correctly cover the separator.
         paint_children(ctx);
         if (!is_narrow_)
+        {
             draw_separator_and_grip_(ctx);
+        }
     }
 
     tk::Widget* hit_test(tk::Point world) override
     {
         if (!is_narrow_ && over_grip_or_band_(world))
+        {
             return this;
+        }
         return tk::Widget::hit_test(world);
     }
 
@@ -734,14 +897,23 @@ public:
             {
                 hover_grip_ = ng;
                 hover_band_ = nb;
-                if (dirty) *dirty = true;
+                if (dirty)
+                {
+                    *dirty = true;
+                }
             }
             if (cur != Cursor::None)
             {
                 // Don't leave a room row / chat element hover-highlighted
                 // under the separator cursor.
-                if (sidebar_) sidebar_->on_pointer_leave();
-                if (chat_panel_) chat_panel_->on_pointer_leave();
+                if (sidebar_)
+                {
+                    sidebar_->on_pointer_leave();
+                }
+                if (chat_panel_)
+                {
+                    chat_panel_->on_pointer_leave();
+                }
                 return this;
             }
         }
@@ -755,51 +927,76 @@ public:
 
     bool on_pointer_down(tk::Point local) override
     {
-        if (is_narrow_) return false;
+        if (is_narrow_)
+        {
+            return false;
+        }
         dragging_ = true;
         moved_ = false;
-        press_on_grip_ =
-            point_in_rect({bounds_.x + local.x, bounds_.y + local.y}, grip_rect_());
+        press_on_grip_ = point_in_rect({bounds_.x + local.x, bounds_.y + local.y}, grip_rect_());
         drag_start_x_ = local.x;
         drag_start_w_ = eff_sidebar_w_();
         // Don't change the cursor on press — it stays whatever the hover set
         // (hand over the grip, ↔ over the band); a drag switches it below.
-        if (host()) host()->request_repaint(); // grip fills accent while pressed
+        if (host())
+        {
+            host()->request_repaint(); // grip fills accent while pressed
+        }
         return true;
     }
 
     void on_pointer_drag(tk::Point local) override
     {
-        if (!dragging_) return;
+        if (!dragging_)
+        {
+            return;
+        }
         if (!moved_ && std::abs(local.x - drag_start_x_) > 3.0f)
         {
             moved_ = true;
             emit_cursor_(Cursor::Resize);
         }
-        if (!moved_) return;
+        if (!moved_)
+        {
+            return;
+        }
         const float raw = drag_start_w_ + (local.x - drag_start_x_);
         const auto r = resolve_sidebar_drag(raw, max_sidebar_w_, collapsed_w_);
         collapsed_ = r.collapsed;
         if (!r.collapsed)
-            sidebar_w_ = r.width;   // keep last expanded width while collapsed
+        {
+            sidebar_w_ = r.width; // keep last expanded width while collapsed
+        }
         apply_icon_only_();
-        if (host()) host()->mark_needs_relayout();
+        if (host())
+        {
+            host()->mark_needs_relayout();
+        }
     }
 
     void on_pointer_up(tk::Point local, bool) override
     {
-        if (!dragging_) return;
+        if (!dragging_)
+        {
+            return;
+        }
         dragging_ = false;
         if (!moved_ && press_on_grip_)
         {
             // A click on the grip (no drag) toggles collapse.
             collapsed_ = !collapsed_;
             apply_icon_only_();
-            if (host()) host()->mark_needs_relayout();
+            if (host())
+            {
+                host()->mark_needs_relayout();
+            }
         }
         moved_ = false;
         press_on_grip_ = false;
-        if (on_resize_committed_) on_resize_committed_(sidebar_w_, collapsed_);
+        if (on_resize_committed_)
+        {
+            on_resize_committed_(sidebar_w_, collapsed_);
+        }
         emit_cursor_(cursor_for_({bounds_.x + local.x, bounds_.y + local.y}));
     }
 
@@ -824,11 +1021,25 @@ private:
         return collapsed_ ? collapsed_w_ : sidebar_w_;
     }
 
+    // Width the picker column takes to the left of the room list.
+    float picker_w_() const
+    {
+        return picker_shown_ && picker_fits() ? SpacePickerView::kWidth : 0.0f;
+    }
+
+    // x of the room-list / chat separator.
+    float separator_x_() const
+    {
+        return bounds_.x + picker_w_() + eff_sidebar_w_();
+    }
+
     bool over_handle_band_(tk::Point world) const
     {
         if (world.y < bounds_.y || world.y >= bounds_.y + bounds_.h)
+        {
             return false;
-        const float sx = bounds_.x + eff_sidebar_w_();
+        }
+        const float sx = separator_x_();
         return std::abs(world.x - sx) <= kHandleHalfW;
     }
 
@@ -837,8 +1048,9 @@ private:
     // panel but clear of the composer bar in the pane to its right.
     tk::Rect grip_rect_() const
     {
-        const float sx = bounds_.x + eff_sidebar_w_();
-        const float cy = bounds_.y + bounds_.h - MainAppWidget::user_strip_height();
+        const float sx = separator_x_();
+        const float strip_h = sidebar_ ? sidebar_->user_strip_h() : MainAppWidget::kUserStripBaseH;
+        const float cy = bounds_.y + bounds_.h - strip_h;
         return {sx - kGripR, cy - kGripR, kGripR * 2.0f, kGripR * 2.0f};
     }
 
@@ -849,22 +1061,34 @@ private:
 
     Cursor cursor_for_(tk::Point world) const
     {
-        if (point_in_rect(world, grip_rect_())) return Cursor::Toggle;
-        if (over_handle_band_(world)) return Cursor::Resize;
+        if (point_in_rect(world, grip_rect_()))
+        {
+            return Cursor::Toggle;
+        }
+        if (over_handle_band_(world))
+        {
+            return Cursor::Resize;
+        }
         return Cursor::None;
     }
 
     void emit_cursor_(Cursor c)
     {
-        if (c == last_cursor_) return;
+        if (c == last_cursor_)
+        {
+            return;
+        }
         last_cursor_ = c;
-        if (on_cursor_) on_cursor_(c);
+        if (on_cursor_)
+        {
+            on_cursor_(c);
+        }
     }
 
     void draw_separator_and_grip_(tk::PaintCtx& ctx)
     {
         const auto& pal = ctx.theme.palette;
-        const float sx = bounds_.x + eff_sidebar_w_();
+        const float sx = separator_x_();
         const tk::Rect g = grip_rect_();
         const float cy = g.y + g.h * 0.5f;
         // The separator line gets the accent tint while the bar is hovered
@@ -874,15 +1098,13 @@ private:
         const bool grip_active = press_on_grip_ && !moved_;
 
         ctx.canvas.draw_line({sx, bounds_.y}, {sx, bounds_.y + bounds_.h},
-                             bar_active ? pal.accent : pal.separator,
-                             bar_active ? 2.0f : 1.0f);
+                             bar_active ? pal.accent : pal.separator, bar_active ? 2.0f : 1.0f);
 
         const tk::Color fill = grip_active ? pal.accent : pal.sidebar_bg;
         ctx.canvas.fill_rounded_rect(g, kGripR, fill);
         ctx.canvas.stroke_rounded_rect(g, kGripR, pal.border_strong, 1.0f);
 
-        const tk::Color arrow =
-            grip_active ? pal.text_on_accent : pal.text_secondary;
+        const tk::Color arrow = grip_active ? pal.text_on_accent : pal.text_secondary;
         constexpr float kAx = 3.0f;
         constexpr float kAy = 4.0f;
         if (collapsed_)
@@ -902,39 +1124,53 @@ private:
     void commit_keyboard_resize_()
     {
         apply_icon_only_();
-        if (host()) host()->mark_needs_relayout();
-        if (on_resize_committed_) on_resize_committed_(sidebar_w_, collapsed_);
+        if (host())
+        {
+            host()->mark_needs_relayout();
+        }
+        if (on_resize_committed_)
+        {
+            on_resize_committed_(sidebar_w_, collapsed_);
+        }
     }
 
     void apply_icon_only_()
     {
-        if (!sidebar_) return;
+        if (!sidebar_)
+        {
+            return;
+        }
         const bool on = !is_narrow_ && collapsed_;
         if (sidebar_->room_list_view())
+        {
             sidebar_->room_list_view()->set_icon_only(on);
+        }
         if (sidebar_->user_info())
+        {
             sidebar_->user_info()->set_icon_only(on);
+        }
     }
 
     SidebarWidget* sidebar_ = nullptr;
+    bool picker_shown_ = false;
     ChatPanelWidget* chat_panel_ = nullptr;
     tk::KeyboardTarget* grip_target_ = nullptr;
     Pane active_pane_ = Pane::List;
     bool is_narrow_ = false;
 
-    float sidebar_w_     = MainAppWidget::kSidebarW;
+    float sidebar_w_ = MainAppWidget::kSidebarW;
     float max_sidebar_w_ = MainAppWidget::kSidebarW;
-    float last_root_w_   = 0.0f;
-    bool  collapsed_     = false;
-    float collapsed_w_   = kSidebarCollapsedW;
-    bool  dragging_      = false;
-    bool  moved_         = false;
-    bool  press_on_grip_ = false;
-    bool  hover_grip_    = false;
-    bool  hover_band_    = false;
-    float drag_start_x_  = 0.0f;
-    float drag_start_w_  = 0.0f;
-    Cursor last_cursor_  = Cursor::None;
+    float last_root_w_ = 0.0f;
+    bool collapsed_ = false;
+    float collapsed_w_ = kSidebarCollapsedW;
+    bool dragging_ = false;
+    bool moved_ = false;
+    bool press_on_grip_ = false;
+    bool hover_grip_ = false;
+    bool hover_band_ = false;
+    float drag_start_x_ = 0.0f;
+    float drag_start_w_ = 0.0f;
+    Cursor last_cursor_ = Cursor::None;
 };
 
 class MainAppWidget::OverlayStackWidget : public tk::Stack
@@ -943,15 +1179,21 @@ public:
     tk::Widget* dispatch_pointer_move(tk::Point world, bool* dirty) override
     {
         if (!visible())
+        {
             return nullptr;
+        }
         const auto& ch = children();
         for (auto it = ch.rbegin(); it != ch.rend(); ++it)
         {
             auto* child = it->get();
             if (!child->visible())
+            {
                 continue;
+            }
             if (tk::Widget* hit = child->dispatch_pointer_move(world, dirty))
+            {
                 return hit;
+            }
         }
         return nullptr;
     }
@@ -964,15 +1206,21 @@ public:
     tk::Widget* hit_test(tk::Point world) override
     {
         if (!visible())
+        {
             return nullptr;
+        }
         const auto& ch = children();
         for (auto it = ch.rbegin(); it != ch.rend(); ++it)
         {
             auto* child = it->get();
             if (!child->visible())
+            {
                 continue;
+            }
             if (tk::Widget* hit = child->hit_test(world))
+            {
                 return hit;
+            }
         }
         return nullptr;
     }
@@ -981,8 +1229,7 @@ public:
 class MainAppWidget::FloatingCallLayerWidget : public tk::Widget
 {
 public:
-    views::CallOverlayWidget* add_call_overlay(
-        std::unique_ptr<views::CallOverlayWidget> widget)
+    views::CallOverlayWidget* add_call_overlay(std::unique_ptr<views::CallOverlayWidget> widget)
     {
         return add_child(std::move(widget));
     }
@@ -1002,7 +1249,10 @@ public:
     // macOS/Qt6/GTK4 even though it's canvas-rendered, so a bubble over it
     // would lose clicks to it — and there's no reason to park a call there.
     // Empty = no exclusion.
-    void set_avoid_rect(tk::Rect r) { avoid_rect_ = r; }
+    void set_avoid_rect(tk::Rect r)
+    {
+        avoid_rect_ = r;
+    }
 
     void arrange(tk::LayoutCtx& ctx, tk::Rect bounds) override
     {
@@ -1011,14 +1261,11 @@ public:
         {
             auto* call = static_cast<views::CallOverlayWidget*>(child.get());
             const auto [cx, cy] = call->float_position();
-            const float fx = std::max(bounds.x,
-                std::min(cx, bounds.x + bounds.w - kFloatingCallW));
-            float fy = std::max(bounds.y,
-                std::min(cy, bounds.y + bounds.h - kFloatingCallH));
+            const float fx = std::max(bounds.x, std::min(cx, bounds.x + bounds.w - kFloatingCallW));
+            float fy = std::max(bounds.y, std::min(cy, bounds.y + bounds.h - kFloatingCallH));
             const tk::Rect& a = avoid_rect_;
-            if (!a.empty() &&
-                fx < a.x + a.w && fx + kFloatingCallW > a.x &&
-                fy < a.y + a.h && fy + kFloatingCallH > a.y)
+            if (!a.empty() && fx < a.x + a.w && fx + kFloatingCallW > a.x && fy < a.y + a.h &&
+                fy + kFloatingCallH > a.y)
             {
                 fy = std::max(bounds.y, a.y - kAvoidGap - kFloatingCallH);
             }
@@ -1036,15 +1283,21 @@ public:
     tk::Widget* dispatch_pointer_move(tk::Point world, bool* dirty) override
     {
         if (!visible())
+        {
             return nullptr;
+        }
         const auto& ch = children();
         for (auto it = ch.rbegin(); it != ch.rend(); ++it)
         {
             auto* child = it->get();
             if (!child->visible())
+            {
                 continue;
+            }
             if (tk::Widget* hit = child->dispatch_pointer_move(world, dirty))
+            {
                 return hit;
+            }
         }
         return nullptr;
     }
@@ -1057,15 +1310,21 @@ public:
     tk::Widget* hit_test(tk::Point world) override
     {
         if (!visible())
+        {
             return nullptr;
+        }
         const auto& ch = children();
         for (auto it = ch.rbegin(); it != ch.rend(); ++it)
         {
             auto* child = it->get();
             if (!child->visible())
+            {
                 continue;
+            }
             if (tk::Widget* hit = child->hit_test(world))
+            {
                 return hit;
+            }
         }
         return nullptr;
     }
@@ -1073,7 +1332,7 @@ public:
 private:
     static constexpr float kFloatingCallW = 320.0f;
     static constexpr float kFloatingCallH = 240.0f;
-    static constexpr float kAvoidGap      = 8.0f;
+    static constexpr float kAvoidGap = 8.0f;
     tk::Rect avoid_rect_{};
 };
 
@@ -1105,12 +1364,16 @@ MainAppWidget::MainAppWidget()
     root_layout_->on_resize_committed_ = [this](float w, bool collapsed)
     {
         if (on_sidebar_layout_changed)
+        {
             on_sidebar_layout_changed(w, collapsed);
+        }
     };
     root_layout_->on_cursor_ = [this](SidebarCursor c)
     {
         if (on_sidebar_cursor)
+        {
             on_sidebar_cursor(c);
+        }
     };
 
     chat_panel_ = root_layout_->chat_panel();
@@ -1125,7 +1388,10 @@ MainAppWidget::MainAppWidget()
     // Chat panel: main room view (header + messages + compose bar).
     auto rv = tk::create_root_widget<RoomView>(host);
     room_view_ = chat_content->add_child(std::move(rv));
-    room_view_->on_back_requested = [this] { show_room_list_pane_narrow_(); };
+    room_view_->on_back_requested = [this]
+    {
+        show_room_list_pane_narrow_();
+    };
     room_view_->on_room_cleared = [this]
     {
         // A real deselect (logout/account switch/leave) — always snap back
@@ -1167,8 +1433,8 @@ MainAppWidget::MainAppWidget()
     media_viewer_ = overlay_stack_->add_child(std::move(viewer));
     media_viewer_->set_visible(false);
 
-    auto enc = tk::create_root_widget<EncryptionSetupOverlay>(
-        host, EncryptionSetupOverlay::Mode::Fresh);
+    auto enc =
+        tk::create_root_widget<EncryptionSetupOverlay>(host, EncryptionSetupOverlay::Mode::Fresh);
     encryption_setup_ = overlay_stack_->add_child(std::move(enc));
     encryption_setup_->set_visible(false);
 
@@ -1191,14 +1457,16 @@ MainAppWidget::MainAppWidget()
 
     // Create-poll form — same open()/close()-gated treatment.
     create_poll_dialog_ = overlay_stack_->add_child(std::make_unique<CreatePollDialog>());
-    create_poll_dialog_->on_layout_changed = [this]() {
+    create_poll_dialog_->on_layout_changed = [this]()
+    {
         notify_layout_changed_();
     };
 
     // Keyboard shortcuts list — same open()/close()-gated treatment.
-    shortcuts_overlay_ = overlay_stack_->add_child(
-        tk::create_root_widget<KeyboardShortcutsOverlay>(host));
-    shortcuts_overlay_->on_layout_changed = [this]() {
+    shortcuts_overlay_ =
+        overlay_stack_->add_child(tk::create_root_widget<KeyboardShortcutsOverlay>(host));
+    shortcuts_overlay_->on_layout_changed = [this]()
+    {
         notify_layout_changed_();
     };
 
@@ -1220,7 +1488,11 @@ MainAppWidget::MainAppWidget()
     // comment).
     if (host)
     {
-        host->set_on_ctrl_key_up([this] { commit_mru_cycle(); });
+        host->set_on_ctrl_key_up(
+            [this]
+            {
+                commit_mru_cycle();
+            });
     }
 
     // Ctrl+Shift+F message search — topmost overlay alongside the switcher.
@@ -1242,6 +1514,14 @@ MainAppWidget::MainAppWidget()
     // RoomListView's "+" button or an unjoined matrix: link.
     auto ar = tk::create_root_widget<AddRoomView>(host);
     add_room_view_ = overlay_stack_->add_child(std::move(ar));
+
+    // Undismissable "please wait" overlay — added last so it paints above every
+    // other overlay and swallows input until the owner closes it.
+    busy_dialog_ = overlay_stack_->add_child(std::make_unique<BusyDialog>());
+    busy_dialog_->on_layout_changed = [this]()
+    {
+        notify_layout_changed_();
+    };
     add_room_view_->set_visible(false);
 
     auto floating_calls = std::make_unique<FloatingCallLayerWidget>();
@@ -1253,15 +1533,16 @@ MainAppWidget::MainAppWidget()
     if (room_view_ && confirm_dialog_)
     {
         room_view_->set_confirm_provider(
-            [this](ConfirmDialog::Options opts,
-                   std::function<void()> on_confirm) {
+            [this](ConfirmDialog::Options opts, std::function<void()> on_confirm)
+            {
                 confirm_dialog_->open(std::move(opts), std::move(on_confirm));
             });
 
         // Route the dialog's layout-changed notification through RoomView's
         // shared on_layout_changed chain so the shell hides the compose
         // textarea + room-search overlays while the dialog is up.
-        confirm_dialog_->on_layout_changed = [this]() {
+        confirm_dialog_->on_layout_changed = [this]()
+        {
             notify_layout_changed_();
         };
     }
@@ -1274,11 +1555,13 @@ MainAppWidget::MainAppWidget()
         // since that needs HistoryExportController — this provider only
         // needs to show the overlay.
         room_view_->set_export_history_provider(
-            [this](std::string room_id, std::string room_display_name) {
+            [this](std::string room_id, std::string room_display_name)
+            {
                 export_history_dialog_->open(std::move(room_id), std::move(room_display_name));
             });
 
-        export_history_dialog_->on_layout_changed = [this]() {
+        export_history_dialog_->on_layout_changed = [this]()
+        {
             notify_layout_changed_();
         };
     }
@@ -1295,9 +1578,29 @@ void MainAppWidget::set_space_nav(bool show, std::string_view space_name,
     }
 }
 
+void MainAppWidget::set_space_picker_entries(std::vector<SpacePickerEntry> entries)
+{
+    if (!root_layout_ || !root_layout_->space_picker())
+    {
+        return;
+    }
+    const bool shown = !entries.empty();
+    root_layout_->space_picker()->set_entries(std::move(entries));
+    root_layout_->set_picker_shown(shown);
+}
+
+SpacePickerView* MainAppWidget::space_picker() const
+{
+    return root_layout_ ? root_layout_->space_picker() : nullptr;
+}
+
 void MainAppWidget::set_avatar_provider(
     std::function<const tk::Image*(const std::string& mxc_url)> provider)
 {
+    if (root_layout_ && root_layout_->space_picker())
+    {
+        root_layout_->space_picker()->set_image_provider(provider);
+    }
     if (sidebar_)
     {
         sidebar_->set_avatar_provider(provider);
@@ -1332,8 +1635,7 @@ void MainAppWidget::set_offline(bool offline)
         // Probe only when going offline: distinguishes "no network at all"
         // from "homeserver unreachable" so the banner doesn't blame the
         // user's internet for a server-side outage.
-        const bool no_network =
-            offline && host() && !host()->is_network_available();
+        const bool no_network = offline && host() && !host()->is_network_available();
         chat_panel_->set_offline(offline, no_network);
     }
 }
@@ -1341,27 +1643,56 @@ void MainAppWidget::set_offline(bool offline)
 void MainAppWidget::set_sidebar_width(float w)
 {
     if (root_layout_)
+    {
         root_layout_->set_sidebar_width(w);
+    }
 }
 
 void MainAppWidget::set_room_list_compact(bool compact)
 {
     if (!sidebar_ || !sidebar_->room_list_view())
+    {
         return;
+    }
     auto* rlv = sidebar_->room_list_view();
     rlv->set_compact(compact);
     const float av = rlv->compact_avatar_size();
     // The user strip's avatar and the collapsed column shrink with the rows.
     if (sidebar_->user_info())
+    {
         sidebar_->user_info()->set_icon_avatar_size(av);
+    }
     if (root_layout_)
+    {
         root_layout_->set_collapsed_width(sidebar_collapsed_width(av));
+    }
+}
+
+bool MainAppWidget::space_pins_shown() const
+{
+    return !root_layout_ || root_layout_->picker_fits();
+}
+
+void MainAppWidget::notify_pins_shown_()
+{
+    const bool shown = space_pins_shown();
+    if (shown == last_pins_shown_)
+    {
+        return;
+    }
+    last_pins_shown_ = shown;
+    if (on_space_pins_shown_changed)
+    {
+        on_space_pins_shown_changed(shown);
+    }
 }
 
 void MainAppWidget::set_sidebar_collapsed(bool collapsed)
 {
     if (root_layout_)
+    {
         root_layout_->set_collapsed(collapsed);
+    }
 }
 
 void MainAppWidget::set_tab_bar_visible(bool visible)
@@ -1379,25 +1710,37 @@ void MainAppWidget::set_tab_bar_visible(bool visible)
 void MainAppWidget::clear_alternate_content_()
 {
     if (invite_card_)
+    {
         invite_card_->clear();
+    }
     if (knock_status_card_)
+    {
         knock_status_card_->clear();
+    }
     if (room_preview_)
+    {
         room_preview_->clear();
+    }
     if (space_root_)
+    {
         space_root_->clear();
+    }
 }
 
 void MainAppWidget::notify_layout_changed_()
 {
     if (room_view_ && room_view_->on_layout_changed)
+    {
         room_view_->on_layout_changed();
+    }
 }
 
 void MainAppWidget::set_room_visible_(bool visible)
 {
     if (room_view_)
+    {
         room_view_->set_visible(visible);
+    }
 }
 
 bool MainAppWidget::handle_primary_shortcut_(const tk::KeyEvent& event)
@@ -1413,18 +1756,21 @@ bool MainAppWidget::handle_primary_shortcut_(const tk::KeyEvent& event)
     // Ctrl+I / Cmd+I and Ctrl+, / Cmd+, open views on top of the room, so
     // they stay inert while anything already covers it: a scoped panel or
     // overlay, an open popup, or a modal dialog.
-    const bool covered =
-        host() && (host()->focus_scope() || host()->popup() ||
-                   tk::find_topmost_modal(this) != nullptr);
+    const bool covered = host() && (host()->focus_scope() || host()->popup() ||
+                                    tk::find_topmost_modal(this) != nullptr);
     // Ctrl+/ / Cmd+/ or F1 toggles the keyboard shortcuts overlay. Opening
     // it is inert while something else covers the app, like Ctrl+I; the
     // overlay itself is one of those covers, so the same key closes it.
     if (matches(ShortcutId::ShowShortcuts, event))
     {
         if (shortcuts_overlay_ && shortcuts_overlay_->is_open())
+        {
             shortcuts_overlay_->close();
+        }
         else if (!covered)
+        {
             show_keyboard_shortcuts();
+        }
         return true;
     }
     // Ctrl+I / Cmd+I: room info for the open room — the keyboard route to
@@ -1441,7 +1787,9 @@ bool MainAppWidget::handle_primary_shortcut_(const tk::KeyEvent& event)
     if (matches(ShortcutId::Settings, event) && on_settings_shortcut)
     {
         if (!covered)
+        {
             on_settings_shortcut();
+        }
         return true;
     }
     if (matches(ShortcutId::SearchMessages, event))
@@ -1501,6 +1849,11 @@ bool MainAppWidget::handle_history_shortcut_(const tk::KeyEvent& event)
 
 bool MainAppWidget::dismiss_top_transient_()
 {
+    // The busy dialog cannot be dismissed; Escape is swallowed.
+    if (busy_dialog_ && busy_dialog_->is_open())
+    {
+        return true;
+    }
     // Match visual priority for transient overlays. Native text controls may
     // still handle Escape before this when they own focus; this path is for the
     // shared canvas/widget tree and lets shells stop duplicating canvas policy.
@@ -1558,8 +1911,7 @@ bool MainAppWidget::dismiss_top_transient_()
         media_viewer_->set_visible(false);
         return true;
     }
-    if (auto* inv = room_view_ ? room_view_->invite_dialog() : nullptr;
-        inv && inv->is_open())
+    if (auto* inv = room_view_ ? room_view_->invite_dialog() : nullptr; inv && inv->is_open())
     {
         inv->close();
         return true;
@@ -1615,45 +1967,83 @@ bool MainAppWidget::dismiss_top_transient_()
 bool MainAppWidget::show_room_list_pane_narrow_()
 {
     if (!root_layout_ || !root_layout_->is_narrow())
+    {
         return false;
+    }
     if (root_layout_->active_pane() != RootLayoutWidget::Pane::Room)
+    {
         return false;
+    }
     if (active_transient_overlay_() != nullptr)
+    {
         return false;
+    }
     if (room_view_ && room_view_->room_search_open())
+    {
         room_view_->close_room_search();
+    }
     root_layout_->set_active_pane(RootLayoutWidget::Pane::List);
     return true;
 }
 
 tk::Widget* MainAppWidget::active_transient_overlay_() const
 {
+    if (busy_dialog_ && busy_dialog_->is_open())
+    {
+        return busy_dialog_;
+    }
     if (add_room_view_ && add_room_view_->is_open())
+    {
         return add_room_view_;
+    }
     if (forward_picker_ && forward_picker_->is_open())
+    {
         return forward_picker_;
+    }
     if (message_search_ && message_search_->is_open())
+    {
         return message_search_;
+    }
     if (quick_switcher_ && quick_switcher_->is_open())
+    {
         return quick_switcher_;
+    }
     if (shortcuts_overlay_ && shortcuts_overlay_->is_open())
+    {
         return shortcuts_overlay_;
+    }
     if (create_poll_dialog_ && create_poll_dialog_->is_open())
+    {
         return create_poll_dialog_;
+    }
     if (confirm_dialog_ && confirm_dialog_->is_open())
+    {
         return confirm_dialog_;
+    }
     if (media_viewer_ && media_viewer_->is_open())
+    {
         return media_viewer_;
+    }
     if (qr_grant_view_ && qr_grant_view_->visible())
+    {
         return qr_grant_view_;
+    }
     if (encryption_setup_ && encryption_setup_->visible())
+    {
         return encryption_setup_;
+    }
     if (export_history_dialog_ && export_history_dialog_->is_open())
+    {
         return export_history_dialog_;
+    }
     if (screen_picker_ && screen_picker_->visible())
+    {
         return screen_picker_;
+    }
     if (camera_widget_ && camera_widget_->visible())
+    {
         return camera_widget_;
+    }
     return nullptr;
 }
 
@@ -1661,11 +2051,17 @@ void MainAppWidget::show_invite(const tesseract::InviteInfo& invite,
                                 InviteCard::ImageProvider provider)
 {
     if (invite_card_)
+    {
         invite_card_->set_invite(invite, std::move(provider));
+    }
     if (knock_status_card_)
+    {
         knock_status_card_->clear();
+    }
     if (space_root_)
+    {
         space_root_->clear();
+    }
     set_room_visible_(false);
 }
 
@@ -1673,14 +2069,22 @@ void MainAppWidget::show_knock_status(const tesseract::KnockedRoomInfo& knock,
                                       KnockStatusCard::ImageProvider provider)
 {
     if (invite_card_)
+    {
         invite_card_->clear();
+    }
     if (room_preview_)
+    {
         room_preview_->clear();
+    }
     if (space_root_)
+    {
         space_root_->clear();
+    }
     set_room_visible_(false);
     if (knock_status_card_)
+    {
         knock_status_card_->set_knock(knock, std::move(provider));
+    }
 }
 
 void MainAppWidget::show_room()
@@ -1698,18 +2102,26 @@ void MainAppWidget::show_room()
     clear_alternate_content_();
     set_room_visible_(true);
     if (root_layout_ && root_layout_->is_narrow())
+    {
         root_layout_->set_active_pane(RootLayoutWidget::Pane::Room);
+    }
 }
 
 void MainAppWidget::show_room_preview(const tesseract::RoomSummary& s,
                                       RoomPreviewView::AvatarProvider provider)
 {
     if (invite_card_)
+    {
         invite_card_->clear();
+    }
     if (knock_status_card_)
+    {
         knock_status_card_->clear();
+    }
     if (space_root_)
+    {
         space_root_->clear();
+    }
     set_room_visible_(false);
     if (room_preview_)
     {
@@ -1721,21 +2133,28 @@ void MainAppWidget::show_room_preview(const tesseract::RoomSummary& s,
 void MainAppWidget::hide_room_preview()
 {
     if (room_preview_)
+    {
         room_preview_->clear();
+    }
     set_room_visible_(true);
 }
 
-void MainAppWidget::show_space_root(const tesseract::RoomInfo& space,
-                                    std::size_t joined_children,
+void MainAppWidget::show_space_root(const tesseract::RoomInfo& space, std::size_t joined_children,
                                     std::size_t unjoined_children,
                                     SpaceRootView::AvatarProvider provider)
 {
     if (invite_card_)
+    {
         invite_card_->clear();
+    }
     if (knock_status_card_)
+    {
         knock_status_card_->clear();
+    }
     if (room_preview_)
+    {
         room_preview_->clear();
+    }
     set_room_visible_(false);
     if (space_root_)
     {
@@ -1747,7 +2166,9 @@ void MainAppWidget::show_space_root(const tesseract::RoomInfo& space,
 void MainAppWidget::hide_space_root()
 {
     if (space_root_)
+    {
         space_root_->clear();
+    }
     set_room_visible_(true);
 }
 
@@ -1783,17 +2204,26 @@ void MainAppWidget::show_encryption_setup(bool show)
 
 void MainAppWidget::show_qr_grant(bool show)
 {
-    if (qr_grant_view_) qr_grant_view_->set_visible(show);
+    if (qr_grant_view_)
+    {
+        qr_grant_view_->set_visible(show);
+    }
 }
 
 void MainAppWidget::open_camera_overlay()
 {
     if (camera_widget_)
+    {
         return; // already open
+    }
     if (is_call_active && is_call_active())
+    {
         return;
+    }
     if (!overlay_stack_)
+    {
         return;
+    }
     // No device probe here: CameraWidget itself explains a missing, busy or
     // blocked camera rather than the command silently doing nothing.
 
@@ -1802,16 +2232,17 @@ void MainAppWidget::open_camera_overlay()
 
     camera_widget_->on_frame_captured =
         [this](std::vector<std::uint8_t> bgra, std::uint32_t w, std::uint32_t h)
+    {
+        if (on_selfie_captured)
         {
-            if (on_selfie_captured)
-                on_selfie_captured(std::move(bgra), w, h);
-        };
+            on_selfie_captured(std::move(bgra), w, h);
+        }
+    };
 
-    camera_widget_->on_dismissed =
-        [this]
-        {
-            close_camera_overlay();
-        };
+    camera_widget_->on_dismissed = [this]
+    {
+        close_camera_overlay();
+    };
 
     overlay_stack_->add_child(std::move(widget));
     camera_widget_->open();
@@ -1822,20 +2253,24 @@ void MainAppWidget::open_camera_overlay()
 void MainAppWidget::close_camera_overlay()
 {
     if (!camera_widget_)
+    {
         return;
+    }
     CameraWidget* w = camera_widget_;
-    camera_widget_  = nullptr;
+    camera_widget_ = nullptr;
     if (overlay_stack_)
+    {
         overlay_stack_->remove_child(w);
+    }
     notify_layout_changed_();
 }
 
 void MainAppWidget::mount_call_overlay(
-    views::CallOverlayWidget::Mode                  initial_mode,
+    views::CallOverlayWidget::Mode initial_mode,
     std::function<void(int, std::function<void()>)> post_delayed,
-    std::function<void()>                           repaint_requester,
+    std::function<void()> repaint_requester,
     std::function<const tk::Image*(const std::string&)> avatar_provider,
-    std::function<std::string(const std::string&)>  display_name_provider)
+    std::function<std::string(const std::string&)> display_name_provider)
 {
     if (initial_mode == views::CallOverlayWidget::Mode::Floating)
     {
@@ -1847,19 +2282,18 @@ void MainAppWidget::mount_call_overlay(
         w->set_display_name_provider(std::move(display_name_provider));
         w->set_mode(views::CallOverlayWidget::Mode::Floating);
         if (floating_call_layer_)
+        {
             float_call_overlay_ = floating_call_layer_->add_call_overlay(std::move(w));
+        }
     }
     else
     {
         // Docked / DockedExpanded: delegate to RoomView's call panel.
         if (room_view_)
         {
-            room_view_->mount_call_panel(
-                initial_mode,
-                std::move(post_delayed),
-                std::move(repaint_requester),
-                std::move(avatar_provider),
-                std::move(display_name_provider));
+            room_view_->mount_call_panel(initial_mode, std::move(post_delayed),
+                                         std::move(repaint_requester), std::move(avatar_provider),
+                                         std::move(display_name_provider));
         }
     }
     notify_layout_changed_();
@@ -1869,24 +2303,28 @@ void MainAppWidget::unmount_call_overlay()
 {
     // Tear down the docked panel if one is active.
     if (room_view_ && room_view_->call_panel())
+    {
         room_view_->unmount_call_panel();
+    }
 
     // Tear down the floating overlay if one is active.
     if (float_call_overlay_)
     {
         float_call_overlay_->stop_timer();
         if (floating_call_layer_)
+        {
             floating_call_layer_->remove_call_overlay(float_call_overlay_);
+        }
         float_call_overlay_ = nullptr;
     }
 
     notify_layout_changed_();
 }
 
-views::ScreenPickerWidget* MainAppWidget::mount_screen_picker(
-    std::vector<tk::ScreenSource>    sources,
-    std::function<void(std::string)> on_selected,
-    std::function<void()>            on_cancelled)
+views::ScreenPickerWidget*
+MainAppWidget::mount_screen_picker(std::vector<tk::ScreenSource> sources,
+                                   std::function<void(std::string)> on_selected,
+                                   std::function<void()> on_cancelled)
 {
     unmount_screen_picker(); // remove any stale picker first
 
@@ -1896,12 +2334,18 @@ views::ScreenPickerWidget* MainAppWidget::mount_screen_picker(
     screen_picker_->on_source_selected = [this, cb = std::move(on_selected)](std::string id)
     {
         unmount_screen_picker();
-        if (cb) cb(std::move(id));
+        if (cb)
+        {
+            cb(std::move(id));
+        }
     };
     screen_picker_->on_cancelled = [this, cb = std::move(on_cancelled)]()
     {
         unmount_screen_picker();
-        if (cb) cb();
+        if (cb)
+        {
+            cb();
+        }
     };
 
     notify_layout_changed_();
@@ -1910,7 +2354,10 @@ views::ScreenPickerWidget* MainAppWidget::mount_screen_picker(
 
 void MainAppWidget::unmount_screen_picker()
 {
-    if (!screen_picker_) return;
+    if (!screen_picker_)
+    {
+        return;
+    }
     overlay_stack_->remove_child(screen_picker_);
     screen_picker_ = nullptr;
     notify_layout_changed_();
@@ -1919,7 +2366,9 @@ void MainAppWidget::unmount_screen_picker()
 views::CallOverlayWidget* MainAppWidget::call_panel_for_room() const
 {
     if (float_call_overlay_)
+    {
         return float_call_overlay_;
+    }
     return room_view_ ? room_view_->call_panel() : nullptr;
 }
 
@@ -1999,32 +2448,35 @@ void MainAppWidget::show_message_search(bool show)
 void MainAppWidget::show_keyboard_shortcuts()
 {
     if (!shortcuts_overlay_)
+    {
         return;
+    }
     shortcuts_overlay_->open();
     if (auto* h = host())
+    {
         h->mark_needs_relayout();
+    }
 }
 
 // ── Native overlay rect queries ────────────────────────────────────────────
 
 bool MainAppWidget::any_modal_open_() const
 {
-    const bool existing_modals =
-           (confirm_dialog_    && confirm_dialog_->is_open()) ||
-           (create_poll_dialog_ && create_poll_dialog_->is_open()) ||
-           (shortcuts_overlay_ && shortcuts_overlay_->is_open()) ||
-           (room_view_         && room_view_->is_overlay_open()) ||
-           (media_viewer_      && media_viewer_->is_open()) ||
-           (encryption_setup_  && encryption_setup_->visible()) ||
-           (qr_grant_view_     && qr_grant_view_->visible()) ||
-           (quick_switcher_    && quick_switcher_->is_open()) ||
-           (mru_switcher_      && mru_switcher_->is_open()) ||
-           (message_search_    && message_search_->is_open()) ||
-           (forward_picker_    && forward_picker_->is_open()) ||
-           (add_room_view_     && add_room_view_->is_open()) ||
-           (export_history_dialog_ && export_history_dialog_->is_open()) ||
-           camera_widget_ ||
-           screen_picker_;
+    const bool existing_modals = (busy_dialog_ && busy_dialog_->is_open()) ||
+                                 (confirm_dialog_ && confirm_dialog_->is_open()) ||
+                                 (create_poll_dialog_ && create_poll_dialog_->is_open()) ||
+                                 (shortcuts_overlay_ && shortcuts_overlay_->is_open()) ||
+                                 (room_view_ && room_view_->is_overlay_open()) ||
+                                 (media_viewer_ && media_viewer_->is_open()) ||
+                                 (encryption_setup_ && encryption_setup_->visible()) ||
+                                 (qr_grant_view_ && qr_grant_view_->visible()) ||
+                                 (quick_switcher_ && quick_switcher_->is_open()) ||
+                                 (mru_switcher_ && mru_switcher_->is_open()) ||
+                                 (message_search_ && message_search_->is_open()) ||
+                                 (forward_picker_ && forward_picker_->is_open()) ||
+                                 (add_room_view_ && add_room_view_->is_open()) ||
+                                 (export_history_dialog_ && export_history_dialog_->is_open()) ||
+                                 camera_widget_ || screen_picker_;
     // Docked mode is NOT modal — it sits inside RoomView and doesn't suppress
     // native overlays. Neither is Floating: FloatingCallLayerWidget keeps the
     // bubble off the compose bar instead. Only DockedExpanded (covers the
@@ -2045,8 +2497,14 @@ tk::Rect MainAppWidget::compose_text_area_rect() const
     // deliberately not called on that transition, so room_view_'s own
     // has_room_/visible_ flags stay unchanged; only the ancestor's
     // visibility actually changed.
-    if (any_modal_open_()) return {};
-    if (!room_view_ || !room_view_->visible_in_tree()) return {};
+    if (any_modal_open_())
+    {
+        return {};
+    }
+    if (!room_view_ || !room_view_->visible_in_tree())
+    {
+        return {};
+    }
     return room_view_->compose_text_area_rect();
 }
 
@@ -2064,6 +2522,7 @@ void MainAppWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     // message search their full-bleed coverage.
     const bool was_narrow = root_layout_ && root_layout_->is_narrow();
     tk::Widget::arrange(ctx, bounds);
+    notify_pins_shown_();
 
     if (root_layout_ && !was_narrow && root_layout_->is_narrow())
     {
@@ -2075,6 +2534,7 @@ void MainAppWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
                                           ? RootLayoutWidget::Pane::Room
                                           : RootLayoutWidget::Pane::List);
         root_layout_->arrange(ctx, bounds);
+        notify_pins_shown_();
     }
 
     // The floating call layer was arranged above before the compose bar's
@@ -2086,7 +2546,9 @@ void MainAppWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         if (room_view_ && room_view_->visible_in_tree())
         {
             if (auto* cb = room_view_->compose_bar(); cb && cb->visible())
+            {
                 avoid = cb->bounds();
+            }
         }
         floating_call_layer_->set_avoid_rect(avoid);
         floating_call_layer_->arrange(ctx, bounds);
@@ -2094,9 +2556,9 @@ void MainAppWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
     if (room_view_ && room_view_->header() && root_layout_)
     {
-        room_view_->header()->set_show_back_button(
-            root_layout_->is_narrow() &&
-            root_layout_->active_pane() == RootLayoutWidget::Pane::Room);
+        room_view_->header()->set_show_back_button(root_layout_->is_narrow() &&
+                                                   root_layout_->active_pane() ==
+                                                       RootLayoutWidget::Pane::Room);
     }
 
     // A full-bleed modal (image/video viewer, quick switcher, confirm
@@ -2124,7 +2586,9 @@ void MainAppWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         if (auto* ta = room_view_->compose_bar()->text_area())
         {
             if (compose_text_area_rect().empty())
+            {
                 ta->set_visible(false);
+            }
         }
     }
 }
@@ -2159,12 +2623,18 @@ void MainAppWidget::paint_after_children(tk::PaintCtx&)
     if (host())
     {
         if (tk::Widget* o = active_transient_overlay_())
+        {
             host()->set_focus_scope(o);
+        }
     }
 }
 
 bool MainAppWidget::on_key_down(const tk::KeyEvent& event)
 {
+    if (busy_dialog_ && busy_dialog_->is_open())
+    {
+        return true;
+    }
     if (handle_primary_shortcut_(event))
     {
         return true;

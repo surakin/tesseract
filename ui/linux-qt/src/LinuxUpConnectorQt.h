@@ -1,5 +1,5 @@
 #pragma once
-#include "../../shared/linux_up_connector_core.h"
+#include "platform/linux/linux_up_connector_core.h"
 #include <tesseract/up_connector.h>
 #include <QObject>
 #include <functional>

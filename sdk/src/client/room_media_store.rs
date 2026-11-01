@@ -294,11 +294,11 @@ pub(crate) use live::*;
 #[cfg(not(test))]
 mod live {
     use super::*;
-    use matrix_sdk_base::event_cache::store::EventCacheStoreLockState;
     use matrix_sdk::ruma::events::room::message::MessageType;
     use matrix_sdk::ruma::events::{AnySyncMessageLikeEvent, AnySyncTimelineEvent};
     use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
     use matrix_sdk::Client;
+    use matrix_sdk_base::event_cache::store::EventCacheStoreLockState;
     use std::collections::HashMap;
 
     use super::super::timeline_convert::{split_source, split_source_opt};
@@ -349,7 +349,9 @@ mod live {
             MessageType::Image(i) => {
                 let (src_mxc, src_json) = split_source(&i.source);
                 let (thumb_mxc, thumb_json) = split_source_opt(
-                    i.info.as_ref().and_then(|info| info.thumbnail_source.as_ref()),
+                    i.info
+                        .as_ref()
+                        .and_then(|info| info.thumbnail_source.as_ref()),
                 );
                 let (w, h) = i
                     .info
@@ -623,8 +625,7 @@ mod live {
                 let reached_db_end = (rows.len() as i64) < limit;
 
                 if let Some(h) = &handler {
-                    let ffi: Vec<crate::ffi::MediaIndexRowFfi> =
-                        rows.iter().map(to_ffi).collect();
+                    let ffi: Vec<crate::ffi::MediaIndexRowFfi> = rows.iter().map(to_ffi).collect();
                     h.lock()
                         .on_room_media_page(request_id, &ffi, reached_db_end, total);
                 }

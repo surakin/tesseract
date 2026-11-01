@@ -70,12 +70,15 @@ std::string mime_extension(const std::string& mime)
     };
     // Subtypes whose extension differs from the subtype itself.
     static constexpr Mapping kMap[] = {
-        {"jpeg", "jpg"},       {"pjpeg", "jpg"},    {"quicktime", "mov"},
-        {"matroska", "mkv"},   {"msvideo", "avi"},  {"wave", "wav"},
-        {"wav", "wav"},        {"3gpp", "3gp"},     {"3gpp2", "3g2"},
-        {"microsoft.icon", "ico"}, {"icon", "ico"}, {"tiff", "tif"},
-        {"mp4-latm", "m4a"},   {"m4a", "m4a"},      {"aac", "aac"},
-        {"mpeg4-generic", "m4a"}, {"ms-wmv", "wmv"}, {"plain", "txt"},
+        {"jpeg", "jpg"},      {"pjpeg", "jpg"},
+        {"quicktime", "mov"}, {"matroska", "mkv"},
+        {"msvideo", "avi"},   {"wave", "wav"},
+        {"wav", "wav"},       {"3gpp", "3gp"},
+        {"3gpp2", "3g2"},     {"microsoft.icon", "ico"},
+        {"icon", "ico"},      {"tiff", "tif"},
+        {"mp4-latm", "m4a"},  {"m4a", "m4a"},
+        {"aac", "aac"},       {"mpeg4-generic", "m4a"},
+        {"ms-wmv", "wmv"},    {"plain", "txt"},
     };
     for (const auto& m : kMap)
     {
@@ -94,10 +97,12 @@ std::string mime_extension(const std::string& mime)
         return ".m4a";
     }
     // Only a plain alphanumeric token is safe to put in a suggested file name.
-    const bool plain =
-        !sub.empty() && sub.size() <= 8 &&
-        std::all_of(sub.begin(), sub.end(), [](char c)
-                    { return std::isalnum(static_cast<unsigned char>(c)) != 0; });
+    const bool plain = !sub.empty() && sub.size() <= 8 &&
+                       std::all_of(sub.begin(), sub.end(),
+                                   [](char c)
+                                   {
+                                       return std::isalnum(static_cast<unsigned char>(c)) != 0;
+                                   });
     return plain ? "." + sub : std::string{};
 }
 } // namespace
@@ -168,32 +173,31 @@ std::vector<MediaViewerItem> items_from_gallery(const MessageListView::GalleryHi
         MediaViewerItem item;
         switch (row.kind)
         {
-            case Row::Kind::Image:
-            {
-                item.kind = MediaViewerItem::Kind::Image;
-                break;
-            }
-            case Row::Kind::Video:
-            {
-                item.kind = MediaViewerItem::Kind::Video;
-                break;
-            }
-            case Row::Kind::Audio:
-            {
-                item.kind = MediaViewerItem::Kind::Audio;
-                break;
-            }
-            case Row::Kind::File:
-            {
-                item.kind = MediaViewerItem::Kind::File;
-                break;
-            }
+        case Row::Kind::Image:
+        {
+            item.kind = MediaViewerItem::Kind::Image;
+            break;
+        }
+        case Row::Kind::Video:
+        {
+            item.kind = MediaViewerItem::Kind::Video;
+            break;
+        }
+        case Row::Kind::Audio:
+        {
+            item.kind = MediaViewerItem::Kind::Audio;
+            break;
+        }
+        case Row::Kind::File:
+        {
+            item.kind = MediaViewerItem::Kind::File;
+            break;
+        }
         }
         item.event_id = hit.event_id;
         item.source = row.source ? row.source->fetch_token() : std::string{};
         item.thumbnail = row.thumbnail ? row.thumbnail->fetch_token() : std::string{};
-        item.caption =
-            (row.body.empty() || row.body == row.filename) ? hit.caption : row.body;
+        item.caption = (row.body.empty() || row.body == row.filename) ? hit.caption : row.body;
         item.filename = row.filename;
         item.mime_type = row.mime_type;
         item.width = row.media_w;
@@ -211,65 +215,65 @@ MediaSaveSpec media_save_spec(const MediaViewerItem& item)
     MediaSaveSpec spec;
     switch (item.kind)
     {
-        case MediaViewerItem::Kind::Image:
+    case MediaViewerItem::Kind::Image:
+    {
+        spec.title = tk::tr("Save image");
+        spec.suggested_name =
+            item.filename.empty() ? "image" + mime_extension(item.mime_type) : item.filename;
+        spec.filter_name = tk::tr("Images");
+        spec.patterns = {"*.jpg", "*.jpeg", "*.png", "*.gif", "*.webp"};
+        break;
+    }
+    case MediaViewerItem::Kind::Video:
+    {
+        spec.title = tk::tr("Save video");
+        if (!item.filename.empty())
         {
-            spec.title = tk::tr("Save image");
-            spec.suggested_name =
-                item.filename.empty() ? "image" + mime_extension(item.mime_type) : item.filename;
-            spec.filter_name = tk::tr("Images");
-            spec.patterns = {"*.jpg", "*.jpeg", "*.png", "*.gif", "*.webp"};
-            break;
+            spec.suggested_name = item.filename;
         }
-        case MediaViewerItem::Kind::Video:
+        else
         {
-            spec.title = tk::tr("Save video");
-            if (!item.filename.empty())
-            {
-                spec.suggested_name = item.filename;
-            }
-            else
-            {
-                std::string ext = mime_extension(item.mime_type);
-                spec.suggested_name = "video" + (ext.empty() ? ".mp4" : ext);
-            }
-            spec.filter_name = tk::tr("Videos");
-            spec.patterns = {"*.mp4", "*.webm", "*.mkv"};
-            break;
+            std::string ext = mime_extension(item.mime_type);
+            spec.suggested_name = "video" + (ext.empty() ? ".mp4" : ext);
         }
-        case MediaViewerItem::Kind::Audio:
+        spec.filter_name = tk::tr("Videos");
+        spec.patterns = {"*.mp4", "*.webm", "*.mkv"};
+        break;
+    }
+    case MediaViewerItem::Kind::Audio:
+    {
+        spec.title = tk::tr("Save audio");
+        if (!item.filename.empty())
         {
-            spec.title = tk::tr("Save audio");
-            if (!item.filename.empty())
-            {
-                spec.suggested_name = item.filename;
-            }
-            else if (!item.caption.empty())
-            {
-                spec.suggested_name = item.caption;
-            }
-            else
-            {
-                spec.suggested_name = "audio" + mime_extension(item.mime_type);
-            }
-            break;
+            spec.suggested_name = item.filename;
         }
-        case MediaViewerItem::Kind::File:
+        else if (!item.caption.empty())
         {
-            spec.title = tk::tr("Save file");
-            if (!item.filename.empty())
-            {
-                spec.suggested_name = item.filename;
-            }
-            else if (!item.caption.empty())
-            {
-                spec.suggested_name = item.caption;
-            }
-            else
-            {
-                spec.suggested_name = "download";
-            }
-            break;
+            spec.suggested_name = item.caption;
         }
+        else
+        {
+            spec.suggested_name = "audio" + mime_extension(item.mime_type);
+        }
+        break;
+    }
+    case MediaViewerItem::Kind::File:
+    {
+        spec.title = tk::tr("Save file");
+        if (!item.filename.empty())
+        {
+            spec.suggested_name = item.filename;
+        }
+        else if (!item.caption.empty())
+        {
+            spec.suggested_name = item.caption;
+        }
+        else
+        {
+            spec.suggested_name = "download";
+        }
+        break;
+    }
     }
     return spec;
 }

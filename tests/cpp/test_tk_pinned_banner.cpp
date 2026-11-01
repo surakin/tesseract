@@ -19,10 +19,10 @@ namespace
 PinnedEvent make_pin(const std::string& id, std::uint64_t ts)
 {
     PinnedEvent p;
-    p.event_id     = id;
-    p.sender_name  = "Alice";
+    p.event_id = id;
+    p.sender_name = "Alice";
     p.body_preview = "Important";
-    p.timestamp    = ts;
+    p.timestamp = ts;
     return p;
 }
 
@@ -64,8 +64,7 @@ TEST_CASE("PinnedBanner::set_pins clamps current_index_ when list shrinks to emp
     CHECK(b.pins().empty());
 }
 
-TEST_CASE("PinnedBanner::on_jump_to fires for the currently-displayed pin",
-          "[pinned_banner]")
+TEST_CASE("PinnedBanner::on_jump_to fires for the currently-displayed pin", "[pinned_banner]")
 {
     TkPinnedBannerStage st;
     PinnedBanner b;
@@ -73,7 +72,10 @@ TEST_CASE("PinnedBanner::on_jump_to fires for the currently-displayed pin",
     st.arrange(b, {0, 0, 400, PinnedBanner::kBannerH});
 
     std::string clicked;
-    b.on_jump_to = [&](const std::string& id) { clicked = id; };
+    b.on_jump_to = [&](const std::string& id)
+    {
+        clicked = id;
+    };
 
     // The body is a real button filling the banner's left part; press and
     // release near its middle (button-local coordinates).

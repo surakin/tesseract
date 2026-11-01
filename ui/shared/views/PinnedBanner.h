@@ -34,10 +34,16 @@ public:
     /// when empty). Banner widget is effectively hidden (zero-height in
     /// measure) when empty.
     void set_pins(std::vector<tesseract::PinnedEvent> pins);
-    const std::vector<tesseract::PinnedEvent>& pins() const { return pins_; }
+    const std::vector<tesseract::PinnedEvent>& pins() const
+    {
+        return pins_;
+    }
 
     /// Currently displayed pin index. 0 when empty.
-    std::size_t current_index() const { return current_index_; }
+    std::size_t current_index() const
+    {
+        return current_index_;
+    }
 
     /// Fired when the user clicks the banner body. event_id is from the
     /// currently-displayed pin.
@@ -45,12 +51,12 @@ public:
 
     // tk::Widget overrides — match the signatures used by ThreadListView.
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint(tk::PaintCtx&) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint(tk::PaintCtx&) override;
 
     // A "Pinned messages" group ("2 of 5" as its description when there are
     // several); the body and the previous/next chevrons are real buttons.
-    tk::Role    access_role() const override
+    tk::Role access_role() const override
     {
         return pins_.empty() ? tk::Role::None : tk::Role::Group;
     }
@@ -61,16 +67,25 @@ public:
     std::string current_preview() const;
 
     // Test hooks: the three buttons (null-safe accessors).
-    tk::Button* body_button() const { return body_btn_; }
-    tk::Button* previous_button() const { return up_btn_; }
-    tk::Button* next_button() const { return down_btn_; }
+    tk::Button* body_button() const
+    {
+        return body_btn_;
+    }
+    tk::Button* previous_button() const
+    {
+        return up_btn_;
+    }
+    tk::Button* next_button() const
+    {
+        return down_btn_;
+    }
 
     // Layout constants exposed for tests.
-    static constexpr float kBannerH    = 44.0f;
-    static constexpr float kChevronSz  = 20.0f;
+    static constexpr float kBannerH = 44.0f;
+    static constexpr float kChevronSz = 20.0f;
     static constexpr float kChevronPad = 4.0f;
-    static constexpr float kCounterW   = 36.0f;
-    static constexpr float kPadX       = 12.0f;
+    static constexpr float kCounterW = 36.0f;
+    static constexpr float kPadX = 12.0f;
 
 private:
     std::vector<tesseract::PinnedEvent> pins_;
@@ -79,7 +94,7 @@ private:
     // painted over body_btn_'s hover/press fill.
     tk::Rect body_rect_{};
     tk::Button* body_btn_ = nullptr; // jump to the current pin
-    tk::Button* up_btn_   = nullptr; // previous pin
+    tk::Button* up_btn_ = nullptr;   // previous pin
     tk::Button* down_btn_ = nullptr; // next pin
 
     void step_(int delta);

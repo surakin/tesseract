@@ -16,6 +16,7 @@
 #                        Center
 #        - appstore:    uploads package.yml's Mac App Store .pkg to App Store
 #                       Connect
+#        - aur:         bumps and pushes the tesseract-matrix AUR package
 #        - winget:      opens the winget-pkgs update PR (disabled, see below)
 #
 # Everything published here is the exact build that was tested as the
@@ -42,12 +43,15 @@
 #            im.gnomos.tesseract, an App Store Connect API key (Users and
 #            Access > Integrations), and the export-compliance answer matching
 #            ITSAppUsesNonExemptEncryption (see ui/macos/CMakeLists.txt).
+#   AUR:     the AUR account, the first manual push of tesseract-matrix, and a
+#            dedicated SSH key pair; see packaging/arch/aur/README.md.
 #   Winget:  the first manual submission in packaging/winget/README.md.
 #
 # Repo configuration (Settings > Secrets and variables > Actions):
 #   Variables:
 #     TESSERACT_MSIX_STORE_PRODUCT_ID   Partner Center's Store product ID
 #     TESSERACT_MAC_APPSTORE_APPLE_ID   the app's numeric Apple ID in App Store Connect
+#                                       (in the "appstore" environment)
 #   Secrets:
 #     FLATPAK_GPG_PRIVATE_KEY, FLATPAK_GPG_PASSPHRASE, FLATPAK_GPG_KEY_ID
 #     AZURE_AD_TENANT_ID, AZURE_AD_APPLICATION_CLIENT_ID,
@@ -55,6 +59,10 @@
 #     APPSTORE_API_KEY_ID, APPSTORE_API_ISSUER_ID, APPSTORE_API_KEY_P8
 #                    App Store Connect API key id, issuer id and .p8 contents
 #                    (the signing secrets/variables are package.yml's)
+#     AUR_SSH_PRIVATE_KEY
+#                    private half of the SSH key registered on the AUR account;
+#                    stored as a secret of the `aur` environment (Settings >
+#                    Environments), not a repo-level secret
 #     WINGET_TOKEN   GitHub PAT (classic, public_repo scope) for an account
 #                    that can open PRs against microsoft/winget-pkgs
 # ---------------------------------------------------------------------------
@@ -83,6 +91,10 @@ on:
         default: true
       appstore:
         description: 'Upload to the Mac App Store (App Store Connect)'
+        type: boolean
+        default: true
+      aur:
+        description: 'Push the tesseract-matrix AUR package'
         type: boolean
         default: true
       winget:
@@ -238,8 +250,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha)
           run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow package.yml \
-                     --branch "$TAG" --event push --status success --limit 1 \
+                     --branch "$TAG" --commit "$sha" --status success --limit 1 \
                      --json databaseId --jq '.[0].databaseId')
           if [ -z "$run_id" ]; then
             echo "::error::No successful package.yml run found for $TAG"
@@ -281,6 +294,8 @@ jobs:
     # restore `github.event_name == 'release' || inputs.appstore` to re-enable.
     if: false
     runs-on: macos-latest
+    # Holds the App Store Connect API key and TESSERACT_MAC_APPSTORE_APPLE_ID.
+    environment: appstore
     permissions:
       contents: read
       actions: read
@@ -305,8 +320,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha)
           run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow package.yml \
-                     --branch "$TAG" --event push --status success --limit 1 \
+                     --branch "$TAG" --commit "$sha" --status success --limit 1 \
                      --json databaseId --jq '.[0].databaseId')
           if [ -z "$run_id" ]; then
             echo "::error::No successful package.yml run found for $TAG"
@@ -357,6 +373,45 @@ jobs:
           xcrun altool --upload-package "$pkg" -t macos --apiKey "$KEY_ID" --apiIssuer "$ISSUER_ID" \
             --apple-id "$APPLE_ID" --bundle-id im.gnomos.tesseract \
             --bundle-version "$build" --bundle-short-version-string "$short"
+
+  # ---------------------------------------------------------------------------
+  # AUR — bump tesseract-matrix to this tag. The action recomputes sha256sums
+  # (updpkgsums), regenerates .SRCINFO and pushes to the AUR git repo. The
+  # test build is off: the PKGBUILD rarely changes and a full Rust + Qt build
+  # in a container would add 20+ minutes. tesseract-matrix-git derives its
+  # version from git, so it needs nothing per release.
+  # ---------------------------------------------------------------------------
+  aur:
+    name: AUR (tesseract-matrix)
+    if: github.event_name == 'release' || inputs.aur
+    runs-on: ubuntu-24.04
+    environment: aur
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.TAG }}
+
+      - name: Set pkgver and reset pkgrel
+        run: |
+          ver="${TAG#v}"
+          pkgbuild=packaging/arch/aur/tesseract-matrix/PKGBUILD
+          sed -i -E "s/^pkgver=.*/pkgver=${ver}/; s/^pkgrel=.*/pkgrel=1/" "$pkgbuild"
+          grep -E '^(pkgver|pkgrel)=' "$pkgbuild"
+
+      - name: Publish to the AUR
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.1
+        with:
+          pkgname: tesseract-matrix
+          pkgbuild: packaging/arch/aur/tesseract-matrix/PKGBUILD
+          updpkgsums: true
+          test: false
+          commit_username: Marco Alvarez
+          commit_email: surakus@pm.me
+          commit_message: Update to ${{ env.TAG }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
 
   # ---------------------------------------------------------------------------
   # winget — open the winget-pkgs manifest update PR for the NSIS installer.

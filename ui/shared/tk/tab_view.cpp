@@ -34,12 +34,18 @@ void TabView::set_items(std::vector<std::string> labels)
 void TabView::set_selected_index(int idx)
 {
     if (idx < 0 || idx >= static_cast<int>(items_.size()))
+    {
         return;
+    }
     if (idx == selected_idx_)
+    {
         return;
+    }
     selected_idx_ = idx;
     if (on_selected)
+    {
         on_selected(selected_idx_);
+    }
 }
 
 Size TabView::measure(LayoutCtx&, Size constraints)
@@ -53,7 +59,9 @@ void TabView::arrange(LayoutCtx& ctx, Rect bounds)
 
     const int n = static_cast<int>(items_.size());
     if (n == 0)
+    {
         return;
+    }
 
     // Measure every label to find the widest, so all segments share one
     // natural width — mirrors AppearanceSection::ThemePicker's approach
@@ -66,7 +74,9 @@ void TabView::arrange(LayoutCtx& ctx, Rect bounds)
         st.role = FontRole::Body;
         st.max_width = -1.0f;
         if (auto lo = ctx.factory.build_text(item.label, st))
+        {
             max_text_w = std::max(max_text_w, lo->measure().w);
+        }
     }
     const float content_seg_w = max_text_w + kHPad * 2.0f;
 
@@ -106,11 +116,17 @@ void TabView::paint_before_children(PaintCtx& ctx)
         // underline moving.
         if (!is_selected)
         {
-            const Color wash = is_pressed ? pal.subtle_pressed
-                                : is_hovered ? pal.subtle_hover
-                                             : Color::rgba(0, 0, 0, 0);
+            const Color wash = is_pressed   ? pal.subtle_pressed
+                               : is_hovered ? pal.subtle_hover
+                                            : Color::rgba(0, 0, 0, 0);
             if (wash.a != 0)
+            {
                 ctx.canvas.fill_rect(item.bounds, wash);
+            }
+            if (is_hovered)
+            {
+                paint_hc_hover_outline(ctx.canvas, ctx.theme, item.bounds);
+            }
         }
 
         if (!item.layout)
@@ -133,16 +149,15 @@ void TabView::paint_before_children(PaintCtx& ctx)
             const Size sz = item.layout->measure();
             const float tx = item.bounds.x + (item.bounds.w - sz.w) * 0.5f;
             const float ty = item.bounds.y + (item.bounds.h - sz.h) * 0.5f;
-            const Color ink = is_selected ? pal.accent
-                               : is_hovered ? pal.text_primary
-                                            : pal.text_secondary;
+            const Color ink = is_selected  ? pal.accent
+                              : is_hovered ? pal.text_primary
+                                           : pal.text_secondary;
             ctx.canvas.draw_text(*item.layout, {tx, ty}, ink);
         }
 
         if (is_selected)
         {
-            const Rect underline{item.bounds.x,
-                                 item.bounds.y + item.bounds.h - kUnderlineH,
+            const Rect underline{item.bounds.x, item.bounds.y + item.bounds.h - kUnderlineH,
                                  item.bounds.w, kUnderlineH};
             ctx.canvas.fill_rect(underline, pal.accent);
         }
@@ -155,9 +170,10 @@ int TabView::hit_test_(Point local) const
     for (int i = 0; i < static_cast<int>(items_.size()); ++i)
     {
         const Rect& r = items_[i].bounds;
-        if (world.x >= r.x && world.x < r.x + r.w && world.y >= r.y &&
-            world.y < r.y + r.h)
+        if (world.x >= r.x && world.x < r.x + r.w && world.y >= r.y && world.y < r.y + r.h)
+        {
             return i;
+        }
     }
     return -1;
 }
@@ -166,7 +182,9 @@ bool TabView::on_pointer_down(Point local)
 {
     const int idx = hit_test_(local);
     if (idx < 0)
+    {
         return false;
+    }
     pressed_idx_ = idx;
     return true;
 }
@@ -176,9 +194,13 @@ void TabView::on_pointer_up(Point local, bool inside_self)
     const int was_pressed = pressed_idx_;
     pressed_idx_ = -1;
     if (!inside_self || was_pressed < 0)
+    {
         return;
+    }
     if (hit_test_(local) != was_pressed)
+    {
         return;
+    }
     set_selected_index(was_pressed);
 }
 
@@ -198,14 +220,22 @@ void TabView::on_pointer_leave()
 bool TabView::on_key_down(const KeyEvent& e)
 {
     if (!has_focus())
+    {
         return false;
+    }
     if (e.key != Key::Left && e.key != Key::Right)
+    {
         return false;
+    }
     if (e.ctrl || e.alt || e.meta)
+    {
         return false;
+    }
     const int n = static_cast<int>(items_.size());
     if (n == 0)
+    {
         return false;
+    }
     const int delta = (e.key == Key::Right) ? 1 : -1;
     const int next = (selected_idx_ + delta + n) % n;
     set_selected_index(next);

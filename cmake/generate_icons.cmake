@@ -27,7 +27,9 @@ foreach(_entry
         "eye|kEyeSvg" "cable|kCableSvg" "user-round-plus|kUserRoundPlusSvg"
         "user-round|kUserRoundSvg" "user-round-minus|kUserRoundMinusSvg" "ban|kBanSvg"
         "languages|kLanguagesSvg" "music|kMusicSvg" "file|kFileSvg"
-        "bell|kBellSvg" "bell-off|kBellOffSvg")
+        "bell|kBellSvg" "bell-off|kBellOffSvg"
+        "house|kHomeSvg" "pin-off|kUnpinSvg"
+        "shield-check|kShieldCheckSvg" "shield-alert|kShieldAlertSvg")
     string(REPLACE "|" ";" _pair "${_entry}")
     list(GET _pair 0 _name)
     list(GET _pair 1 _var)

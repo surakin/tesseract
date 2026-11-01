@@ -75,10 +75,7 @@ pub(crate) fn ensure_stop_at_ts_column(conn: &rusqlite::Connection) -> rusqlite:
 pub(super) const PRUNE_STALE_SQL: &str =
     "DELETE FROM room_export_progress WHERE updated_at_secs < strftime('%s','now') - 2592000;";
 
-pub(super) fn query_checkpoint(
-    conn: &rusqlite::Connection,
-    room_id: &str,
-) -> Option<Checkpoint> {
+pub(super) fn query_checkpoint(conn: &rusqlite::Connection, room_id: &str) -> Option<Checkpoint> {
     conn.query_row(
         "SELECT room_id, out_path, format, oldest_event_id, oldest_ts_ms, \
                 events_written, segments_written, updated_at_secs, stop_at_ts_ms \
@@ -122,7 +119,10 @@ pub(super) fn upsert_checkpoint(conn: &rusqlite::Connection, cp: &Checkpoint) {
 }
 
 pub(super) fn delete_checkpoint(conn: &rusqlite::Connection, room_id: &str) {
-    let _ = conn.execute("DELETE FROM room_export_progress WHERE room_id = ?1", [room_id]);
+    let _ = conn.execute(
+        "DELETE FROM room_export_progress WHERE room_id = ?1",
+        [room_id],
+    );
 }
 
 pub(crate) fn prune_stale_checkpoints(conn: &rusqlite::Connection) {

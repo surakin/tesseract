@@ -173,6 +173,11 @@ public:
 // has no widget, or the relevant optional interface isn't implemented.
 bool invoke_default_action(const AccessNode& node);
 
+// Applies an assistive-technology "set value" request to `node`'s widget
+// (Role::Slider). Returns false for a node with no real widget (synthesized
+// rows/cells, subtree nodes) or whose widget is read-only.
+bool set_node_value(const AccessNode& node, double value);
+
 // Walks `root`'s subtree, producing an AccessNode tree. Mirrors
 // next_focusable()'s traversal exactly (same reading_order_less ordering,
 // same "skip invisible subtrees entirely" rule) so accessibility reading

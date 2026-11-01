@@ -25,9 +25,8 @@ namespace tesseract::app
 // when the event was sent by the logged-in user — their own media is never a
 // privacy/safety/bandwidth concern to them, so it is exempt from the
 // public-room suppression that Private mode applies to other senders.
-inline bool media_allowed(tesseract::Settings::MediaPreviews mode,
-                          const std::string& join_rule, bool is_own,
-                          bool revealed)
+inline bool media_allowed(tesseract::Settings::MediaPreviews mode, const std::string& join_rule,
+                          bool is_own, bool revealed)
 {
     if (revealed)
     {

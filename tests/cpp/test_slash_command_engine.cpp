@@ -9,8 +9,7 @@ namespace
 {
 const std::vector<CommandDescription> kNoBotCommands;
 
-CommandDescription make_bot_command(std::string command, std::string sender,
-                                     bool valid = true)
+CommandDescription make_bot_command(std::string command, std::string sender, bool valid = true)
 {
     CommandDescription d;
     d.command = std::move(command);
@@ -19,7 +18,7 @@ CommandDescription make_bot_command(std::string command, std::string sender,
     d.valid = valid;
     return d;
 }
-}  // namespace
+} // namespace
 
 TEST_CASE("find_prefix returns query on empty-line slash", "[slash][engine]")
 {
@@ -53,8 +52,7 @@ TEST_CASE("find_prefix rejects mid-message slash", "[slash][engine]")
     REQUIRE(!m.has_value());
 }
 
-TEST_CASE("find_prefix rejects characters a command name cannot contain",
-          "[slash][engine]")
+TEST_CASE("find_prefix rejects characters a command name cannot contain", "[slash][engine]")
 {
     SlashCommandEngine e;
     // Digits are part of a bot command name; punctuation is not.
@@ -145,8 +143,7 @@ TEST_CASE("lookup prefix-matches bot commands after built-ins", "[slash][engine]
     REQUIRE_FALSE(results[1].is_builtin);
 }
 
-TEST_CASE("find_prefix accepts digits and dashes in a bot command name",
-          "[slash][engine]")
+TEST_CASE("find_prefix accepts digits and dashes in a bot command name", "[slash][engine]")
 {
     // Bot command names are [a-z0-9_-]; the popup must keep open for them.
     SlashCommandEngine e;

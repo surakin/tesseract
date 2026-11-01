@@ -25,57 +25,83 @@ protected:
     SpFruitPicker()
     {
         if (!host())
+        {
             return;
+        }
         init_(28.0f, 24.0f, 200.0f, 3, "Fruit");
     }
     TK_WIDGET_FACTORY_FRIEND(SpFruitPicker)
 
-    std::size_t entry_count_() const override { return kFruit.size(); }
+    std::size_t entry_count_() const override
+    {
+        return kFruit.size();
+    }
     int match_rank_(std::size_t i, std::string_view q) const override
     {
         const std::string& f = kFruit[i];
         if (q.empty())
+        {
             return 1;
+        }
         if (f.compare(0, q.size(), q) == 0)
+        {
             return 0;
+        }
         return f.find(q) != std::string::npos ? 1 : -1;
     }
-    std::string entry_key_(std::size_t i) const override { return "k-" + kFruit[i]; }
-    std::string entry_label_(std::size_t i) const override { return kFruit[i]; }
+    std::string entry_key_(std::size_t i) const override
+    {
+        return "k-" + kFruit[i];
+    }
+    std::string entry_label_(std::size_t i) const override
+    {
+        return kFruit[i];
+    }
     std::string entry_display_(std::size_t i) const override
     {
         return "Fruit " + kFruit[i];
     }
 
 private:
-    inline static const std::vector<std::string> kFruit = {
-        "apple", "banana", "cherry", "grape", "pineapple"};
+    inline static const std::vector<std::string> kFruit = {"apple", "banana", "cherry", "grape",
+                                                           "pineapple"};
 };
 
 struct SpStage
 {
-    PopupCapableStubHost host;
+    // Declared before host so it outlives it: the host can still hold images
+    // the surface's backend made, and on Win32 releasing them after that
+    // backend's CoUninitialize() crashes.
     std::unique_ptr<TestSurface> surface = TestSurface::create(400, 300);
-    std::unique_ptr<SpFruitPicker> picker =
-        create_root_widget<SpFruitPicker>(&host);
+    PopupCapableStubHost host;
+    std::unique_ptr<SpFruitPicker> picker = create_root_widget<SpFruitPicker>(&host);
 
-    StubTextField& field() { return *host.fields_created.at(0); }
+    StubTextField& field()
+    {
+        return *host.fields_created.at(0);
+    }
     void layout()
     {
         LayoutCtx lc{surface->factory(), Theme::light()};
         picker->measure(lc, {300, 100});
         picker->arrange(lc, {10, 10, 200, 28});
     }
-    void type(const std::string& s) { field().on_changed(s); }
+    void type(const std::string& s)
+    {
+        field().on_changed(s);
+    }
     std::vector<std::string> rows()
     {
         std::vector<std::string> out;
         if (host.popups_created.empty())
+        {
             return out;
-        auto* r = dynamic_cast<WidgetRowAccessibility*>(
-            host.popups_created[0]->root());
+        }
+        auto* r = dynamic_cast<WidgetRowAccessibility*>(host.popups_created[0]->root());
         for (std::size_t i = 0; r && i < r->access_row_count(); ++i)
+        {
             out.push_back(r->access_name_for_widget_row(i));
+        }
         return out;
     }
 };
@@ -94,8 +120,7 @@ TEST_CASE("SearchablePicker measure caps width and uses the field height",
     CHECK(s.picker->measure(lc, {0, 0}).w == 200);
 }
 
-TEST_CASE("SearchablePicker set_value shows the display text and name",
-          "[tk][searchable_picker]")
+TEST_CASE("SearchablePicker set_value shows the display text and name", "[tk][searchable_picker]")
 {
     SpStage s;
     s.layout();
@@ -108,8 +133,7 @@ TEST_CASE("SearchablePicker set_value shows the display text and name",
     CHECK(s.picker->access_role() == Role::ComboBox);
 }
 
-TEST_CASE("SearchablePicker typing filters and ranks every match",
-          "[tk][searchable_picker]")
+TEST_CASE("SearchablePicker typing filters and ranks every match", "[tk][searchable_picker]")
 {
     SpStage s;
     s.layout();
@@ -136,11 +160,14 @@ TEST_CASE("SearchablePicker keyboard nav wraps and Enter commits the hovered "
     SpStage s;
     s.layout();
     std::string committed;
-    s.picker->on_changed = [&](std::string v) { committed = v; };
+    s.picker->on_changed = [&](std::string v)
+    {
+        committed = v;
+    };
 
     CHECK_FALSE(s.field().on_popup_nav(NavKey::Down)); // closed: not consumed
-    s.type("an"); // banana only
-    s.type("a");  // apple, banana, grape, pineapple: prefix then substring
+    s.type("an");                                      // banana only
+    s.type("a"); // apple, banana, grape, pineapple: prefix then substring
     REQUIRE(s.rows().size() == 4);
     CHECK(s.field().on_popup_nav(NavKey::Down)); // hovered 1
     CHECK(s.field().on_popup_nav(NavKey::Down)); // 2
@@ -176,7 +203,10 @@ TEST_CASE("SearchablePicker Enter with no hover commits the first row; with "
     SpStage s;
     s.layout();
     int changes = 0;
-    s.picker->on_changed = [&](std::string) { ++changes; };
+    s.picker->on_changed = [&](std::string)
+    {
+        ++changes;
+    };
 
     s.type("zzz"); // filtered empty
     s.field().on_submit();
@@ -196,8 +226,14 @@ TEST_CASE("SearchablePicker Enter on unmatched text fires on_submit_text unless 
     s.layout();
     int changes = 0;
     std::string submitted;
-    s.picker->on_changed = [&](std::string) { ++changes; };
-    s.picker->on_submit_text = [&](std::string t) { submitted = std::move(t); };
+    s.picker->on_changed = [&](std::string)
+    {
+        ++changes;
+    };
+    s.picker->on_submit_text = [&](std::string t)
+    {
+        submitted = std::move(t);
+    };
 
     // "pine" is not an exact key ("k-pineapple" is): free text wins.
     s.field().set_text("pine");
@@ -228,7 +264,10 @@ TEST_CASE("SearchablePicker dropdown rows commit via pointer and a11y",
     SpStage s;
     s.layout();
     std::vector<std::string> got;
-    s.picker->on_changed = [&](std::string v) { got.push_back(v); };
+    s.picker->on_changed = [&](std::string v)
+    {
+        got.push_back(v);
+    };
 
     s.type("a");
     REQUIRE(s.host.popups_created.size() == 1);
@@ -267,7 +306,10 @@ TEST_CASE("SearchablePicker dropdown scrolls by wheel, drag and keyboard",
     SpStage s;
     s.layout();
     std::vector<std::string> got;
-    s.picker->on_changed = [&](std::string v) { got.push_back(v); };
+    s.picker->on_changed = [&](std::string v)
+    {
+        got.push_back(v);
+    };
 
     // "a" matches 4 entries (apple, banana, grape, pineapple); max_rows is 3,
     // so the 72px viewport shows 3 of 4 rows.
@@ -293,7 +335,7 @@ TEST_CASE("SearchablePicker dropdown scrolls by wheel, drag and keyboard",
     CHECK(list->on_pointer_down({195, 10}));
     list->on_pointer_drag({195, 60}); // far past the end of the track
     list->on_pointer_up({195, 60}, true);
-    CHECK(got.size() == 1); // no row committed by the scrollbar gesture
+    CHECK(got.size() == 1);                 // no row committed by the scrollbar gesture
     CHECK(list->on_pointer_down({10, 10})); // list is at its end again
     list->on_pointer_up({10, 10}, true);
     REQUIRE(got.size() == 2);
@@ -305,7 +347,9 @@ TEST_CASE("SearchablePicker dropdown scrolls by wheel, drag and keyboard",
     list = s.host.popups_created[0]->root();
     list->arrange(lc, {0, 0, 200, 72});
     for (int i = 0; i < 3; ++i)
+    {
         CHECK(s.field().on_popup_nav(NavKey::Down));
+    }
     s.field().on_submit();
     CHECK(got.back() == "k-pineapple");
 }
@@ -317,7 +361,11 @@ TEST_CASE("SearchablePicker losing focus collapses and reverts; focus "
     SpStage s;
     s.layout();
     std::vector<bool> focus_events;
-    s.picker->set_on_focus_changed([&](bool f) { focus_events.push_back(f); });
+    s.picker->set_on_focus_changed(
+        [&](bool f)
+        {
+            focus_events.push_back(f);
+        });
     s.picker->set_value("k-apple");
 
     s.field().on_focus_changed(true);
@@ -356,8 +404,7 @@ TEST_CASE("SearchablePicker disabled/hidden collapse; default action toggles; "
     CHECK_FALSE(s.picker->access_default_action());
 }
 
-TEST_CASE("SearchablePicker without a host stays a plain spacer",
-          "[tk][searchable_picker]")
+TEST_CASE("SearchablePicker without a host stays a plain spacer", "[tk][searchable_picker]")
 {
     auto p = create_root_widget<SpFruitPicker>(nullptr);
     p->set_value("k-apple"); // no field: no crash

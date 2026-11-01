@@ -20,8 +20,7 @@ public:
     static constexpr float kWidth = 320.0f;
     static constexpr int kMaxRows = 8;
 
-    using ImageProvider =
-        std::function<const tk::Image*(const std::string& url)>;
+    using ImageProvider = std::function<const tk::Image*(const std::string& url)>;
     void set_image_provider(ImageProvider p)
     {
         image_provider_ = std::move(p);
@@ -41,16 +40,27 @@ protected:
     {
         return candidates_.size();
     }
-    void paint_row(tk::PaintCtx& ctx, const tk::Rect& row, size_t index,
-                   bool selected, bool hovered) override;
+    void paint_row(tk::PaintCtx& ctx, const tk::Rect& row, size_t index, bool selected,
+                   bool hovered) override;
     void on_row_activated(size_t index) override
     {
         if (on_accepted)
+        {
             on_accepted(candidates_[index]);
+        }
     }
-    float row_height() const override { return kRowHeight; }
-    float width() const override { return kWidth; }
-    int max_visible_rows() const override { return kMaxRows; }
+    float row_height() const override
+    {
+        return kRowHeight;
+    }
+    float width() const override
+    {
+        return kWidth;
+    }
+    int max_visible_rows() const override
+    {
+        return kMaxRows;
+    }
 
 public:
     // tk::WidgetRowAccessibility — mirrors paint_row's own primary/
@@ -63,14 +73,22 @@ public:
     std::string access_name_for_widget_row(std::size_t index) const override
     {
         if (index >= candidates_.size())
+        {
             return {};
+        }
         const auto& c = candidates_[index];
         if (c.is_room)
+        {
             return "@room (" + tk::tr("Notify the whole room") + ")";
+        }
         if (c.display_name.empty())
+        {
             return c.user_id;
+        }
         if (c.user_id.empty())
+        {
             return c.display_name;
+        }
         return c.display_name + " (" + c.user_id + ")";
     }
 

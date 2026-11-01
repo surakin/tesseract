@@ -35,20 +35,22 @@ struct TabShell : tesseract::test::TestShellBase
 {
     ~TabShell() override
     {
-        pool_.wait_idle(std::chrono::seconds(5));
-        mut_pool_.wait_idle(std::chrono::seconds(5));
+        wait_pools_idle();
         pool_.drain();
         mut_pool_.drain();
         media_prefetch_pool_.drain();
     }
-    void apply_thread_messages_(
-        const std::string&, std::vector<tesseract::views::MessageRowData>,
-        bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
     void post_to_ui_after_(int, std::function<void()> fn) override
     {
         delayed.push_back(std::move(fn));
@@ -57,7 +59,9 @@ struct TabShell : tesseract::test::TestShellBase
     {
         ++tab_state_changes;
         if (run_base_tab_state)
+        {
             ShellBase::on_tab_state_changed_ui_();
+        }
     }
     void apply_window_title_ui_(const std::string& t) override
     {
@@ -67,7 +71,10 @@ struct TabShell : tesseract::test::TestShellBase
     {
         recent_visits.push_back(r.id);
     }
-    void navigate_to_room_(const std::string& id) override { navigated = id; }
+    void navigate_to_room_(const std::string& id) override
+    {
+        navigated = id;
+    }
 
     std::vector<std::function<void()>> delayed;
     std::vector<std::string> titles, recent_visits;
@@ -102,6 +109,7 @@ struct TabShell : tesseract::test::TestShellBase
     using ShellBase::pending_restore_rooms_;
     using ShellBase::handle_account_prefs_updated_ui_;
     using ShellBase::persist_room_layout_pref_;
+    using ShellBase::carried_prefs_;
     using ShellBase::recent_room_ids_;
     using ShellBase::refresh_window_title_;
     using ShellBase::room_nav_history_;
@@ -131,7 +139,9 @@ struct TabShell : tesseract::test::TestShellBase
     {
         std::vector<std::string> v;
         for (const auto& t : tabs_)
+        {
             v.push_back(t.room_id);
+        }
         return v;
     }
 };
@@ -149,8 +159,7 @@ using TabIds = std::vector<std::string>;
 
 } // namespace
 
-TEST_CASE("tab_open_room bootstraps from the current room and appends",
-          "[shell][tabs]")
+TEST_CASE("tab_open_room bootstraps from the current room and appends", "[shell][tabs]")
 {
     TabShell s;
     s.tab_open_room("");
@@ -181,8 +190,7 @@ TEST_CASE("tab_open_room from nothing creates a single tab", "[shell][tabs]")
     CHECK(s.current_room_id_ == "!a");
 }
 
-TEST_CASE("tab_select_room replaces the active tab and switches to existing ones",
-          "[shell][tabs]")
+TEST_CASE("tab_select_room replaces the active tab and switches to existing ones", "[shell][tabs]")
 {
     TabShell s;
     s.tab_select_room("");
@@ -206,8 +214,7 @@ TEST_CASE("tab_select_room replaces the active tab and switches to existing ones
     CHECK(s.tab_ids() == TabIds{"!z", "!c"});
 }
 
-TEST_CASE("tab_navigate_room picks select or open by tab count",
-          "[shell][tabs]")
+TEST_CASE("tab_navigate_room picks select or open by tab count", "[shell][tabs]")
 {
     TabShell s;
     s.tab_navigate_room("");
@@ -275,8 +282,7 @@ TEST_CASE("room_open_in_tab / room_open_in_window", "[shell][tabs]")
     CHECK_FALSE(s.room_open_in_window("!a"));
 }
 
-TEST_CASE("try_restore_tab_session_ reopens only known non-space rooms",
-          "[shell][tabs]")
+TEST_CASE("try_restore_tab_session_ reopens only known non-space rooms", "[shell][tabs]")
 {
     TabShell s;
     s.rooms_ = {tab_room("!a"), tab_room("!b"), tab_room("!s", true)};
@@ -299,8 +305,7 @@ TEST_CASE("try_restore_tab_session_ reopens only known non-space rooms",
     CHECK(s.pending_restore_popouts_ == TabIds{"!notyet"});
 }
 
-TEST_CASE("a room switch resets per-room media state and records recents",
-          "[shell][tabs][switch]")
+TEST_CASE("a room switch resets per-room media state and records recents", "[shell][tabs][switch]")
 {
     tesseract::Client client;
     TabShell s;
@@ -340,8 +345,7 @@ TEST_CASE("recent rooms are capped", "[shell][tabs][switch]")
         s.after_active_room_changed_();
     }
     CHECK(s.recent_room_ids_.size() == TabShell::kRecentRoomsMax);
-    CHECK(s.recent_room_ids_.front() ==
-          "!r" + std::to_string(TabShell::kRecentRoomsMax + 2));
+    CHECK(s.recent_room_ids_.front() == "!r" + std::to_string(TabShell::kRecentRoomsMax + 2));
 }
 
 TEST_CASE("navigation history is capped", "[shell][tabs][switch]")
@@ -371,8 +375,7 @@ TEST_CASE("switching to a space shows its root instead of loading a timeline",
     CHECK(s.active_media_group_ == 0);
 }
 
-TEST_CASE("closing the last tab still persists the empty layout",
-          "[shell][tabs][switch]")
+TEST_CASE("closing the last tab still persists the empty layout", "[shell][tabs][switch]")
 {
     tesseract::Client client;
     TabShell s;
@@ -468,6 +471,20 @@ TEST_CASE("an unrestored saved layout is not overwritten by the empty tab strip"
     CHECK(s.active_account_->prefs_json.find("!saved2") != std::string::npos);
 }
 
+TEST_CASE("a restore that never completes does not shadow the live tabs", "[shell][tabs][persist]")
+{
+    tesseract::Client client;
+    TabShell s;
+    s.client_ = &client;
+    s.active_account_ = std::make_shared<tesseract::AccountSession>();
+    s.pending_restore_rooms_ = {"!saved1", "!saved2"};
+    s.tab_select_room("!live");
+    s.persist_room_layout_pref_(false);
+    const std::string& json = s.active_account_->prefs_json;
+    CHECK(json.find("!live") != std::string::npos);
+    CHECK(json.find("!saved1") == std::string::npos);
+}
+
 TEST_CASE("a synced open-room list is capped before the restore", "[shell][tabs][persist]")
 {
     tesseract::Client client;
@@ -478,17 +495,17 @@ TEST_CASE("a synced open-room list is capped before the restore", "[shell][tabs]
     // Another device saved far more rooms than a window can restore.
     nlohmann::json open = nlohmann::json::array();
     for (int i = 0; i < 500; ++i)
+    {
         open.push_back("!room" + std::to_string(i) + ":x");
-    const std::string json =
-        nlohmann::json{{"last_room", "!room0:x"}, {"open_rooms", open}}.dump();
+    }
+    const std::string json = nlohmann::json{{"last_room", "!room0:x"}, {"open_rooms", open}}.dump();
     s.handle_account_prefs_updated_ui_("@me:x", json);
     CHECK(s.pending_restore_rooms_.size() == 32);
     REQUIRE_FALSE(s.pending_restore_rooms_.empty());
     CHECK(s.pending_restore_rooms_[0] == "!room0:x");
 }
 
-TEST_CASE("room_by_id_ falls back to hidden rooms and tracks index changes",
-          "[shell][tabs]")
+TEST_CASE("room_by_id_ falls back to hidden rooms and tracks index changes", "[shell][tabs]")
 {
     TabShell s;
     CHECK(s.room_by_id_("!a") == nullptr);
@@ -505,8 +522,7 @@ TEST_CASE("room_by_id_ falls back to hidden rooms and tracks index changes",
     CHECK(s.room_by_id_("!a") == nullptr);
 }
 
-TEST_CASE("open_room_version_ reveals a listed room or defers to a join",
-          "[shell][tabs][version]")
+TEST_CASE("open_room_version_ reveals a listed room or defers to a join", "[shell][tabs][version]")
 {
     TabShell s;
     s.open_room_version_("", {}, "", false);
@@ -527,12 +543,11 @@ TEST_CASE("open_room_version_ reveals a listed room or defers to a join",
     s.active_account_->client = std::make_unique<tesseract::Client>();
     s.client_ = s.active_account_->client.get();
     s.open_room_version_("!unknown", {}, "$e", false);
-    s.pool_.wait_idle(std::chrono::seconds(5));
+    s.drain_workers();
     CHECK(s.pending_event_scroll_after_join_.at("!unknown") == "$e");
 }
 
-TEST_CASE("on_room_selected_ drills into spaces and opens ordinary rooms",
-          "[shell][tabs][select]")
+TEST_CASE("on_room_selected_ drills into spaces and opens ordinary rooms", "[shell][tabs][select]")
 {
     tesseract::Client client;
     TabShell s;
@@ -553,8 +568,7 @@ TEST_CASE("on_room_selected_ drills into spaces and opens ordinary rooms",
     CHECK(s.titles.back() == "Tesseract - Name !a");
 }
 
-TEST_CASE("on_room_selected_ loads the room into the view and subscribes",
-          "[shell][tabs][select]")
+TEST_CASE("on_room_selected_ loads the room into the view and subscribes", "[shell][tabs][select]")
 {
     tesseract::Client client;
     TabShell s;
@@ -567,13 +581,12 @@ TEST_CASE("on_room_selected_ loads the room into the view and subscribes",
     s.room_view_ = rv.get();
     s.pagination_["!a"].initial_fill_done = true;
     s.on_room_selected_("!a");
-    s.mut_pool_.wait_idle(std::chrono::seconds(5));
+    s.drain_workers();
     CHECK(s.current_room_id_ == "!a");
     CHECK(rv->compose_bar() != nullptr);
 }
 
-TEST_CASE("window title follows the room and the settings page",
-          "[shell][tabs][title]")
+TEST_CASE("window title follows the room and the settings page", "[shell][tabs][title]")
 {
     TabShell s;
     CHECK(s.compose_window_title_() == "Tesseract");
@@ -621,8 +634,7 @@ TEST_CASE("the default tab-state hook rebuilds the tab bar and selects the "
     CHECK_FALSE(s.titles.empty());
 }
 
-TEST_CASE("touch_visited_room_ keeps the most recent first and unique",
-          "[shell][tabs]")
+TEST_CASE("touch_visited_room_ keeps the most recent first and unique", "[shell][tabs]")
 {
     TabShell s;
     s.touch_visited_room_("");
@@ -633,8 +645,7 @@ TEST_CASE("touch_visited_room_ keeps the most recent first and unique",
     CHECK(s.visited_lru_ == TabIds{"!a", "!b"});
 }
 
-TEST_CASE("tab operations also reset the thread panel through the main pane",
-          "[shell][tabs][pane]")
+TEST_CASE("tab operations also reset the thread panel through the main pane", "[shell][tabs][pane]")
 {
     tesseract::Client client;
     TabShell s;
@@ -644,8 +655,7 @@ TEST_CASE("tab operations also reset the thread panel through the main pane",
     auto rv = tk::create_root_widget<tesseract::views::RoomView>(nullptr);
     s.room_view_ = rv.get();
     s.main_room_pane_ = std::make_unique<tesseract::RoomPane>(
-        tesseract::RoomPane::Deps{.shell = &s, .repaint = [] {}, .relayout = [] {}},
-        "");
+        tesseract::RoomPane::Deps{.shell = &s, .repaint = [] {}, .relayout = [] {}}, "");
     s.main_room_pane_->attach({.room_view = rv.get()});
     s.rooms_ = {tab_room("!a"), tab_room("!b"), tab_room("!c")};
     s.mark_room_index_dirty_();
@@ -666,4 +676,39 @@ TEST_CASE("tab operations also reset the thread panel through the main pane",
     CHECK(s.current_room_id_.empty());
     CHECK(s.try_restore_tab_session_({"!a", "!b"}, "!b"));
     CHECK(s.main_room_pane_->room_id() == "!b");
+}
+
+TEST_CASE("a layout save and a cleared layout both keep the non-layout synced prefs",
+          "[shell][tabs][persist]")
+{
+    tesseract::Client client;
+    TabShell s;
+    s.client_ = &client;
+    s.active_account_ = std::make_shared<tesseract::AccountSession>();
+    s.active_account_->pinned_spaces = {"!sp1", "!sp2"};
+    s.active_account_->directory_servers = {"example.org"};
+    s.active_account_->bridge_not_bridged_overrides = {"!bridged"};
+    s.active_account_->prefs_json = R"({"future_key":42})";
+    s.tab_select_room("!a");
+    s.recent_room_ids_ = {"!a"};
+
+    // Tab switch: the layout is rewritten, everything else survives.
+    s.persist_room_layout_pref_(false);
+    auto saved = tesseract::Prefs::parse(s.active_account_->prefs_json);
+    CHECK(saved.pinned_spaces == TabIds{"!sp1", "!sp2"});
+    CHECK(saved.directory_servers == TabIds{"example.org"});
+    CHECK(saved.bridge_not_bridged_overrides == TabIds{"!bridged"});
+    CHECK(saved.open_rooms == TabIds{"!a"});
+    CHECK(s.active_account_->prefs_json.find("future_key") != std::string::npos);
+
+    // Clear Cache: only the layout is forgotten (this is exactly what the
+    // clear-cache path pushes before wiping the store).
+    const auto cleared = tesseract::Prefs::parse(tesseract::Prefs::serialize(
+        tesseract::Prefs::without_layout(s.carried_prefs_()), s.active_account_->prefs_json));
+    CHECK(cleared.pinned_spaces == TabIds{"!sp1", "!sp2"});
+    CHECK(cleared.directory_servers == TabIds{"example.org"});
+    CHECK(cleared.bridge_not_bridged_overrides == TabIds{"!bridged"});
+    CHECK(cleared.open_rooms.empty());
+    CHECK(cleared.recent_rooms.empty());
+    CHECK(cleared.last_room.empty());
 }

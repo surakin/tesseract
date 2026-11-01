@@ -27,18 +27,14 @@ namespace tesseract::views
 // span. Topic/non-message callers may leave `dark` at its default.
 //
 // Returns a single plain-text span when `html` is empty.
-std::vector<tk::TextSpan> html_to_spans(std::string_view html,
-                                        bool             dark = false);
+std::vector<tk::TextSpan> html_to_spans(std::string_view html, bool dark = false);
 
-// Return the first http(s) URL found in an HTML formatted_body (the href
-// of the first <a> tag whose href starts with http:// or https://).
-// Returns empty when none is found.
-std::string first_url_from_html(std::string_view html);
-
-// Return the first http(s) URL found in a plain-text body by scanning for
-// "https://" or "http://" prefixes. Strips trailing prose punctuation.
-// Returns empty when none is found.
-std::string first_url_from_plain(std::string_view text);
+// Return the URL a message's preview card should show: the first bare
+// http(s) URL in the HTML `formatted_body` (a link whose visible text is the
+// URL itself), else the first in the plain `body`. Embedded links whose text
+// differs (Markdown `[text](url)`), matrix.to permalinks and URLs in code get
+// no preview. Either argument may be empty; returns empty when none is found.
+std::string first_preview_url(std::string_view html, std::string_view body);
 
 // Convert a plain-text body into TextSpans, turning bare http(s):// URLs
 // (at a word boundary) into hyperlink spans — the `url` field is set and
@@ -55,8 +51,7 @@ std::vector<tk::TextSpan> autolink_plain_to_spans(std::string_view text);
 // html_to_spans()/html_to_blocks(), and directly by callers building spans
 // from plain m.body text (no formatted_body) so a literal "@room" in a
 // plain m.text event still renders as a pill, matching the HTML path.
-std::vector<tk::TextSpan> split_room_mentions(std::vector<tk::TextSpan> spans,
-                                              bool dark);
+std::vector<tk::TextSpan> split_room_mentions(std::vector<tk::TextSpan> spans, bool dark);
 
 // Replaces a literal U+FFFC in the text of every non-image span with U+FFFD.
 // U+FFFC is the inline-image carrier, and a renderer pairs each image span
@@ -73,7 +68,7 @@ void neutralize_literal_carriers(std::vector<tk::TextSpan>& spans);
 //   Heading      — <h1>–<h6>; level = 1–6; spans are bold
 //   Blockquote   — <blockquote>; level = nesting depth (1-based)
 //   UnorderedItem — <ul><li>; level = list nesting depth (1-based)
-//   OrderedItem  — <ol><li>; level = list nesting depth; index = item number (1-based)
+//   OrderedItem  — <ol><li>; level = list nesting depth; index = item number (honours <ol start>; may be 0 or negative)
 //   Table        — <table>; one block per table. `table` holds the cell grid,
 //                  per-column alignment and the header-row count; `spans` is
 //                  empty. Nested tables are flattened into the containing cell.
@@ -107,9 +102,9 @@ struct TableCell
 // <thead>.
 struct BodyTable
 {
-    std::vector<TableAlign>             col_align;
+    std::vector<TableAlign> col_align;
     std::vector<std::vector<TableCell>> rows;
-    int                                header_rows = 0;
+    int header_rows = 0;
 };
 
 struct BodyBlock
@@ -123,14 +118,19 @@ struct BodyBlock
         OrderedItem,
         Table,
     };
-    Kind kind  = Kind::Paragraph;
-    int  level = 0;  // heading: 1–6; blockquote/list: nesting depth (1-based)
-    int  index = 0;  // ordered list: item number (1-based)
-    std::vector<tk::TextSpan> spans;  // empty when kind == Table
-    BodyTable                 table;  // populated only when kind == Table
+    Kind kind = Kind::Paragraph;
+    int level = 0; // heading: 1–6; blockquote/list: nesting depth (1-based)
+    int index = 0; // ordered list: item number (honours <ol start>, so not necessarily 1-based)
+    std::vector<tk::TextSpan> spans; // empty when kind == Table
+    BodyTable table;                 // populated only when kind == Table
 };
 
 std::vector<BodyBlock> html_to_blocks(std::string_view html, bool dark = false);
+
+// High Contrast: drop syntax and author colours from every run except mention
+// pills and inline images, so text uses the theme's text colour.
+void flatten_span_colours(std::vector<tk::TextSpan>& spans);
+void flatten_block_colours(std::vector<BodyBlock>& blocks);
 
 // Emoji classification + run segmentation moved to tk/emoji_segmentation.h
 // (pure text utilities, no HTML-parser dependency). Re-exported here so the

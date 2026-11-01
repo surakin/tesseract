@@ -37,12 +37,6 @@ public:
     void paint_content(tk::PaintCtx&) override;
     void paint_controls(tk::PaintCtx&) override;
     bool on_content_pointer_down(tk::Point world, tk::Point local) override;
-    bool on_content_pointer_up(tk::Point world, tk::Point local,
-                               bool inside_self) override;
-    // Continues a scrub-bar drag: the host forwards every pointer-move here
-    // after on_content_pointer_down claimed the press (see press_scrub_),
-    // until the matching pointer-up.
-    void on_pointer_drag(tk::Point local) override;
     // Space / K play-pause, Left/Right seek +-5 s, Home restarts.
     bool on_key(const tk::KeyEvent& e) override;
     bool controls_hovered() const override;
@@ -58,8 +52,14 @@ public:
         return video_rect_;
     }
 
-    tk::Button* play_btn() const { return bar_.play_btn(); }
-    tk::Button* speed_btn() const { return bar_.speed_btn(); }
+    tk::Button* play_btn() const
+    {
+        return bar_.play_btn();
+    }
+    tk::Button* speed_btn() const
+    {
+        return bar_.speed_btn();
+    }
 
     // Called on the UI thread once the async byte fetch completes.
     // Starts playback immediately.
@@ -93,8 +93,7 @@ public:
     // the pre-roll queue.
     std::size_t memory_bytes() const
     {
-        return (video_player_ ? video_player_->memory_bytes() : 0) +
-               stream_buffer_.capacity();
+        return (video_player_ ? video_player_->memory_bytes() : 0) + stream_buffer_.capacity();
     }
 
 private:

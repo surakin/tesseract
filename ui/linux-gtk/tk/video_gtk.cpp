@@ -12,7 +12,7 @@
 // returns nullptr and the viewer shows a static thumbnail.
 
 #include "video.h"
-#include "gst_hw_probe.h"
+#include "platform/linux/gst_hw_probe.h"
 
 // cairo.h must be included before canvas_cairo.h so that the elaborated
 // struct _cairo_surface type specifier in canvas_cairo.h resolves to the
@@ -121,9 +121,7 @@ public:
     std::uint64_t reported_length() const
     {
         std::lock_guard<std::mutex> lk(mu_);
-        return ended_ ? final_length_
-              : known_total_ > 0 ? known_total_
-                                 : buf_.size();
+        return ended_ ? final_length_ : known_total_ > 0 ? known_total_ : buf_.size();
     }
 
     // ── Consumer side (GStreamer streaming thread only) ──────────────────
@@ -133,11 +131,11 @@ public:
     {
         std::unique_lock<std::mutex> lk(mu_);
         const bool woke = cv_.wait_for(lk, std::chrono::seconds(30),
-            [&]
-            {
-                return cancelled_ || failed_ || pos_ < buf_.size() ||
-                      (ended_ && pos_ >= buf_.size());
-            });
+                                       [&]
+                                       {
+                                           return cancelled_ || failed_ || pos_ < buf_.size() ||
+                                                  (ended_ && pos_ >= buf_.size());
+                                       });
         if (cancelled_)
         {
             return;
@@ -153,8 +151,7 @@ public:
             return;
         }
         const std::uint64_t avail = buf_.size() - pos_;
-        const std::size_t n =
-            static_cast<std::size_t>(std::min<std::uint64_t>(avail, length));
+        const std::size_t n = static_cast<std::size_t>(std::min<std::uint64_t>(avail, length));
         const std::uint8_t* src = buf_.data() + pos_;
         pos_ += n;
         lk.unlock();
@@ -183,12 +180,12 @@ public:
     bool seek_data(std::uint64_t offset)
     {
         std::unique_lock<std::mutex> lk(mu_);
-        const bool woke = cv_.wait_for(lk, std::chrono::seconds(30),
-            [&]
-            {
-                return cancelled_ || failed_ || offset <= buf_.size() ||
-                      ended_;
-            });
+        const bool woke =
+            cv_.wait_for(lk, std::chrono::seconds(30),
+                         [&]
+                         {
+                             return cancelled_ || failed_ || offset <= buf_.size() || ended_;
+                         });
         if (cancelled_ || failed_ || !woke)
         {
             return false;
@@ -224,8 +221,7 @@ public:
         teardown_pipeline();
     }
 
-    void play(const std::uint8_t* data, std::size_t size,
-              std::string_view /*mime*/) override
+    void play(const std::uint8_t* data, std::size_t size, std::string_view /*mime*/) override
     {
         teardown_pipeline();
         if (!data || size == 0)
@@ -273,8 +269,7 @@ public:
         }
         gst_element_seek_simple(
             pipeline_, GST_FORMAT_TIME,
-            static_cast<GstSeekFlags>(GST_SEEK_FLAG_FLUSH |
-                                      GST_SEEK_FLAG_KEY_UNIT),
+            static_cast<GstSeekFlags>(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT),
             static_cast<gint64>(ms) * GST_MSECOND);
         fire_progress();
     }
@@ -296,11 +291,9 @@ public:
         }
         gint64 pos = 0;
         gst_element_query_position(pipeline_, GST_FORMAT_TIME, &pos);
-        gst_element_seek(
-            pipeline_, static_cast<gdouble>(rate_), GST_FORMAT_TIME,
-            static_cast<GstSeekFlags>(GST_SEEK_FLAG_FLUSH |
-                                      GST_SEEK_FLAG_KEY_UNIT),
-            GST_SEEK_TYPE_SET, pos, GST_SEEK_TYPE_NONE, GST_CLOCK_TIME_NONE);
+        gst_element_seek(pipeline_, static_cast<gdouble>(rate_), GST_FORMAT_TIME,
+                         static_cast<GstSeekFlags>(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT),
+                         GST_SEEK_TYPE_SET, pos, GST_SEEK_TYPE_NONE, GST_CLOCK_TIME_NONE);
     }
     float playback_rate() const override
     {
@@ -324,10 +317,14 @@ public:
     {
         std::size_t total = bytes_.size();
         if (stream_source_)
+        {
             total += stream_source_->buffered_bytes();
+        }
         std::lock_guard lk(frame_mutex_);
         if (current_frame_)
+        {
             total += current_frame_->memory_bytes();
+        }
         return total;
     }
 
@@ -361,8 +358,7 @@ public:
         return current_frame_.get();
     }
 
-    bool begin_stream(std::string_view /*mime*/,
-                      std::uint64_t /*total_size_hint*/) override
+    bool begin_stream(std::string_view /*mime*/, std::uint64_t /*total_size_hint*/) override
     {
         teardown_pipeline();
         {
@@ -398,9 +394,7 @@ public:
         stream_source_->end(0);
         if (appsrc_)
         {
-            gst_app_src_set_size(
-                appsrc_,
-                static_cast<gint64>(stream_source_->reported_length()));
+            gst_app_src_set_size(appsrc_, static_cast<gint64>(stream_source_->reported_length()));
         }
     }
 
@@ -435,8 +429,7 @@ private:
     // be created (but not yet added to `pipe`'s bin) by the caller — on
     // failure every element passed in, plus any created here, is cleaned
     // up and `false` is returned; `pipeline_`/timers are untouched.
-    bool finish_pipeline_and_start_(GstElement* pipe, GstElement* src,
-                                    GstElement* decode)
+    bool finish_pipeline_and_start_(GstElement* pipe, GstElement* src, GstElement* decode)
     {
         // Named explicitly (rather than the default nullptr, which
         // GStreamer would auto-suffix to "audioconvert0"/"videoconvert0")
@@ -491,8 +484,7 @@ private:
         gst_app_sink_set_max_buffers(GST_APP_SINK(vsink), 1);
         g_signal_connect(vsink, "new-sample", G_CALLBACK(on_new_sample_), this);
 
-        gst_bin_add_many(GST_BIN(pipe), src, decode, aconv, asink, vconv, vsink,
-                         nullptr);
+        gst_bin_add_many(GST_BIN(pipe), src, decode, aconv, asink, vconv, vsink, nullptr);
         gst_element_link(src, decode);
         // decode has dynamic pads; link remaining elements statically.
         gst_element_link(aconv, asink);
@@ -530,19 +522,15 @@ private:
     }
 
     // appsrc's need-data callback trampoline.
-    static void appsrc_need_data_(GstAppSrc* appsrc, guint length,
-                                  gpointer user_data)
+    static void appsrc_need_data_(GstAppSrc* appsrc, guint length, gpointer user_data)
     {
-        auto* ctx =
-            static_cast<std::shared_ptr<GrowableGstBuffer>*>(user_data);
+        auto* ctx = static_cast<std::shared_ptr<GrowableGstBuffer>*>(user_data);
         (*ctx)->need_data(appsrc, length);
     }
     // appsrc's seek-data callback trampoline.
-    static gboolean appsrc_seek_data_(GstAppSrc* appsrc, guint64 offset,
-                                      gpointer user_data)
+    static gboolean appsrc_seek_data_(GstAppSrc* appsrc, guint64 offset, gpointer user_data)
     {
-        auto* ctx =
-            static_cast<std::shared_ptr<GrowableGstBuffer>*>(user_data);
+        auto* ctx = static_cast<std::shared_ptr<GrowableGstBuffer>*>(user_data);
         return (*ctx)->seek_data(offset) ? TRUE : FALSE;
     }
 
@@ -578,8 +566,7 @@ private:
                 appsrc, &cbs, ctx,
                 +[](gpointer data)
                 {
-                    delete static_cast<std::shared_ptr<GrowableGstBuffer>*>(
-                        data);
+                    delete static_cast<std::shared_ptr<GrowableGstBuffer>*>(data);
                 });
         }
 
@@ -698,37 +685,31 @@ private:
                 auto* c = static_cast<Ctx*>(data);
                 if (*c->alive)
                 {
-                    int stride = cairo_format_stride_for_width(
-                        CAIRO_FORMAT_ARGB32, c->w);
+                    int stride = cairo_format_stride_for_width(CAIRO_FORMAT_ARGB32, c->w);
                     // Own the pixels: make_image() retains the surface via
                     // cairo_surface_reference, but `delete c` below frees
                     // c->pixels. A *_create_for_data surface would then point at
                     // freed memory (use-after-free on the next paint). Allocate
                     // a cairo-owned buffer and copy into it instead.
-                    cairo_surface_t* surf = cairo_image_surface_create(
-                        CAIRO_FORMAT_ARGB32, c->w, c->h);
-                    if (surf &&
-                        cairo_surface_status(surf) == CAIRO_STATUS_SUCCESS)
+                    cairo_surface_t* surf =
+                        cairo_image_surface_create(CAIRO_FORMAT_ARGB32, c->w, c->h);
+                    if (surf && cairo_surface_status(surf) == CAIRO_STATUS_SUCCESS)
                     {
                         unsigned char* dst = cairo_image_surface_get_data(surf);
                         int dst_stride = cairo_image_surface_get_stride(surf);
-                        const std::size_t src_stride =
-                            static_cast<std::size_t>(stride);
-                        const std::size_t copy_bytes = std::min<std::size_t>(
-                            src_stride, static_cast<std::size_t>(dst_stride));
+                        const std::size_t src_stride = static_cast<std::size_t>(stride);
+                        const std::size_t copy_bytes =
+                            std::min<std::size_t>(src_stride, static_cast<std::size_t>(dst_stride));
                         for (int y = 0; y < c->h; ++y)
                         {
-                            std::memcpy(
-                                dst + static_cast<std::size_t>(y) * dst_stride,
-                                c->pixels.data() +
-                                    static_cast<std::size_t>(y) * src_stride,
-                                copy_bytes);
+                            std::memcpy(dst + static_cast<std::size_t>(y) * dst_stride,
+                                        c->pixels.data() + static_cast<std::size_t>(y) * src_stride,
+                                        copy_bytes);
                         }
                         cairo_surface_mark_dirty(surf);
                         {
                             std::lock_guard lk(c->player->frame_mutex_);
-                            c->player->current_frame_ =
-                                tk::cairo_pango::make_image(surf);
+                            c->player->current_frame_ = tk::cairo_pango::make_image(surf);
                         }
                         cairo_surface_destroy(surf);
                         if (c->player->on_frame)
@@ -749,8 +730,7 @@ private:
         return GST_FLOW_OK;
     }
 
-    static void on_pad_added_(GstElement* /*dec*/, GstPad* pad,
-                              gpointer user_data)
+    static void on_pad_added_(GstElement* /*dec*/, GstPad* pad, gpointer user_data)
     {
         GstElement* pipe = static_cast<GstElement*>(user_data);
         GstCaps* caps = gst_pad_get_current_caps(pad);
@@ -773,13 +753,10 @@ private:
             GValue val = G_VALUE_INIT;
             while (gst_iterator_next(it, &val) == GST_ITERATOR_OK)
             {
-                GstElement* e =
-                    static_cast<GstElement*>(g_value_get_object(&val));
+                GstElement* e = static_cast<GstElement*>(g_value_get_object(&val));
                 GstElementFactory* f = gst_element_get_factory(e);
-                if (f && g_str_has_prefix(
-                             gst_plugin_feature_get_name(
-                                 GST_PLUGIN_FEATURE(f)),
-                             target_elem))
+                if (f && g_str_has_prefix(gst_plugin_feature_get_name(GST_PLUGIN_FEATURE(f)),
+                                          target_elem))
                 {
                     sink_elem = static_cast<GstElement*>(gst_object_ref(e));
                     g_value_unset(&val);
@@ -805,8 +782,7 @@ private:
         gst_caps_unref(caps);
     }
 
-    static gboolean bus_cb_(GstBus* /*bus*/, GstMessage* msg,
-                            gpointer user_data)
+    static gboolean bus_cb_(GstBus* /*bus*/, GstMessage* msg, gpointer user_data)
     {
         auto* self = static_cast<GtkVideoPlayer*>(user_data);
         if (GST_MESSAGE_TYPE(msg) == GST_MESSAGE_EOS)

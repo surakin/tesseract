@@ -39,6 +39,7 @@ impl ClientFfi {
         // Drop any handle left over from a previous (abandoned) attempt.
         self.crypto_reset_handle = None;
 
+        let _in_flight = self.in_flight_guard("crypto-reset");
         let client_for_reset = client.clone();
         let handle = match self
             .rt

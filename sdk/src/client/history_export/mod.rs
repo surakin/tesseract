@@ -78,7 +78,9 @@ use segments::SegmentWriter;
 #[cfg(not(test))]
 use matrix_sdk::{
     ruma::{
-        api::{client::room::get_event_by_timestamp::v1::Request as TimestampToEventRequest, Direction},
+        api::{
+            client::room::get_event_by_timestamp::v1::Request as TimestampToEventRequest, Direction,
+        },
         MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, UInt,
     },
     Client, Room,
@@ -141,9 +143,18 @@ use parking_lot::Mutex;
 
 #[cfg(not(test))]
 #[allow(clippy::too_many_arguments)]
-fn emit_progress(ctx: &ExportCtx, events_written: u64, bytes_written: u64, oldest_ts_ms: u64,
-                  newest_ts_ms: u64, room_created_ts_ms: u64, images: (u64, u64, u64),
-                  reached_start: bool, finalizing: bool, assembly: (u64, u64)) {
+fn emit_progress(
+    ctx: &ExportCtx,
+    events_written: u64,
+    bytes_written: u64,
+    oldest_ts_ms: u64,
+    newest_ts_ms: u64,
+    room_created_ts_ms: u64,
+    images: (u64, u64, u64),
+    reached_start: bool,
+    finalizing: bool,
+    assembly: (u64, u64),
+) {
     let Some(h) = &ctx.handler else { return };
     let progress = RoomExportProgressFfi {
         request_id: ctx.request_id,
@@ -230,28 +241,71 @@ impl ClientFfi {
     /// exactly one `on_room_export_complete`. Refuses (delivering
     /// `ok=false` immediately) if any export — for this room or another —
     /// is already in flight; only one export runs app-wide at a time.
-    pub fn start_room_export_async(&self, request_id: u64, room_id: &str, options: RoomExportOptionsFfi) {
+    pub fn start_room_export_async(
+        &self,
+        request_id: u64,
+        room_id: &str,
+        options: RoomExportOptionsFfi,
+    ) {
         let handler = self.handler.clone();
 
         if options.format != "txt" && options.format != "html" {
-            emit_complete(&handler, request_id, false, false, false, "", 0, 0,
-                &format!("unsupported format {:?}", options.format));
+            emit_complete(
+                &handler,
+                request_id,
+                false,
+                false,
+                false,
+                "",
+                0,
+                0,
+                &format!("unsupported format {:?}", options.format),
+            );
             return;
         }
         let Some(client) = self.client.clone() else {
-            emit_complete(&handler, request_id, false, false, false, "", 0, 0, "not logged in");
+            emit_complete(
+                &handler,
+                request_id,
+                false,
+                false,
+                false,
+                "",
+                0,
+                0,
+                "not logged in",
+            );
             return;
         };
         let room_id_owned: OwnedRoomId = match room_id.parse() {
             Ok(id) => id,
             Err(e) => {
-                emit_complete(&handler, request_id, false, false, false, "", 0, 0,
-                    &format!("invalid room id: {e}"));
+                emit_complete(
+                    &handler,
+                    request_id,
+                    false,
+                    false,
+                    false,
+                    "",
+                    0,
+                    0,
+                    &format!("invalid room id: {e}"),
+                );
                 return;
             }
         };
         let Some(room) = client.get_room(&room_id_owned) else {
-            emit_complete(&handler, request_id, false, false, false, "", 0, 0, "room not found");
+            emit_complete(
+                &handler,
+                request_id,
+                false,
+                false,
+                false,
+                "",
+                0,
+                0,
+                "room not found",
+            );
             return;
         };
 
@@ -259,8 +313,17 @@ impl ClientFfi {
             let mut tasks = self.export_tasks.lock();
             tasks.retain(|_, h| !h.abort.is_finished());
             if !tasks.is_empty() {
-                emit_complete(&handler, request_id, false, false, false, "", 0, 0,
-                    "another export is already in progress");
+                emit_complete(
+                    &handler,
+                    request_id,
+                    false,
+                    false,
+                    false,
+                    "",
+                    0,
+                    0,
+                    "another export is already in progress",
+                );
                 return;
             }
         }
@@ -281,13 +344,21 @@ impl ClientFfi {
         };
 
         let join = self.rt.spawn(async move {
-            let _job = crate::client::activity::begin("history-export", "Export", crate::client::activity::JobKind::OneShot);
+            let _job = crate::client::activity::begin(
+                "history-export",
+                "Export",
+                crate::client::activity::JobKind::OneShot,
+            );
             run_export(ctx).await;
         });
 
         self.export_tasks.lock().insert(
             request_id,
-            ExportHandle { abort: join.abort_handle(), cancel, stop },
+            ExportHandle {
+                abort: join.abort_handle(),
+                cancel,
+                stop,
+            },
         );
     }
 
@@ -355,7 +426,11 @@ fn fresh_export_dir(chosen: &std::path::Path) -> std::path::PathBuf {
     let is_free = |p: &std::path::Path| match std::fs::read_dir(p) {
         // The export's own staging directory lives inside the chosen folder.
         Ok(mut entries) => !entries.any(|e| {
-            e.map_or(true, |e| !e.file_name().to_string_lossy().starts_with(".tesseract-export-tmp-"))
+            e.map_or(true, |e| {
+                !e.file_name()
+                    .to_string_lossy()
+                    .starts_with(".tesseract-export-tmp-")
+            })
         }),
         Err(_) => !p.exists(),
     };
@@ -378,7 +453,13 @@ fn fresh_export_dir(chosen: &std::path::Path) -> std::path::PathBuf {
 
 #[cfg(test)]
 impl ClientFfi {
-    pub fn start_room_export_async(&self, _request_id: u64, _room_id: &str, _options: crate::ffi::RoomExportOptionsFfi) {}
+    pub fn start_room_export_async(
+        &self,
+        _request_id: u64,
+        _room_id: &str,
+        _options: crate::ffi::RoomExportOptionsFfi,
+    ) {
+    }
     pub fn cancel_room_export(&self, _request_id: u64) {}
     pub fn stop_room_export(&self, _request_id: u64) {}
     pub fn room_export_checkpoint(&self, _room_id: &str) -> crate::ffi::RoomExportCheckpointFfi {
@@ -393,7 +474,10 @@ impl ClientFfi {
 /// `self.rt.block_on`, which panics when called from a task already running
 /// on that same runtime, exactly the situation this export task is in.
 #[cfg(not(test))]
-async fn resolve_newest_event(client: &Client, room_id: &OwnedRoomId) -> Result<(OwnedEventId, u64), String> {
+async fn resolve_newest_event(
+    client: &Client,
+    room_id: &OwnedRoomId,
+) -> Result<(OwnedEventId, u64), String> {
     let now_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
@@ -460,7 +544,9 @@ async fn build_focused_timeline(
                     .with_focus(TimelineFocus::Event {
                         target: focus_event_id,
                         num_context_events: 1,
-                        thread_mode: TimelineEventFocusThreadMode::Automatic { hide_threaded_events: true },
+                        thread_mode: TimelineEventFocusThreadMode::Automatic {
+                            hide_threaded_events: true,
+                        },
                     })
                     .build()
                     .await
@@ -476,7 +562,9 @@ async fn build_focused_timeline(
 
 #[cfg(not(test))]
 enum WindowOutcome {
-    Continue { next_focus: OwnedEventId },
+    Continue {
+        next_focus: OwnedEventId,
+    },
     ReachedStart,
     ReachedStop,
     /// The user clicked Stop: distinct from `ReachedStop` (a data-driven
@@ -508,7 +596,9 @@ fn apply_stop_at_ts_ms(events: &mut Vec<crate::ffi::TimelineEvent>, stop_at_ts_m
     if stop_at_ts_ms == 0 {
         return false;
     }
-    let crossed = events.iter().any(|ev| ev.timestamp != 0 && ev.timestamp < stop_at_ts_ms);
+    let crossed = events
+        .iter()
+        .any(|ev| ev.timestamp != 0 && ev.timestamp < stop_at_ts_ms);
     if crossed {
         // Find the first real (non-virtual) event at or after the cutoff
         // and drop everything before it — the too-old prefix, plus any
@@ -530,7 +620,10 @@ mod apply_stop_at_ts_ms_tests {
     use crate::ffi::TimelineEvent;
 
     fn ev(timestamp: u64) -> TimelineEvent {
-        TimelineEvent { timestamp, ..Default::default() }
+        TimelineEvent {
+            timestamp,
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -555,7 +648,10 @@ mod apply_stop_at_ts_ms_tests {
         let mut events = vec![ev(100), ev(200), ev(500), ev(600)];
         let crossed = apply_stop_at_ts_ms(&mut events, 400);
         assert!(crossed);
-        assert_eq!(events.iter().map(|e| e.timestamp).collect::<Vec<_>>(), vec![500, 600]);
+        assert_eq!(
+            events.iter().map(|e| e.timestamp).collect::<Vec<_>>(),
+            vec![500, 600]
+        );
     }
 
     #[test]
@@ -574,7 +670,10 @@ mod apply_stop_at_ts_ms_tests {
         let mut events = vec![ev(100), ev(0), ev(500)];
         let crossed = apply_stop_at_ts_ms(&mut events, 400);
         assert!(crossed);
-        assert_eq!(events.iter().map(|e| e.timestamp).collect::<Vec<_>>(), vec![500]);
+        assert_eq!(
+            events.iter().map(|e| e.timestamp).collect::<Vec<_>>(),
+            vec![500]
+        );
     }
 
     #[test]
@@ -582,7 +681,10 @@ mod apply_stop_at_ts_ms_tests {
         let mut events = vec![ev(300), ev(400)];
         let crossed = apply_stop_at_ts_ms(&mut events, 400);
         assert!(crossed);
-        assert_eq!(events.iter().map(|e| e.timestamp).collect::<Vec<_>>(), vec![400]);
+        assert_eq!(
+            events.iter().map(|e| e.timestamp).collect::<Vec<_>>(),
+            vec![400]
+        );
     }
 }
 
@@ -679,13 +781,13 @@ async fn run_window(
         // so it's the only thing this tick reports; the UI shows the date
         // without a message count until this window's authoritative one
         // is ready.
-        let approx_oldest_from_this_round: Option<u64> = items_snapshot
-            .iter()
-            .find_map(|item| match item.kind() {
+        let approx_oldest_from_this_round: Option<u64> =
+            items_snapshot.iter().find_map(|item| match item.kind() {
                 TimelineItemKind::Event(e) => Some(e.timestamp().get().into()),
                 TimelineItemKind::Virtual(_) => None,
             });
-        let approx_oldest_ts_ms = approx_oldest_from_this_round.unwrap_or(running_totals.oldest_ts_ms);
+        let approx_oldest_ts_ms =
+            approx_oldest_from_this_round.unwrap_or(running_totals.oldest_ts_ms);
         emit_progress(
             ctx,
             running_totals.events_written,
@@ -693,7 +795,11 @@ async fn run_window(
             approx_oldest_ts_ms,
             running_totals.newest_ts_ms,
             room_created_ts_ms,
-            (running_totals.images_downloaded, running_totals.images_skipped, running_totals.images_failed),
+            (
+                running_totals.images_downloaded,
+                running_totals.images_skipped,
+                running_totals.images_failed,
+            ),
             false,
             false,
             (0, 0),
@@ -755,7 +861,8 @@ async fn run_window(
 
     // Image pass: collect descriptors from this window only, so memory
     // stays bounded to one window regardless of room size.
-    let mut media_outcomes: std::collections::HashMap<String, MediaOutcomeForEvent> = std::collections::HashMap::new();
+    let mut media_outcomes: std::collections::HashMap<String, MediaOutcomeForEvent> =
+        std::collections::HashMap::new();
     let mut images_downloaded = 0u64;
     let mut images_skipped = 0u64;
     let mut images_failed = 0u64;
@@ -788,7 +895,11 @@ async fn run_window(
             } else {
                 ev.body.clone()
             };
-            descriptors.push(ImageDescriptor { event_id: ev.event_id.clone(), source, original_name });
+            descriptors.push(ImageDescriptor {
+                event_id: ev.event_id.clone(),
+                source,
+                original_name,
+            });
         }
         if !descriptors.is_empty() {
             let outcomes = images::download_images(
@@ -804,7 +915,10 @@ async fn run_window(
                 match outcome {
                     ImageOutcome::Saved { rel_path } => {
                         images_downloaded += 1;
-                        media_outcomes.insert(desc.event_id, MediaOutcomeForEvent::Saved(format!("media/{rel_path}")));
+                        media_outcomes.insert(
+                            desc.event_id,
+                            MediaOutcomeForEvent::Saved(format!("media/{rel_path}")),
+                        );
                     }
                     // A deliberate policy skip, not a technical failure —
                     // same progress bucket as a cancelled download.
@@ -830,7 +944,9 @@ async fn run_window(
             if ev.msg_type.starts_with("virtual.") || ev.msg_type == "m.room.member" {
                 continue;
             }
-            if avatar_cache.contains_key(&ev.sender) || !seen_senders_this_window.insert(ev.sender.clone()) {
+            if avatar_cache.contains_key(&ev.sender)
+                || !seen_senders_this_window.insert(ev.sender.clone())
+            {
                 continue;
             }
             if ev.sender_avatar_url.is_empty() {
@@ -840,7 +956,11 @@ async fn run_window(
             avatar_descriptors.push(ImageDescriptor {
                 event_id: ev.sender.clone(),
                 source: ev.sender_avatar_url.clone(),
-                original_name: if !ev.sender_name.is_empty() { ev.sender_name.clone() } else { ev.sender.clone() },
+                original_name: if !ev.sender_name.is_empty() {
+                    ev.sender_name.clone()
+                } else {
+                    ev.sender.clone()
+                },
             });
         }
         if !avatar_descriptors.is_empty() {
@@ -918,7 +1038,10 @@ async fn run_window(
     }
 
     if let Some(oldest_id) = &oldest_written_id {
-        let now_secs = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
+        let now_secs = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
         let cp = store::Checkpoint {
             room_id: ctx.room_id.to_string(),
             out_path: ctx.options.out_path.clone(),
@@ -943,7 +1066,11 @@ async fn run_window(
         running_totals.oldest_ts_ms,
         running_totals.newest_ts_ms,
         room_created_ts_ms,
-        (running_totals.images_downloaded, running_totals.images_skipped, running_totals.images_failed),
+        (
+            running_totals.images_downloaded,
+            running_totals.images_skipped,
+            running_totals.images_failed,
+        ),
         reached_start,
         false,
         (0, 0),
@@ -990,13 +1117,21 @@ async fn run_export(mut ctx: ExportCtx) {
     // Best-effort: the isolated timeline's cache is never revisited by the
     // passive redecryptor, so keys must land before the events do (same
     // reasoning as `subscribe_room_at`).
-    if let Err(e) = ctx.client.encryption().backups().download_room_keys_for_room(ctx.room.room_id()).await {
+    if let Err(e) = ctx
+        .client
+        .encryption()
+        .backups()
+        .download_room_keys_for_room(ctx.room.room_id())
+        .await
+    {
         tracing::warn!("history export: failed to download backup room keys: {e}");
     }
 
     let checkpoint = {
         let guard = ctx.app_cache_db.lock();
-        guard.as_ref().and_then(|conn| store::query_checkpoint(conn, &room_id_str))
+        guard
+            .as_ref()
+            .and_then(|conn| store::query_checkpoint(conn, &room_id_str))
     };
 
     // Resolved once, up front, for both the fresh and resumed paths below —
@@ -1006,12 +1141,23 @@ async fn run_export(mut ctx: ExportCtx) {
     let room_created_ts_ms = resolve_room_created_ts_ms(&ctx.room).await;
 
     let (mut focus_id, mut seen, mut segment_writer, mut totals, mut seed_for_first_window) = 'setup: {
-        if let Some(cp) = checkpoint.filter(|cp| cp.format == ctx.options.format && cp.out_path == ctx.options.out_path) {
+        if let Some(cp) = checkpoint
+            .filter(|cp| cp.format == ctx.options.format && cp.out_path == ctx.options.out_path)
+        {
             let focus: OwnedEventId = match cp.oldest_event_id.parse() {
                 Ok(id) => id,
                 Err(e) => {
-                    emit_complete(&ctx.handler, ctx.request_id, false, false, false, "", 0, 0,
-                        &format!("invalid checkpoint event id: {e}"));
+                    emit_complete(
+                        &ctx.handler,
+                        ctx.request_id,
+                        false,
+                        false,
+                        false,
+                        "",
+                        0,
+                        0,
+                        &format!("invalid checkpoint event id: {e}"),
+                    );
                     return;
                 }
             };
@@ -1021,11 +1167,21 @@ async fn run_export(mut ctx: ExportCtx) {
             // only place the original bound survives.
             ctx.options.stop_at_ts_ms = cp.stop_at_ts_ms;
             let staging = staging_dir(&ctx);
-            let writer = match SegmentWriter::resume(&staging.join("segments"), cp.segments_written) {
+            let writer = match SegmentWriter::resume(&staging.join("segments"), cp.segments_written)
+            {
                 Ok(w) => w,
                 Err(e) => {
-                    emit_complete(&ctx.handler, ctx.request_id, false, false, false, "", 0, 0,
-                        &format!("failed to resume export: {e}"));
+                    emit_complete(
+                        &ctx.handler,
+                        ctx.request_id,
+                        false,
+                        false,
+                        false,
+                        "",
+                        0,
+                        0,
+                        &format!("failed to resume export: {e}"),
+                    );
                     return;
                 }
             };
@@ -1044,15 +1200,30 @@ async fn run_export(mut ctx: ExportCtx) {
                 newest_ts_ms,
                 ..Default::default()
             };
-            break 'setup (focus, HashSet::new(), writer, totals, Some(cp.oldest_event_id));
+            break 'setup (
+                focus,
+                HashSet::new(),
+                writer,
+                totals,
+                Some(cp.oldest_event_id),
+            );
         }
 
         let (focus, newest_ts_ms) = if !ctx.options.resume_from_event_id.is_empty() {
             let focus = match ctx.options.resume_from_event_id.parse::<OwnedEventId>() {
                 Ok(id) => id,
                 Err(e) => {
-                    emit_complete(&ctx.handler, ctx.request_id, false, false, false, "", 0, 0,
-                        &format!("invalid resume_from_event_id: {e}"));
+                    emit_complete(
+                        &ctx.handler,
+                        ctx.request_id,
+                        false,
+                        false,
+                        false,
+                        "",
+                        0,
+                        0,
+                        &format!("invalid resume_from_event_id: {e}"),
+                    );
                     return;
                 }
             };
@@ -1066,8 +1237,17 @@ async fn run_export(mut ctx: ExportCtx) {
             match resolve_newest_event(&ctx.client, &ctx.room_id).await {
                 Ok((id, ts)) => (id, ts),
                 Err(e) => {
-                    emit_complete(&ctx.handler, ctx.request_id, false, false, false, "", 0, 0,
-                        &format!("failed to resolve starting point: {e}"));
+                    emit_complete(
+                        &ctx.handler,
+                        ctx.request_id,
+                        false,
+                        false,
+                        false,
+                        "",
+                        0,
+                        0,
+                        &format!("failed to resolve starting point: {e}"),
+                    );
                     return;
                 }
             }
@@ -1076,8 +1256,17 @@ async fn run_export(mut ctx: ExportCtx) {
         let writer = match SegmentWriter::create(&staging.join("segments")) {
             Ok(w) => w,
             Err(e) => {
-                emit_complete(&ctx.handler, ctx.request_id, false, false, false, "", 0, 0,
-                    &format!("failed to start export: {e}"));
+                emit_complete(
+                    &ctx.handler,
+                    ctx.request_id,
+                    false,
+                    false,
+                    false,
+                    "",
+                    0,
+                    0,
+                    &format!("failed to start export: {e}"),
+                );
                 return;
             }
         };
@@ -1086,13 +1275,24 @@ async fn run_export(mut ctx: ExportCtx) {
         } else {
             None
         };
-        let totals = RunningTotals { newest_ts_ms, ..Default::default() };
+        let totals = RunningTotals {
+            newest_ts_ms,
+            ..Default::default()
+        };
         (focus, HashSet::new(), writer, totals, seed)
     };
 
-    let window_events = if ctx.options.window_events == 0 { DEFAULT_WINDOW_EVENTS } else { ctx.options.window_events };
+    let window_events = if ctx.options.window_events == 0 {
+        DEFAULT_WINDOW_EVENTS
+    } else {
+        ctx.options.window_events
+    };
     let labels = Labels::new(ctx.options.labels.clone());
-    let sink: Box<dyn ExportSink> = if ctx.options.format == "html" { Box::new(HtmlSink) } else { Box::new(TextSink) };
+    let sink: Box<dyn ExportSink> = if ctx.options.format == "html" {
+        Box::new(HtmlSink)
+    } else {
+        Box::new(TextSink)
+    };
 
     let staging = staging_dir(&ctx);
     let media_dir = staging.join("media");
@@ -1164,12 +1364,32 @@ async fn run_export(mut ctx: ExportCtx) {
 
     if let Some(err_msg) = outcome_failed {
         let _ = segment_writer.cleanup();
-        emit_complete(&ctx.handler, ctx.request_id, false, false, false, "", totals.events_written, totals.bytes_written, &err_msg);
+        emit_complete(
+            &ctx.handler,
+            ctx.request_id,
+            false,
+            false,
+            false,
+            "",
+            totals.events_written,
+            totals.bytes_written,
+            &err_msg,
+        );
         return;
     }
 
     if outcome_cancelled {
-        emit_complete(&ctx.handler, ctx.request_id, true, true, false, "", totals.events_written, totals.bytes_written, "");
+        emit_complete(
+            &ctx.handler,
+            ctx.request_id,
+            true,
+            true,
+            false,
+            "",
+            totals.events_written,
+            totals.bytes_written,
+            "",
+        );
         return;
     }
 
@@ -1184,20 +1404,31 @@ async fn run_export(mut ctx: ExportCtx) {
     let segment_total = segment_writer.segments_written() as u64;
     let mut zip_entries: Vec<zip::ZipEntry> = Vec::new();
     if ctx.options.zip_output {
-        zip_entries.push(zip::ZipEntry { source: assembled_path.clone(), archive_path: doc_name.clone() });
+        zip_entries.push(zip::ZipEntry {
+            source: assembled_path.clone(),
+            archive_path: doc_name.clone(),
+        });
         if media_dir.is_dir() {
             if let Ok(rd) = std::fs::read_dir(&media_dir) {
                 for entry in rd.flatten() {
                     let path = entry.path();
                     if path.is_file() {
                         let name = entry.file_name().to_string_lossy().to_string();
-                        zip_entries.push(zip::ZipEntry { source: path, archive_path: format!("media/{name}") });
+                        zip_entries.push(zip::ZipEntry {
+                            source: path,
+                            archive_path: format!("media/{name}"),
+                        });
                     }
                 }
             }
         }
     }
-    let assembly_total = segment_total + if ctx.options.zip_output { zip_entries.len() as u64 } else { 0 };
+    let assembly_total = segment_total
+        + if ctx.options.zip_output {
+            zip_entries.len() as u64
+        } else {
+            0
+        };
 
     // One explicit tick announcing the switch to local assembly, before
     // any of it has happened yet — without this the UI would otherwise sit
@@ -1210,7 +1441,11 @@ async fn run_export(mut ctx: ExportCtx) {
         totals.oldest_ts_ms,
         totals.newest_ts_ms,
         room_created_ts_ms,
-        (totals.images_downloaded, totals.images_skipped, totals.images_failed),
+        (
+            totals.images_downloaded,
+            totals.images_skipped,
+            totals.images_failed,
+        ),
         outcome_reached_start,
         true,
         (0, assembly_total),
@@ -1219,48 +1454,107 @@ async fn run_export(mut ctx: ExportCtx) {
     // Assemble the final document.
     let meta = ExportMeta {
         room_name: ctx.room.name().unwrap_or_else(|| room_id_str.clone()),
-        exported_at_ms: SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0),
+        exported_at_ms: SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0),
     };
     let header = sink.header(&meta, &labels);
     // `complete` here means "the document has everything it was asked
     // for," not "reached the room's true start" — a satisfied time-range
     // cutoff is just as complete as truly reaching the start.
-    let footer = sink.footer(&labels, outcome_reached_start || outcome_reached_stop, totals.events_written);
+    let footer = sink.footer(
+        &labels,
+        outcome_reached_start || outcome_reached_stop,
+        totals.events_written,
+    );
     // From here the staging directory holds the decrypted document, so every
     // exit, including the early error returns below, must clear it.
     let _staging_cleanup = StagingCleanup(&staging);
-    let concat_result = segment_writer.concatenate_reverse(&assembled_path, &header, &footer, |done| {
-        emit_progress(&ctx, totals.events_written, totals.bytes_written, totals.oldest_ts_ms,
-            totals.newest_ts_ms, room_created_ts_ms,
-            (totals.images_downloaded, totals.images_skipped, totals.images_failed),
-            outcome_reached_start, true, (done as u64, assembly_total));
-    });
+    let concat_result =
+        segment_writer.concatenate_reverse(&assembled_path, &header, &footer, |done| {
+            emit_progress(
+                &ctx,
+                totals.events_written,
+                totals.bytes_written,
+                totals.oldest_ts_ms,
+                totals.newest_ts_ms,
+                room_created_ts_ms,
+                (
+                    totals.images_downloaded,
+                    totals.images_skipped,
+                    totals.images_failed,
+                ),
+                outcome_reached_start,
+                true,
+                (done as u64, assembly_total),
+            );
+        });
     if let Err(e) = concat_result {
         let _ = segment_writer.cleanup();
-        emit_complete(&ctx.handler, ctx.request_id, false, false, outcome_reached_start, "", totals.events_written, totals.bytes_written,
-            &format!("failed to assemble export: {e}"));
+        emit_complete(
+            &ctx.handler,
+            ctx.request_id,
+            false,
+            false,
+            outcome_reached_start,
+            "",
+            totals.events_written,
+            totals.bytes_written,
+            &format!("failed to assemble export: {e}"),
+        );
         return;
     }
 
     let out_dir = fresh_export_dir(std::path::Path::new(&ctx.options.out_path));
     if let Err(e) = std::fs::create_dir_all(&out_dir) {
-        emit_complete(&ctx.handler, ctx.request_id, false, false, outcome_reached_start, "", totals.events_written, totals.bytes_written,
-            &format!("failed to create output folder: {e}"));
+        emit_complete(
+            &ctx.handler,
+            ctx.request_id,
+            false,
+            false,
+            outcome_reached_start,
+            "",
+            totals.events_written,
+            totals.bytes_written,
+            &format!("failed to create output folder: {e}"),
+        );
         return;
     }
     let final_path = if ctx.options.zip_output {
         let zip_path = out_dir.join("history.zip");
         let zip_result = zip::write_zip(&zip_path, &zip_entries, |done| {
-            emit_progress(&ctx, totals.events_written, totals.bytes_written, totals.oldest_ts_ms,
-                totals.newest_ts_ms, room_created_ts_ms,
-                (totals.images_downloaded, totals.images_skipped, totals.images_failed),
-                outcome_reached_start, true, (segment_total + done as u64, assembly_total));
+            emit_progress(
+                &ctx,
+                totals.events_written,
+                totals.bytes_written,
+                totals.oldest_ts_ms,
+                totals.newest_ts_ms,
+                room_created_ts_ms,
+                (
+                    totals.images_downloaded,
+                    totals.images_skipped,
+                    totals.images_failed,
+                ),
+                outcome_reached_start,
+                true,
+                (segment_total + done as u64, assembly_total),
+            );
         });
         match zip_result {
             Ok(()) => Some(zip_path),
             Err(e) => {
-                emit_complete(&ctx.handler, ctx.request_id, false, false, outcome_reached_start, "", totals.events_written, totals.bytes_written,
-                    &format!("failed to package zip: {e}"));
+                emit_complete(
+                    &ctx.handler,
+                    ctx.request_id,
+                    false,
+                    false,
+                    outcome_reached_start,
+                    "",
+                    totals.events_written,
+                    totals.bytes_written,
+                    &format!("failed to package zip: {e}"),
+                );
                 return;
             }
         }
@@ -1269,15 +1563,22 @@ async fn run_export(mut ctx: ExportCtx) {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(
-                &assembled_path,
-                std::fs::Permissions::from_mode(0o600),
-            );
+            let _ =
+                std::fs::set_permissions(&assembled_path, std::fs::Permissions::from_mode(0o600));
         }
         let dest_doc = out_dir.join(&doc_name);
         if let Err(e) = std::fs::rename(&assembled_path, &dest_doc) {
-            emit_complete(&ctx.handler, ctx.request_id, false, false, outcome_reached_start, "", totals.events_written, totals.bytes_written,
-                &format!("failed to write output file: {e}"));
+            emit_complete(
+                &ctx.handler,
+                ctx.request_id,
+                false,
+                false,
+                outcome_reached_start,
+                "",
+                totals.events_written,
+                totals.bytes_written,
+                &format!("failed to write output file: {e}"),
+            );
             return;
         }
         if media_dir.is_dir() {
@@ -1305,8 +1606,20 @@ async fn run_export(mut ctx: ExportCtx) {
         }
     }
 
-    let out_path_str = final_path.map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
-    emit_complete(&ctx.handler, ctx.request_id, true, false, outcome_reached_start, &out_path_str, totals.events_written, totals.bytes_written, "");
+    let out_path_str = final_path
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+    emit_complete(
+        &ctx.handler,
+        ctx.request_id,
+        true,
+        false,
+        outcome_reached_start,
+        &out_path_str,
+        totals.events_written,
+        totals.bytes_written,
+        "",
+    );
 }
 
 /// Removes the export's staging directory when dropped.
@@ -1331,8 +1644,10 @@ impl Drop for StagingCleanup<'_> {
 /// again, which the resume UI asks them to do anyway.
 #[cfg(not(test))]
 fn staging_dir(ctx: &ExportCtx) -> PathBuf {
-    PathBuf::from(&ctx.options.out_path)
-        .join(format!(".tesseract-export-tmp-{}", sanitize_room_dir_name(&ctx.room_id.to_string())))
+    PathBuf::from(&ctx.options.out_path).join(format!(
+        ".tesseract-export-tmp-{}",
+        sanitize_room_dir_name(&ctx.room_id.to_string())
+    ))
 }
 
 #[cfg(test)]
@@ -1356,18 +1671,28 @@ mod fresh_export_dir_tests {
         assert_eq!(fresh_export_dir(&base), base, "an empty folder is used");
 
         std::fs::create_dir_all(base.join(".tesseract-export-tmp-room")).unwrap();
-        assert_eq!(fresh_export_dir(&base), base, "the export's own staging directory doesn't count");
+        assert_eq!(
+            fresh_export_dir(&base),
+            base,
+            "the export's own staging directory doesn't count"
+        );
         std::fs::remove_dir_all(base.join(".tesseract-export-tmp-room")).unwrap();
 
         std::fs::write(base.join("history.html"), b"old").unwrap();
         let second = fresh_export_dir(&base);
-        assert_eq!(second.file_name().unwrap().to_string_lossy(), format!("{} (2)", base.file_name().unwrap().to_string_lossy()));
+        assert_eq!(
+            second.file_name().unwrap().to_string_lossy(),
+            format!("{} (2)", base.file_name().unwrap().to_string_lossy())
+        );
         assert!(!second.exists() || std::fs::read_dir(&second).unwrap().next().is_none());
 
         std::fs::create_dir_all(&second).unwrap();
         std::fs::write(second.join("history.html"), b"older").unwrap();
         let third = fresh_export_dir(&base);
-        assert!(third.ends_with(format!("{} (3)", base.file_name().unwrap().to_string_lossy())));
+        assert!(third.ends_with(format!(
+            "{} (3)",
+            base.file_name().unwrap().to_string_lossy()
+        )));
 
         let _ = std::fs::remove_dir_all(&base);
         let _ = std::fs::remove_dir_all(&second);
@@ -1380,7 +1705,8 @@ mod staging_cleanup_tests {
 
     #[test]
     fn dropping_the_guard_removes_the_decrypted_staging_files() {
-        let dir = std::env::temp_dir().join(format!("tesseract-staging-cleanup-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("tesseract-staging-cleanup-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("history.html"), b"decrypted").unwrap();

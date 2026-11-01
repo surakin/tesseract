@@ -31,8 +31,7 @@ namespace tesseract::views
 // (rather than in ImagePackEditorView.h, its original home) so both
 // ImagePackEditorView.h and UserPackEditor.h can depend on this header
 // without a cycle.
-using ImagePackImageProvider =
-    std::function<const tk::Image*(const std::string& mxc)>;
+using ImagePackImageProvider = std::function<const tk::Image*(const std::string& mxc)>;
 
 // One staged sticker/emoji tile — used both by ImagePackEditorView's
 // per-room, multi-pack editor (each pack owns a vector<StagedPackImage>) and
@@ -48,8 +47,8 @@ struct StagedPackImage
     // identified by existing_url instead.
     std::uint64_t local_id = 0;
 
-    std::string shortcode; // editable, click-to-edit
-    std::string existing_url; // mxc:// — empty if newly added, not yet uploaded
+    std::string shortcode;                   // editable, click-to-edit
+    std::string existing_url;                // mxc:// — empty if newly added, not yet uploaded
     std::vector<std::uint8_t> pending_bytes; // raw bytes if newly added
     std::string pending_mime;
     std::string body;
@@ -102,20 +101,17 @@ protected:
     // image_provider_(img.existing_url)), shortcode label (unless
     // `is_editing`, in which case the host's NativeTextField overlay covers
     // it), remove chip (only when `hovered_remove`).
-    void paint_tile_shared_(tk::PaintCtx&, const StagedPackImage& img,
-                            const tk::Rect& cell_local, tk::Point origin,
-                            bool hovered_remove, bool is_editing) const;
+    void paint_tile_shared_(tk::PaintCtx&, const StagedPackImage& img, const tk::Rect& cell_local,
+                            tk::Point origin, bool hovered_remove, bool is_editing) const;
 
     // Shared "Drop image" placeholder tile, painted for the trailing
     // slot after every real image tile.
-    void paint_hint_tile_shared_(tk::PaintCtx&, const tk::Rect& cell_local,
-                                 tk::Point origin) const;
+    void paint_hint_tile_shared_(tk::PaintCtx&, const tk::Rect& cell_local, tk::Point origin) const;
 
     // Circular remove-chip hit-test at `image_rect`'s top-right corner.
     // `local`/`y_content` are the same (widget-local x, content-space y)
     // coordinates each subclass's on_pointer_down already computes.
-    bool hit_remove_chip_(tk::Point local, float y_content,
-                         const tk::Rect& image_rect) const;
+    bool hit_remove_chip_(tk::Point local, float y_content, const tk::Rect& image_rect) const;
 
     ImagePackImageProvider image_provider_;
 
@@ -124,11 +120,11 @@ protected:
     // lazily rasterizes/caches on first use.
     mutable tk::IconCache remove_icon_;
 
-    static constexpr float kImageH      = 76.0f; // thumbnail square side
-    static constexpr float kLabelH      = 20.0f; // shortcode strip below it
-    static constexpr float kTileSize    = 96.0f; // full cell (image+label)
+    static constexpr float kImageH = 76.0f;   // thumbnail square side
+    static constexpr float kLabelH = 20.0f;   // shortcode strip below it
+    static constexpr float kTileSize = 96.0f; // full cell (image+label)
     static constexpr float kTileSpacing = 8.0f;
-    static constexpr float kTilePad     = 8.0f;
+    static constexpr float kTilePad = 8.0f;
     static constexpr float kRemoveChipR = 9.0f; // mirrors AvatarEditControl
 };
 

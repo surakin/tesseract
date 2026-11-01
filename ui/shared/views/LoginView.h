@@ -7,8 +7,10 @@
 // the host before calling finish_init().
 
 #include "AlertDialog.h"
+#include "ServerBrowserOverlay.h" // empty unless TESSERACT_SERVER_BROWSER_ENABLED
 #include "tk/canvas.h"
 #include "tk/controls.h"
+#include "tk/media_disk_cache.h"
 #include "tk/host.h"
 #include "tk/image_view.h"
 #include "tk/layout.h"
@@ -37,7 +39,15 @@ protected:
     TK_WIDGET_FACTORY_FRIEND(LoginView)
 
 public:
-    ~LoginView() override { invalidate_weak_self(); }
+    ~LoginView() override
+    {
+        // A joinable worker_ would std::terminate the process.
+        if (worker_.joinable())
+        {
+            shutdown();
+        }
+        invalidate_weak_self();
+    }
 
     // -----------------------------------------------------------------------
     // Visual state
@@ -77,6 +87,16 @@ public:
     {
         return sign_in_btn_ && sign_in_btn_->visible();
     }
+    // Whether the sign-in button and "Create an account" link accept clicks
+    // (they don't while the server's sign-in methods are being worked out).
+    bool sign_in_enabled() const
+    {
+        return sign_in_btn_ && sign_in_btn_->enabled();
+    }
+    bool register_enabled() const
+    {
+        return register_link_ && register_link_->enabled();
+    }
 
     /// The corner settings button (reaches Network settings before any
     /// account exists). Shown only on the first-login form.
@@ -87,7 +107,9 @@ public:
     void simulate_settings_click()
     {
         if (on_open_settings_)
+        {
             on_open_settings_();
+        }
     }
 
     void set_status(std::string message, bool is_error = false);
@@ -214,6 +236,47 @@ public:
         on_cancel_done_ = std::move(fn);
     }
 
+#ifdef TESSERACT_SERVER_BROWSER_ENABLED
+    /// Opens the "Find a server" browser (loading the community list first if
+    /// it hasn't arrived yet).
+    void open_server_browser();
+    ServerBrowserOverlay* server_browser() const
+    {
+        return server_browser_;
+    }
+    /// Whether the "Find a server" affordance is offered at all: not when the
+    /// deployment provisions a default homeserver.
+    bool server_browser_available() const
+    {
+        return !provisioned_;
+    }
+    // Test helper: the community list's answer (as load_server_list_'s worker
+    // posts it).
+    void simulate_server_list_result(const tesseract::Client::ServerList& list)
+    {
+        apply_server_list_(list);
+    }
+#endif
+    tk::TextField* homeserver_field() const
+    {
+        return hs_field_;
+    }
+#ifdef TESSERACT_SERVER_BROWSER_ENABLED
+    tk::Button* find_server_button() const
+    {
+        return find_server_btn_;
+    }
+#endif
+    tk::Button* register_button() const
+    {
+        return register_link_;
+    }
+    // Test helper: click "Create an account".
+    void simulate_register_click()
+    {
+        on_register_clicked_();
+    }
+
     /// Sets placeholder/initial text on the (already-constructed, tree-owned)
     /// homeserver field and wires it to the OAuth controller. Must be called
     /// after all set_* above.
@@ -289,11 +352,28 @@ private:
     // probe_oauth_support_'s outcome (or its absence): records it, updates
     // the form and runs a remembered Enter.
     void oauth_probe_done_result_(bool supported);
+    // The sign-in, "Create an account" and password-form controls are inert
+    // while the server's sign-in methods are still being worked out (the same
+    // Wait state that makes Enter defer): until then the default offered
+    // method may be the wrong one.
+    void update_method_controls_enabled_();
     // The homeserver lookup finished: record what the server offers and run
     // a remembered Enter if nothing else is outstanding.
     void apply_discovery_result_(bool ok, const std::string& base_url_or_error,
                                  bool supports_password);
     void start_oauth_(bool register_account);
+    // "Create an account": with an empty field (and no provisioned server)
+    // there is no server to register on yet, so offer the browser instead.
+    void on_register_clicked_();
+#ifdef TESSERACT_SERVER_BROWSER_ENABLED
+    void load_server_list_();
+    void apply_server_list_(const tesseract::Client::ServerList& list);
+    // Fetches the favicons the browser doesn't have yet (disk cache first,
+    // then each server's site), a few at a time on the worker pool. Only runs
+    // while the browser is open, so nothing contacts the listed sites before
+    // the user asks to see them.
+    void request_server_icons_();
+#endif
     void probe_registration_support_(const std::string& base_url);
     void probe_oauth_support_(const std::string& base_url);
     void update_oauth_availability_(bool available);
@@ -315,56 +395,72 @@ private:
     // Injected platform hooks
     std::function<void(std::function<void()>)> post_to_ui_;
     std::function<void(std::function<void()>)> run_async_;
-    std::function<void()>                      relayout_;
-    std::function<void(const std::string&)>    open_browser_;
+    std::function<void()> relayout_;
+    std::function<void(const std::string&)> open_browser_;
 
     // Controller state
-    tesseract::Client*                   client_       = nullptr;
-    std::thread                          worker_;
-    std::atomic<bool>                    cancelled_{false};
-    std::atomic<uint32_t>                discovery_gen_{0};
+    tesseract::Client* client_ = nullptr;
+    std::thread worker_;
+    std::atomic<bool> cancelled_{false};
+    std::atomic<uint32_t> discovery_gen_{0};
     // Server an empty homeserver field stands for: the provisioned one
     // (tesseract/provisioning.h) or "matrix.org".
-    std::string                          default_homeserver_;
-    std::function<void()>                on_begin_oauth_;
-    std::function<void()>                on_success_;
-    std::function<void()>                on_cancel_done_;
-    std::function<void()>                on_open_settings_;
+    std::string default_homeserver_;
+    std::function<void()> on_begin_oauth_;
+    std::function<void()> on_success_;
+    std::function<void()> on_cancel_done_;
+    std::function<void()> on_open_settings_;
 
     // Visual state
-    State          state_          = State::Form;
-    Mode           mode_           = Mode::Initial;
+    State state_ = State::Form;
+    Mode mode_ = Mode::Initial;
     DiscoveryState discovery_state_{DiscoveryState::Idle};
-    std::string    resolved_base_url_;
-    bool           status_is_error_ = false;
+    std::string resolved_base_url_;
+    bool status_is_error_ = false;
 
     // Alert overlay (owned via add_child, raw pointer borrowed back)
-    AlertDialog* alert_          = nullptr;
+    AlertDialog* alert_ = nullptr;
+#ifdef TESSERACT_SERVER_BROWSER_ENABLED
+    // "Find a server" browser, added before alert_ so alerts paint above it.
+    ServerBrowserOverlay* server_browser_ = nullptr;
+    tk::Button* find_server_btn_ = nullptr;
+    bool server_list_loading_ = false;
+    // hs_field_ was visible when the browser opened and is restored on close.
+    bool hs_field_hidden_by_browser_ = false;
+    std::atomic<uint32_t> server_list_gen_{0};
+    // (client_domain, homepage) of the listed servers, for request_server_icons_.
+    std::vector<std::pair<std::string, std::string>> server_icon_targets_;
+    std::shared_ptr<tk::MediaDiskCache> icon_cache_; // the shared media cache dir
+    bool icons_fetching_ = false;
+    std::atomic<uint32_t> icon_gen_{0};
+#endif
+    // A deployment-provisioned default homeserver replaces the picker.
+    bool provisioned_ = false;
 
     // Borrowed widget pointers (owned by card_)
-    tk::VBox*      card_            = nullptr;
-    tk::Avatar*    brand_avatar_    = nullptr;
-    tk::Label*     title_lbl_       = nullptr;
-    tk::Label*     hs_input_label_  = nullptr;
-    tk::TextField* hs_field_        = nullptr;
+    tk::VBox* card_ = nullptr;
+    tk::Avatar* brand_avatar_ = nullptr;
+    tk::Label* title_lbl_ = nullptr;
+    tk::Label* hs_input_label_ = nullptr;
+    tk::TextField* hs_field_ = nullptr;
     // Small ✓/✗/"Checking…" indicator next to hs_field_ — see set_discovery_state().
-    tk::Label*     discovery_icon_lbl_  = nullptr;
-    tk::Button*    hs_help_btn_         = nullptr;
+    tk::Label* discovery_icon_lbl_ = nullptr;
+    tk::Button* hs_help_btn_ = nullptr;
     // Error detail, shown below the field only on DiscoveryState::Failed —
     // a valid/pending result shows no text at all, just the icon above.
-    tk::Label*     discovery_error_lbl_ = nullptr;
-    tk::Button*    sign_in_btn_     = nullptr;
-    tk::Button*    cancel_btn_      = nullptr;
-    tk::Button*    settings_btn_    = nullptr;
+    tk::Label* discovery_error_lbl_ = nullptr;
+    tk::Button* sign_in_btn_ = nullptr;
+    tk::Button* cancel_btn_ = nullptr;
+    tk::Button* settings_btn_ = nullptr;
     void update_settings_visibility_();
-    tk::Button*    register_link_   = nullptr;
-    tk::Label*     status_lbl_      = nullptr;
+    tk::Button* register_link_ = nullptr;
+    tk::Label* status_lbl_ = nullptr;
 
     // Decoded once, lazily, in arrange() — see BrandView's identical pattern.
     std::unique_ptr<tk::Image> brand_icon_;
 
-    bool                     registration_supported_ = false;
-    std::atomic<uint32_t>    registration_gen_{0};
+    bool registration_supported_ = false;
+    std::atomic<uint32_t> registration_gen_{0};
 
     // Permissive: defaults true (fail open) so the OAuth "Sign in" button
     // isn't hidden during Discovering/Failed/network-error states, nor
@@ -372,18 +468,18 @@ private:
     // discovery positively confirms (Resolved) that the homeserver's OAuth
     // metadata fetch failed. Unconditional (unlike password_available_)
     // because sign_in_btn_ exists in every build configuration.
-    bool                     oauth_available_ = true;
-    std::atomic<uint32_t>    oauth_gen_{0};
+    bool oauth_available_ = true;
+    std::atomic<uint32_t> oauth_gen_{0};
     // Whether this discovery cycle's OAuth probe has answered: until then,
     // oauth_available_ is only the permissive default.
-    bool                     oauth_probe_done_ = false;
+    bool oauth_probe_done_ = false;
     // Enter was pressed in the homeserver field while the server was still
     // being checked.
-    bool                     submit_pending_ = false;
+    bool submit_pending_ = false;
     // The status line shows submit_homeserver_'s "Checking…" message.
-    bool                     submit_status_shown_ = false;
+    bool submit_status_shown_ = false;
     // This cycle's homeserver lookup has answered (with its sign-in methods).
-    bool                     discovery_settled_ = false;
+    bool discovery_settled_ = false;
 
 #ifdef TESSERACT_LEGACY_LOGIN_ENABLED
     /// `OAuthOnly` — the main form (homeserver field, OAuth button, and the
@@ -404,13 +500,13 @@ private:
     // all — no permissive/inconclusive fallback (see update_form_visibility_).
     bool password_available_ = false;
 
-    tk::Label*     username_input_label_ = nullptr;
-    tk::TextField* username_field_       = nullptr;
-    tk::Label*     password_input_label_ = nullptr;
-    tk::TextField* password_field_       = nullptr;
-    tk::Button*    password_toggle_btn_  = nullptr; // on the OAuthOnly form
-    tk::Button*    password_sign_in_btn_ = nullptr; // submit button on the Password form
-    tk::Button*    back_btn_             = nullptr; // on the Password form
+    tk::Label* username_input_label_ = nullptr;
+    tk::TextField* username_field_ = nullptr;
+    tk::Label* password_input_label_ = nullptr;
+    tk::TextField* password_field_ = nullptr;
+    tk::Button* password_toggle_btn_ = nullptr;  // on the OAuthOnly form
+    tk::Button* password_sign_in_btn_ = nullptr; // submit button on the Password form
+    tk::Button* back_btn_ = nullptr;             // on the Password form
 #endif
 };
 

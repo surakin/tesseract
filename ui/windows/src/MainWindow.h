@@ -35,21 +35,8 @@ using std::min;
 #include "views/format.h"
 #include "views/BrandView.h"
 #include "views/MainAppWidget.h"
-#include "views/MediaViewerOverlay.h"
 #include "views/media_viewer_items.h"
-#include "views/ComposePopups.h"
-#include "views/ShortcodeController.h"
-#include "views/ShortcodePopup.h"
-#include "views/MentionController.h"
-#include "views/MentionPopup.h"
-#include "views/SlashCommandController.h"
-#include "views/SlashCommandPopup.h"
-#include "views/GifController.h"
-#include "views/GifPopup.h"
-
-#include "views/AccountPicker.h"
 #include "views/SettingsView.h"
-#include "app/SettingsController.h"
 
 #include <atomic>
 #include <condition_variable>
@@ -67,30 +54,24 @@ using std::min;
 // Custom window messages
 // WM_APP + 1 was WM_TESSERACT_MESSAGE_INSERTED; Windows now routes through the
 // shared ShellBase timeline/message handlers (no per-message marshalling msg).
-constexpr UINT WM_TESSERACT_ROOMS = WM_APP + 2;
-constexpr UINT WM_TESSERACT_SYNC_ERROR = WM_APP + 3;
+// WM_APP + 2/3/5/6 and 12/14/16/21 were per-event messages (rooms, sync error,
+// reconnect, auth error, image packs, media bytes, account prefs, room-list
+// state); all of those now arrive through EventHandlerBase and post_to_ui_.
 // WM_APP + 4 was WM_TESSERACT_TIMELINE_RESET; see the +1 note above.
-constexpr UINT WM_TESSERACT_RECONNECT = WM_APP + 5;
-constexpr UINT WM_TESSERACT_AUTH_ERROR = WM_APP + 6;
-constexpr UINT WM_TESSERACT_BACKUP_PROGRESS = WM_APP + 7;
 // WM_APP + 8 was the recover-done message; the inline key-entry banner that
 // consumed it was removed (key recovery now lives in the encryption-setup
 // overlay).
 // WM_APP + 9 was WM_TESSERACT_MESSAGE_UPDATED; see the +1 note above.
-constexpr UINT WM_TESSERACT_PAGINATE_DONE = WM_APP + 10;
 // WM_APP + 11 was WM_TESSERACT_MESSAGE_REMOVED; see the +1 note above.
-constexpr UINT WM_TESSERACT_IMAGE_PACKS = WM_APP + 12;
 // WM_APP + 13 was WM_TESSERACT_STICKER_BYTES; the sticker picker now uses
 // the shared ShellBase async image-cache path (ensure_picker_image_).
-constexpr UINT WM_TESSERACT_MEDIA_BYTES = WM_APP + 14;
 // WM_APP + 15 was WM_TESSERACT_SUBSCRIBE_DONE (removed with the shared
 // start_room_subscription_ consolidation); left as a gap to avoid renumbering.
-constexpr UINT WM_TESSERACT_ACCOUNT_PREFS = WM_APP + 16;
-constexpr UINT WM_TESSERACT_NOTIFY = WM_APP + 17;
+// WM_APP + 17 was WM_TESSERACT_NOTIFY (removed with the shared notification
+// policy in ShellBase); left as a gap to avoid renumbering.
 // WM_APP + 18 = WM_TESSERACT_NOTIFY_CLICK, defined in Win32Notifier.h
 // WM_APP + 19 was WM_TESSERACT_VIDEO_BYTES (removed; media now flows through begin_media_req_)
 // WM_APP + 20 is taken by Win32TrayIcon on its hidden helper HWND.
-constexpr UINT WM_TESSERACT_ROOM_LIST_STATE = WM_APP + 21;
 constexpr UINT WM_TESSERACT_POST_TO_UI = WM_APP + 22;
 // WM_APP + 25/26 were WM_TESSERACT_JOIN_ROOM_LOOKUP_DONE/_DONE (removed with
 // the shared AddRoomView/lookup_room_command_/join_room_command_
@@ -103,8 +84,6 @@ namespace win32
 class Win32Notifier; // defined in Win32Notifier.h, included by MainWindow.cpp
 class Win32TrayIcon; // defined in Win32TrayIcon.h, included by MainWindow.cpp
 class Win32Taskbar;
-
-class LoginView;
 
 // ---------------------------------------------------------------------------
 
@@ -124,17 +103,20 @@ public:
     // (ShowWindow(hwnd_, SW_SHOW)) if there's no saved session to restore.
     explicit MainWindow(tesseract::AccountManager& account_manager, HINSTANCE hInst,
                         Win32Taskbar& taskbar, bool start_hidden = false,
-                        tesseract::LaunchAction launch_action =
-                            tesseract::LaunchAction::None,
+                        tesseract::LaunchAction launch_action = tesseract::LaunchAction::None,
                         std::string launch_room_id = {}
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
-                        , std::filesystem::path screenshot_dir = {}
+                        ,
+                        std::filesystem::path screenshot_dir = {}
 #endif
-                        );
+    );
     ~MainWindow();
 
     bool create(int nCmdShow);
-    Win32Taskbar& taskbar() { return taskbar_; }
+    Win32Taskbar& taskbar()
+    {
+        return taskbar_;
+    }
 
     // Called by the main message loop before TranslateMessage/DispatchMessage.
     // Routes application accelerators (e.g. Ctrl+K → quick switcher) to the
@@ -153,55 +135,52 @@ public:
     // same room_view_ this shell owns and dispatch to secondary windows. They
     // also carry guards this shell used to drop (in-thread reply exclusion,
     // scroll/focus restore on reset), so the base path is strictly more correct.
-    void handle_sync_error_ui_(std::string context, std::string user_id,
-                               std::string description,
+    void handle_sync_error_ui_(std::string context, std::string user_id, std::string description,
                                bool soft_logout) override;
-    void refresh_user_strip_() override;
-    void request_relogin_(const std::string& user_id) override;
-    void
-    handle_backup_progress_ui_(tesseract::BackupProgress progress) override;
-    void refresh_pickers_packs_() override;
-    void handle_notification_ui_(std::string user_id, std::string room_id,
-                                 std::string room_name, std::string sender,
-                                 std::string body, bool is_mention,
-                                 std::vector<uint8_t> avatar_bytes,
-                                 std::vector<uint8_t> image_bytes,
-                                 std::string event_id) override;
     void on_room_list_state_ui_() override;
     void on_inflight_ui_() override;
     void on_low_power_mode_ui_(bool active) override;
-    std::uint64_t shell_extra_memory_bytes_() const override;
-    void on_launch_at_login_pref_ui_(bool enabled) override;
     bool tray_available_() const override;
-    void on_tray_available_ui_(bool available) override;
-    void on_server_info_ready_ui_() override;
-    void on_own_extended_profile_ready_ui_() override;
-    void open_app_settings_ui_() override { open_settings_(); }
-    void close_app_settings_ui_() override { close_settings_(); }
+    void open_app_settings_ui_() override
+    {
+        open_settings_();
+    }
+    void close_app_settings_ui_() override
+    {
+        close_settings_();
+    }
     void rebind_login_client_ui_() override;
-    void on_profile_field_result_ui_(const std::string& key, bool ok,
-                                     const std::string& error) override;
-    void update_typing_bar_(const std::string& text, bool visible) override;
-    void on_active_room_bot_commands_changed_ui_() override;
     void on_show_status_message_ui_(const std::string& msg) override;
     void on_restore_status_ui_() override;
     void on_startup_restore_progress_ui_(const std::string& status) override;
 
     // Returns the user-chosen path, or L"" if cancelled.
     // Also called by RoomWindow for save dialogs in popout windows.
-    std::wstring show_save_dialog_(const std::wstring& suggested,
-                                   const wchar_t* filter);
+    std::wstring show_save_dialog_(const std::wstring& suggested, const wchar_t* filter);
     // An OPENFILENAMEW filter ("Label\0pattern\0...\0") from UTF-8 labels,
     // so the labels can be translated.
-    static std::wstring file_filter(
-        std::initializer_list<std::pair<std::string, const wchar_t*>> entries);
+    static std::wstring
+    file_filter(std::initializer_list<std::pair<std::string, const wchar_t*>> entries);
     // OPENFILENAMEW filter for a MediaSaveSpec (its type group + "All files").
     static std::wstring save_filter_for(const tesseract::views::MediaSaveSpec& spec);
-    void wire_key_dialog_callbacks_();
-    // Wires HistoryExportController::show_save_folder_dialog to a native
-    // folder picker. Called once per ensure_history_export_controller_()
-    // call, alongside wire_key_dialog_callbacks_()'s per-login rewiring.
-    void wire_history_export_dialog_callbacks_();
+    bool has_save_file_dialog_() const override;
+    void prompt_passphrase_(std::string title, std::function<void(std::string)> cb) override;
+    void pick_media_save_path_(const tesseract::views::MediaSaveSpec& spec,
+                               std::function<void(std::string)> cb) override;
+    void pick_save_file_(std::string title, std::string suggested_name,
+                         std::function<void(std::string)> cb) override;
+    void pick_open_file_(std::string title, std::function<void(std::string)> cb) override;
+    void pick_folder_(std::string title, std::function<void(std::string)> cb) override;
+    void show_message_dialog_(std::string title, std::string text, bool is_error) override;
+
+public:
+    /// Split a status-bar string into text and link runs, honouring the opt-in
+    /// of the message being shown (see ShellBase::show_status_message_). Used by
+    /// the status bar's window procedure.
+    std::vector<tesseract::StatusSegment> status_segments(const std::string& msg) const
+    {
+        return parse_status_message_(msg);
+    }
 
 private:
     void on_create(HWND hwnd);
@@ -214,6 +193,12 @@ private:
     // reaching for the notify icon at all) doesn't count as leaving the app,
     // only losing it to a genuinely different application does.
     bool is_tray_owner_effectively_active_() const;
+    bool main_window_foreground_for_tray_() const override;
+    std::vector<std::uint8_t> encode_selfie_jpeg_(const std::uint8_t* bgra, std::uint32_t w,
+                                                  std::uint32_t h) override;
+    std::unique_ptr<tk::Image> decode_avatar_(const std::vector<std::uint8_t>& bytes) override;
+    void hide_main_window_for_tray_() override;
+    void show_main_window_for_tray_(const std::string& token) override;
     static bool is_explorer_foreground_(HWND fg);
     void start_login();
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
@@ -222,102 +207,49 @@ private:
     // ScreenshotHost adapter; nested so it can reach the private hooks.
     class Win32ScreenshotHost;
 #endif
-    // Bind the UI to the now-active account `uid` and finish startup (settings
-    // controller + fields). Shared by the cold restore path and the
-    // secondary-window bind path in start_login().
-    void finish_login_ui_(const std::string& uid);
-    void on_login_succeeded();
-    void show_login_view();
-    void show_main_content();
+    void show_login_page_ui_() override;
+    void show_main_content_() override;
     // Launch-action hooks for ShellBase::dispatch_launch_action_.
     void raise_main_window_ui_() override;
-    void open_quick_switch_ui_() override { open_quick_switch_(); }
-    void open_message_search_ui_() override { open_message_search_(); }
+    void bring_main_window_forward_for_overlay_() override;
+    void restore_focus_after_overlay_() override;
     void open_settings_();
     void close_settings_();
-    // Lazily construct login_view_/settings_view_ on first need (called from
-    // show_login_view()/open_settings_()) and tear them down once no longer
-    // needed (show_main_content()/close_settings_()) — both are seldom used
-    // for a typical logged-in session, so there's no reason to keep either
-    // alive (native controls, decoded icon, full widget tree) for the whole
-    // app lifetime. See ui/shared/app/DeferredTeardown.h for why teardown is
-    // deferred rather than synchronous.
-    void ensure_login_view_();
-    void teardown_login_view_();
-    void ensure_settings_view_();
-    void teardown_settings_view_();
-    void on_send_clicked();
     // Push ShellBase::compose_window_title_()'s string to the OS window title
     // (and thus the custom title bar, which reads it via GetWindowTextW).
     // SetWindowTextW alone doesn't repaint the custom-drawn title bar (see
     // CustomTitleBar.h), so this also invalidates the strip.
     void apply_window_title_ui_(const std::string& title) override;
-    // Posted-message payloads — see WM_TESSERACT_* constants above. The
-    // posting code transfers ownership of each heap-allocated payload to
-    // the receiving handler.
-    struct NotificationPayload
-    {
-        std::string room_id;
-        std::string room_name;
-        std::string sender;
-        std::string body;
-        std::string user_id; // which AccountSession fired this
-        bool is_mention;
-        std::vector<uint8_t> avatar_bytes;
-        std::vector<uint8_t> image_bytes; // already privacy-gated
-        std::string event_id;
-    };
-    struct RoomsPayload
-    {
-        std::string user_id;
-        std::vector<tesseract::RoomInfo> rooms;
-    };
-
-    void on_tesseract_notify(const NotificationPayload* p);
-    void request_attention_();
+    bool is_main_window_focused_() const override;
+    void request_notification_attention_() override;
     void navigate_to_room(const std::string& room_id);
 
-    // Ctrl+K quick switcher — open focuses the native search field; close
-    // hides it, relayouts, and restores focus to the main window.
-    void open_quick_switch_();
-    void close_quick_switch_();
-    void open_message_search_();
-    void close_message_search_();
-    void close_forward_picker_();
     void focus_forward_picker_field_() override;
     void hide_forward_picker_field_() override;
-    void open_find_in_room_();
-    void close_find_in_room_();
-    void on_tesseract_paginate_done(std::string* room_id, bool reached_start);
-    void on_tesseract_rooms(RoomsPayload* payload);
-    void refresh_room_list();
-    /// Kick off back-pagination on a worker thread.
-    void request_more_history(const std::string& room_id);
 
     // ensure_room_avatar_, ensure_user_avatar_, and ensure_media_image_ are
     // inherited from tesseract::ShellBase. ensure_reply_details_ now lives
     // on RoomPane (main_room_pane_).
 
-    void on_space_back();
-    void on_backup_progress(tesseract::BackupProgress* progress);
-    void on_room_list_state(tesseract::RoomListState state);
-    void refresh_sync_status();
-    void switch_active_account(const std::string& user_id);
-    void begin_add_account();
-    void logout_active_account();
-    void on_login_cancelled();
-    void rebuild_account_picker();
-    void open_account_picker();
+    void show_sync_status_text_(const std::string& text) override;
+    std::unique_ptr<tk::SurfaceBase> create_login_surface_ui_() override;
+    std::unique_ptr<tk::SurfaceBase> create_settings_surface_ui_() override;
+    tk::SurfaceBase* main_surface_() override;
+    void grab_main_surface_focus_() override;
+    void on_pre_paint_() override;
+    // The login page's native surface (its window handle).
+    tk::win32::Surface* login_native_() const
+    {
+        return static_cast<tk::win32::Surface*>(login_surface_.get());
+    }
+    // The settings page's native surface (its window handle).
+    tk::win32::Surface* settings_native_() const
+    {
+        return static_cast<tk::win32::Surface*>(settings_surface_.get());
+    }
+    void start_platform_services_ui_() override;
     // last_room_list_state_, last_backup_state_, last_imported_keys_, and
     // sync_progress_shown_ are inherited from tesseract::ShellBase.
-    UINT_PTR sync_status_debounce_timer_id_ = 0;
-    static constexpr UINT_PTR kSyncStatusDebounceTimerId = 0xA1B2;
-    void populate_user_strip();
-    // Resolve any media bytes the row references and decode them into
-    // tk::Images held in `tk_avatars_` / `tk_images_`. Shared by every
-    // positional-callback path (insert / update / reset).
-    void ensure_row_media(const tesseract::Event& ev);
-    void clear_messages();
     // Room and message rendering are owned by the shared widget tree —
     // see RoomListView / MessageListView. The legacy DRAWITEM hooks
     // are gone.
@@ -326,12 +258,6 @@ private:
     void on_system_theme_changed();               // re-apply DWM + invalidate
     void paint_main_background(HDC, const RECT&); // compose card etc.
     void show_user_context_menu_(int screen_x, int screen_y);
-
-    static constexpr int kRoomAvatarSize = tesseract::visual::kRoomAvatarSize;
-    static constexpr int kMsgAvatarSize = tesseract::visual::kMsgAvatarSize;
-    static constexpr int kRoomRowH = tesseract::visual::kRoomRowHeight;
-    static constexpr int kMsgRowPad = tesseract::visual::kMsgRowVerticalPad;
-    static constexpr int kMsgMaxWidth = tesseract::visual::kMsgMaxWidth;
 
     float dip_scale() const
     {
@@ -357,25 +283,17 @@ private:
     std::unique_ptr<tk::win32::Surface> branding_surface_;
     tesseract::views::BrandView* branding_view_ = nullptr; // borrowed, owned by branding_surface_
     bool branding_visible_ = true;
-    std::unique_ptr<LoginView> login_view_;
     bool login_visible_ = false;
 
     // Single surface hosting the full MainAppWidget tree.
     // main_app_ / room_view_ live in ShellBase (assigned in setup).
     std::unique_ptr<tk::win32::Surface> main_app_surface_;
 
-    // Settings surface — full-window sibling of main_app_surface_ and login_view_.
-    std::unique_ptr<tk::win32::Surface> settings_surface_;
-    tesseract::views::SettingsView* settings_view_ = nullptr; // borrowed
+    // Settings surface — full-window sibling of main_app_surface_ and the login surface.
     // "settings page is showing" state lives in ShellBase::app_settings_open_.
     // The name/pronouns/timezone/bio fields are self-owned by AccountSection
     // — see AccountSection::name_field()/pronouns_editor()/tz_field()/
     // bio_field() — so no shell-side member is needed for them.
-
-    // Borrowed sub-view pointers (extracted from main_app_ for convenience).
-    tesseract::views::RoomListView* room_list_view_ = nullptr;
-    tesseract::views::MediaViewerOverlay* media_viewer_ = nullptr;
-    tesseract::views::RoomMediaView* room_media_view_ = nullptr;
 
     // Borrowed from main_app_->room_view()->compose_bar()->text_area() —
     // see ComposeBar::text_area(). Quick switcher's, message search's,
@@ -386,84 +304,12 @@ private:
     // RoomSearchBar::search_field() / RoomInfoPanel::topic_field() /
     // RoomSettingsView::name_field()/topic_field() /
     // ImagePackEditorView::new_pack_name_field()/shortcode_field()/
-    // pack_name_field()/paste_catcher(). Windows still force-hides all of
-    // these during an image/video viewer (Win32 child HWNDs always paint
-    // over canvas-drawn overlays) — see the `hide` gating in
-    // set_on_layout's lambda.
+    // pack_name_field()/paste_catcher().
     tk::TextArea* room_text_area_ = nullptr;
-    bool                                 focus_compose_on_show_ = false;
-    // Mirrors room_text_area_->visible() as of the previous set_on_layout
-    // pass, so that callback can detect the hidden->visible transition
-    // (needed for focus_compose_on_show_ — see its own comment) now that
-    // room_text_area_ self-positions/shows itself via ComposeBar::arrange()
-    // instead of being driven from a native-overlay-registry lookup.
-    bool                                 room_text_area_was_visible_ = false;
-
-    // ── Slash-command popup ───────────────────────────────────────────────
-    std::unique_ptr<tk::PopupSurfaceHandle> slash_popup_;
-    tesseract::views::SlashCommandPopup*  slash_popup_widget_ = nullptr;
-    std::unique_ptr<tesseract::views::SlashCommandController> slash_controller_;
-
-    void show_slash_popup_(tk::Rect cursor_local, int rows);
-    void hide_slash_popup_();
-    bool slash_popup_visible_() const
-    {
-        return slash_popup_ && slash_popup_->visible();
-    }
 
     // ── GIF picker (/gif <query>) ─────────────────────────────────────────
-    std::unique_ptr<tk::PopupSurfaceHandle> gif_popup_;
-    tesseract::views::GifPopup*         gif_popup_widget_ = nullptr;
-    std::unique_ptr<tesseract::views::GifController> gif_controller_;
-    std::unordered_map<tk::CacheKey, std::unique_ptr<tk::Image>, tk::CacheKeyHash>
-        gif_previews_;
-    std::unordered_set<std::string> gif_preview_inflight_;
-    std::unordered_set<std::string> gif_anim_inflight_;
-    std::shared_ptr<bool> gif_alive_ = std::make_shared<bool>(true);
-    // Two-stage GIF strip cell provider (body parameterised on a repaint
-    // callback). Shared by this window's strip and every pop-out's via the
-    // gif_strip_image_ override.
-    std::function<const tk::Image*(const tesseract::GifResult&,
-                                   const std::function<void()>&)>
-        gif_strip_provider_;
-    const tk::Image*
-    gif_strip_image_(const tesseract::GifResult& result,
-                     const std::function<void()>& repaint) override;
-    void show_gif_popup_();
-    void hide_gif_popup_();
-    bool gif_popup_visible_() const
-    {
-        return gif_popup_ && gif_popup_->visible();
-    }
-    void handle_gif_results_ui_(std::uint64_t request_id,
-                                std::vector<tesseract::GifResult> results) override;
-    void handle_gif_search_failed_ui_(std::uint64_t request_id,
-                                      std::string message) override;
-
-    // ── Shortcode popup ───────────────────────────────────────────────────
-    std::unique_ptr<tk::PopupSurfaceHandle> shortcode_popup_;
-    tesseract::views::ShortcodePopup* shortcode_popup_widget_ = nullptr;
-    std::unique_ptr<tesseract::views::ShortcodeController> shortcode_controller_;
-
-    void show_shortcode_popup_(tk::Rect cursor_local, int rows);
-    void hide_shortcode_popup_();
-    bool shortcode_popup_visible_() const
-    {
-        return shortcode_popup_ && shortcode_popup_->visible();
-    }
-
-    // ── @mention popup ────────────────────────────────────────────────────
-    std::unique_ptr<tk::PopupSurfaceHandle> mention_popup_;
-    tesseract::views::MentionPopup* mention_popup_widget_ = nullptr;
-    std::unique_ptr<tesseract::views::MentionController> mention_controller_;
-    void show_mention_popup_(tk::Rect cursor_rect, int rows);
-    void hide_mention_popup_();
-    bool mention_popup_visible_() const
-    {
-        return mention_popup_ && mention_popup_->visible();
-    }
-
-
+    std::unique_ptr<tk::Image> make_image_from_bgra_(int w, int h,
+                                                     const std::uint8_t* bgra) override;
     HWND hStatus_ = nullptr;
     HWND hStatusTip_ = nullptr;
     std::wstring inflight_tip_text_;
@@ -472,12 +318,7 @@ private:
     // Multi-account state: account_manager_ (ref), active_account_, client_,
     // event_handler_, per_account_rooms_, pending_login_client_,
     // pending_login_temp_dir_, pending_login_is_add_account_,
-    // add_account_return_idx_ are inherited from tesseract::ShellBase.
-
-    // Account-picker popup (WS_POPUP HWND hosting AccountPicker surface).
-    HWND hAccountPicker_ = nullptr;
-    std::unique_ptr<tk::win32::Surface> account_picker_surface_;
-    tesseract::views::AccountPicker* account_picker_ = nullptr; // borrowed
+    // add_account_return_uid_ are inherited from tesseract::ShellBase.
 
     std::unique_ptr<Win32TrayIcon> tray_;
     bool quitting_ = false;
@@ -491,6 +332,9 @@ private:
     // True when constructed with start_hidden=true (--autostart) and no
     // saved session has yet forced the window visible. See start_login().
     bool start_hidden_ = false;
+    // Set by spawn_main_window_ on a heap-allocated secondary window, which
+    // deletes itself in WM_NCDESTROY. Never set on the primary.
+    bool delete_on_destroy_ = false;
     std::unordered_map<std::string, std::string> recent_taskbar_avatar_rooms_;
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
     std::filesystem::path screenshot_dir_;
@@ -518,15 +362,16 @@ private:
 
     static constexpr UINT_PTR kAnimTimerId = 0xA01u;
     static constexpr UINT_PTR kInflightTimerId = 0xA02u;
-    static constexpr UINT_PTR kScrollDebounceTimerId = 4;
-    static constexpr UINT_PTR kMarkReadTimerId = 6;
-    static constexpr UINT_PTR kStatusClearTimerId = 7;
     static constexpr UINT_PTR kPresenceTickTimerId = 8;
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
     static constexpr UINT_PTR kScreenshotStepTimerId = 9;
 #endif
-    static constexpr UINT kAnimTimerHz = 16; // ~60 fps
+    static constexpr UINT kAnimTimerMs = 16; // ~60 fps
     bool anim_timer_running_ = false;
+    // Last on_anim_tick() time and whether a catch-up tick is already queued
+    // by the pre-paint hook (see the hook in MainWindow.cpp).
+    std::int64_t last_anim_tick_ms_ = 0;
+    bool anim_catchup_posted_ = false;
     bool inflight_timer_running_ = false;
 
     // ShellBase virtual hooks (Win32 implementations).
@@ -538,39 +383,28 @@ private:
     {
         navigate_to_room(room_id);
     }
-    void apply_theme_ui_(const tk::Theme& t) override;
+    void apply_native_theme_(const tk::Theme& t) override;
+    void for_each_shell_surface_(const std::function<void(tk::SurfaceBase&)>& fn) override;
     void apply_fonts_ui_() override;
     tk::ThemeMode os_color_scheme_() const override;
     std::optional<tk::Color> os_accent_color_() const override;
+    std::optional<tk::HighContrastColors> os_high_contrast_() const override;
     void post_to_ui_(std::function<void()> fn) override;
     void post_to_ui_after_(int ms, std::function<void()> fn) override;
     void request_relayout_() override;
     void request_repaint_() override;
-    void on_rooms_updated_() override;
+    void after_rooms_updated_ui_() override;
     void on_recent_room_visited_(const tesseract::RoomInfo& room) override;
-    void on_invites_updated_() override;
-    void on_my_knocks_updated_() override;
     void on_space_children_cache_ready_ui_() override;
     void on_space_unjoined_summaries_ready_ui_(const std::string&) override;
-    void on_tray_unread_changed_(bool has_unread,
-                                 bool has_highlight) override;
-    void on_account_badges_changed_(bool other_accounts_unread) override;
-    void on_upload_progress_ui_(std::uint64_t request_id,
-                                std::uint64_t current,
+    void on_tray_unread_changed_(bool has_unread, bool has_highlight) override;
+    void on_upload_progress_ui_(std::uint64_t request_id, std::uint64_t current,
                                 std::uint64_t total) override;
     void on_upload_finished_ui_(std::uint64_t request_id, bool ok) override;
 
-    // Room-selection hooks (ShellBase::on_room_selected_).
-    void hide_compose_popups_() override;
-    void restart_mark_read_timer_(int delay_ms) override;
-    void before_room_set_() override;
-
     // Tab management hooks.
     void on_tab_state_changed_ui_() override;
-    float get_message_scroll_fraction_() override;
-    void set_message_scroll_fraction_(float t) override;
-    tesseract::RoomWindowBase*
-    create_secondary_room_window_(const std::string& room_id) override;
+    tesseract::RoomWindowBase* create_secondary_room_window_(const std::string& room_id) override;
     void raise_and_activate_() override;
     void activate_for_notification_(const std::string& token) override;
     void set_window_fullscreen_(bool on) override;
@@ -578,64 +412,53 @@ private:
     bool spawn_relaunch_(const std::vector<std::string>& args) override;
     void quit_app_() override;
     bool is_ctrl_held_() const override;
-    void switch_active_account_(const std::string& user_id) override;
-    void refresh_account_ui_after_switch_() override;
-    void spawn_main_window_(
-        std::shared_ptr<tesseract::AccountSession> account) override;
-    std::unique_ptr<tesseract::IEventHandler>
-    make_account_bridge_(const std::string& uid) override;
-    void install_account_notifier_(
-        tesseract::AccountSession& session) override;
+    void spawn_main_window_(std::shared_ptr<tesseract::AccountSession> account) override;
+    std::unique_ptr<tesseract::IEventHandler> make_account_bridge_(const std::string& uid) override;
+    void install_account_notifier_(tesseract::AccountSession& session) override;
     std::unique_ptr<tk::AudioPlayback> make_call_audio_output_() override;
     tesseract::CallWindowBase* create_call_window_() override;
     tesseract::AuxWindowBase* create_aux_window_(std::string title,
-                                                 std::unique_ptr<tk::Widget> root,
-                                                 int width, int height) override;
-    void on_media_bytes_ready_(const tk::CacheKey& cache_key, MediaKind kind,
-                               std::vector<uint8_t> bytes) override;
-    DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w,
-                               int max_h) override;
+                                                 std::unique_ptr<tk::Widget> root, int width,
+                                                 int height) override;
+    bool accept_media_bytes_(const tk::CacheKey& key, MediaKind kind,
+                             const std::vector<std::uint8_t>& bytes) override;
+    void ingest_tile_media_(const tk::CacheKey& key, std::vector<std::uint8_t> bytes) override;
+    DecodedImage decode_image_(const std::vector<uint8_t>& bytes, int max_w, int max_h) override;
     bool decode_image_streamed_(
         const std::vector<uint8_t>& bytes, int max_w, int max_h,
         const std::function<void(std::unique_ptr<tk::Image>, int)>& on_first_frame,
-        const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame)
-        override;
+        const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame) override;
     bool decode_image_streamed_windowed_(
         const std::vector<uint8_t>& bytes, int max_w, int max_h,
         const std::function<void(std::unique_ptr<tk::Image>, int,
-                                 std::shared_ptr<tk::AnimDecodeSession>,
-                                 std::size_t)>& on_first_frame,
-        const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame)
-        override;
-    void pick_image_file_(
-        std::function<void(std::vector<uint8_t>, std::string)> cb) override;
-    void bind_settings_controller_() override;
+                                 std::shared_ptr<tk::AnimDecodeSession>, std::size_t)>&
+            on_first_frame,
+        const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame) override;
+    void pick_image_file_(std::function<void(std::vector<uint8_t>, std::string)> cb) override;
     std::int64_t monotonic_ms_() override;
     void start_anim_tick_() override;
     void stop_anim_tick_() override;
-    void repaint_anim_frame_() override;
+    void update_main_anim_regions_() override;
     void start_inflight_tick_() override;
     void stop_inflight_tick_() override;
     void repaint_inflight_spinner_() override;
-    void repaint_pickers_() override;
-    void decode_video_first_frame_(
-        std::vector<std::uint8_t> bytes,
-        std::function<void(std::vector<std::uint8_t>)> done) override;
+    void decode_video_first_frame_(std::vector<std::uint8_t> bytes,
+                                   std::function<void(std::vector<std::uint8_t>)> done) override;
     void cache_rgba_image_(const tk::CacheKey& key, int w, int h,
                            std::vector<uint8_t> rgba) override;
     std::vector<tk::Rect> get_screen_work_areas_() const override;
 
-    // Extract thumbnail, dimensions, and duration from a dropped file on a
-    // background thread; posts result back via post_to_ui_. When `target` is
-    // non-null the result is posted to that compose bar (a pop-out window's),
-    // guarded by `target_alive`; otherwise to the main compose bar. Overrides
-    // the ShellBase drag-and-drop probe hook.
-    void extract_drop_media_(std::uint32_t pending_gen,
-                             std::vector<std::uint8_t> bytes,
-                             std::string mime,
-                             tesseract::views::ComposeBar* target = nullptr,
-                             std::shared_ptr<bool> target_alive = nullptr)
-        override;
+    // Platform probe called by ShellBase::extract_drop_media_ for video/audio:
+    // extracts thumbnail, dimensions and duration on a background thread and
+    // posts the result back via post_to_ui_. When `target` is non-null the
+    // result is posted to that compose bar (a pop-out window's), guarded by
+    // `target_alive`; otherwise to the main compose bar.
+    void probe_drop_video_(std::uint32_t pending_gen, std::vector<std::uint8_t> bytes,
+                           tesseract::views::ComposeBar* target,
+                           std::shared_ptr<bool> target_alive) override;
+    void probe_drop_audio_(std::uint32_t pending_gen, std::vector<std::uint8_t> bytes,
+                           tesseract::views::ComposeBar* target,
+                           std::shared_ptr<bool> target_alive) override;
 
     // WM_COMMAND ids IDC_SHORTCUT_BASE + i are the global shortcuts from
     // views/shortcut_registry.h; accel_events_[i] is the KeyEvent the i-th

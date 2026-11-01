@@ -5,6 +5,7 @@
 
 use super::labels::{membership_labels, ExportLabel, Labels};
 use crate::ffi::TimelineEvent;
+use crate::text_utils::html_escape;
 
 /// Export-run-level metadata, independent of any single event.
 pub(super) struct ExportMeta {
@@ -50,7 +51,13 @@ pub(super) struct EventContext<'a> {
 pub(super) trait ExportSink: Send + Sync {
     fn extension(&self) -> &'static str;
     fn header(&self, meta: &ExportMeta, labels: &Labels) -> String;
-    fn event(&self, ev: &TimelineEvent, ctx: &EventContext<'_>, attachment: AttachmentState<'_>, labels: &Labels) -> String;
+    fn event(
+        &self,
+        ev: &TimelineEvent,
+        ctx: &EventContext<'_>,
+        attachment: AttachmentState<'_>,
+        labels: &Labels,
+    ) -> String;
     fn footer(&self, labels: &Labels, complete: bool, event_count: u64) -> String;
 }
 
@@ -115,7 +122,10 @@ fn membership_line(ev: &TimelineEvent, labels: &Labels) -> String {
         && !ev.membership_reason.is_empty()
         && !labels.get(ExportLabel::MembershipReason).is_empty()
     {
-        return labels.format(ExportLabel::MembershipReason, &[&line, &ev.membership_reason]);
+        return labels.format(
+            ExportLabel::MembershipReason,
+            &[&line, &ev.membership_reason],
+        );
     }
     line
 }
@@ -155,7 +165,11 @@ pub(super) fn format_ts(ms: u64) -> String {
     let days = secs.div_euclid(86400);
     let time_of_day = secs.rem_euclid(86400);
     let (y, m, d) = civil_from_days(days);
-    let (h, mi, s) = (time_of_day / 3600, (time_of_day / 60) % 60, time_of_day % 60);
+    let (h, mi, s) = (
+        time_of_day / 3600,
+        (time_of_day / 60) % 60,
+        time_of_day % 60,
+    );
     format!("{y:04}-{m:02}-{d:02} {h:02}:{mi:02}:{s:02}")
 }
 
@@ -198,20 +212,6 @@ fn url_encode_path(s: &str) -> String {
     out
 }
 
-fn html_escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            _ => out.push(c),
-        }
-    }
-    out
-}
-
 /// Ports `fit_media()` (`ui/shared/views/media_utils.h`) exactly, so an
 /// exported image renders at the same pixel size the live timeline would
 /// give it: scale to fit inside `(max_w, max_h)`, preserving aspect ratio,
@@ -237,7 +237,11 @@ fn fit_media(natural_w: f64, natural_h: f64, max_w: f64, max_h: f64) -> (f64, f6
 /// instead (see `HtmlSink::header`'s `.attachment img` rule), so the caps
 /// are used directly.
 fn media_display_size(ev: &TimelineEvent) -> (f64, f64) {
-    let (max_w, max_h) = if ev.msg_type == "m.sticker" { (256.0, 256.0) } else { (320.0, 200.0) };
+    let (max_w, max_h) = if ev.msg_type == "m.sticker" {
+        (256.0, 256.0)
+    } else {
+        (320.0, 200.0)
+    };
     fit_media(ev.width as f64, ev.height as f64, max_w, max_h)
 }
 
@@ -256,7 +260,13 @@ impl ExportSink for TextSink {
         format!("{title}\n{exported}\n\n")
     }
 
-    fn event(&self, ev: &TimelineEvent, _ctx: &EventContext<'_>, attachment: AttachmentState<'_>, labels: &Labels) -> String {
+    fn event(
+        &self,
+        ev: &TimelineEvent,
+        _ctx: &EventContext<'_>,
+        attachment: AttachmentState<'_>,
+        labels: &Labels,
+    ) -> String {
         if ev.msg_type.starts_with("virtual.") {
             return String::new();
         }
@@ -404,7 +414,13 @@ impl ExportSink for HtmlSink {
         )
     }
 
-    fn event(&self, ev: &TimelineEvent, ctx: &EventContext<'_>, attachment: AttachmentState<'_>, labels: &Labels) -> String {
+    fn event(
+        &self,
+        ev: &TimelineEvent,
+        ctx: &EventContext<'_>,
+        attachment: AttachmentState<'_>,
+        labels: &Labels,
+    ) -> String {
         if ev.msg_type.starts_with("virtual.") {
             return String::new();
         }
@@ -428,7 +444,10 @@ impl ExportSink for HtmlSink {
             if is_cont {
                 out.push_str("<div></div>");
             } else if let Some(path) = ctx.avatar_path {
-                out.push_str(&format!("<img class=\"avatar\" src=\"{}\" alt=\"\">", html_escape(&url_encode_path(path))));
+                out.push_str(&format!(
+                    "<img class=\"avatar\" src=\"{}\" alt=\"\">",
+                    html_escape(&url_encode_path(path))
+                ));
             } else {
                 out.push_str(&format!(
                     "<div class=\"avatar initials s{color_idx}\">{}</div>",
@@ -461,7 +480,11 @@ impl ExportSink for HtmlSink {
             }
         }
 
-        out.push_str(if is_placeholder { "<span class=\"body muted\">" } else { "<span class=\"body\">" });
+        out.push_str(if is_placeholder {
+            "<span class=\"body muted\">"
+        } else {
+            "<span class=\"body\">"
+        });
         if is_placeholder {
             out.push_str(&html_escape(&body_text(ev, labels)));
         } else if !ev.formatted_body.is_empty() {
@@ -495,7 +518,9 @@ impl ExportSink for HtmlSink {
             AttachmentState::TooLarge => {
                 out.push_str(&format!(
                     "<div class=\"attachment\">{}</div>",
-                    html_escape(&labels.format(ExportLabel::AttachmentSkipped, &[&image_display_name(ev)]))
+                    html_escape(
+                        &labels.format(ExportLabel::AttachmentSkipped, &[&image_display_name(ev)])
+                    )
                 ));
             }
             AttachmentState::None if is_image_event(ev) => {
@@ -532,7 +557,10 @@ impl ExportSink for HtmlSink {
         } else {
             format!("{event_count} messages (export incomplete)")
         };
-        format!("<hr><p class=\"footer\">{}</p>\n</body></html>\n", html_escape(&note))
+        format!(
+            "<hr><p class=\"footer\">{}</p>\n</body></html>\n",
+            html_escape(&note)
+        )
     }
 }
 
@@ -579,9 +607,15 @@ mod tests {
 
     #[test]
     fn sender_color_index_spreads_distinct_names() {
-        let names = ["Alice", "Bob", "Carol", "Dave", "Eve", "Frank", "Grace", "Heidi"];
-        let indices: std::collections::HashSet<u8> = names.iter().map(|n| sender_color_index(n)).collect();
-        assert!(indices.len() > 1, "8 distinct names all hashed to the same index");
+        let names = [
+            "Alice", "Bob", "Carol", "Dave", "Eve", "Frank", "Grace", "Heidi",
+        ];
+        let indices: std::collections::HashSet<u8> =
+            names.iter().map(|n| sender_color_index(n)).collect();
+        assert!(
+            indices.len() > 1,
+            "8 distinct names all hashed to the same index"
+        );
     }
 
     #[test]
@@ -638,7 +672,12 @@ mod tests {
     #[test]
     fn text_event_basic_line() {
         let ev = base_event();
-        let line = TextSink.event(&ev, &EventContext::default(), AttachmentState::None, &labels());
+        let line = TextSink.event(
+            &ev,
+            &EventContext::default(),
+            AttachmentState::None,
+            &labels(),
+        );
         assert_eq!(line, "[2020-01-01 00:00:00] Alice: hello world\n");
     }
 
@@ -646,7 +685,15 @@ mod tests {
     fn text_event_virtual_row_is_empty() {
         let mut ev = base_event();
         ev.msg_type = "virtual.date_divider".into();
-        assert_eq!(TextSink.event(&ev, &EventContext::default(), AttachmentState::None, &labels()), "");
+        assert_eq!(
+            TextSink.event(
+                &ev,
+                &EventContext::default(),
+                AttachmentState::None,
+                &labels()
+            ),
+            ""
+        );
     }
 
     #[test]
@@ -654,7 +701,12 @@ mod tests {
         let mut ev = base_event();
         ev.msg_type = "m.redacted".into();
         ev.body = String::new();
-        let line = TextSink.event(&ev, &EventContext::default(), AttachmentState::None, &labels());
+        let line = TextSink.event(
+            &ev,
+            &EventContext::default(),
+            AttachmentState::None,
+            &labels(),
+        );
         assert!(line.contains("Message deleted"), "{line}");
     }
 
@@ -663,7 +715,12 @@ mod tests {
         let mut ev = base_event();
         ev.msg_type = "m.utd".into();
         ev.body = "🔒 Sent before you joined this room".into();
-        let line = TextSink.event(&ev, &EventContext::default(), AttachmentState::None, &labels());
+        let line = TextSink.event(
+            &ev,
+            &EventContext::default(),
+            AttachmentState::None,
+            &labels(),
+        );
         assert!(line.contains("Unable to decrypt this message"), "{line}");
         assert!(!line.contains("Sent before you joined"), "{line}");
     }
@@ -673,7 +730,12 @@ mod tests {
         let mut ev = base_event();
         ev.msg_type = "m.utd".into();
         ev.body = "🔒 Sent before you joined this room".into();
-        let out = HtmlSink.event(&ev, &EventContext::default(), AttachmentState::None, &labels());
+        let out = HtmlSink.event(
+            &ev,
+            &EventContext::default(),
+            AttachmentState::None,
+            &labels(),
+        );
         assert!(out.contains("Unable to decrypt this message"), "{out}");
         assert!(!out.contains("Sent before you joined"), "{out}");
         assert!(out.contains("class=\"body muted\""), "{out}");
@@ -683,7 +745,12 @@ mod tests {
     fn text_event_edited_marker() {
         let mut ev = base_event();
         ev.is_edited = true;
-        let line = TextSink.event(&ev, &EventContext::default(), AttachmentState::None, &labels());
+        let line = TextSink.event(
+            &ev,
+            &EventContext::default(),
+            AttachmentState::None,
+            &labels(),
+        );
         assert!(line.trim_end().ends_with("(edited)"), "{line}");
     }
 
@@ -692,7 +759,12 @@ mod tests {
         let mut ev = base_event();
         ev.in_reply_to_id = "$0".into();
         ev.in_reply_to_body = "original message".into();
-        let line = TextSink.event(&ev, &EventContext::default(), AttachmentState::None, &labels());
+        let line = TextSink.event(
+            &ev,
+            &EventContext::default(),
+            AttachmentState::None,
+            &labels(),
+        );
         assert!(line.contains("In reply to original message"), "{line}");
     }
 
@@ -704,7 +776,12 @@ mod tests {
             count: 3,
             ..Default::default()
         }];
-        let line = TextSink.event(&ev, &EventContext::default(), AttachmentState::None, &labels());
+        let line = TextSink.event(
+            &ev,
+            &EventContext::default(),
+            AttachmentState::None,
+            &labels(),
+        );
         assert!(line.contains("Reactions: \u{1F44D} 3"), "{line}");
     }
 
@@ -718,9 +795,17 @@ mod tests {
         ev.membership_target_user_id = ev.sender.clone();
         ev.membership_target_name = ev.sender_name.clone();
         ev.body = String::new();
-        let line = TextSink.event(&ev, &EventContext::default(), AttachmentState::None, &labels());
+        let line = TextSink.event(
+            &ev,
+            &EventContext::default(),
+            AttachmentState::None,
+            &labels(),
+        );
         assert!(line.contains("Alice joined the room"), "{line}");
-        assert!(!line.contains("Alice:"), "membership rows omit the sender prefix: {line}");
+        assert!(
+            !line.contains("Alice:"),
+            "membership rows omit the sender prefix: {line}"
+        );
     }
 
     #[test]
@@ -730,7 +815,12 @@ mod tests {
         ev.membership_action = "invited".into();
         ev.membership_target_user_id = "@bob:example.org".into();
         ev.membership_target_name = "Bob".into();
-        let line = TextSink.event(&ev, &EventContext::default(), AttachmentState::None, &labels());
+        let line = TextSink.event(
+            &ev,
+            &EventContext::default(),
+            AttachmentState::None,
+            &labels(),
+        );
         assert!(line.contains("Bob was invited by Alice"), "{line}");
     }
 
@@ -742,8 +832,16 @@ mod tests {
         ev.membership_target_user_id = "@bob:example.org".into();
         ev.membership_target_name = "Bob".into();
         ev.membership_reason = "spamming".into();
-        let line = TextSink.event(&ev, &EventContext::default(), AttachmentState::None, &labels());
-        assert!(line.contains("Bob was removed by Alice. Reason: spamming"), "{line}");
+        let line = TextSink.event(
+            &ev,
+            &EventContext::default(),
+            AttachmentState::None,
+            &labels(),
+        );
+        assert!(
+            line.contains("Bob was removed by Alice. Reason: spamming"),
+            "{line}"
+        );
     }
 
     #[test]
@@ -754,7 +852,12 @@ mod tests {
         ev.membership_target_user_id = ev.sender.clone();
         ev.membership_target_name = ev.sender_name.clone();
         ev.membership_reason = "bye".into();
-        let line = TextSink.event(&ev, &EventContext::default(), AttachmentState::None, &labels());
+        let line = TextSink.event(
+            &ev,
+            &EventContext::default(),
+            AttachmentState::None,
+            &labels(),
+        );
         assert!(line.contains("Alice left the room"), "{line}");
         assert!(!line.contains("Reason"), "{line}");
     }
@@ -762,15 +865,26 @@ mod tests {
     #[test]
     fn text_event_attachment_saved_path() {
         let ev = base_event();
-        let line = TextSink.event(&ev, &EventContext::default(), AttachmentState::Saved("media/abc-photo.jpg"), &labels());
+        let line = TextSink.event(
+            &ev,
+            &EventContext::default(),
+            AttachmentState::Saved("media/abc-photo.jpg"),
+            &labels(),
+        );
         assert!(line.contains("Attachment: media/abc-photo.jpg"), "{line}");
     }
 
     #[test]
     fn html_header_has_restrictive_csp() {
-        let meta = ExportMeta { room_name: "R".into(), exported_at_ms: 0 };
+        let meta = ExportMeta {
+            room_name: "R".into(),
+            exported_at_ms: 0,
+        };
         let header = HtmlSink.header(&meta, &labels());
-        assert!(header.contains("http-equiv=\"Content-Security-Policy\""), "{header}");
+        assert!(
+            header.contains("http-equiv=\"Content-Security-Policy\""),
+            "{header}"
+        );
         assert!(header.contains("default-src 'none'"), "{header}");
     }
 
@@ -780,7 +894,12 @@ mod tests {
         ev.formatted_body = "hi <img src=\"https://tracker.example/b.gif\" alt=\"t\"> \
                              <img data-mx-emoticon src=\"mxc://a/b\" alt=\":party:\">"
             .into();
-        let out = HtmlSink.event(&ev, &EventContext::default(), AttachmentState::None, &labels());
+        let out = HtmlSink.event(
+            &ev,
+            &EventContext::default(),
+            AttachmentState::None,
+            &labels(),
+        );
         assert!(!out.contains("tracker.example"), "{out}");
         assert!(out.contains(":party:"), "{out}");
         assert!(out.contains("alt=\":party:\""), "{out}");
@@ -791,7 +910,12 @@ mod tests {
     fn html_event_escapes_body() {
         let mut ev = base_event();
         ev.body = "<script>alert(1)</script>".into();
-        let out = HtmlSink.event(&ev, &EventContext::default(), AttachmentState::None, &labels());
+        let out = HtmlSink.event(
+            &ev,
+            &EventContext::default(),
+            AttachmentState::None,
+            &labels(),
+        );
         assert!(!out.contains("<script>"), "{out}");
         assert!(out.contains("&lt;script&gt;"), "{out}");
     }
@@ -799,7 +923,10 @@ mod tests {
     #[test]
     fn url_encode_path_keeps_separators_and_encodes_delimiters() {
         assert_eq!(url_encode_path("media/a-photo.jpg"), "media/a-photo.jpg");
-        assert_eq!(url_encode_path("media/a#b%c?d.png"), "media/a%23b%25c%3Fd.png");
+        assert_eq!(
+            url_encode_path("media/a#b%c?d.png"),
+            "media/a%23b%25c%3Fd.png"
+        );
         assert_eq!(url_encode_path("media/é.png"), "media/%C3%A9.png");
     }
 
@@ -818,7 +945,12 @@ mod tests {
     fn html_event_prefers_sanitized_formatted_body() {
         let mut ev = base_event();
         ev.formatted_body = "<b>bold</b>".into();
-        let out = HtmlSink.event(&ev, &EventContext::default(), AttachmentState::None, &labels());
+        let out = HtmlSink.event(
+            &ev,
+            &EventContext::default(),
+            AttachmentState::None,
+            &labels(),
+        );
         assert!(out.contains("<b>bold</b>"), "{out}");
     }
 
@@ -826,7 +958,12 @@ mod tests {
     fn html_event_embeds_image_when_media_present() {
         let mut ev = base_event();
         ev.msg_type = "m.image".into();
-        let out = HtmlSink.event(&ev, &EventContext::default(), AttachmentState::Saved("media/abc-photo.jpg"), &labels());
+        let out = HtmlSink.event(
+            &ev,
+            &EventContext::default(),
+            AttachmentState::Saved("media/abc-photo.jpg"),
+            &labels(),
+        );
         assert!(out.contains("<img src=\"media/abc-photo.jpg\""), "{out}");
     }
 
@@ -834,7 +971,12 @@ mod tests {
     fn html_event_image_is_wrapped_in_a_click_through_link() {
         let mut ev = base_event();
         ev.msg_type = "m.image".into();
-        let out = HtmlSink.event(&ev, &EventContext::default(), AttachmentState::Saved("media/abc-photo.jpg"), &labels());
+        let out = HtmlSink.event(
+            &ev,
+            &EventContext::default(),
+            AttachmentState::Saved("media/abc-photo.jpg"),
+            &labels(),
+        );
         assert!(out.contains("<a href=\"media/abc-photo.jpg\" target=\"_blank\" rel=\"noopener noreferrer\"><img"), "{out}");
     }
 
@@ -845,7 +987,12 @@ mod tests {
         // 1600x1000, 2x the 320x200 image cap on both axes — scales by 0.2.
         ev.width = 1600;
         ev.height = 1000;
-        let out = HtmlSink.event(&ev, &EventContext::default(), AttachmentState::Saved("media/abc-photo.jpg"), &labels());
+        let out = HtmlSink.event(
+            &ev,
+            &EventContext::default(),
+            AttachmentState::Saved("media/abc-photo.jpg"),
+            &labels(),
+        );
         assert!(out.contains("width=\"320\" height=\"200\""), "{out}");
     }
 
@@ -855,7 +1002,12 @@ mod tests {
         ev.msg_type = "m.sticker".into();
         ev.width = 512;
         ev.height = 512;
-        let out = HtmlSink.event(&ev, &EventContext::default(), AttachmentState::Saved("media/sticker.png"), &labels());
+        let out = HtmlSink.event(
+            &ev,
+            &EventContext::default(),
+            AttachmentState::Saved("media/sticker.png"),
+            &labels(),
+        );
         assert!(out.contains("width=\"256\" height=\"256\""), "{out}");
     }
 
@@ -865,7 +1017,12 @@ mod tests {
         ev.msg_type = "m.image".into();
         ev.width = 40;
         ev.height = 20;
-        let out = HtmlSink.event(&ev, &EventContext::default(), AttachmentState::Saved("media/tiny.jpg"), &labels());
+        let out = HtmlSink.event(
+            &ev,
+            &EventContext::default(),
+            AttachmentState::Saved("media/tiny.jpg"),
+            &labels(),
+        );
         assert!(out.contains("width=\"40\" height=\"20\""), "{out}");
     }
 
@@ -874,7 +1031,12 @@ mod tests {
         let mut ev = base_event();
         ev.msg_type = "m.image".into();
         ev.image_filename = "photo.jpg".into();
-        let out = HtmlSink.event(&ev, &EventContext::default(), AttachmentState::None, &labels());
+        let out = HtmlSink.event(
+            &ev,
+            &EventContext::default(),
+            AttachmentState::None,
+            &labels(),
+        );
         assert!(out.contains("Image unavailable: photo.jpg"), "{out}");
     }
 
@@ -883,7 +1045,12 @@ mod tests {
         let mut ev = base_event();
         ev.msg_type = "m.image".into();
         ev.image_filename = "photo.jpg".into();
-        let out = HtmlSink.event(&ev, &EventContext::default(), AttachmentState::TooLarge, &labels());
+        let out = HtmlSink.event(
+            &ev,
+            &EventContext::default(),
+            AttachmentState::TooLarge,
+            &labels(),
+        );
         assert!(out.contains("Attachment too large: photo.jpg"), "{out}");
         assert!(!out.contains("Image unavailable"), "{out}");
     }
@@ -893,14 +1060,22 @@ mod tests {
         let mut ev = base_event();
         ev.msg_type = "m.image".into();
         ev.image_filename = "photo.jpg".into();
-        let line = TextSink.event(&ev, &EventContext::default(), AttachmentState::TooLarge, &labels());
+        let line = TextSink.event(
+            &ev,
+            &EventContext::default(),
+            AttachmentState::TooLarge,
+            &labels(),
+        );
         assert!(!line.contains("too large"), "{line}");
         assert!(!line.contains("Attachment"), "{line}");
     }
 
     #[test]
     fn html_header_and_footer_are_balanced() {
-        let meta = ExportMeta { room_name: "Test & Room".into(), exported_at_ms: 0 };
+        let meta = ExportMeta {
+            room_name: "Test & Room".into(),
+            exported_at_ms: 0,
+        };
         let header = HtmlSink.header(&meta, &labels());
         assert!(header.contains("<html>"));
         assert!(header.contains("Test &amp; Room"));
@@ -919,7 +1094,10 @@ mod tests {
 
     #[test]
     fn html_header_has_a_footer_and_is_balanced() {
-        let meta = ExportMeta { room_name: "R".into(), exported_at_ms: 0 };
+        let meta = ExportMeta {
+            room_name: "R".into(),
+            exported_at_ms: 0,
+        };
         let header = HtmlSink.header(&meta, &labels());
         assert!(header.contains("<html>"));
         let footer = HtmlSink.footer(&labels(), true, 42);
@@ -938,7 +1116,12 @@ mod tests {
     #[test]
     fn html_event_first_in_group_shows_avatar_and_header() {
         let ev = base_event();
-        let out = HtmlSink.event(&ev, &EventContext::default(), AttachmentState::None, &labels());
+        let out = HtmlSink.event(
+            &ev,
+            &EventContext::default(),
+            AttachmentState::None,
+            &labels(),
+        );
         assert!(out.contains("class=\"msg\""), "{out}");
         assert!(!out.contains("class=\"msg cont\""), "{out}");
         assert!(out.contains("class=\"head\""), "{out}");
@@ -951,7 +1134,10 @@ mod tests {
         let mut ev = base_event();
         ev.event_id = "$2".into();
         ev.timestamp = prev.timestamp + 1000; // well within the grouping window
-        let ctx = EventContext { prev: Some(&prev), avatar_path: None };
+        let ctx = EventContext {
+            prev: Some(&prev),
+            avatar_path: None,
+        };
         let out = HtmlSink.event(&ev, &ctx, AttachmentState::None, &labels());
         assert!(out.contains("class=\"msg cont\""), "{out}");
         assert!(!out.contains("class=\"head\""), "{out}");
@@ -966,9 +1152,15 @@ mod tests {
         ev.timestamp = prev.timestamp + 1000;
         ev.in_reply_to_id = "$0".into();
         ev.in_reply_to_body = "earlier".into();
-        let ctx = EventContext { prev: Some(&prev), avatar_path: None };
+        let ctx = EventContext {
+            prev: Some(&prev),
+            avatar_path: None,
+        };
         let out = HtmlSink.event(&ev, &ctx, AttachmentState::None, &labels());
-        assert!(out.contains("class=\"head\""), "a reply must not be a continuation: {out}");
+        assert!(
+            out.contains("class=\"head\""),
+            "a reply must not be a continuation: {out}"
+        );
     }
 
     #[test]
@@ -978,7 +1170,10 @@ mod tests {
         let mut ev = base_event();
         ev.event_id = "$2".into();
         ev.timestamp = prev.timestamp + 1000;
-        let ctx = EventContext { prev: Some(&prev), avatar_path: None };
+        let ctx = EventContext {
+            prev: Some(&prev),
+            avatar_path: None,
+        };
         let out = HtmlSink.event(&ev, &ctx, AttachmentState::None, &labels());
         assert!(out.contains("class=\"head\""), "{out}");
     }
@@ -989,7 +1184,10 @@ mod tests {
         let mut ev = base_event();
         ev.event_id = "$2".into();
         ev.timestamp = prev.timestamp + GROUP_INTERVAL_MS + 1;
-        let ctx = EventContext { prev: Some(&prev), avatar_path: None };
+        let ctx = EventContext {
+            prev: Some(&prev),
+            avatar_path: None,
+        };
         let out = HtmlSink.event(&ev, &ctx, AttachmentState::None, &labels());
         assert!(out.contains("class=\"head\""), "{out}");
     }
@@ -1002,7 +1200,10 @@ mod tests {
         ev.sender = "@bob:example.org".into();
         ev.sender_name = "Bob".into();
         ev.timestamp = prev.timestamp + 1000;
-        let ctx = EventContext { prev: Some(&prev), avatar_path: None };
+        let ctx = EventContext {
+            prev: Some(&prev),
+            avatar_path: None,
+        };
         let out = HtmlSink.event(&ev, &ctx, AttachmentState::None, &labels());
         assert!(out.contains("class=\"head\""), "{out}");
     }
@@ -1016,10 +1217,16 @@ mod tests {
         ev.membership_target_user_id = ev.sender.clone();
         ev.membership_target_name = ev.sender_name.clone();
         ev.timestamp = prev.timestamp + 1000;
-        let ctx = EventContext { prev: Some(&prev), avatar_path: None };
+        let ctx = EventContext {
+            prev: Some(&prev),
+            avatar_path: None,
+        };
         let out = HtmlSink.event(&ev, &ctx, AttachmentState::None, &labels());
         assert!(out.contains("class=\"msg sys\""), "{out}");
-        assert!(!out.contains("avatar"), "membership rows get no avatar cell: {out}");
+        assert!(
+            !out.contains("avatar"),
+            "membership rows get no avatar cell: {out}"
+        );
     }
 
     // ── avatars ──────────────────────────────────────────────────────────
@@ -1027,7 +1234,12 @@ mod tests {
     #[test]
     fn html_event_no_avatar_path_renders_initials_fallback() {
         let ev = base_event();
-        let out = HtmlSink.event(&ev, &EventContext::default(), AttachmentState::None, &labels());
+        let out = HtmlSink.event(
+            &ev,
+            &EventContext::default(),
+            AttachmentState::None,
+            &labels(),
+        );
         assert!(out.contains("avatar initials"), "{out}");
         assert!(out.contains('A'), "{out}"); // Alice's initial
         assert!(!out.contains("<img class=\"avatar\""), "{out}");
@@ -1036,9 +1248,15 @@ mod tests {
     #[test]
     fn html_event_avatar_path_renders_img() {
         let ev = base_event();
-        let ctx = EventContext { prev: None, avatar_path: Some("media/alice-avatar.jpg") };
+        let ctx = EventContext {
+            prev: None,
+            avatar_path: Some("media/alice-avatar.jpg"),
+        };
         let out = HtmlSink.event(&ev, &ctx, AttachmentState::None, &labels());
-        assert!(out.contains("<img class=\"avatar\" src=\"media/alice-avatar.jpg\""), "{out}");
+        assert!(
+            out.contains("<img class=\"avatar\" src=\"media/alice-avatar.jpg\""),
+            "{out}"
+        );
         assert!(!out.contains("avatar initials"), "{out}");
     }
 
@@ -1050,7 +1268,12 @@ mod tests {
         ev.in_reply_to_id = "$0".into();
         ev.in_reply_to_sender_name = "Bob".into();
         ev.in_reply_to_body = "original message".into();
-        let out = HtmlSink.event(&ev, &EventContext::default(), AttachmentState::None, &labels());
+        let out = HtmlSink.event(
+            &ev,
+            &EventContext::default(),
+            AttachmentState::None,
+            &labels(),
+        );
         assert!(out.contains("class=\"rsender\">Bob<"), "{out}");
         assert!(out.contains("class=\"rbody\">original message<"), "{out}");
     }
@@ -1060,7 +1283,12 @@ mod tests {
         let mut ev = base_event();
         ev.in_reply_to_id = "$0".into();
         ev.in_reply_to_body = "original message".into();
-        let out = HtmlSink.event(&ev, &EventContext::default(), AttachmentState::None, &labels());
+        let out = HtmlSink.event(
+            &ev,
+            &EventContext::default(),
+            AttachmentState::None,
+            &labels(),
+        );
         assert!(out.contains("In reply to original message"), "{out}");
         assert!(!out.contains("class=\"rsender\""), "{out}");
     }
@@ -1071,10 +1299,24 @@ mod tests {
     fn html_event_reactions_render_one_chip_per_group() {
         let mut ev = base_event();
         ev.reactions = vec![
-            crate::ffi::ReactionGroup { key: "\u{1F44D}".into(), count: 3, ..Default::default() },
-            crate::ffi::ReactionGroup { key: "\u{2764}".into(), count: 1, reacted_by_me: true, ..Default::default() },
+            crate::ffi::ReactionGroup {
+                key: "\u{1F44D}".into(),
+                count: 3,
+                ..Default::default()
+            },
+            crate::ffi::ReactionGroup {
+                key: "\u{2764}".into(),
+                count: 1,
+                reacted_by_me: true,
+                ..Default::default()
+            },
         ];
-        let out = HtmlSink.event(&ev, &EventContext::default(), AttachmentState::None, &labels());
+        let out = HtmlSink.event(
+            &ev,
+            &EventContext::default(),
+            AttachmentState::None,
+            &labels(),
+        );
         assert!(out.contains("class=\"chip\">\u{1F44D} 3<"), "{out}");
         assert!(out.contains("class=\"chip me\">\u{2764} 1<"), "{out}");
     }

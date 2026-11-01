@@ -22,21 +22,24 @@ namespace qt6
 {
 
 RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
-    : QWidget(nullptr, Qt::Window),
-      tesseract::RoomWindowBase(parent_shell, room_id),
+    : QWidget(nullptr, Qt::Window), tesseract::RoomWindowBase(parent_shell, room_id),
       parent_shell_(parent_shell)
 {
     setAttribute(Qt::WA_DeleteOnClose,
                  false); // we manage lifetime via unique_ptr
     setMinimumSize(static_cast<int>(tesseract::visual::kMinWindowWidth),
-                    static_cast<int>(tesseract::visual::kMinWindowHeight));
+                   static_cast<int>(tesseract::visual::kMinWindowHeight));
     // Apply saved geometry or fall back to the default size.
     {
         const auto geom = get_saved_popout_geometry_(800, 600);
         if (geom.valid)
+        {
             setGeometry(geom.x, geom.y, geom.w, geom.h);
+        }
         else
+        {
             resize(800, 600);
+        }
     }
 
     surface_ = new tk::qt6::Surface(tk::Theme::light(), this);
@@ -44,13 +47,12 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     layout->setContentsMargins(0, 0, 0, 0);
     layout->addWidget(surface_);
 
-    auto room_widget = tk::create_root_widget<tesseract::views::PopoutRoomWidget>(
-        &surface_->host());
-    room_view_             = room_widget->room_view();
-    media_viewer_          = room_widget->media_viewer();
+    auto room_widget =
+        tk::create_root_widget<tesseract::views::PopoutRoomWidget>(&surface_->host());
+    room_view_ = room_widget->room_view();
+    media_viewer_ = room_widget->media_viewer();
     forward_picker_widget_ = room_widget->forward_picker();
     room_media_view_widget_ = room_widget->room_media_view();
-    confirm_dialog_widget_ = room_widget->confirm_dialog();
     room_widget->on_layout_changed = [this]
     {
         if (surface_)
@@ -67,21 +69,29 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         .media_viewer = media_viewer_,
         .forward_picker = forward_picker_widget_,
         .room_media_view = room_media_view_widget_,
-        .focus_forward_picker_field = [this]
+        .focus_forward_picker_field =
+            [this]
         {
             if (!forward_picker_widget_)
+            {
                 return;
+            }
             if (auto* f = forward_picker_widget_->search_field())
             {
                 f->set_text("");
                 f->set_focused(true);
             }
         },
-        .hide_forward_picker_field = [this]
+        .hide_forward_picker_field =
+            [this]
         {
             if (forward_picker_widget_)
+            {
                 if (auto* f = forward_picker_widget_->search_field())
+                {
                     f->set_visible(false);
+                }
+            }
         },
     });
 
@@ -95,22 +105,23 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     // player above — MessageListView falls back to a static thumbnail unless
     // both of these are set).
     room_view_->set_video_player_factory(
-        [this]() { return surface_->host().make_video_player(); });
+        [this]()
+        {
+            return surface_->host().make_video_player();
+        });
     room_view_->set_video_fetch_provider(
-        [this](const std::string& src,
-               std::function<void(std::vector<std::uint8_t>)> on_ready)
+        [this](const std::string& src, std::function<void(std::vector<std::uint8_t>)> on_ready)
         {
             pane_->fetch_source_bytes_(src, std::move(on_ready));
         });
 
     // ── Media save dialog ─────────────────────────────────────────────────
     pane_->install_media_viewer_save_(
-        [this](const tesseract::views::MediaSaveSpec& spec,
-               std::function<void(std::string)> done)
+        [this](const tesseract::views::MediaSaveSpec& spec, std::function<void(std::string)> done)
         {
-            QString path = QFileDialog::getSaveFileName(
-                this, QString::fromStdString(spec.title),
-                QString::fromStdString(spec.suggested_name), save_filter_for(spec));
+            QString path = QFileDialog::getSaveFileName(this, QString::fromStdString(spec.title),
+                                                        QString::fromStdString(spec.suggested_name),
+                                                        save_filter_for(spec));
             if (!path.isEmpty())
             {
                 done(path.toStdString());
@@ -121,16 +132,22 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     const auto set_fs = [this](bool on)
     {
         if (on == isFullScreen())
+        {
             return;
+        }
         if (on)
         {
             rw_was_maximized_ = isMaximized();
             showFullScreen();
         }
         else if (rw_was_maximized_)
+        {
             showMaximized();
+        }
         else
+        {
             showNormal();
+        }
     };
     media_viewer_->on_request_fullscreen = set_fs;
 
@@ -157,12 +174,16 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     room_view_->on_set_clipboard = [this](std::string_view t)
     {
         if (surface_)
+        {
             surface_->host().set_clipboard_text(t);
+        }
     };
     room_view_->on_selection_started = [this]()
     {
         if (surface_)
+        {
             surface_->host().release_focus_to_canvas();
+        }
     };
     room_view_->on_show_copy_menu = [this]()
     {
@@ -171,10 +192,11 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         menu->setAttribute(Qt::WA_DeleteOnClose);
         menu->setStyleSheet(tk::qt6::build_menu_qss(surface_->theme()));
         QAction* copyAct = menu->addAction(QString::fromStdString(rv->copy_menu_label()));
-        QObject::connect(copyAct, &QAction::triggered, [rv]()
-        {
-            rv->copy_context_menu_target();
-        });
+        QObject::connect(copyAct, &QAction::triggered,
+                         [rv]()
+                         {
+                             rv->copy_context_menu_target();
+                         });
         menu->popup(QCursor::pos());
     };
 
@@ -191,43 +213,8 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
 
     // ── Compose text area (self-owned) + composer popups ─────────────────
     roomTextArea_ = room_view_->compose_bar()->text_area();
-    popups_ = std::make_unique<tesseract::ComposerPopups>(
-        surface_->host(), roomTextArea_, pane_.get(), room_view_);
-
-    surface_->set_on_layout(
-        [this]
-        {
-            // Native child controls always paint over canvas-drawn overlays,
-            // so hide them while the confirm dialog covers the window —
-            // otherwise the compose box/search fields would poke through on
-            // top of the modal backdrop. roomTextArea_ self-positions via
-            // ComposeBar::arrange() otherwise (reached via the relayout this
-            // set_on_layout callback runs after), so only a force-hide is
-            // needed here — mirrors the search fields' own gating below.
-            const bool confirm_open =
-                confirm_dialog_widget_ && confirm_dialog_widget_->is_open();
-            if (confirm_open && roomTextArea_)
-            {
-                roomTextArea_->set_visible(false);
-            }
-            if (confirm_open && room_view_)
-            {
-                // Search field self-positions via RoomSearchBar::arrange(),
-                // but the ConfirmDialog covering this window is pop-out-local
-                // state the widget doesn't know about — force it off here.
-                if (auto* bar = room_view_->room_search_bar())
-                    if (auto* f = bar->search_field())
-                        f->set_visible(false);
-            }
-            if (confirm_open && forward_picker_widget_)
-            {
-                // Search field self-positions via ForwardRoomPicker::arrange(),
-                // but the ConfirmDialog covering this window is pop-out-local
-                // state the widget doesn't know about — force it off here.
-                if (auto* f = forward_picker_widget_->search_field())
-                    f->set_visible(false);
-            }
-        });
+    popups_ = std::make_unique<tesseract::ComposerPopups>(surface_->host(), roomTextArea_,
+                                                          pane_.get(), room_view_);
 
     // Per-room "find in conversation" — search field is self-owned; only the
     // shell-level Up/Down/Escape nav needs wiring here (on_close is already
@@ -242,16 +229,22 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
                     [this](tk::NavKey nk) -> bool
                     {
                         if (!room_view_ || !room_view_->room_search_open())
+                        {
                             return false;
+                        }
                         switch (nk)
                         {
                         case tk::NavKey::Up:
                             if (room_view_->on_room_search_navigate)
+                            {
                                 room_view_->on_room_search_navigate(-1);
+                            }
                             return true;
                         case tk::NavKey::Down:
                             if (room_view_->on_room_search_navigate)
+                            {
                                 room_view_->on_room_search_navigate(+1);
+                            }
                             return true;
                         case tk::NavKey::Escape:
                             room_view_->close_room_search();
@@ -274,16 +267,24 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
                 [this](tk::NavKey nk) -> bool
                 {
                     if (!forward_picker_widget_ || !forward_picker_widget_->is_open())
+                    {
                         return false;
+                    }
                     switch (nk)
                     {
                     case tk::NavKey::Up:
                         forward_picker_widget_->move_selection(-1);
-                        if (surface_) surface_->relayout();
+                        if (surface_)
+                        {
+                            surface_->relayout();
+                        }
                         return true;
                     case tk::NavKey::Down:
                         forward_picker_widget_->move_selection(+1);
-                        if (surface_) surface_->relayout();
+                        if (surface_)
+                        {
+                            surface_->relayout();
+                        }
                         return true;
                     case tk::NavKey::Escape:
                         forward_picker_widget_->close();
@@ -297,7 +298,10 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
 
     room_view_->on_link_hovered = [this](const std::string& url)
     {
-        if (!surface_) return;
+        if (!surface_)
+        {
+            return;
+        }
         using HC = tesseract::views::MessageListView::HoverCursor;
         const HC hc = tesseract::views::MessageListView::hover_cursor_for(url);
         surface_->setCursor(hc == HC::Text      ? Qt::IBeamCursor
@@ -354,11 +358,12 @@ void RoomWindow::apply_theme(const tk::Theme& t)
 void RoomWindow::apply_scale_change(float scale)
 {
     if (surface_)
+    {
         surface_->apply_scale_change(scale);
+    }
 }
 
-void RoomWindow::on_gif_results(std::uint64_t request_id,
-                                std::vector<tesseract::GifResult> results)
+void RoomWindow::on_gif_results(std::uint64_t request_id, std::vector<tesseract::GifResult> results)
 {
     if (popups_)
     {
@@ -366,8 +371,7 @@ void RoomWindow::on_gif_results(std::uint64_t request_id,
     }
 }
 
-void RoomWindow::on_gif_search_failed(std::uint64_t request_id,
-                                      const std::string& message)
+void RoomWindow::on_gif_search_failed(std::uint64_t request_id, const std::string& message)
 {
     if (popups_)
     {
@@ -406,7 +410,10 @@ void RoomWindow::resizeEvent(QResizeEvent* ev)
         // instead (see MainWindow::resizeEvent for the same fix in the
         // main window).
         surface_->host().dismiss_active_popup();
-        if (room_view_) room_view_->dismiss_popups();
+        if (room_view_)
+        {
+            room_view_->dismiss_popups();
+        }
         if (popups_)
         {
             popups_->hide_all();
@@ -439,15 +446,16 @@ void RoomWindow::keyPressEvent(QKeyEvent* ev)
             return;
         }
         if (close_media_viewer_if_open_())
+        {
             return;
+        }
     }
     QWidget::keyPressEvent(ev);
 }
 
 // ---------------------------------------------------------------------------
 
-tesseract::RoomWindowBase*
-MainWindow::create_secondary_room_window_(const std::string& room_id)
+tesseract::RoomWindowBase* MainWindow::create_secondary_room_window_(const std::string& room_id)
 {
     return new RoomWindow(this, room_id);
 }

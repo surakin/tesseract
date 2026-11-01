@@ -43,7 +43,7 @@ public:
     explicit PixmapCache(std::size_t max_bytes = 64u * 1024u * 1024u,
                          std::chrono::seconds ttl = std::chrono::seconds{30});
     ~PixmapCache();
-    PixmapCache(const PixmapCache&)            = delete;
+    PixmapCache(const PixmapCache&) = delete;
     PixmapCache& operator=(const PixmapCache&) = delete;
 
     // Insert (or replace) the image for `key`. Wraps it in an ImageRef the
@@ -110,8 +110,7 @@ public:
     std::size_t misses() const;
 
     // Test seam: override the monotonic clock used for TTL bookkeeping.
-    void set_clock_for_testing(
-        std::function<std::chrono::steady_clock::time_point()> clock)
+    void set_clock_for_testing(std::function<std::chrono::steady_clock::time_point()> clock)
     {
         clock_ = std::move(clock);
     }
@@ -135,9 +134,9 @@ private:
     std::unordered_map<CacheKey, Entry, CacheKeyHash> entries_;
     std::size_t max_bytes_;
     std::size_t current_bytes_ = 0;
-    std::size_t hits_          = 0;
-    std::size_t misses_        = 0;
-    std::uint64_t gen_         = 0;
+    std::size_t hits_ = 0;
+    std::size_t misses_ = 0;
+    std::uint64_t gen_ = 0;
     std::chrono::seconds ttl_;
     std::function<std::chrono::steady_clock::time_point()> clock_;
 };

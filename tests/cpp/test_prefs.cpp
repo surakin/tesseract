@@ -69,10 +69,10 @@ TEST_CASE("Prefs backward compat: last_room only populates open_rooms")
 TEST_CASE("Prefs serialize open_rooms round-trips")
 {
     PrefsData p;
-    p.last_room  = "!a:h";
+    p.last_room = "!a:h";
     p.open_rooms = {"!a:h", "!b:h", "!c:h"};
     auto json = serialize(p);
-    auto p2   = parse(json);
+    auto p2 = parse(json);
     CHECK(p2.last_room == "!a:h");
     REQUIRE(p2.open_rooms.size() == 3);
     CHECK(p2.open_rooms[0] == "!a:h");
@@ -108,10 +108,10 @@ TEST_CASE("Prefs room_layout with no active room and no tabs stays empty")
 TEST_CASE("Prefs serialize single tab produces open_rooms of size 1")
 {
     PrefsData p;
-    p.last_room  = "!only:host";
+    p.last_room = "!only:host";
     p.open_rooms = {"!only:host"};
     auto json = serialize(p);
-    auto p2   = parse(json);
+    auto p2 = parse(json);
     CHECK(p2.last_room == "!only:host");
     REQUIRE(p2.open_rooms.size() == 1);
     CHECK(p2.open_rooms[0] == "!only:host");
@@ -153,9 +153,9 @@ TEST_CASE("Prefs serialize with empty recent_rooms removes the stored key")
 
 TEST_CASE("Prefs layout save carries recent_rooms alongside the tab layout")
 {
-    auto p         = tesseract::Prefs::room_layout("!b:x", {"!a:x", "!b:x"});
+    auto p = tesseract::Prefs::room_layout("!b:x", {"!a:x", "!b:x"});
     p.recent_rooms = {"!b:x", "!z:x"};
-    auto back      = parse(serialize(p, R"({"recent_rooms":["!old:x"],"future":1})"));
+    auto back = parse(serialize(p, R"({"recent_rooms":["!old:x"],"future":1})"));
     CHECK(back.last_room == "!b:x");
     CHECK(back.recent_rooms == std::vector<std::string>{"!b:x", "!z:x"});
 }
@@ -186,7 +186,9 @@ TEST_CASE("Prefs add_directory_server moves to front, dedupes, caps at 8")
     CHECK(l == std::vector<std::string>{"A.ORG", "b.org"});
     CHECK(add_directory_server(l, "") == l);
     for (int i = 0; i < 10; ++i)
+    {
         l = add_directory_server(l, "s" + std::to_string(i) + ".org");
+    }
     CHECK(l.size() == tesseract::kMaxDirectoryServers);
     CHECK(l.front() == "s9.org");
 }
@@ -196,11 +198,52 @@ TEST_CASE("Prefs directory_server_choices lists defaults until pushed out")
     using tesseract::Prefs::directory_server_choices;
     CHECK(directory_server_choices({}, "home.org") ==
           std::vector<std::string>{"home.org", "activematrixrooms.com", "matrixrooms.info"});
-    CHECK(directory_server_choices({"x.org", "MatrixRooms.info"}, "home.org") ==
-          std::vector<std::string>{"x.org", "MatrixRooms.info", "home.org",
-                                   "activematrixrooms.com"});
+    CHECK(
+        directory_server_choices({"x.org", "MatrixRooms.info"}, "home.org") ==
+        std::vector<std::string>{"x.org", "MatrixRooms.info", "home.org", "activematrixrooms.com"});
     CHECK(directory_server_choices({}, "") ==
           std::vector<std::string>{"activematrixrooms.com", "matrixrooms.info"});
     std::vector<std::string> full{"1", "2", "3", "4", "5", "6", "7", "8"};
     CHECK(directory_server_choices(full, "home.org") == full);
+}
+
+TEST_CASE("Prefs pinned_spaces round-trips in tab order")
+{
+    PrefsData p;
+    p.pinned_spaces = {"!b:x", "!a:x"};
+    auto back = parse(serialize(p));
+    CHECK(back.pinned_spaces == std::vector<std::string>{"!b:x", "!a:x"});
+}
+
+TEST_CASE("Prefs without pinned_spaces parses empty and serialize drops the key")
+{
+    CHECK(parse(R"({"last_room":"!r:x"})").pinned_spaces.empty());
+    PrefsData p;
+    auto json = serialize(p, R"({"pinned_spaces":["!a:x"]})");
+    CHECK(json.find("pinned_spaces") == std::string::npos);
+}
+
+TEST_CASE("Prefs without_layout forgets the layout and keeps everything else")
+{
+    PrefsData p;
+    p.last_room = "!r:x";
+    p.open_rooms = {"!r:x", "!s:x"};
+    p.recent_rooms = {"!s:x"};
+    p.pinned_spaces = {"!sp:x"};
+    p.directory_servers = {"example.org"};
+    p.bridge_not_bridged_overrides = {"!b:x"};
+    p.emoji_skin_tone = "medium";
+
+    const PrefsData out = tesseract::Prefs::without_layout(p);
+    CHECK(out.last_room.empty());
+    CHECK(out.open_rooms.empty());
+    CHECK(out.recent_rooms.empty());
+    CHECK(out.pinned_spaces == std::vector<std::string>{"!sp:x"});
+    CHECK(out.directory_servers == std::vector<std::string>{"example.org"});
+    CHECK(out.bridge_not_bridged_overrides == std::vector<std::string>{"!b:x"});
+    CHECK(out.emoji_skin_tone == "medium");
+
+    const auto json = serialize(out, R"({"future_key":1,"pinned_spaces":["!old:x"]})");
+    CHECK(parse(json).pinned_spaces == std::vector<std::string>{"!sp:x"});
+    CHECK(json.find("future_key") != std::string::npos);
 }

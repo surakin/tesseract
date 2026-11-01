@@ -28,10 +28,20 @@ public:
     {
         bounds_ = r;
     }
-    Size measure(LayoutCtx&, Size) override { return {bounds_.w, bounds_.h}; }
-    void arrange(LayoutCtx&, Rect) override {}
-    void paint(PaintCtx&) override {}
-    bool focusable() const override { return focusable_; }
+    Size measure(LayoutCtx&, Size) override
+    {
+        return {bounds_.w, bounds_.h};
+    }
+    void arrange(LayoutCtx&, Rect) override
+    {
+    }
+    void paint(PaintCtx&) override
+    {
+    }
+    bool focusable() const override
+    {
+        return focusable_;
+    }
     bool on_right_click(Point local) override
     {
         ++right_clicks;
@@ -51,15 +61,24 @@ class ModalBox : public Box
 {
 public:
     using Box::Box;
-    bool access_modal() const override { return visible(); }
+    bool access_modal() const override
+    {
+        return visible();
+    }
 };
 
 class ScopedPopup : public Box
 {
 public:
     using Box::Box;
-    bool popup_scopes_focus() const override { return scopes; }
-    void on_popup_dismiss() override { ++dismissed; }
+    bool popup_scopes_focus() const override
+    {
+        return scopes;
+    }
+    void on_popup_dismiss() override
+    {
+        ++dismissed;
+    }
     bool scopes = true;
     int dismissed = 0;
 };
@@ -69,32 +88,55 @@ public:
 class Scroller : public ScrollableBase
 {
 public:
-    explicit Scroller(Rect r) { bounds_ = r; }
-    Size measure(LayoutCtx&, Size) override { return {bounds_.w, bounds_.h}; }
-    void arrange(LayoutCtx&, Rect) override {}
-    void paint(PaintCtx&) override {}
+    explicit Scroller(Rect r)
+    {
+        bounds_ = r;
+    }
+    Size measure(LayoutCtx&, Size) override
+    {
+        return {bounds_.w, bounds_.h};
+    }
+    void arrange(LayoutCtx&, Rect) override
+    {
+    }
+    void paint(PaintCtx&) override
+    {
+    }
     bool on_wheel(Point, float, float dy, bool is_touchpad) override
     {
         return on_wheel_scroll(dy, is_touchpad);
     }
-    float content_height() const override { return 1000.0f; }
+    float content_height() const override
+    {
+        return 1000.0f;
+    }
 };
 
 class RowsAdapter : public ListAdapter
 {
 public:
-    std::size_t count() const override { return 50; }
-    float measure_row_height(std::size_t, LayoutCtx&, float) override { return 20; }
-    void paint_row(std::size_t, PaintCtx&, Rect, bool, bool) override {}
-    bool is_selectable(std::size_t i) const override { return i != 0; }
+    std::size_t count() const override
+    {
+        return 50;
+    }
+    float measure_row_height(std::size_t, LayoutCtx&, float) override
+    {
+        return 20;
+    }
+    void paint_row(std::size_t, PaintCtx&, Rect, bool, bool) override
+    {
+    }
+    bool is_selectable(std::size_t i) const override
+    {
+        return i != 0;
+    }
 };
 
 } // namespace kbd_nav_test
 
 using namespace kbd_nav_test;
 
-TEST_CASE("Tab stays inside a registered popup that scopes focus",
-          "[tk][host][focus][keyboard]")
+TEST_CASE("Tab stays inside a registered popup that scopes focus", "[tk][host][focus][keyboard]")
 {
     Box root({0, 0, 400, 400});
     auto* outside = root.add_child(create_widget<Box>(&root, Rect{0, 0, 50, 20}, true));
@@ -132,8 +174,7 @@ TEST_CASE("Tab leaves (and dismisses) a popup that doesn't scope focus",
     CHECK(popup.dismissed == 1);
 }
 
-TEST_CASE("Tab traversal is confined to an open modal dialog",
-          "[tk][host][focus][keyboard]")
+TEST_CASE("Tab traversal is confined to an open modal dialog", "[tk][host][focus][keyboard]")
 {
     Box root({0, 0, 400, 400});
     root.add_child(create_widget<Box>(&root, Rect{0, 0, 50, 20}, true));
@@ -156,8 +197,7 @@ TEST_CASE("Tab traversal is confined to an open modal dialog",
     CHECK(host.focused_widget() != cancel);
 }
 
-TEST_CASE("An explicit focus scope wins over a modal underneath it",
-          "[tk][host][focus][keyboard]")
+TEST_CASE("An explicit focus scope wins over a modal underneath it", "[tk][host][focus][keyboard]")
 {
     // e.g. the Quick Switcher (scoped by MainAppWidget) opened over the
     // encryption dialog (a modal): Tab must stay in the switcher.
@@ -226,8 +266,7 @@ TEST_CASE("Paging keys scroll the scrollable region around the focused widget",
     CHECK(region.scroll_y() == 0.0f);
 }
 
-TEST_CASE("ListView Home/End/PageDown move the selection",
-          "[tk][list_view][keyboard]")
+TEST_CASE("ListView Home/End/PageDown move the selection", "[tk][list_view][keyboard]")
 {
     auto surface = TestSurface::create(300, 200);
     LayoutCtx lc{surface->factory(), Theme::light()};
@@ -254,8 +293,8 @@ TEST_CASE("Tab onto an icon-only button shows its name as a tooltip",
     auto surface = TestSurface::create(100, 100);
     LayoutCtx lc{surface->factory(), Theme::light()};
     Box root({0, 0, 400, 400});
-    auto* icon = root.add_child(create_widget<Button>(
-        &root, "", std::function<void()>{}, Button::Variant::Icon));
+    auto* icon = root.add_child(
+        create_widget<Button>(&root, "", std::function<void()>{}, Button::Variant::Icon));
     icon->set_accessible_name("Jump to Date");
     icon->arrange(lc, {10, 10, 28, 28});
 
@@ -289,8 +328,7 @@ std::unique_ptr<DatePickerView> open_test_picker(TestSurface& surface)
 }
 } // namespace kbd_nav_test
 
-TEST_CASE("DatePickerView: Tab cycles its parts instead of escaping",
-          "[datepicker][keyboard]")
+TEST_CASE("DatePickerView: Tab cycles its parts instead of escaping", "[datepicker][keyboard]")
 {
     auto surface = TestSurface::create(400, 400);
     auto picker = open_test_picker(*surface);
@@ -313,8 +351,7 @@ TEST_CASE("DatePickerView: Tab cycles its parts instead of escaping",
     CHECK(picker->focus_part() == P::Month);
 }
 
-TEST_CASE("DatePickerView: the year field steps the year by keyboard",
-          "[datepicker][keyboard]")
+TEST_CASE("DatePickerView: the year field steps the year by keyboard", "[datepicker][keyboard]")
 {
     auto surface = TestSurface::create(400, 400);
     auto picker = open_test_picker(*surface);
@@ -323,7 +360,9 @@ TEST_CASE("DatePickerView: the year field steps the year by keyboard",
     const int start_year = picker->view_year();
     picker->on_key_down({Key::Tab}); // reveal
     while (picker->focus_part() != P::Year)
+    {
         picker->on_key_down({Key::Tab});
+    }
     CHECK(picker->on_key_down({Key::Up}));
     CHECK(picker->view_year() == start_year + 1);
     CHECK(picker->on_key_down({Key::Down}));
@@ -337,8 +376,7 @@ TEST_CASE("DatePickerView: the year field steps the year by keyboard",
     CHECK(picker->view_year() == start_year);
 }
 
-TEST_CASE("DatePickerView: grid arrows cross into the previous month",
-          "[datepicker][keyboard]")
+TEST_CASE("DatePickerView: grid arrows cross into the previous month", "[datepicker][keyboard]")
 {
     auto surface = TestSurface::create(400, 400);
     auto picker = open_test_picker(*surface);
@@ -347,19 +385,25 @@ TEST_CASE("DatePickerView: grid arrows cross into the previous month",
     const int month = picker->cursor_month();
     const int day = picker->cursor_day();
     for (int i = 0; i < day; ++i)
+    {
         picker->on_key_down({Key::Left});
+    }
     CHECK(picker->cursor_month() != month);
     CHECK(picker->view_month() == picker->cursor_month());
     CHECK(picker->cursor_day() >= 28);
 }
 
-TEST_CASE("DatePickerView: Enter picks the keyboard cursor date",
-          "[datepicker][keyboard]")
+TEST_CASE("DatePickerView: Enter picks the keyboard cursor date", "[datepicker][keyboard]")
 {
     auto surface = TestSurface::create(400, 400);
     auto picker = open_test_picker(*surface);
     int py = 0, pm = 0, pd = 0;
-    picker->on_date_picked = [&](int y, int m, int d) { py = y; pm = m; pd = d; };
+    picker->on_date_picked = [&](int y, int m, int d)
+    {
+        py = y;
+        pm = m;
+        pd = d;
+    };
 
     picker->on_key_down({Key::Enter}); // first press only reveals
     CHECK(pd == 0);
@@ -370,8 +414,7 @@ TEST_CASE("DatePickerView: Enter picks the keyboard cursor date",
     CHECK(pd == picker->cursor_day());
 }
 
-TEST_CASE("DatePickerView: the cursor never passes the max date",
-          "[datepicker][keyboard]")
+TEST_CASE("DatePickerView: the cursor never passes the max date", "[datepicker][keyboard]")
 {
     auto surface = TestSurface::create(400, 400);
     auto picker = std::make_unique<DatePickerView>();
@@ -397,7 +440,10 @@ TEST_CASE("KeyboardTarget activates on Enter and is pointer-transparent",
     root.counts_right_clicks = true;
     auto* t = root.add_child(create_widget<KeyboardTarget>(&root));
     int activations = 0;
-    t->on_activate = [&] { ++activations; };
+    t->on_activate = [&]
+    {
+        ++activations;
+    };
     t->set_target_rect({10, 10, 100, 30});
 
     TestHost host(&root);
@@ -423,7 +469,10 @@ TEST_CASE("KeyboardTarget cycles links with Left/Right and opens with Enter",
     host.set_root(&root);
     auto* t = root.add_child(create_widget<KeyboardTarget>(&root));
     std::string opened;
-    t->on_link_activated = [&](const std::string& url) { opened = url; };
+    t->on_link_activated = [&](const std::string& url)
+    {
+        opened = url;
+    };
     t->set_links({{"one", "https://one.example"}, {"two", "https://two.example"}});
     t->set_target_rect({10, 10, 100, 30});
 
@@ -441,8 +490,7 @@ TEST_CASE("KeyboardTarget cycles links with Left/Right and opens with Enter",
     CHECK(t->link_index() == -1);
 }
 
-TEST_CASE("KeyboardTarget with nothing to do is not a Tab stop",
-          "[tk][keyboard][keyboard_target]")
+TEST_CASE("KeyboardTarget with nothing to do is not a Tab stop", "[tk][keyboard][keyboard_target]")
 {
     Box root({0, 0, 400, 400});
     auto* t = root.add_child(create_widget<KeyboardTarget>(&root));
@@ -493,7 +541,9 @@ TEST_CASE("Timeline: focus lands on the newest visible message; Up/Down move",
     MessageListView v;
     std::vector<MessageRowData> rows;
     for (int i = 0; i < 20; ++i)
+    {
         rows.push_back(kbd_text_row(i));
+    }
     v.set_messages(std::move(rows), /*room_switch=*/true);
     st.run(v, {0, 0, 320, 200});
 
@@ -516,7 +566,9 @@ TEST_CASE("Timeline: Shift+PageUp pages up when nothing is unread",
     MessageListView v;
     std::vector<MessageRowData> rows;
     for (int i = 0; i < 20; ++i)
+    {
         rows.push_back(kbd_text_row(i));
+    }
     v.set_messages(std::move(rows), /*room_switch=*/true);
     st.run(v, {0, 0, 320, 200});
 
@@ -536,23 +588,29 @@ TEST_CASE("Timeline: Left/Right reach a message's actions and Enter fires them",
     MessageListView v;
     std::vector<MessageRowData> rows;
     for (int i = 0; i < 5; ++i)
+    {
         rows.push_back(kbd_text_row(i));
+    }
     v.set_messages(std::move(rows), true);
     st.run(v, {0, 0, 320, 200});
 
     std::string replied_to;
-    v.on_reply_requested = [&](const std::string& ev, const std::string&,
-                               const std::string&) { replied_to = ev; };
+    v.on_reply_requested = [&](const std::string& ev, const std::string&, const std::string&)
+    {
+        replied_to = ev;
+    };
     std::string more_for;
     Rect more_anchor{};
-    v.on_more_requested = [&](const std::string& ev, Rect anchor, bool, bool,
-                              bool, bool)
+    v.on_actions_menu_requested = [&](const MessageListView::MessageMenuRequest& req)
     {
-        more_for = ev;
-        more_anchor = anchor;
+        more_for = req.event_id;
+        more_anchor = req.anchor;
     };
     int exits = 0;
-    v.on_keyboard_exit = [&] { ++exits; };
+    v.on_keyboard_exit = [&]
+    {
+        ++exits;
+    };
 
     TestHost host(&v);
     host.request_focus(&v);
@@ -561,11 +619,17 @@ TEST_CASE("Timeline: Left/Right reach a message's actions and Enter fires them",
     const auto names = v.keyboard_part_names();
     int reply_at = -1;
     for (int i = 0; i < static_cast<int>(names.size()); ++i)
+    {
         if (names[static_cast<std::size_t>(i)] == "Reply")
+        {
             reply_at = i;
+        }
+    }
     REQUIRE(reply_at >= 0);
     for (int i = 0; i <= reply_at; ++i)
+    {
         v.on_key_down({Key::Right});
+    }
     CHECK(v.keyboard_part_index() == reply_at);
     v.on_key_down({Key::Enter});
     CHECK(replied_to == "$e4");
@@ -586,14 +650,15 @@ TEST_CASE("Timeline: Left/Right reach a message's actions and Enter fires them",
     CHECK(more_for == "$e4");
 }
 
-TEST_CASE("Timeline: a click never moves keyboard focus onto it",
-          "[message_list][keyboard]")
+TEST_CASE("Timeline: a click never moves keyboard focus onto it", "[message_list][keyboard]")
 {
     TimelineStage st;
     MessageListView v;
     std::vector<MessageRowData> rows;
     for (int i = 0; i < 5; ++i)
+    {
         rows.push_back(kbd_text_row(i));
+    }
     v.set_messages(std::move(rows), true);
     st.run(v, {0, 0, 320, 200});
 
@@ -610,13 +675,17 @@ TEST_CASE("Timeline: the cursor follows its message across a history prepend",
     MessageListView v;
     std::vector<MessageRowData> rows;
     for (int i = 10; i < 15; ++i)
+    {
         rows.push_back(kbd_text_row(i));
+    }
     v.set_messages(std::move(rows), true);
     st.run(v, {0, 0, 320, 200});
 
     std::string more_for;
-    v.on_more_requested = [&](const std::string& ev, Rect, bool, bool, bool, bool)
-    { more_for = ev; };
+    v.on_actions_menu_requested = [&](const MessageListView::MessageMenuRequest& req)
+    {
+        more_for = req.event_id;
+    };
 
     TestHost host(&v);
     host.request_focus(&v);
@@ -624,7 +693,9 @@ TEST_CASE("Timeline: the cursor follows its message across a history prepend",
 
     std::vector<MessageRowData> older;
     for (int i = 0; i < 10; ++i)
+    {
         older.push_back(kbd_text_row(i));
+    }
     v.prepend_messages(std::move(older));
     st.run(v, {0, 0, 320, 200});
 
@@ -639,27 +710,39 @@ TEST_CASE("Timeline: a part added before the chosen one doesn't redirect Enter",
     MessageListView v;
     std::vector<MessageRowData> rows;
     for (int i = 0; i < 3; ++i)
+    {
         rows.push_back(kbd_text_row(i));
+    }
     v.set_messages(rows, true);
     st.run(v, {0, 0, 320, 200});
 
     std::string replied_to;
     int toggles = 0;
-    v.on_reply_requested = [&](const std::string& ev, const std::string&,
-                               const std::string&) { replied_to = ev; };
-    v.on_reaction_toggled = [&](const std::string&, const std::string&,
-                                const std::string&) { ++toggles; };
+    v.on_reply_requested = [&](const std::string& ev, const std::string&, const std::string&)
+    {
+        replied_to = ev;
+    };
+    v.on_reaction_toggled = [&](const std::string&, const std::string&, const std::string&)
+    {
+        ++toggles;
+    };
 
     TestHost host(&v);
     host.request_focus(&v);
     const auto names = v.keyboard_part_names();
     int reply_at = -1;
     for (int i = 0; i < static_cast<int>(names.size()); ++i)
+    {
         if (names[static_cast<std::size_t>(i)] == "Reply")
+        {
             reply_at = i;
+        }
+    }
     REQUIRE(reply_at >= 0);
     for (int i = 0; i <= reply_at; ++i)
+    {
         v.on_key_down({Key::Right});
+    }
 
     // A reaction arrives on the cursor message: its chip precedes Reply.
     tesseract::Reaction r;
@@ -713,7 +796,10 @@ TEST_CASE("Keyboard movement to the top of a list fires the near-top hook",
     list->measure(lc, {300, 200});
     list->arrange(lc, {0, 0, 300, 200});
     int near_top = 0;
-    list->on_near_top = [&] { ++near_top; };
+    list->on_near_top = [&]
+    {
+        ++near_top;
+    };
 
     TestHost host(list.get());
     host.request_focus(list.get());
@@ -722,8 +808,7 @@ TEST_CASE("Keyboard movement to the top of a list fires the near-top hook",
     CHECK(near_top >= 1);
 }
 
-TEST_CASE("DatePickerView: a past max date caps the shown month and cursor",
-          "[tk][datepicker]")
+TEST_CASE("DatePickerView: a past max date caps the shown month and cursor", "[tk][datepicker]")
 {
     auto picker = std::make_unique<DatePickerView>();
     picker->set_max_date(2020, 3, 14);
@@ -741,8 +826,7 @@ TEST_CASE("DatePickerView: a past max date caps the shown month and cursor",
     CHECK(picker->cursor_day() == 2);
 }
 
-TEST_CASE("DatePickerView: reset_view reopens on a later max date",
-          "[tk][datepicker]")
+TEST_CASE("DatePickerView: reset_view reopens on a later max date", "[tk][datepicker]")
 {
     auto picker = std::make_unique<DatePickerView>();
     picker->set_max_date(2019, 11, 2);

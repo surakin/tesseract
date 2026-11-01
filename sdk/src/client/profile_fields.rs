@@ -210,8 +210,10 @@ impl ClientFfi {
             let _guard = super::InFlightGuard::new(
                 &in_flight,
                 &handler,
-                #[cfg(debug_assertions)] &in_flight_urls,
-                #[cfg(debug_assertions)] "profile_fields/get_extended_profile".to_string(),
+                #[cfg(debug_assertions)]
+                &in_flight_urls,
+                #[cfg(debug_assertions)]
+                "profile_fields/get_extended_profile".to_string(),
             );
 
             let payload = async {
@@ -488,10 +490,7 @@ mod tests {
         });
         assert_eq!(
             parse_pronouns(&profile),
-            vec![
-                entry("en", "she/her", "feminine"),
-                entry("fr", "elle", ""),
-            ]
+            vec![entry("en", "she/her", "feminine"), entry("fr", "elle", ""),]
         );
     }
 
@@ -630,7 +629,10 @@ mod tests {
     #[test]
     fn status_parts_reads_both_fields() {
         let v = serde_json::json!({"text": "On holiday", "emoji": "🌴"});
-        assert_eq!(super::status_parts(&v), ("🌴".to_owned(), "On holiday".to_owned()));
+        assert_eq!(
+            super::status_parts(&v),
+            ("🌴".to_owned(), "On holiday".to_owned())
+        );
     }
 
     #[test]
@@ -669,7 +671,10 @@ mod tests {
 
     #[test]
     fn extract_status_wrong_type_is_none() {
-        let p = profile_with("org.matrix.msc4426.status", serde_json::json!("a bare string"));
+        let p = profile_with(
+            "org.matrix.msc4426.status",
+            serde_json::json!("a bare string"),
+        );
         assert!(extract_status(&p).is_none());
     }
 
@@ -685,7 +690,10 @@ mod tests {
     #[test]
     fn extract_status_partial_object_is_dropped() {
         // The typed field requires both `text` and `emoji`.
-        let p = profile_with("org.matrix.msc4426.status", serde_json::json!({"emoji": "🎯"}));
+        let p = profile_with(
+            "org.matrix.msc4426.status",
+            serde_json::json!({"emoji": "🎯"}),
+        );
         assert!(extract_status(&p).is_none());
     }
 

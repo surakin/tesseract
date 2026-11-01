@@ -94,8 +94,7 @@ void FileViewerPage::paint_content(tk::PaintCtx& ctx)
 
     const float glyph_y = card_.y + kFileCardPad;
     glyph_.draw(cv, ctx.factory, kFileSvg,
-                {card_.x + (card_.w - kFileGlyphPx) * 0.5f, glyph_y, kFileGlyphPx,
-                 kFileGlyphPx},
+                {card_.x + (card_.w - kFileGlyphPx) * 0.5f, glyph_y, kFileGlyphPx, kFileGlyphPx},
                 kFileGlyphPx, kFileTextSecondary);
 
     float y = glyph_y + kFileGlyphPx + 12.0f;

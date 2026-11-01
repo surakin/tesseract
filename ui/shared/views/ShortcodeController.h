@@ -61,8 +61,7 @@ public:
         std::function<tesseract::emoji::SkinTone()> skin_tone;
     };
 
-    ShortcodeController(tk::TextArea* text_area, ShortcodePopup* popup,
-                        Hooks hooks);
+    ShortcodeController(tk::TextArea* text_area, ShortcodePopup* popup, Hooks hooks);
     ~ShortcodeController();
 
     // Returns true if a shortcode was handled — either a completed `:word:` was

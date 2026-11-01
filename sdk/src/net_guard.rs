@@ -196,9 +196,8 @@ impl reqwest::dns::Resolve for SafeResolver {
     fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
         let host = name.as_str().to_owned();
         Box::pin(async move {
-            let addrs: Vec<SocketAddr> = tokio::net::lookup_host((host.as_str(), 0))
-                .await?
-                .collect();
+            let addrs: Vec<SocketAddr> =
+                tokio::net::lookup_host((host.as_str(), 0)).await?.collect();
             match vet_addrs(addrs) {
                 Some(ok) => Ok(Box::new(ok.into_iter()) as reqwest::dns::Addrs),
                 None => Err(format!("{host}: resolves to a disallowed address").into()),
@@ -236,7 +235,10 @@ pub(crate) fn guarded_client(total_timeout: Duration) -> Option<reqwest::Client>
 /// every hop's scheme and IP-literal host are vetted (the resolver
 /// vets hostnames) and the peer address is re-checked. Returns the
 /// final successful response and its URL.
-pub(crate) async fn guarded_get(http: &reqwest::Client, url: Url) -> Option<(reqwest::Response, Url)> {
+pub(crate) async fn guarded_get(
+    http: &reqwest::Client,
+    url: Url,
+) -> Option<(reqwest::Response, Url)> {
     guarded_walk(http, url, GUARDED_MAX_REDIRECTS, true).await
 }
 
@@ -244,8 +246,14 @@ pub(crate) async fn guarded_get(http: &reqwest::Client, url: Url) -> Option<(req
 /// response may be any status, and `max_redirects` hops are followed. For
 /// callers that read the destination URL (a maps shortlink whose target page
 /// answers 403 still names the coordinates) rather than its body.
-pub(crate) async fn guarded_final_url(http: &reqwest::Client, url: Url, max_redirects: u8) -> Option<Url> {
-    guarded_walk(http, url, max_redirects, false).await.map(|(_, u)| u)
+pub(crate) async fn guarded_final_url(
+    http: &reqwest::Client,
+    url: Url,
+    max_redirects: u8,
+) -> Option<Url> {
+    guarded_walk(http, url, max_redirects, false)
+        .await
+        .map(|(_, u)| u)
 }
 
 async fn guarded_walk(
@@ -270,7 +278,11 @@ async fn guarded_walk(
             return None;
         }
         if resp.status().is_redirection() {
-            let location = resp.headers().get(reqwest::header::LOCATION)?.to_str().ok()?;
+            let location = resp
+                .headers()
+                .get(reqwest::header::LOCATION)?
+                .to_str()
+                .ok()?;
             current = current.join(location).ok()?;
             continue;
         }
@@ -408,7 +420,10 @@ mod tests {
                 "127.0.0.1.",
                 "169.254.169.254.",
             ] {
-                assert!(!ok(&format!("https://{host}/x")), "{host} must be refused (manual={manual})");
+                assert!(
+                    !ok(&format!("https://{host}/x")),
+                    "{host} must be refused (manual={manual})"
+                );
             }
             assert!(ok("https://example.com/"));
             assert!(ok("https://localhost.example.com/"));
@@ -420,12 +435,22 @@ mod tests {
     fn url_is_fetchable_refuses_internal_names_only_behind_a_manual_proxy() {
         let behind_proxy = |s: &str| url_is_fetchable_with(&Url::parse(s).unwrap(), true);
         let direct = |s: &str| url_is_fetchable_with(&Url::parse(s).unwrap(), false);
-        for host in ["printer.local", "nas.internal", "router.lan", "intranet", "box.localdomain", "gw.home.arpa"] {
+        for host in [
+            "printer.local",
+            "nas.internal",
+            "router.lan",
+            "intranet",
+            "box.localdomain",
+            "gw.home.arpa",
+        ] {
             let url = format!("https://{host}/x");
             assert!(!behind_proxy(&url), "{host} must be refused behind a proxy");
             // Direct: the resolver check vets where the name points, so a
             // name on a public address stays reachable.
-            assert!(direct(&url), "{host} is left to the resolver check when direct");
+            assert!(
+                direct(&url),
+                "{host} is left to the resolver check when direct"
+            );
         }
         assert!(behind_proxy("https://example.local.org/"));
     }

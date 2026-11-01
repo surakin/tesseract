@@ -75,8 +75,7 @@ public:
         std::function<std::vector<tesseract::CommandDescription>()> bot_commands;
     };
 
-    SlashCommandController(tk::TextArea* text_area,
-                           SlashCommandPopup* popup, Hooks hooks);
+    SlashCommandController(tk::TextArea* text_area, SlashCommandPopup* popup, Hooks hooks);
     ~SlashCommandController();
 
     // Returns true if a `/`-prefix was handled (popup shown) — the caller should
@@ -110,8 +109,7 @@ private:
     // Recompute and show the argument hint (or error, if `error` is set)
     // for the in-progress bot command, given the composer text after the
     // "/command_name " prefix.
-    void update_arg_hint(const std::string& args_text,
-                         const std::string& error = {});
+    void update_arg_hint(const std::string& args_text, const std::string& error = {});
     // Validate + send the in-progress bot command. Returns true (and clears
     // composer/state) on success; on failure, shows the error in the hint
     // row and leaves the composer text untouched so the user can fix it.

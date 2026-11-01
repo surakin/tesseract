@@ -78,15 +78,17 @@ fn apply_chip_overrides_to_ops(
     if !matches!(ch, TimelineChannel::Room) {
         return;
     }
-    let events = ops.iter_mut().flat_map(|op| -> Box<dyn Iterator<Item = &mut TimelineEvent>> {
-        match op {
-            EmitOp::Reset(evs) | EmitOp::Prepended(evs) | EmitOp::Appended(evs) => {
-                Box::new(evs.iter_mut())
+    let events = ops
+        .iter_mut()
+        .flat_map(|op| -> Box<dyn Iterator<Item = &mut TimelineEvent>> {
+            match op {
+                EmitOp::Reset(evs) | EmitOp::Prepended(evs) | EmitOp::Appended(evs) => {
+                    Box::new(evs.iter_mut())
+                }
+                EmitOp::Inserted(_, ev) | EmitOp::Updated(_, ev) => Box::new(std::iter::once(ev)),
+                EmitOp::Removed(_) => Box::new(std::iter::empty()),
             }
-            EmitOp::Inserted(_, ev) | EmitOp::Updated(_, ev) => Box::new(std::iter::once(ev)),
-            EmitOp::Removed(_) => Box::new(std::iter::empty()),
-        }
-    });
+        });
     super::thread::apply_thread_chip_overrides(events, room_id, overrides);
 }
 
@@ -280,11 +282,8 @@ pub(crate) fn visible_len(visible: &[bool]) -> u64 {
 /// (`num_items == 0`) ends it, as does the oldest chunk. The input order is
 /// arbitrary, and the walk is bounded by `chunks.len()` so a corrupt cyclic
 /// store cannot spin.
-pub(crate) fn events_before_first_gap(
-    chunks: &[matrix_sdk::linked_chunk::ChunkMetadata],
-) -> usize {
-    let by_id: std::collections::HashMap<_, _> =
-        chunks.iter().map(|c| (c.identifier, c)).collect();
+pub(crate) fn events_before_first_gap(chunks: &[matrix_sdk::linked_chunk::ChunkMetadata]) -> usize {
+    let by_id: std::collections::HashMap<_, _> = chunks.iter().map(|c| (c.identifier, c)).collect();
     let Some(mut cur) = chunks.iter().find(|c| c.next.is_none()) else {
         return 0;
     };
@@ -312,11 +311,12 @@ async fn cached_events_before_gap(client: &Client, room_id: &str) -> Option<usiz
 
     let rid: OwnedRoomId = room_id.parse().ok()?;
     let chunks = match client.event_cache_store().lock().await {
-        Ok(EventCacheStoreLockState::Clean(guard))
-        | Ok(EventCacheStoreLockState::Dirty(guard)) => guard
-            .load_all_chunks_metadata(LinkedChunkId::Room(&rid))
-            .await
-            .ok()?,
+        Ok(EventCacheStoreLockState::Clean(guard)) | Ok(EventCacheStoreLockState::Dirty(guard)) => {
+            guard
+                .load_all_chunks_metadata(LinkedChunkId::Room(&rid))
+                .await
+                .ok()?
+        }
         Err(_) => return None,
     };
     Some(events_before_first_gap(&chunks))
@@ -392,7 +392,10 @@ fn timeline_item_is_media(item: &Arc<TimelineItem>) -> bool {
     let MsgLikeKind::Message(message) = &msg_like.kind else {
         return false;
     };
-    matches!(message.msgtype(), MessageType::Image(_) | MessageType::Video(_))
+    matches!(
+        message.msgtype(),
+        MessageType::Image(_) | MessageType::Video(_)
+    )
 }
 
 /// Process one VectorDiff, mutating `visible`/`visible_ids` in place and
@@ -841,6 +844,7 @@ impl ClientFfi {
         handler: &Arc<Mutex<SendHandler>>,
         client: &Client,
         rt: &tokio::runtime::Runtime,
+        in_flight: super::InFlightCtx,
         channel: TimelineChannel,
         cancelled: Arc<AtomicBool>,
         index: Option<super::search::SearchIndexCtx>,
@@ -1052,6 +1056,7 @@ impl ClientFfi {
         let tl_for_members = Arc::clone(timeline);
         let fetch_abort = rt
             .spawn(async move {
+                let _in_flight = in_flight.guard("members");
                 tl_for_members.fetch_members().await;
                 let _ = members_done_tx.send(()).await;
             })
@@ -1108,6 +1113,7 @@ impl ClientFfi {
                         &handler,
                         &client,
                         &self.rt,
+                        self.in_flight_ctx(),
                         TimelineChannel::Room,
                         Arc::clone(&new_cancelled),
                         self.search_index_ctx(),
@@ -1117,13 +1123,15 @@ impl ClientFfi {
                         false,
                     );
                     existing.abort_tasks = vec![abort, fetch_abort];
-                    existing.abort_tasks.push(super::identity::spawn_identity_watcher(
-                        &room,
-                        room_id.to_string(),
-                        &handler,
-                        &self.rt,
-                        Arc::clone(&new_cancelled),
-                    ));
+                    existing
+                        .abort_tasks
+                        .push(super::identity::spawn_identity_watcher(
+                            &room,
+                            room_id.to_string(),
+                            &handler,
+                            &self.rt,
+                            Arc::clone(&new_cancelled),
+                        ));
                     existing.cancelled = new_cancelled;
                     drop(guard);
                     self.sync_room_subscriptions();
@@ -1192,6 +1200,7 @@ impl ClientFfi {
             &handler,
             &client,
             &self.rt,
+            self.in_flight_ctx(),
             TimelineChannel::Room,
             Arc::clone(&cancelled),
             self.search_index_ctx(),
@@ -1229,6 +1238,7 @@ impl ClientFfi {
         // room still shows whatever the sliding-sync response seeded it with;
         // the user can scroll up to paginate on demand.
         let low_power = Arc::clone(&self.low_power_mode);
+        let in_flight_warm = self.in_flight_ctx();
         let warm_check = self.rt.spawn(async move {
             if low_power.load(Ordering::Relaxed) {
                 return;
@@ -1248,6 +1258,7 @@ impl ClientFfi {
                 {
                     break;
                 }
+                let _in_flight = in_flight_warm.guard("timeline/warm");
                 match tl.paginate_backwards(50).await {
                     Ok(true) => break, // reached the start of the room
                     Ok(false) => {}
@@ -1626,13 +1637,7 @@ impl ClientFfi {
     pub fn paginate_back_async(&self, _request_id: u64, _room_id: &str, _count: u16) {}
 
     #[cfg(test)]
-    pub fn paginate_media_view_back_async(
-        &self,
-        _request_id: u64,
-        _room_id: &str,
-        _count: u16,
-    ) {
-    }
+    pub fn paginate_media_view_back_async(&self, _request_id: u64, _room_id: &str, _count: u16) {}
 
     /// Non-blocking paginate-forward. Spawns the network call as a tokio task
     /// and delivers the result via `on_paginate_result(request_id, ok, false,
@@ -1850,9 +1855,7 @@ impl ClientFfi {
                     .download_room_keys_for_room(room_for_keys.room_id())
                     .await
                 {
-                    tracing::warn!(
-                        "jump-to-date: failed to download backup room keys: {e}"
-                    );
+                    tracing::warn!("jump-to-date: failed to download backup room keys: {e}");
                 }
             });
         }
@@ -1902,6 +1905,7 @@ impl ClientFfi {
             &handler,
             &client,
             &self.rt,
+            self.in_flight_ctx(),
             TimelineChannel::Room,
             Arc::clone(&cancelled),
             self.search_index_ctx(),

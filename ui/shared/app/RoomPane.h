@@ -107,8 +107,7 @@ public:
         // main window — finish_init() and on_room_info_updated(), the only
         // call sites, are pop-out-only paths), so its Deps leaves this at
         // the no-op default.
-        std::function<void(const std::string&)> update_window_title =
-            [](const std::string&) {};
+        std::function<void(const std::string&)> update_window_title = [](const std::string&) {};
         // Called with the room_id when the user successfully leaves it via
         // this pane's RoomView. Pop-outs set this to schedule_self_close_()
         // (RoomWindowBase-owned, since closing a whole native window is a
@@ -117,8 +116,7 @@ public:
         // it's showing — that bookkeeping is main-window-only (pop-outs have
         // no "currently selected room" concept to clear), which is why it's
         // injected here rather than handled inside RoomPane itself.
-        std::function<void(const std::string&)> on_left_room =
-            [](const std::string&) {};
+        std::function<void(const std::string&)> on_left_room = [](const std::string&) {};
         // Called every time this pane issues an in-room search query.
         // ShellBase::in_room_search_active_win_ (a RoomWindowBase*, used to
         // relayout a pop-out's own surface when a search result lands) is a
@@ -196,7 +194,10 @@ public:
     // the "is there a draft to restore" half).
     void apply_compose_draft_(const std::string& room_id);
     // Drop every saved draft — call on account switch/logout.
-    void clear_compose_drafts_() { room_compose_drafts_.clear(); }
+    void clear_compose_drafts_()
+    {
+        room_compose_drafts_.clear();
+    }
     // Put the text of a send that failed before reaching the SDK's send
     // queue back into this pane's composer. Returns false (and changes
     // nothing) if the composer already holds new text or isn't available.
@@ -213,19 +214,28 @@ public:
     // back when the user returns.
     void stash_unsent_draft_(const std::string& room_id, const std::string& text);
 
-    const std::string& room_id() const { return room_id_; }
+    const std::string& room_id() const
+    {
+        return room_id_;
+    }
 
     // A member's profile (display name / avatar) changed in this pane's room:
     // re-read the member list so the room info panel and mention pills show it.
     void refresh_room_members_();
-    views::RoomView* room_view() const { return room_view_; }
+    views::RoomView* room_view() const
+    {
+        return room_view_;
+    }
 
     // Number of rows currently withheld from room_view_ by the
     // kSwitchDisplayCap trim (see withheld_older_rows_ below). Live SDK
     // update/insert/remove indices are relative to the full, untrimmed
     // timeline, so a caller forwarding one of those straight to room_view_
     // must first subtract this to land on the right row.
-    std::size_t withheld_count() const { return withheld_older_rows_.size(); }
+    std::size_t withheld_count() const
+    {
+        return withheld_older_rows_.size();
+    }
     // Apply a live SDK diff at full-timeline index `idx` to the withheld
     // rows when it lands among them, so the buffer (and withheld_count())
     // stays in step with the SDK — e.g. the read marker moving inside it.
@@ -285,21 +295,32 @@ public:
     void on_typing_changed(const std::string& text, bool visible);
     // The room's current identity-change warnings (MSC4153 pinning); ignored
     // unless `room_id` is the room this pane shows.
-    void on_identity_status_changed(
-        const std::string& room_id,
-        const std::vector<tesseract::IdentityWarning>& warnings);
+    void on_identity_status_changed(const std::string& room_id,
+                                    const std::vector<tesseract::IdentityWarning>& warnings);
     // Cross-signing identities changed for `user_ids` (this pane's account):
     // re-read the profile panel's trust row if it shows one of them.
     void on_user_identities_changed(const std::vector<std::string>& user_ids);
 
     // Thread view delivery — called by the owner when SDK events arrive for
     // the thread this pane has open (thread_root() matches).
-    const std::string& thread_root() const { return thread_root_; }
-    ThreadPanelController::ThreadPanel thread_panel() const { return thread_panel_; }
-    ThreadPanelController::ThreadPanel thread_panel_prev() const { return thread_panel_prev_; }
+    const std::string& thread_root() const
+    {
+        return thread_root_;
+    }
+    ThreadPanelController::ThreadPanel thread_panel() const
+    {
+        return thread_panel_;
+    }
+    ThreadPanelController::ThreadPanel thread_panel_prev() const
+    {
+        return thread_panel_prev_;
+    }
     // Reset the thread-list backfill guards — called by the owner on every
     // room switch, since each new room starts with an unknown thread history.
-    void reset_thread_backfill() { thread_ctl_.reset_backfill(); }
+    void reset_thread_backfill()
+    {
+        thread_ctl_.reset_backfill();
+    }
     void apply_thread_reset_(std::vector<views::MessageRowData> rows);
     void apply_thread_prepend_(std::vector<views::MessageRowData> rows);
     void apply_thread_append_(std::vector<views::MessageRowData> rows);
@@ -323,8 +344,7 @@ public:
     // other than the one it displays, e.g. ShellBase's room-media-gallery
     // pagination, global-search jump-to-result, and permalink navigation
     // all route through main_room_pane_ this way).
-    void begin_focused_subscription_(const std::string& room_id,
-                                     const std::string& event_id);
+    void begin_focused_subscription_(const std::string& room_id, const std::string& event_id);
     // Resolve ts_ms to an event in this pane's own room and begin a focused
     // subscription centred on it.
     void handle_date_jump_(std::uint64_t ts_ms);
@@ -346,8 +366,7 @@ public:
     // (pane_client_()) and dedups in shell_->reply_details_requested_ under
     // that account; never touches this pane's own room_id_, so any live
     // RoomPane of the right account can serve as the call's entry point.
-    void ensure_reply_details_(const std::string& room_id,
-                               const std::string& event_id,
+    void ensure_reply_details_(const std::string& room_id, const std::string& event_id,
                                const std::string& thread_root);
 
     // ensure_reply_details_() only ever resolves a reply preview against
@@ -371,8 +390,7 @@ public:
     // pane's own room_view_->message_list(). thread_root is forwarded to
     // ensure_reply_details_ so the retried fetch resolves against the right
     // timeline.
-    void retry_stale_reply_previews_(views::MessageListView* list,
-                                     const std::string& room_id,
+    void retry_stale_reply_previews_(views::MessageListView* list, const std::string& room_id,
                                      const std::string& thread_root,
                                      const std::vector<std::string>& new_event_ids);
 
@@ -402,29 +420,25 @@ public:
     const std::string& active_thread_root_for_send_() const
     {
         static const std::string kEmpty;
-        return (thread_panel_ == ThreadPanel::Open && !thread_root_.empty())
-                   ? thread_root_
-                   : kEmpty;
+        return (thread_panel_ == ThreadPanel::Open && !thread_root_.empty()) ? thread_root_
+                                                                             : kEmpty;
     }
     // Re-check this pane's open thread for already-rendered reply rows whose
     // target is among new_event_ids (no-op if no thread is open).
-    void retry_stale_thread_reply_previews_(
-        const std::vector<std::string>& new_event_ids);
+    void retry_stale_thread_reply_previews_(const std::vector<std::string>& new_event_ids);
 
     // Fan-in for async message-forward completions — the owner's forward_event
     // request_id is process-global, so it checks every open pane until one
     // recognizes the id. Returns true if this pane issued request_id.
     bool handle_forward_done_(std::uint64_t request_id);
-    bool handle_forward_failed_(std::uint64_t request_id,
-                                const std::string& message);
+    bool handle_forward_failed_(std::uint64_t request_id, const std::string& message);
 
     // ── Popup-hooks helpers ─────────────────────────────────────────────
     // Fill every Hooks field derivable from shell/room state. The caller
     // still builds show/hide/repaint (and on_selfie for mention/slash, which
     // needs a main-window-only overlay) locally, since the popup surface
     // handle type stays per-platform/per-window.
-    void wire_mention_hooks_(views::MentionPopup* popup,
-                             views::MentionController::Hooks& hooks);
+    void wire_mention_hooks_(views::MentionPopup* popup, views::MentionController::Hooks& hooks);
     // Called by the owning shell's on_media_bytes_ready_ whenever an
     // avatar (user or room) finishes decoding. Re-checks whichever
     // composer pill(s) are still waiting on an avatar and patches them in
@@ -449,15 +463,13 @@ public:
     // Position + show a "row list" composer popup (mention/slash/shortcode)
     // anchored at the text cursor. Replaces every show_mention_popup_/
     // show_slash_popup_/show_shortcode_popup_ body across all platforms.
-    static void position_dropdown_popup_(tk::PopupSurfaceHandle* popup,
-                                         tk::Rect cursor_local, int rows,
-                                         float row_height, float width);
+    static void position_dropdown_popup_(tk::PopupSurfaceHandle* popup, tk::Rect cursor_local,
+                                         int rows, float row_height, float width);
 
     // Build the outgoing (body, formatted_body) pair from the live compose
     // text area's mention/emoticon draft. Falls back to {fallback_body, ""}
     // when there is no text area or its draft is empty.
-    tesseract::MarkdownResult draft_outgoing_message_(
-        const std::string& fallback_body);
+    tesseract::MarkdownResult draft_outgoing_message_(const std::string& fallback_body);
 
     // Look up a cached URL-preview card for `url`, or nullptr.
     const views::UrlPreviewData* preview_lookup_(const std::string& url);
@@ -469,23 +481,38 @@ public:
     // must be called on the UI thread.
     std::shared_ptr<AccountSession> session_() const;
     tesseract::Client* pane_client_() const;
-    tesseract::Client* shell_client_() const { return pane_client_(); }
+    tesseract::Client* shell_client_() const
+    {
+        return pane_client_();
+    }
+    // The shell's shared animated-image cache.
+    const tk::AnimImageCache* shell_anim_cache_() const;
     // That account's user id and room list.
     std::string pane_user_id_() const;
     const std::vector<tesseract::RoomInfo>& pane_rooms_() const;
     const tesseract::RoomInfo* pane_room_by_id_(const std::string& room_id) const;
 
     void send_message_(const std::string& body);
-    void send_message_(const std::string& body,
-                       const std::string& formatted_body);
-    void send_reply_(const std::string& reply_event_id,
-                     const std::string& body);
+    void send_message_(const std::string& body, const std::string& formatted_body);
+    void send_reply_(const std::string& reply_event_id, const std::string& body);
     void send_sticker_(const std::string& body, const std::string& image_url,
                        const std::string& info_json);
     void send_current_location_();
     void send_edit_(const std::string& event_id, const std::string& new_body,
                     bool is_caption = false);
+    // A media caption as the text path sends a message: the composer's mention
+    // draft run through build_mention_message(), so Markdown and mention pills
+    // reach the event as `formatted_body` + `m.mentions`.
+    struct ComposedCaption
+    {
+        std::string body;
+        std::string formatted; // HTML; empty for a plain caption
+    };
+    // Reads the compose text area, so call it before the composer is cleared.
+    // With no draft (or an empty one) the result is `fallback` and no HTML.
+    ComposedCaption composed_caption_(const std::string& fallback) const;
     void delete_event_(const std::string& event_id);
+    void report_event_(const std::string& event_id, const std::string& reason);
     void toggle_reaction_(const std::string& event_id, const std::string& key,
                           const std::string& source_mxc);
     void vote_poll_(const std::string& event_id, std::vector<std::string> ids);
@@ -501,6 +528,13 @@ public:
     void jump_to_unread_(const std::string& fully_read_event_id);
     void send_typing_notice_(bool typing);
     void retry_send_(const std::string& txn_id);
+    // A send an encryption check parked (views/send_block.h): explain why and
+    // offer to stop trusting the named users, then retry. Falls back to a plain
+    // retry when no dialog can be shown.
+    void retry_blocked_send_(const std::string& txn_id, const std::string& code,
+                             const std::vector<std::string>& users);
+    // Display name of a room member from the cached member list, else empty.
+    std::string member_label_(const std::string& user_id) const;
     void abort_send_(const std::string& txn_id);
     // Pin the changed identity or withdraw verification, per `w.kind`.
     void resolve_identity_warning_(const tesseract::IdentityWarning& w);
@@ -537,8 +571,7 @@ public:
     // ShellBase::handle_media_view_paginate_result_ui_, which owns the
     // request_id -> RoomPane* correlation since the SDK callback has no
     // per-window addressing of its own.
-    void handle_media_view_paginate_result_(std::uint64_t request_id, bool ok,
-                                            bool reached_start,
+    void handle_media_view_paginate_result_(std::uint64_t request_id, bool ok, bool reached_start,
                                             std::uint64_t media_count);
     // Completion callback for a load_room_media_page_async request this pane
     // issued (persistent media index, no network). Routed here by
@@ -546,8 +579,8 @@ public:
     // the DB; only once the index is drained does paging fall through to the
     // network retry loop above.
     void handle_room_media_page_(std::uint64_t request_id,
-                                 std::vector<tesseract::MediaIndexRow> rows,
-                                 bool reached_db_end, std::uint64_t total);
+                                 std::vector<tesseract::MediaIndexRow> rows, bool reached_db_end,
+                                 std::uint64_t total);
     // Issue the next gallery page: from the persistent index while it still
     // has older rows, otherwise (index drained + history not exhausted) a
     // network paginate_media_view_back_async round.
@@ -563,8 +596,8 @@ public:
     // open on a room the user has since navigated away from. `prepend`
     // distinguishes a backward-pagination arrival (insert at the head) from
     // a genuinely new live message (append at the tail).
-    void feed_gallery_live_(const std::string& event_room_id,
-                            views::MessageRowData row, bool prepend);
+    void feed_gallery_live_(const std::string& event_room_id, views::MessageRowData row,
+                            bool prepend);
     // Batched counterpart of feed_gallery_live_(..., /*prepend=*/true), for
     // callers (the main window's handle_messages_prepended_ui_) that already
     // have a whole backward-pagination batch instead of per-event delivery.
@@ -579,7 +612,10 @@ public:
     // closed). Lets ShellBase's tab-switch handler decide whether to
     // auto-close a gallery left open on a room the user is navigating away
     // from, without needing friend access to RoomPane's private state.
-    const std::string& media_view_room_id() const { return media_view_room_id_; }
+    const std::string& media_view_room_id() const
+    {
+        return media_view_room_id_;
+    }
 
     // Image cache accessors — friend access to ShellBase protected members.
     const tk::Image* shell_avatar_(const std::string& mxc) const;
@@ -630,8 +666,8 @@ public:
     // save dialog for `spec` and calls `done` with the chosen UTF-8 path (never
     // called when cancelled). May be synchronous (modal dialog) or deferred
     // (async dialog); `done` stays valid until the pane is destroyed.
-    using MediaSavePathPicker = std::function<void(
-        const views::MediaSaveSpec& spec, std::function<void(std::string)> done)>;
+    using MediaSavePathPicker = std::function<void(const views::MediaSaveSpec& spec,
+                                                   std::function<void(std::string)> done)>;
     // Wires the media viewer's Save action for every item kind: builds the
     // dialog spec with media_save_spec(), lets `pick` choose the destination and
     // writes the item's original bytes there via save_source_to_file_().
@@ -649,9 +685,8 @@ public:
     // Set while open_media_externally_ falls back to the in-app viewer.
     bool force_in_app_viewer_ = false;
     // Fetch source_json bytes and hand them to on_ready.
-    void fetch_source_bytes_(
-        const std::string& src,
-        std::function<void(std::vector<std::uint8_t>)> on_ready);
+    void fetch_source_bytes_(const std::string& src,
+                             std::function<void(std::vector<std::uint8_t>)> on_ready);
     // Checks the disk cache for a previously fully-downloaded copy of `src`
     // first (async, off the UI thread) — a hit plays instantly via
     // load_bytes() with no network call at all. On a miss, delegates to
@@ -673,20 +708,21 @@ public:
     // Show `items` in the shared media viewer starting at `index`: opens it,
     // makes it visible, relayouts and takes focus. The fetch itself starts from
     // the viewer's on_item_shown (see start_viewer_fetch_).
-    void open_media_viewer_(std::vector<views::MediaViewerItem> items,
-                            std::size_t index);
+    void open_media_viewer_(std::vector<views::MediaViewerItem> items, std::size_t index);
     // Fetches an audio item's bytes into viewer_fetch_group_ and hands them to the
     // viewer's audio page (token-checked there).
     void fetch_viewer_audio_(const std::string& src, std::uint64_t token);
     // Begin the byte fetch for the item the viewer just made current: images
     // go through ensure_viewer_image_, videos through fetch_and_play_video_,
     // audio through fetch_viewer_audio_; files have nothing to fetch.
-    void start_viewer_fetch_(const views::MediaViewerItem& item,
-                             std::uint64_t token);
+    void start_viewer_fetch_(const views::MediaViewerItem& item, std::uint64_t token);
     // Fetch source_json bytes and place the decoded image on the clipboard.
     void copy_source_to_clipboard_(std::string source_json);
     // Look up event_id's raw JSON and place it on the clipboard.
     void copy_event_source_to_clipboard_(std::string event_id);
+    // Adds a sticker to the user's Saved Stickers pack (off the UI thread).
+    void save_sticker_(const std::string& mxc_url, const std::string& body,
+                       const std::string& info_json);
 
     // Trigger fetch of a full-res image into the shared tk_images_ cache.
     void ensure_viewer_image_(const std::string& url);
@@ -710,12 +746,16 @@ private:
     void focus_forward_picker_field_() const
     {
         if (widgets_.focus_forward_picker_field)
+        {
             widgets_.focus_forward_picker_field();
+        }
     }
     void hide_forward_picker_field_() const
     {
         if (widgets_.hide_forward_picker_field)
+        {
             widgets_.hide_forward_picker_field();
+        }
     }
     views::RoomMediaView* room_media_view_() const
     {
@@ -792,9 +832,8 @@ private:
     std::vector<tesseract::RoomMember> cached_room_members_;
     std::string cached_members_room_;
     // Liveness token specifically for ShellBase::extract_drop_media_(), whose
-    // virtual signature (implemented per-platform-shell) expects a
-    // std::shared_ptr<bool> that stays safely dereferenceable even after this
-    // RoomPane is destroyed — unlike EnableWeakSelf's weak_flag(), which
+    // signature expects a std::shared_ptr<bool> that stays safely
+    // dereferenceable even after this RoomPane is destroyed — unlike EnableWeakSelf's weak_flag(), which
     // aliases this object's own memory and must be re-locked after every
     // deferred hop. Kept as its own independently-heap-allocated flag (the
     // old pattern) rather than migrating extract_drop_media_'s cross-shell

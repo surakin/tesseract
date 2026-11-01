@@ -31,10 +31,13 @@ class DatePickerView : public tk::Widget, public tk::WidgetRowAccessibility
 {
 public:
     // Drops every layout (they're rebuilt when the factory looks new).
-    void on_fonts_changed() override { last_factory_ = nullptr; }
+    void on_fonts_changed() override
+    {
+        last_factory_ = nullptr;
+    }
 
     // Popup card dimensions (logical px).
-    static constexpr float kWidth  = 256.0f;
+    static constexpr float kWidth = 256.0f;
     static constexpr float kHeight = 296.0f;
 
     DatePickerView();
@@ -66,19 +69,21 @@ public:
 
     // ── tk::Widget overrides ─────────────────────────────────────────────────
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     // paint() is never called in normal use (not a tree child), but the base
     // interface requires an implementation.
-    void     paint(tk::PaintCtx&) override {}
+    void paint(tk::PaintCtx&) override
+    {
+    }
     // All visible drawing lives here; called by the host as the registered popup.
-    void     paint_overlay(tk::PaintCtx&) override;
-    bool     contains_world(tk::Point world) const override;
-    bool     on_pointer_down(tk::Point local) override;
-    void     on_pointer_up(tk::Point local, bool inside_self) override;
-    bool     on_pointer_move(tk::Point local) override;
-    void     on_pointer_leave() override;
-    bool     on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
-    void     on_popup_dismiss() override;
+    void paint_overlay(tk::PaintCtx&) override;
+    bool contains_world(tk::Point world) const override;
+    bool on_pointer_down(tk::Point local) override;
+    void on_pointer_up(tk::Point local, bool inside_self) override;
+    bool on_pointer_move(tk::Point local) override;
+    void on_pointer_leave() override;
+    bool on_wheel(tk::Point local, float dx, float dy, bool is_touchpad = false) override;
+    void on_popup_dismiss() override;
     // Reached via Host's popup-first-refusal path while this picker is the
     // registered popup (see class comment) — not via Tab traversal, since
     // this widget is never a tree child, so the picker runs its own
@@ -91,66 +96,98 @@ public:
     //   anywhere          PageUp/PageDown ±1 month, Shift+PageUp/PageDown
     //                     ±1 year, T jumps to today, Escape dismisses;
     //                     Enter/Space on the grid picks the focused day
-    bool     on_key_down(const tk::KeyEvent& event) override;
+    bool on_key_down(const tk::KeyEvent& event) override;
 
     // Which internal part holds keyboard focus (see on_key_down). Public
     // for tests.
-    enum class FocusPart { PrevBtn, Month, Year, NextBtn, Grid, TodayBtn };
-    FocusPart focus_part() const { return focus_part_; }
+    enum class FocusPart
+    {
+        PrevBtn,
+        Month,
+        Year,
+        NextBtn,
+        Grid,
+        TodayBtn
+    };
+    FocusPart focus_part() const
+    {
+        return focus_part_;
+    }
     // The keyboard cursor date on the grid (also what Enter picks). Public
     // for tests.
-    int cursor_year() const { return cursor_year_; }
-    int cursor_month() const { return cursor_month_; }
-    int cursor_day() const { return cursor_day_; }
+    int cursor_year() const
+    {
+        return cursor_year_;
+    }
+    int cursor_month() const
+    {
+        return cursor_month_;
+    }
+    int cursor_day() const
+    {
+        return cursor_day_;
+    }
     // Currently displayed month. Public for tests.
-    int view_year() const { return view_year_; }
-    int view_month() const { return view_month_; }
+    int view_year() const
+    {
+        return view_year_;
+    }
+    int view_month() const
+    {
+        return view_month_;
+    }
 
     // ── Accessibility ─────────────────────────────────────────────────────
     // A grid named by the shown month ("October 2026"): rows are the
     // previous/next-month buttons, the current month's day cells (6×7 grid
     // positions, the keyboard highlight as `selected`), and "Today".
-    tk::Role    access_role() const override { return tk::Role::Grid; }
+    tk::Role access_role() const override
+    {
+        return tk::Role::Grid;
+    }
     std::string access_name() const override;
     std::size_t access_row_count() const override;
-    tk::Role    access_role_for_widget_row(std::size_t i) const override;
+    tk::Role access_role_for_widget_row(std::size_t i) const override;
     std::string access_name_for_widget_row(std::size_t i) const override;
     std::string access_description_for_widget_row(std::size_t i) const override;
     tk::AccessState access_state_for_widget_row(std::size_t i) const override;
-    bool        access_activate_widget_row(std::size_t i) override;
-    tk::Rect    access_rect_for_widget_row(std::size_t i) const override;
+    bool access_activate_widget_row(std::size_t i) override;
+    tk::Rect access_rect_for_widget_row(std::size_t i) const override;
     std::pair<int, int> access_grid_cell_for_widget_row(std::size_t i) const override;
-    std::pair<int, int> access_grid_size() const override { return {kRows, kCols}; }
+    std::pair<int, int> access_grid_size() const override
+    {
+        return {kRows, kCols};
+    }
 
 private:
     // ── layout constants ──────────────────────────────────────────────────────
-    static constexpr float kHeaderH  = 44.0f;
-    static constexpr float kDowH     = 24.0f;
-    static constexpr float kDayH     = 32.0f;
-    static constexpr int   kRows     = 6;
-    static constexpr int   kCols     = 7;
-    static constexpr float kFooterH  = 36.0f;
+    static constexpr float kHeaderH = 44.0f;
+    static constexpr float kDowH = 24.0f;
+    static constexpr float kDayH = 32.0f;
+    static constexpr int kRows = 6;
+    static constexpr int kCols = 7;
+    static constexpr float kFooterH = 36.0f;
     static constexpr float kNavBtnSz = 28.0f;
     static constexpr float kNavBtnPad = 6.0f;
     static constexpr float kCardRadius = tesseract::visual::kRadiusMD;
     // Circular cell highlight: inscribed circle within the cell, with 2px margin.
-    static constexpr float kCellCircleD = kDayH - 4.0f;  // 28 px diameter
+    static constexpr float kCellCircleD = kDayH - 4.0f; // 28 px diameter
 
     // ── date state ────────────────────────────────────────────────────────────
-    int view_year_  = 0;  // currently displayed month (0 = uninitialised)
-    int view_month_ = 0;  // 1-based
-    int max_year_   = 9999;
-    int max_month_  = 12;
-    int max_day_    = 31;
+    int view_year_ = 0;  // currently displayed month (0 = uninitialised)
+    int view_month_ = 0; // 1-based
+    int max_year_ = 9999;
+    int max_month_ = 12;
+    int max_day_ = 31;
 
     // ── cell model ────────────────────────────────────────────────────────────
     struct CellInfo
     {
-        int  year   = 0;
-        int  month  = 0;  // 1-based
-        int  day    = 0;
+        int year = 0;
+        int month = 0; // 1-based
+        int day = 0;
         bool in_month = false; // belongs to view_month_ (not prev/next spill)
-        bool enabled  = false; // clickable (in_month, <= max, >= 1970-01-01)
+        bool enabled = false;  // clickable (in_month, <= max, >= 1970-01-01)
         bool is_today = false;
     };
     std::array<CellInfo, kRows * kCols> cells_{};
@@ -163,22 +200,29 @@ private:
     bool kbd_active_ = false;
 
     // ── hover / press state ───────────────────────────────────────────────────
-    enum class Zone { None, PrevBtn, NextBtn, DayCell, TodayBtn };
+    enum class Zone
+    {
+        None,
+        PrevBtn,
+        NextBtn,
+        DayCell,
+        TodayBtn
+    };
     Zone pressed_zone_ = Zone::None;
-    int  pressed_cell_ = -1;
+    int pressed_cell_ = -1;
     Zone hovered_zone_ = Zone::None;
 
     // Opacity entrance reveal, restarted each time open_at() is called.
     tk::FloatTween reveal_{1.0f};
-    int  hovered_cell_ = -1;
+    int hovered_cell_ = -1;
 
     // ── layout zones (world coords, set in open_at / compute_zones_) ─────────
-    tk::Rect header_rect_  {};
+    tk::Rect header_rect_{};
     tk::Rect prev_btn_rect_{};
     tk::Rect next_btn_rect_{};
-    tk::Rect dow_rect_     {};
-    tk::Rect grid_rect_    {};
-    tk::Rect footer_rect_  {};
+    tk::Rect dow_rect_{};
+    tk::Rect grid_rect_{};
+    tk::Rect footer_rect_{};
     tk::Rect today_btn_rect_{};
 
     // ── text layout cache ─────────────────────────────────────────────────────

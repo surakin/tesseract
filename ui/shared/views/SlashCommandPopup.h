@@ -20,8 +20,8 @@ class SlashCommandPopup : public ListPopupBase
 {
 public:
     static constexpr float kRowHeight = 44.0f; // taller: shows two lines
-    static constexpr float kWidth     = 320.0f;
-    static constexpr int   kMaxRows   = 8;
+    static constexpr float kWidth = 320.0f;
+    static constexpr int kMaxRows = 8;
 
     void set_suggestions(std::vector<SlashCommandSuggestion> suggestions);
 
@@ -55,25 +55,36 @@ public:
     }
 
     std::function<void(SlashCommandSuggestion)> on_accepted;
-    std::function<void()>                       on_dismissed;
+    std::function<void()> on_dismissed;
 
 protected:
     size_t row_count() const override
     {
         return hint_mode_ ? 1 : suggestions_.size();
     }
-    void paint_row(tk::PaintCtx& ctx, const tk::Rect& row, size_t index,
-                   bool selected, bool hovered) override;
+    void paint_row(tk::PaintCtx& ctx, const tk::Rect& row, size_t index, bool selected,
+                   bool hovered) override;
     void on_row_activated(size_t index) override
     {
         // No-op in hint mode — there's nothing to "accept"; the controller
         // handles Enter itself (validate + send) before it would reach here.
         if (!hint_mode_ && on_accepted)
+        {
             on_accepted(suggestions_[index]);
+        }
     }
-    float row_height() const override { return kRowHeight; }
-    float width() const override { return kWidth; }
-    int max_visible_rows() const override { return kMaxRows; }
+    float row_height() const override
+    {
+        return kRowHeight;
+    }
+    float width() const override
+    {
+        return kWidth;
+    }
+    int max_visible_rows() const override
+    {
+        return kMaxRows;
+    }
 
 public:
     // tk::WidgetRowAccessibility — mirrors paint_row's own hint-mode branch
@@ -85,21 +96,31 @@ public:
     tk::Role access_role_for_widget_row(std::size_t index) const override
     {
         if (hint_mode_)
+        {
             return index == 0 ? tk::Role::StaticText : tk::Role::None;
+        }
         return index < suggestions_.size() ? tk::Role::ListItem : tk::Role::None;
     }
     std::string access_name_for_widget_row(std::size_t index) const override
     {
         if (hint_mode_)
+        {
             return index == 0 ? hint_text_ : std::string{};
+        }
         if (index >= suggestions_.size())
+        {
             return {};
+        }
         const auto& s = suggestions_[index];
         std::string name = "/" + s.name;
         if (!s.args_hint.empty())
+        {
             name += " " + s.args_hint;
+        }
         if (!s.description.empty())
+        {
             name += ": " + s.description;
+        }
         if (!s.is_builtin)
         {
             const std::string& who =

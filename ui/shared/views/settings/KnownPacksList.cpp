@@ -34,15 +34,16 @@ void KnownPacksList::rebuild_()
 
     for (const auto& p : packs_)
     {
-        const std::string label =
-            p.display_name.empty() ? p.room_id : p.display_name;
+        const std::string label = p.display_name.empty() ? p.room_id : p.display_name;
         auto cb = tk::create_widget<tk::CheckButton>(content_, label, p.subscribed);
-        const std::string room_id   = p.room_id;
+        const std::string room_id = p.room_id;
         const std::string state_key = p.state_key;
         cb->on_change = [this, room_id, state_key](bool checked)
         {
             if (on_subscription_toggled)
+            {
                 on_subscription_toggled(room_id, state_key, checked);
+            }
         };
         rows_.push_back(content_->add_child(std::move(cb)));
     }
@@ -96,10 +97,14 @@ bool KnownPacksList::on_wheel(tk::Point /*local*/, float /*dx*/, float dy, bool 
 tk::Widget* KnownPacksList::dispatch_pointer_down(tk::Point world)
 {
     if (!visible() || !contains_world(world))
+    {
         return nullptr;
+    }
     tk::Point local = world_to_local(world);
     if (thumb_hit(local) && scrollbar_on_pointer_down(local))
+    {
         return this;
+    }
     return tk::Widget::dispatch_pointer_down(world);
 }
 

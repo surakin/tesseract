@@ -166,11 +166,7 @@ impl ClientFfi {
                 match <&ServerName>::try_from(server_input.as_str()) {
                     Ok(s) => Some(s.to_owned()),
                     Err(e) => {
-                        deliver_failed(
-                            &handler,
-                            request_id,
-                            &format!("invalid server name: {e}"),
-                        );
+                        deliver_failed(&handler, request_id, &format!("invalid server name: {e}"));
                         return;
                     }
                 }
@@ -189,9 +185,7 @@ impl ClientFfi {
                     searches.lock().insert(request_id, search);
                 }
                 Ok(Err(e)) => deliver_failed(&handler, request_id, &e.to_string()),
-                Err(_) => {
-                    deliver_failed(&handler, request_id, &timeout_message(&server_input))
-                }
+                Err(_) => deliver_failed(&handler, request_id, &timeout_message(&server_input)),
             }
         });
     }
@@ -262,7 +256,12 @@ impl ClientFfi {
     pub fn cancel_room_directory_search(&self, request_id: u64) {
         // A search absent from the map has a page in flight (it was taken for the
         // fetch), and that search must not come back. An idle one is just removed.
-        if self.room_directory_searches.lock().remove(&request_id).is_none() {
+        if self
+            .room_directory_searches
+            .lock()
+            .remove(&request_id)
+            .is_none()
+        {
             self.room_directory_cancelled.lock().insert(request_id);
         }
     }

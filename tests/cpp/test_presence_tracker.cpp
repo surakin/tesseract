@@ -16,15 +16,20 @@ namespace
 // and the tracker reads the current value through the injected provider.
 struct FakeClock
 {
-    PresenceTracker::Clock::time_point now =
-        PresenceTracker::Clock::time_point{} + 1h;
+    PresenceTracker::Clock::time_point now = PresenceTracker::Clock::time_point{} + 1h;
 
     PresenceTracker::NowProvider provider()
     {
-        return [this] { return now; };
+        return [this]
+        {
+            return now;
+        };
     }
 
-    void advance(std::chrono::seconds s) { now += s; }
+    void advance(std::chrono::seconds s)
+    {
+        now += s;
+    }
 };
 
 struct Recorder
@@ -33,14 +38,16 @@ struct Recorder
 
     std::function<void(State)> sink()
     {
-        return [this](State s) { seen.push_back(s); };
+        return [this](State s)
+        {
+            seen.push_back(s);
+        };
     }
 };
 
 } // namespace
 
-TEST_CASE("PresenceTracker: starts Offline and only transitions after sync",
-          "[presence][tracker]")
+TEST_CASE("PresenceTracker: starts Offline and only transitions after sync", "[presence][tracker]")
 {
     FakeClock clk;
     PresenceTracker t{clk.provider()};
@@ -55,8 +62,7 @@ TEST_CASE("PresenceTracker: starts Offline and only transitions after sync",
     REQUIRE(rec.seen.empty());
 }
 
-TEST_CASE("PresenceTracker: notify_sync_started fires Online exactly once",
-          "[presence][tracker]")
+TEST_CASE("PresenceTracker: notify_sync_started fires Online exactly once", "[presence][tracker]")
 {
     FakeClock clk;
     PresenceTracker t{clk.provider()};
@@ -72,8 +78,7 @@ TEST_CASE("PresenceTracker: notify_sync_started fires Online exactly once",
     REQUIRE(rec.seen == std::vector<State>{State::Online});
 }
 
-TEST_CASE("PresenceTracker: idle decay only after window becomes inactive",
-          "[presence][tracker]")
+TEST_CASE("PresenceTracker: idle decay only after window becomes inactive", "[presence][tracker]")
 {
     FakeClock clk;
     PresenceTracker t{clk.provider()};
@@ -108,8 +113,7 @@ TEST_CASE("PresenceTracker: idle decay only after window becomes inactive",
     REQUIRE(rec.seen.back() == State::Unavailable);
 }
 
-TEST_CASE("PresenceTracker: input restores Online from Unavailable",
-          "[presence][tracker]")
+TEST_CASE("PresenceTracker: input restores Online from Unavailable", "[presence][tracker]")
 {
     FakeClock clk;
     PresenceTracker t{clk.provider()};
@@ -125,12 +129,10 @@ TEST_CASE("PresenceTracker: input restores Online from Unavailable",
     // Keyboard / pointer input flips us back to Online.
     t.notify_input();
     REQUIRE(t.current() == State::Online);
-    REQUIRE(rec.seen ==
-            std::vector<State>{State::Online, State::Unavailable, State::Online});
+    REQUIRE(rec.seen == std::vector<State>{State::Online, State::Unavailable, State::Online});
 }
 
-TEST_CASE("PresenceTracker: window activation forces Online",
-          "[presence][tracker]")
+TEST_CASE("PresenceTracker: window activation forces Online", "[presence][tracker]")
 {
     FakeClock clk;
     PresenceTracker t{clk.provider()};
@@ -147,8 +149,7 @@ TEST_CASE("PresenceTracker: window activation forces Online",
     REQUIRE(t.current() == State::Online);
 }
 
-TEST_CASE("PresenceTracker: notify_logout forces Offline from any state",
-          "[presence][tracker]")
+TEST_CASE("PresenceTracker: notify_logout forces Offline from any state", "[presence][tracker]")
 {
     FakeClock clk;
     PresenceTracker t{clk.provider()};
@@ -166,8 +167,7 @@ TEST_CASE("PresenceTracker: notify_logout forces Offline from any state",
     REQUIRE(t.current() == State::Offline);
 }
 
-TEST_CASE("PresenceTracker: identical transitions never re-fire",
-          "[presence][tracker]")
+TEST_CASE("PresenceTracker: identical transitions never re-fire", "[presence][tracker]")
 {
     FakeClock clk;
     PresenceTracker t{clk.provider()};
@@ -182,8 +182,7 @@ TEST_CASE("PresenceTracker: identical transitions never re-fire",
     REQUIRE(rec.seen == std::vector<State>{State::Online});
 }
 
-TEST_CASE("PresenceTracker: input during inactive window does not decay",
-          "[presence][tracker]")
+TEST_CASE("PresenceTracker: input during inactive window does not decay", "[presence][tracker]")
 {
     // Regression: keyboard input through an accessibility tool while the
     // window doesn't have focus should still keep us Online — we don't

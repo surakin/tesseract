@@ -6,31 +6,30 @@
 using tesseract::views::MessageRowData;
 using tesseract::views::make_row_data;
 
-TEST_CASE("GalleryEvent produces Kind::Gallery row with per-item fields",
-          "[message_list][gallery]")
+TEST_CASE("GalleryEvent produces Kind::Gallery row with per-item fields", "[message_list][gallery]")
 {
     tesseract::GalleryEvent ev;
-    ev.event_id    = "$gal:server";
-    ev.sender      = "@alice:server";
+    ev.event_id = "$gal:server";
+    ev.sender = "@alice:server";
     ev.sender_name = "Alice";
-    ev.body        = "vacation pics";
-    ev.timestamp   = 1700000042000ULL;
+    ev.body = "vacation pics";
+    ev.timestamp = 1700000042000ULL;
 
     tesseract::GalleryItem img;
-    img.kind   = tesseract::GalleryItem::Kind::Image;
-    img.body   = "beach.jpg";
+    img.kind = tesseract::GalleryItem::Kind::Image;
+    img.body = "beach.jpg";
     img.source = tesseract::MediaSource::plain("mxc://example.org/img1");
-    img.width  = 800;
+    img.width = 800;
     img.height = 600;
     img.blurhash = "LEHV6nWB2yk8";
     img.animated = true;
     ev.items.push_back(img);
 
     tesseract::GalleryItem file;
-    file.kind      = tesseract::GalleryItem::Kind::File;
-    file.body      = "report.pdf";
-    file.source    = tesseract::MediaSource::plain("mxc://example.org/file1");
-    file.filename  = "report.pdf";
+    file.kind = tesseract::GalleryItem::Kind::File;
+    file.body = "report.pdf";
+    file.source = tesseract::MediaSource::plain("mxc://example.org/file1");
+    file.filename = "report.pdf";
     file.file_size = 4096;
     ev.items.push_back(file);
 
@@ -72,18 +71,17 @@ TEST_CASE("Non-gallery events leave gallery_items empty", "[message_list][galler
     CHECK(row.gallery_items.empty());
 }
 
-TEST_CASE("Gallery rows cap incoming items but keep the uncapped total",
-          "[message_list][gallery]")
+TEST_CASE("Gallery rows cap incoming items but keep the uncapped total", "[message_list][gallery]")
 {
     tesseract::GalleryEvent ev;
     ev.event_id = "$big:server";
-    ev.sender   = "@mallory:server";
+    ev.sender = "@mallory:server";
     const std::size_t n = MessageRowData::kMaxGalleryViewerItems * 5;
     for (std::size_t i = 0; i < n; ++i)
     {
         tesseract::GalleryItem it;
-        it.kind   = tesseract::GalleryItem::Kind::Image;
-        it.body   = "i" + std::to_string(i);
+        it.kind = tesseract::GalleryItem::Kind::Image;
+        it.body = "i" + std::to_string(i);
         it.source = tesseract::MediaSource::plain("mxc://example.org/" + std::to_string(i));
         ev.items.push_back(std::move(it));
     }
@@ -100,15 +98,14 @@ TEST_CASE("Gallery rows cap incoming items but keep the uncapped total",
           "i" + std::to_string(MessageRowData::kMaxGalleryViewerItems - 1));
 }
 
-TEST_CASE("Gallery at or under the cap is not truncated",
-          "[message_list][gallery]")
+TEST_CASE("Gallery at or under the cap is not truncated", "[message_list][gallery]")
 {
     tesseract::GalleryEvent ev;
     ev.event_id = "$ok:server";
     for (std::size_t i = 0; i < MessageRowData::kMaxGalleryItems; ++i)
     {
         tesseract::GalleryItem it;
-        it.kind   = tesseract::GalleryItem::Kind::File;
+        it.kind = tesseract::GalleryItem::Kind::File;
         it.source = tesseract::MediaSource::plain("mxc://example.org/f");
         ev.items.push_back(std::move(it));
     }

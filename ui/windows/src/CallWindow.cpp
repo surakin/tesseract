@@ -17,47 +17,46 @@ bool CallWindow::class_registered_ = false;
 // ---------------------------------------------------------------------------
 
 CallWindow::CallWindow(MainWindow* parent_shell)
-    : tesseract::CallWindowBase(parent_shell)
-    , parent_shell_(parent_shell)
+    : tesseract::CallWindowBase(parent_shell), parent_shell_(parent_shell)
 {
     HINSTANCE hInst = GetModuleHandleW(nullptr);
 
     if (!class_registered_)
     {
         WNDCLASSEXW wc{};
-        wc.cbSize        = sizeof(wc);
-        wc.style         = CS_HREDRAW | CS_VREDRAW;
-        wc.lpfnWndProc   = wnd_proc_;
-        wc.hInstance     = hInst;
-        wc.hCursor       = LoadCursorW(nullptr, IDC_ARROW);
+        wc.cbSize = sizeof(wc);
+        wc.style = CS_HREDRAW | CS_VREDRAW;
+        wc.lpfnWndProc = wnd_proc_;
+        wc.hInstance = hInst;
+        wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
         wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
         wc.lpszClassName = kClassName;
-        wc.hIcon = static_cast<HICON>(
-            LoadImageW(hInst, MAKEINTRESOURCEW(IDI_TESSERACT), IMAGE_ICON,
-                       GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON),
-                       LR_DEFAULTCOLOR | LR_SHARED));
-        wc.hIconSm = static_cast<HICON>(
-            LoadImageW(hInst, MAKEINTRESOURCEW(IDI_TESSERACT), IMAGE_ICON,
-                       GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON),
-                       LR_DEFAULTCOLOR | LR_SHARED));
+        wc.hIcon = static_cast<HICON>(LoadImageW(
+            hInst, MAKEINTRESOURCEW(IDI_TESSERACT), IMAGE_ICON, GetSystemMetrics(SM_CXICON),
+            GetSystemMetrics(SM_CYICON), LR_DEFAULTCOLOR | LR_SHARED));
+        wc.hIconSm = static_cast<HICON>(LoadImageW(
+            hInst, MAKEINTRESOURCEW(IDI_TESSERACT), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON),
+            GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR | LR_SHARED));
         if (!wc.hIcon)
+        {
             wc.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
+        }
         if (!wc.hIconSm)
+        {
             wc.hIconSm = wc.hIcon;
+        }
         RegisterClassExW(&wc);
         class_registered_ = true;
     }
 
-    hwnd_ = CreateWindowExW(
-        0, kClassName,
-        tk::win32::utf8_to_wide(tk::tr("Call")).c_str(),
-        WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT,
-        640, 480,
-        nullptr, nullptr, hInst, this);
+    hwnd_ = CreateWindowExW(0, kClassName, tk::win32::utf8_to_wide(tk::tr("Call")).c_str(),
+                            WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 640, 480, nullptr,
+                            nullptr, hInst, this);
 
     if (!hwnd_)
+    {
         return;
+    }
 
     surface_ = std::make_unique<tk::win32::Surface>(hInst, hwnd_, tk::Theme::light());
 
@@ -67,18 +66,38 @@ CallWindow::CallWindow(MainWindow* parent_shell)
 
     auto update_taskbar = [this]
     {
-        if (!parent_shell_ || !call_overlay_widget_ || !hwnd_) return;
+        if (!parent_shell_ || !call_overlay_widget_ || !hwnd_)
+        {
+            return;
+        }
         const auto state = call_overlay_widget_->snapshot();
-        parent_shell_->taskbar().set_call_state(
-            hwnd_, state.audio_muted, state.video_muted,
-            state.show_video_button);
+        parent_shell_->taskbar().set_call_state(hwnd_, state.audio_muted, state.video_muted,
+                                                state.show_video_button);
     };
     call_overlay_widget_->on_controls_changed = update_taskbar;
     parent_shell_->taskbar().register_call_window(
         hwnd_,
-        [this] { if (call_overlay_widget_) call_overlay_widget_->toggle_audio(); },
-        [this] { if (call_overlay_widget_) call_overlay_widget_->toggle_video(); },
-        [this] { if (call_overlay_widget_) call_overlay_widget_->hang_up(); });
+        [this]
+        {
+            if (call_overlay_widget_)
+            {
+                call_overlay_widget_->toggle_audio();
+            }
+        },
+        [this]
+        {
+            if (call_overlay_widget_)
+            {
+                call_overlay_widget_->toggle_video();
+            }
+        },
+        [this]
+        {
+            if (call_overlay_widget_)
+            {
+                call_overlay_widget_->hang_up();
+            }
+        });
     update_taskbar();
 
     ShowWindow(hwnd_, SW_SHOW);
@@ -87,7 +106,9 @@ CallWindow::CallWindow(MainWindow* parent_shell)
 CallWindow::~CallWindow()
 {
     if (hwnd_)
+    {
         DestroyWindow(hwnd_);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -97,7 +118,9 @@ void CallWindow::bring_to_front()
     if (hwnd_)
     {
         if (IsIconic(hwnd_))
+        {
             ShowWindow(hwnd_, SW_RESTORE);
+        }
         SetForegroundWindow(hwnd_);
     }
 }
@@ -105,7 +128,9 @@ void CallWindow::bring_to_front()
 void CallWindow::close_window()
 {
     if (hwnd_)
+    {
         DestroyWindow(hwnd_);
+    }
 }
 
 void CallWindow::apply_theme(const tk::Theme& t)
@@ -120,27 +145,32 @@ void CallWindow::apply_theme(const tk::Theme& t)
 void CallWindow::apply_scale_change(float scale)
 {
     if (surface_)
+    {
         surface_->apply_scale_change(scale);
+    }
 }
 
 void CallWindow::request_relayout()
 {
     if (surface_)
+    {
         surface_->relayout();
+    }
 }
 
 void CallWindow::request_repaint()
 {
     if (surface_)
+    {
         surface_->host().request_repaint();
+    }
 }
 
 // ---------------------------------------------------------------------------
 // Window procedure
 
 // static
-LRESULT CALLBACK CallWindow::wnd_proc_(HWND hwnd, UINT msg, WPARAM wParam,
-                                        LPARAM lParam)
+LRESULT CALLBACK CallWindow::wnd_proc_(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     if (msg == WM_GETMINMAXINFO)
     {
@@ -149,10 +179,10 @@ LRESULT CALLBACK CallWindow::wnd_proc_(HWND hwnd, UINT msg, WPARAM wParam,
         auto* mmi = reinterpret_cast<MINMAXINFO*>(lParam);
         const UINT dpi = GetDpiForWindow(hwnd);
         const float scale = dpi > 0 ? static_cast<float>(dpi) / 96.f : 1.f;
-        mmi->ptMinTrackSize.x = static_cast<LONG>(
-            std::round(tesseract::visual::kMinCallWindowWidth * scale));
-        mmi->ptMinTrackSize.y = static_cast<LONG>(
-            std::round(tesseract::visual::kMinCallWindowHeight * scale));
+        mmi->ptMinTrackSize.x =
+            static_cast<LONG>(std::round(tesseract::visual::kMinCallWindowWidth * scale));
+        mmi->ptMinTrackSize.y =
+            static_cast<LONG>(std::round(tesseract::visual::kMinCallWindowHeight * scale));
         return 0;
     }
 
@@ -160,7 +190,7 @@ LRESULT CALLBACK CallWindow::wnd_proc_(HWND hwnd, UINT msg, WPARAM wParam,
     if (msg == WM_NCCREATE)
     {
         auto* cs = reinterpret_cast<CREATESTRUCTW*>(lParam);
-        self     = static_cast<CallWindow*>(cs->lpCreateParams);
+        self = static_cast<CallWindow*>(cs->lpCreateParams);
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
     }
     else
@@ -168,14 +198,15 @@ LRESULT CALLBACK CallWindow::wnd_proc_(HWND hwnd, UINT msg, WPARAM wParam,
         self = reinterpret_cast<CallWindow*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
     }
     if (!self)
+    {
         return DefWindowProcW(hwnd, msg, wParam, lParam);
+    }
     return self->handle_msg_(hwnd, msg, wParam, lParam);
 }
 
 LRESULT CallWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-    if (parent_shell_ &&
-        msg == parent_shell_->taskbar().taskbar_button_created_message())
+    if (parent_shell_ && msg == parent_shell_->taskbar().taskbar_button_created_message())
     {
         parent_shell_->taskbar().on_taskbar_button_created(hwnd);
         return 0;
@@ -183,9 +214,10 @@ LRESULT CallWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
     switch (msg)
     {
     case WM_COMMAND:
-        if (parent_shell_ &&
-            parent_shell_->taskbar().handle_thumbnail_command(hwnd, wParam))
+        if (parent_shell_ && parent_shell_->taskbar().handle_thumbnail_command(hwnd, wParam))
+        {
             return 0;
+        }
         break;
 
     case WM_DPICHANGED:
@@ -199,8 +231,7 @@ LRESULT CallWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         // change at all.
         theme::on_dpi_changed();
         const RECT* rc = reinterpret_cast<const RECT*>(lParam);
-        SetWindowPos(hwnd, nullptr, rc->left, rc->top,
-                     rc->right - rc->left, rc->bottom - rc->top,
+        SetWindowPos(hwnd, nullptr, rc->left, rc->top, rc->right - rc->left, rc->bottom - rc->top,
                      SWP_NOZORDER | SWP_NOACTIVATE);
         apply_scale_change(static_cast<float>(LOWORD(wParam)) / 96.0f);
         return 0;
@@ -220,11 +251,12 @@ LRESULT CallWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                 // a second time on every tick of a live resize drag.
                 RECT before{};
                 GetClientRect(sh, &before);
-                const bool needs_relayout =
-                    before.right == rc.right && before.bottom == rc.bottom;
-                SetWindowPos(sh, nullptr, 0, 0, rc.right, rc.bottom,
-                             SWP_NOZORDER | SWP_NOACTIVATE);
-                if (needs_relayout) surface_->relayout();
+                const bool needs_relayout = before.right == rc.right && before.bottom == rc.bottom;
+                SetWindowPos(sh, nullptr, 0, 0, rc.right, rc.bottom, SWP_NOZORDER | SWP_NOACTIVATE);
+                if (needs_relayout)
+                {
+                    surface_->relayout();
+                }
             }
         }
         return 0;
@@ -245,10 +277,15 @@ LRESULT CallWindow::handle_msg_(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
         return 0;
 
     case WM_DESTROY:
-        if (parent_shell_) parent_shell_->taskbar().unregister_window(hwnd);
+        if (parent_shell_)
+        {
+            parent_shell_->taskbar().unregister_window(hwnd);
+        }
         hwnd_ = nullptr;
         if (on_window_closed)
+        {
             on_window_closed();
+        }
         return 0;
 
     default:

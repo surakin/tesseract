@@ -44,7 +44,9 @@ pub(super) fn write_zip(
 
     let mut buf = [0u8; 64 * 1024];
     for (i, entry) in entries.iter().enumerate() {
-        writer.start_file(&entry.archive_path, options).map_err(zip_err)?;
+        writer
+            .start_file(&entry.archive_path, options)
+            .map_err(zip_err)?;
         let mut src = BufReader::new(File::open(&entry.source)?);
         loop {
             let n = src.read(&mut buf)?;
@@ -68,8 +70,12 @@ mod tests {
     fn unique_test_dir(name: &str) -> PathBuf {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let dir = std::env::temp_dir()
-            .join(format!("tesseract_history_export_ziptest_{}_{}_{}", std::process::id(), name, n));
+        let dir = std::env::temp_dir().join(format!(
+            "tesseract_history_export_ziptest_{}_{}_{}",
+            std::process::id(),
+            name,
+            n
+        ));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
@@ -87,8 +93,14 @@ mod tests {
         write_zip(
             &out,
             &[
-                ZipEntry { source: doc.clone(), archive_path: "history.html".to_string() },
-                ZipEntry { source: img.clone(), archive_path: "media/photo.jpg".to_string() },
+                ZipEntry {
+                    source: doc.clone(),
+                    archive_path: "history.html".to_string(),
+                },
+                ZipEntry {
+                    source: img.clone(),
+                    archive_path: "media/photo.jpg".to_string(),
+                },
             ],
             |_| {},
         )
@@ -98,11 +110,19 @@ mod tests {
         assert_eq!(archive.len(), 2);
 
         let mut doc_out = String::new();
-        archive.by_name("history.html").unwrap().read_to_string(&mut doc_out).unwrap();
+        archive
+            .by_name("history.html")
+            .unwrap()
+            .read_to_string(&mut doc_out)
+            .unwrap();
         assert_eq!(doc_out, "<html>hello</html>");
 
         let mut img_out = Vec::new();
-        archive.by_name("media/photo.jpg").unwrap().read_to_end(&mut img_out).unwrap();
+        archive
+            .by_name("media/photo.jpg")
+            .unwrap()
+            .read_to_end(&mut img_out)
+            .unwrap();
         assert_eq!(img_out, b"not really a jpeg");
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -130,7 +150,10 @@ mod tests {
         let entries: Vec<ZipEntry> = sources
             .iter()
             .enumerate()
-            .map(|(i, p)| ZipEntry { source: p.clone(), archive_path: format!("f{i}.bin") })
+            .map(|(i, p)| ZipEntry {
+                source: p.clone(),
+                archive_path: format!("f{i}.bin"),
+            })
             .collect();
 
         let out = dir.join("progress.zip");
@@ -146,7 +169,10 @@ mod tests {
         let out = dir.join("out.zip");
         let result = write_zip(
             &out,
-            &[ZipEntry { source: dir.join("does_not_exist.bin"), archive_path: "x.bin".to_string() }],
+            &[ZipEntry {
+                source: dir.join("does_not_exist.bin"),
+                archive_path: "x.bin".to_string(),
+            }],
             |_| {},
         );
         assert!(result.is_err());

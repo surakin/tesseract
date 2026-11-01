@@ -10,12 +10,11 @@
 // palette in a future pass.
 static constexpr tk::Color kRingColor = tk::Color::rgb(0xA0A0A6);
 
-static constexpr float kDotR     = tk::kInflightDotR;
-static constexpr float kOrbitR   = tk::kInflightOrbitR;
+static constexpr float kDotR = tk::kInflightDotR;
+static constexpr float kOrbitR = tk::kInflightOrbitR;
 static constexpr float kRingDotR = tk::kInflightRingDotR;
 
-InflightDotWidget::InflightDotWidget(QWidget* parent)
-    : QWidget(parent)
+InflightDotWidget::InflightDotWidget(QWidget* parent) : QWidget(parent)
 {
     setAttribute(Qt::WA_OpaquePaintEvent, false);
     setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
@@ -23,7 +22,7 @@ InflightDotWidget::InflightDotWidget(QWidget* parent)
 
 void InflightDotWidget::update_state(uint32_t count, tk::Color dot_color)
 {
-    count_     = count;
+    count_ = count;
     dot_color_ = dot_color;
     update();
 }
@@ -41,9 +40,7 @@ void InflightDotWidget::paintEvent(QPaintEvent*)
 
     const tk::Point center{width() / 2.0f, height() / 2.0f};
 
-    tk::draw_inflight_indicator(*cv, center,
-                                kDotR, kOrbitR, kRingDotR,
-                                dot_color_, kRingColor,
+    tk::draw_inflight_indicator(*cv, center, kDotR, kOrbitR, kRingDotR, dot_color_, kRingColor,
                                 phase_, count_ >= 2);
 }
 

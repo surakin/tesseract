@@ -22,9 +22,13 @@ inline std::string trim(std::string_view s)
 inline bool name_matches(const std::string& name, const std::string& query)
 {
     if (query.empty())
+    {
         return true;
+    }
     if (name.size() < query.size())
+    {
         return false;
+    }
     auto to_lower = [](char c)
     {
         return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
@@ -41,7 +45,9 @@ inline bool name_matches(const std::string& name, const std::string& query)
             }
         }
         if (match)
+        {
             return true;
+        }
     }
     return false;
 }

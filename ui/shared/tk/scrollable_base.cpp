@@ -41,8 +41,7 @@ ScrollableBase::ThumbGeom ScrollableBase::thumb_geom() const
     g.track_h = bounds_.h - kScrollbarInset * 2;
     g.thumb_h = std::max(kScrollbarMinLen, g.track_h * (bounds_.h / total));
     g.thumb_top =
-        g.track_top + (g.track_h - g.thumb_h) *
-                          (scroll_y_ / std::max(1.0f, total - bounds_.h));
+        g.track_top + (g.track_h - g.thumb_h) * (scroll_y_ / std::max(1.0f, total - bounds_.h));
     return g;
 }
 
@@ -72,13 +71,11 @@ void ScrollableBase::paint_scrollbar(PaintCtx& ctx) const
     if (total > bounds_.h && bounds_.h > 0)
     {
         float track_h = bounds_.h - kScrollbarInset * 2;
-        float thumb_h =
-            std::max(kScrollbarMinLen, track_h * (bounds_.h / total));
+        float thumb_h = std::max(kScrollbarMinLen, track_h * (bounds_.h / total));
         float thumb_y = bounds_.y + kScrollbarInset +
-                        (track_h - thumb_h) *
-                            (scroll_y_ / std::max(1.0f, total - bounds_.h));
-        Rect thumb{bounds_.x + bounds_.w - kScrollbarWidth - kScrollbarInset,
-                   thumb_y, kScrollbarWidth, thumb_h};
+                        (track_h - thumb_h) * (scroll_y_ / std::max(1.0f, total - bounds_.h));
+        Rect thumb{bounds_.x + bounds_.w - kScrollbarWidth - kScrollbarInset, thumb_y,
+                   kScrollbarWidth, thumb_h};
         Color c = ctx.theme.palette.text_muted.with_alpha(128);
         ctx.canvas.fill_rounded_rect(thumb, kScrollbarRadius, c);
     }
@@ -173,10 +170,14 @@ bool ScrollableBase::scrollbar_on_pointer_up()
 bool ScrollableBase::scroll_by_key(const KeyEvent& e)
 {
     if (e.ctrl || e.alt || e.meta)
+    {
         return false;
+    }
     const float total = content_height();
     if (total <= bounds_.h || bounds_.h <= 0.0f)
+    {
         return false;
+    }
     // Keep ~one line of the previous page visible so the reader doesn't
     // lose their place.
     constexpr float kPageOverlap = 40.0f;
@@ -184,15 +185,26 @@ bool ScrollableBase::scroll_by_key(const KeyEvent& e)
     float dy = 0.0f;
     switch (e.key)
     {
-    case Key::PageUp: dy = -page; break;
-    case Key::PageDown: dy = page; break;
-    case Key::Home: dy = -(total + bounds_.h); break;
-    case Key::End: dy = total + bounds_.h; break;
-    default: return false;
+    case Key::PageUp:
+        dy = -page;
+        break;
+    case Key::PageDown:
+        dy = page;
+        break;
+    case Key::Home:
+        dy = -(total + bounds_.h);
+        break;
+    case Key::End:
+        dy = total + bounds_.h;
+        break;
+    default:
+        return false;
     }
     on_wheel({bounds_.w * 0.5f, bounds_.h * 0.5f}, 0.0f, dy, false);
     if (auto* h = host())
+    {
         h->request_repaint();
+    }
     return true;
 }
 
@@ -212,8 +224,12 @@ void ScrollableBase::scroll_into_view(Rect world_rect)
     // arrange() time (RoomInfoPanelBody, SettingsPage, ...); re-arrange so a
     // Tab-driven scroll actually moves the focused child into view.
     if (scroll_y_ != prev)
+    {
         if (auto* h = host())
+        {
             h->mark_needs_relayout();
+        }
+    }
 }
 
 } // namespace tk

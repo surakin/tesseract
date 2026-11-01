@@ -12,6 +12,8 @@ jobs:
   windows:
     name: Windows (NSIS + Store MSIX)
     runs-on: windows-latest
+    # Holds CERTUM_EMAIL / CERTUM_OTP (and any required-reviewer gate).
+    environment: signing
     permissions:
       contents: read
       actions: write
@@ -26,7 +28,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> build/windows-release/cargo/build
-          cache-on-failure: true
 
       # resvg-py 0.3.2 only ships wheels up to cp312, so pin Python 3.12.
       # The id lets us hand the exact interpreter to CMake below — otherwise
@@ -96,34 +97,32 @@ jobs:
           "OPUS_INCLUDE_DIR=$inc" >> $env:GITHUB_ENV
           "OPUS_STATIC=1" >> $env:GITHUB_ENV
 
-      # Signing is optional — an empty secret produces an unsigned .exe,
-      # for both ad-hoc workflow_dispatch runs and tag pushes; nothing in
-      # this job currently enforces it either way.
-      # The `secrets` context can't be read directly in an `if:` (GitHub
-      # rejects it at static validation time), so a separate step checks
-      # presence here and the next step's `if:` reads that step's output
-      # instead — this also keeps the secret's env exposure scoped to only
-      # the two steps that actually touch it, not the whole job.
-      - name: Check for signing certificate secret
-        id: sign_check
+      # Release builds are always signed with the Certum SimplySign cloud
+      # certificate via ssign (https://github.com/Le-Syl21/ssign): plain HTTPS
+      # to Certum, no PFX or SimplySign Desktop. Missing secrets abort here,
+      # before the long build. The `secrets` context can't be read in an
+      # `if:`, so presence is checked via env.
+      - name: Check Certum signing secrets
+        shell: pwsh
         env:
-          TESSERACT_WIN_SIGN_PFX_BASE64: ${{ secrets.TESSERACT_WIN_SIGN_PFX_BASE64 }}
+          CERTUM_EMAIL: ${{ secrets.CERTUM_EMAIL }}
+          CERTUM_OTP: ${{ secrets.CERTUM_OTP }}
         run: |
-          $present = $env:TESSERACT_WIN_SIGN_PFX_BASE64 -ne ''
-          "present=$present" >> $env:GITHUB_OUTPUT
+          if (-not $env:CERTUM_EMAIL -or -not $env:CERTUM_OTP) {
+            Write-Output "::error::CERTUM_EMAIL / CERTUM_OTP are missing from the 'signing' environment"
+            exit 1
+          }
 
-      # The decoded .pfx is written under RUNNER_TEMP so it never lands in
-      # the repo checkout, and is only ever referenced by path/GITHUB_OUTPUT.
-      - name: Decode signing certificate (optional)
-        id: sign
-        if: steps.sign_check.outputs.present == 'True'
-        env:
-          TESSERACT_WIN_SIGN_PFX_BASE64: ${{ secrets.TESSERACT_WIN_SIGN_PFX_BASE64 }}
-        run: |
-          $bytes = [Convert]::FromBase64String($env:TESSERACT_WIN_SIGN_PFX_BASE64)
-          $path = "$env:RUNNER_TEMP\tesseract-sign.pfx"
-          [IO.File]::WriteAllBytes($path, $bytes)
-          "cert_path=$path" >> $env:GITHUB_OUTPUT
+      - name: Cache ssign
+        id: ssign_cache
+        uses: actions/cache@v4
+        with:
+          path: ~\.cargo\bin\ssign.exe
+          key: ssign-0.1.8-${{ runner.os }}
+
+      - name: Install ssign
+        if: steps.ssign_cache.outputs.cache-hit != 'true'
+        run: cargo install --locked ssign --version 0.1.8
 
       # cmake, ninja, Go, and Strawberry Perl are pre-installed on
       # windows-latest; Go and Perl satisfy the aws-lc-sys CMake builder.
@@ -131,34 +130,56 @@ jobs:
         # Force CMake to use the same Python interpreter we installed
         # resvg-py into; otherwise FindPython3 picks the newest version
         # available on the runner (3.14) regardless of PATH.
-        # TESSERACT_WIN_SIGN_CERT/_PASS (when the secret above was present)
-        # signs the NSIS .exe at build time.
         # The TESSERACT_MSIX_* repo variables (not secret — they're baked
         # into every shipped AppxManifest.xml anyway) give the Store MSIX its
         # Partner Center identity. The same exe keeps TESSERACT_GITHUB_REPO:
         # a packaged install turns the update check off at runtime.
-        env:
-          TESSERACT_WIN_SIGN_PASS: ${{ secrets.TESSERACT_WIN_SIGN_PFX_PASSWORD }}
         run: |
-          $signArgs = @()
-          if ("${{ steps.sign.outputs.cert_path }}" -ne "") {
-            $signArgs += "-DTESSERACT_WIN_SIGN_CERT=${{ steps.sign.outputs.cert_path }}"
-            $signArgs += "-DTESSERACT_WIN_SIGN_PASS=$env:TESSERACT_WIN_SIGN_PASS"
-          }
           cmake --preset windows-release `
             "-DPython3_EXECUTABLE=${{ steps.python.outputs.python-path }}" `
             -DTESSERACT_BUILD_TESTS=OFF `
             "-DTESSERACT_GITHUB_REPO=${{ github.repository }}" `
             "-DTESSERACT_MSIX_STORE_IDENTITY_NAME=${{ vars.TESSERACT_MSIX_STORE_IDENTITY_NAME }}" `
             "-DTESSERACT_MSIX_STORE_PUBLISHER=${{ vars.TESSERACT_MSIX_STORE_PUBLISHER }}" `
-            "-DTESSERACT_MSIX_PUBLISHER_DISPLAY_NAME=${{ vars.TESSERACT_MSIX_PUBLISHER_DISPLAY_NAME }}" `
-            @signArgs
+            "-DTESSERACT_MSIX_PUBLISHER_DISPLAY_NAME=${{ vars.TESSERACT_MSIX_PUBLISHER_DISPLAY_NAME }}"
 
       - name: Build
         run: cmake --build build/windows-release
 
+      # Signed in place before packaging so CPack (and the MSIX stage below)
+      # pick up the signed exe. The OTP seed goes via env only, never -O.
+      - name: Sign Tesseract.exe
+        env:
+          CERTUM_EMAIL: ${{ secrets.CERTUM_EMAIL }}
+          CERTUM_OTP: ${{ secrets.CERTUM_OTP }}
+        run: ssign build/windows-release/ui/windows/Tesseract.exe
+
       - name: Package (CPack → NSIS)
         run: cmake --build build/windows-release --target package
+
+      - name: Sign installer
+        shell: pwsh
+        env:
+          CERTUM_EMAIL: ${{ secrets.CERTUM_EMAIL }}
+          CERTUM_OTP: ${{ secrets.CERTUM_OTP }}
+        run: |
+          $installers = @(Get-ChildItem build/windows-release/Tesseract-*.exe)
+          if ($installers.Count -eq 0) { throw "no installer found to sign" }
+          ssign $installers.FullName
+          if ($LASTEXITCODE -ne 0) { throw "ssign failed" }
+
+      - name: Verify signatures
+        shell: pwsh
+        run: |
+          $files = @(Get-Item build/windows-release/ui/windows/Tesseract.exe) +
+                   @(Get-ChildItem build/windows-release/Tesseract-*.exe)
+          $bad = $false
+          foreach ($f in $files) {
+            $sig = Get-AuthenticodeSignature $f.FullName
+            Write-Output "$($f.Name): $($sig.Status) | $($sig.SignerCertificate.Subject) | timestamp: $($sig.TimeStamperCertificate.Subject)"
+            if ($sig.Status -ne 'Valid') { $bad = $true }
+          }
+          if ($bad) { throw "signature verification failed" }
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
@@ -275,8 +296,8 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> build/macos-appkit-arm64-release/cargo/build
-          key: xcode-26.4.1
-          cache-on-failure: true
+          # Same key as prime-rust-cache.yml, which seeds this cache nightly.
+          shared-key: macos-arm64-xcode-26.4.1
 
       - name: Check for signing secrets
         id: sign_check
@@ -394,8 +415,9 @@ jobs:
         run: gh run cancel ${{ github.run_id }} --repo ${{ github.repository }}
 
   # ---------------------------------------------------------------------------
-  # macOS arm64 — Mac App Store .pkg (sandboxed; uploaded by publish-release.yml)
+  # macOS universal — Mac App Store .pkg (sandboxed; uploaded by publish-release.yml)
   #
+  # Secrets and variables live in the "appstore" environment.
   # Secrets: TESSERACT_MAC_APPSTORE_APP_CERT_P12 (Apple Distribution, base64
   # .p12), TESSERACT_MAC_APPSTORE_INSTALLER_CERT_P12 (3rd Party Mac Developer
   # Installer, base64 .p12), TESSERACT_MAC_APPSTORE_CERT_PASSWORD (password of
@@ -408,8 +430,10 @@ jobs:
   macos-appstore:
     # Disabled until the Mac App Store build is ready; remove this line to re-enable.
     if: false
-    name: macOS arm64 (Mac App Store pkg)
+    name: macOS universal (Mac App Store pkg)
     runs-on: macos-latest
+    # Holds the App Store certificates, profile and identity variables.
+    environment: appstore
     # Matches CMAKE_OSX_DEPLOYMENT_TARGET (root CMakeLists.txt); also read by
     # CMake, rustc and cc-built C dependencies.
     env:
@@ -442,40 +466,22 @@ jobs:
         if: steps.as_check.outputs.present == 'true'
         run: brew install go resvg autoconf automake libtool
 
-      # Homebrew's opus bottle targets the runner's own macOS; App Store
-      # validation rejects a dylib newer than LSMinimumSystemVersion.
-      - name: Build opus from source (arm64)
-        if: steps.as_check.outputs.present == 'true'
-        run: |
-          git clone --depth 1 --branch v1.5.2 https://github.com/xiph/opus.git opus-src
-          cmake -S opus-src -B opus-build -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_OSX_ARCHITECTURES=arm64 \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET" \
-            -DOPUS_BUILD_SHARED_LIBRARY=ON \
-            -DOPUS_BUILD_PROGRAMS=OFF \
-            -DOPUS_BUILD_TESTING=OFF
-          cmake --build opus-build
-          # Lay opus.pc where Corrosion's PKG_CONFIG_PATH (…/pkgconfig) will find it.
-          mkdir -p opus-build/pkgconfig
-          cp opus-build/opus.pc opus-build/pkgconfig/
-          echo "OPUS_LIB_DIR=$PWD/opus-build" >> $GITHUB_ENV
-          echo "OPUS_INCLUDE_DIR=$PWD/opus-src/include" >> $GITHUB_ENV
-
-      - name: Install Rust (stable, aarch64 target)
+      # libopus is built from source by CMake (cmake/MacUniversal.cmake): the
+      # Homebrew bottle targets the runner's own macOS and is single-arch.
+      - name: Install Rust (stable, aarch64 + x86_64 targets)
         if: steps.as_check.outputs.present == 'true'
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-darwin
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
           components: llvm-tools-preview
 
       - name: Cache Rust build artifacts
         if: steps.as_check.outputs.present == 'true'
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: . -> build/macos-appkit-arm64-appstore/cargo/build
-          key: xcode-26.4.1
-          cache-on-failure: true
+          workspaces: . -> build/macos-appkit-appstore/cargo/build
+          # Same key as prime-rust-cache.yml, which seeds this cache nightly.
+          shared-key: macos-appstore-xcode-26.4.1
 
       # Certificates go into a throwaway keychain; the profile is written
       # under RUNNER_TEMP so neither lands in the checkout.
@@ -506,11 +512,12 @@ jobs:
           echo "profile_path=$RUNNER_TEMP/tesseract.provisionprofile" >> "$GITHUB_OUTPUT"
 
       # CFBundleVersion = run number: App Store Connect rejects a repeated one.
-      - name: Configure (Mac App Store, arm64)
+      - name: Configure (Mac App Store, universal)
         if: steps.as_check.outputs.present == 'true'
         run: |
-          cmake --preset macos-appkit-arm64-appstore \
+          cmake --preset macos-appkit-appstore \
             "-DTESSERACT_GITHUB_REPO=${{ github.repository }}" \
+            -DTESSERACT_BUILD_TESTS=OFF \
             "-DTESSERACT_MAC_APPSTORE_APP_IDENTITY=${{ vars.TESSERACT_MAC_APPSTORE_APP_IDENTITY }}" \
             "-DTESSERACT_MAC_APPSTORE_INSTALLER_IDENTITY=${{ vars.TESSERACT_MAC_APPSTORE_INSTALLER_IDENTITY }}" \
             "-DTESSERACT_MAC_TEAM_ID=${{ vars.TESSERACT_MAC_TEAM_ID }}" \
@@ -519,18 +526,20 @@ jobs:
 
       - name: Build signed .pkg
         if: steps.as_check.outputs.present == 'true'
-        run: cmake --build build/macos-appkit-arm64-appstore --target appstore-pkg
+        run: cmake --build build/macos-appkit-appstore --target appstore-pkg
 
       - name: Check bundled libopus minimum macOS
         if: steps.as_check.outputs.present == 'true'
         run: |
-          for f in build/macos-appkit-arm64-appstore/ui/macos/Tesseract.app/Contents/Frameworks/libopus*.dylib; do
-            minos=$(vtool -show-build "$f" | awk '/minos/ {print $2; exit}')
-            echo "$f: minos $minos"
-            if [ "$(printf '%s\n%s\n' "$minos" "$MACOSX_DEPLOYMENT_TARGET" | sort -V | tail -n 1)" != "$MACOSX_DEPLOYMENT_TARGET" ]; then
-              echo "::error::$f needs macOS $minos, newer than the $MACOSX_DEPLOYMENT_TARGET deployment target"
-              exit 1
-            fi
+          for f in build/macos-appkit-appstore/ui/macos/Tesseract.app/Contents/Frameworks/libopus*.dylib; do
+            # A universal dylib prints one build record per slice; check each.
+            for minos in $(vtool -show-build "$f" | awk '/minos/ {print $2}'); do
+              echo "$f: minos $minos"
+              if [ "$(printf '%s\n%s\n' "$minos" "$MACOSX_DEPLOYMENT_TARGET" | sort -V | tail -n 1)" != "$MACOSX_DEPLOYMENT_TARGET" ]; then
+                echo "::error::$f needs macOS $minos, newer than the $MACOSX_DEPLOYMENT_TARGET deployment target"
+                exit 1
+              fi
+            done
           done
 
       - name: Upload App Store pkg artifact
@@ -538,7 +547,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: tesseract-macos-appstore
-          path: build/macos-appkit-arm64-appstore/Tesseract-*-appstore.pkg
+          path: build/macos-appkit-appstore/Tesseract-*-appstore.pkg
           if-no-files-found: error
           retention-days: 90
 
@@ -622,8 +631,8 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> build/macos-appkit-x86_64-release/cargo/build
-          key: xcode-26.4.1
-          cache-on-failure: true
+          # Same key as prime-rust-cache.yml, which seeds this cache nightly.
+          shared-key: macos-x86_64-xcode-26.4.1
 
       - name: Check for signing secrets
         id: sign_check
@@ -755,6 +764,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up clang (webrtc-sys needs clang 21 or later)
+        uses: ./.github/actions/setup-clang
+
       - name: Install build dependencies
         run: |
           sudo apt-get update -q
@@ -771,6 +783,7 @@ jobs:
             libxtst-dev \
             rpm \
             patchelf \
+            librsvg2-bin \
             gstreamer1.0-plugins-base \
             gstreamer1.0-plugins-good \
             gstreamer1.0-libav \
@@ -789,7 +802,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> build/linux-release/cargo/build
-          cache-on-failure: true
 
       - name: Configure (Release)
         run: cmake --preset linux-release -DTESSERACT_UI=qt6 "-DTESSERACT_GITHUB_REPO=${{ github.repository }}" -DTESSERACT_BUILD_TESTS=OFF
@@ -858,6 +870,14 @@ jobs:
           wget -q https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gstreamer/master/linuxdeploy-plugin-gstreamer.sh
           chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-qt-x86_64.AppImage linuxdeploy-plugin-gstreamer.sh
     
+      # The current appimagetool refuses an AppDir whose icon is only an SVG:
+      # it wants a PNG named after the desktop file's Icon= at the top level.
+      - name: Add a PNG icon for appimagetool
+        run: |
+          rsvg-convert -w 256 -h 256 \
+            AppDir/usr/share/icons/hicolor/scalable/apps/tesseract-matrix.svg \
+            -o AppDir/tesseract-matrix.png
+
       - name: Build AppImage
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
@@ -930,8 +950,15 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y flatpak flatpak-builder appstream desktop-file-utils
           flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-          flatpak install --user -y flathub \
-            org.kde.Platform//6.11 org.kde.Sdk//6.11
+          for attempt in 1 2 3 4 5; do
+            flatpak install --user -y flathub \
+              org.kde.Platform//6.11 org.kde.Sdk//6.11 \
+              org.freedesktop.Sdk.Extension.llvm21//25.08 && exit 0
+            echo "::warning::runtime install failed (attempt ${attempt}/5)"
+            sleep $((attempt * 20))
+          done
+          echo "::error::runtime install failed after 5 attempts"
+          exit 1
 
       # Regenerated from this tag's Cargo.lock rather than trusting the
       # tracked copy, which is only a "last known good, for local builds"
@@ -940,7 +967,8 @@ jobs:
       # floating master).
       - name: Regenerate cargo-sources.json from the tagged Cargo.lock
         run: |
-          curl -sL -o /tmp/flatpak-cargo-generator.py \
+          curl -sSfL --retry 5 --retry-all-errors --retry-delay 10 \
+            -o /tmp/flatpak-cargo-generator.py \
             https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/1fc32195e3e60fe5c97f0af646dec7a99df5962b/cargo/flatpak-cargo-generator.py
           pip install aiohttp tomlkit
           python3 /tmp/flatpak-cargo-generator.py Cargo.lock -o packaging/flatpak/cargo-sources.json
@@ -992,6 +1020,24 @@ jobs:
           key: flatpak-builder-${{ hashFiles('packaging/flatpak/io.github.surakin.Tesseract.yml.in', 'Cargo.lock') }}
           restore-keys: |
             flatpak-builder-
+
+      # Fetched on its own, with retries, so a transient crates.io/GitHub 5xx
+      # while downloading the ~700 sources doesn't fail the job (and, through
+      # the cancel step below, the whole release run). Downloads land in the
+      # cached .flatpak-builder/downloads, so a retry only refetches what is
+      # missing and the build below finds every source already there.
+      - name: Download sources (retried)
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if flatpak-builder --user --download-only build-dir \
+                 packaging/flatpak/io.github.surakin.Tesseract.yml; then
+              exit 0
+            fi
+            echo "::warning::source download failed (attempt ${attempt}/5)"
+            sleep $((attempt * 20))
+          done
+          echo "::error::source download failed after 5 attempts"
+          exit 1
 
       - name: Build (offline, signed)
         run: |

@@ -25,13 +25,16 @@ TEST_CASE("RoomInfoPanel: Media row is clickable when the panel sits right of x=
     host.set_root(panel_owner.get());
     RoomInfoPanel& panel = *panel_owner;
     tesseract::RoomInfo info;
-    info.id   = "!room:example.org";
+    info.id = "!room:example.org";
     info.name = "Room";
     panel.set_media_count(3);
     panel.open(info);
 
     int fired = 0;
-    panel.on_media_view_requested = [&](std::string) { ++fired; };
+    panel.on_media_view_requested = [&](std::string)
+    {
+        ++fired;
+    };
 
     const tk::Rect bounds{0, 0, 1000, 800};
     panel.measure(lc, {bounds.w, bounds.h});
@@ -66,13 +69,13 @@ struct MemberMenuStage
     {
         host.set_root(owner.get());
         tesseract::RoomInfo info;
-        info.id   = "!room:example.org";
+        info.id = "!room:example.org";
         info.name = "Room";
         panel.open(info);
         std::vector<tesseract::RoomMember> members(2);
-        members[0].user_id      = "@alice:example.org";
+        members[0].user_id = "@alice:example.org";
         members[0].display_name = "Alice";
-        members[1].user_id      = "@bob:example.org";
+        members[1].user_id = "@bob:example.org";
         members[1].display_name = "Bob";
         panel.set_members(std::move(members));
 
@@ -81,7 +84,10 @@ struct MemberMenuStage
         panel.arrange(lc, {0, 0, 1000, 800});
     }
 
-    tesseract::views::RoomInfoPanelBody& body() { return *panel.body_for_test(); }
+    tesseract::views::RoomInfoPanelBody& body()
+    {
+        return *panel.body_for_test();
+    }
 
     tk::Point row_center(int i)
     {
@@ -98,10 +104,12 @@ TEST_CASE("RoomInfoPanel: right-clicking a member opens profile/kick/ban menu",
 {
     MemberMenuStage st;
     std::vector<std::string> queried;
-    st.panel.set_member_actions_provider([&](const std::string& uid) {
-        queried.push_back(uid);
-        return RoomInfoPanel::MemberActions{true, false};
-    });
+    st.panel.set_member_actions_provider(
+        [&](const std::string& uid)
+        {
+            queried.push_back(uid);
+            return RoomInfoPanel::MemberActions{true, false};
+        });
 
     REQUIRE(st.body().on_right_click(st.row_center(1)));
     CHECK(queried == std::vector<std::string>{"@bob:example.org"});
@@ -124,14 +132,17 @@ TEST_CASE("RoomInfoPanel: member menu items fire the matching callbacks",
 {
     MemberMenuStage st;
     std::string profile_uid, kick_uid, kick_room, ban_uid;
-    st.panel.on_member_clicked = [&](std::string uid, std::string, std::string) {
+    st.panel.on_member_clicked = [&](std::string uid, std::string, std::string)
+    {
         profile_uid = std::move(uid);
     };
-    st.panel.on_kick_member = [&](std::string room, std::string uid, std::string) {
+    st.panel.on_kick_member = [&](std::string room, std::string uid, std::string)
+    {
         kick_room = std::move(room);
-        kick_uid  = std::move(uid);
+        kick_uid = std::move(uid);
     };
-    st.panel.on_ban_member = [&](std::string, std::string uid, std::string) {
+    st.panel.on_ban_member = [&](std::string, std::string uid, std::string)
+    {
         ban_uid = std::move(uid);
     };
 
@@ -170,10 +181,17 @@ TEST_CASE("ConfirmDialog: reason field hands its trimmed text to on_reason befor
 
     std::vector<std::string> order;
     tesseract::views::ConfirmDialog::Options opts;
-    opts.title        = "Kick Bob?";
+    opts.title = "Kick Bob?";
     opts.reason_field = true;
-    opts.on_reason    = [&](std::string r) { order.push_back("reason:" + r); };
-    dlg->open(std::move(opts), [&] { order.push_back("confirm"); });
+    opts.on_reason = [&](std::string r)
+    {
+        order.push_back("reason:" + r);
+    };
+    dlg->open(std::move(opts),
+              [&]
+              {
+                  order.push_back("confirm");
+              });
     CHECK(dlg->reason_field()->own_visible());
 
     auto surface = TestSurface::create(800, 600);
@@ -187,34 +205,39 @@ TEST_CASE("ConfirmDialog: reason field hands its trimmed text to on_reason befor
     CHECK_FALSE(dlg->is_open());
 }
 
-TEST_CASE("ConfirmDialog: reason field hidden and on_reason unused by default",
-          "[dialog][confirm]")
+TEST_CASE("ConfirmDialog: reason field hidden and on_reason unused by default", "[dialog][confirm]")
 {
     StubHost host;
     auto dlg = tk::create_root_widget<tesseract::views::ConfirmDialog>(&host);
     REQUIRE(dlg->reason_field());
     bool reason_fired = false;
     tesseract::views::ConfirmDialog::Options opts;
-    opts.title     = "Leave?";
-    opts.on_reason = [&](std::string) { reason_fired = true; };
+    opts.title = "Leave?";
+    opts.on_reason = [&](std::string)
+    {
+        reason_fired = true;
+    };
     bool confirmed = false;
-    dlg->open(std::move(opts), [&] { confirmed = true; });
+    dlg->open(std::move(opts),
+              [&]
+              {
+                  confirmed = true;
+              });
     CHECK_FALSE(dlg->reason_field()->own_visible());
     dlg->confirm();
     CHECK(confirmed);
     CHECK_FALSE(reason_fired);
 }
 
-TEST_CASE("RoomInfoPanel: the history badge names the room's visibility",
-          "[room_info_panel]")
+TEST_CASE("RoomInfoPanel: the history badge names the room's visibility", "[room_info_panel]")
 {
     TestHost host(nullptr);
     auto panel_owner = tk::create_root_widget<RoomInfoPanel>(&host);
     host.set_root(panel_owner.get());
     RoomInfoPanel& panel = *panel_owner;
     tesseract::RoomInfo info;
-    info.id                = "!room:example.org";
-    info.name              = "Room";
+    info.id = "!room:example.org";
+    info.name = "Room";
     info.history_visibility = "joined";
     panel.open(info);
     CHECK(panel.body_for_test()->badge_labels_for_test() == "History: Members (since joined)");
@@ -235,7 +258,7 @@ TEST_CASE("RoomInfoPanel: a collapsed roster lists the top five in display order
     host.set_root(panel_owner.get());
     RoomInfoPanel& panel = *panel_owner;
     tesseract::RoomInfo info;
-    info.id   = "!room:example.org";
+    info.id = "!room:example.org";
     info.name = "Room";
     panel.open(info);
 
@@ -244,15 +267,16 @@ TEST_CASE("RoomInfoPanel: a collapsed roster lists the top five in display order
     for (int i = 39; i >= 0; --i)
     {
         tesseract::RoomMember m;
-        m.user_id      = "@m" + std::to_string(i) + ":example.org";
+        m.user_id = "@m" + std::to_string(i) + ":example.org";
         m.display_name = "m" + std::string(i < 10 ? "0" : "") + std::to_string(i);
         members.push_back(m);
     }
-    auto add = [&](const char* name, int64_t level) {
+    auto add = [&](const char* name, int64_t level)
+    {
         tesseract::RoomMember m;
-        m.user_id      = std::string("@") + name + ":example.org";
+        m.user_id = std::string("@") + name + ":example.org";
         m.display_name = name;
-        m.power_level  = level;
+        m.power_level = level;
         members.push_back(m);
     };
     add("Zoe", 100);

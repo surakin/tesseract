@@ -1,7 +1,7 @@
 #include "Win32Notifier.h"
 #include "Win32PackageContext.h"
 
-#include "winrt_coroutine_shim.h" // must precede any <winrt/...> include
+#include "platform/win32/winrt_coroutine_shim.h" // must precede any <winrt/...> include
 
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.UI.Notifications.h>
@@ -23,8 +23,7 @@ namespace win32
 {
 
 Win32Notifier::Win32Notifier(HWND hwnd, std::string user_id)
-    : hwnd_(hwnd),
-      user_id_(std::move(user_id)),
+    : hwnd_(hwnd), user_id_(std::move(user_id)),
       hwnd_box_(std::make_shared<std::atomic<HWND>>(hwnd))
 {
 }
@@ -97,8 +96,7 @@ static std::string to_utf8(const std::wstring& w)
     {
         return {};
     }
-    int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, nullptr, 0, nullptr,
-                                nullptr);
+    int n = WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, nullptr, 0, nullptr, nullptr);
     if (n <= 0)
     {
         return {};
@@ -128,10 +126,9 @@ static std::wstring to_file_uri(const std::filesystem::path& p)
     std::wstring uri = L"file:///";
     for (unsigned char ch : u8)
     {
-        bool unreserved = (ch >= 'A' && ch <= 'Z') ||
-                          (ch >= 'a' && ch <= 'z') ||
-                          (ch >= '0' && ch <= '9') || ch == '-' || ch == '_' ||
-                          ch == '.' || ch == '~' || ch == '/' || ch == ':';
+        bool unreserved = (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') ||
+                          (ch >= '0' && ch <= '9') || ch == '-' || ch == '_' || ch == '.' ||
+                          ch == '~' || ch == '/' || ch == ':';
         if (unreserved)
         {
             uri += static_cast<wchar_t>(ch);
@@ -154,9 +151,8 @@ static std::wstring to_file_uri(const std::filesystem::path& p)
 // keeps the avatar and message-picture temp files from colliding for the
 // same room. Reused (overwritten) per (room, kind) so the temp dir stays
 // bounded.
-static std::filesystem::path
-write_notif_image_temp(const std::vector<std::uint8_t>& bytes,
-                       const std::string& room_id, const char* kind)
+static std::filesystem::path write_notif_image_temp(const std::vector<std::uint8_t>& bytes,
+                                                    const std::string& room_id, const char* kind)
 {
     if (bytes.empty())
     {
@@ -164,26 +160,24 @@ write_notif_image_temp(const std::vector<std::uint8_t>& bytes,
     }
 
     const char* ext = ".png";
-    if (bytes.size() >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 &&
-        bytes[2] == 0xFF)
+    if (bytes.size() >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF)
     {
         ext = ".jpg";
     }
-    else if (bytes.size() >= 4 && bytes[0] == 'G' && bytes[1] == 'I' &&
-             bytes[2] == 'F' && bytes[3] == '8')
+    else if (bytes.size() >= 4 && bytes[0] == 'G' && bytes[1] == 'I' && bytes[2] == 'F' &&
+             bytes[3] == '8')
     {
         ext = ".gif";
     }
-    else if (bytes.size() >= 12 && bytes[0] == 'R' && bytes[1] == 'I' &&
-             bytes[2] == 'F' && bytes[3] == 'F' && bytes[8] == 'W' &&
-             bytes[9] == 'E' && bytes[10] == 'B' && bytes[11] == 'P')
+    else if (bytes.size() >= 12 && bytes[0] == 'R' && bytes[1] == 'I' && bytes[2] == 'F' &&
+             bytes[3] == 'F' && bytes[8] == 'W' && bytes[9] == 'E' && bytes[10] == 'B' &&
+             bytes[11] == 'P')
     {
         ext = ".webp";
     }
 
     std::error_code ec;
-    std::filesystem::path dir =
-        std::filesystem::temp_directory_path(ec) / L"Tesseract" / L"notif";
+    std::filesystem::path dir = std::filesystem::temp_directory_path(ec) / L"Tesseract" / L"notif";
     if (ec)
     {
         return {};
@@ -195,8 +189,7 @@ write_notif_image_temp(const std::vector<std::uint8_t>& bytes,
     }
 
     std::filesystem::path file =
-        dir /
-        (std::to_string(std::hash<std::string>{}(room_id)) + "-" + kind + ext);
+        dir / (std::to_string(std::hash<std::string>{}(room_id)) + "-" + kind + ext);
 
     std::ofstream out(file, std::ios::binary | std::ios::trunc);
     if (!out)
@@ -212,10 +205,8 @@ write_notif_image_temp(const std::vector<std::uint8_t>& bytes,
     return file;
 }
 
-std::wstring Win32Notifier::build_toast_xml(const std::string& sender,
-                                            const std::string& room_name,
-                                            const std::string& body,
-                                            const std::wstring& avatar_uri,
+std::wstring Win32Notifier::build_toast_xml(const std::string& sender, const std::string& room_name,
+                                            const std::string& body, const std::wstring& avatar_uri,
                                             const std::wstring& image_uri,
                                             const std::wstring& reply_placeholder,
                                             const std::wstring& reply_label)
@@ -275,15 +266,13 @@ void Win32Notifier::notify(const tesseract::Notification& n)
     try
     {
         std::wstring avatar_uri;
-        if (std::filesystem::path p =
-                write_notif_image_temp(n.avatar_bytes, n.room_id, "avatar");
+        if (std::filesystem::path p = write_notif_image_temp(n.avatar_bytes, n.room_id, "avatar");
             !p.empty())
         {
             avatar_uri = to_file_uri(p);
         }
         std::wstring image_uri;
-        if (std::filesystem::path p =
-                write_notif_image_temp(n.image_bytes, n.room_id, "image");
+        if (std::filesystem::path p = write_notif_image_temp(n.image_bytes, n.room_id, "image");
             !p.empty())
         {
             image_uri = to_file_uri(p);
@@ -293,11 +282,11 @@ void Win32Notifier::notify(const tesseract::Notification& n)
         const std::wstring reply_label = to_wide(tk::tr("Reply"));
 
         WDX::XmlDocument doc;
-        doc.LoadXml(build_toast_xml(n.sender, n.room_name, n.body, avatar_uri,
-                                    image_uri, reply_placeholder, reply_label));
+        doc.LoadXml(build_toast_xml(n.sender, n.room_name, n.body, avatar_uri, image_uri,
+                                    reply_placeholder, reply_label));
 
-        auto notifier = WUN::ToastNotificationManager::CreateToastNotifier(
-            package_context::effective_aumid());
+        auto notifier =
+            WUN::ToastNotificationManager::CreateToastNotifier(package_context::effective_aumid());
         auto toast = WUN::ToastNotification(doc);
 
         // Capture room_id/user_id/event_id for the click handler (runs on a
@@ -310,33 +299,28 @@ void Win32Notifier::notify(const tesseract::Notification& n)
         std::string user_id = user_id_;
         std::string event_id = n.event_id;
         toast.Activated(winrt::Windows::Foundation::TypedEventHandler<
-                        WUN::ToastNotification,
-                        winrt::Windows::Foundation::IInspectable>{
-            [hwnd_box, room_id, user_id,
-             event_id](const WUN::ToastNotification&,
-                      const winrt::Windows::Foundation::IInspectable& args)
+                        WUN::ToastNotification, winrt::Windows::Foundation::IInspectable>{
+            [hwnd_box, room_id, user_id, event_id](
+                const WUN::ToastNotification&, const winrt::Windows::Foundation::IInspectable& args)
             {
                 std::string reply_text;
-                if (auto activated =
-                        args.try_as<WUN::ToastActivatedEventArgs>())
+                if (auto activated = args.try_as<WUN::ToastActivatedEventArgs>())
                 {
                     if (activated.Arguments() == L"action=reply")
                     {
                         auto input = activated.UserInput();
                         if (auto v = input.TryLookup(L"replyText"))
                         {
-                            reply_text = to_utf8(
-                                winrt::unbox_value<winrt::hstring>(v).c_str());
+                            reply_text = to_utf8(winrt::unbox_value<winrt::hstring>(v).c_str());
                         }
                     }
                 }
                 HWND hwnd = hwnd_box->load();
                 if (hwnd && IsWindow(hwnd))
                 {
-                    PostMessage(
-                        hwnd, WM_TESSERACT_NOTIFY_CLICK, 0,
-                        reinterpret_cast<LPARAM>(new NotifyClickPayload{
-                            room_id, user_id, event_id, reply_text}));
+                    PostMessage(hwnd, WM_TESSERACT_NOTIFY_CLICK, 0,
+                                reinterpret_cast<LPARAM>(new NotifyClickPayload{
+                                    room_id, user_id, event_id, reply_text}));
                 }
             }});
 

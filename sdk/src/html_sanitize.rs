@@ -197,10 +197,8 @@ mod tests {
     fn img_onerror_attribute_still_stripped() {
         // Compat mode's <img> allow-list gains data-mx-emoticon but nothing
         // else — onerror must still be rejected.
-        let out = sanitize_formatted_body(
-            "<img src=\"mxc://x.org/a\" onerror=\"alert(1)\">",
-            false,
-        );
+        let out =
+            sanitize_formatted_body("<img src=\"mxc://x.org/a\" onerror=\"alert(1)\">", false);
         assert!(!out.contains("onerror"));
         assert!(!out.contains("alert(1)"));
     }
@@ -214,7 +212,8 @@ mod tests {
 
     #[test]
     fn table_header_cell_text_align_survives() {
-        let input = "<table><thead><tr><th style=\"text-align: center\">H</th></tr></thead></table>";
+        let input =
+            "<table><thead><tr><th style=\"text-align: center\">H</th></tr></thead></table>";
         let out = sanitize_formatted_body(input, false);
         assert!(out.contains("text-align:center"), "got: {out}");
     }
@@ -255,10 +254,8 @@ mod tests {
 
     #[test]
     fn img_with_remote_src_loses_src_but_keeps_alt() {
-        let out = sanitize_formatted_body(
-            "<img src=\"https://evil.example/p.png\" alt=\"x\">",
-            false,
-        );
+        let out =
+            sanitize_formatted_body("<img src=\"https://evil.example/p.png\" alt=\"x\">", false);
         assert!(!out.contains("evil.example"), "got: {out}");
         assert!(out.contains("alt=\"x\""), "got: {out}");
     }

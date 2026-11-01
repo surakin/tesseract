@@ -7,7 +7,7 @@ use crate::ffi::{OpResult, PaginateResult};
 #[cfg(not(test))]
 use super::timeline::TimelineChannel;
 #[cfg(not(test))]
-use super::timeline_convert::msglike_snippet;
+use super::timeline_convert::{forwarded_snippet, may_be_forward_fallback, msglike_snippet};
 #[cfg(test)]
 use super::ClientFfi;
 #[cfg(not(test))]
@@ -93,6 +93,7 @@ impl ClientFfi {
             &handler,
             &client,
             &self.rt,
+            self.in_flight_ctx(),
             TimelineChannel::Thread(root_str),
             Arc::clone(&cancelled),
             self.search_index_ctx(),
@@ -105,9 +106,11 @@ impl ClientFfi {
         // immediately from the server. Results arrive as VectorDiff events in
         // the streaming task above and are forwarded to C++ via on_thread_inserted.
         let tl_for_paginate = Arc::clone(&timeline);
+        let in_flight_paginate = self.in_flight_ctx();
         let paginate_abort = self
             .rt
             .spawn(async move {
+                let _in_flight = in_flight_paginate.guard("thread-paginate");
                 let _ = tl_for_paginate.paginate_backwards(50).await;
             })
             .abort_handle();
@@ -206,6 +209,7 @@ impl ClientFfi {
                 reached_end: false,
             };
         };
+        let _in_flight = self.in_flight_guard("thread-paginate");
         match self
             .rt
             .block_on(async move { tl.paginate_backwards(count).await })
@@ -549,6 +553,46 @@ impl ClientFfi {
             return out;
         }
 
+        // A forward (MSC4553) previews what it forwards, not its fallback text.
+        // Only a text that may be one costs a look at the raw event, so the
+        // common case spawns nothing.
+        if let Some(room) = self.client.as_ref().and_then(|c| c.get_room(&rid)) {
+            let mut lookups = Vec::new();
+            for (idx, item) in items.iter().enumerate() {
+                if let Some(msgtype) = forward_fallback_msgtype(&item.root_event) {
+                    lookups.push((idx, false, item.root_event.event_id.clone(), msgtype));
+                }
+                if let Some(latest) = &item.latest_event {
+                    if let Some(msgtype) = forward_fallback_msgtype(latest) {
+                        lookups.push((idx, true, latest.event_id.clone(), msgtype));
+                    }
+                }
+            }
+            if !lookups.is_empty() {
+                let shown = self
+                    .rt
+                    .block_on(self.rt.spawn(async move {
+                        let mut v = Vec::new();
+                        for (idx, is_latest, event_id, msgtype) in lookups {
+                            if let Some((body, _html)) =
+                                forwarded_snippet(&room, &event_id, &msgtype).await
+                            {
+                                v.push((idx, is_latest, body));
+                            }
+                        }
+                        v
+                    }))
+                    .unwrap_or_default();
+                for (idx, is_latest, body) in shown {
+                    if is_latest {
+                        out[idx].latest_body = body;
+                    } else {
+                        out[idx].root_body = body;
+                    }
+                }
+            }
+        }
+
         // best-effort mention flag off the latest reply's `m.mentions`.
         let me = self
             .client
@@ -718,8 +762,10 @@ impl ClientFfi {
         // unread / mention you (matches Element). A failed lookup fails open
         // (treated as followed) so a flaky network never hides activity.
         if self.thread_subscriptions_enabled() {
-            let roots: Vec<OwnedEventId> =
-                items.iter().map(|it| it.root_event.event_id.clone()).collect();
+            let roots: Vec<OwnedEventId> = items
+                .iter()
+                .map(|it| it.root_event.event_id.clone())
+                .collect();
             let room_task = room.clone();
             let followed: Vec<bool> = self
                 .rt
@@ -810,6 +856,7 @@ impl ClientFfi {
         // overflows the smaller stack (same class of crash as the timeline
         // subscribe fix in 789eb2b).
         let svc_for_spawn = std::sync::Arc::clone(&svc);
+        let _in_flight = self.in_flight_guard("thread-list-paginate");
         let join = self.rt.spawn(async move { svc_for_spawn.paginate().await });
         match self.rt.block_on(join) {
             Ok(Ok(())) => {
@@ -1021,32 +1068,30 @@ async fn apply_thread_chips(
     // Publish this tick's layer for the room timeline stream to re-apply on
     // every later re-emission of a root row (see ThreadChipOverrides).
     {
-        let room_layer: HashMap<String, ThreadChipOverride> = items
-            .iter()
-            .map(|item| {
-                let root = item.root_event.event_id.to_string();
-                let count = cache
-                    .get(&root)
-                    .map(|c| c.server_count)
-                    .unwrap_or(item.num_replies as u64);
-                let (latest_name, latest_body, latest_ts) = match &item.latest_event {
-                    Some(le) => {
-                        let (_id, n, b, t) = thread_list_event_preview(le);
-                        (n, b, t)
-                    }
-                    None => (String::new(), String::new(), 0u64),
-                };
-                (
-                    root,
-                    ThreadChipOverride {
-                        count,
-                        latest_name,
-                        latest_body,
-                        latest_ts,
-                    },
-                )
-            })
-            .collect();
+        let mut room_layer: HashMap<String, ThreadChipOverride> = HashMap::new();
+        for item in items {
+            let root = item.root_event.event_id.to_string();
+            let count = cache
+                .get(&root)
+                .map(|c| c.server_count)
+                .unwrap_or(item.num_replies as u64);
+            let (latest_name, latest_body, latest_ts) = match &item.latest_event {
+                Some(le) => {
+                    let (_id, n, b, t) = thread_list_event_preview_in(room, le).await;
+                    (n, b, t)
+                }
+                None => (String::new(), String::new(), 0u64),
+            };
+            room_layer.insert(
+                root,
+                ThreadChipOverride {
+                    count,
+                    latest_name,
+                    latest_body,
+                    latest_ts,
+                },
+            );
+        }
         overrides.write().insert(room_id.to_owned(), room_layer);
     }
 
@@ -1121,9 +1166,13 @@ async fn apply_thread_chips(
                 // can't blank or roll back the row's preview.
                 let (latest_name, latest_body, latest_ts) = match &item.latest_event {
                     Some(le) => {
-                        let (_id, n, b, t) = thread_list_event_preview(le);
-                        if prefer_thread_list_preview(&b, t, &ev.thread_latest_body, ev.thread_latest_ts)
-                        {
+                        let (_id, n, b, t) = thread_list_event_preview_in(room, le).await;
+                        if prefer_thread_list_preview(
+                            &b,
+                            t,
+                            &ev.thread_latest_body,
+                            ev.thread_latest_ts,
+                        ) {
                             (n, b, t)
                         } else {
                             (
@@ -1183,6 +1232,34 @@ pub(super) fn thread_list_event_preview(
     };
     let ts: u64 = ev.timestamp.get().into();
     (ev.event_id.to_string(), name, body, ts)
+}
+
+/// The message type of a thread-list event when it may be a forward's
+/// fallback text (MSC4553), so worth a look at the raw event.
+#[cfg(not(test))]
+fn forward_fallback_msgtype(
+    ev: &matrix_sdk_ui::timeline::thread_list_service::ThreadListItemEvent,
+) -> Option<matrix_sdk::ruma::events::room::message::MessageType> {
+    let msg = ev.content.as_ref()?.as_message()?;
+    let msgtype = msg.msgtype();
+    may_be_forward_fallback(msgtype).then(|| msgtype.clone())
+}
+
+/// `thread_list_event_preview`, with the body of a forward (MSC4553) shown as
+/// the content it forwards instead of its "Forwarded from ..." fallback. The
+/// raw event comes from the local event cache; any failure keeps the fallback.
+#[cfg(not(test))]
+pub(super) async fn thread_list_event_preview_in(
+    room: &matrix_sdk::Room,
+    ev: &matrix_sdk_ui::timeline::thread_list_service::ThreadListItemEvent,
+) -> (String, String, String, u64) {
+    let (id, name, mut body, ts) = thread_list_event_preview(ev);
+    if let Some(msgtype) = forward_fallback_msgtype(ev) {
+        if let Some((shown, _html)) = forwarded_snippet(room, &ev.event_id, &msgtype).await {
+            body = shown;
+        }
+    }
+    (id, name, body, ts)
 }
 
 /// Convert a `ThreadListItem` into the flat `ThreadInfo` FFI struct.
@@ -1352,7 +1429,11 @@ mod thread_unread_tests {
 
     #[test]
     fn mention_by_user_id() {
-        assert!(any_mention(&["@me:server", "@other:server"], false, "@me:server"));
+        assert!(any_mention(
+            &["@me:server", "@other:server"],
+            false,
+            "@me:server"
+        ));
         assert!(!any_mention(&["@other:server"], false, "@me:server"));
     }
 

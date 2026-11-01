@@ -4,7 +4,10 @@
 #include "app/CallWindowBase.h"
 #include "tk/host_qt.h"
 
-namespace qt6 { class MainWindow; }
+namespace qt6
+{
+class MainWindow;
+}
 
 namespace qt6
 {
@@ -18,17 +21,17 @@ public:
     explicit CallWindow(MainWindow* parent_shell);
     ~CallWindow() override;
 
-    void bring_to_front()               override;
-    void close_window()                 override;
-    void apply_theme(const tk::Theme&)  override;
+    void bring_to_front() override;
+    void close_window() override;
+    void apply_theme(const tk::Theme&) override;
     void apply_scale_change(float scale) override;
-    void request_relayout()             override;
-    void request_repaint()              override;
-    void schedule_delete()              override;
+    void request_relayout() override;
+    void request_repaint() override;
+    void schedule_delete() override;
 
 protected:
-    void closeEvent(QCloseEvent* ev)    override;
-    void resizeEvent(QResizeEvent* ev)  override;
+    void closeEvent(QCloseEvent* ev) override;
+    void resizeEvent(QResizeEvent* ev) override;
 
 private:
     tk::qt6::Surface* surface_ = nullptr; // owned by Qt (child widget)

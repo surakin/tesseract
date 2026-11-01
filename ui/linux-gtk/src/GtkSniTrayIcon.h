@@ -21,8 +21,7 @@ public:
     // `on_toggle` receives the xdg-activation token Plasma hands us via the
     // ProvideXdgActivationToken D-Bus call that precedes Activate (empty string
     // when none was provided, e.g. non-KDE hosts or X11).
-    GtkSniTrayIcon(std::function<void(std::string)> on_toggle,
-                   std::function<void()> on_quit);
+    GtkSniTrayIcon(std::function<void(std::string)> on_toggle, std::function<void()> on_quit);
     ~GtkSniTrayIcon() override;
 
     bool is_available() const override
@@ -35,8 +34,7 @@ public:
     // Rebuild the context menu. `window_items` is a list of (label, callback)
     // pairs — one per open main window — prepended before the Quit action.
     // Emits LayoutUpdated so the host re-queries. Call from the UI thread only.
-    void rebuild_menu(
-        std::vector<std::pair<std::string, std::function<void()>>> window_items);
+    void rebuild_menu(std::vector<std::pair<std::string, std::function<void()>>> window_items);
 
     // Opaque; defined in the .cpp. Public so the file-local GDBus vtable
     // callbacks (which receive it as user_data) can name the type.

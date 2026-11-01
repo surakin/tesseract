@@ -27,7 +27,10 @@ const char* const kUid = "@maint-test:example.invalid";
 struct MaintFixture
 {
     tesseract::test::SettingsGuard settings_guard;
-    MaintFixture() { clean(); }
+    MaintFixture()
+    {
+        clean();
+    }
     ~MaintFixture()
     {
         clean();
@@ -37,8 +40,7 @@ struct MaintFixture
         // The per-process data dir is shared by every test case: don't leave
         // (or inherit) an account index, least of all a corrupt one.
         std::error_code ec;
-        for (const char* f : {"accounts.json", "accounts.json.bak",
-                              "accounts.json.corrupt"})
+        for (const char* f : {"accounts.json", "accounts.json.bak", "accounts.json.corrupt"})
         {
             fs::remove(tesseract::data_dir() / f, ec);
         }
@@ -61,8 +63,7 @@ TEST_CASE("logout_all_accounts with no accounts reports nothing and writes an "
     CHECK(SessionStore::load_index().user_ids.empty());
 }
 
-TEST_CASE("logout_all_accounts refuses to touch an unreadable index",
-          "[maintenance][keychain]")
+TEST_CASE("logout_all_accounts refuses to touch an unreadable index", "[maintenance][keychain]")
 {
     MaintFixture f;
     const fs::path idx = tesseract::data_dir() / "accounts.json";
@@ -75,8 +76,7 @@ TEST_CASE("logout_all_accounts refuses to touch an unreadable index",
     CHECK(report.accounts.empty());
     // Nothing was rewritten.
     std::ifstream in(idx);
-    std::string content((std::istreambuf_iterator<char>(in)),
-                        std::istreambuf_iterator<char>());
+    std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     CHECK(content == "{ this is not json");
 }
 

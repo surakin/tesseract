@@ -55,8 +55,7 @@ public:
     // and Adapter is only forward-declared here.
     ~RoomDirectoryView() override;
 
-    using AvatarProvider =
-        std::function<const tk::Image*(const std::string& mxc_url)>;
+    using AvatarProvider = std::function<const tk::Image*(const std::string& mxc_url)>;
 
     // ── Lifecycle ─────────────────────────────────────────────────────────
     // Issues an initial search if none has run yet. Called by AddRoomView
@@ -110,8 +109,7 @@ public:
     // ── Results delivery (called by the host from ShellBase) ──────────────
     // Appends `entries` to the currently displayed list if `request_id`
     // matches the last search/page request issued; stale ids are dropped.
-    void set_results(std::uint64_t request_id,
-                     std::vector<tesseract::RoomDirectoryEntry> entries,
+    void set_results(std::uint64_t request_id, std::vector<tesseract::RoomDirectoryEntry> entries,
                      bool reached_end);
     void set_search_failed(std::uint64_t request_id, std::string message);
 

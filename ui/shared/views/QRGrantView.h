@@ -98,7 +98,10 @@ public:
     // *previous* run while the view itself is still alive — a generation
     // token, not a lifetime token. Renamed away from the shared "alive_token"
     // name so a caller can't mistake one contract for the other.
-    std::weak_ptr<bool> generation_token() const { return alive_; }
+    std::weak_ptr<bool> generation_token() const
+    {
+        return alive_;
+    }
 
     // Shadows tk::Widget::set_visible (not virtual — same idiom as
     // tk::TextField's own shadow) so hiding the overlay also hides
@@ -115,8 +118,8 @@ public:
     // -----------------------------------------------------------------------
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint_before_children(tk::PaintCtx&) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint_before_children(tk::PaintCtx&) override;
 
 private:
     void rebuild_tree_();
@@ -124,41 +127,41 @@ private:
     void join_worker_();
 
     // State machine
-    State       state_     = State::Loading;
+    State state_ = State::Loading;
     std::string error_msg_;
 
     // QR image — created lazily in paint() after pixels arrive
-    std::vector<uint8_t>       qr_pixels_;
-    uint32_t                   qr_side_      = 0;
+    std::vector<uint8_t> qr_pixels_;
+    uint32_t qr_side_ = 0;
     std::unique_ptr<tk::Image> qr_image_;
-    tk::CanvasFactory*         last_factory_ = nullptr;
+    tk::CanvasFactory* last_factory_ = nullptr;
 
     // Check code text field
     std::string check_code_text_;
 
     // Worker machinery
-    tesseract::Client*    client_    = nullptr;
-    std::thread           worker_;
-    std::atomic<bool>     cancelled_{false};
+    tesseract::Client* client_ = nullptr;
+    std::thread worker_;
+    std::atomic<bool> cancelled_{false};
     std::shared_ptr<bool> alive_{std::make_shared<bool>(true)};
 
     // Injected platform hooks
     std::function<void(std::function<void()>)> post_to_ui_;
     std::function<void(std::function<void()>)> run_async_;
-    std::function<void()>                      relayout_;
-    std::function<void(const std::string&)>    open_browser_;
-    std::function<void()>                      on_done_;
-    std::function<void()>                      on_cancel_;
+    std::function<void()> relayout_;
+    std::function<void(const std::string&)> open_browser_;
+    std::function<void()> on_done_;
+    std::function<void()> on_cancel_;
 
     // Borrowed widget pointers (owned by card_ subtree via add_child)
-    tk::VBox*      card_              = nullptr;
-    tk::Label*     status_lbl_        = nullptr;
-    tk::ImageView* qr_view_           = nullptr;
+    tk::VBox* card_ = nullptr;
+    tk::Label* status_lbl_ = nullptr;
+    tk::ImageView* qr_view_ = nullptr;
     tk::TextField* check_input_field_ = nullptr;
-    tk::Button*    confirm_btn_       = nullptr;
-    tk::Button*    cancel_btn_        = nullptr;
-    tk::Button*    close_btn_         = nullptr;
-    tk::Button*    retry_btn_         = nullptr;
+    tk::Button* confirm_btn_ = nullptr;
+    tk::Button* cancel_btn_ = nullptr;
+    tk::Button* close_btn_ = nullptr;
+    tk::Button* retry_btn_ = nullptr;
 };
 
 } // namespace tesseract::views

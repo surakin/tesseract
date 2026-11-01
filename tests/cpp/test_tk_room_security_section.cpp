@@ -17,8 +17,7 @@ struct TkRoomSecuritySectionStage
     }
     tk::PaintCtx paint_ctx()
     {
-        return tk::PaintCtx{surface->canvas(), surface->factory(),
-                            tk::Theme::light()};
+        return tk::PaintCtx{surface->canvas(), surface->factory(), tk::Theme::light()};
     }
     void run(tk::Widget& root, tk::Rect bounds)
     {
@@ -167,7 +166,10 @@ TEST_CASE("RoomSecuritySection: join_rule combo fires the callback with the "
 {
     RoomSecuritySection s;
     std::string picked;
-    s.on_join_rule_changed = [&](std::string v) { picked = v; };
+    s.on_join_rule_changed = [&](std::string v)
+    {
+        picked = v;
+    };
 
     s.join_rule_combo()->on_changed("public");
     CHECK(picked == "public");
@@ -221,7 +223,11 @@ TEST_CASE("RoomSecuritySection: guest_access checkbox reflects seeding and "
 
     int count = 0;
     bool last = false;
-    s.on_guest_access_changed = [&](bool allow) { ++count; last = allow; };
+    s.on_guest_access_changed = [&](bool allow)
+    {
+        ++count;
+        last = allow;
+    };
     s.guest_access_checkbox()->on_change(false);
     REQUIRE(count == 1);
     CHECK_FALSE(last);
@@ -232,9 +238,8 @@ TEST_CASE("RoomSecuritySection: history_visibility combo selects the "
           "[room_security_section]")
 {
     RoomSecuritySection s;
-    for (const std::string& v :
-         {std::string("world_readable"), std::string("shared"),
-          std::string("invited"), std::string("joined")})
+    for (const std::string& v : {std::string("world_readable"), std::string("shared"),
+                                 std::string("invited"), std::string("joined")})
     {
         s.set_history_visibility(v);
         CHECK(s.history_visibility_combo()->selected_value() == v);

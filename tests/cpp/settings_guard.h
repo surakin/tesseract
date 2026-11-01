@@ -32,9 +32,9 @@ public:
 #else
         const auto pid = ::getpid();
 #endif
-        dir_ = std::filesystem::temp_directory_path() /
-               ("tesseract-settings-guard-" + std::to_string(pid) + "-" +
-                std::to_string(counter++));
+        dir_ =
+            std::filesystem::temp_directory_path() /
+            ("tesseract-settings-guard-" + std::to_string(pid) + "-" + std::to_string(counter++));
         std::filesystem::create_directories(dir_);
         Settings::instance().save_to_disk(dir_);
     }

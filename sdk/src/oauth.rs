@@ -20,7 +20,10 @@ use matrix_sdk::{
         registration::{ApplicationType, ClientMetadata, Localized, OAuthGrantType},
         ClientRegistrationData,
     },
+    config::RequestConfig,
+    cross_process_lock::CrossProcessLockConfig,
     encryption::{BackupDownloadStrategy, EncryptionSettings},
+    media::MediaRetentionPolicy,
     utils::{
         local_server::{
             LocalServerBuilder, LocalServerIpAddress, LocalServerResponse,
@@ -28,9 +31,6 @@ use matrix_sdk::{
         },
         UrlOrQuery,
     },
-    config::RequestConfig,
-    cross_process_lock::CrossProcessLockConfig,
-    media::MediaRetentionPolicy,
     Client, SqliteStoreConfig, ThreadingSupport,
 };
 use rand::RngCore;
@@ -307,10 +307,11 @@ pub(crate) async fn build_configured_client(
         })
         // MSC4153 "exclude insecure devices" (opt-in, Settings → Privacy):
         // share room keys only with cross-signed devices and hide messages
-        // from devices that aren't. Read once here, so a toggle applies from
-        // the next account start.
+        // from devices that aren't. Read here, so a toggle applies on the next
+        // client rebuild (account start or in-place reload).
         .with_room_key_recipient_strategy(crate::client::identity::room_key_recipient_strategy(
             crate::client::identity::exclude_insecure_devices(),
+            crate::client::identity::block_sends_on_unverified_devices(),
         ))
         .with_decryption_settings(crate::client::identity::decryption_settings(
             crate::client::identity::exclude_insecure_devices(),
@@ -319,10 +320,12 @@ pub(crate) async fn build_configured_client(
         // per-thread linked chunks (which our focused thread Timeline
         // subscribes to) when threading support is enabled. Without this,
         // the open thread panel never sees new replies arriving via sync.
-        // `with_subscriptions` opts in to MSC4306 thread subscriptions (a
-        // no-op unless the homeserver advertises `org.matrix.msc4306`).
+        // `with_subscriptions` stays off: Synapse omits empty maps from the
+        // MSC4308 catch-up response, ruma requires them (no `serde(default)`),
+        // and matrix-sdk's catch-up task retries the failed page in a tight
+        // loop. Re-enable once ruma accepts omitted maps.
         .with_threading_support(ThreadingSupport::Enabled {
-            with_subscriptions: true,
+            with_subscriptions: false,
         })
         .build()
         .await
@@ -336,7 +339,12 @@ pub(crate) async fn build_configured_client(
     // sensible default (400 MiB cache / 20 MiB per file / 60-day expiry, daily
     // automatic cleanup) once; it persists in matrix-sdk-media.sqlite3 and is
     // restored on every later client build, so only set it the first time.
-    if !client.media().media_retention_policy().await?.has_limitations() {
+    if !client
+        .media()
+        .media_retention_policy()
+        .await?
+        .has_limitations()
+    {
         client
             .media()
             .set_media_retention_policy(MediaRetentionPolicy::default())
@@ -352,6 +360,7 @@ pub async fn begin(
     homeserver: &str,
     sqlite_path: &std::path::Path,
     register: bool,
+    user_id_hint: &str,
     store_key: &[u8; 32],
 ) -> anyhow::Result<BeginResult> {
     // 1. Bind a loopback redirect server on a random port. We need the port
@@ -419,6 +428,10 @@ pub async fn begin(
     if register {
         use matrix_sdk::ruma::api::client::discovery::get_authorization_server_metadata::v1::Prompt;
         login_builder = login_builder.prompt(vec![Prompt::Create]);
+    } else if let Ok(user_id) = matrix_sdk::ruma::UserId::parse(user_id_hint) {
+        // MSC4198: lets the authorization server prefill the username. An empty
+        // or malformed hint is simply not sent.
+        login_builder = login_builder.user_id_hint(&user_id);
     }
     let mut auth_data = login_builder
         .build()
@@ -808,7 +821,10 @@ mod describe_and_ua_tests {
         let ua = build_user_agent();
         let prefix = format!("Tesseract/{} (", env!("CARGO_PKG_VERSION"));
         assert!(ua.starts_with(&prefix), "{ua}");
-        assert!(ua.ends_with(&format!("; {})", std::env::consts::OS)), "{ua}");
+        assert!(
+            ua.ends_with(&format!("; {})", std::env::consts::OS)),
+            "{ua}"
+        );
         // MAS splits the parenthetical on ';': exactly two tokens must remain.
         let inner = &ua[prefix.len()..ua.len() - 1];
         assert_eq!(inner.matches(';').count(), 1, "{ua}");
@@ -818,7 +834,10 @@ mod describe_and_ua_tests {
     #[test]
     fn user_agent_is_a_valid_header_value() {
         let ua = build_user_agent();
-        assert!(matrix_sdk::reqwest::header::HeaderValue::from_str(&ua).is_ok(), "{ua}");
+        assert!(
+            matrix_sdk::reqwest::header::HeaderValue::from_str(&ua).is_ok(),
+            "{ua}"
+        );
     }
 
     #[test]
@@ -965,7 +984,7 @@ mod pending_flow_tests {
                 .as_nanos()
         ));
         let _ = std::fs::create_dir_all(&dir);
-        let res = begin("not a valid homeserver \0", &dir, false, &[3u8; 32]).await;
+        let res = begin("not a valid homeserver \0", &dir, false, "", &[3u8; 32]).await;
         assert!(res.is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }

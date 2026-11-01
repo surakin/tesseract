@@ -17,6 +17,7 @@
 #include "canvas.h"
 #include "device_listing.h"
 #include "emoji_support.h"
+#include "theme.h"
 #include "toast.h"
 #include "tooltip.h"
 #include "video.h"
@@ -25,6 +26,7 @@
 
 #include <tesseract/mentions.h> // tesseract::MentionSeg
 
+#include <chrono>
 #include <cstdint>
 #include <cstddef>
 #include <functional>
@@ -59,7 +61,7 @@ enum class NavKey
 // A borrowed handle to a native text input control overlaid on top of
 // the canvas, positioned to align with a tk::Widget's rect. Caller
 // destroys to remove the overlay. Hosts back this with QLineEdit,
-// GtkEntry, Win32 EDIT, UITextField respectively.
+// GtkEntry, BetterText (Windows) and NSTextField respectively.
 class NativeTextField
 {
 public:
@@ -88,23 +90,31 @@ public:
     // while it holds focus (the Ctrl+K quick switcher). Return true from the
     // callback to consume the key. Default no-op so backends opt in; the
     // single-line field never inserts Tab so only Up/Down/Escape are raised.
-    virtual void set_on_popup_nav(std::function<bool(NavKey)>) {}
+    virtual void set_on_popup_nav(std::function<bool(NavKey)>)
+    {
+    }
 
     // Override the text (and placeholder) colour so the field respects
     // the application's dark/light palette. Default no-op; backends that
     // rely on the system theme for text colour don't need to implement it.
-    virtual void set_text_color(Color) {}
+    virtual void set_text_color(Color)
+    {
+    }
 
     // Font role (family, size, weight) for the field's text, so a user font
     // change reaches single-line fields too. Re-callable. Default no-op:
     // backends that haven't implemented it keep the system control font.
-    virtual void set_font_role(FontRole) {}
+    virtual void set_font_role(FontRole)
+    {
+    }
 
     // What a screen reader should call this control (the owning tk widget's
     // accessible label, else its placeholder) — for a backend whose native
     // control is exposed to the platform AT directly (Win32's BetterText).
     // Default no-op: backends whose native control isn't AT-visible.
-    virtual void set_accessible_name(std::string) {}
+    virtual void set_accessible_name(std::string)
+    {
+    }
 
     // Tell a backend that captures itself into an offscreen buffer (see
     // rendered_image() below) the exact solid color already painted behind
@@ -119,7 +129,9 @@ public:
     // under it inherits it, so this is always the exact color, never a
     // guess. Default no-op — backends that haven't opted in keep capturing
     // transparently, unchanged from today.
-    virtual void set_background_color(Color) {}
+    virtual void set_background_color(Color)
+    {
+    }
 
     // Focus-change hook. Called with `true` when the field gains focus,
     // `false` when it loses it. Default no-op so backends can opt in.
@@ -137,7 +149,9 @@ public:
     // how an open register_popup()'d popup (see Host::request_focus's doc
     // comment) gets dismissed by a click into a field that was already
     // focused when the popup opened. Default no-op so backends opt in.
-    virtual void set_on_pointer_down(std::function<void()>) {}
+    virtual void set_on_pointer_down(std::function<void()>)
+    {
+    }
 
     // Supplies the world rect of an open register_popup()'d popup drawn on
     // top of this control (nullopt when none is). The canvas paints the
@@ -148,13 +162,19 @@ public:
     // rect from the control's native hit-testing — Qt with
     // QWidget::setMask(), refreshed via refresh_occlusion(). Default no-op:
     // Win32's control is already outside OS hit-testing.
-    virtual void set_occlusion_query(std::function<std::optional<Rect>()>) {}
+    virtual void set_occlusion_query(std::function<std::optional<Rect>()>)
+    {
+    }
     // Re-read the occlusion query — the open popup or this control moved.
-    virtual void refresh_occlusion() {}
+    virtual void refresh_occlusion()
+    {
+    }
 
     // Reduce internal padding so the field fits inside a compact inline row
     // (e.g. the account settings display-name row). Default no-op.
-    virtual void set_compact(bool) {}
+    virtual void set_compact(bool)
+    {
+    }
 
     // Non-null once a backend renders itself into an offscreen buffer
     // instead of compositing on screen directly (the canvas-drawn text
@@ -162,7 +182,10 @@ public:
     // hybrid), in which case tk::TextField draws this image itself each
     // paint() instead of relying on the native control to paint on top.
     // Default null preserves today's real-overlay behavior.
-    virtual const tk::Image* rendered_image() const { return nullptr; }
+    virtual const tk::Image* rendered_image() const
+    {
+        return nullptr;
+    }
 
     // World (widget-tree) rect rendered_image() actually depicts. Several
     // backends deliberately size the native control to its own *natural*
@@ -173,7 +196,10 @@ public:
     // (zero-size) rect — the default — tells the caller to fall back to its
     // own bounds_, for backends that don't do this narrowing (the image
     // already matches bounds_ exactly).
-    virtual Rect rendered_image_rect() const { return {}; }
+    virtual Rect rendered_image_rect() const
+    {
+        return {};
+    }
 
     // Fired when rendered_image()'s content changed and the owning
     // widget's rect needs repainting. The Rect argument is the world
@@ -186,7 +212,9 @@ public:
     // scoped native repaint (see tk::Host::request_repaint_rect's doc
     // comment) don't pay for a whole-surface redraw on every capture. Only
     // meaningful once rendered_image() is non-null; default no-op.
-    virtual void set_on_repaint_needed(std::function<void(Rect)>) {}
+    virtual void set_on_repaint_needed(std::function<void(Rect)>)
+    {
+    }
 
     // Force an unconditional re-rasterize of rendered_image() at the
     // canvas's *current* device-pixel scale, bypassing any "nothing
@@ -195,7 +223,9 @@ public:
     // tk::TextField::on_scale_changed() whenever Widget::apply_scale_change()
     // (see widget.h) reaches this control. Default no-op for a backend with
     // no offscreen capture at all (rendered_image() == nullptr).
-    virtual void invalidate_for_scale_change() {}
+    virtual void invalidate_for_scale_change()
+    {
+    }
 
     // True for a backend that has permanently disabled its native caret
     // paint (e.g. Win32's BetterTextSetCaretVisible(hwnd, FALSE), called
@@ -213,7 +243,10 @@ public:
     // true, since GtkTextView/QTextEdit/NSTextView all expose that
     // per-widget knob even though GtkText/QLineEdit/the shared NSTextField
     // field editor don't.
-    virtual bool caret_owned_by_canvas() const { return false; }
+    virtual bool caret_owned_by_canvas() const
+    {
+        return false;
+    }
 
     // Whether the canvas-owned caret (see caret_owned_by_canvas() above)
     // should currently be drawn — false while unfocused or mid-blink-off.
@@ -221,14 +254,20 @@ public:
     // just caret_rect() via set_on_repaint_needed, instead of recapturing
     // the whole control every ~530ms just to toggle a caret. Meaningless
     // (never read) when caret_owned_by_canvas() is false.
-    virtual bool caret_blink_visible() const { return false; }
+    virtual bool caret_blink_visible() const
+    {
+        return false;
+    }
 
     // Bounding rect of the insertion caret, in the same world (widget-tree)
     // coordinates as set_rect()'s `r` and rendered_image_rect(). Meaningless
     // (never read) when caret_owned_by_canvas() is false — a backend that
     // bakes its own caret into rendered_image() has no need to report this
     // separately.
-    virtual Rect caret_rect() const { return {}; }
+    virtual Rect caret_rect() const
+    {
+        return {};
+    }
 
     // Forward a synthetic press/drag/release into the native control, in the
     // same world (widget-tree) coordinates as set_rect()'s `r` — the caller
@@ -238,9 +277,15 @@ public:
     // set_on_pointer_down's doc comment above on why canvas hit-testing
     // never even reaches the caller in that case), so these are no-ops by
     // default for every backend that hasn't opted into canvas-drawn text.
-    virtual void forward_pointer_down(Point /*world*/) {}
-    virtual void forward_pointer_drag(Point /*world*/) {}
-    virtual void forward_pointer_up(Point /*world*/) {}
+    virtual void forward_pointer_down(Point /*world*/)
+    {
+    }
+    virtual void forward_pointer_drag(Point /*world*/)
+    {
+    }
+    virtual void forward_pointer_up(Point /*world*/)
+    {
+    }
 
     // Canvas-level hover state, fired from tk::TextField::on_pointer_move /
     // on_pointer_leave. Only meaningful for backends whose real control is
@@ -252,7 +297,9 @@ public:
     // normal OS hover/cursor handling on its own (Qt's WA_DontShowOnScreen,
     // macOS's alphaValue 0 — confirmed on real hardware to leave hover-
     // cursor working normally, unlike GTK/Win32's approaches).
-    virtual void set_hovering(bool /*hovering*/) {}
+    virtual void set_hovering(bool /*hovering*/)
+    {
+    }
 };
 
 // Theme colors for a composer's inline mention pills: the chip itself
@@ -306,7 +353,9 @@ public:
     // accessible label, else its placeholder) — for a backend whose native
     // control is exposed to the platform AT directly (Win32's BetterText).
     // Default no-op: backends whose native control isn't AT-visible.
-    virtual void set_accessible_name(std::string) {}
+    virtual void set_accessible_name(std::string)
+    {
+    }
 
     // See NativeTextField::set_background_color()'s doc comment — same
     // rationale and same tk::TextArea/Widget::background_color() sourcing,
@@ -430,8 +479,7 @@ public:
     /// support, or that don't track inserted pills by user id, simply never
     /// get patched (composer_draft() still reports the mention correctly
     /// either way).
-    virtual void refresh_mention_avatar(const std::string& user_id,
-                                        const tk::Image* avatar)
+    virtual void refresh_mention_avatar(const std::string& user_id, const tk::Image* avatar)
     {
         (void)user_id;
         (void)avatar;
@@ -461,11 +509,17 @@ public:
     // not it changes OS focus. See NativeTextField::set_on_pointer_down's
     // doc comment above — same rationale, mirrored here for TextArea.
     // Default no-op so backends opt in.
-    virtual void set_on_pointer_down(std::function<void()>) {}
+    virtual void set_on_pointer_down(std::function<void()>)
+    {
+    }
 
     // See NativeTextField::set_occlusion_query / refresh_occlusion.
-    virtual void set_occlusion_query(std::function<std::optional<Rect>()>) {}
-    virtual void refresh_occlusion() {}
+    virtual void set_occlusion_query(std::function<std::optional<Rect>()>)
+    {
+    }
+    virtual void refresh_occlusion()
+    {
+    }
 
     /// Fired when the Up arrow is pressed while the composer is empty and
     /// the shortcode popup is not open — used to edit the last own message
@@ -511,11 +565,17 @@ public:
     // NativeTextField::rendered_image()'s doc comment above — same
     // rationale, mirrored here for TextArea. Default null preserves
     // today's real-overlay behavior.
-    virtual const tk::Image* rendered_image() const { return nullptr; }
+    virtual const tk::Image* rendered_image() const
+    {
+        return nullptr;
+    }
 
     // See NativeTextField::rendered_image_rect() — same rationale, mirrored
     // here for TextArea (multi-line controls centre-within-row too).
-    virtual Rect rendered_image_rect() const { return {}; }
+    virtual Rect rendered_image_rect() const
+    {
+        return {};
+    }
 
     // Fired when rendered_image()'s content changed and the owning
     // widget's rect needs repainting. See NativeTextField::
@@ -523,12 +583,16 @@ public:
     // argument, forwarded to host()->request_repaint_rect()), mirrored here
     // for TextArea. Only meaningful once rendered_image() is non-null;
     // default no-op.
-    virtual void set_on_repaint_needed(std::function<void(Rect)>) {}
+    virtual void set_on_repaint_needed(std::function<void(Rect)>)
+    {
+    }
 
     // See NativeTextField::invalidate_for_scale_change()'s doc comment
     // above — same rationale, mirrored here for TextArea. Called by
     // tk::TextArea::on_scale_changed(). Default no-op.
-    virtual void invalidate_for_scale_change() {}
+    virtual void invalidate_for_scale_change()
+    {
+    }
 
     // See NativeTextField::caret_owned_by_canvas()'s doc comment above —
     // same rationale, mirrored here for TextArea. Unlike TextField, every
@@ -538,11 +602,17 @@ public:
     // per-widget way to suppress their own caret paint, and Win32's
     // BetterTextArea uses the same BetterTextSetCaretVisible mechanism as
     // BetterTextField.
-    virtual bool caret_owned_by_canvas() const { return false; }
+    virtual bool caret_owned_by_canvas() const
+    {
+        return false;
+    }
 
     // See NativeTextField::caret_blink_visible()'s doc comment above — same
     // rationale, mirrored here for TextArea.
-    virtual bool caret_blink_visible() const { return false; }
+    virtual bool caret_blink_visible() const
+    {
+        return false;
+    }
 
     // Bounding rect of the insertion caret, in the same world (widget-tree)
     // coordinates as set_rect()'s `r` and rendered_image_rect() — the
@@ -553,7 +623,10 @@ public:
     // different space (window/toplevel-relative) than set_rect()'s `r` —
     // not safe to reuse here without risking a misplaced canvas caret.
     // Meaningless (never read) when caret_owned_by_canvas() is false.
-    virtual Rect caret_rect() const { return {}; }
+    virtual Rect caret_rect() const
+    {
+        return {};
+    }
 
     // Forward a synthetic press/drag/release into the native control, in the
     // same world (widget-tree) coordinates as set_rect()'s `r` — the caller
@@ -563,9 +636,15 @@ public:
     // set_on_pointer_down's doc comment above on why canvas hit-testing
     // never even reaches the caller in that case), so these are no-ops by
     // default for every backend that hasn't opted into canvas-drawn text.
-    virtual void forward_pointer_down(Point /*world*/) {}
-    virtual void forward_pointer_drag(Point /*world*/) {}
-    virtual void forward_pointer_up(Point /*world*/) {}
+    virtual void forward_pointer_down(Point /*world*/)
+    {
+    }
+    virtual void forward_pointer_drag(Point /*world*/)
+    {
+    }
+    virtual void forward_pointer_up(Point /*world*/)
+    {
+    }
 
     // Forward a hover-based wheel-scroll delta into the native control, in
     // the same world coordinates as set_rect()'s `r`. Only meaningful for
@@ -577,11 +656,15 @@ public:
     // never reaches it on its own. Default no-op: a real on-screen overlay
     // (Qt/GTK/macOS) already receives wheel input natively based on its own
     // hit-testing, independent of OS window focus/regions.
-    virtual void forward_wheel(Point /*world*/, float /*dy*/) {}
+    virtual void forward_wheel(Point /*world*/, float /*dy*/)
+    {
+    }
 
     // See NativeTextField::set_hovering() above — same rationale, mirrored
     // here for TextArea.
-    virtual void set_hovering(bool /*hovering*/) {}
+    virtual void set_hovering(bool /*hovering*/)
+    {
+    }
 };
 
 // Which side of the anchor rect a popup prefers to open on, falling back to
@@ -641,10 +724,20 @@ public:
     // radius the content itself draws with. 0 (the default, and this base
     // no-op) means "square popup" — most callers (Mention/Slash/Shortcode
     // popups, etc.) already draw square content and don't need this.
-    virtual void set_corner_radius(float /*radius_dip*/) {}
+    virtual void set_corner_radius(float /*radius_dip*/)
+    {
+    }
 
     virtual void set_visible(bool visible) = 0;
     virtual bool visible() const = 0;
+
+    // The popup's own Host, so the shell can forward keys to it (a popup takes
+    // no native keyboard focus) and move tk focus inside it. nullptr when the
+    // backend has none.
+    virtual Host* popup_host()
+    {
+        return nullptr;
+    }
 
     // Push the active tk::Theme into this popup's own Surface (it has its
     // own Host/Surface pair, so theme changes don't propagate automatically).
@@ -671,7 +764,9 @@ public:
     // tk::qt6::Surface::set_anim_cache, which every existing GIF-strip
     // popup already calls). Default no-op — every other popup type has no
     // animated content and never calls this or update_anim_regions().
-    virtual void set_anim_cache(const AnimImageCache* /*cache*/) {}
+    virtual void set_anim_cache(const AnimImageCache* /*cache*/)
+    {
+    }
 
     // Invalidate just the regions occupied by animated images drawn on the
     // last paint (see set_anim_cache), instead of a full request_repaint().
@@ -681,7 +776,9 @@ public:
     // already-centrally-advanced current frame just as well, only less
     // efficiently — see e.g. the popup-in-a-secondary-window case, which
     // doesn't bother wiring set_anim_cache and just repaints every tick).
-    virtual void update_anim_regions() {}
+    virtual void update_anim_regions()
+    {
+    }
 
     // Fired when the popup should close on its own (e.g. outside click,
     // Escape) rather than via an explicit set_visible(false) from the
@@ -720,12 +817,22 @@ struct EncodedImage
 class Host : public EnableWeakSelf<Host>
 {
 public:
-    virtual ~Host() { invalidate_weak_self(); }
+    virtual ~Host()
+    {
+        invalidate_weak_self();
+    }
+
+    // The theme the owning surface last received via Surface::set_theme. A
+    // widget created after a theme apply (lazily built views) reads it at
+    // construction, since on_theme_changed() only fires on later changes.
+    virtual const Theme& theme() const = 0;
 
     // RootWidget::queue_for_deletion() forwards straight to the protected
     // queue_for_deletion() below — it's the only external caller, so this
     // stays a narrow grant rather than a public API.
     friend class RootWidget;
+    // Widget::dispatch_wheel reports which widget consumed a wheel event.
+    friend class Widget;
 
     // Schedule a repaint of the entire root widget. Cheap to call
     // multiple times — the host coalesces.
@@ -758,7 +865,10 @@ public:
     // InvalidateRect(hwnd,&rect,...) / setNeedsDisplayInRect:) — GTK4 has
     // no such primitive anywhere in its widget-draw API (confirmed; every
     // GTK4 repaint is whole-widget), so it deliberately keeps the default.
-    virtual void request_repaint_rect(Rect /*world*/) { request_repaint(); }
+    virtual void request_repaint_rect(Rect /*world*/)
+    {
+        request_repaint();
+    }
 
     // Schedule a full measure()+arrange()+repaint pass over the whole tree,
     // unlike request_repaint() (redraw only, reusing whatever geometry the
@@ -805,7 +915,10 @@ public:
     // future one.
     void mark_needs_relayout()
     {
-        if (relayout_scheduled_ || relayout_in_progress_) return;
+        if (relayout_scheduled_ || relayout_in_progress_)
+        {
+            return;
+        }
         relayout_scheduled_ = true;
         post_to_ui(guarded(
             [this]
@@ -831,7 +944,6 @@ protected:
     }
 
 public:
-
     // True if a Ctrl modifier was held during the most recent pointer press/
     // release dispatched through this host. tk's pointer events don't carry
     // modifier state, so shells use this to distinguish a plain click from a
@@ -899,7 +1011,9 @@ public:
     void announce(const std::string& text, Politeness p = Politeness::Polite)
     {
         if (!text.empty())
+        {
             on_announce_(text, p);
+        }
     }
 
     // Called once per paint pass (alongside the pre-paint hook). An
@@ -916,23 +1030,34 @@ protected:
     // host_qt.cpp / host_gtk.cpp / host_win32.cpp / host_macos.mm.
     void fire_user_activity_()
     {
-        if (on_user_activity_) on_user_activity_();
+        if (on_user_activity_)
+        {
+            on_user_activity_();
+        }
     }
 
     // Each Host impl invokes this from its native Ctrl key-up / flags-changed
     // handling — see set_on_ctrl_key_up()'s doc comment above.
     void fire_ctrl_key_up_()
     {
-        if (on_ctrl_key_up_) on_ctrl_key_up_();
+        if (on_ctrl_key_up_)
+        {
+            on_ctrl_key_up_();
+        }
     }
 
     // Each Host impl invokes this immediately before root_->paint(ctx) in
     // its own paint()/on_draw()/on_paint() body — see set_pre_paint_hook().
     void run_pre_paint_hook_() const
     {
-        if (pre_paint_hook_) pre_paint_hook_();
+        if (pre_paint_hook_)
+        {
+            pre_paint_hook_();
+        }
         for (const auto& cb : paint_listeners_)
+        {
             cb();
+        }
     }
 
     // Backend hook behind announce(); default does nothing.
@@ -941,7 +1066,6 @@ protected:
     }
 
 public:
-
     // Run `fn` on the UI thread after at least `ms` milliseconds. One-shot;
     // coalescing not required. Used by the message-list room-switch gate to
     // bound how long the list is held invisible waiting for media to load.
@@ -958,7 +1082,10 @@ public:
     // the platform-specific reason: COM apartment / GLib main context / Qt
     // main-thread affinity). Default optimistically returns true (today's
     // always-attempt behavior) for any backend without a real probe.
-    virtual bool is_network_available() const { return true; }
+    virtual bool is_network_available() const
+    {
+        return true;
+    }
 
     // Allocate a native text input control parented to the host's
     // surface. The returned NativeTextField is owned by the caller; let
@@ -993,13 +1120,22 @@ public:
 
     // Enumerate available audio input devices (microphones).
     // Returns an empty vector on platforms that haven't implemented this yet.
-    virtual std::vector<DeviceListing> enumerate_audio_inputs() const { return {}; }
+    virtual std::vector<DeviceListing> enumerate_audio_inputs() const
+    {
+        return {};
+    }
 
     // Enumerate available audio output devices (speakers/headphones).
-    virtual std::vector<DeviceListing> enumerate_audio_outputs() const { return {}; }
+    virtual std::vector<DeviceListing> enumerate_audio_outputs() const
+    {
+        return {};
+    }
 
     // Enumerate available camera (video capture) devices.
-    virtual std::vector<DeviceListing> enumerate_cameras() const { return {}; }
+    virtual std::vector<DeviceListing> enumerate_cameras() const
+    {
+        return {};
+    }
 
     // Create a `VideoPlayer` backed by the platform's native media stack.
     // Returns `nullptr` on platforms without a video backend; callers must
@@ -1012,8 +1148,8 @@ public:
     // `compress=false` returns the input bytes unchanged with the original
     // mime sniffed by the decoder. Returns an `EncodedImage` with an empty
     // `bytes` vector if the input can't be decoded.
-    virtual EncodedImage encode_for_send(const std::uint8_t* data,
-                                         std::size_t len, bool compress) = 0;
+    virtual EncodedImage encode_for_send(const std::uint8_t* data, std::size_t len,
+                                         bool compress) = 0;
 
     // Write `text` to the system clipboard as plain text.
     virtual void set_clipboard_text(std::string_view text) = 0;
@@ -1022,8 +1158,7 @@ public:
     // place the resulting bitmap on the system clipboard. Returns false if the
     // bytes could not be decoded or the platform has no image-clipboard
     // support. Used by the image lightbox's "copy image" button.
-    virtual bool
-    set_clipboard_image(std::span<const std::uint8_t> encoded_bytes) = 0;
+    virtual bool set_clipboard_image(std::span<const std::uint8_t> encoded_bytes) = 0;
 
     // Newest Emoji version (tk/emoji_support.h) the platform's emoji font can
     // draw; the picker and :shortcode: autocomplete hide newer glyphs.
@@ -1057,7 +1192,10 @@ public:
     }
 
     // Returns the currently active popup (valid between paint frames).
-    Widget* popup() const { return popup_.lock().get(); }
+    Widget* popup() const
+    {
+        return popup_.lock().get();
+    }
     // True when `world` lies inside the open popup — backends check this
     // before dispatch_right_click() so a right-click the popup handles
     // doesn't also reach their shell-level right-click hook.
@@ -1073,7 +1211,9 @@ public:
     {
         auto p = popup_.lock();
         if (!p || p->is_ancestor_of(w))
+        {
             return std::nullopt;
+        }
         return p->bounds();
     }
 
@@ -1111,8 +1251,14 @@ public:
     // clear_focus_scope() while closed. advance_focus_() then walks this
     // subtree instead of the whole window. Falls back to input_root_() when
     // unset or the scoped widget is gone/hidden.
-    void set_focus_scope(Widget* w) { focus_scope_ = track(w); }
-    void clear_focus_scope() { focus_scope_.reset(); }
+    void set_focus_scope(Widget* w)
+    {
+        focus_scope_ = track(w);
+    }
+    void clear_focus_scope()
+    {
+        focus_scope_.reset();
+    }
     // The active focus scope, or null when unset or the scoped widget is
     // gone/hidden (the same fallback advance_focus_() applies). Also tells
     // shortcut handlers whether a modal overlay is covering the rest of the
@@ -1147,7 +1293,10 @@ public:
     void release_focus_to_canvas();
 
     // Currently tk-focused widget, or nullptr.
-    Widget* focused_widget() const { return focused_widget_.lock().get(); }
+    Widget* focused_widget() const
+    {
+        return focused_widget_.lock().get();
+    }
 
     // Moves tk-level focus to the next (forward) or previous focusable
     // canvas widget, exactly as Tab/Shift-Tab already does via
@@ -1156,7 +1305,26 @@ public:
     // unhandled Tab out of a focused native control — can drive the same
     // traversal without needing key-dispatch internals. Returns false if
     // there's no next focusable widget.
-    bool advance_focus(bool forward) { return advance_focus_(forward); }
+    bool advance_focus(bool forward)
+    {
+        return advance_focus_(forward);
+    }
+
+    // Offers `event` to `filter` before anything else in dispatch_key_down; a
+    // true return consumes the key. The shell uses it to steer keys into a
+    // popup that never takes native keyboard focus. Pass an empty function to
+    // remove it.
+    void set_key_prefilter(std::function<bool(const KeyEvent&)> filter)
+    {
+        key_prefilter_ = std::move(filter);
+    }
+
+    // dispatch_key_down for a key that arrived somewhere else (another host's
+    // prefilter). Same result as a key typed into this host's own surface.
+    bool forward_key_down(const KeyEvent& event)
+    {
+        return dispatch_key_down(event);
+    }
 
     // ── Tooltip management ───────────────────────────────────────────────────
     // Any widget can request a tooltip near itself. Since on_pointer_move()/
@@ -1183,8 +1351,8 @@ public:
     // what's already stored is a pure no-op (no repaint requested) — safe
     // for callers that must re-assert the tooltip on every paint() frame
     // instead of on a hover-transition edge.
-    virtual void show_tooltip(const void* owner, std::string text,
-                              Rect anchor_world, bool from_popup = false);
+    virtual void show_tooltip(const void* owner, std::string text, Rect anchor_world,
+                              bool from_popup = false);
 
     // Hide (or cancel the pending delay for) the tooltip owned by `owner`.
     // No-op if `owner` isn't the current tooltip owner.
@@ -1396,7 +1564,7 @@ protected:
     // pending-reset / post-paint-promote pair).
     std::weak_ptr<Widget> popup_trigger_;
     std::weak_ptr<Widget> pending_popup_trigger_;
-    std::weak_ptr<Widget> focus_scope_;   // active Tab-traversal scope, if any
+    std::weak_ptr<Widget> focus_scope_; // active Tab-traversal scope, if any
 
     // Hover feedback + cursor (see Widget::set_hoverable / Widget::cursor()).
     static Widget* hover_target_for_(Widget* hit);
@@ -1405,12 +1573,45 @@ protected:
     void end_hover_feedback_(CursorShape want);
 
     // Tracked pointer state, shared by the dispatch_pointer_* state machine.
-    std::weak_ptr<Widget> pressed_widget_;      // captured on pointer-down
-    std::weak_ptr<Widget> hover_feedback_;      // hoverable widget currently showing hover (see Widget::set_hoverable)
+    std::weak_ptr<Widget> pressed_widget_; // captured on pointer-down
+
+    // Wheel latch: the widget that consumed the current scroll gesture keeps
+    // receiving its wheel events even when content slides another wheel
+    // consumer (a combobox, an inner list) under the stationary pointer.
+    // Ends after a quiet gap with no momentum in flight, or when the pointer
+    // moves. See dispatch_wheel().
+    struct WheelLatch
+    {
+        std::weak_ptr<Widget> target;
+        Point anchor{};
+        std::chrono::steady_clock::time_point last;
+    };
+    std::optional<WheelLatch> wheel_latch_;
+    Widget* wheel_consumer_ = nullptr; // set by note_wheel_consumer_ during one dispatch
+    bool swallow_pointer_up_ = false;  // the press that stopped a coast
+    static constexpr std::chrono::milliseconds kWheelLatchQuiet{400};
+    static constexpr float kWheelLatchMoveSlop = 4.0f;
+    // Overridable so tests can drive the quiet-gap timer.
+    virtual std::chrono::steady_clock::time_point wheel_clock_now_() const
+    {
+        return std::chrono::steady_clock::now();
+    }
+    void note_wheel_consumer_(Widget* w)
+    {
+        if (!wheel_consumer_)
+        {
+            wheel_consumer_ = w; // deepest consumer is reported first
+        }
+    }
+    // The latched widget if the latch is still live, else nullptr (and the
+    // latch is cleared).
+    Widget* live_wheel_latch_target_(Point world);
+    std::weak_ptr<Widget>
+        hover_feedback_; // hoverable widget currently showing hover (see Widget::set_hoverable)
     CursorShape applied_cursor_ = CursorShape::Default; // last cursor handed to apply_cursor_()
-    std::weak_ptr<Widget> hovered_widget_;      // widget currently under the pointer
-    std::weak_ptr<Widget> native_drag_hovered_widget_; // widget currently claiming drag-hover
-    std::weak_ptr<Widget> focused_widget_;      // canvas widget holding tk-level keyboard focus
+    std::weak_ptr<Widget> hovered_widget_;              // widget currently under the pointer
+    std::weak_ptr<Widget> native_drag_hovered_widget_;  // widget currently claiming drag-hover
+    std::weak_ptr<Widget> focused_widget_; // canvas widget holding tk-level keyboard focus
 
     // State for an in-app drag started by begin_drag() (see drag_drop.h).
     // Unrelated to native_drag_hovered_widget_ above (OS file-drop hover).
@@ -1418,7 +1619,7 @@ protected:
     {
         DragPayload payload;
         DragVisual visual;
-        Point cursor_world{}; // updated on every dispatch_pointer_move
+        Point cursor_world{};                 // updated on every dispatch_pointer_move
         std::weak_ptr<Widget> current_target; // last dispatch_drag_enter() claimant
     };
     std::unique_ptr<ActiveDrag> active_drag_;
@@ -1450,6 +1651,7 @@ protected:
     // Returns false (leaving focus unchanged) if the tree has no focusable
     // widget to move to.
     bool advance_focus_(bool forward);
+    std::function<bool(const KeyEvent&)> key_prefilter_;
 
     // Draws the active tooltip (if any) above everything, called by each
     // backend's paint() right after root_->paint_overlay(ctx). `surface_bounds`
@@ -1468,20 +1670,20 @@ protected:
     // Tooltip state — protected (not private) so test fakes derived from
     // Host can assert on it directly (mirrors hovered_widget_ above).
     std::unique_ptr<Tooltip> tooltip_widget_;
-    const void* tooltip_owner_    = nullptr;
+    const void* tooltip_owner_ = nullptr;
     std::string tooltip_text_;
-    Rect        tooltip_anchor_{};
-    bool        tooltip_visible_ = false;   // false = still in its dwell delay
+    Rect tooltip_anchor_{};
+    bool tooltip_visible_ = false; // false = still in its dwell delay
     // Set whenever tooltip_visible_ transitions to true; consumed by
     // paint_tooltip_overlay() to restart Tooltip's entrance reveal exactly
     // once per appearance (set_content() is reasserted every paint frame
     // while visible, so it can't safely detect "just appeared" itself).
-    bool        tooltip_reveal_pending_ = false;
+    bool tooltip_reveal_pending_ = false;
     // Set by advance_focus_ for a focus tooltip: when the dwell delay ends,
     // re-anchor to the focused widget's bounds then, since the Tab that
     // focused it may also have scrolled it (applied on the next layout).
-    bool        tooltip_anchor_follows_focus_ = false;
-    std::uint64_t tooltip_gen_   = 0;
+    bool tooltip_anchor_follows_focus_ = false;
+    std::uint64_t tooltip_gen_ = 0;
     static constexpr int kTooltipShowDelayMs = 500;
 
     // Draws the active toast (if any) above everything, called by each
@@ -1494,8 +1696,8 @@ protected:
     // above, so test fakes derived from Host can assert on it directly.
     std::unique_ptr<Toast> toast_widget_;
     std::string toast_message_;
-    bool        toast_visible_ = false;
-    std::uint64_t toast_gen_   = 0;
+    bool toast_visible_ = false;
+    std::uint64_t toast_gen_ = 0;
     static constexpr int kToastDurationMs = 1500; // matches both prior per-view usages
 
 private:

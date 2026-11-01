@@ -23,8 +23,7 @@ class DragPayload
 {
 public:
     template <typename T>
-    DragPayload(std::string kind, T value)
-        : kind_(std::move(kind)), value_(std::move(value))
+    DragPayload(std::string kind, T value) : kind_(std::move(kind)), value_(std::move(value))
     {
     }
 
@@ -40,7 +39,9 @@ public:
     const T* get_if(const std::string& kind) const
     {
         if (kind_ != kind)
+        {
             return nullptr;
+        }
         return std::any_cast<T>(&value_);
     }
 

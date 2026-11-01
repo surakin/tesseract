@@ -1,0 +1,51 @@
+# Code style gate: Rust (rustfmt) and C++ (clang-format) formatting.
+#
+# Needs no build and no Rust cache: `cargo fmt --check` only parses sources.
+# clang-format is installed from PyPI at the version pinned in
+# tests/clang-format-version (formatting differs between major versions).
+# Both checks always run so a failure in one does not hide the other.
+#
+# Pull requests, pushes to main/development and manual runs run it.
+
+name: Code style
+
+on:
+  pull_request:
+  workflow_dispatch:
+  push:
+    branches: [main, development]
+
+concurrency:
+  group: style-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  formatting:
+    name: Formatting (Rust and C++)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install clang-format (pinned)
+        run: |
+          pip install clang-format==$(cat tests/clang-format-version)
+          clang-format --version
+
+      - name: Install Rust (stable) with rustfmt
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Check formatting
+        run: |
+          status=0
+          cargo fmt --check -p tesseract-sdk-ffi || status=1
+          python3 tests/check_cxx_format.py . || status=1
+          exit $status

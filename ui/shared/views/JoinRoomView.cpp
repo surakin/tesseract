@@ -53,7 +53,9 @@ JoinRoomView::JoinRoomView()
     topic_target_->on_link_activated = [this](const std::string& url)
     {
         if (on_link_clicked)
+        {
             on_link_clicked(url);
+        }
     };
 
     // host() is nullable: when null (e.g. unit tests constructing this
@@ -64,28 +66,43 @@ JoinRoomView::JoinRoomView()
     {
         auto alias = tk::create_widget<tk::TextField>(this, kInputH);
         alias->set_placeholder(tk::tr("#room:server.org"));
-        alias->set_on_changed([this](const std::string& text) { alias_text_ = text; });
-        alias->set_on_submit([this] { request_lookup_(); });
+        alias->set_on_changed(
+            [this](const std::string& text)
+            {
+                alias_text_ = text;
+            });
+        alias->set_on_submit(
+            [this]
+            {
+                request_lookup_();
+            });
         alias_field_ = add_child(std::move(alias));
 
         auto reason = tk::create_widget<tk::TextField>(this, kInputH);
         reason->set_placeholder(tk::tr("Reason (optional)"));
-        reason->set_on_changed([this](const std::string& text) { reason_text_ = text; });
+        reason->set_on_changed(
+            [this](const std::string& text)
+            {
+                reason_text_ = text;
+            });
         reason_field_ = add_child(std::move(reason));
     }
 
-    auto lookup = tk::create_widget<tk::Button>(this,
-        tk::tr("Look up"), std::function<void()>{}, tk::Button::Variant::Primary);
-    lookup->set_on_click([this] { request_lookup_(); });
+    auto lookup = tk::create_widget<tk::Button>(this, tk::tr("Look up"), std::function<void()>{},
+                                                tk::Button::Variant::Primary);
+    lookup->set_on_click(
+        [this]
+        {
+            request_lookup_();
+        });
     lookup_btn_ = add_child(std::move(lookup));
 
     auto join = tk::create_widget<tk::Button>(this, tk::tr("Join"), std::function<void()>{},
-                                             tk::Button::Variant::Primary);
+                                              tk::Button::Variant::Primary);
     join->set_on_click(
         [this]
         {
-            std::string id =
-                preview_.room_id.empty() ? alias_text_ : preview_.room_id;
+            std::string id = preview_.room_id.empty() ? alias_text_ : preview_.room_id;
             // A pasted identifier often carries surrounding whitespace or a
             // newline, which the homeserver then rejects as invalid.
             const auto first = id.find_first_not_of(" \t\r\n");
@@ -93,7 +110,9 @@ JoinRoomView::JoinRoomView()
                      ? std::string{}
                      : id.substr(first, id.find_last_not_of(" \t\r\n") - first + 1);
             if (id.empty())
+            {
                 return;
+            }
             // Capture knock/reason before set_state — State::Joining is
             // reached below and wants_knock_() reads preview_.
             const bool knock = wants_knock_();
@@ -106,7 +125,9 @@ JoinRoomView::JoinRoomView()
             if (knock)
             {
                 if (on_knock_requested)
+                {
                     on_knock_requested(id, reason);
+                }
             }
             else if (on_join_requested)
             {
@@ -115,8 +136,8 @@ JoinRoomView::JoinRoomView()
         });
     join_btn_ = add_child(std::move(join));
 
-    auto cancel = tk::create_widget<tk::Button>(this,
-        tk::tr("Cancel"), std::function<void()>{}, tk::Button::Variant::Subtle);
+    auto cancel = tk::create_widget<tk::Button>(this, tk::tr("Cancel"), std::function<void()>{},
+                                                tk::Button::Variant::Subtle);
     cancel->set_on_click(
         [this]
         {
@@ -149,28 +170,35 @@ void JoinRoomView::open(const std::string& prefill)
 void JoinRoomView::close()
 {
     if (!is_open_)
+    {
         return;
+    }
     is_open_ = false;
     pending_focus_ = false;
     set_visible(false);
     set_state(State::Idle);
     if (on_close)
+    {
         on_close();
+    }
 }
 
 void JoinRoomView::set_visible(bool v)
 {
     tk::Widget::set_visible(v);
     if (!v && alias_field_)
+    {
         alias_field_->set_visible(false);
+    }
     if (!v && reason_field_)
+    {
         reason_field_->set_visible(false);
+    }
 }
 
 bool JoinRoomView::wants_knock_() const
 {
-    return (preview_.join_rule == "knock" ||
-            preview_.join_rule == "knock_restricted") &&
+    return (preview_.join_rule == "knock" || preview_.join_rule == "knock_restricted") &&
            preview_.membership != "join";
 }
 
@@ -197,7 +225,9 @@ void JoinRoomView::set_preview(const tesseract::RoomSummary& summary)
     error_msg_.clear();
     reason_text_.clear();
     if (reason_field_)
+    {
         reason_field_->set_text("");
+    }
     apply_state();
 }
 
@@ -226,28 +256,38 @@ bool JoinRoomView::join_button_enabled() const
 void JoinRoomView::trigger_join_for_test()
 {
     if (join_btn_)
+    {
         join_btn_->click();
+    }
 }
 
 void JoinRoomView::on_theme_changed(const tk::Theme& t)
 {
     if (alias_field_)
+    {
         alias_field_->set_text_color(t.palette.text_primary);
+    }
     if (reason_field_)
+    {
         reason_field_->set_text_color(t.palette.text_primary);
+    }
 }
 
 void JoinRoomView::focus_alias_field()
 {
     if (alias_field_)
+    {
         alias_field_->set_focused(true);
+    }
 }
 
 void JoinRoomView::set_alias_text(std::string text)
 {
     alias_text_ = text;
     if (alias_field_)
+    {
         alias_field_->set_text(std::move(text));
+    }
 }
 
 void JoinRoomView::request_lookup_()
@@ -261,8 +301,8 @@ void JoinRoomView::request_lookup_()
 void JoinRoomView::apply_state()
 {
     bool show_join = showing_preview_card_();
-    bool show_status = (state_ == State::Loading || state_ == State::Error ||
-                        state_ == State::Joining);
+    bool show_status =
+        (state_ == State::Loading || state_ == State::Error || state_ == State::Joining);
 
     if (join_btn_)
     {
@@ -292,8 +332,7 @@ void JoinRoomView::apply_state()
         }
         else if (state_ == State::Error)
         {
-            status_lbl_->set_text(error_msg_.empty() ? tk::tr("Room not found.")
-                                                     : error_msg_);
+            status_lbl_->set_text(error_msg_.empty() ? tk::tr("Room not found.") : error_msg_);
         }
         else
         {
@@ -323,7 +362,9 @@ void JoinRoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     // Title row (painted directly — no Label child to keep it simple).
     // Suppressed when hosted inside AddRoomView's segmented header.
     if (title_visible_)
+    {
         y += kTitleH + kJoinRoomGap;
+    }
 
     // Input row: [alias field] [kSmallGap] [Look up button].
     float lookup_x = x + inner_w - kLookupBtnW;
@@ -368,21 +409,26 @@ void JoinRoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
             ts.max_width = info_w;
             if (auto lo = ctx.factory.build_text(
                     preview_.name.empty() ? preview_.room_id : preview_.name, ts))
+            {
                 info_content_h += lo->measure().h;
+            }
         }
         if (!preview_.join_rule.empty())
-            info_content_h += kSmallGap + kPillH;
         {
-            std::string detail = tk::trf(
-                tk::trn("{0} member", "{0} members",
-                        static_cast<long>(preview_.num_joined_members)),
-                {std::to_string(preview_.num_joined_members)});
+            info_content_h += kSmallGap + kPillH;
+        }
+        {
+            std::string detail = tk::trf(tk::trn("{0} member", "{0} members",
+                                                 static_cast<long>(preview_.num_joined_members)),
+                                         {std::to_string(preview_.num_joined_members)});
             tk::TextStyle ts;
             ts.role = tk::FontRole::Body;
             ts.trim = tk::TextTrim::Ellipsis;
             ts.max_width = info_w;
             if (auto lo = ctx.factory.build_text(detail, ts))
+            {
                 info_content_h += kSmallGap + lo->measure().h;
+            }
         }
         float info_h = std::max(kJoinRoomAvatarSize, info_content_h);
         preview_info_h_ = info_h;
@@ -411,16 +457,21 @@ void JoinRoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
                 ts.wrap = true;
                 ts.max_width = topic_w;
                 if (!topic_spans_.empty())
+                {
                     topic_layout_ = ctx.factory.build_rich_text(topic_spans_, ts);
+                }
                 else
+                {
                     topic_layout_ = ctx.factory.build_text(preview_.topic, ts);
+                }
             }
             if (topic_layout_)
+            {
                 topic_h = std::min(topic_layout_->measure().h, kJoinRoomTopicMaxH);
+            }
         }
 
-        float card_h = kCardPadY * 2.0f + info_h +
-                       (topic_h > 0 ? kSmallGap + topic_h : 0.0f);
+        float card_h = kCardPadY * 2.0f + info_h + (topic_h > 0 ? kSmallGap + topic_h : 0.0f);
         preview_card_rect_ = {card_x, card_y, inner_w, card_h};
         y += card_h + kJoinRoomGap;
     }
@@ -462,7 +513,9 @@ void JoinRoomView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 void JoinRoomView::paint(tk::PaintCtx& ctx)
 {
     if (topic_target_)
+    {
         topic_target_->set_target_rect({}); // re-placed below if a topic shows
+    }
 
     // See pending_focus_'s doc comment: open() defers this because the
     // native alias field's overlay isn't positioned (arrange() hasn't run
@@ -508,9 +561,8 @@ void JoinRoomView::paint(tk::PaintCtx& ctx)
     // Status label.
     if (status_lbl_ && status_lbl_->visible())
     {
-        status_lbl_->set_colour(state_ == State::Error
-                                     ? std::optional<tk::Color>(pal.destructive)
-                                     : std::nullopt);
+        status_lbl_->set_colour(state_ == State::Error ? std::optional<tk::Color>(pal.destructive)
+                                                       : std::nullopt);
         status_lbl_->paint(ctx);
         y += kStatusH + kSmallGap;
     }
@@ -536,11 +588,10 @@ void JoinRoomView::paint(tk::PaintCtx& ctx)
         }
 
         {
-            std::string_view disp = preview_.name.empty()
-                                        ? std::string_view("#")
-                                        : std::string_view(preview_.name);
-            draw_avatar(ctx.canvas, av_img, av_centre, kJoinRoomAvatarSize, disp,
-                        pal.accent, tk::Color{255, 255, 255, 255});
+            std::string_view disp =
+                preview_.name.empty() ? std::string_view("#") : std::string_view(preview_.name);
+            draw_avatar(ctx.canvas, av_img, av_centre, kJoinRoomAvatarSize, disp, pal.accent,
+                        tk::accent_foreground(ctx.theme));
         }
 
         // Info column to the right of the avatar.
@@ -576,22 +627,24 @@ void JoinRoomView::paint(tk::PaintCtx& ctx)
             {
                 float pw = lo->measure().w + kPillPadX * 2.0f;
                 tk::Rect pill{info_x, info_y, pw, kPillH};
-                ctx.canvas.fill_rounded_rect(pill, kPillH * 0.5f, bg);
+                ctx.canvas.fill_rounded_rect(pill, kPillH * 0.5f,
+                                             ctx.theme.high_contrast ? pal.bg : bg);
+                if (ctx.theme.high_contrast)
+                {
+                    ctx.canvas.stroke_rounded_rect(pill, kPillH * 0.5f, pal.border, 1.0f);
+                }
                 ctx.canvas.draw_text(
-                    *lo,
-                    {info_x + kPillPadX,
-                     info_y + (kPillH - lo->measure().h) * 0.5f},
-                    tk::Color{255, 255, 255, 255});
+                    *lo, {info_x + kPillPadX, info_y + (kPillH - lo->measure().h) * 0.5f},
+                    ctx.theme.high_contrast ? pal.text_primary : tk::Color{255, 255, 255, 255});
                 info_y += kPillH + kSmallGap;
             }
         }
 
         // Member count + encryption indicator.
         {
-            std::string detail = tk::trf(
-                tk::trn("{0} member", "{0} members",
-                        static_cast<long>(preview_.num_joined_members)),
-                {std::to_string(preview_.num_joined_members)});
+            std::string detail = tk::trf(tk::trn("{0} member", "{0} members",
+                                                 static_cast<long>(preview_.num_joined_members)),
+                                         {std::to_string(preview_.num_joined_members)});
             if (!preview_.encryption.empty())
             {
                 detail += "  \xF0\x9F\x94\x92"; // UTF-8 🔒
@@ -615,8 +668,7 @@ void JoinRoomView::paint(tk::PaintCtx& ctx)
         // (e.g. a fresh paint before arrange ran) builds an identical layout.
         if (!preview_.topic.empty())
         {
-            float topic_y =
-                preview_card_rect_.y + kCardPadY + preview_info_h_ + kSmallGap;
+            float topic_y = preview_card_rect_.y + kCardPadY + preview_info_h_ + kSmallGap;
             float topic_w = preview_card_rect_.w - kCardPadX * 2.0f;
             if (!topic_layout_)
             {
@@ -626,9 +678,13 @@ void JoinRoomView::paint(tk::PaintCtx& ctx)
                 ts.wrap = true;
                 ts.max_width = topic_w;
                 if (!topic_spans_.empty())
+                {
                     topic_layout_ = ctx.factory.build_rich_text(topic_spans_, ts);
+                }
                 else
+                {
                     topic_layout_ = ctx.factory.build_text(preview_.topic, ts);
+                }
             }
             if (topic_layout_)
             {
@@ -637,11 +693,11 @@ void JoinRoomView::paint(tk::PaintCtx& ctx)
                 // style's (unset) max_height, so without this a topic
                 // needing more than kJoinRoomTopicMaxH would spill past the
                 // card's bottom border instead of being cleanly cut off.
-                const float clipped_h =
-                    std::min(topic_layout_->measure().h, kJoinRoomTopicMaxH);
-                ctx.canvas.push_clip_rect({cx, topic_y, topic_w, clipped_h});
-                ctx.canvas.draw_text(*topic_layout_, {cx, topic_y}, pal.text_secondary);
-                ctx.canvas.pop_clip();
+                const float clipped_h = std::min(topic_layout_->measure().h, kJoinRoomTopicMaxH);
+                {
+                    tk::ClipScope clip(ctx.canvas, {cx, topic_y, topic_w, clipped_h});
+                    ctx.canvas.draw_text(*topic_layout_, {cx, topic_y}, pal.text_secondary);
+                }
                 topic_rect_ = {cx, topic_y, topic_layout_->measure().w, clipped_h};
                 if (topic_target_)
                 {
@@ -681,16 +737,22 @@ void JoinRoomView::paint(tk::PaintCtx& ctx)
 bool JoinRoomView::on_pointer_down(tk::Point local)
 {
     if (state_ != State::Preview || !topic_layout_)
+    {
         return false;
+    }
 
     const tk::Point w{local.x + bounds().x, local.y + bounds().y};
     if (!rect_contains(topic_rect_, w))
+    {
         return false;
+    }
 
     const tk::Point ll{w.x - topic_rect_.x, w.y - topic_rect_.y};
     std::string url = topic_layout_->link_at(ll);
     if (url.empty())
+    {
         return false;
+    }
 
     press_link_url_ = std::move(url);
     return true;
@@ -699,27 +761,37 @@ bool JoinRoomView::on_pointer_down(tk::Point local)
 void JoinRoomView::on_pointer_up(tk::Point local, bool inside_self)
 {
     if (press_link_url_.empty())
+    {
         return;
+    }
 
     std::string url = std::move(press_link_url_);
     press_link_url_.clear();
 
     if (!inside_self || !on_link_clicked || !topic_layout_)
+    {
         return;
+    }
 
     const tk::Point w{local.x + bounds().x, local.y + bounds().y};
     if (!rect_contains(topic_rect_, w))
+    {
         return;
+    }
 
     const tk::Point ll{w.x - topic_rect_.x, w.y - topic_rect_.y};
     if (topic_layout_->link_at(ll) == url)
+    {
         on_link_clicked(std::move(url));
+    }
 }
 
 bool JoinRoomView::on_pointer_move(tk::Point local)
 {
     if (state_ != State::Preview || !topic_layout_)
+    {
         return false;
+    }
 
     const tk::Point w{local.x + bounds().x, local.y + bounds().y};
     std::string new_link_url;
@@ -732,7 +804,10 @@ bool JoinRoomView::on_pointer_move(tk::Point local)
     if (changed)
     {
         hover_link_url_ = new_link_url;
-        if (on_link_hovered) on_link_hovered(hover_link_url_);
+        if (on_link_hovered)
+        {
+            on_link_hovered(hover_link_url_);
+        }
     }
     return changed;
 }
@@ -742,7 +817,10 @@ void JoinRoomView::on_pointer_leave()
     if (!hover_link_url_.empty())
     {
         hover_link_url_.clear();
-        if (on_link_hovered) on_link_hovered({});
+        if (on_link_hovered)
+        {
+            on_link_hovered({});
+        }
     }
 }
 
@@ -755,17 +833,22 @@ tk::Role JoinRoomView::access_role() const
 std::string JoinRoomView::access_name() const
 {
     if (!showing_preview_card_() || preview_.room_id.empty())
+    {
         return {};
+    }
 
     std::string name = preview_.name.empty() ? preview_.room_id : preview_.name;
     if (!preview_.join_rule.empty())
+    {
         name += ", " + join_rule_label(preview_.join_rule);
-    name += ", " +
-           tk::trf(tk::trn("{0} member", "{0} members",
-                          static_cast<long>(preview_.num_joined_members)),
-                   {std::to_string(preview_.num_joined_members)});
+    }
+    name += ", " + tk::trf(tk::trn("{0} member", "{0} members",
+                                   static_cast<long>(preview_.num_joined_members)),
+                           {std::to_string(preview_.num_joined_members)});
     if (!preview_.topic.empty())
+    {
         name += ": " + preview_.topic;
+    }
     return name;
 }
 

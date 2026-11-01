@@ -43,7 +43,7 @@ public:
     // Popup card dimensions (logical px) — canonical size for hosts using
     // register_popup()/open_at(), replacing the shell-duplicated size
     // constants each native-popup wrapper used to define separately.
-    static constexpr float kWidth  = 360.0f;
+    static constexpr float kWidth = 360.0f;
     static constexpr float kHeight = 420.0f;
 
     ~StickerPicker() override;
@@ -127,8 +127,8 @@ protected:
 
     // Item model.
     std::size_t item_count() const override;
-    void paint_cell(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
-                    bool selected, bool hovered) override;
+    void paint_cell(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds, bool selected,
+                    bool hovered) override;
     void on_item_activated(int index) override;
     std::string cell_tooltip(int index) const override;
 
@@ -140,8 +140,7 @@ protected:
     std::string tab_label(int index) const override;
 
     // Search.
-    void on_search_query_changed(const std::string& query,
-                                 bool cleared) override;
+    void on_search_query_changed(const std::string& query, bool cleared) override;
 
 private:
     enum class Page : std::uint8_t

@@ -24,8 +24,7 @@ using tesseract::views::RoomView;
 
 // ── FFI conversion ──────────────────────────────────────────────────────────
 
-TEST_CASE("make_event turns m.room.tombstone into RoomTombstoneStateEvent",
-          "[ffi][room_upgrade]")
+TEST_CASE("make_event turns m.room.tombstone into RoomTombstoneStateEvent", "[ffi][room_upgrade]")
 {
     tesseract_ffi::TimelineEvent in{};
     in.msg_type = "m.room.tombstone";
@@ -44,8 +43,7 @@ TEST_CASE("make_event turns m.room.tombstone into RoomTombstoneStateEvent",
     CHECK(t->sender_name == "Alice");
 }
 
-TEST_CASE("from_ffi(RoomInfo) propagates the room-upgrade fields",
-          "[ffi][room_upgrade]")
+TEST_CASE("from_ffi(RoomInfo) propagates the room-upgrade fields", "[ffi][room_upgrade]")
 {
     tesseract_ffi::RoomInfo in{};
     in.id = "!old:server";
@@ -134,13 +132,15 @@ TEST_CASE("MessageListView offers View older messages on the start row only "
     CHECK_FALSE(v.predecessor_link()->own_visible());
 }
 
-TEST_CASE("clicking View older messages fires on_open_predecessor",
-          "[message_list][room_upgrade]")
+TEST_CASE("clicking View older messages fires on_open_predecessor", "[message_list][room_upgrade]")
 {
     UpgradeStage st;
     MessageListView v;
     int fired = 0;
-    v.on_open_predecessor = [&] { ++fired; };
+    v.on_open_predecessor = [&]
+    {
+        ++fired;
+    };
     v.set_messages(start_then_text(), /*room_switch=*/true);
     v.set_predecessor_available(true);
     v.scroll_to_top();
@@ -198,8 +198,7 @@ TEST_CASE("RoomView shows the replaced strip and disables the composer for a "
 
     std::string opened;
     std::vector<std::string> via;
-    view.on_open_room_version = [&](const std::string& id,
-                                    const std::vector<std::string>& v)
+    view.on_open_room_version = [&](const std::string& id, const std::vector<std::string>& v)
     {
         opened = id;
         via = v;
@@ -245,8 +244,7 @@ TEST_CASE("RoomView leaves the composer enabled and the strip hidden for an "
     CHECK_FALSE(view.replaced_banner()->own_visible());
 }
 
-TEST_CASE("RoomView opens the predecessor with its via servers",
-          "[view][room][room_upgrade]")
+TEST_CASE("RoomView opens the predecessor with its via servers", "[view][room][room_upgrade]")
 {
     auto owner = tk::create_root_widget<RoomView>(nullptr);
     RoomView& view = *owner;
@@ -260,8 +258,7 @@ TEST_CASE("RoomView opens the predecessor with its via servers",
 
     std::string opened;
     std::vector<std::string> via;
-    view.on_open_room_version = [&](const std::string& id,
-                                    const std::vector<std::string>& v)
+    view.on_open_room_version = [&](const std::string& id, const std::vector<std::string>& v)
     {
         opened = id;
         via = v;
@@ -280,15 +277,20 @@ namespace
 struct UpgradeTestShell : tesseract::test::TestShellBase
 {
 
-    void apply_thread_messages_(
-        const std::string&,
-        std::vector<tesseract::views::MessageRowData>, bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
-    void apply_window_title_ui_(const std::string&) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
+    void apply_window_title_ui_(const std::string&) override
+    {
+    }
 
     using ShellBase::hidden_rooms_;
     using ShellBase::mark_room_index_dirty_;
@@ -298,8 +300,7 @@ struct UpgradeTestShell : tesseract::test::TestShellBase
 
 } // namespace
 
-TEST_CASE("room_by_id_ falls back to a hidden upgraded room",
-          "[shell][room_upgrade]")
+TEST_CASE("room_by_id_ falls back to a hidden upgraded room", "[shell][room_upgrade]")
 {
     UpgradeTestShell s;
     tesseract::RoomInfo listed;

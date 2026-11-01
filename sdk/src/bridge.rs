@@ -42,6 +42,13 @@ pub fn set_exclude_insecure_devices(enabled: bool) {
     super::client::identity::set_exclude_insecure_devices(enabled);
 }
 
+/// Refuse a send when a verified member's identity changed or they have an
+/// unsigned device (default on). Process-wide, read when each matrix-sdk
+/// client is built.
+pub fn set_block_sends_on_unverified_devices(enabled: bool) {
+    super::client::identity::set_block_sends_on_unverified_devices(enabled);
+}
+
 /// Process-wide HTTP proxy (0 = system, 1 = none, 2 = manual). Call before
 /// any client is built and before runtime threads start.
 pub fn set_proxy(mode: u8, url: &str) -> bool {
@@ -56,7 +63,11 @@ pub fn validate_proxy_url(url: &str) -> bool {
     super::net_proxy::validate_proxy_url(url)
 }
 
-pub fn check_media_file(filename: &str, declared_mime: &str, head: &[u8]) -> ffi::MediaTypeCheckFfi {
+pub fn check_media_file(
+    filename: &str,
+    declared_mime: &str,
+    head: &[u8],
+) -> ffi::MediaTypeCheckFfi {
     use super::media_type_check::{check, Verdict};
     let r = check(filename, declared_mime, head);
     ffi::MediaTypeCheckFfi {
@@ -109,6 +120,10 @@ pub fn find_url_spans(text: &str) -> Vec<ffi::UrlSpan> {
     super::text_utils::find_url_spans(text)
 }
 
+pub fn find_preview_url_spans(text: &str) -> Vec<ffi::UrlSpan> {
+    super::text_utils::find_preview_url_spans(text)
+}
+
 /// Classify whether `text` (expected to be the entire trimmed composed
 /// message body) is a Google Maps / OpenStreetMap URL. See `MapsLinkResult`.
 pub fn classify_maps_link(text: &str) -> ffi::MapsLinkResult {
@@ -151,7 +166,7 @@ pub mod ffi {
     // Shared plain-data types
     // -------------------------------------------------------------------------
 
-    /// Lightweight room descriptor returned by list_rooms().
+    /// Lightweight room descriptor returned by room_info_by_id().
     struct RoomInfo {
         id: String,
         name: String,
@@ -714,6 +729,9 @@ pub mod ffi {
         pending_recoverable: bool,
         /// Transaction ID of the pending local echo (for abort_send).
         pending_txn_id: String,
+        /// Users an encryption check named when `pending_error` is a
+        /// `identity_violation` / `insecure_devices` code.
+        pending_error_users: Vec<String>,
         // m.location / MSC3488 (valid when msg_type == "m.location")
         location_lat: f64,
         location_lon: f64,
@@ -784,12 +802,37 @@ pub mod ffi {
         /// "m.gallery" only (MSC4274): ordered gallery items. Empty for all
         /// other msg_types.
         gallery_items: Vec<GalleryItemFfi>,
+        // ----- MSC4553 forwarded messages -----
+        /// True when the event carries an MSC4553 `forwarded` object. All
+        /// other fields then describe the forwarded (original) content, never
+        /// an edit of it, and `is_edited` is false.
+        forwarded: bool,
+        /// Matrix ID of the original sender; empty when the forward gives none.
+        forwarded_sender: String,
+        /// Display name of the original sender when the current room's member
+        /// cache has it (no network); empty otherwise, the UI shows the ID.
+        forwarded_sender_name: String,
+        /// Room and event the content was forwarded from; empty when absent.
+        forwarded_room_id: String,
+        forwarded_event_id: String,
+        /// Original `origin_server_ts` in Unix milliseconds; 0 when absent.
+        forwarded_origin_ts: i64,
     }
 
     /// Outcome of an asynchronous SDK operation.
     struct OpResult {
         ok: bool,
         message: String,
+    }
+
+    /// Outcome of starting a MatrixRTC call. The call itself comes up on the
+    /// runtime: `session_id` (non-zero on success) is the id every later event
+    /// of the call carries, and a call that cannot be set up ends with an
+    /// `on_rtc_session_ended` whose reason starts with `start_failed:`.
+    struct RtcStartResult {
+        ok: bool,
+        message: String,
+        session_id: u64,
     }
 
     /// Plain-data descriptor for a MatrixRTC call participant.
@@ -812,6 +855,37 @@ pub mod ffi {
         has_update: bool,
         version: String,
         url: String,
+    }
+
+    /// One homeserver from the community list (servers.joinmatrix.org).
+    /// Link fields are `https://` URLs or empty; only sliding-sync servers
+    /// are ever returned.
+    struct ServerListEntryFfi {
+        name: String,
+        client_domain: String,
+        homepage: String,
+        description: String,
+        jurisdiction: String,
+        languages: Vec<String>,
+        software: String,
+        reg_method: String,
+        reg_link: String,
+        rules: String,
+        privacy: String,
+        longstanding: bool,
+        online: bool,
+        is_public: bool,
+    }
+
+    /// Result of `load_server_list`. `ok` is false when there was neither a
+    /// fresh fetch nor a usable cache; `from_cache` marks a cached answer.
+    struct ServerListFfi {
+        entries: Vec<ServerListEntryFfi>,
+        ok: bool,
+        from_cache: bool,
+        /// Provider's display name and `https://` page; empty when `!ok`.
+        source_name: String,
+        source_url: String,
     }
 
     /// Outcome of a back-pagination or forward-pagination call.
@@ -1437,6 +1511,8 @@ pub mod ffi {
         profile_fields_stable: bool,
         /// Server advertises MSC4491 invite reasons.
         supports_invite_reason: bool,
+        /// Server supports MSC2666 mutual rooms (unstable or stable endpoint).
+        supports_mutual_rooms: bool,
         /// Server software from `/_matrix/federation/v1/version`; both empty
         /// when the endpoint is unreachable.
         server_name: String,
@@ -1871,7 +1947,13 @@ pub mod ffi {
         /// the C++ side needs this to report a real final length to Media
         /// Foundation instead of a growing partial size, which its reader
         /// otherwise mistakes for having caught up to EOF.
-        fn on_media_chunk(self: &EventHandlerBridge, request_id: u64, chunk: &[u8], status: u8, total_size: u64);
+        fn on_media_chunk(
+            self: &EventHandlerBridge,
+            request_id: u64,
+            chunk: &[u8],
+            status: u8,
+            total_size: u64,
+        );
 
         /// Fired when an async URL-preview fetch started via
         /// `get_url_preview_async` completes. `request_id` is the correlation
@@ -1910,11 +1992,7 @@ pub mod ffi {
         /// Fired when an async server-info fetch started via
         /// `get_server_info_async` completes (`ok` false on failure or when
         /// not logged in).
-        fn on_server_info_ready(
-            self: &EventHandlerBridge,
-            request_id: u64,
-            info: &ServerInfoFfi,
-        );
+        fn on_server_info_ready(self: &EventHandlerBridge, request_id: u64, info: &ServerInfoFfi);
 
         /// Fired when an async `media_preview_config_async` fetch completes.
         /// `config_json` is `{"media_previews":N,"invite_avatars":bool}`.
@@ -2084,6 +2162,11 @@ pub mod ffi {
             profile_json: &str,
         );
 
+        /// Fired when an async `get_mutual_rooms_async` page completes.
+        /// `json` is `{"joined":[room ids],"count":N,"next_batch":"","error":""}`;
+        /// a non-empty `error` means the request failed.
+        fn on_mutual_rooms_ready(self: &EventHandlerBridge, request_id: u64, json: &str);
+
         // --- MatrixRTC call event callbacks ---
 
         /// Fired when a remote participant opens a call slot in a joined room,
@@ -2184,6 +2267,10 @@ pub mod ffi {
         /// built: call before `restore_session` / `oauth_begin`.
         fn set_exclude_insecure_devices(enabled: bool);
 
+        /// Refuse a send when a verified member's identity changed or they
+        /// have an unsigned device. Process-wide, read when a client is built.
+        fn set_block_sends_on_unverified_devices(enabled: bool);
+
         // ----- Network proxy -----
 
         /// Process-wide HTTP proxy: mode 0 = system, 1 = none, 2 = manual
@@ -2199,11 +2286,7 @@ pub mod ffi {
 
         /// Compare a received file's name, declared mime and leading bytes
         /// (pass up to ~8 KiB) before handing it to an OS viewer.
-        fn check_media_file(
-            filename: &str,
-            declared_mime: &str,
-            head: &[u8],
-        ) -> MediaTypeCheckFfi;
+        fn check_media_file(filename: &str, declared_mime: &str, head: &[u8]) -> MediaTypeCheckFfi;
 
         // ----- Local waveform generation -----
 
@@ -2246,6 +2329,12 @@ pub mod ffi {
         /// Returns byte-offset spans sorted by `start`.  Used by the C++
         /// autolinker to build clickable TextSpan lists from plain-text bodies.
         fn find_url_spans(text: &str) -> Vec<UrlSpan>;
+
+        /// Like `find_url_spans`, but excludes spans inside a Markdown code
+        /// region (fenced block or inline code span) — a URL shown as code
+        /// was not meant as a link to preview. Used by the C++ legacy
+        /// URL-preview fallback (`first_url_from_plain`).
+        fn find_preview_url_spans(text: &str) -> Vec<UrlSpan>;
 
         // ----- Maps link detection -----
 
@@ -2332,11 +2421,13 @@ pub mod ffi {
 
         /// Begin the OAuth login (or, when `register_account` is true,
         /// registration via OIDC prompt=create) flow. Returns the auth URL to
-        /// open in a browser.
+        /// open in a browser. A non-empty `user_id_hint` (a full Matrix ID) is sent as
+        /// the MSC4198 login hint so the server can prefill the username.
         fn oauth_begin(
             self: &mut ClientFfi,
             homeserver: &str,
             register_account: bool,
+            user_id_hint: &str,
         ) -> OAuthBegin;
 
         /// Best-effort: does `homeserver` advertise OIDC registration support
@@ -2431,6 +2522,9 @@ pub mod ffi {
         fn request_stop(self: &ClientFfi);
         fn stop_sync(self: &mut ClientFfi);
         fn clear_caches(self: &mut ClientFfi) -> OpResult;
+        /// Tear the client down in place, keeping every on-disk store, so the
+        /// next `restore_session` rebuilds it with the current build-time flags.
+        fn reload_client(self: &mut ClientFfi) -> OpResult;
 
         // ----- Media backoff persistence -----
 
@@ -2477,8 +2571,6 @@ pub mod ffi {
         fn in_flight_count(self: &ClientFfi) -> u32;
 
         // ----- Room list -----
-
-        fn list_rooms(self: &ClientFfi) -> Vec<RoomInfo>;
 
         /// `RoomInfo` for one joined room, bypassing the room-list filter that
         /// hides a tombstoned room once its successor is joined. Returns an
@@ -2769,14 +2861,16 @@ pub mod ffi {
         /// path. Silent: emits no `on_message_event` / `on_timeline_reset`
         /// callbacks for the rooms it visits. The persistent SDK event
         /// cache is what gets warmed.
-        fn start_background_backfill(
-            self: &ClientFfi,
-            room_ids: &CxxVector<CxxString>,
-        ) -> OpResult;
+        fn start_background_backfill(self: &ClientFfi, room_ids: &Vec<String>) -> OpResult;
 
         /// Cancel an in-progress background backfill. No-op if none is
         /// running. Also called automatically from `stop_sync` and `Drop`.
         fn stop_background_backfill(self: &ClientFfi);
+
+        /// Cancel only the visible-rooms backfill (`start_background_backfill`),
+        /// leaving the all-rooms pass (`start_background_backfill_all_uncached`)
+        /// running. Used when the visible set changes.
+        fn stop_visible_backfill(self: &ClientFfi);
 
         /// Like `start_background_backfill` but auto-selects every joined
         /// room whose timestamp is absent from the in-memory backfill cache
@@ -2792,10 +2886,7 @@ pub mod ffi {
         /// newly discovered bridged room changes what the UI shows. Idempotent
         /// while a check is already in flight. Called by the shell when the
         /// visible room set changes (same pattern as start_background_backfill).
-        fn start_bridge_status_check(
-            self: &ClientFfi,
-            room_ids: &CxxVector<CxxString>,
-        ) -> OpResult;
+        fn start_bridge_status_check(self: &ClientFfi, room_ids: &Vec<String>) -> OpResult;
 
         /// One-shot prefetch of recent messages for the given unread rooms into
         /// the SDK event cache, so opening them is instant. The caller passes
@@ -2807,8 +2898,7 @@ pub mod ffi {
         /// concurrency on a task independent of the inactive-grouping backfill,
         /// so the two never abort each other. Silent (no callbacks). Idempotent
         /// while a prefetch is in flight.
-        fn start_unread_prefetch(self: &ClientFfi, room_ids: &CxxVector<CxxString>)
-            -> OpResult;
+        fn start_unread_prefetch(self: &ClientFfi, room_ids: &Vec<String>) -> OpResult;
 
         /// Cancel an in-progress unread prefetch. No-op if none is running.
         /// Also called automatically from `stop_sync` and `Drop`.
@@ -2907,8 +2997,7 @@ pub mod ffi {
         /// and classify the resolved target. Blocking — call only from a
         /// background thread, never the UI thread. Returns `matched: false`
         /// on any failure, non-coordinate target, or timeout.
-        fn resolve_maps_shortlink(self: &ClientFfi, url: &str, timeout_ms: u64)
-            -> MapsLinkResult;
+        fn resolve_maps_shortlink(self: &ClientFfi, url: &str, timeout_ms: u64) -> MapsLinkResult;
 
         /// Send `body` as an `m.location` event (MSC3488) at the given
         /// coordinates. `body` is the plain-text fallback shown by clients
@@ -3045,6 +3134,8 @@ pub mod ffi {
         /// Non-blocking image send. Spawns the upload as a tokio task and
         /// delivers the result via `on_upload_complete`. `bytes` are cloned
         /// before returning; the caller need not keep them alive.
+        /// `formatted_caption` is the caption's HTML (empty for a plain
+        /// caption); user mentions in it become `m.mentions`.
         fn send_image_async(
             self: &ClientFfi,
             request_id: u64,
@@ -3053,6 +3144,7 @@ pub mod ffi {
             mime_type: &str,
             filename: &str,
             caption: &str,
+            formatted_caption: &str,
             width: u32,
             height: u32,
             is_animated: bool,
@@ -3061,7 +3153,8 @@ pub mod ffi {
         );
 
         /// Non-blocking file send. Spawns the upload as a tokio task and
-        /// delivers the result via `on_upload_complete`.
+        /// delivers the result via `on_upload_complete`. `formatted_caption`
+        /// is the caption's HTML, as for `send_image_async`.
         fn send_file_async(
             self: &ClientFfi,
             request_id: u64,
@@ -3070,12 +3163,14 @@ pub mod ffi {
             mime_type: &str,
             filename: &str,
             caption: &str,
+            formatted_caption: &str,
             reply_event_id: &str,
             thread_root: &str,
         );
 
         /// Non-blocking audio send. Spawns the upload as a tokio task and
-        /// delivers the result via `on_upload_complete`.
+        /// delivers the result via `on_upload_complete`. `formatted_caption`
+        /// is the caption's HTML, as for `send_image_async`.
         fn send_audio_async(
             self: &ClientFfi,
             request_id: u64,
@@ -3084,13 +3179,15 @@ pub mod ffi {
             mime_type: &str,
             filename: &str,
             caption: &str,
+            formatted_caption: &str,
             duration_ms: u64,
             reply_event_id: &str,
             thread_root: &str,
         );
 
         /// Non-blocking video send. Spawns the upload as a tokio task and
-        /// delivers the result via `on_upload_complete`.
+        /// delivers the result via `on_upload_complete`. `formatted_caption`
+        /// is the caption's HTML, as for `send_image_async`.
         fn send_video_async(
             self: &ClientFfi,
             request_id: u64,
@@ -3099,6 +3196,7 @@ pub mod ffi {
             mime_type: &str,
             filename: &str,
             caption: &str,
+            formatted_caption: &str,
             width: u32,
             height: u32,
             thumb_bytes: &[u8],
@@ -3116,13 +3214,15 @@ pub mod ffi {
         /// mirrors the enqueue-is-done semantics `send_edit` already uses,
         /// not per-item upload progress. Requires 2+ items; the composer
         /// sends a lone attachment via the scalar `send_*_async` calls
-        /// instead.
+        /// instead. `formatted_caption` is the caption's HTML, as for
+        /// `send_image_async`; ignored when `caption` is empty.
         fn send_gallery_async(
             self: &ClientFfi,
             request_id: u64,
             room_id: &str,
             items: Vec<GalleryItemOutFfi>,
             caption: &str,
+            formatted_caption: &str,
             reply_event_id: &str,
             thread_root: &str,
         );
@@ -3179,12 +3279,15 @@ pub mod ffi {
         /// `EditedContent::MediaCaption`, which preserves the original media
         /// content (url/info/msgtype) and only patches the caption. Only
         /// works on own media events. An empty `new_caption` removes the
-        /// caption entirely. Does not require `subscribe_room`.
+        /// caption entirely. `formatted_caption` is the new caption's HTML
+        /// (empty for a plain caption); user mentions in it become
+        /// `m.mentions`. Does not require `subscribe_room`.
         fn send_caption_edit(
             self: &ClientFfi,
             room_id: &str,
             event_id: &str,
             new_caption: &str,
+            formatted_caption: &str,
         ) -> OpResult;
 
         /// Forward `event_id` from `source_room_id` to `target_room_id`.
@@ -3243,7 +3346,8 @@ pub mod ffi {
         /// latest cached event in `room_id`, plus `m.fully_read` when
         /// `include_fully_read` is set. Used to clear the unread badge.
         /// Does not require a subscription.
-        fn mark_room_as_read(self: &ClientFfi, room_id: &str, include_fully_read: bool) -> OpResult;
+        fn mark_room_as_read(self: &ClientFfi, room_id: &str, include_fully_read: bool)
+            -> OpResult;
 
         /// Move the `m.fully_read` marker ("New messages" divider) to
         /// `event_id` in `room_id`. Does not require a subscription.
@@ -3286,6 +3390,10 @@ pub mod ffi {
         /// is currently subscribed via `subscribe_room`. Server-side
         /// permission errors surface as `OpResult { ok: false, message: ... }`.
         fn redact_event(self: &ClientFfi, room_id: &str, event_id: &str, reason: &str) -> OpResult;
+
+        /// Report `event_id` to the homeserver administrators. `reason` may be
+        /// empty. Requires a joined room; does not notify room moderators.
+        fn report_event(self: &ClientFfi, room_id: &str, event_id: &str, reason: &str) -> OpResult;
 
         /// True iff the current user may redact OTHER users' events in this
         /// room (own events are always redactable — see redact_event).
@@ -3578,7 +3686,12 @@ pub mod ffi {
         /// on completion. Does not pin a C++ worker thread. `group_id` (0 for
         /// never-cancelled) registers the task so `cancel_media_group` can
         /// abort it, same as `fetch_url_async`.
-        fn fetch_source_bytes_async(self: &ClientFfi, request_id: u64, group_id: u64, source_json: &str);
+        fn fetch_source_bytes_async(
+            self: &ClientFfi,
+            request_id: u64,
+            group_id: u64,
+            source_json: &str,
+        );
 
         /// Fetch only the first `max_bytes` of a media source's underlying
         /// file via a raw authenticated Range GET, bypassing the SDK's media
@@ -3586,12 +3699,21 @@ pub mod ffi {
         /// full-file key). Returns raw bytes (possibly the full file, if the
         /// homeserver ignores Range and it's under `max_bytes`) or an empty
         /// Vec on failure.
-        fn fetch_source_prefix_bytes(self: &ClientFfi, source_json: &str, max_bytes: u64) -> Vec<u8>;
+        fn fetch_source_prefix_bytes(
+            self: &ClientFfi,
+            source_json: &str,
+            max_bytes: u64,
+        ) -> Vec<u8>;
 
         /// Non-blocking counterpart of `fetch_source_prefix_bytes`. Spawns the
         /// fetch on the tokio runtime and fires `on_media_ready(request_id,
         /// bytes)` on completion. Does not pin a C++ worker thread.
-        fn fetch_source_prefix_async(self: &ClientFfi, request_id: u64, source_json: &str, max_bytes: u64);
+        fn fetch_source_prefix_async(
+            self: &ClientFfi,
+            request_id: u64,
+            source_json: &str,
+            max_bytes: u64,
+        );
 
         /// Streaming counterpart of `fetch_source_bytes_async`: delivers the
         /// file incrementally via `on_media_chunk(request_id, chunk, status)`
@@ -3600,7 +3722,12 @@ pub mod ffi {
         /// cancelled) registers the task under the same registry
         /// `cancel_media_group` already drains — a cancelled request never
         /// delivers a terminal status.
-        fn fetch_source_stream_async(self: &ClientFfi, request_id: u64, group_id: u64, source_json: &str);
+        fn fetch_source_stream_async(
+            self: &ClientFfi,
+            request_id: u64,
+            group_id: u64,
+            source_json: &str,
+        );
 
         /// Classifies whether `prefix` (the leading bytes of a media file —
         /// e.g. already fetched via `fetch_source_prefix_bytes`/`_async`) is
@@ -3619,11 +3746,27 @@ pub mod ffi {
         /// false` on any network error, rate limit, or when already up-to-date.
         fn check_for_update(self: &ClientFfi, repo: &str, current_version: &str) -> UpdateResult;
 
+        /// Load the community homeserver list: the on-disk cache at
+        /// `cache_path` if under 24 h old, else a fresh fetch (written back to
+        /// the cache), else a stale cache. Blocks the calling thread (call from
+        /// a worker, never from the UI thread).
+        fn load_server_list(self: &ClientFfi, cache_dir: &str) -> ServerListFfi;
+
+        /// The favicon (`/favicon.ico`) of a listed server's https homepage, as
+        /// raw image bytes; empty when there is none. Size-capped and guarded
+        /// like other third-party fetches. Blocks the calling thread (worker
+        /// only); the caller caches the bytes.
+        fn fetch_server_icon(self: &ClientFfi, homepage: &str) -> Vec<u8>;
+
         /// Check the AUR RPC API for a newer version of `pkgname` than
         /// `current_version`. Blocks the calling thread (call from a worker,
         /// never from the UI thread). Returns `UpdateResult::has_update ==
         /// false` on any network error or when already up-to-date.
-        fn check_for_aur_update(self: &ClientFfi, pkgname: &str, current_version: &str) -> UpdateResult;
+        fn check_for_aur_update(
+            self: &ClientFfi,
+            pkgname: &str,
+            current_version: &str,
+        ) -> UpdateResult;
 
         // ----- Async media downloads (non-blocking) -----
 
@@ -3801,11 +3944,7 @@ pub mod ffi {
         /// not the client is a member. Accepts a room ID (`!id:server`) or
         /// alias (`#alias:server`). Returns a JSON object on success or an
         /// empty string on error. Blocks the calling thread.
-        fn get_room_summary(
-            self: &ClientFfi,
-            room_id_or_alias: &str,
-            via: &Vec<String>,
-        ) -> String;
+        fn get_room_summary(self: &ClientFfi, room_id_or_alias: &str, via: &Vec<String>) -> String;
         /// Return the cached MSC3266 room summary for `room_id` from
         /// `app_cache.db`, or an empty string when no entry exists.
         /// Synchronous, DB-only — no network. Safe to call from any thread.
@@ -4188,6 +4327,11 @@ pub mod ffi {
         /// completion. Does not pin a C++ worker thread.
         fn get_extended_profile_async(self: &ClientFfi, request_id: u64, user_id: &str);
 
+        /// Fetch one page of the rooms shared with `user_id` (MSC2666) and fire
+        /// `on_mutual_rooms_ready(request_id, json)`. `from` is the previous
+        /// page's `next_batch` (empty for the first). Does not pin a thread.
+        fn get_mutual_rooms_async(self: &ClientFfi, request_id: u64, user_id: &str, from: &str);
+
         /// Async counterpart of `resolve_user_profile`. Delegates to
         /// `get_extended_profile_async` and fires the same callback.
         /// Does not pin a C++ worker thread.
@@ -4547,17 +4691,35 @@ pub mod ffi {
         /// Reads cached power levels — no network round-trip. False on any
         /// uncertainty.
         fn can_start_call_in_room(self: &ClientFfi, room_id: &str) -> bool;
+
+        /// Decline an incoming MatrixRTC invite: sends `m.rtc.decline`
+        /// referencing `invite_event_id`. Non-blocking, no callback.
+        fn rtc_decline_invite_async(self: &ClientFfi, room_id: &str, invite_event_id: &str);
         fn can_join_call_in_room(self: &ClientFfi, room_id: &str) -> bool;
 
-        /// Start a MatrixRTC call in `room_id` / `slot_id`. Returns an error when
-        /// not logged in or when the `calls` feature is disabled. On success the
-        /// session is stored inside `ClientFfi`; subsequent `rtc_*` calls operate
-        /// on it. `slot_id` is typically `"call#default"`.
-        fn rtc_start_call(self: &mut ClientFfi, room_id: &str, slot_id: &str, audio_only: bool) -> OpResult;
+        /// Start a MatrixRTC call in `room_id` / `slot_id`. Returns at once with
+        /// the new call's session id (an error when not logged in); the call is
+        /// set up on the runtime, after the previous one has fully left, and
+        /// its failure arrives as `on_rtc_session_ended` with a reason that
+        /// starts with `start_failed:`. Mute requests made meanwhile apply
+        /// when the call is up. `slot_id` is typically `"call#default"`.
+        fn rtc_start_call(
+            self: &mut ClientFfi,
+            room_id: &str,
+            slot_id: &str,
+            audio_only: bool,
+        ) -> RtcStartResult;
 
-        /// Gracefully leave the active call and release its resources. No-op when
-        /// no call is active or when the `calls` feature is disabled.
+        /// Gracefully leave the active call and release its resources, without
+        /// waiting: the leave events go out on the runtime, and the next
+        /// `rtc_start_call` waits for them. No-op when no call is active or
+        /// when the `calls` feature is disabled.
         fn rtc_end_call(self: &mut ClientFfi);
+
+        /// Like `rtc_end_call`, but returns once the leave has gone out and the
+        /// SFU connections are closed (a few seconds at most). For callers that
+        /// tear the client down right after.
+        fn rtc_end_call_wait(self: &mut ClientFfi);
 
         /// Mute or unmute the local audio track. The track stays published but
         /// delivers silence when muted. No-op when no call is active.

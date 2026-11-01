@@ -47,8 +47,7 @@ protected:
     // its own `if (!host()) return;` guard — the entry_*_() hooks below are
     // pure virtual and unsafe to invoke before the leaf object is fully
     // constructed, so this can't happen from this base class's constructor.
-    void init_(float field_h, float row_h, float width, int max_rows,
-              std::string placeholder);
+    void init_(float field_h, float row_h, float width, int max_rows, std::string placeholder);
 
 public:
     // Sets the committed value and mirrors it into the field's text. No-op
@@ -107,8 +106,14 @@ public:
     // Role::None (its native overlay carries OS-level a11y), so the
     // combobox-ness — the committed value, the expand/collapse state, and
     // the "open the dropdown" action — is exposed here.
-    Role access_role() const override { return Role::ComboBox; }
-    std::string access_name() const override { return display_for_(value_); }
+    Role access_role() const override
+    {
+        return Role::ComboBox;
+    }
+    std::string access_name() const override
+    {
+        return display_for_(value_);
+    }
     AccessState access_state() const override
     {
         AccessState s;
@@ -118,7 +123,9 @@ public:
     bool access_default_action() override
     {
         if (!enabled_)
+        {
             return false;
+        }
         set_expanded_(!expanded_);
         return true;
     }
@@ -175,19 +182,23 @@ private:
     std::unique_ptr<PopupSurfaceHandle> popup_;
     DropdownList* dropdown_ = nullptr; // borrowed — owned by popup_ once set
 
-    bool expanded_    = false;
-    int  hovered_row_ = -1;
-    bool row_chosen_  = false; // arrow key or mouse picked a row since the last refilter
+    bool expanded_ = false;
+    int hovered_row_ = -1;
+    bool row_chosen_ = false; // arrow key or mouse picked a row since the last refilter
 
     Rect field_rect_{};   // the text field (bounds minus the chevron cell)
     Rect chevron_rect_{}; // the ▾ cell
     bool chevron_hovered_ = false;
     bool chevron_pressed_ = false;
+    // Field text colours from the last theme; the muted one shows while disabled.
+    bool text_color_set_ = false;
+    Color text_color_{};
+    Color text_color_muted_{};
 
-    float field_h_  = 32.0f;
-    float row_h_    = 28.0f;
-    float width_    = 220.0f;
-    int   max_rows_ = 8;
+    float field_h_ = 32.0f;
+    float row_h_ = 28.0f;
+    float width_ = 220.0f;
+    int max_rows_ = 8;
 };
 
 } // namespace tk

@@ -29,14 +29,18 @@ public:
     {
         return {bounds_.w, bounds_.h};
     }
-    void paint(PaintCtx&) override {}
+    void paint(PaintCtx&) override
+    {
+    }
 
     bool on_file_drop(Point local, FileDropPayload& payload) override
     {
         ++drop_count;
         last_local = local;
         if (!claim_drop_)
+        {
             return false; // must not touch `payload`
+        }
         last_bytes = payload.bytes;
         last_mime = payload.mime;
         last_filename = payload.filename;
@@ -52,7 +56,10 @@ public:
         last_hover_local = local;
         return claim_drop_;
     }
-    void on_native_drag_leave() override { ++leave_count; }
+    void on_native_drag_leave() override
+    {
+        ++leave_count;
+    }
 
     int drop_count = 0;
     Point last_local{};
@@ -80,9 +87,8 @@ TEST_CASE("File drop inside a claiming child reaches it and moves the "
           "[tk][host][drop]")
 {
     DropProbeWidget root({0, 0, 400, 400});
-    auto* child =
-        root.add_child(std::make_unique<DropProbeWidget>(
-            Rect{100, 100, 100, 100}, /*claim_drop=*/true));
+    auto* child = root.add_child(
+        std::make_unique<DropProbeWidget>(Rect{100, 100, 100, 100}, /*claim_drop=*/true));
     TestHost host(&root);
 
     FileDropPayload payload = make_payload();
@@ -101,8 +107,7 @@ TEST_CASE("File drop inside a claiming child reaches it and moves the "
     CHECK(payload.bytes.empty());
 }
 
-TEST_CASE("File drop on a non-claiming widget leaves the payload untouched",
-          "[tk][host][drop]")
+TEST_CASE("File drop on a non-claiming widget leaves the payload untouched", "[tk][host][drop]")
 {
     DropProbeWidget root({0, 0, 400, 400});
     TestHost host(&root);
@@ -139,9 +144,8 @@ TEST_CASE("An invisible ancestor skips the whole subtree even though a "
     DropProbeWidget root({0, 0, 400, 400});
     auto* hidden_container =
         root.add_child(std::make_unique<DropProbeWidget>(Rect{100, 100, 200, 200}));
-    auto* grandchild =
-        hidden_container->add_child(std::make_unique<DropProbeWidget>(
-            Rect{150, 150, 50, 50}, /*claim_drop=*/true));
+    auto* grandchild = hidden_container->add_child(
+        std::make_unique<DropProbeWidget>(Rect{150, 150, 50, 50}, /*claim_drop=*/true));
     hidden_container->set_visible(false);
     TestHost host(&root);
 
@@ -149,9 +153,9 @@ TEST_CASE("An invisible ancestor skips the whole subtree even though a "
     Widget* target = host.dispatch_file_drop({160, 160}, payload);
 
     REQUIRE(target == nullptr);
-    CHECK(grandchild->drop_count == 0);   // whole subtree skipped
+    CHECK(grandchild->drop_count == 0); // whole subtree skipped
     CHECK(hidden_container->drop_count == 0);
-    CHECK(root.drop_count == 1);          // falls back to root, which rejects
+    CHECK(root.drop_count == 1); // falls back to root, which rejects
     CHECK(payload.bytes == std::vector<std::uint8_t>{1, 2, 3});
 }
 
@@ -181,10 +185,8 @@ TEST_CASE("Drag hover moving between two claiming widgets fires "
           "[tk][host][drag_hover]")
 {
     DropProbeWidget root({0, 0, 400, 400});
-    auto* a = root.add_child(
-        std::make_unique<DropProbeWidget>(Rect{0, 0, 100, 100}, true));
-    auto* b = root.add_child(
-        std::make_unique<DropProbeWidget>(Rect{200, 0, 100, 100}, true));
+    auto* a = root.add_child(std::make_unique<DropProbeWidget>(Rect{0, 0, 100, 100}, true));
+    auto* b = root.add_child(std::make_unique<DropProbeWidget>(Rect{200, 0, 100, 100}, true));
     TestHost host(&root);
 
     REQUIRE(host.dispatch_native_drag_hover({50, 50}) == a);
@@ -192,7 +194,7 @@ TEST_CASE("Drag hover moving between two claiming widgets fires "
     CHECK(a->leave_count == 0);
 
     REQUIRE(host.dispatch_native_drag_hover({250, 50}) == b);
-    CHECK(a->leave_count == 1);  // a lost the claim
+    CHECK(a->leave_count == 1); // a lost the claim
     CHECK(b->hover_count == 1);
     CHECK(b->leave_count == 0);
 }
@@ -202,8 +204,7 @@ TEST_CASE("Drag hover moving off every widget clears the claim and fires "
           "[tk][host][drag_hover]")
 {
     DropProbeWidget root({0, 0, 400, 400});
-    auto* a = root.add_child(
-        std::make_unique<DropProbeWidget>(Rect{0, 0, 100, 100}, true));
+    auto* a = root.add_child(std::make_unique<DropProbeWidget>(Rect{0, 0, 100, 100}, true));
     TestHost host(&root);
 
     REQUIRE(host.dispatch_native_drag_hover({50, 50}) == a);

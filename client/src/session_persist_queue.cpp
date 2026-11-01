@@ -18,11 +18,15 @@ bool save_with_retries(const std::function<bool()>& attempt, int attempts,
     for (int i = 1; i <= attempts; ++i)
     {
         if (cancelled && cancelled())
+        {
             return false;
+        }
         try
         {
             if (attempt())
+            {
                 return true;
+            }
         }
         catch (...)
         {
@@ -35,11 +39,14 @@ bool save_with_retries(const std::function<bool()>& attempt, int attempts,
             while (std::chrono::steady_clock::now() < until)
             {
                 if (cancelled && cancelled())
+                {
                     return false;
-                std::this_thread::sleep_for(std::min(
-                    std::chrono::milliseconds(25),
-                    std::chrono::duration_cast<std::chrono::milliseconds>(
-                        until - std::chrono::steady_clock::now()) + std::chrono::milliseconds(1)));
+                }
+                std::this_thread::sleep_for(
+                    std::min(std::chrono::milliseconds(25),
+                             std::chrono::duration_cast<std::chrono::milliseconds>(
+                                 until - std::chrono::steady_clock::now()) +
+                                 std::chrono::milliseconds(1)));
             }
             backoff *= 2;
         }
@@ -63,12 +70,18 @@ void report_session_save_failed(const std::string& user_id)
 {
     std::lock_guard<std::mutex> lk(g_save_failed_mutex);
     if (g_save_failed_handler)
+    {
         g_save_failed_handler(user_id);
+    }
 }
 
 SessionPersistQueue::SessionPersistQueue(Writer writer) : writer_(writer)
 {
-    thread_ = std::thread([this] { run(); });
+    thread_ = std::thread(
+        [this]
+        {
+            run();
+        });
 }
 
 SessionPersistQueue::~SessionPersistQueue()
@@ -89,7 +102,9 @@ void SessionPersistQueue::enqueue(std::string user_id, std::string json)
     {
         std::lock_guard<std::mutex> lk(mutex_);
         if (tombstones_.count(user_id) != 0)
+        {
             return; // logged out: a late refresh must not recreate the account
+        }
         // Coalesce: if a job for this user_id is already pending (not yet
         // picked up by the writer), replace its json so only the newest token
         // is written. The in-flight job — if any — is left alone; a job that is
@@ -114,7 +129,11 @@ void SessionPersistQueue::run()
     std::unique_lock<std::mutex> lk(mutex_);
     for (;;)
     {
-        cv_.wait(lk, [this] { return stop_ || !queue_.empty(); });
+        cv_.wait(lk,
+                 [this]
+                 {
+                     return stop_ || !queue_.empty();
+                 });
         if (queue_.empty())
         {
             // stop_ with nothing left to write.
@@ -144,9 +163,8 @@ void SessionPersistQueue::run()
         }
         catch (...)
         {
-            std::fprintf(stderr,
-                         "[tesseract] session persist write threw non-exception "
-                         "(dropped)\n");
+            std::fprintf(stderr, "[tesseract] session persist write threw non-exception "
+                                 "(dropped)\n");
         }
 
         lk.lock();
@@ -160,7 +178,11 @@ void SessionPersistQueue::drain()
 {
     std::unique_lock<std::mutex> lk(mutex_);
     cv_.notify_all();
-    cv_.wait(lk, [this] { return queue_.empty() && !busy_; });
+    cv_.wait(lk,
+             [this]
+             {
+                 return queue_.empty() && !busy_;
+             });
 }
 
 std::size_t SessionPersistQueue::pending()
@@ -176,11 +198,19 @@ void SessionPersistQueue::discard(const std::string& user_id)
     for (auto it = queue_.begin(); it != queue_.end();)
     {
         if (it->user_id == user_id)
+        {
             it = queue_.erase(it);
+        }
         else
+        {
             ++it;
+        }
     }
-    cv_.wait(lk, [this, &user_id] { return !(busy_ && busy_user_ == user_id); });
+    cv_.wait(lk,
+             [this, &user_id]
+             {
+                 return !(busy_ && busy_user_ == user_id);
+             });
 }
 
 void SessionPersistQueue::revive(const std::string& user_id)
@@ -211,10 +241,16 @@ void default_writer(const std::string& user_id, const std::string& json)
     // before giving up. This runs on the writer thread, so the SDK is not
     // blocked, and jobs queued meanwhile still coalesce.
     const bool saved = save_with_retries(
-        [&] { return SessionStore::save_session_update(user_id, json); },
+        [&]
+        {
+            return SessionStore::save_session_update(user_id, json);
+        },
         kPersistAttempts, kPersistFirstBackoff,
         // A sign-out waits in discard() for this write, so stop retrying for it.
-        [&] { return session_persist_queue().is_discarded(user_id); });
+        [&]
+        {
+            return session_persist_queue().is_discarded(user_id);
+        });
     if (!saved && !session_persist_queue().is_discarded(user_id))
     {
         std::fprintf(stderr,
@@ -231,8 +267,7 @@ SessionPersistQueue& session_persist_queue()
     // Leaked on purpose — see header. `new` (never deleted) gives us a stable
     // worker thread for the whole process lifetime without risking a join
     // during static destruction while the SDK runtime may still be live.
-    static SessionPersistQueue* instance =
-        new SessionPersistQueue(&default_writer);
+    static SessionPersistQueue* instance = new SessionPersistQueue(&default_writer);
     return *instance;
 }
 

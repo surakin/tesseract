@@ -46,20 +46,29 @@ public:
     void set_selected_camera(const std::string& id);
 
     // ComboBox accessors used by tests to simulate user selections.
-    tk::ComboBox* audio_input_combo()  const { return audio_input_combo_; }
-    tk::ComboBox* audio_output_combo() const { return audio_output_combo_; }
-    tk::ComboBox* camera_combo()       const { return camera_combo_; }
+    tk::ComboBox* audio_input_combo() const
+    {
+        return audio_input_combo_;
+    }
+    tk::ComboBox* audio_output_combo() const
+    {
+        return audio_output_combo_;
+    }
+    tk::ComboBox* camera_combo() const
+    {
+        return camera_combo_;
+    }
 
 private:
-    tk::ComboBox*    previews_combo_    = nullptr;
+    tk::ComboBox* previews_combo_ = nullptr;
     tk::CheckButton* invite_avatars_cb_ = nullptr;
-    tk::CheckButton* prefetch_cb_       = nullptr;
-    tk::CheckButton* open_external_cb_  = nullptr;
-    tk::CheckButton* recompress_cb_     = nullptr;
+    tk::CheckButton* prefetch_cb_ = nullptr;
+    tk::CheckButton* open_external_cb_ = nullptr;
+    tk::CheckButton* recompress_cb_ = nullptr;
 
-    tk::ComboBox* audio_input_combo_  = nullptr;
+    tk::ComboBox* audio_input_combo_ = nullptr;
     tk::ComboBox* audio_output_combo_ = nullptr;
-    tk::ComboBox* camera_combo_       = nullptr;
+    tk::ComboBox* camera_combo_ = nullptr;
 };
 
 } // namespace tesseract::views

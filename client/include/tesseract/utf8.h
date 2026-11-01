@@ -18,16 +18,26 @@ inline std::string utf8_lossy(std::string_view s)
 {
     std::string out;
     out.reserve(s.size());
-    const auto at = [&](std::size_t i) { return static_cast<unsigned char>(s[i]); };
-    const auto cont = [&](std::size_t i) { return i < s.size() && (at(i) & 0xC0) == 0x80; };
+    const auto at = [&](std::size_t i)
+    {
+        return static_cast<unsigned char>(s[i]);
+    };
+    const auto cont = [&](std::size_t i)
+    {
+        return i < s.size() && (at(i) & 0xC0) == 0x80;
+    };
     for (std::size_t i = 0; i < s.size();)
     {
         const unsigned char c = at(i);
         std::size_t len = 0;
         if (c < 0x80)
+        {
             len = 1;
+        }
         else if (c >= 0xC2 && c <= 0xDF && cont(i + 1))
+        {
             len = 2;
+        }
         else if (c >= 0xE0 && c <= 0xEF && cont(i + 1) && cont(i + 2))
         {
             const unsigned char c1 = at(i + 1);

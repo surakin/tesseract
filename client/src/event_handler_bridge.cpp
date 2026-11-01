@@ -44,13 +44,11 @@ void guard(const char* where, F&& f) noexcept
     }
     catch (const std::exception& e)
     {
-        std::fprintf(stderr, "[tesseract] %s threw: %s (dropped)\n", where,
-                     e.what());
+        std::fprintf(stderr, "[tesseract] %s threw: %s (dropped)\n", where, e.what());
     }
     catch (...)
     {
-        std::fprintf(stderr, "[tesseract] %s threw non-exception (dropped)\n",
-                     where);
+        std::fprintf(stderr, "[tesseract] %s threw non-exception (dropped)\n", where);
     }
 }
 
@@ -61,336 +59,318 @@ void guard(const char* where, F&& f) noexcept
 // guaranteed-non-null handler. (Index-bearing callbacks still do their own
 // !index_fits() early-return inside `fn`.)
 template <class F>
-void with_handler(const char* where, const std::shared_ptr<HandlerSlot>& slot,
-                  F&& fn) noexcept
+void with_handler(const char* where, const std::shared_ptr<HandlerSlot>& slot, F&& fn) noexcept
 {
     // The slot is held shared while `fn` runs, so Client::stop_sync()'s detach()
     // waits for it: the shell cannot destroy the handler under a callback.
-    guard(where, [&] { slot->with_handler(fn); });
+    guard(where,
+          [&]
+          {
+              slot->with_handler(fn);
+          });
 }
 } // namespace
 
-void EventHandlerBridge::on_timeline_reset(
-    rust::Str room_id, const rust::Vec<TimelineEvent>& snapshot) const
+void EventHandlerBridge::on_timeline_reset(rust::Str room_id,
+                                           const rust::Vec<TimelineEvent>& snapshot) const
 {
     with_handler("on_timeline_reset", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              std::vector<std::unique_ptr<tesseract::Event>> events;
-              events.reserve(snapshot.size());
-              for (const auto& ev : snapshot)
-              {
-                  events.push_back(tesseract::make_event(ev));
-              }
-              handler_->on_timeline_reset(std::string(room_id),
-                                          std::move(events));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     std::vector<std::unique_ptr<tesseract::Event>> events;
+                     events.reserve(snapshot.size());
+                     for (const auto& ev : snapshot)
+                     {
+                         events.push_back(tesseract::make_event(ev));
+                     }
+                     handler_->on_timeline_reset(std::string(room_id), std::move(events));
+                 });
 }
 
-void EventHandlerBridge::on_message_inserted(rust::Str room_id,
-                                             std::uint64_t index,
+void EventHandlerBridge::on_message_inserted(rust::Str room_id, std::uint64_t index,
                                              const TimelineEvent& ev) const
 {
     with_handler("on_message_inserted", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              if (!index_fits(index))
-              {
-                  return;
-              }
-              handler_->on_message_inserted(std::string(room_id),
-                                            static_cast<std::size_t>(index),
-                                            tesseract::make_event(ev));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     if (!index_fits(index))
+                     {
+                         return;
+                     }
+                     handler_->on_message_inserted(std::string(room_id),
+                                                   static_cast<std::size_t>(index),
+                                                   tesseract::make_event(ev));
+                 });
 }
 
-void EventHandlerBridge::on_message_updated(rust::Str room_id,
-                                            std::uint64_t index,
+void EventHandlerBridge::on_message_updated(rust::Str room_id, std::uint64_t index,
                                             const TimelineEvent& ev) const
 {
     with_handler("on_message_updated", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              if (!index_fits(index))
-              {
-                  return;
-              }
-              handler_->on_message_updated(std::string(room_id),
-                                           static_cast<std::size_t>(index),
-                                           tesseract::make_event(ev));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     if (!index_fits(index))
+                     {
+                         return;
+                     }
+                     handler_->on_message_updated(std::string(room_id),
+                                                  static_cast<std::size_t>(index),
+                                                  tesseract::make_event(ev));
+                 });
 }
 
-void EventHandlerBridge::on_message_removed(rust::Str room_id,
-                                            std::uint64_t index) const
+void EventHandlerBridge::on_message_removed(rust::Str room_id, std::uint64_t index) const
 {
     with_handler("on_message_removed", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              if (!index_fits(index))
-              {
-                  return;
-              }
-              handler_->on_message_removed(std::string(room_id),
-                                           static_cast<std::size_t>(index));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     if (!index_fits(index))
+                     {
+                         return;
+                     }
+                     handler_->on_message_removed(std::string(room_id),
+                                                  static_cast<std::size_t>(index));
+                 });
 }
 
-void EventHandlerBridge::on_thread_reset(
-    rust::Str room_id, rust::Str thread_root,
-    const rust::Vec<TimelineEvent>& snapshot) const
+void EventHandlerBridge::on_thread_reset(rust::Str room_id, rust::Str thread_root,
+                                         const rust::Vec<TimelineEvent>& snapshot) const
 {
     with_handler("on_thread_reset", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              std::vector<std::unique_ptr<tesseract::Event>> events;
-              events.reserve(snapshot.size());
-              for (const auto& ev : snapshot)
-              {
-                  events.push_back(tesseract::make_event(ev));
-              }
-              handler_->on_thread_reset(std::string(room_id),
-                                        std::string(thread_root),
-                                        std::move(events));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     std::vector<std::unique_ptr<tesseract::Event>> events;
+                     events.reserve(snapshot.size());
+                     for (const auto& ev : snapshot)
+                     {
+                         events.push_back(tesseract::make_event(ev));
+                     }
+                     handler_->on_thread_reset(std::string(room_id), std::string(thread_root),
+                                               std::move(events));
+                 });
 }
 
-void EventHandlerBridge::on_thread_inserted(rust::Str room_id,
-                                            rust::Str thread_root,
-                                            std::uint64_t index,
-                                            const TimelineEvent& ev) const
+void EventHandlerBridge::on_thread_inserted(rust::Str room_id, rust::Str thread_root,
+                                            std::uint64_t index, const TimelineEvent& ev) const
 {
     with_handler("on_thread_inserted", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              if (!index_fits(index))
-              {
-                  return;
-              }
-              handler_->on_thread_inserted(
-                  std::string(room_id), std::string(thread_root),
-                  static_cast<std::size_t>(index), tesseract::make_event(ev));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     if (!index_fits(index))
+                     {
+                         return;
+                     }
+                     handler_->on_thread_inserted(std::string(room_id), std::string(thread_root),
+                                                  static_cast<std::size_t>(index),
+                                                  tesseract::make_event(ev));
+                 });
 }
 
-void EventHandlerBridge::on_thread_updated(rust::Str room_id,
-                                           rust::Str thread_root,
-                                           std::uint64_t index,
-                                           const TimelineEvent& ev) const
+void EventHandlerBridge::on_thread_updated(rust::Str room_id, rust::Str thread_root,
+                                           std::uint64_t index, const TimelineEvent& ev) const
 {
     with_handler("on_thread_updated", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              if (!index_fits(index))
-              {
-                  return;
-              }
-              handler_->on_thread_updated(
-                  std::string(room_id), std::string(thread_root),
-                  static_cast<std::size_t>(index), tesseract::make_event(ev));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     if (!index_fits(index))
+                     {
+                         return;
+                     }
+                     handler_->on_thread_updated(std::string(room_id), std::string(thread_root),
+                                                 static_cast<std::size_t>(index),
+                                                 tesseract::make_event(ev));
+                 });
 }
 
-void EventHandlerBridge::on_thread_removed(rust::Str room_id,
-                                           rust::Str thread_root,
+void EventHandlerBridge::on_thread_removed(rust::Str room_id, rust::Str thread_root,
                                            std::uint64_t index) const
 {
     with_handler("on_thread_removed", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              if (!index_fits(index))
-              {
-                  return;
-              }
-              handler_->on_thread_removed(std::string(room_id),
-                                          std::string(thread_root),
-                                          static_cast<std::size_t>(index));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     if (!index_fits(index))
+                     {
+                         return;
+                     }
+                     handler_->on_thread_removed(std::string(room_id), std::string(thread_root),
+                                                 static_cast<std::size_t>(index));
+                 });
 }
 
-void EventHandlerBridge::on_messages_prepended(
-    rust::Str room_id, const rust::Vec<TimelineEvent>& events) const
+void EventHandlerBridge::on_messages_prepended(rust::Str room_id,
+                                               const rust::Vec<TimelineEvent>& events) const
 {
     with_handler("on_messages_prepended", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              std::vector<std::unique_ptr<tesseract::Event>> evs;
-              evs.reserve(events.size());
-              for (const auto& ev : events)
-              {
-                  evs.push_back(tesseract::make_event(ev));
-              }
-              handler_->on_messages_prepended(std::string(room_id),
-                                              std::move(evs));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     std::vector<std::unique_ptr<tesseract::Event>> evs;
+                     evs.reserve(events.size());
+                     for (const auto& ev : events)
+                     {
+                         evs.push_back(tesseract::make_event(ev));
+                     }
+                     handler_->on_messages_prepended(std::string(room_id), std::move(evs));
+                 });
 }
 
-void EventHandlerBridge::on_messages_appended(
-    rust::Str room_id, const rust::Vec<TimelineEvent>& events) const
+void EventHandlerBridge::on_messages_appended(rust::Str room_id,
+                                              const rust::Vec<TimelineEvent>& events) const
 {
     with_handler("on_messages_appended", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              std::vector<std::unique_ptr<tesseract::Event>> evs;
-              evs.reserve(events.size());
-              for (const auto& ev : events)
-              {
-                  evs.push_back(tesseract::make_event(ev));
-              }
-              handler_->on_messages_appended(std::string(room_id),
-                                             std::move(evs));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     std::vector<std::unique_ptr<tesseract::Event>> evs;
+                     evs.reserve(events.size());
+                     for (const auto& ev : events)
+                     {
+                         evs.push_back(tesseract::make_event(ev));
+                     }
+                     handler_->on_messages_appended(std::string(room_id), std::move(evs));
+                 });
 }
 
-void EventHandlerBridge::on_messages_updated_batch(
-    rust::Str room_id,
-    const rust::Vec<std::uint64_t>& indices,
-    const rust::Vec<TimelineEvent>& events) const
+void EventHandlerBridge::on_messages_updated_batch(rust::Str room_id,
+                                                   const rust::Vec<std::uint64_t>& indices,
+                                                   const rust::Vec<TimelineEvent>& events) const
 {
-    with_handler("on_messages_updated_batch", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              const std::size_t n = indices.size();
-              if (n == 0)
-              {
-                  return;
-              }
-              if (n != events.size())
-              {
-                  std::fprintf(stderr,
-                               "[tesseract] on_messages_updated_batch: %zu indices for %zu events (dropped)\n",
-                               n, events.size());
-                  return;
-              }
-              std::vector<std::size_t> idxs;
-              idxs.reserve(n);
-              for (std::uint64_t i : indices)
-              {
-                  if (!index_fits(i))
-                  {
-                      std::fprintf(stderr,
-                                   "[tesseract] on_messages_updated_batch: index %llu out of range (dropped)\n",
-                                   static_cast<unsigned long long>(i));
-                      return;
-                  }
-                  idxs.push_back(static_cast<std::size_t>(i));
-              }
-              std::vector<std::unique_ptr<tesseract::Event>> evs;
-              evs.reserve(n);
-              for (const auto& ev : events)
-              {
-                  evs.push_back(tesseract::make_event(ev));
-              }
-              handler_->on_messages_updated_batch(std::string(room_id),
-                                                  std::move(idxs),
-                                                  std::move(evs));
-          });
+    with_handler(
+        "on_messages_updated_batch", slot_,
+        [&](tesseract::IEventHandler* handler_)
+        {
+            const std::size_t n = indices.size();
+            if (n == 0)
+            {
+                return;
+            }
+            if (n != events.size())
+            {
+                std::fprintf(
+                    stderr,
+                    "[tesseract] on_messages_updated_batch: %zu indices for %zu events (dropped)\n",
+                    n, events.size());
+                return;
+            }
+            std::vector<std::size_t> idxs;
+            idxs.reserve(n);
+            for (std::uint64_t i : indices)
+            {
+                if (!index_fits(i))
+                {
+                    std::fprintf(
+                        stderr,
+                        "[tesseract] on_messages_updated_batch: index %llu out of range (dropped)\n",
+                        static_cast<unsigned long long>(i));
+                    return;
+                }
+                idxs.push_back(static_cast<std::size_t>(i));
+            }
+            std::vector<std::unique_ptr<tesseract::Event>> evs;
+            evs.reserve(n);
+            for (const auto& ev : events)
+            {
+                evs.push_back(tesseract::make_event(ev));
+            }
+            handler_->on_messages_updated_batch(std::string(room_id), std::move(idxs),
+                                                std::move(evs));
+        });
 }
 
-void EventHandlerBridge::on_thread_messages_prepended(
-    rust::Str room_id, rust::Str thread_root,
-    const rust::Vec<TimelineEvent>& events) const
+void EventHandlerBridge::on_thread_messages_prepended(rust::Str room_id, rust::Str thread_root,
+                                                      const rust::Vec<TimelineEvent>& events) const
 {
     with_handler("on_thread_messages_prepended", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              std::vector<std::unique_ptr<tesseract::Event>> evs;
-              evs.reserve(events.size());
-              for (const auto& ev : events)
-              {
-                  evs.push_back(tesseract::make_event(ev));
-              }
-              handler_->on_thread_messages_prepended(std::string(room_id),
-                                                     std::string(thread_root),
-                                                     std::move(evs));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     std::vector<std::unique_ptr<tesseract::Event>> evs;
+                     evs.reserve(events.size());
+                     for (const auto& ev : events)
+                     {
+                         evs.push_back(tesseract::make_event(ev));
+                     }
+                     handler_->on_thread_messages_prepended(
+                         std::string(room_id), std::string(thread_root), std::move(evs));
+                 });
 }
 
-void EventHandlerBridge::on_thread_messages_appended(
-    rust::Str room_id, rust::Str thread_root,
-    const rust::Vec<TimelineEvent>& events) const
+void EventHandlerBridge::on_thread_messages_appended(rust::Str room_id, rust::Str thread_root,
+                                                     const rust::Vec<TimelineEvent>& events) const
 {
     with_handler("on_thread_messages_appended", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              std::vector<std::unique_ptr<tesseract::Event>> evs;
-              evs.reserve(events.size());
-              for (const auto& ev : events)
-              {
-                  evs.push_back(tesseract::make_event(ev));
-              }
-              handler_->on_thread_messages_appended(std::string(room_id),
-                                                    std::string(thread_root),
-                                                    std::move(evs));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     std::vector<std::unique_ptr<tesseract::Event>> evs;
+                     evs.reserve(events.size());
+                     for (const auto& ev : events)
+                     {
+                         evs.push_back(tesseract::make_event(ev));
+                     }
+                     handler_->on_thread_messages_appended(
+                         std::string(room_id), std::string(thread_root), std::move(evs));
+                 });
 }
 
-void EventHandlerBridge::on_rooms_updated(
-    const rust::Vec<RoomInfo>& rooms) const
+void EventHandlerBridge::on_rooms_updated(const rust::Vec<RoomInfo>& rooms) const
 {
     with_handler("on_rooms_updated", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              std::vector<tesseract::RoomInfo> cpp_rooms;
-              cpp_rooms.reserve(rooms.size());
-              for (const auto& r : rooms)
-              {
-                  cpp_rooms.push_back(tesseract::from_ffi(r));
-              }
-              handler_->on_rooms_updated(cpp_rooms);
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     std::vector<tesseract::RoomInfo> cpp_rooms;
+                     cpp_rooms.reserve(rooms.size());
+                     for (const auto& r : rooms)
+                     {
+                         cpp_rooms.push_back(tesseract::from_ffi(r));
+                     }
+                     handler_->on_rooms_updated(cpp_rooms);
+                 });
 }
 
-void EventHandlerBridge::on_invites_updated(
-    const rust::Vec<InviteInfo>& invites) const
+void EventHandlerBridge::on_invites_updated(const rust::Vec<InviteInfo>& invites) const
 {
     with_handler("on_invites_updated", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              std::vector<tesseract::InviteInfo> cpp_invites;
-              cpp_invites.reserve(invites.size());
-              for (const auto& i : invites)
-              {
-                  cpp_invites.push_back(tesseract::from_ffi(i));
-              }
-              handler_->on_invites_updated(cpp_invites);
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     std::vector<tesseract::InviteInfo> cpp_invites;
+                     cpp_invites.reserve(invites.size());
+                     for (const auto& i : invites)
+                     {
+                         cpp_invites.push_back(tesseract::from_ffi(i));
+                     }
+                     handler_->on_invites_updated(cpp_invites);
+                 });
 }
 
-void EventHandlerBridge::on_my_knocks_updated(
-    const rust::Vec<KnockedRoomInfo>& knocks) const
+void EventHandlerBridge::on_my_knocks_updated(const rust::Vec<KnockedRoomInfo>& knocks) const
 {
     with_handler("on_my_knocks_updated", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              std::vector<tesseract::KnockedRoomInfo> cpp_knocks;
-              cpp_knocks.reserve(knocks.size());
-              for (const auto& k : knocks)
-              {
-                  cpp_knocks.push_back(tesseract::from_ffi(k));
-              }
-              handler_->on_my_knocks_updated(cpp_knocks);
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     std::vector<tesseract::KnockedRoomInfo> cpp_knocks;
+                     cpp_knocks.reserve(knocks.size());
+                     for (const auto& k : knocks)
+                     {
+                         cpp_knocks.push_back(tesseract::from_ffi(k));
+                     }
+                     handler_->on_my_knocks_updated(cpp_knocks);
+                 });
 }
 
-void EventHandlerBridge::on_error(rust::Str context, rust::Str message,
-                                  bool soft_logout) const
+void EventHandlerBridge::on_error(rust::Str context, rust::Str message, bool soft_logout) const
 {
     with_handler("on_error", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_sync_error(std::string(context),
-                                      std::string(message), soft_logout);
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_sync_error(std::string(context), std::string(message),
+                                             soft_logout);
+                 });
 }
 
 void EventHandlerBridge::on_session_refreshed(rust::Str session_json) const
 {
     with_handler("on_session_refreshed", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_session_saved(std::string(session_json));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_session_saved(std::string(session_json));
+                 });
 }
 
 void persist_session(rust::Str user_id, rust::Str session_json)
@@ -410,804 +390,773 @@ void persist_session(rust::Str user_id, rust::Str session_json)
     guard("persist_session",
           [&]
           {
-              tesseract::session_persist_queue().enqueue(
-                  std::string(user_id), std::string(session_json));
+              tesseract::session_persist_queue().enqueue(std::string(user_id),
+                                                         std::string(session_json));
           });
 }
 
-void EventHandlerBridge::on_backup_progress(
-    const BackupProgress& progress) const
+void EventHandlerBridge::on_backup_progress(const BackupProgress& progress) const
 {
     with_handler("on_backup_progress", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_backup_progress(tesseract::from_ffi(progress));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_backup_progress(tesseract::from_ffi(progress));
+                 });
 }
 
-void EventHandlerBridge::on_enable_recovery_progress(std::uint8_t step,
-                                                     rust::Str recovery_key,
+void EventHandlerBridge::on_enable_recovery_progress(std::uint8_t step, rust::Str recovery_key,
                                                      std::uint32_t backed_up,
                                                      std::uint32_t total) const
 {
     with_handler("on_enable_recovery_progress", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_enable_recovery_progress(
-                  step, std::string(recovery_key), backed_up, total);
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_enable_recovery_progress(step, std::string(recovery_key),
+                                                           backed_up, total);
+                 });
 }
 
 void EventHandlerBridge::on_crypto_reset_result(bool ok, rust::Str message) const
 {
     with_handler("on_crypto_reset_result", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_crypto_reset_result(ok, std::string(message));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_crypto_reset_result(ok, std::string(message));
+                 });
 }
 
 void EventHandlerBridge::on_room_list_state(std::uint8_t state) const
 {
     with_handler("on_room_list_state", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              // Clamp unknown codes back to Init so the C++ side never sees an
-              // out-of-range enum value if the Rust protocol ever adds a state we
-              // don't know yet. The exhaustive Rust mapper makes this a defensive
-              // belt-and-braces — there's no path that produces an invalid code today.
-              tesseract::RoomListState rls =
-                  (state <= static_cast<std::uint8_t>(
-                                tesseract::RoomListState::Terminated))
-                      ? static_cast<tesseract::RoomListState>(state)
-                      : tesseract::RoomListState::Init;
-              handler_->on_room_list_state(rls);
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     // Clamp unknown codes back to Init so the C++ side never sees an
+                     // out-of-range enum value if the Rust protocol ever adds a state we
+                     // don't know yet. The exhaustive Rust mapper makes this a defensive
+                     // belt-and-braces — there's no path that produces an invalid code today.
+                     tesseract::RoomListState rls =
+                         (state <= static_cast<std::uint8_t>(tesseract::RoomListState::Terminated))
+                             ? static_cast<tesseract::RoomListState>(state)
+                             : tesseract::RoomListState::Init;
+                     handler_->on_room_list_state(rls);
+                 });
 }
 
 void EventHandlerBridge::on_inflight_changed(std::uint32_t count) const
 {
     with_handler("on_inflight_changed", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_inflight_changed(count);
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_inflight_changed(count);
+                 });
 }
 
-void EventHandlerBridge::on_inflight_changed_debug(std::uint32_t count,
-                                                    rust::Str urls) const
+void EventHandlerBridge::on_inflight_changed_debug(std::uint32_t count, rust::Str urls) const
 {
 #ifndef NDEBUG
     with_handler("on_inflight_changed_debug", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_inflight_changed_debug(count, std::string(urls));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_inflight_changed_debug(count, std::string(urls));
+                 });
 #else
-    (void)count; (void)urls;
+    (void)count;
+    (void)urls;
 #endif
 }
 
 void EventHandlerBridge::on_image_packs_updated() const
 {
     with_handler("on_image_packs_updated", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_image_packs_updated();
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_image_packs_updated();
+                 });
 }
 
 void EventHandlerBridge::on_threads_updated(rust::Str room_id) const
 {
     with_handler("on_threads_updated", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_threads_updated(std::string(room_id));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_threads_updated(std::string(room_id));
+                 });
 }
 
 void EventHandlerBridge::on_knock_requests_updated(rust::Str room_id) const
 {
     with_handler("on_knock_requests_updated", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_knock_requests_updated(std::string(room_id));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_knock_requests_updated(std::string(room_id));
+                 });
 }
 
 void EventHandlerBridge::on_bot_commands_updated(rust::Str room_id) const
 {
     with_handler("on_bot_commands_updated", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_bot_commands_updated(std::string(room_id));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_bot_commands_updated(std::string(room_id));
+                 });
 }
 
 void EventHandlerBridge::on_media_ready(std::uint64_t request_id,
                                         rust::Slice<const uint8_t> bytes) const
 {
     with_handler("on_media_ready", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              std::vector<uint8_t> b(bytes.data(), bytes.data() + bytes.size());
-              handler_->on_media_ready(request_id, b);
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     std::vector<uint8_t> b(bytes.data(), bytes.data() + bytes.size());
+                     handler_->on_media_ready(request_id, b);
+                 });
 }
 
-void EventHandlerBridge::on_media_chunk(std::uint64_t request_id,
-                                        rust::Slice<const uint8_t> chunk,
-                                        std::uint8_t status,
-                                        std::uint64_t total_size) const
+void EventHandlerBridge::on_media_chunk(std::uint64_t request_id, rust::Slice<const uint8_t> chunk,
+                                        std::uint8_t status, std::uint64_t total_size) const
 {
     with_handler("on_media_chunk", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              std::vector<uint8_t> c(chunk.data(), chunk.data() + chunk.size());
-              handler_->on_media_chunk(request_id, c, status, total_size);
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     std::vector<uint8_t> c(chunk.data(), chunk.data() + chunk.size());
+                     handler_->on_media_chunk(request_id, c, status, total_size);
+                 });
 }
 
 void EventHandlerBridge::on_url_preview_ready(std::uint64_t request_id,
                                               rust::Str preview_json) const
 {
     with_handler("on_url_preview_ready", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_url_preview_ready(request_id,
-                                             std::string(preview_json));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_url_preview_ready(request_id, std::string(preview_json));
+                 });
 }
 
 void EventHandlerBridge::on_gif_results(std::uint64_t request_id,
                                         const rust::Vec<GifResult>& results) const
 {
     with_handler("on_gif_results", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              std::vector<tesseract::GifResult> cpp_results;
-              cpp_results.reserve(results.size());
-              for (const auto& r : results)
-              {
-                  tesseract::GifResult g;
-                  g.id = std::string(r.id);
-                  g.preview_url = std::string(r.preview_url);
-                  g.preview_w = r.preview_w;
-                  g.preview_h = r.preview_h;
-                  g.image_url = std::string(r.image_url);
-                  g.image_w = r.image_w;
-                  g.image_h = r.image_h;
-                  g.image_mime = std::string(r.image_mime);
-                  g.strip_url = std::string(r.strip_url);
-                  g.strip_mime = std::string(r.strip_mime);
-                  cpp_results.push_back(std::move(g));
-              }
-              handler_->on_gif_results(request_id, cpp_results);
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     std::vector<tesseract::GifResult> cpp_results;
+                     cpp_results.reserve(results.size());
+                     for (const auto& r : results)
+                     {
+                         tesseract::GifResult g;
+                         g.id = std::string(r.id);
+                         g.preview_url = std::string(r.preview_url);
+                         g.preview_w = r.preview_w;
+                         g.preview_h = r.preview_h;
+                         g.image_url = std::string(r.image_url);
+                         g.image_w = r.image_w;
+                         g.image_h = r.image_h;
+                         g.image_mime = std::string(r.image_mime);
+                         g.strip_url = std::string(r.strip_url);
+                         g.strip_mime = std::string(r.strip_mime);
+                         cpp_results.push_back(std::move(g));
+                     }
+                     handler_->on_gif_results(request_id, cpp_results);
+                 });
 }
 
-void EventHandlerBridge::on_gif_search_failed(std::uint64_t request_id,
-                                              rust::Str message) const
+void EventHandlerBridge::on_gif_search_failed(std::uint64_t request_id, rust::Str message) const
 {
     with_handler("on_gif_search_failed", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_gif_search_failed(request_id, std::string(message));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_gif_search_failed(request_id, std::string(message));
+                 });
 }
 
 void EventHandlerBridge::on_forward_done(std::uint64_t request_id) const
 {
     with_handler("on_forward_done", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_forward_done(request_id);
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_forward_done(request_id);
+                 });
 }
 
-void EventHandlerBridge::on_forward_failed(std::uint64_t request_id,
-                                           rust::Str message) const
+void EventHandlerBridge::on_forward_failed(std::uint64_t request_id, rust::Str message) const
 {
     with_handler("on_forward_failed", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_forward_failed(request_id, std::string(message));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_forward_failed(request_id, std::string(message));
+                 });
 }
 
 void EventHandlerBridge::on_space_child_summary_ready(std::uint64_t request_id,
                                                       rust::Str summary_json) const
 {
     with_handler("on_space_child_summary_ready", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_space_child_summary_ready(request_id,
-                                                     std::string(summary_json));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_space_child_summary_ready(request_id, std::string(summary_json));
+                 });
 }
 
 void EventHandlerBridge::on_server_info_ready(std::uint64_t request_id,
                                               const ServerInfoFfi& info) const
 {
     with_handler("on_server_info_ready", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_server_info_ready(request_id, tesseract::from_ffi(info));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_server_info_ready(request_id, tesseract::from_ffi(info));
+                 });
 }
 
 void EventHandlerBridge::on_media_preview_config_ready(std::uint64_t request_id,
                                                        rust::Str config_json) const
 {
     with_handler("on_media_preview_config_ready", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_media_preview_config_ready(request_id,
-                                                      std::string(config_json));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_media_preview_config_ready(request_id, std::string(config_json));
+                 });
 }
 
 void EventHandlerBridge::on_room_preview_override_ready(std::uint64_t request_id,
                                                         rust::Str override_json) const
 {
     with_handler("on_room_preview_override_ready", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_room_preview_override_ready(request_id,
-                                                       std::string(override_json));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_room_preview_override_ready(request_id,
+                                                              std::string(override_json));
+                 });
 }
 
-void EventHandlerBridge::on_room_security_state_ready(
-    std::uint64_t request_id, const RoomSecurityStateFfi& state) const
+void EventHandlerBridge::on_room_security_state_ready(std::uint64_t request_id,
+                                                      const RoomSecurityStateFfi& state) const
 {
     with_handler("on_room_security_state_ready", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_room_security_state_ready(request_id,
-                                                     tesseract::from_ffi(state));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_room_security_state_ready(request_id, tesseract::from_ffi(state));
+                 });
 }
 
 void EventHandlerBridge::on_search_results(std::uint64_t request_id,
                                            const rust::Vec<SearchHit>& results) const
 {
     with_handler("on_search_results", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              std::vector<tesseract::SearchHit> cpp_results;
-              cpp_results.reserve(results.size());
-              for (const auto& r : results)
-              {
-                  tesseract::SearchHit h;
-                  h.event_id = std::string(r.event_id);
-                  h.room_id = std::string(r.room_id);
-                  h.room_name = std::string(r.room_name);
-                  h.sender = std::string(r.sender);
-                  h.sender_name = std::string(r.sender_name);
-                  h.body = std::string(r.body);
-                  h.timestamp_ms = r.timestamp_ms;
-                  cpp_results.push_back(std::move(h));
-              }
-              handler_->on_search_results(request_id, cpp_results);
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     std::vector<tesseract::SearchHit> cpp_results;
+                     cpp_results.reserve(results.size());
+                     for (const auto& r : results)
+                     {
+                         tesseract::SearchHit h;
+                         h.event_id = std::string(r.event_id);
+                         h.room_id = std::string(r.room_id);
+                         h.room_name = std::string(r.room_name);
+                         h.sender = std::string(r.sender);
+                         h.sender_name = std::string(r.sender_name);
+                         h.body = std::string(r.body);
+                         h.timestamp_ms = r.timestamp_ms;
+                         cpp_results.push_back(std::move(h));
+                     }
+                     handler_->on_search_results(request_id, cpp_results);
+                 });
 }
 
-void EventHandlerBridge::on_search_failed(std::uint64_t request_id,
-                                          rust::Str message) const
+void EventHandlerBridge::on_search_failed(std::uint64_t request_id, rust::Str message) const
 {
     with_handler("on_search_failed", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_search_failed(request_id, std::string(message));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_search_failed(request_id, std::string(message));
+                 });
 }
 
 void EventHandlerBridge::on_room_directory_search_results(
-    std::uint64_t request_id,
-    const rust::Vec<RoomDirectoryEntryFfi>& entries, bool reached_end) const
+    std::uint64_t request_id, const rust::Vec<RoomDirectoryEntryFfi>& entries,
+    bool reached_end) const
 {
     with_handler("on_room_directory_search_results", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              std::vector<tesseract::RoomDirectoryEntry> cpp_entries;
-              cpp_entries.reserve(entries.size());
-              for (const auto& e : entries)
-              {
-                  tesseract::RoomDirectoryEntry entry;
-                  entry.room_id = std::string(e.room_id);
-                  entry.name = std::string(e.name);
-                  entry.topic = std::string(e.topic);
-                  entry.alias = std::string(e.alias);
-                  entry.avatar_url = std::string(e.avatar_url);
-                  entry.join_rule = std::string(e.join_rule);
-                  entry.is_world_readable = e.is_world_readable;
-                  entry.joined_members = e.joined_members;
-                  cpp_entries.push_back(std::move(entry));
-              }
-              handler_->on_room_directory_search_results(request_id, cpp_entries,
-                                                          reached_end);
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     std::vector<tesseract::RoomDirectoryEntry> cpp_entries;
+                     cpp_entries.reserve(entries.size());
+                     for (const auto& e : entries)
+                     {
+                         tesseract::RoomDirectoryEntry entry;
+                         entry.room_id = std::string(e.room_id);
+                         entry.name = std::string(e.name);
+                         entry.topic = std::string(e.topic);
+                         entry.alias = std::string(e.alias);
+                         entry.avatar_url = std::string(e.avatar_url);
+                         entry.join_rule = std::string(e.join_rule);
+                         entry.is_world_readable = e.is_world_readable;
+                         entry.joined_members = e.joined_members;
+                         cpp_entries.push_back(std::move(entry));
+                     }
+                     handler_->on_room_directory_search_results(request_id, cpp_entries,
+                                                                reached_end);
+                 });
 }
 
-void EventHandlerBridge::on_room_directory_search_failed(
-    std::uint64_t request_id, rust::Str message) const
+void EventHandlerBridge::on_room_directory_search_failed(std::uint64_t request_id,
+                                                         rust::Str message) const
 {
     with_handler("on_room_directory_search_failed", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_room_directory_search_failed(request_id,
-                                                         std::string(message));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_room_directory_search_failed(request_id, std::string(message));
+                 });
 }
 
-void EventHandlerBridge::on_paginate_result(std::uint64_t request_id,
-                                            bool ok, bool reached_start,
-                                            bool reached_end,
-                                            rust::Str message) const
+void EventHandlerBridge::on_paginate_result(std::uint64_t request_id, bool ok, bool reached_start,
+                                            bool reached_end, rust::Str message) const
 {
     with_handler("on_paginate_result", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_paginate_result(request_id, ok, reached_start,
-                                           reached_end, std::string(message));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_paginate_result(request_id, ok, reached_start, reached_end,
+                                                  std::string(message));
+                 });
 }
 
-void EventHandlerBridge::on_media_view_paginate_result(
-    std::uint64_t request_id, bool ok, bool reached_start,
-    std::uint64_t media_count, rust::Str message) const
+void EventHandlerBridge::on_media_view_paginate_result(std::uint64_t request_id, bool ok,
+                                                       bool reached_start,
+                                                       std::uint64_t media_count,
+                                                       rust::Str message) const
 {
     with_handler("on_media_view_paginate_result", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_media_view_paginate_result(
-                  request_id, ok, reached_start, media_count,
-                  std::string(message));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_media_view_paginate_result(request_id, ok, reached_start,
+                                                             media_count, std::string(message));
+                 });
 }
 
-void EventHandlerBridge::on_room_media_page(
-    std::uint64_t request_id, const rust::Vec<MediaIndexRowFfi>& rows,
-    bool reached_db_end, std::uint64_t total) const
+void EventHandlerBridge::on_room_media_page(std::uint64_t request_id,
+                                            const rust::Vec<MediaIndexRowFfi>& rows,
+                                            bool reached_db_end, std::uint64_t total) const
 {
     with_handler("on_room_media_page", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              std::vector<tesseract::MediaIndexRow> cpp_rows;
-              cpp_rows.reserve(rows.size());
-              for (const auto& r : rows)
-              {
-                  tesseract::MediaIndexRow m;
-                  m.event_id = std::string(r.event_id);
-                  m.ts_ms = r.ts_ms;
-                  m.sender = std::string(r.sender);
-                  m.sender_name = std::string(r.sender_name);
-                  m.sender_avatar_mxc = std::string(r.sender_avatar_mxc);
-                  m.kind = r.kind;
-                  m.caption = std::string(r.caption);
-                  m.src_mxc = std::string(r.src_mxc);
-                  m.src_encrypted = r.src_encrypted;
-                  m.src_json = std::string(r.src_json);
-                  m.thumb_mxc = std::string(r.thumb_mxc);
-                  m.thumb_encrypted = r.thumb_encrypted;
-                  m.thumb_json = std::string(r.thumb_json);
-                  m.media_w = r.media_w;
-                  m.media_h = r.media_h;
-                  m.blurhash = std::string(r.blurhash);
-                  m.duration_ms = r.duration_ms;
-                  m.video_mime = std::string(r.video_mime);
-                  m.video_autoplay = r.video_autoplay;
-                  m.video_loop = r.video_loop;
-                  m.video_no_audio = r.video_no_audio;
-                  m.video_hide_controls = r.video_hide_controls;
-                  m.video_gif = r.video_gif;
-                  m.image_animated = r.image_animated;
-                  cpp_rows.push_back(std::move(m));
-              }
-              handler_->on_room_media_page(request_id, cpp_rows,
-                                           reached_db_end, total);
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     std::vector<tesseract::MediaIndexRow> cpp_rows;
+                     cpp_rows.reserve(rows.size());
+                     for (const auto& r : rows)
+                     {
+                         tesseract::MediaIndexRow m;
+                         m.event_id = std::string(r.event_id);
+                         m.ts_ms = r.ts_ms;
+                         m.sender = std::string(r.sender);
+                         m.sender_name = std::string(r.sender_name);
+                         m.sender_avatar_mxc = std::string(r.sender_avatar_mxc);
+                         m.kind = r.kind;
+                         m.caption = std::string(r.caption);
+                         m.src_mxc = std::string(r.src_mxc);
+                         m.src_encrypted = r.src_encrypted;
+                         m.src_json = std::string(r.src_json);
+                         m.thumb_mxc = std::string(r.thumb_mxc);
+                         m.thumb_encrypted = r.thumb_encrypted;
+                         m.thumb_json = std::string(r.thumb_json);
+                         m.media_w = r.media_w;
+                         m.media_h = r.media_h;
+                         m.blurhash = std::string(r.blurhash);
+                         m.duration_ms = r.duration_ms;
+                         m.video_mime = std::string(r.video_mime);
+                         m.video_autoplay = r.video_autoplay;
+                         m.video_loop = r.video_loop;
+                         m.video_no_audio = r.video_no_audio;
+                         m.video_hide_controls = r.video_hide_controls;
+                         m.video_gif = r.video_gif;
+                         m.image_animated = r.image_animated;
+                         cpp_rows.push_back(std::move(m));
+                     }
+                     handler_->on_room_media_page(request_id, cpp_rows, reached_db_end, total);
+                 });
 }
 
-void EventHandlerBridge::on_room_export_progress(
-    const RoomExportProgressFfi& progress) const
+void EventHandlerBridge::on_room_export_progress(const RoomExportProgressFfi& progress) const
 {
     with_handler("on_room_export_progress", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_room_export_progress(tesseract::from_ffi(progress));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_room_export_progress(tesseract::from_ffi(progress));
+                 });
 }
 
-void EventHandlerBridge::on_room_export_complete(
-    std::uint64_t request_id, bool ok, bool cancelled, bool reached_start,
-    rust::Str out_path, std::uint64_t events_written,
-    std::uint64_t bytes_written, rust::Str message) const
+void EventHandlerBridge::on_room_export_complete(std::uint64_t request_id, bool ok, bool cancelled,
+                                                 bool reached_start, rust::Str out_path,
+                                                 std::uint64_t events_written,
+                                                 std::uint64_t bytes_written,
+                                                 rust::Str message) const
 {
     with_handler("on_room_export_complete", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_room_export_complete(
-                  request_id, ok, cancelled, reached_start,
-                  std::string(out_path), events_written, bytes_written,
-                  std::string(message));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_room_export_complete(request_id, ok, cancelled, reached_start,
+                                                       std::string(out_path), events_written,
+                                                       bytes_written, std::string(message));
+                 });
 }
 
-void EventHandlerBridge::on_room_action_complete(std::uint64_t request_id,
-                                                  bool ok,
-                                                  rust::Str joined_room_id,
-                                                  rust::Str message) const
+void EventHandlerBridge::on_room_action_complete(std::uint64_t request_id, bool ok,
+                                                 rust::Str joined_room_id, rust::Str message) const
 {
     with_handler("on_room_action_complete", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_room_action_complete(request_id, ok,
-                                                std::string(joined_room_id),
-                                                std::string(message));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_room_action_complete(request_id, ok, std::string(joined_room_id),
+                                                       std::string(message));
+                 });
 }
 
 void EventHandlerBridge::on_upload_complete(std::uint64_t request_id, bool ok,
-                                             rust::Str message) const
+                                            rust::Str message) const
 {
     with_handler("on_upload_complete", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_upload_complete(request_id, ok, std::string(message));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_upload_complete(request_id, ok, std::string(message));
+                 });
 }
 
-void EventHandlerBridge::on_upload_progress(std::uint64_t request_id,
-                                             std::uint64_t current_bytes,
-                                             std::uint64_t total_bytes) const
+void EventHandlerBridge::on_upload_progress(std::uint64_t request_id, std::uint64_t current_bytes,
+                                            std::uint64_t total_bytes) const
 {
     with_handler("on_upload_progress", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_upload_progress(request_id, current_bytes,
-                                           total_bytes);
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_upload_progress(request_id, current_bytes, total_bytes);
+                 });
 }
 
-void EventHandlerBridge::on_profile_field_result(std::uint64_t request_id,
-                                                  rust::Str key, bool ok,
-                                                  rust::Str message) const
+void EventHandlerBridge::on_profile_field_result(std::uint64_t request_id, rust::Str key, bool ok,
+                                                 rust::Str message) const
 {
     with_handler("on_profile_field_result", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_profile_field_result(request_id, std::string(key),
-                                                ok, std::string(message));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_profile_field_result(request_id, std::string(key), ok,
+                                                       std::string(message));
+                 });
 }
 
 void EventHandlerBridge::on_extended_profile_ready(std::uint64_t request_id,
-                                                    rust::Str profile_json) const
+                                                   rust::Str profile_json) const
 {
     with_handler("on_extended_profile_ready", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_extended_profile_ready(request_id,
-                                                   std::string(profile_json));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_extended_profile_ready(request_id, std::string(profile_json));
+                 });
+}
+
+void EventHandlerBridge::on_mutual_rooms_ready(std::uint64_t request_id, rust::Str json) const
+{
+    with_handler("on_mutual_rooms_ready", slot_,
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_mutual_rooms_ready(request_id, std::string(json));
+                 });
 }
 
 void EventHandlerBridge::on_account_prefs_updated(rust::Str json) const
 {
     with_handler("on_account_prefs_updated", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_account_prefs_updated(std::string(json));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_account_prefs_updated(std::string(json));
+                 });
 }
 
 void EventHandlerBridge::on_media_preview_config_updated(rust::Str json) const
 {
     with_handler("on_media_preview_config_updated", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_media_preview_config_updated(std::string(json));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_media_preview_config_updated(std::string(json));
+                 });
 }
 
-void EventHandlerBridge::on_own_profile_changed(bool has_display_name,
-                                                rust::Str display_name,
-                                                bool has_avatar_url,
-                                                rust::Str avatar_url) const
+void EventHandlerBridge::on_own_profile_changed(bool has_display_name, rust::Str display_name,
+                                                bool has_avatar_url, rust::Str avatar_url) const
 {
     with_handler("on_own_profile_changed", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              std::optional<std::string> name;
-              std::optional<std::string> avatar;
-              if (has_display_name)
-                  name = std::string(display_name);
-              if (has_avatar_url)
-                  avatar = std::string(avatar_url);
-              handler_->on_own_profile_changed(name, avatar);
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     std::optional<std::string> name;
+                     std::optional<std::string> avatar;
+                     if (has_display_name)
+                     {
+                         name = std::string(display_name);
+                     }
+                     if (has_avatar_url)
+                     {
+                         avatar = std::string(avatar_url);
+                     }
+                     handler_->on_own_profile_changed(name, avatar);
+                 });
 }
 
-void EventHandlerBridge::on_room_media_preview_override_updated(
-    rust::Str room_id, rust::Str json) const
+void EventHandlerBridge::on_room_media_preview_override_updated(rust::Str room_id,
+                                                                rust::Str json) const
 {
     with_handler("on_room_media_preview_override_updated", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_room_media_preview_override_updated(
-                  std::string(room_id), std::string(json));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_room_media_preview_override_updated(std::string(room_id),
+                                                                      std::string(json));
+                 });
 }
 
-void EventHandlerBridge::on_notification(
-    rust::Str room_id, rust::Str room_name, rust::Str sender, rust::Str body,
-    bool is_mention, rust::Slice<const uint8_t> avatar_bytes,
-    rust::Slice<const uint8_t> image_bytes, rust::Str event_id) const
+void EventHandlerBridge::on_notification(rust::Str room_id, rust::Str room_name, rust::Str sender,
+                                         rust::Str body, bool is_mention,
+                                         rust::Slice<const uint8_t> avatar_bytes,
+                                         rust::Slice<const uint8_t> image_bytes,
+                                         rust::Str event_id) const
 {
-    with_handler("on_notification", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              std::vector<uint8_t> av(avatar_bytes.data(),
-                                      avatar_bytes.data() +
-                                          avatar_bytes.size());
-              std::vector<uint8_t> img(image_bytes.data(),
-                                       image_bytes.data() + image_bytes.size());
-              handler_->on_notification(
-                  std::string(room_id), std::string(room_name),
-                  std::string(sender), std::string(body), is_mention, av, img,
-                  std::string(event_id));
-          });
+    with_handler(
+        "on_notification", slot_,
+        [&](tesseract::IEventHandler* handler_)
+        {
+            std::vector<uint8_t> av(avatar_bytes.data(), avatar_bytes.data() + avatar_bytes.size());
+            std::vector<uint8_t> img(image_bytes.data(), image_bytes.data() + image_bytes.size());
+            handler_->on_notification(std::string(room_id), std::string(room_name),
+                                      std::string(sender), std::string(body), is_mention, av, img,
+                                      std::string(event_id));
+        });
 }
 
-void EventHandlerBridge::on_verification_request(rust::Str flow_id,
-                                                 rust::Str user_id,
-                                                 rust::Str device_id,
-                                                 bool incoming) const
+void EventHandlerBridge::on_verification_request(rust::Str flow_id, rust::Str user_id,
+                                                 rust::Str device_id, bool incoming) const
 {
     with_handler("on_verification_request", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_verification_request(
-                  std::string(flow_id), std::string(user_id),
-                  std::string(device_id), incoming);
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_verification_request(std::string(flow_id), std::string(user_id),
+                                                       std::string(device_id), incoming);
+                 });
 }
 
-void EventHandlerBridge::on_sas_ready(rust::Str flow_id,
-                                      const VerificationSas& sas) const
+void EventHandlerBridge::on_sas_ready(rust::Str flow_id, const VerificationSas& sas) const
 {
     with_handler("on_sas_ready", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_sas_ready(std::string(flow_id),
-                                     tesseract::from_ffi(sas));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_sas_ready(std::string(flow_id), tesseract::from_ffi(sas));
+                 });
 }
 
 void EventHandlerBridge::on_verification_done(rust::Str flow_id) const
 {
     with_handler("on_verification_done", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_verification_done(std::string(flow_id));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_verification_done(std::string(flow_id));
+                 });
 }
 
-void EventHandlerBridge::on_verification_cancelled(rust::Str flow_id,
-                                                   rust::Str cancel_code) const
+void EventHandlerBridge::on_verification_cancelled(rust::Str flow_id, rust::Str cancel_code) const
 {
     with_handler("on_verification_cancelled", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_verification_cancelled(std::string(flow_id),
-                                                  std::string(cancel_code));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_verification_cancelled(std::string(flow_id),
+                                                         std::string(cancel_code));
+                 });
 }
 
 void EventHandlerBridge::on_verification_state_changed(bool verified) const
 {
     with_handler("on_verification_state_changed", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_verification_state_changed(verified);
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_verification_state_changed(verified);
+                 });
 }
 
 void EventHandlerBridge::on_recovery_state_changed(std::uint8_t state) const
 {
     with_handler("on_recovery_state_changed", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_recovery_state_changed(state);
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_recovery_state_changed(state);
+                 });
 }
 
-void EventHandlerBridge::on_typing_changed(
-    rust::Str room_id, const rust::Vec<rust::String>& user_ids) const
+void EventHandlerBridge::on_typing_changed(rust::Str room_id,
+                                           const rust::Vec<rust::String>& user_ids) const
 {
     with_handler("on_typing_changed", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              std::vector<std::string> ids;
-              ids.reserve(user_ids.size());
-              for (const auto& uid : user_ids)
-              {
-                  ids.push_back(std::string(uid));
-              }
-              handler_->on_typing_changed(std::string(room_id), std::move(ids));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     std::vector<std::string> ids;
+                     ids.reserve(user_ids.size());
+                     for (const auto& uid : user_ids)
+                     {
+                         ids.push_back(std::string(uid));
+                     }
+                     handler_->on_typing_changed(std::string(room_id), std::move(ids));
+                 });
 }
 
-void EventHandlerBridge::on_user_identities_changed(
-    const rust::Vec<rust::String>& user_ids) const
+void EventHandlerBridge::on_user_identities_changed(const rust::Vec<rust::String>& user_ids) const
 {
     with_handler("on_user_identities_changed", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              std::vector<std::string> ids;
-              ids.reserve(user_ids.size());
-              for (const auto& uid : user_ids)
-                  ids.push_back(std::string(uid));
-              handler_->on_user_identities_changed(ids);
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     std::vector<std::string> ids;
+                     ids.reserve(user_ids.size());
+                     for (const auto& uid : user_ids)
+                     {
+                         ids.push_back(std::string(uid));
+                     }
+                     handler_->on_user_identities_changed(ids);
+                 });
 }
 
-void EventHandlerBridge::on_identity_status_changed(
-    rust::Str room_id, const rust::Vec<rust::String>& user_ids,
-    const rust::Vec<rust::String>& display_names,
-    const rust::Vec<std::uint8_t>& kinds) const
+void EventHandlerBridge::on_identity_status_changed(rust::Str room_id,
+                                                    const rust::Vec<rust::String>& user_ids,
+                                                    const rust::Vec<rust::String>& display_names,
+                                                    const rust::Vec<std::uint8_t>& kinds) const
 {
     with_handler("on_identity_status_changed", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              std::vector<tesseract::IdentityWarning> warnings;
-              warnings.reserve(user_ids.size());
-              for (std::size_t i = 0; i < user_ids.size(); ++i)
-              {
-                  tesseract::IdentityWarning w;
-                  w.user_id = std::string(user_ids[i]);
-                  if (i < display_names.size())
-                      w.display_name = std::string(display_names[i]);
-                  if (i < kinds.size() && kinds[i] == 2)
-                      w.kind = tesseract::IdentityWarning::Kind::VerificationBroken;
-                  warnings.push_back(std::move(w));
-              }
-              handler_->on_identity_status_changed(std::string(room_id),
-                                                   warnings);
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     std::vector<tesseract::IdentityWarning> warnings;
+                     warnings.reserve(user_ids.size());
+                     for (std::size_t i = 0; i < user_ids.size(); ++i)
+                     {
+                         tesseract::IdentityWarning w;
+                         w.user_id = std::string(user_ids[i]);
+                         if (i < display_names.size())
+                         {
+                             w.display_name = std::string(display_names[i]);
+                         }
+                         if (i < kinds.size() && kinds[i] == 2)
+                         {
+                             w.kind = tesseract::IdentityWarning::Kind::VerificationBroken;
+                         }
+                         warnings.push_back(std::move(w));
+                     }
+                     handler_->on_identity_status_changed(std::string(room_id), warnings);
+                 });
 }
 
-void EventHandlerBridge::on_presence_changed(rust::Str user_id,
-                                             std::uint8_t state) const
+void EventHandlerBridge::on_presence_changed(rust::Str user_id, std::uint8_t state) const
 {
     with_handler("on_presence_changed", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              tesseract::PresenceState ps;
-              switch (state)
-              {
-              case 1:  ps = tesseract::PresenceState::Online;      break;
-              case 2:  ps = tesseract::PresenceState::Unavailable; break;
-              default: ps = tesseract::PresenceState::Offline;     break;
-              }
-              handler_->on_presence_changed(std::string(user_id), ps);
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     tesseract::PresenceState ps;
+                     switch (state)
+                     {
+                     case 1:
+                         ps = tesseract::PresenceState::Online;
+                         break;
+                     case 2:
+                         ps = tesseract::PresenceState::Unavailable;
+                         break;
+                     default:
+                         ps = tesseract::PresenceState::Offline;
+                         break;
+                     }
+                     handler_->on_presence_changed(std::string(user_id), ps);
+                 });
 }
 
 // ---------------------------------------------------------------------------
 // MatrixRTC callbacks
 // ---------------------------------------------------------------------------
 
-void EventHandlerBridge::on_rtc_invitation(rust::Str room_id,
-                                           rust::Str slot_id,
-                                           rust::Str caller_user_id,
-                                           rust::Str call_intent,
+void EventHandlerBridge::on_rtc_invitation(rust::Str room_id, rust::Str slot_id,
+                                           rust::Str caller_user_id, rust::Str call_intent,
                                            std::uint64_t lifetime_ms,
                                            rust::Str notification_event_id) const
 {
     with_handler("on_rtc_invitation", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_call_invitation(std::string(room_id),
-                                           std::string(slot_id),
-                                           std::string(caller_user_id),
-                                           std::string(call_intent),
-                                           lifetime_ms,
-                                           std::string(notification_event_id));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_call_invitation(
+                         std::string(room_id), std::string(slot_id), std::string(caller_user_id),
+                         std::string(call_intent), lifetime_ms, std::string(notification_event_id));
+                 });
 }
 
-void EventHandlerBridge::on_rtc_participant_joined(
-    std::uint64_t session_id, const RtcParticipantInfo& info) const
+void EventHandlerBridge::on_rtc_participant_joined(std::uint64_t session_id,
+                                                   const RtcParticipantInfo& info) const
 {
     with_handler("on_rtc_participant_joined", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_call_participant_joined(session_id,
-                                                   tesseract::from_ffi(info));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_call_participant_joined(session_id, tesseract::from_ffi(info));
+                 });
 }
 
 void EventHandlerBridge::on_rtc_participant_left(std::uint64_t session_id,
                                                  rust::Str participant_id) const
 {
     with_handler("on_rtc_participant_left", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_call_participant_left(session_id,
-                                                  std::string(participant_id));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_call_participant_left(session_id, std::string(participant_id));
+                 });
 }
 
-void EventHandlerBridge::on_rtc_participant_updated(
-    std::uint64_t session_id, const RtcParticipantInfo& info) const
+void EventHandlerBridge::on_rtc_participant_updated(std::uint64_t session_id,
+                                                    const RtcParticipantInfo& info) const
 {
     with_handler("on_rtc_participant_updated", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_call_participant_updated(session_id,
-                                                    tesseract::from_ffi(info));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_call_participant_updated(session_id, tesseract::from_ffi(info));
+                 });
 }
 
-void EventHandlerBridge::on_rtc_session_ended(std::uint64_t session_id,
-                                              rust::Str reason) const
+void EventHandlerBridge::on_rtc_session_ended(std::uint64_t session_id, rust::Str reason) const
 {
     with_handler("on_rtc_session_ended", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_call_ended(session_id, std::string(reason));
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_call_ended(session_id, std::string(reason));
+                 });
 }
 
-void EventHandlerBridge::on_rtc_video_frame(std::uint64_t session_id,
-                                            rust::Str participant_id,
-                                            std::uint32_t width,
-                                            std::uint32_t height,
+void EventHandlerBridge::on_rtc_video_frame(std::uint64_t session_id, rust::Str participant_id,
+                                            std::uint32_t width, std::uint32_t height,
                                             rust::Slice<const uint8_t> rgba) const
 {
     with_handler("on_rtc_video_frame", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_call_video_frame(session_id,
-                                             std::string(participant_id),
-                                             width, height,
-                                             rgba.data(), rgba.size());
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_call_video_frame(session_id, std::string(participant_id), width,
+                                                   height, rgba.data(), rgba.size());
+                 });
 }
 
-void EventHandlerBridge::on_rtc_screen_frame(std::uint64_t session_id,
-                                             rust::Str participant_id,
-                                             std::uint32_t width,
-                                             std::uint32_t height,
+void EventHandlerBridge::on_rtc_screen_frame(std::uint64_t session_id, rust::Str participant_id,
+                                             std::uint32_t width, std::uint32_t height,
                                              rust::Slice<const uint8_t> rgba) const
 {
     with_handler("on_rtc_screen_frame", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_call_screen_frame(session_id,
-                                              std::string(participant_id),
-                                              width, height,
-                                              rgba.data(), rgba.size());
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_call_screen_frame(session_id, std::string(participant_id), width,
+                                                    height, rgba.data(), rgba.size());
+                 });
 }
 
-void EventHandlerBridge::on_rtc_audio_frame(std::uint64_t session_id,
-                                            rust::Str participant_id,
+void EventHandlerBridge::on_rtc_audio_frame(std::uint64_t session_id, rust::Str participant_id,
                                             rust::Slice<const int16_t> samples,
                                             std::uint32_t sample_rate,
                                             std::uint32_t num_channels) const
 {
     with_handler("on_rtc_audio_frame", slot_,
-          [&](tesseract::IEventHandler* handler_)
-          {
-              handler_->on_call_audio_frame(session_id,
-                                             std::string(participant_id),
-                                             samples.data(), samples.size(),
-                                             sample_rate, num_channels);
-          });
+                 [&](tesseract::IEventHandler* handler_)
+                 {
+                     handler_->on_call_audio_frame(session_id, std::string(participant_id),
+                                                   samples.data(), samples.size(), sample_rate,
+                                                   num_channels);
+                 });
 }
 
 } // namespace tesseract_ffi

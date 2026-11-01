@@ -51,6 +51,9 @@ public:
         // controller after login can leave this null and rely on the ctor
         // snapshot instead.
         std::function<tesseract::Client*()> client;
+        // Optional: the owner of the client above (its account session). The
+        // roster fetch holds it while it runs so sign-out waits for the fetch.
+        std::function<std::shared_ptr<void>()> client_owner;
         // Prefetch a candidate's avatar (mxc URL) into the shell's avatar cache
         // so the popup's image provider can resolve it on a later repaint.
         // Optional: when null, candidates render initials discs only. The shell
@@ -77,8 +80,8 @@ public:
         std::function<void(std::function<void()>)> post_to_ui;
     };
 
-    MentionController(tk::TextArea* text_area, tesseract::Client* client,
-                      MentionPopup* popup, Hooks hooks);
+    MentionController(tk::TextArea* text_area, tesseract::Client* client, MentionPopup* popup,
+                      Hooks hooks);
     ~MentionController();
 
     // Returns true if an `@`-prefix was handled (popup shown or member fetch

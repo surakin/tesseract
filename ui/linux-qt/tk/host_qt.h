@@ -11,6 +11,7 @@
 
 #include "canvas.h"
 #include "host.h"
+#include "surface.h"
 #include "theme.h"
 #include "widget.h"
 
@@ -31,74 +32,67 @@ class Host;
 
 // Stylesheet for a plain native QMenu (right-click context menus that are
 // not routed through the shared PopupSurfaceHandle mechanism, e.g. the
-// message "Copy" menu, the sticker "Add to Saved Stickers" menu, and the
-// user-info panel context menu) so they follow the app's selected theme
+// message "Copy" menu and the user-info panel context menu) so they follow the app's selected theme
 // instead of falling back to the OS/native Qt style default.
 QString build_menu_qss(const Theme& t);
 
-class Surface : public QWidget
+class Surface : public QWidget, public tk::SurfaceBase
 {
 public:
-    explicit Surface(const Theme& theme = Theme::light(),
-                     QWidget* parent = nullptr, bool transparent = false);
+    explicit Surface(const Theme& theme = Theme::light(), QWidget* parent = nullptr,
+                     bool transparent = false);
     ~Surface() override;
 
-    tk::Host& host();
-    CanvasFactory& factory();
-    const tk::Theme& theme() const;
+    tk::Host& host() override;
+    CanvasFactory& factory() override;
+    const tk::Theme& theme() const override;
 
     // Mount the root widget. Triggers an immediate measure + arrange
     // against the current widget bounds, plus a repaint.
-    void set_root(std::unique_ptr<Widget> root);
-    Widget* root() const;
+    void set_root(std::unique_ptr<Widget> root) override;
+    Widget* root() const override;
 
     // Re-run measure + arrange on the existing root + repaint. Call
     // after mutating widget state in a way that affects layout (showing
     // / hiding children, replacing labels with very different lengths,
     // …). resizeEvent already does this automatically.
-    void relayout();
-    void set_theme(const Theme& t);
+    void relayout() override;
+    void set_theme(const Theme& t) override;
 
     // Pushes `scale` through the whole widget tree via
     // Widget::apply_scale_change() (see widget.h) — called from event()
     // below when Qt reports a devicePixelRatio/screen change, so
     // native-control image captures (tk::NativeTextField/NativeTextArea)
     // don't stay stale/blurry.
-    void apply_scale_change(float scale);
+    void apply_scale_change(float scale) override;
 
     // A popup surface never takes Qt keyboard focus on click: the widget that
     // opened it (a picker's text field, the composer) keeps focus, so pressing
     // inside the popup — a scrollbar drag, a row — doesn't blur and dismiss it.
-    void set_takes_focus_on_click(bool takes) { takes_focus_on_click_ = takes; }
+    void set_takes_focus_on_click(bool takes)
+    {
+        takes_focus_on_click_ = takes;
+    }
 
     // Fired at the tail of apply_scale_change() above, with the new scale.
     // Lets integration code (the owning shell) track the display's current
     // scale — see ShellBase::set_current_scale_()'s doc comment — without
     // needing its own separate DPI-change plumbing.
-    void set_on_scale_changed(std::function<void(float)> cb);
+    void set_on_scale_changed(std::function<void(float)> cb) override;
 
     // Animated-image partial repaints. Point the surface at the shell's
     // animation cache once at setup; then call update_anim_regions() from the
     // animation timer instead of update() to invalidate only the rects where
     // animated images were drawn on the last paint.
-    void set_anim_cache(const AnimImageCache* cache);
-    void update_anim_regions();
+    void set_anim_cache(const AnimImageCache* cache) override;
+    void update_anim_regions() override;
 
-    // Callback fired at the tail of every relayout. Use this from
-    // integration code to keep native overlays (QLineEdit, ...) aligned
-    // with the shared widget tree. Single-slot: a second caller silently
-    // replaces the first's callback, so use this only where a Surface is
-    // known to have exactly one interested subsystem.
-    void set_on_layout(std::function<void()> cb);
-
-    // Same trigger point as set_on_layout, but additive — for a subsystem
-    // that can't assume it's the only thing interested in relayout (e.g.
-    // the accessibility bridge, which must coexist with whatever a given
-    // Surface's owner already wired via set_on_layout).
-    void add_layout_listener(std::function<void()> cb);
+    // Called at the tail of every relayout, additive — for a subsystem such as
+    // the accessibility bridge that must follow layout changes.
+    void add_layout_listener(std::function<void()> cb) override;
 
     // Called when a drop fails because the file could not be read.
-    void set_on_file_drop_error(FileDropErrorHandler cb);
+    void set_on_file_drop_error(FileDropErrorHandler cb) override;
 
 protected:
     // Qt's own QWidget::event() intercepts Key_Tab/Key_Backtab for its

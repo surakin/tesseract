@@ -19,18 +19,25 @@ namespace
 // or client. Pure-virtual surface stubbed to no-ops.
 struct RosterShell : tesseract::test::TestShellBase
 {
-    void post_to_ui_(std::function<void()> fn) override { queue.push_back(std::move(fn)); }
+    void post_to_ui_(std::function<void()> fn) override
+    {
+        queue.push_back(std::move(fn));
+    }
     void post_to_ui_after_(int, std::function<void()> fn) override
     {
         queue.push_back(std::move(fn));
     }
-    void apply_thread_messages_(
-        const std::string&,
-        std::vector<tesseract::views::MessageRowData>, bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&, std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
 
     std::vector<std::function<void()>> queue;
 
@@ -48,8 +55,7 @@ tesseract::RoomInfo room(const std::string& id)
 
 } // namespace
 
-TEST_CASE("roster survives a same-set push (no invalidation)",
-          "[shell][roster]")
+TEST_CASE("roster survives a same-set push (no invalidation)", "[shell][roster]")
 {
     RosterShell s;
     s.my_user_id_ = "@me:x";
@@ -61,8 +67,7 @@ TEST_CASE("roster survives a same-set push (no invalidation)",
     CHECK(s.known_users_built_);
 }
 
-TEST_CASE("roster is invalidated when the room set changes with equal count",
-          "[shell][roster]")
+TEST_CASE("roster is invalidated when the room set changes with equal count", "[shell][roster]")
 {
     RosterShell s;
     s.my_user_id_ = "@me:x";

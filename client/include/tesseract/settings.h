@@ -56,6 +56,14 @@ public:
     // timeline (hover shows the status text). Default off.
     bool show_sender_status_in_timeline = false;
 
+    // Show the difference between each sender's profile timezone and this
+    // computer's, as a short dimmed "+2h" after their name. Default off.
+    bool show_sender_timezone_in_timeline = false;
+
+    // Keep the profile timezone in sync with this computer's timezone
+    // (the picker in Account settings is disabled while on). Default off.
+    bool auto_detect_timezone = false;
+
     // Play animated avatars (GIF / animated WebP / APNG) instead of showing
     // their first frame. Not applied while low power mode is active. Default on.
     bool animate_avatars = true;
@@ -80,6 +88,22 @@ public:
     // Bubbles layout only: draw the local user's avatar and name on their own
     // bubbles (right gutter, first row of a run). Default on.
     bool bubbles_show_own_avatar = true;
+
+    // ── Timeline content column ─────────────────────────────────────
+    // Width of the column message rows lay out in, as a percentage of the
+    // room timeline (clamped 30..100; 100 = the whole width, the default), and where it
+    // sits when narrower than the timeline: beside the room list (Left) or
+    // centred. Classic and Bubbles only; IRC always uses the full width.
+    // Live-applied.
+    enum class TimelineColumnAnchor
+    {
+        Left,
+        Center
+    };
+    static constexpr int kTimelineColumnMinPct = 30;
+    static constexpr int kTimelineColumnMaxPct = 100;
+    int timeline_column_pct = 100;
+    TimelineColumnAnchor timeline_column_anchor = TimelineColumnAnchor::Left;
 
     // ── Room list density ───────────────────────────────────────────
     // Normal  → avatar, name and last-message preview per row (default).
@@ -256,8 +280,16 @@ public:
     // their owner cross-signed, and hide messages sent from devices that
     // aren't. Off by default while other clients catch up on cross-signing.
     // Applied via Client::set_exclude_insecure_devices at launch; a change
-    // takes effect after restart.
+    // is applied when Settings closes, by reloading every account's client.
     bool exclude_insecure_devices = false;
+
+    // Refuse to send while a verified member's identity has changed or they
+    // have a device their owner did not confirm. Off sends to every device
+    // regardless (the behaviour before 0.9.4). Ignored while
+    // exclude_insecure_devices is on. Applied via
+    // Client::set_block_sends_on_unverified_devices at launch; a change is
+    // applied when Settings closes, by reloading every account's client.
+    bool block_sends_on_unverified_devices = true;
 
     // ── Network proxy ─────────────────────────────────────────────────
     // System → OS/environment proxy (default); None → never use a proxy;
@@ -280,7 +312,7 @@ public:
     // Bookkeeping for save_to_disk (const): not a setting.
     mutable bool proxy_creds_in_keyring = false;
     mutable bool proxy_creds_unreadable = false; // the keyring couldn't be read at load
-    mutable std::string proxy_creds_saved; // the userinfo last written there
+    mutable std::string proxy_creds_saved;       // the userinfo last written there
 
     // ── MSC4278 media-preview controls ────────────────────────────────
     // In-memory mirror of the active account's global `m.media_preview_config`
@@ -298,26 +330,26 @@ public:
         On
     };
     MediaPreviews media_previews = MediaPreviews::On;
-    bool          invite_avatars = true;
+    bool invite_avatars = true;
 
     // ── Window geometry ───────────────────────────────────────────────────
     // Persisted locally (not synced) so windows reopen at the same position
     // and size. valid=false means "no saved geometry; use platform default".
     struct WindowGeometry
     {
-        int  x = 0, y = 0, w = 0, h = 0;
-        int  dpi   = 0; // 0 = unknown (written before this field existed)
+        int x = 0, y = 0, w = 0, h = 0;
+        int dpi = 0; // 0 = unknown (written before this field existed)
         bool valid = false;
     };
 
     struct PopoutEntry
     {
-        std::string    room_id;
-        std::string    user_id;   // empty = pre-migration entry (restore for any account)
+        std::string room_id;
+        std::string user_id; // empty = pre-migration entry (restore for any account)
         WindowGeometry geometry;
     };
 
-    WindowGeometry           main_window_geometry;
+    WindowGeometry main_window_geometry;
     std::vector<PopoutEntry> popout_windows;
 
     // ── Encryption reminder ──────────────────────────────────────────
@@ -365,20 +397,22 @@ public:
 
     // Collapsed state of each room-list section; persisted across restarts.
     // Defaults match the hardcoded initial state in RoomListView.
-    bool room_section_invites_collapsed         = false;
-    bool room_section_favorites_collapsed       = false;
-    bool room_section_dms_collapsed             = false;
-    bool room_section_rooms_collapsed           = false;
-    bool room_section_spaces_collapsed          = false;
-    bool room_section_inactive_collapsed        = true;
-    bool room_section_unread_collapsed          = false;
-    bool room_section_space_unjoined_collapsed  = false;
+    bool room_section_invites_collapsed = false;
+    bool room_section_favorites_collapsed = false;
+    bool room_section_dms_collapsed = false;
+    bool room_section_rooms_collapsed = false;
+    bool room_section_spaces_collapsed = false;
+    bool room_section_inactive_collapsed = true;
+    bool room_section_unread_collapsed = false;
+    bool room_section_space_unjoined_collapsed = false;
+    bool room_section_call_rooms_collapsed = false;
+    bool room_section_knocks_collapsed = false;
 
     // User-chosen width of the room-list sidebar, in logical px. 0 = unset →
     // fall back to visual::kSidebarWidth. When sidebar_collapsed is true the
     // sidebar renders in icon-only mode regardless of this value (which is
     // retained as the width to restore when it is expanded again).
-    int  sidebar_width     = 0;
+    int sidebar_width = 0;
     bool sidebar_collapsed = false;
 
     // ── General ───────────────────────────────────────────────────────
@@ -470,7 +504,13 @@ public:
     std::string sdk_log_level = "warn";
 
     // ── Call overlay ─────────────────────────────────────────────────
-    enum class CallOverlayMode { Docked, DockedExpanded, Floating, Popout };
+    enum class CallOverlayMode
+    {
+        Docked,
+        DockedExpanded,
+        Floating,
+        Popout
+    };
     CallOverlayMode call_overlay_mode = CallOverlayMode::Docked;
     float call_overlay_float_x = 40.0f;
     float call_overlay_float_y = 40.0f;

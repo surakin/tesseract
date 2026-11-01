@@ -31,17 +31,23 @@ RoomInfo named_room(std::string name, uint64_t last_ts = 1)
 const AccessNode* find_role(const AccessNode& node, Role role)
 {
     if (node.role == role)
+    {
         return &node;
+    }
     for (const auto& ch : node.children)
+    {
         if (const AccessNode* found = find_role(ch, role))
+        {
             return found;
+        }
+    }
     return nullptr;
 }
 } // namespace
 
 TEST_CASE("RoomListView's room rows are accessible ListItems named after "
-         "the room, under a List node",
-         "[roomlist][accessibility]")
+          "the room, under a List node",
+          "[roomlist][accessibility]")
 {
     auto v_owner = tk::create_root_widget<RoomListView>(nullptr);
     RoomListView& v = *v_owner;
@@ -59,18 +65,20 @@ TEST_CASE("RoomListView's room rows are accessible ListItems named after "
     // section header is also a row, but role Button, not ListItem).
     std::vector<std::string> room_names;
     for (const auto& row : list->children)
+    {
         if (row.role == Role::ListItem)
+        {
             room_names.push_back(row.name);
+        }
+    }
 
-    CHECK(std::find(room_names.begin(), room_names.end(), "Alpha Room") !=
-         room_names.end());
-    CHECK(std::find(room_names.begin(), room_names.end(), "Beta Room") !=
-         room_names.end());
+    CHECK(std::find(room_names.begin(), room_names.end(), "Alpha Room") != room_names.end());
+    CHECK(std::find(room_names.begin(), room_names.end(), "Beta Room") != room_names.end());
 }
 
 TEST_CASE("RoomListView's section headers are accessible Buttons reflecting "
-         "expanded state",
-         "[roomlist][accessibility]")
+          "expanded state",
+          "[roomlist][accessibility]")
 {
     auto v_owner = tk::create_root_widget<RoomListView>(nullptr);
     RoomListView& v = *v_owner;
@@ -85,11 +93,13 @@ TEST_CASE("RoomListView's section headers are accessible Buttons reflecting "
 
     const AccessNode* header = nullptr;
     for (const auto& row : list->children)
+    {
         if (row.role == Role::Button)
         {
             header = &row;
             break;
         }
+    }
     REQUIRE(header != nullptr);
     CHECK(header->state.expanded); // sections start expanded (collapsed_ = false)
 
@@ -99,18 +109,20 @@ TEST_CASE("RoomListView's section headers are accessible Buttons reflecting "
     REQUIRE(list2 != nullptr);
     const AccessNode* header2 = nullptr;
     for (const auto& row : list2->children)
+    {
         if (row.role == Role::Button)
         {
             header2 = &row;
             break;
         }
+    }
     REQUIRE(header2 != nullptr);
     CHECK_FALSE(header2->state.expanded);
 }
 
 TEST_CASE("invoking a room row's default action selects that room, the "
-         "same as a real click",
-         "[roomlist][accessibility][action]")
+          "same as a real click",
+          "[roomlist][accessibility][action]")
 {
     auto v_owner = tk::create_root_widget<RoomListView>(nullptr);
     RoomListView& v = *v_owner;
@@ -123,7 +135,10 @@ TEST_CASE("invoking a room row's default action selects that room, the "
     v.set_rooms(std::move(rooms));
 
     std::string selected;
-    v.on_room_selected = [&](const std::string& id) { selected = id; };
+    v.on_room_selected = [&](const std::string& id)
+    {
+        selected = id;
+    };
 
     AccessNode tree = build_access_tree(&v);
     const AccessNode* list = find_role(tree, Role::List);
@@ -131,8 +146,12 @@ TEST_CASE("invoking a room row's default action selects that room, the "
 
     const AccessNode* beta_row = nullptr;
     for (const auto& row : list->children)
+    {
         if (row.role == Role::ListItem && row.name == "Beta Room")
+        {
             beta_row = &row;
+        }
+    }
     REQUIRE(beta_row != nullptr);
 
     CHECK(invoke_default_action(*beta_row));
@@ -140,8 +159,8 @@ TEST_CASE("invoking a room row's default action selects that room, the "
 }
 
 TEST_CASE("invoking a header row's default action toggles its section's "
-         "collapsed state, the same as a real click",
-         "[roomlist][accessibility][action]")
+          "collapsed state, the same as a real click",
+          "[roomlist][accessibility][action]")
 {
     auto v_owner = tk::create_root_widget<RoomListView>(nullptr);
     RoomListView& v = *v_owner;
@@ -156,8 +175,12 @@ TEST_CASE("invoking a header row's default action toggles its section's "
 
     const AccessNode* header = nullptr;
     for (const auto& row : list->children)
+    {
         if (row.role == Role::Button)
+        {
             header = &row;
+        }
+    }
     REQUIRE(header != nullptr);
     CHECK(header->state.expanded);
 
@@ -168,8 +191,12 @@ TEST_CASE("invoking a header row's default action toggles its section's "
     REQUIRE(list2 != nullptr);
     const AccessNode* header2 = nullptr;
     for (const auto& row : list2->children)
+    {
         if (row.role == Role::Button)
+        {
             header2 = &row;
+        }
+    }
     REQUIRE(header2 != nullptr);
     CHECK_FALSE(header2->state.expanded);
 }

@@ -13,8 +13,7 @@ namespace
 {
 struct SpkStage : vt::Stage
 {
-    std::unique_ptr<StickerPicker> picker =
-        tk::create_root_widget<StickerPicker>(&host);
+    std::unique_ptr<StickerPicker> picker = tk::create_root_widget<StickerPicker>(&host);
     tesseract::Client client; // no session: pack/favorite lists are empty
     SpkStage(int w = 360, int h = 420) : vt::Stage(w, h)
     {
@@ -59,9 +58,15 @@ TEST_CASE("StickerPicker selection callback is not fired for an empty grid",
 {
     SpkStage s;
     int picked = 0;
-    s.picker->on_selected = [&](const tesseract::ImagePackImage&) { ++picked; };
+    s.picker->on_selected = [&](const tesseract::ImagePackImage&)
+    {
+        ++picked;
+    };
     s.picker->set_image_provider(
-        [](const std::string&, const std::string&, bool) -> const tk::Image* { return nullptr; });
+        [](const std::string&, const std::string&, bool) -> const tk::Image*
+        {
+            return nullptr;
+        });
     s.picker->open_at({100, 100, 20, 20});
     s.run();
     s.host.dispatch_key_down(vt::key(tk::Key::Enter));

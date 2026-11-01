@@ -8,7 +8,9 @@ namespace tesseract
 MapsLinkClassification classify_maps_link(const std::string& trimmed_text)
 {
     if (trimmed_text.empty())
+    {
         return {};
+    }
 
     auto r = tesseract_ffi::classify_maps_link(trimmed_text);
     MapsLinkClassification out;

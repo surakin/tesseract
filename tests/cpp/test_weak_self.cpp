@@ -21,7 +21,11 @@ struct WeakSelfProbe : EnableWeakSelf<WeakSelfProbe>
 
     void post(std::vector<std::function<void()>>* queue, int* touched)
     {
-        queue->push_back(guarded([this, touched] { *touched += 1; }));
+        queue->push_back(guarded(
+            [this, touched]
+            {
+                *touched += 1;
+            }));
     }
 
     // A callback that destroys its own object (as a controller replaced from
@@ -29,15 +33,22 @@ struct WeakSelfProbe : EnableWeakSelf<WeakSelfProbe>
     void post_self_destroying(std::vector<std::function<void()>>* queue,
                               std::unique_ptr<WeakSelfProbe>* owner)
     {
-        queue->push_back(guarded([owner] { owner->reset(); }));
+        queue->push_back(guarded(
+            [owner]
+            {
+                owner->reset();
+            }));
     }
 
     // Worker-side use: the returned poster is built here (owner's thread)
     // and is the only thing the "worker" below touches.
     auto make_poster(std::vector<std::function<void()>>* queue)
     {
-        return ui_poster([queue](std::function<void()> fn)
-                         { queue->push_back(std::move(fn)); });
+        return ui_poster(
+            [queue](std::function<void()> fn)
+            {
+                queue->push_back(std::move(fn));
+            });
     }
 
     using EnableWeakSelf<WeakSelfProbe>::weak_self;
@@ -48,11 +59,10 @@ struct WeakSelfProbe : EnableWeakSelf<WeakSelfProbe>
 
 } // namespace
 
-TEST_CASE("guarded() continuation runs while the object is alive",
-          "[weak_self]")
+TEST_CASE("guarded() continuation runs while the object is alive", "[weak_self]")
 {
     std::vector<std::function<void()>> queue;
-    int                                 touched = 0;
+    int touched = 0;
 
     WeakSelfProbe w;
     w.post(&queue, &touched);
@@ -61,16 +71,20 @@ TEST_CASE("guarded() continuation runs while the object is alive",
     CHECK(touched == 0);
 
     for (auto& fn : queue)
-        if (fn) fn();
+    {
+        if (fn)
+        {
+            fn();
+        }
+    }
 
     CHECK(touched == 1);
 }
 
-TEST_CASE("guarded() continuation no-ops after the object is destroyed",
-          "[weak_self]")
+TEST_CASE("guarded() continuation no-ops after the object is destroyed", "[weak_self]")
 {
     std::vector<std::function<void()>> queue;
-    int                                 touched = 0;
+    int touched = 0;
 
     {
         WeakSelfProbe w;
@@ -79,13 +93,17 @@ TEST_CASE("guarded() continuation no-ops after the object is destroyed",
     } // ~WeakSelfProbe runs here: invalidate_weak_self() fires before `destroyed`.
 
     for (auto& fn : queue)
-        if (fn) fn();
+    {
+        if (fn)
+        {
+            fn();
+        }
+    }
 
     CHECK(touched == 0);
 }
 
-TEST_CASE("weak_self() locks while alive and expires after destruction",
-          "[weak_self]")
+TEST_CASE("weak_self() locks while alive and expires after destruction", "[weak_self]")
 {
     std::weak_ptr<WeakSelfProbe> weak;
 
@@ -102,8 +120,7 @@ TEST_CASE("weak_self() locks while alive and expires after destruction",
     CHECK(weak.lock() == nullptr);
 }
 
-TEST_CASE("weak_flag() locks while alive and expires after destruction",
-          "[weak_self]")
+TEST_CASE("weak_flag() locks while alive and expires after destruction", "[weak_self]")
 {
     std::weak_ptr<bool> weak;
 
@@ -119,18 +136,21 @@ TEST_CASE("weak_flag() locks while alive and expires after destruction",
     CHECK(weak.lock() == nullptr);
 }
 
-TEST_CASE("ui_poster() delivers while alive and drops after destruction",
-          "[weak_self]")
+TEST_CASE("ui_poster() delivers while alive and drops after destruction", "[weak_self]")
 {
     std::vector<std::function<void()>> queue;
-    int                                 touched = 0;
+    int touched = 0;
 
     auto w = std::make_unique<WeakSelfProbe>();
     auto ui = w->make_poster(&queue);
 
     // A worker finishing while the owner is alive: delivered and run.
     CHECK(ui.owner_alive());
-    ui([&touched] { touched += 1; });
+    ui(
+        [&touched]
+        {
+            touched += 1;
+        });
     REQUIRE(queue.size() == 1);
     queue.front()();
     CHECK(touched == 1);
@@ -141,14 +161,17 @@ TEST_CASE("ui_poster() delivers while alive and drops after destruction",
     // must not run once it reaches the owner's thread.
     w.reset();
     CHECK_FALSE(ui.owner_alive());
-    ui([&touched] { touched += 1; });
+    ui(
+        [&touched]
+        {
+            touched += 1;
+        });
     REQUIRE(queue.size() == 1);
     queue.front()();
     CHECK(touched == 1);
 }
 
-TEST_CASE("destroying an object inside its own guarded() callback is reported",
-          "[weak_self]")
+TEST_CASE("destroying an object inside its own guarded() callback is reported", "[weak_self]")
 {
     std::vector<std::function<void()>> queue;
     auto owner = std::make_unique<WeakSelfProbe>();
@@ -160,8 +183,7 @@ TEST_CASE("destroying an object inside its own guarded() callback is reported",
     CHECK(tk::detail::destroyed_in_own_callback_count().load() == before + 1);
 }
 
-TEST_CASE("destroying an object outside its callbacks is not reported",
-          "[weak_self]")
+TEST_CASE("destroying an object outside its callbacks is not reported", "[weak_self]")
 {
     std::vector<std::function<void()>> queue;
     int touched = 0;

@@ -212,7 +212,10 @@ pub(super) async fn fetch_notification_image(
     source: matrix_sdk::ruma::events::room::MediaSource,
 ) -> Vec<u8> {
     use matrix_sdk::media::MediaRequestParameters;
-    let format = notif_format(matches!(source, matrix_sdk::ruma::events::room::MediaSource::Plain(_)));
+    let format = notif_format(matches!(
+        source,
+        matrix_sdk::ruma::events::room::MediaSource::Plain(_)
+    ));
     let request = MediaRequestParameters { source, format };
     match client.media().get_media_content(&request, true).await {
         Ok(b) if b.len() <= NOTIF_IMAGE_CAP => b,
@@ -386,7 +389,11 @@ pub(super) async fn download_media_outcome(
                 .ok()
                 .flatten()
                 .unwrap_or_default();
-            if bytes.is_empty() { Failed } else { FetchOk(bytes) }
+            if bytes.is_empty() {
+                Failed
+            } else {
+                FetchOk(bytes)
+            }
         }
         MEDIA_KIND_MXC_THUMB => {
             let uri = OwnedMxcUri::from(source);
@@ -399,7 +406,13 @@ pub(super) async fn download_media_outcome(
                 source: MediaSource::Plain(uri),
                 format: MediaFormat::Thumbnail(settings),
             };
-            check_size(client.media().get_media_content(&request, true).await.unwrap_or_default())
+            check_size(
+                client
+                    .media()
+                    .get_media_content(&request, true)
+                    .await
+                    .unwrap_or_default(),
+            )
         }
         MEDIA_KIND_SOURCE_THUMB => {
             if source.is_empty() {
@@ -423,7 +436,13 @@ pub(super) async fn download_media_outcome(
                 source: media_source,
                 format,
             };
-            check_size(client.media().get_media_content(&request, true).await.unwrap_or_default())
+            check_size(
+                client
+                    .media()
+                    .get_media_content(&request, true)
+                    .await
+                    .unwrap_or_default(),
+            )
         }
         // MEDIA_KIND_SOURCE_FULL (and any unknown kind) → full file.
         _ => {
@@ -446,7 +465,13 @@ pub(super) async fn download_media_outcome(
                 source: media_source,
                 format: MediaFormat::File,
             };
-            check_size(client.media().get_media_content(&request, true).await.unwrap_or_default())
+            check_size(
+                client
+                    .media()
+                    .get_media_content(&request, true)
+                    .await
+                    .unwrap_or_default(),
+            )
         }
     }
 }
@@ -456,7 +481,14 @@ pub(super) async fn download_media_outcome(
 /// oversized content — callers that need to tell "oversized" apart from a
 /// genuine failure should use `download_media_outcome` instead.
 #[cfg(not(test))]
-pub(super) async fn download_media(client: &Client, kind: u8, source: &str, w: u32, h: u32, animated: bool) -> Vec<u8> {
+pub(super) async fn download_media(
+    client: &Client,
+    kind: u8,
+    source: &str,
+    w: u32,
+    h: u32,
+    animated: bool,
+) -> Vec<u8> {
     match download_media_outcome(client, kind, source, w, h, animated).await {
         MediaFetchOutcome::Ok(bytes) => bytes,
         MediaFetchOutcome::TooLarge | MediaFetchOutcome::Failed => Vec::new(),
@@ -475,7 +507,11 @@ const CHUNK_STALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(
 /// and every resolved address is checked against internal networks, and the
 /// body is capped the same way.
 #[cfg(not(test))]
-pub(super) async fn download_guarded(url: &str, max_bytes: usize, timeout: std::time::Duration) -> Vec<u8> {
+pub(super) async fn download_guarded(
+    url: &str,
+    max_bytes: usize,
+    timeout: std::time::Duration,
+) -> Vec<u8> {
     let Ok(parsed) = url::Url::parse(url) else {
         return Vec::new();
     };
@@ -494,7 +530,11 @@ pub(super) async fn download_guarded(url: &str, max_bytes: usize, timeout: std::
 /// `url` is only used for log lines. Split out of `download_url` so the
 /// guarded URL-preview fetch (which walks redirects itself) can share it.
 #[cfg(not(test))]
-pub(super) async fn read_body_capped(resp: reqwest::Response, url: &str, max_bytes: usize) -> Vec<u8> {
+pub(super) async fn read_body_capped(
+    resp: reqwest::Response,
+    url: &str,
+    max_bytes: usize,
+) -> Vec<u8> {
     use futures_util::StreamExt;
     if let Some(len) = resp.content_length() {
         if len as usize > max_bytes {
@@ -938,7 +978,12 @@ impl ClientFfi {
             deliver_media(&handler, request_id, &bytes);
         });
 
-        register_media_task(&self.media_tasks, group_id, request_id, handle.abort_handle());
+        register_media_task(
+            &self.media_tasks,
+            group_id,
+            request_id,
+            handle.abort_handle(),
+        );
     }
 
     /// Streaming counterpart of `fetch_source_bytes_async`: delivers the file
@@ -1091,11 +1136,19 @@ impl ClientFfi {
                     let decrypt_handler = handler.clone();
                     tokio::task::spawn_blocking(move || {
                         use std::io::Read;
-                        let mut reader = ChunkReader { rx, leftover: Vec::new(), pos: 0 };
+                        let mut reader = ChunkReader {
+                            rx,
+                            leftover: Vec::new(),
+                            pos: 0,
+                        };
                         let mut dec = match AttachmentDecryptor::new(&mut reader, info) {
                             Ok(d) => d,
                             Err(_) => {
-                                deliver_stream_terminal(&decrypt_handler, request_id, STREAM_FAILED);
+                                deliver_stream_terminal(
+                                    &decrypt_handler,
+                                    request_id,
+                                    STREAM_FAILED,
+                                );
                                 return;
                             }
                         };
@@ -1103,17 +1156,30 @@ impl ClientFfi {
                         loop {
                             match dec.read(&mut scratch) {
                                 Ok(0) => {
-                                    deliver_stream_terminal(&decrypt_handler, request_id, STREAM_DONE);
+                                    deliver_stream_terminal(
+                                        &decrypt_handler,
+                                        request_id,
+                                        STREAM_DONE,
+                                    );
                                     return;
                                 }
                                 Ok(n) => {
                                     // AES-CTR is a stream cipher with no block padding, so the
                                     // ciphertext (what Content-Length measured) is exactly the
                                     // same length as the decrypted plaintext.
-                                    deliver_stream_chunk(&decrypt_handler, request_id, &scratch[..n], content_length);
+                                    deliver_stream_chunk(
+                                        &decrypt_handler,
+                                        request_id,
+                                        &scratch[..n],
+                                        content_length,
+                                    );
                                 }
                                 Err(_) => {
-                                    deliver_stream_terminal(&decrypt_handler, request_id, STREAM_FAILED_HASH);
+                                    deliver_stream_terminal(
+                                        &decrypt_handler,
+                                        request_id,
+                                        STREAM_FAILED_HASH,
+                                    );
                                     return;
                                 }
                             }
@@ -1152,7 +1218,12 @@ impl ClientFfi {
             }
         });
 
-        register_media_task(&self.media_tasks, group_id, request_id, handle.abort_handle());
+        register_media_task(
+            &self.media_tasks,
+            group_id,
+            request_id,
+            handle.abort_handle(),
+        );
     }
 
     /// Classifies whether `prefix` (the leading bytes of a media file, e.g.
@@ -1277,7 +1348,12 @@ impl ClientFfi {
 
         let handle = self.rt.spawn(async move {
             let _permit = match gate
-                .acquire(&origin, super::media_queue::PRIO_NORMAL, request_id, group_id)
+                .acquire(
+                    &origin,
+                    super::media_queue::PRIO_NORMAL,
+                    request_id,
+                    group_id,
+                )
                 .await
             {
                 Some(p) => p,
@@ -1603,7 +1679,10 @@ mod tests {
     fn classify_iso_bmff_indeterminate_on_empty_or_truncated_prefix() {
         assert_eq!(classify_iso_bmff(&[]), CONTAINER_INDETERMINATE);
         // Fewer than 8 bytes: not even one full box header.
-        assert_eq!(classify_iso_bmff(&[0, 0, 0, 1, b'f']), CONTAINER_INDETERMINATE);
+        assert_eq!(
+            classify_iso_bmff(&[0, 0, 0, 1, b'f']),
+            CONTAINER_INDETERMINATE
+        );
     }
 
     #[test]

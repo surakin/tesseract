@@ -37,7 +37,10 @@ public:
 
     /// Remove the credential for `user_id`. No-op if the key does not exist
     /// or the backend is unavailable.
-    static void remove(const std::string& user_id) { remove_entry_(key_for(user_id)); }
+    static void remove(const std::string& user_id)
+    {
+        remove_entry_(key_for(user_id));
+    }
 
     /// The account's recovery key, when Tesseract set up recovery by itself
     /// (see ShellBase's silent encryption setup): held until the user saves
@@ -53,16 +56,17 @@ public:
             Unreadable, // the secure storage couldn't be read (locked keyring,
                         // dismissed unlock prompt, no backend, …)
         };
-        Status      status = Status::Missing;
+        Status status = Status::Missing;
         std::string key;
     };
     static RecoveryKeyLookup load_recovery_key(const std::string& user_id)
     {
         bool failed = false;
         if (auto key = load_entry_(recovery_key_for(user_id), &failed))
+        {
             return {RecoveryKeyLookup::Status::Found, std::move(*key)};
-        return {failed ? RecoveryKeyLookup::Status::Unreadable
-                       : RecoveryKeyLookup::Status::Missing,
+        }
+        return {failed ? RecoveryKeyLookup::Status::Unreadable : RecoveryKeyLookup::Status::Missing,
                 {}};
     }
     static bool save_recovery_key(const std::string& user_id, const std::string& key)
@@ -86,7 +90,10 @@ public:
     {
         return save_entry_(proxy_credentials_key(), userinfo, "Tesseract proxy");
     }
-    static void remove_proxy_credentials() { remove_entry_(proxy_credentials_key()); }
+    static void remove_proxy_credentials()
+    {
+        remove_entry_(proxy_credentials_key());
+    }
 
     /// The backend key actually used for `user_id`: the bare MXID in the
     /// default profile (unchanged from before profiles existed, so no
@@ -119,8 +126,7 @@ private:
     // human-readable name the OS keyring shows, where it shows one.
     // `failed` (optional): set when the backend couldn't be read, as opposed
     // to the entry not existing.
-    static std::optional<std::string> load_entry_(const std::string& storage_key,
-                                                  bool* failed);
+    static std::optional<std::string> load_entry_(const std::string& storage_key, bool* failed);
     static bool save_entry_(const std::string& storage_key, const std::string& value,
                             const char* label);
     static void remove_entry_(const std::string& storage_key);

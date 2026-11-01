@@ -84,13 +84,14 @@ void TimelineVideoPlaylist::ensure_playing(const VideoSourceInfo& info)
     // `this` via repaint_.
     auto wire_on_frame = [this](tk::VideoPlayer& player)
     {
-        player.on_frame = guarded([this]
-        {
-            if (repaint_)
+        player.on_frame = guarded(
+            [this]
             {
-                repaint_();
-            }
-        });
+                if (repaint_)
+                {
+                    repaint_();
+                }
+            });
     };
 
     // Fast path: this exact video was already loaded and only paused (not
@@ -154,31 +155,29 @@ void TimelineVideoPlaylist::ensure_playing(const VideoSourceInfo& info)
     // guarded() is called once here, synchronously — the playlist is
     // destroyed on every room switch while this fetch may still be in
     // flight, so the wrapped body bails if we've been torn down by then.
-    fetch_provider_(
-        src,
-        guarded([this, eid, mime, autoplay](std::vector<std::uint8_t> bytes)
-        {
-            auto it = players_.find(eid);
-            if (it == players_.end() || !it->second.player)
-            {
-                return;
-            }
-            if (bytes.empty())
-            {
-                players_.erase(eid);
-                return;
-            }
-            auto& p = *it->second.player;
-            p.play(bytes.data(), bytes.size(), mime);
-            if (!autoplay)
-            {
-                p.pause();
-            }
-        }));
+    fetch_provider_(src, guarded(
+                             [this, eid, mime, autoplay](std::vector<std::uint8_t> bytes)
+                             {
+                                 auto it = players_.find(eid);
+                                 if (it == players_.end() || !it->second.player)
+                                 {
+                                     return;
+                                 }
+                                 if (bytes.empty())
+                                 {
+                                     players_.erase(eid);
+                                     return;
+                                 }
+                                 auto& p = *it->second.player;
+                                 p.play(bytes.data(), bytes.size(), mime);
+                                 if (!autoplay)
+                                 {
+                                     p.pause();
+                                 }
+                             }));
 }
 
-const tk::Image* TimelineVideoPlaylist::live_frame(
-    const std::string& event_id) const
+const tk::Image* TimelineVideoPlaylist::live_frame(const std::string& event_id) const
 {
     auto it = players_.find(event_id);
     if (it != players_.end() && it->second.player)
@@ -232,11 +231,19 @@ std::size_t TimelineVideoPlaylist::memory_bytes() const
 {
     std::size_t total = 0;
     for (const auto& [_, entry] : players_)
+    {
         if (entry.player)
+        {
             total += entry.player->memory_bytes();
+        }
+    }
     for (const auto& r : retired_pool_)
+    {
         if (r.player)
+        {
             total += r.player->memory_bytes();
+        }
+    }
     return total;
 }
 

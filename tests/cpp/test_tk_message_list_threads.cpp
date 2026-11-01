@@ -28,8 +28,7 @@ MessageRowData make_text(const std::string& id, const std::string& body = "x")
     return r;
 }
 
-MessageRowData make_thread_root(const std::string& id,
-                                std::uint64_t replies = 2)
+MessageRowData make_thread_root(const std::string& id, std::uint64_t replies = 2)
 {
     auto r = make_text(id, "root body");
     r.is_thread_root = true;
@@ -40,8 +39,7 @@ MessageRowData make_thread_root(const std::string& id,
     return r;
 }
 
-MessageRowData make_in_thread_reply(const std::string& id,
-                                    const std::string& root)
+MessageRowData make_in_thread_reply(const std::string& id, const std::string& root)
 {
     auto r = make_text(id, "reply");
     r.thread_root_id = root;
@@ -50,16 +48,14 @@ MessageRowData make_in_thread_reply(const std::string& id,
 
 struct TkMessageListThreadsStage
 {
-    std::unique_ptr<TestSurface> surface =
-        TestSurface::create(600, 400);
+    std::unique_ptr<TestSurface> surface = TestSurface::create(600, 400);
     tk::LayoutCtx layout_ctx()
     {
         return tk::LayoutCtx{surface->factory(), tk::Theme::light()};
     }
     tk::PaintCtx paint_ctx()
     {
-        return tk::PaintCtx{surface->canvas(), surface->factory(),
-                            tk::Theme::light()};
+        return tk::PaintCtx{surface->canvas(), surface->factory(), tk::Theme::light()};
     }
     void run(tk::Widget& root, tk::Rect bounds)
     {
@@ -73,8 +69,7 @@ struct TkMessageListThreadsStage
 
 } // namespace
 
-TEST_CASE("MessageListView::set_messages drops in-thread replies",
-          "[message_list][threads]")
+TEST_CASE("MessageListView::set_messages drops in-thread replies", "[message_list][threads]")
 {
     MessageListView v;
     std::vector<MessageRowData> msgs;
@@ -104,7 +99,11 @@ TEST_CASE("MessageListView: nav-loading overlay does not double-dim on top of "
     // paint()+read_pixel() on the same surface would be reading back an
     // unchanged bitmap regardless of what the second paint tried to draw.
     MessageListView v;
-    v.set_post_delayed([](int, std::function<void()> cb) { cb(); }); // fire immediately
+    v.set_post_delayed(
+        [](int, std::function<void()> cb)
+        {
+            cb();
+        }); // fire immediately
 
     TkMessageListThreadsStage st1;
     v.set_dimmed(true);
@@ -123,8 +122,7 @@ TEST_CASE("MessageListView: nav-loading overlay does not double-dim on top of "
     CHECK(dimmed_only.b == dimmed_plus_nav.b);
 }
 
-TEST_CASE("MessageListView::insert_message drops in-thread replies",
-          "[message_list][threads]")
+TEST_CASE("MessageListView::insert_message drops in-thread replies", "[message_list][threads]")
 {
     MessageListView v;
     v.set_messages({make_text("$a")}, false);
@@ -133,8 +131,7 @@ TEST_CASE("MessageListView::insert_message drops in-thread replies",
     CHECK(v.messages()[0].event_id == "$a");
 }
 
-TEST_CASE("MessageListView::append_message drops in-thread replies",
-          "[message_list][threads]")
+TEST_CASE("MessageListView::append_message drops in-thread replies", "[message_list][threads]")
 {
     MessageListView v;
     v.set_messages({make_text("$a")}, false);
@@ -143,8 +140,7 @@ TEST_CASE("MessageListView::append_message drops in-thread replies",
     CHECK(v.messages()[0].event_id == "$a");
 }
 
-TEST_CASE("MessageListView::update_message ignores in-thread payload",
-          "[message_list][threads]")
+TEST_CASE("MessageListView::update_message ignores in-thread payload", "[message_list][threads]")
 {
     MessageListView v;
     v.set_messages({make_text("$a", "before")}, false);
@@ -158,8 +154,7 @@ TEST_CASE("MessageListView::update_message ignores in-thread payload",
     CHECK(v.messages()[0].thread_root_id.empty());
 }
 
-TEST_CASE("MessageListView::set_dimmed flips the dim flag",
-          "[message_list][threads]")
+TEST_CASE("MessageListView::set_dimmed flips the dim flag", "[message_list][threads]")
 {
     MessageListView v;
     CHECK_FALSE(v.dimmed());
@@ -169,8 +164,7 @@ TEST_CASE("MessageListView::set_dimmed flips the dim flag",
     CHECK_FALSE(v.dimmed());
 }
 
-TEST_CASE("MessageListView::set_highlighted_event stores the id",
-          "[message_list][threads]")
+TEST_CASE("MessageListView::set_highlighted_event stores the id", "[message_list][threads]")
 {
     MessageListView v;
     CHECK(v.highlighted_event().empty());
@@ -180,9 +174,8 @@ TEST_CASE("MessageListView::set_highlighted_event stores the id",
     CHECK(v.highlighted_event().empty());
 }
 
-TEST_CASE(
-    "MessageListView records a thread chip hit rect for thread-root rows",
-    "[message_list][threads]")
+TEST_CASE("MessageListView records a thread chip hit rect for thread-root rows",
+          "[message_list][threads]")
 {
     TkMessageListThreadsStage st;
     MessageListView v;
@@ -196,9 +189,8 @@ TEST_CASE(
     CHECK(hits[0].rect.h > 0.0f);
 }
 
-TEST_CASE(
-    "MessageListView::on_thread_preview_clicked fires for a chip hit",
-    "[message_list][threads]")
+TEST_CASE("MessageListView::on_thread_preview_clicked fires for a chip hit",
+          "[message_list][threads]")
 {
     TkMessageListThreadsStage st;
     MessageListView v;
@@ -210,7 +202,9 @@ TEST_CASE(
 
     std::string clicked;
     v.on_thread_preview_clicked = [&](const std::string& id)
-    { clicked = id; };
+    {
+        clicked = id;
+    };
 
     // chip rect is in world coords; on_pointer_down takes widget-local
     // coords. View bounds were {0,0,600,400} so local == world here.
@@ -219,9 +213,8 @@ TEST_CASE(
     CHECK(clicked == "$root");
 }
 
-TEST_CASE(
-    "MessageListView clears thread chip hit rects when scrolling to an event",
-    "[message_list][threads]")
+TEST_CASE("MessageListView clears thread chip hit rects when scrolling to an event",
+          "[message_list][threads]")
 {
     TkMessageListThreadsStage st;
     MessageListView v;
@@ -229,7 +222,9 @@ TEST_CASE(
     std::vector<MessageRowData> msgs;
     msgs.push_back(make_thread_root("$root", 2));
     for (int i = 0; i < 24; ++i)
+    {
         msgs.push_back(make_text("$filler" + std::to_string(i), "filler"));
+    }
     msgs.push_back(make_text("$target", "target"));
     v.set_messages(std::move(msgs), false);
     st.run(v, {0, 0, 600, 140});
@@ -243,15 +238,16 @@ TEST_CASE(
 
     std::string clicked;
     v.on_thread_preview_clicked = [&](const std::string& id)
-    { clicked = id; };
+    {
+        clicked = id;
+    };
 
     v.on_pointer_down(centre);
     CHECK(clicked.empty());
 }
 
-TEST_CASE(
-    "MessageListView clears thread chip hit rects when wheel scrolling",
-    "[message_list][threads]")
+TEST_CASE("MessageListView clears thread chip hit rects when wheel scrolling",
+          "[message_list][threads]")
 {
     TkMessageListThreadsStage st;
     MessageListView v;
@@ -259,7 +255,9 @@ TEST_CASE(
     std::vector<MessageRowData> msgs;
     msgs.push_back(make_thread_root("$root", 2));
     for (int i = 0; i < 24; ++i)
+    {
         msgs.push_back(make_text("$filler" + std::to_string(i), "filler"));
+    }
     v.set_messages(std::move(msgs), false);
     st.run(v, {0, 0, 600, 140});
 
@@ -272,15 +270,16 @@ TEST_CASE(
 
     std::string clicked;
     v.on_thread_preview_clicked = [&](const std::string& id)
-    { clicked = id; };
+    {
+        clicked = id;
+    };
 
     v.on_pointer_down(centre);
     CHECK(clicked.empty());
 }
 
-TEST_CASE(
-    "MessageListView clears thread chip hit rects when deferred event scroll resolves",
-    "[message_list][threads]")
+TEST_CASE("MessageListView clears thread chip hit rects when deferred event scroll resolves",
+          "[message_list][threads]")
 {
     TkMessageListThreadsStage st;
     MessageListView v;
@@ -297,7 +296,9 @@ TEST_CASE(
     // pending scroll before layout resolves it.
     std::vector<MessageRowData> reset_rows;
     for (int i = 0; i < 24; ++i)
+    {
         reset_rows.push_back(make_text("$page" + std::to_string(i), "page"));
+    }
     reset_rows.push_back(make_text("$target", "target"));
     v.set_messages(std::move(reset_rows), false);
     v.set_pending_scroll_event_id("$target");
@@ -309,15 +310,16 @@ TEST_CASE(
 
     std::string clicked;
     v.on_thread_preview_clicked = [&](const std::string& id)
-    { clicked = id; };
+    {
+        clicked = id;
+    };
 
     v.on_pointer_down(centre);
     CHECK(clicked.empty());
 }
 
-TEST_CASE(
-    "MessageListView does NOT emit a chip for thread roots with no replies",
-    "[message_list][threads]")
+TEST_CASE("MessageListView does NOT emit a chip for thread roots with no replies",
+          "[message_list][threads]")
 {
     TkMessageListThreadsStage st;
     MessageListView v;

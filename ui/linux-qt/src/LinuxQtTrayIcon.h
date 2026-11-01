@@ -14,8 +14,7 @@ class LinuxQtTrayIcon final : public QObject, public tesseract::ITrayIcon
 {
     Q_OBJECT
 public:
-    LinuxQtTrayIcon(std::function<void()> on_show,
-                    std::function<void()> on_toggle,
+    LinuxQtTrayIcon(std::function<void()> on_show, std::function<void()> on_toggle,
                     std::function<void()> on_quit, QObject* parent = nullptr);
     ~LinuxQtTrayIcon() override;
 
@@ -29,8 +28,7 @@ public:
     // Rebuild the context menu. `window_items` is a list of (label, callback)
     // pairs — one per open main window — prepended before the Quit action.
     // Call from the UI thread only.
-    void rebuild_menu(
-        std::vector<std::pair<std::string, std::function<void()>>> window_items);
+    void rebuild_menu(std::vector<std::pair<std::string, std::function<void()>>> window_items);
 
 private:
     std::function<void()> on_show_;

@@ -6,12 +6,15 @@ namespace tesseract
 {
 
 PowerPolicy::PowerPolicy()
-    : now_([] { return Clock::now(); })
+    : now_(
+          []
+          {
+              return Clock::now();
+          })
 {
 }
 
-PowerPolicy::PowerPolicy(NowProvider now)
-    : now_(std::move(now))
+PowerPolicy::PowerPolicy(NowProvider now) : now_(std::move(now))
 {
 }
 

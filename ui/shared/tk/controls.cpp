@@ -21,7 +21,10 @@ void Label::invalidate_cache()
 {
     cached_.reset();
     cached_max_w_ = -2;
-    if (host()) host()->mark_needs_relayout();
+    if (host())
+    {
+        host()->mark_needs_relayout();
+    }
 }
 
 Size Label::measure(LayoutCtx& ctx, Size constraints)
@@ -73,7 +76,11 @@ void Label::paint(PaintCtx& ctx)
     {
         return;
     }
-    Color c = colour_.value_or(ctx.theme.palette.text_primary);
+    const auto& pal = ctx.theme.palette;
+    const Color tone_colour = tone_ == Tone::Error    ? pal.text_error
+                              : tone_ == Tone::Notice ? pal.notice_text
+                                                      : pal.text_primary;
+    Color c = colour_.value_or(tone_colour);
     ctx.canvas.draw_text(*cached_, {bounds_.x, bounds_.y}, c);
 }
 
@@ -127,15 +134,25 @@ TextStyle button_text_style()
 }
 
 // Pick fill colour given the current variant + interactive state.
-Color button_fill(Button::Variant v, const Theme& th, bool enabled,
-                  bool hovered, bool pressed)
+Color button_fill(Button::Variant v, const Theme& th, bool enabled, bool hovered, bool pressed)
 {
     if (!enabled)
     {
+        if (th.high_contrast)
+        {
+            // An outlined button; the outline is painted in Button::paint.
+            return (v == Button::Variant::Primary || v == Button::Variant::Destructive)
+                       ? th.palette.bg
+                       : Color::rgba(0, 0, 0, 0);
+        }
         if (v == Button::Variant::Primary)
+        {
             return th.palette.accent.with_alpha(120);
+        }
         if (v == Button::Variant::Destructive)
+        {
             return th.palette.destructive.with_alpha(120);
+        }
         return Color::rgba(0, 0, 0, 0);
     }
     switch (v)
@@ -190,7 +207,7 @@ Color button_text(Button::Variant v, const Theme& th, bool enabled)
 {
     if (!enabled)
     {
-        return th.palette.text_muted;
+        return th.palette.text_disabled;
     }
     if (v == Button::Variant::Primary || v == Button::Variant::Destructive)
     {
@@ -198,7 +215,7 @@ Color button_text(Button::Variant v, const Theme& th, bool enabled)
     }
     if (v == Button::Variant::Link)
     {
-        return th.palette.accent;
+        return th.palette.link;
     }
     return th.palette.text_primary;
 }
@@ -263,16 +280,33 @@ void Button::paint(PaintCtx& ctx)
         if (fill_override_)
         {
             base = fill_override_->rest;
-            hov  = fill_override_->hover;
+            hov = fill_override_->hover;
         }
         else
         {
             base = button_fill(variant_, ctx.theme, enabled_, false, false);
-            hov  = button_fill(variant_, ctx.theme, enabled_, true, false);
+            hov = button_fill(variant_, ctx.theme, enabled_, true, false);
         }
         fill = Color::lerp(base, hov, fade);
     }
     ctx.canvas.fill_rounded_rect(bounds_, corner_radius_.value_or(kControlsBtnRadius), fill);
+
+    if (ctx.theme.high_contrast)
+    {
+        // High Contrast has no tinted hover fills, so state is shown by outline.
+        const bool filled = variant_ == Variant::Primary || variant_ == Variant::Destructive;
+        if (!enabled_ && filled)
+        {
+            ctx.canvas.stroke_rounded_rect(bounds_, corner_radius_.value_or(kControlsBtnRadius),
+                                           ctx.theme.palette.text_disabled, 1.0f);
+        }
+        else if (enabled_ && (pressed() || hovered()) &&
+                 (variant_ == Variant::Subtle || variant_ == Variant::Icon))
+        {
+            ctx.canvas.stroke_rounded_rect(bounds_, corner_radius_.value_or(kControlsBtnRadius),
+                                           ctx.theme.palette.accent, pressed() ? 3.0f : 2.0f);
+        }
+    }
 
     if (!paints_content())
     {
@@ -309,8 +343,11 @@ void Button::paint(PaintCtx& ctx)
         return;
     }
     Color text_color = button_text(variant_, ctx.theme, enabled_);
-    if (variant_ == Variant::Link && enabled_ && (pressed() || hovered()))
+    if (variant_ == Variant::Link && enabled_ && (pressed() || hovered()) &&
+        !ctx.theme.high_contrast)
+    {
         text_color = pressed() ? ctx.theme.palette.accent_pressed : ctx.theme.palette.accent_hover;
+    }
     const bool leading_icon = icon_leading_ && !icon_svg_.empty();
     // Centre the whole icon + gap + label group, so a leading-icon button
     // lines up with plain-label buttons of the same width.
@@ -322,8 +359,7 @@ void Button::paint(PaintCtx& ctx)
         // Same tint as the label (see the icon-only branch above).
         Color tint = icon_color_override_.value_or(text_color);
         icon_cache_.draw(ctx.canvas, ctx.factory, icon_svg_,
-                         {tx, bounds_.y, icon_logical_px_, bounds_.h},
-                         icon_logical_px_, tint);
+                         {tx, bounds_.y, icon_logical_px_, bounds_.h}, icon_logical_px_, tint);
         tx += icon_w;
     }
     ctx.canvas.draw_text(*cached_, {tx, ty}, text_color);
@@ -362,7 +398,9 @@ ToggleButton& ToggleButton::set_checked(bool checked)
     {
         checked_ = checked;
         if (auto* h = host())
+        {
             h->request_repaint();
+        }
     }
     return *this;
 }
@@ -371,9 +409,13 @@ void ToggleButton::toggle_()
 {
     checked_ = !checked_;
     if (auto* h = host())
+    {
         h->request_repaint();
+    }
     if (auto cb = on_toggled_)
+    {
         cb(checked_);
+    }
 }
 
 void ToggleButton::paint(PaintCtx& ctx)
@@ -385,10 +427,13 @@ void ToggleButton::paint(PaintCtx& ctx)
         ctx.canvas.fill_rounded_rect(bounds_, kControlsBtnRadius,
                                      ctx.theme.palette.sidebar_selected);
     }
-    set_icon_color_override(checked_
-                                ? std::optional<Color>(checked_tint_.value_or(
-                                      ctx.theme.palette.accent))
-                                : unchecked_tint_);
+    // High Contrast: the selected fill is Highlight, so the accent tint would
+    // vanish; use the on-selection colour.
+    set_icon_color_override(
+        checked_ ? std::optional<Color>(ctx.theme.high_contrast
+                                            ? ctx.theme.palette.selected_text
+                                            : checked_tint_.value_or(ctx.theme.palette.accent))
+                 : unchecked_tint_);
     Button::paint(ctx);
 }
 
@@ -406,8 +451,7 @@ void BusyButton::paint(PaintCtx& ctx)
     const float side = std::min(bounds_.w, bounds_.h);
     const float radius = side * 0.22f;
     const float dot_r = std::max(1.5f, side * 0.05f);
-    draw_spinner_dots(ctx.canvas,
-                      {bounds_.x + bounds_.w * 0.5f, bounds_.y + bounds_.h * 0.5f},
+    draw_spinner_dots(ctx.canvas, {bounds_.x + bounds_.w * 0.5f, bounds_.y + bounds_.h * 0.5f},
                       phase, radius, dot_r, content_color(ctx.theme));
     if (auto* h = host())
     {
@@ -423,7 +467,7 @@ namespace
 {
 constexpr float kSwTrackW = 36.0f;
 constexpr float kSwTrackH = 20.0f;
-constexpr float kSwKnobD  = 16.0f;
+constexpr float kSwKnobD = 16.0f;
 constexpr float kSwKnobPad = 2.0f;
 } // namespace
 
@@ -433,11 +477,13 @@ Size SwitchButton::measure(LayoutCtx& ctx, Size constraints)
     {
         TextStyle st = button_text_style();
         st.max_width = -1.0f;
-        cached_      = ctx.factory.build_text(label_, st);
-        if (cached_) cached_size_ = cached_->measure();
+        cached_ = ctx.factory.build_text(label_, st);
+        if (cached_)
+        {
+            cached_size_ = cached_->measure();
+        }
     }
-    float w = (constraints.w > 0) ? constraints.w
-                                  : cached_size_.w + kBtnHPad + kSwTrackW;
+    float w = (constraints.w > 0) ? constraints.w : cached_size_.w + kBtnHPad + kSwTrackW;
     float h = std::max(cached_size_.h + kBtnVPad * 2, kBtnMinHeight);
     return {w, h};
 }
@@ -447,41 +493,49 @@ void SwitchButton::paint(PaintCtx& ctx)
     const auto& pal = ctx.theme.palette;
 
     if (enabled_ && hovered_)
+    {
         ctx.canvas.fill_rounded_rect(bounds_, kControlsBtnRadius, pal.subtle_hover);
+    }
 
     // Label — left-aligned, vertically centred.
     if (!cached_)
     {
         TextStyle st = button_text_style();
         st.max_width = -1.0f;
-        cached_      = ctx.factory.build_text(label_, st);
-        if (cached_) cached_size_ = cached_->measure();
+        cached_ = ctx.factory.build_text(label_, st);
+        if (cached_)
+        {
+            cached_size_ = cached_->measure();
+        }
     }
     if (cached_)
     {
         float ly = bounds_.y + (bounds_.h - cached_size_.h) * 0.5f;
         ctx.canvas.draw_text(*cached_, {bounds_.x, ly},
-                             enabled_ ? pal.text_primary : pal.text_muted);
+                             enabled_ ? pal.text_primary : pal.text_disabled);
     }
 
     // Switch track + knob — right-aligned.
     float track_x = bounds_.x + bounds_.w - kSwTrackW;
     float track_y = bounds_.y + (bounds_.h - kSwTrackH) * 0.5f;
-    Rect  track{track_x, track_y, kSwTrackW, kSwTrackH};
+    Rect track{track_x, track_y, kSwTrackW, kSwTrackH};
     ctx.canvas.fill_rounded_rect(track, kSwTrackH * 0.5f,
                                  checked_ ? pal.accent : pal.subtle_pressed);
 
-    float knob_x = checked_ ? (track_x + kSwTrackW - kSwKnobPad - kSwKnobD)
-                            : (track_x + kSwKnobPad);
+    float knob_x =
+        checked_ ? (track_x + kSwTrackW - kSwKnobPad - kSwKnobD) : (track_x + kSwKnobPad);
     float knob_y = track_y + (kSwTrackH - kSwKnobD) * 0.5f;
-    Rect  knob{knob_x, knob_y, kSwKnobD, kSwKnobD};
+    Rect knob{knob_x, knob_y, kSwKnobD, kSwKnobD};
     ctx.canvas.fill_rounded_rect(knob, kSwKnobD * 0.5f, pal.text_on_accent);
     ctx.canvas.stroke_rounded_rect(knob, kSwKnobD * 0.5f, pal.border, 1.0f);
 }
 
 bool SwitchButton::on_pointer_down(Point /*local*/)
 {
-    if (!enabled_) return false;
+    if (!enabled_)
+    {
+        return false;
+    }
     pressed_ = true;
     return true;
 }
@@ -503,8 +557,15 @@ void SwitchButton::on_pointer_up(Point /*local*/, bool inside_self)
 
 bool SwitchButton::on_pointer_move(Point /*local*/)
 {
-    if (!enabled_) return false;
-    if (!hovered_) { hovered_ = true; return true; }
+    if (!enabled_)
+    {
+        return false;
+    }
+    if (!hovered_)
+    {
+        hovered_ = true;
+        return true;
+    }
     return false;
 }
 
@@ -520,10 +581,10 @@ void SwitchButton::on_pointer_leave()
 
 namespace
 {
-constexpr float kProgressTrackH  = 6.0f;
-constexpr float kProgressRadius  = 3.0f;
+constexpr float kProgressTrackH = 6.0f;
+constexpr float kProgressRadius = 3.0f;
 constexpr float kProgressLabelGap = 6.0f;
-constexpr float kProgressMinW    = 120.0f;
+constexpr float kProgressMinW = 120.0f;
 // Full sweep cycle for indeterminate mode, and the sweep chunk's width as
 // a fraction of the track — matches the ~1s cadence loading_spinner.h's
 // dot rotation already uses for "something is happening" indicators.
@@ -564,7 +625,10 @@ Size ProgressBar::measure(LayoutCtx& ctx, Size constraints)
             st.role = FontRole::Caption;
             st.max_width = -1.0f;
             label_layout_ = ctx.factory.build_text(label_, st);
-            if (label_layout_) label_size_ = label_layout_->measure();
+            if (label_layout_)
+            {
+                label_size_ = label_layout_->measure();
+            }
         }
         h += label_size_.h + kProgressLabelGap;
     }
@@ -584,10 +648,15 @@ void ProgressBar::paint(PaintCtx& ctx)
             st.role = FontRole::Caption;
             st.max_width = -1.0f;
             label_layout_ = ctx.factory.build_text(label_, st);
-            if (label_layout_) label_size_ = label_layout_->measure();
+            if (label_layout_)
+            {
+                label_size_ = label_layout_->measure();
+            }
         }
         if (label_layout_)
+        {
             ctx.canvas.draw_text(*label_layout_, {bounds_.x, bounds_.y}, pal.text_muted);
+        }
         track_y = bounds_.y + label_size_.h + kProgressLabelGap;
     }
 
@@ -596,23 +665,27 @@ void ProgressBar::paint(PaintCtx& ctx)
 
     if (indeterminate_)
     {
-        const float elapsed_ms = std::chrono::duration<float, std::milli>(
-                                     std::chrono::steady_clock::now() - start_time_)
-                                     .count();
+        const float elapsed_ms =
+            std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() - start_time_)
+                .count();
         const float phase = std::fmod(elapsed_ms, kProgressSweepMs) / kProgressSweepMs;
         const float chunk_w = bounds_.w * kProgressChunkFrac;
         const float x = track.x - chunk_w + phase * (track.w + chunk_w);
         Rect chunk{std::max(x, track.x), track.y,
                    std::min(chunk_w, track.x + track.w - std::max(x, track.x)), kProgressTrackH};
         if (chunk.w > 0.0f)
+        {
             ctx.canvas.fill_rounded_rect(chunk, kProgressRadius, pal.accent);
+        }
 
         // Self-drive the animation: schedule the next frame while
         // indeterminate, matching the media viewer's loading-spinner
         // idiom (see loading_spinner.h's doc comment) — just via the
         // built-in host() accessor since this is an ordinary child widget.
         if (host())
+        {
             host()->request_repaint();
+        }
     }
     else if (value_ > 0.0f)
     {
@@ -628,11 +701,11 @@ void ProgressBar::paint(PaintCtx& ctx)
 namespace
 {
 
-constexpr float kCbBoxSize  = 18.0f;
-constexpr float kCbBoxRad   = 4.0f;
-constexpr float kCbBorder   = 1.5f;
-constexpr float kCbGap      = 10.0f;
-constexpr float kCbMinH     = 36.0f;
+constexpr float kCbBoxSize = 18.0f;
+constexpr float kCbBoxRad = 4.0f;
+constexpr float kCbBorder = 1.5f;
+constexpr float kCbGap = 10.0f;
+constexpr float kCbMinH = 36.0f;
 constexpr float kCbHoverRad = 4.0f;
 
 } // namespace
@@ -649,36 +722,34 @@ void CheckButton::set_checked(bool checked)
 
 void CheckButton::set_font_role(FontRole role)
 {
-    font_role_     = role;
+    font_role_ = role;
     label_layout_.reset();
-    cached_max_w_  = -2.0f;
+    cached_max_w_ = -2.0f;
 }
 
 Size CheckButton::measure(LayoutCtx& ctx, Size constraints)
 {
-    float avail_w = constraints.w > 0
-                        ? constraints.w - kCbBoxSize - kCbGap
-                        : -1.0f;
+    float avail_w = constraints.w > 0 ? constraints.w - kCbBoxSize - kCbGap : -1.0f;
     if (avail_w <= 0.0f)
+    {
         avail_w = -1.0f;
+    }
 
     if (!label_layout_ || cached_max_w_ != avail_w)
     {
         TextStyle st{};
-        st.role      = font_role_;
-        st.halign    = TextHAlign::Leading;
-        st.valign    = TextVAlign::Top;
-        st.trim      = TextTrim::Ellipsis;
+        st.role = font_role_;
+        st.halign = TextHAlign::Leading;
+        st.valign = TextVAlign::Top;
+        st.trim = TextTrim::Ellipsis;
         st.max_width = avail_w;
         label_layout_ = ctx.factory.build_text(label_, st);
         cached_max_w_ = avail_w;
-        label_size_   = label_layout_ ? label_layout_->measure() : Size{};
+        label_size_ = label_layout_ ? label_layout_->measure() : Size{};
     }
 
     float h = std::max({kCbBoxSize, label_size_.h, kCbMinH});
-    float w = constraints.w > 0
-                  ? constraints.w
-                  : kCbBoxSize + kCbGap + label_size_.w;
+    float w = constraints.w > 0 ? constraints.w : kCbBoxSize + kCbGap + label_size_.w;
     return {w, h};
 }
 
@@ -704,19 +775,17 @@ void CheckButton::paint(PaintCtx& ctx)
     }
 
     float box_y = bounds_.y + (bounds_.h - kCbBoxSize) * 0.5f;
-    Rect  box{bounds_.x, box_y, kCbBoxSize, kCbBoxSize};
+    Rect box{bounds_.x, box_y, kCbBoxSize, kCbBoxSize};
 
     if (checked_)
     {
         ctx.canvas.fill_rounded_rect(box, kCbBoxRad, pal.accent);
         // Same Lucide check (and size) as the round picker checkboxes.
-        check_icon_.draw(ctx.canvas, ctx.factory, check_icon_svg(), box, 12.0f,
-                         pal.text_on_accent);
+        check_icon_.draw(ctx.canvas, ctx.factory, check_icon_svg(), box, 12.0f, pal.text_on_accent);
     }
     else
     {
-        ctx.canvas.fill_rounded_rect(box, kCbBoxRad,
-                                     Color::rgba(0, 0, 0, 0));
+        ctx.canvas.fill_rounded_rect(box, kCbBoxRad, Color::rgba(0, 0, 0, 0));
         ctx.canvas.stroke_rounded_rect(box, kCbBoxRad, pal.border, kCbBorder);
     }
 
@@ -724,13 +793,13 @@ void CheckButton::paint(PaintCtx& ctx)
     {
         float avail_w = std::max(0.0f, bounds_.w - kCbBoxSize - kCbGap);
         TextStyle st{};
-        st.role      = font_role_;
-        st.halign    = TextHAlign::Leading;
-        st.valign    = TextVAlign::Top;
-        st.trim      = TextTrim::Ellipsis;
+        st.role = font_role_;
+        st.halign = TextHAlign::Leading;
+        st.valign = TextVAlign::Top;
+        st.trim = TextTrim::Ellipsis;
         st.max_width = avail_w;
         label_layout_ = ctx.factory.build_text(label_, st);
-        label_size_   = label_layout_ ? label_layout_->measure() : Size{};
+        label_size_ = label_layout_ ? label_layout_->measure() : Size{};
         cached_max_w_ = avail_w;
     }
     if (label_layout_)
@@ -738,14 +807,16 @@ void CheckButton::paint(PaintCtx& ctx)
         float lx = bounds_.x + kCbBoxSize + kCbGap;
         float ly = bounds_.y + (bounds_.h - label_size_.h) * 0.5f;
         ctx.canvas.draw_text(*label_layout_, {lx, ly},
-                             enabled_ ? pal.text_primary : pal.text_muted);
+                             enabled_ ? pal.text_primary : pal.text_disabled);
     }
 }
 
 bool CheckButton::on_pointer_down(Point /*local*/)
 {
     if (!enabled_)
+    {
         return false;
+    }
     pressed_ = true;
     return true;
 }
@@ -758,19 +829,25 @@ void CheckButton::on_pointer_up(Point /*local*/, bool inside_self)
     {
         checked_ = !checked_;
         if (on_change)
+        {
             on_change(checked_);
+        }
     }
 }
 
 bool CheckButton::on_pointer_move(Point /*local*/)
 {
     if (!enabled_)
+    {
         return false;
+    }
     if (!hovered_)
     {
         hovered_ = true;
         if (on_hover_enter)
+        {
             on_hover_enter();
+        }
         return true;
     }
     return false;
@@ -782,7 +859,9 @@ void CheckButton::on_pointer_leave()
     hovered_ = false;
     pressed_ = false;
     if (was_hovered && on_hover_leave)
+    {
         on_hover_leave();
+    }
 }
 
 } // namespace tk

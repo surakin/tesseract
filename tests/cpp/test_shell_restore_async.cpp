@@ -13,9 +13,9 @@
 #include <vector>
 
 #if defined(_WIN32)
-#  include <process.h>
+#include <process.h>
 #else
-#  include <unistd.h>
+#include <unistd.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -42,8 +42,7 @@ struct RestoreDirFixture
 #else
         const auto pid = static_cast<unsigned long>(::getpid());
 #endif
-        dir = (fs::temp_directory_path() /
-               ("tesseract_restore_async_test_" + std::to_string(pid)))
+        dir = (fs::temp_directory_path() / ("tesseract_restore_async_test_" + std::to_string(pid)))
                   .string();
         fs::create_directories(dir);
 #if defined(_WIN32)
@@ -84,7 +83,10 @@ struct RestoreDirFixture
     }
 };
 
-struct RestoreAsyncShellAccountManager { tesseract::AccountManager am_; };
+struct RestoreAsyncShellAccountManager
+{
+    tesseract::AccountManager am_;
+};
 
 // A ShellBase double exercising restore_all_accounts_async_ end-to-end via a
 // REAL mut_pool_ round trip — unlike the fully synthetic AliveShell /
@@ -94,7 +96,9 @@ struct RestoreAsyncShellAccountManager { tesseract::AccountManager am_; };
 // executed synchronously on the calling thread.
 struct RestoreAsyncShell : RestoreAsyncShellAccountManager, ShellBase
 {
-    RestoreAsyncShell() : ShellBase(am_) {}
+    RestoreAsyncShell() : ShellBase(am_)
+    {
+    }
 
     std::mutex mu_;
     std::condition_variable cv_;
@@ -118,49 +122,100 @@ struct RestoreAsyncShell : RestoreAsyncShellAccountManager, ShellBase
         progress_calls_.push_back(status);
     }
 
-    void request_relayout_() override {}
-    void request_repaint_() override {}
-    void on_rooms_updated_() override {}
-    void on_media_bytes_ready_(const tk::CacheKey&, MediaKind,
-                               std::vector<uint8_t>) override {}
-    void on_tab_state_changed_ui_() override {}
+    void request_relayout_() override
+    {
+    }
+    void request_repaint_() override
+    {
+    }
+    void on_rooms_updated_() override
+    {
+    }
+    void on_media_bytes_ready_(const tk::CacheKey&, MediaKind, std::vector<uint8_t>) override
+    {
+    }
+    void on_tab_state_changed_ui_() override
+    {
+    }
     DecodedImage decode_image_(const std::vector<uint8_t>&, int, int) override
     {
         return {};
     }
-    std::int64_t monotonic_ms_() override { return 1000; }
-    void start_anim_tick_() override {}
-    void repaint_pickers_() override {}
-    void navigate_to_room_(const std::string&) override {}
-    void pick_image_file_(
-        std::function<void(std::vector<uint8_t>, std::string)>) override {}
-    void show_encryption_setup_overlay_(
-        tesseract::views::EncryptionSetupOverlay::Mode) override {}
-    void raise_and_activate_() override {}
+    std::int64_t monotonic_ms_() override
+    {
+        return 1000;
+    }
+    void start_anim_tick_() override
+    {
+    }
+    void repaint_pickers_() override
+    {
+    }
+    void navigate_to_room_(const std::string&) override
+    {
+    }
+    void pick_image_file_(std::function<void(std::vector<uint8_t>, std::string)>) override
+    {
+    }
+    void show_encryption_setup_overlay_(tesseract::views::EncryptionSetupOverlay::Mode) override
+    {
+    }
+    void raise_and_activate_() override
+    {
+    }
     std::unique_ptr<tk::AudioPlayback> make_call_audio_output_() override
     {
         return nullptr;
     }
-    tesseract::CallWindowBase* create_call_window_() override { return nullptr; }
-    bool is_ctrl_held_() const override { return false; }
-    void switch_active_account_(const std::string&) override {}
-    void refresh_account_ui_after_switch_() override {}
-    void bind_settings_controller_() override {}
-    void spawn_main_window_(std::shared_ptr<tesseract::AccountSession>) override {}
-    std::unique_ptr<tesseract::IEventHandler>
-    make_account_bridge_(const std::string&) override { return nullptr; }
-    void install_account_notifier_(tesseract::AccountSession&) override {}
-    void request_relogin_(const std::string&) override {}
-    void apply_thread_messages_(
-        const std::string&,
-        std::vector<tesseract::views::MessageRowData>, bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    tesseract::CallWindowBase* create_call_window_() override
+    {
+        return nullptr;
+    }
+    bool is_ctrl_held_() const override
+    {
+        return false;
+    }
+    void switch_active_account_(const std::string&) override
+    {
+    }
+    void refresh_account_ui_after_switch_() override
+    {
+    }
+    void bind_settings_controller_() override
+    {
+    }
+    void spawn_main_window_(std::shared_ptr<tesseract::AccountSession>) override
+    {
+    }
+    std::unique_ptr<tesseract::IEventHandler> make_account_bridge_(const std::string&) override
+    {
+        return nullptr;
+    }
+    void install_account_notifier_(tesseract::AccountSession&) override
+    {
+    }
+    void request_relogin_(const std::string&) override
+    {
+    }
+    void show_sync_status_text_(const std::string& t) override
+    {
+        sync_texts_.push_back(t);
+    }
+    std::vector<std::string> sync_texts_;
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
 
     using ShellBase::restore_all_accounts_async_;
+    using ShellBase::my_user_id_;
     using ShellBase::RestoreResult;
 
     // Wait (bounded) for the worker's post_to_ui_alive_ continuation to land
@@ -168,12 +223,21 @@ struct RestoreAsyncShell : RestoreAsyncShellAccountManager, ShellBase
     void wait_and_drain(std::chrono::milliseconds timeout)
     {
         std::unique_lock<std::mutex> lk(mu_);
-        cv_.wait_for(lk, timeout, [&] { return !queue_.empty(); });
+        cv_.wait_for(lk, timeout,
+                     [&]
+                     {
+                         return !queue_.empty();
+                     });
         auto pending = std::move(queue_);
         queue_.clear();
         lk.unlock();
         for (auto& fn : pending)
-            if (fn) fn();
+        {
+            if (fn)
+            {
+                fn();
+            }
+        }
     }
 };
 
@@ -201,6 +265,9 @@ TEST_CASE("restore_all_accounts_async_ defers the blocking restore off the "
     REQUIRE(s.progress_calls_.size() == 1);
     CHECK_FALSE(s.progress_calls_[0].empty());
     CHECK_FALSE(done_called);
+    // The status line says so too, through the shared interface.
+    REQUIRE(s.sync_texts_.size() == 1);
+    CHECK(s.sync_texts_[0] == "Restoring session…");
 
     // Wait for the real mut_pool_ round trip, then run the queued completion
     // on this thread (standing in for the UI thread).
@@ -211,4 +278,28 @@ TEST_CASE("restore_all_accounts_async_ defers the blocking restore off the "
     CHECK_FALSE(result.any_restore_failed);
     REQUIRE(s.progress_calls_.size() == 2);
     CHECK(s.progress_calls_[1].empty()); // cleared right before `done`
+    // Nothing restored: the line goes back to the signed-out state.
+    REQUIRE(s.sync_texts_.size() == 2);
+    CHECK(s.sync_texts_[1] == "Not logged in");
+}
+
+TEST_CASE("restore_all_accounts_async_ leaves the status line alone when an "
+          "account became active",
+          "[shell][restore-async]")
+{
+    RestoreDirFixture dir_fixture;
+    RestoreAsyncShell s;
+
+    bool done_called = false;
+    s.restore_all_accounts_async_(
+        [&](RestoreAsyncShell::RestoreResult)
+        {
+            done_called = true;
+            s.my_user_id_ = "@a:x"; // what switching to the account does
+        });
+    s.wait_and_drain(std::chrono::seconds(5));
+
+    REQUIRE(done_called);
+    REQUIRE(s.sync_texts_.size() == 1);
+    CHECK(s.sync_texts_[0] == "Restoring session…");
 }

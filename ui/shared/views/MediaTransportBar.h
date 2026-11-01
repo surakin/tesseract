@@ -18,10 +18,9 @@ std::string format_clock_ms(std::uint64_t ms);
 
 // The play / scrub / speed strip shared by the video and audio viewer pages.
 // A non-widget helper: it owns the play (and optional speed) tk::Button
-// children, created through the page host, and the scrub-bar geometry, painting
-// and drag maths. The page owns the player and feeds the bar a State snapshot
-// each time it paints or handles a scrub; the bar reports user intent back
-// through on_toggle / on_cycle_speed / on_seek.
+// children and the scrub tk::Slider, all created through the page host. The
+// page owns the player and feeds the bar a State snapshot each time it paints;
+// the bar reports user intent back through on_toggle / on_cycle_speed / on_seek.
 class MediaTransportBar
 {
 public:
@@ -48,19 +47,14 @@ public:
 
     // Place the bar (background strip `bar`) and show/hide its buttons.
     void arrange(tk::LayoutCtx& lc, tk::Rect bar, bool shown);
-    // Hide the buttons and drop any scrub drag (page deactivated).
+    // Hide the buttons and the scrub slider (page deactivated).
     void deactivate();
     void paint(tk::PaintCtx& ctx, const State& s);
 
-    // Press that no button claimed: starts a scrub when it lands on the track.
-    bool on_pointer_down(tk::Point world, const State& s);
-    // Ends a scrub; true when one was active.
-    bool on_pointer_up();
     bool scrubbing() const
     {
-        return scrubbing_;
+        return scrub_ && scrub_->dragging();
     }
-    void on_drag(float world_x, const State& s);
 
     bool contains(tk::Point world) const;
     bool hovered() const;
@@ -73,15 +67,16 @@ public:
     {
         return speed_btn_;
     }
+    tk::Slider* scrub_slider() const
+    {
+        return scrub_;
+    }
 
 private:
-    void seek_from_x_(float world_x, const State& s);
-
     tk::Button* play_btn_ = nullptr;
     tk::Button* speed_btn_ = nullptr;
+    tk::Slider* scrub_ = nullptr;
     tk::Rect bar_{};
-    tk::Rect scrub_{};
-    bool scrubbing_ = false;
 };
 
 } // namespace tesseract::views

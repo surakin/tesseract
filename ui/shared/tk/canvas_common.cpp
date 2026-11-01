@@ -27,39 +27,63 @@ int font_role_pt_with(const FontConfig& cfg, FontRole role, int base_pt)
     const int cat_delta = cfg.delta_pt[static_cast<std::size_t>(font_category(role))];
     // Emoji inside message text follows the Messages size as well as its own
     // delta, so emoji grow with the text around them.
-    const int msg_delta =
-        cfg.delta_pt[static_cast<std::size_t>(FontCategory::Messages)];
+    const int msg_delta = cfg.delta_pt[static_cast<std::size_t>(FontCategory::Messages)];
     const int inline_base = base + msg_delta + cat_delta;
 
     int offset = 0;
     switch (role)
     {
-    case FontRole::Small:          offset = -4; break;
-    case FontRole::Caption:        offset = -2; break;
-    case FontRole::Body:           offset =  0; break;
-    case FontRole::SenderName:     offset = -1; break;
-    case FontRole::Timestamp:      offset = -3; break;
-    case FontRole::SidebarName:    offset =  0; break;
-    case FontRole::SidebarPreview: offset = -2; break;
-    case FontRole::UnreadBadge:    offset = -2; break;
-    case FontRole::Title:          offset = +2; break;
-    case FontRole::UiSemibold:     offset = -2; break;
-    case FontRole::BigEmoji:       return std::max(inline_base * 2, 6);
+    case FontRole::Small:
+        offset = -4;
+        break;
+    case FontRole::Caption:
+        offset = -2;
+        break;
+    case FontRole::Body:
+        offset = 0;
+        break;
+    case FontRole::SenderName:
+        offset = -1;
+        break;
+    case FontRole::Timestamp:
+        offset = -3;
+        break;
+    case FontRole::SidebarName:
+        offset = 0;
+        break;
+    case FontRole::SidebarPreview:
+        offset = -2;
+        break;
+    case FontRole::UnreadBadge:
+        offset = -2;
+        break;
+    case FontRole::Title:
+        offset = +2;
+        break;
+    case FontRole::UiSemibold:
+        offset = -2;
+        break;
+    case FontRole::BigEmoji:
+        return std::max(inline_base * 2, 6);
     // Same as Body for now — the emoji-vs-text visual size is being tuned via
     // the Linux backend comp constants (kQtEmojiStockComp / kGtkEmojiStockComp)
     // and the shared kEmojiSizeAdjust knob; keeping this at the plain body
     // size lets that be compared straight across all platforms.
-    case FontRole::InlineEmoji:    return std::max(inline_base, 6);
+    case FontRole::InlineEmoji:
+        return std::max(inline_base, 6);
     case FontRole::InlineCustomEmoji:
         return std::max((inline_base + 1) * 5 / 4, 6);
-    case FontRole::EmojiPickerCell:offset = +9; break;
-    case FontRole::ReactionEmoji:  offset = +2; break;
+    case FontRole::EmojiPickerCell:
+        offset = +9;
+        break;
+    case FontRole::ReactionEmoji:
+        offset = +2;
+        break;
     case FontRole::ReactionText:
         return std::max(font_role_pt_with(cfg, FontRole::ReactionEmoji, base_pt) * 4 / 5, 6);
     }
     return std::max(base + offset + cat_delta, 6);
 }
-
 
 bool font_role_is_semibold(FontRole role)
 {
@@ -156,8 +180,8 @@ std::vector<CodePoint> decode_utf8(std::string_view s)
 // backend's native predicate flagged in practice.
 bool is_word_break(char32_t cp)
 {
-    return cp == ' ' || cp == '\t' || cp == '\n' || cp == '\r' ||
-           cp == '\v' || cp == '\f' || cp == 0x00A0;
+    return cp == ' ' || cp == '\t' || cp == '\n' || cp == '\r' || cp == '\v' || cp == '\f' ||
+           cp == 0x00A0;
 }
 
 // Code points that attach to the preceding one: combining diacritics,
@@ -166,8 +190,7 @@ bool is_word_break(char32_t cp)
 bool is_cluster_continuation(char32_t cp)
 {
     return (cp >= 0x0300 && cp <= 0x036F) || (cp >= 0xFE00 && cp <= 0xFE0F) ||
-           (cp >= 0x1F3FB && cp <= 0x1F3FF) ||
-           (cp >= 0xE0000 && cp <= 0xE007F) || cp == 0x20E3;
+           (cp >= 0x1F3FB && cp <= 0x1F3FF) || (cp >= 0xE0000 && cp <= 0xE007F) || cp == 0x20E3;
 }
 
 bool is_regional_indicator(char32_t cp)
@@ -189,21 +212,19 @@ bool is_initial_material(char32_t cp)
     {
         return false;
     }
-    const bool skip =
-        cp < 0x30 ||                        // controls, space, !"#$%&'()*+,-./
-        (cp >= 0x3A && cp <= 0x40) ||       // :;<=>?@
-        (cp >= 0x5B && cp <= 0x60) ||       // [\]^_`
-        (cp >= 0x7B && cp <= 0xBF) ||       // {|}~, DEL, C1, Latin-1 punctuation
-        cp == 0xD7 || cp == 0xF7 ||         // × ÷
-        (cp >= 0x2000 && cp <= 0x206F) ||   // General Punctuation (dashes, quotes, …)
-        (cp >= 0x2308 && cp <= 0x230B) ||   // ⌈⌉⌊⌋
-        (cp >= 0x27E6 && cp <= 0x27EF) ||   // ⟦⟧⟨⟩…
-        (cp >= 0x2983 && cp <= 0x2998) ||   // ⦃⦄…
-        (cp >= 0x3000 && cp <= 0x303F) ||   // CJK punctuation, 「」【】《》
-        (cp >= 0xFF01 && cp <= 0xFF0F) ||   // fullwidth ASCII punctuation
-        (cp >= 0xFF1A && cp <= 0xFF20) ||
-        (cp >= 0xFF3B && cp <= 0xFF40) ||
-        (cp >= 0xFF5B && cp <= 0xFF65);
+    const bool skip = cp < 0x30 ||                      // controls, space, !"#$%&'()*+,-./
+                      (cp >= 0x3A && cp <= 0x40) ||     // :;<=>?@
+                      (cp >= 0x5B && cp <= 0x60) ||     // [\]^_`
+                      (cp >= 0x7B && cp <= 0xBF) ||     // {|}~, DEL, C1, Latin-1 punctuation
+                      cp == 0xD7 || cp == 0xF7 ||       // × ÷
+                      (cp >= 0x2000 && cp <= 0x206F) || // General Punctuation (dashes, quotes, …)
+                      (cp >= 0x2308 && cp <= 0x230B) || // ⌈⌉⌊⌋
+                      (cp >= 0x27E6 && cp <= 0x27EF) || // ⟦⟧⟨⟩…
+                      (cp >= 0x2983 && cp <= 0x2998) || // ⦃⦄…
+                      (cp >= 0x3000 && cp <= 0x303F) || // CJK punctuation, 「」【】《》
+                      (cp >= 0xFF01 && cp <= 0xFF0F) || // fullwidth ASCII punctuation
+                      (cp >= 0xFF1A && cp <= 0xFF20) || (cp >= 0xFF3B && cp <= 0xFF40) ||
+                      (cp >= 0xFF5B && cp <= 0xFF65);
     return !skip;
 }
 
@@ -224,8 +245,7 @@ std::size_t grapheme_end(const std::vector<CodePoint>& cps, std::size_t i)
         {
             ++j;
         }
-        else if (cps[j].cp == 0x200D && j + 1 < cps.size() &&
-                 !is_word_break(cps[j + 1].cp))
+        else if (cps[j].cp == 0x200D && j + 1 < cps.size() && !is_word_break(cps[j + 1].cp))
         {
             j += 2;
         }
@@ -243,7 +263,7 @@ std::string initials_of(std::string_view name)
 {
     const std::vector<CodePoint> cps = decode_utf8(name);
     std::string out;
-    int taken = 0; // initials captured (cap at 2)
+    int taken = 0;            // initials captured (cap at 2)
     bool need_initial = true; // current word has no initial yet
     std::size_t i = 0;
     while (i < cps.size() && taken < 2)

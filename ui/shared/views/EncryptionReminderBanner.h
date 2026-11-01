@@ -31,7 +31,10 @@ public:
     ~EncryptionReminderBanner() override = default;
 
     void set_kind(Kind k);
-    Kind kind() const { return kind_; }
+    Kind kind() const
+    {
+        return kind_;
+    }
     std::string label_text() const;
 
     std::function<void()> on_open;    // the action button: reopen the dialog
@@ -40,8 +43,14 @@ public:
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
 
-    tk::Role access_role() const override { return tk::Role::Group; }
-    std::string access_name() const override { return label_text(); }
+    tk::Role access_role() const override
+    {
+        return tk::Role::Group;
+    }
+    std::string access_name() const override
+    {
+        return label_text();
+    }
 
     void paint_before_children(tk::PaintCtx&) override;
 
@@ -52,8 +61,8 @@ private:
 
     Kind kind_ = Kind::Locked;
 
-    tk::Label*  label_   = nullptr; // borrowed
-    tk::Button* action_  = nullptr; // borrowed
+    tk::Label* label_ = nullptr;    // borrowed
+    tk::Button* action_ = nullptr;  // borrowed
     tk::Button* dismiss_ = nullptr; // borrowed
 };
 

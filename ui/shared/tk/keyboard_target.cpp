@@ -10,7 +10,9 @@ namespace tk
 void KeyboardTarget::set_links(std::vector<std::pair<std::string, std::string>> links)
 {
     if (links == links_)
+    {
         return;
+    }
     links_ = std::move(links);
     link_index_ = -1;
 }
@@ -19,8 +21,12 @@ void KeyboardTarget::set_links_from_spans(const std::vector<TextSpan>& spans)
 {
     std::vector<std::pair<std::string, std::string>> links;
     for (const auto& span : spans)
+    {
         if (!span.url.empty())
+        {
             links.emplace_back(span.text.empty() ? span.url : span.text, span.url);
+        }
+    }
     set_links(std::move(links));
 }
 
@@ -33,18 +39,23 @@ void KeyboardTarget::step_link_(int dir)
 {
     const int n = static_cast<int>(links_.size());
     if (n == 0)
+    {
         return;
+    }
     if (link_index_ < 0)
+    {
         link_index_ = dir > 0 ? 0 : n - 1;
+    }
     else
+    {
         link_index_ = (link_index_ + dir + n) % n;
+    }
     if (Host* h = host())
     {
         const auto& label = links_[static_cast<std::size_t>(link_index_)].first;
         h->show_tooltip(this,
                         trf(tr("Link {0} of {1}: {2} — press Enter to open"),
-                            {std::to_string(link_index_ + 1), std::to_string(n),
-                             label}),
+                            {std::to_string(link_index_ + 1), std::to_string(n), label}),
                         bounds_);
     }
 }
@@ -52,12 +63,15 @@ void KeyboardTarget::step_link_(int dir)
 bool KeyboardTarget::on_key_down(const KeyEvent& e)
 {
     if (!has_focus())
+    {
         return false;
+    }
     if (on_key && on_key(e))
+    {
         return true;
+    }
     const bool plain = !e.ctrl && !e.alt && !e.meta;
-    if (plain && !links_.empty() &&
-        (e.key == Key::Left || e.key == Key::Right))
+    if (plain && !links_.empty() && (e.key == Key::Left || e.key == Key::Right))
     {
         step_link_(e.key == Key::Right ? 1 : -1);
         return true;
@@ -92,7 +106,9 @@ bool KeyboardTarget::on_key_down(const KeyEvent& e)
                 on_link_activated(url);
             }
             else
+            {
                 step_link_(1);
+            }
             return true;
         }
     }
@@ -102,7 +118,9 @@ bool KeyboardTarget::on_key_down(const KeyEvent& e)
 bool KeyboardTarget::access_default_action()
 {
     if (!on_activate || !enabled_)
+    {
         return false;
+    }
     auto fn = on_activate;
     fn();
     return true;

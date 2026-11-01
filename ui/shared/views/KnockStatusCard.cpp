@@ -19,8 +19,8 @@ namespace
 // Prefixed kKnockCard* — this file is compiled into a Unity build alongside
 // InviteCard.cpp/JoinRoomView.cpp, whose anonymous-namespace constants would
 // otherwise collide with unprefixed names like kKnockCardNameH/kKnockCardReasonH.
-constexpr float kKnockCardNameH   = 24.0f; // 18 pt bold — Title role
-constexpr float kKnockCardTopicH  = 18.0f; // 13 pt — Body role
+constexpr float kKnockCardNameH = 24.0f;   // 18 pt bold — Title role
+constexpr float kKnockCardTopicH = 18.0f;  // 13 pt — Body role
 constexpr float kKnockCardStatusH = 18.0f; // 12 pt — Small role
 constexpr float kKnockCardReasonH = 18.0f; // 12 pt — Small role
 
@@ -31,16 +31,19 @@ constexpr float kKnockCardReasonH = 18.0f; // 12 pt — Small role
 std::string KnockStatusCard::access_name() const
 {
     if (!knock_)
+    {
         return {};
-    const std::string& room =
-        knock_->room_name.empty() ? knock_->room_id : knock_->room_name;
+    }
+    const std::string& room = knock_->room_name.empty() ? knock_->room_id : knock_->room_name;
     return tk::trf(tk::tr("{0}: {1}"), {room, tk::tr("Request pending")});
 }
 
 std::string KnockStatusCard::access_description() const
 {
     if (!knock_)
+    {
         return {};
+    }
     std::string desc = knock_->room_topic;
     if (!knock_->reason.empty())
     {
@@ -52,9 +55,16 @@ std::string KnockStatusCard::access_description() const
 
 KnockStatusCard::KnockStatusCard()
 {
-    auto cancel = tk::create_widget<tk::Button>(this,
-        tk::tr("Cancel Request"), std::function<void()>{}, tk::Button::Variant::Subtle);
-    cancel->set_on_click([this]() { if (on_cancel) on_cancel(); });
+    auto cancel = tk::create_widget<tk::Button>(
+        this, tk::tr("Cancel Request"), std::function<void()>{}, tk::Button::Variant::Subtle);
+    cancel->set_on_click(
+        [this]()
+        {
+            if (on_cancel)
+            {
+                on_cancel();
+            }
+        });
     cancel_btn_ = add_child(std::move(cancel));
 
     set_visible(false);
@@ -62,10 +72,9 @@ KnockStatusCard::KnockStatusCard()
 
 // ── public API ────────────────────────────────────────────────────────────
 
-void KnockStatusCard::set_knock(const tesseract::KnockedRoomInfo& info,
-                                ImageProvider provider)
+void KnockStatusCard::set_knock(const tesseract::KnockedRoomInfo& info, ImageProvider provider)
 {
-    knock_          = info;
+    knock_ = info;
     image_provider_ = std::move(provider);
     reset_layouts();
     set_visible(true);
@@ -117,7 +126,7 @@ void KnockStatusCard::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     content_h += kBtnH + kPadY;
 
     const float cx = bounds.x + (bounds.w - kContentW) * 0.5f;
-    float       cy = bounds.y + std::max(0.0f, (bounds.h - content_h) * 0.5f);
+    float cy = bounds.y + std::max(0.0f, (bounds.h - content_h) * 0.5f);
 
     // Skip past avatar + text rows to reach the button.
     cy += kAvatarD + kGap + kKnockCardNameH + kGap * 0.5f + kKnockCardStatusH + kGap;
@@ -146,7 +155,7 @@ void KnockStatusCard::paint_before_children(tk::PaintCtx& ctx)
     }
 
     const auto& pal = ctx.theme.palette;
-    auto&       cv  = ctx.canvas;
+    auto& cv = ctx.canvas;
 
     // Background.
     cv.fill_rect(bounds_, pal.bg);
@@ -165,7 +174,7 @@ void KnockStatusCard::paint_before_children(tk::PaintCtx& ctx)
     content_h += kBtnH + kPadY;
 
     const float cx = bounds_.x + (bounds_.w - kContentW) * 0.5f;
-    float       cy = bounds_.y + std::max(0.0f, (bounds_.h - content_h) * 0.5f);
+    float cy = bounds_.y + std::max(0.0f, (bounds_.h - content_h) * 0.5f);
 
     // ── Avatar ───────────────────────────────────────────────────────────
 
@@ -179,32 +188,30 @@ void KnockStatusCard::paint_before_children(tk::PaintCtx& ctx)
     {
         const std::string& fallback_name =
             knock_->room_name.empty() ? knock_->room_id : knock_->room_name;
-        std::string_view disp = fallback_name.empty()
-                                    ? std::string_view("#")
-                                    : std::string_view(fallback_name);
+        std::string_view disp =
+            fallback_name.empty() ? std::string_view("#") : std::string_view(fallback_name);
         draw_avatar(cv, av_img, av_centre, kAvatarD, disp, pal.accent,
-                    tk::Color{255, 255, 255, 255});
+                    tk::accent_foreground(ctx.theme));
     }
 
     cy += kAvatarD + kGap;
 
     // ── Room name ────────────────────────────────────────────────────────
 
-    const std::string& name_str =
-        knock_->room_name.empty() ? knock_->room_id : knock_->room_name;
+    const std::string& name_str = knock_->room_name.empty() ? knock_->room_id : knock_->room_name;
 
     if (!name_layout_)
     {
         tk::TextStyle ts{};
-        ts.role      = tk::FontRole::Title;
-        ts.trim      = tk::TextTrim::Ellipsis;
+        ts.role = tk::FontRole::Title;
+        ts.trim = tk::TextTrim::Ellipsis;
         ts.max_width = kContentW;
         name_layout_ = ctx.factory.build_text(name_str, ts);
     }
     if (name_layout_)
     {
         const tk::Size sz = name_layout_->measure();
-        const float tx    = cx + (kContentW - sz.w) * 0.5f;
+        const float tx = cx + (kContentW - sz.w) * 0.5f;
         cv.draw_text(*name_layout_, {tx, cy}, pal.text_primary);
         cy += sz.h + kGap * 0.5f;
     }
@@ -218,15 +225,15 @@ void KnockStatusCard::paint_before_children(tk::PaintCtx& ctx)
     if (!status_layout_)
     {
         tk::TextStyle ts{};
-        ts.role      = tk::FontRole::Body;
-        ts.trim      = tk::TextTrim::Ellipsis;
+        ts.role = tk::FontRole::Body;
+        ts.trim = tk::TextTrim::Ellipsis;
         ts.max_width = kContentW;
         status_layout_ = ctx.factory.build_text(tk::tr("Request pending"), ts);
     }
     if (status_layout_)
     {
         const tk::Size sz = status_layout_->measure();
-        const float tx    = cx + (kContentW - sz.w) * 0.5f;
+        const float tx = cx + (kContentW - sz.w) * 0.5f;
         cv.draw_text(*status_layout_, {tx, cy}, pal.text_muted);
         cy += sz.h + kGap;
     }
@@ -242,15 +249,15 @@ void KnockStatusCard::paint_before_children(tk::PaintCtx& ctx)
         if (!topic_layout_)
         {
             tk::TextStyle ts{};
-            ts.role      = tk::FontRole::Small;
-            ts.trim      = tk::TextTrim::Ellipsis;
+            ts.role = tk::FontRole::Small;
+            ts.trim = tk::TextTrim::Ellipsis;
             ts.max_width = kContentW;
             topic_layout_ = ctx.factory.build_text(knock_->room_topic, ts);
         }
         if (topic_layout_)
         {
             const tk::Size sz = topic_layout_->measure();
-            const float tx    = cx + (kContentW - sz.w) * 0.5f;
+            const float tx = cx + (kContentW - sz.w) * 0.5f;
             cv.draw_text(*topic_layout_, {tx, cy}, pal.text_muted);
             cy += sz.h + kGap;
         }
@@ -267,16 +274,16 @@ void KnockStatusCard::paint_before_children(tk::PaintCtx& ctx)
         if (!reason_layout_)
         {
             tk::TextStyle ts{};
-            ts.role      = tk::FontRole::Small;
-            ts.trim      = tk::TextTrim::Ellipsis;
+            ts.role = tk::FontRole::Small;
+            ts.trim = tk::TextTrim::Ellipsis;
             ts.max_width = kContentW;
-            reason_layout_ = ctx.factory.build_text(
-                tk::trf(tk::tr("Reason: {0}"), {knock_->reason}), ts);
+            reason_layout_ =
+                ctx.factory.build_text(tk::trf(tk::tr("Reason: {0}"), {knock_->reason}), ts);
         }
         if (reason_layout_)
         {
             const tk::Size sz = reason_layout_->measure();
-            const float tx    = cx + (kContentW - sz.w) * 0.5f;
+            const float tx = cx + (kContentW - sz.w) * 0.5f;
             cv.draw_text(*reason_layout_, {tx, cy}, pal.text_muted);
             cy += sz.h + kGap;
         }

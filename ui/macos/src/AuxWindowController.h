@@ -11,7 +11,6 @@
 // delegate) hosting `root`. The caller takes ownership of the returned pointer.
 namespace tesseract
 {
-AuxWindowBase* make_mac_aux_window(const std::string& title,
-                                   std::unique_ptr<tk::Widget> root,
+AuxWindowBase* make_mac_aux_window(const std::string& title, std::unique_ptr<tk::Widget> root,
                                    int width, int height, const tk::Theme& theme);
 } // namespace tesseract

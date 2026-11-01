@@ -16,21 +16,29 @@ template <typename T>
 struct CFOwned
 {
     T ref = nullptr;
-    explicit CFOwned(T r) : ref(r) {}
-    ~CFOwned() { if (ref) CFRelease(ref); }
+    explicit CFOwned(T r) : ref(r)
+    {
+    }
+    ~CFOwned()
+    {
+        if (ref)
+        {
+            CFRelease(ref);
+        }
+    }
     CFOwned(const CFOwned&) = delete;
     CFOwned& operator=(const CFOwned&) = delete;
-    operator T() const { return ref; }
+    operator T() const
+    {
+        return ref;
+    }
 };
 
 CFOwned<CFStringRef> cf_string(const std::string& s)
 {
-    return CFOwned<CFStringRef>(CFStringCreateWithBytes(
-        nullptr,
-        reinterpret_cast<const UInt8*>(s.data()),
-        static_cast<CFIndex>(s.size()),
-        kCFStringEncodingUTF8,
-        false));
+    return CFOwned<CFStringRef>(
+        CFStringCreateWithBytes(nullptr, reinterpret_cast<const UInt8*>(s.data()),
+                                static_cast<CFIndex>(s.size()), kCFStringEncodingUTF8, false));
 }
 
 // All sessions are stored in a single Keychain item so that the OS shows at
@@ -74,31 +82,31 @@ std::optional<std::string> keychain_load_dp(const std::string& account_key,
                                             OSStatus* status_out = nullptr)
 {
     auto account = cf_string(account_key);
-    const void* keys[] = {
-        kSecClass, kSecAttrService, kSecAttrAccount,
-        kSecReturnData, kSecMatchLimit, kSecUseDataProtectionKeychain};
-    const void* vals[] = {
-        kSecClassGenericPassword,
-        CFSTR("im.gnomos.tesseract"),
-        account.ref,
-        kCFBooleanTrue,
-        kSecMatchLimitOne,
-        kCFBooleanTrue};
+    const void* keys[] = {kSecClass,      kSecAttrService, kSecAttrAccount,
+                          kSecReturnData, kSecMatchLimit,  kSecUseDataProtectionKeychain};
+    const void* vals[] = {kSecClassGenericPassword,
+                          CFSTR("im.gnomos.tesseract"),
+                          account.ref,
+                          kCFBooleanTrue,
+                          kSecMatchLimitOne,
+                          kCFBooleanTrue};
     CFOwned<CFDictionaryRef> query(CFDictionaryCreate(
-        nullptr, keys, vals, 6,
-        &kCFTypeDictionaryKeyCallBacks,
-        &kCFTypeDictionaryValueCallBacks));
+        nullptr, keys, vals, 6, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
 
     CFTypeRef raw = nullptr;
     OSStatus status = SecItemCopyMatching(query, &raw);
-    if (status_out) *status_out = status;
+    if (status_out)
+    {
+        *status_out = status;
+    }
     if (status != errSecSuccess || !raw)
+    {
         return std::nullopt;
+    }
 
     CFOwned<CFDataRef> data(static_cast<CFDataRef>(raw));
-    return std::string(
-        reinterpret_cast<const char*>(CFDataGetBytePtr(data)),
-        static_cast<std::size_t>(CFDataGetLength(data)));
+    return std::string(reinterpret_cast<const char*>(CFDataGetBytePtr(data)),
+                       static_cast<std::size_t>(CFDataGetLength(data)));
 }
 
 // Query only the traditional login keychain.  May trigger an authorization
@@ -106,36 +114,32 @@ std::optional<std::string> keychain_load_dp(const std::string& account_key,
 std::optional<std::string> keychain_load_traditional(const std::string& account_key)
 {
     auto account = cf_string(account_key);
-    const void* keys[] = {
-        kSecClass, kSecAttrService, kSecAttrAccount,
-        kSecReturnData, kSecMatchLimit};
-    const void* vals[] = {
-        kSecClassGenericPassword,
-        CFSTR("im.gnomos.tesseract"),
-        account.ref,
-        kCFBooleanTrue,
-        kSecMatchLimitOne};
+    const void* keys[] = {kSecClass, kSecAttrService, kSecAttrAccount, kSecReturnData,
+                          kSecMatchLimit};
+    const void* vals[] = {kSecClassGenericPassword, CFSTR("im.gnomos.tesseract"), account.ref,
+                          kCFBooleanTrue, kSecMatchLimitOne};
     CFOwned<CFDictionaryRef> query(CFDictionaryCreate(
-        nullptr, keys, vals, 5,
-        &kCFTypeDictionaryKeyCallBacks,
-        &kCFTypeDictionaryValueCallBacks));
+        nullptr, keys, vals, 5, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
 
     CFTypeRef raw = nullptr;
     OSStatus status = SecItemCopyMatching(query, &raw);
     if (status != errSecSuccess || !raw)
+    {
         return std::nullopt;
+    }
 
     CFOwned<CFDataRef> data(static_cast<CFDataRef>(raw));
-    return std::string(
-        reinterpret_cast<const char*>(CFDataGetBytePtr(data)),
-        static_cast<std::size_t>(CFDataGetLength(data)));
+    return std::string(reinterpret_cast<const char*>(CFDataGetBytePtr(data)),
+                       static_cast<std::size_t>(CFDataGetLength(data)));
 }
 
 // Try data-protection keychain first; fall back to traditional for migration.
 std::optional<std::string> keychain_load(const std::string& account_key)
 {
     if (auto blob = keychain_load_dp(account_key))
+    {
         return blob;
+    }
     return keychain_load_traditional(account_key);
 }
 
@@ -145,53 +149,47 @@ std::optional<std::string> keychain_load(const std::string& account_key)
 bool keychain_save(const std::string& account_key, const std::string& blob)
 {
     auto account = cf_string(account_key);
-    CFOwned<CFDataRef> value(CFDataCreate(
-        nullptr,
-        reinterpret_cast<const UInt8*>(blob.data()),
-        static_cast<CFIndex>(blob.size())));
+    CFOwned<CFDataRef> value(CFDataCreate(nullptr, reinterpret_cast<const UInt8*>(blob.data()),
+                                          static_cast<CFIndex>(blob.size())));
 
     // Attempt update in the data-protection keychain first.
     {
-        const void* qk[] = {
-            kSecClass, kSecAttrService, kSecAttrAccount,
-            kSecUseDataProtectionKeychain};
-        const void* qv[] = {
-            kSecClassGenericPassword,
-            CFSTR("im.gnomos.tesseract"),
-            account.ref,
-            kCFBooleanTrue};
+        const void* qk[] = {kSecClass, kSecAttrService, kSecAttrAccount,
+                            kSecUseDataProtectionKeychain};
+        const void* qv[] = {kSecClassGenericPassword, CFSTR("im.gnomos.tesseract"), account.ref,
+                            kCFBooleanTrue};
         CFOwned<CFDictionaryRef> query(CFDictionaryCreate(
-            nullptr, qk, qv, 4,
-            &kCFTypeDictionaryKeyCallBacks,
-            &kCFTypeDictionaryValueCallBacks));
+            nullptr, qk, qv, 4, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
         const void* uk[] = {kSecValueData};
         const void* uv[] = {value.ref};
         CFOwned<CFDictionaryRef> update(CFDictionaryCreate(
-            nullptr, uk, uv, 1,
-            &kCFTypeDictionaryKeyCallBacks,
-            &kCFTypeDictionaryValueCallBacks));
+            nullptr, uk, uv, 1, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
         OSStatus st = SecItemUpdate(query, update);
         if (st == errSecSuccess)
+        {
             return true;
+        }
         if (st != errSecItemNotFound)
+        {
             return false;
+        }
     }
 
     // Item not found in the data-protection keychain — add it.
-    const void* ak[] = {
-        kSecClass, kSecAttrService, kSecAttrAccount, kSecValueData,
-        kSecUseDataProtectionKeychain, kSecAttrAccessible};
-    const void* av[] = {
-        kSecClassGenericPassword,
-        CFSTR("im.gnomos.tesseract"),
-        account.ref,
-        value.ref,
-        kCFBooleanTrue,
-        kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly};
+    const void* ak[] = {kSecClass,
+                        kSecAttrService,
+                        kSecAttrAccount,
+                        kSecValueData,
+                        kSecUseDataProtectionKeychain,
+                        kSecAttrAccessible};
+    const void* av[] = {kSecClassGenericPassword,
+                        CFSTR("im.gnomos.tesseract"),
+                        account.ref,
+                        value.ref,
+                        kCFBooleanTrue,
+                        kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly};
     CFOwned<CFDictionaryRef> add(CFDictionaryCreate(
-        nullptr, ak, av, 6,
-        &kCFTypeDictionaryKeyCallBacks,
-        &kCFTypeDictionaryValueCallBacks));
+        nullptr, ak, av, 6, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks));
     return SecItemAdd(add, nullptr) == errSecSuccess;
 }
 
@@ -205,35 +203,24 @@ void keychain_remove(const std::string& account_key)
 
     // Data-protection keychain — app always has silent access to its own items.
     {
-        const void* keys[] = {
-            kSecClass, kSecAttrService, kSecAttrAccount,
-            kSecUseDataProtectionKeychain};
-        const void* vals[] = {
-            kSecClassGenericPassword,
-            CFSTR("im.gnomos.tesseract"),
-            account.ref,
-            kCFBooleanTrue};
-        CFOwned<CFDictionaryRef> query(CFDictionaryCreate(
-            nullptr, keys, vals, 4,
-            &kCFTypeDictionaryKeyCallBacks,
-            &kCFTypeDictionaryValueCallBacks));
+        const void* keys[] = {kSecClass, kSecAttrService, kSecAttrAccount,
+                              kSecUseDataProtectionKeychain};
+        const void* vals[] = {kSecClassGenericPassword, CFSTR("im.gnomos.tesseract"), account.ref,
+                              kCFBooleanTrue};
+        CFOwned<CFDictionaryRef> query(CFDictionaryCreate(nullptr, keys, vals, 4,
+                                                          &kCFTypeDictionaryKeyCallBacks,
+                                                          &kCFTypeDictionaryValueCallBacks));
         SecItemDelete(query);
     }
 
     // Traditional keychain — skip UI to avoid prompts for pre-migration items.
     {
-        const void* keys[] = {
-            kSecClass, kSecAttrService, kSecAttrAccount,
-            kSecUseAuthenticationUI};
-        const void* vals[] = {
-            kSecClassGenericPassword,
-            CFSTR("im.gnomos.tesseract"),
-            account.ref,
-            kSecUseAuthenticationUISkip};
-        CFOwned<CFDictionaryRef> query(CFDictionaryCreate(
-            nullptr, keys, vals, 4,
-            &kCFTypeDictionaryKeyCallBacks,
-            &kCFTypeDictionaryValueCallBacks));
+        const void* keys[] = {kSecClass, kSecAttrService, kSecAttrAccount, kSecUseAuthenticationUI};
+        const void* vals[] = {kSecClassGenericPassword, CFSTR("im.gnomos.tesseract"), account.ref,
+                              kSecUseAuthenticationUISkip};
+        CFOwned<CFDictionaryRef> query(CFDictionaryCreate(nullptr, keys, vals, 4,
+                                                          &kCFTypeDictionaryKeyCallBacks,
+                                                          &kCFTypeDictionaryValueCallBacks));
         SecItemDelete(query);
     }
 }
@@ -248,7 +235,9 @@ bool flush_map()
     // what this run has added. Writing it would replace every other account's
     // stored session with that partial map.
     if (g_map_unreadable)
+    {
         return false;
+    }
     return keychain_save(std::string(kConsAcct), g_map->dump());
 }
 
@@ -260,7 +249,9 @@ bool flush_map()
 void ensure_map_loaded()
 {
     if (g_map.has_value())
+    {
         return;
+    }
 
     // Fast path: data-protection keychain — no authorization dialog.
     OSStatus dp_status = errSecSuccess;
@@ -275,7 +266,9 @@ void ensure_map_loaded()
                 return;
             }
         }
-        catch (const nlohmann::json::exception&) {}
+        catch (const nlohmann::json::exception&)
+        {
+        }
     }
 
     // Migration path: traditional keychain (at most one dialog on first run
@@ -298,24 +291,21 @@ void ensure_map_loaded()
                     // Do NOT call keychain_remove() here: that would also delete the DP
                     // item we just created via flush_map().
                     auto acct = cf_string(std::string(kConsAcct));
-                    const void* dk[] = {
-                        kSecClass, kSecAttrService, kSecAttrAccount,
-                        kSecUseAuthenticationUI};
-                    const void* dv[] = {
-                        kSecClassGenericPassword,
-                        CFSTR("im.gnomos.tesseract"),
-                        acct.ref,
-                        kSecUseAuthenticationUISkip};
-                    CFOwned<CFDictionaryRef> del(CFDictionaryCreate(
-                        nullptr, dk, dv, 4,
-                        &kCFTypeDictionaryKeyCallBacks,
-                        &kCFTypeDictionaryValueCallBacks));
+                    const void* dk[] = {kSecClass, kSecAttrService, kSecAttrAccount,
+                                        kSecUseAuthenticationUI};
+                    const void* dv[] = {kSecClassGenericPassword, CFSTR("im.gnomos.tesseract"),
+                                        acct.ref, kSecUseAuthenticationUISkip};
+                    CFOwned<CFDictionaryRef> del(
+                        CFDictionaryCreate(nullptr, dk, dv, 4, &kCFTypeDictionaryKeyCallBacks,
+                                           &kCFTypeDictionaryValueCallBacks));
                     SecItemDelete(del);
                 }
                 return;
             }
         }
-        catch (const nlohmann::json::exception&) {}
+        catch (const nlohmann::json::exception&)
+        {
+        }
     }
 
     g_map_unreadable = dp_status != errSecSuccess && dp_status != errSecItemNotFound;
@@ -336,8 +326,7 @@ namespace tesseract
 // SecItemCopyMatching at most), then serves subsequent callers from the cache.
 // If the user is not in the consolidated item, falls back to the old
 // per-user format so sessions survive the first post-upgrade launch.
-std::optional<std::string> SecretStore::load_entry_(const std::string& user_id,
-                                                    bool* failed)
+std::optional<std::string> SecretStore::load_entry_(const std::string& user_id, bool* failed)
 {
     std::lock_guard<std::mutex> lock(g_lock);
 
@@ -345,7 +334,9 @@ std::optional<std::string> SecretStore::load_entry_(const std::string& user_id,
 
     auto it = g_map->find(user_id);
     if (it != g_map->end() && it->is_string())
+    {
         return it->get<std::string>();
+    }
 
     // Migration fallback: old per-user item. Migrate eagerly into the
     // consolidated item here so the next startup reads only "_sessions" and
@@ -357,9 +348,14 @@ std::optional<std::string> SecretStore::load_entry_(const std::string& user_id,
     {
         (*g_map)[user_id] = *blob;
         if (flush_map())
+        {
             keychain_remove(user_id);
+        }
     }
-    if (!blob && failed && g_map_unreadable) *failed = true;
+    if (!blob && failed && g_map_unreadable)
+    {
+        *failed = true;
+    }
     return blob;
 }
 
@@ -380,16 +376,22 @@ bool SecretStore::save_entry_(const std::string& user_id, const std::string& jso
     // return a secret that was never persisted.
     std::optional<nlohmann::json> previous;
     if (auto it = g_map->find(user_id); it != g_map->end())
+    {
         previous = *it;
+    }
 
     (*g_map)[user_id] = json;
 
     if (!flush_map())
     {
         if (previous)
+        {
             (*g_map)[user_id] = *previous;
+        }
         else
+        {
             g_map->erase(user_id);
+        }
         return false;
     }
 
@@ -416,7 +418,9 @@ void SecretStore::remove_entry_(const std::string& user_id)
     g_map->erase(it);
 
     if (!flush_map())
+    {
         (*g_map)[user_id] = std::move(previous);
+    }
 
     keychain_remove(user_id); // remove old per-user item if present
 }

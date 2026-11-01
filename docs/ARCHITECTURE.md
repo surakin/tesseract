@@ -61,8 +61,9 @@ flowchart TB
 The platform shells supply native windows, menus, accessibility, notifications,
 and toolkit backends. Shared views use the toolkit abstractions, while
 `ShellBase` and its controllers coordinate accounts and application behavior.
-The platform shells inherit from `ShellBase`; macOS embeds a derived `MacShell`
-inside its Objective-C++ window controller. `ShellBase` is implemented across
+Each platform shell's main window inherits from `ShellBase`; on macOS that is
+`macos::MainWindow`, and its Objective-C++ `MainWindowController` only forwards
+AppKit delegate and menu callbacks to it. `ShellBase` is implemented across
 `ShellBase_<subsystem>.cpp` files (accounts, calls, encryption, media, navigation,
 profile, rooms, search, settings, spaces, timeline, windows and view wiring); its worker
 pool, account-lifecycle types, media types and pure helpers are separate headers.
@@ -94,13 +95,13 @@ flowchart TB
     native["Native main window<br/>MainWindow / MainWindowController"]
     shell["ShellBase<br/>Window state, room selection, worker pools"]
     root["MainAppWidget"]
-    sidebar["RoomListView / AccountPicker"]
+    sidebar["RoomListView / AccountPicker / SpacePickerView"]
     room["RoomView"]
     timeline["MessageListView<br/>Timeline media, receipts, spoilers, link layout"]
     compose["ComposeBar<br/>Text, attachments, replies, mentions"]
     thread["ThreadView / ThreadListView"]
     overlays["Pickers, media viewers, settings<br/>EncryptionSetupOverlay"]
-    controllers["Shell collaborators<br/>SettingsController / EncryptionFlowController<br/>ThreadPanelController / HistoryExportController<br/>SendPipeline / PowerPolicy"]
+    controllers["Shell collaborators<br/>SettingsController (views/settings/) / EncryptionFlowController<br/>ThreadPanelController / HistoryExportController<br/>SendPipeline / PowerPolicy"]
     manager["AccountManager — shared across windows<br/>Session registry, media caches, playback hub"]
     account["AccountSession — one per account<br/>Client + IEventHandler bridge<br/>Notifier + optional UnifiedPush connector"]
     backend["Platform toolkit backend<br/>Canvas, Host, native text controls<br/>Audio/video capture and playback"]
@@ -122,6 +123,9 @@ flowchart TB
 ```
 
 Native `Host` implementations provide UI scheduling and platform integration.
+`Host::theme()` returns the current theme, so a view that is created lazily
+reads its colours at construction rather than waiting for the next
+`on_theme_changed()`.
 `Canvas` implementations draw shared widgets; native text controls support IME
 and selection while their rendered surfaces participate in toolkit compositing.
 Additional room and call windows use `RoomWindowBase` and `CallWindowBase`.
@@ -309,13 +313,17 @@ flowchart LR
     cmake --> clientlib["tesseract_client<br/>C++ client library"]
     rustlib --> clientlib
     glue --> clientlib
-    cmake --> sharedlib["tesseract_tk<br/>Shared toolkit, views and app code"]
+    cmake --> tklib["tesseract_tk<br/>Canvas, Widget, Layout, Host"]
+    tklib --> platformlib["tesseract_platform<br/>Per-OS capture, location, single-instance services"]
+    platformlib --> viewslib["tesseract_views<br/>Shared views and settings helpers"]
+    viewslib --> applib["tesseract_app<br/>ShellBase and event dispatch"]
     clientlib --> executable["Selected platform executable<br/>Native shell + toolkit backend"]
-    sharedlib --> executable
+    applib --> executable
     cmake --> executable
 ```
 
 Linux can build both Qt6 and GTK4 executables using the same shared layers.
+The shared libraries form a chain (`tesseract_tk` <- `tesseract_platform` <- `tesseract_views` <- `tesseract_app`), and the `layering_check` ctest enforces the include direction.
 Platform-specific toolkit implementations compile into their platform targets.
 The Rust and C++ layers are linked into the desktop application; the FFI boundary
 is an in-process language boundary, not an IPC or network service.
@@ -326,11 +334,14 @@ is an in-process language boundary, not an IPC or network service.
 | --- | --- |
 | Shared application and callback dispatch | [ShellBase.h](../ui/shared/app/ShellBase.h) (implemented in `ShellBase_*.cpp`), [EventHandlerBase.h](../ui/shared/app/EventHandlerBase.h) |
 | Shared views and toolkit | [ui/shared/views](../ui/shared/views/), [ui/shared/tk](../ui/shared/tk/) |
+| Non-UI platform services | [ui/shared/platform](../ui/shared/platform/) (per-OS backends in `linux/`, `win32/`, `macos/`) |
 | Platform shells and backends | [Windows](../ui/windows/), [macOS](../ui/macos/), [Qt6](../ui/linux-qt/), [GTK4](../ui/linux-gtk/) |
 | C++ API and event bridge | [client.h](../client/include/tesseract/client.h), [event_handler_bridge.cpp](../client/src/event_handler_bridge.cpp) |
 | Rust FFI and orchestration | [bridge.rs](../sdk/src/bridge.rs), [client/mod.rs](../sdk/src/client/mod.rs) |
 | Authentication and persistence | [oauth.rs](../sdk/src/oauth.rs), [session.rs](../sdk/src/client/session.rs), [session_store.cpp](../client/src/session_store.cpp) |
 | Native calls | [CallSession.cpp](../client/src/CallSession.cpp), [rtc](../sdk/src/client/rtc/) |
+
+Deep dives: [TOOLKIT.md](TOOLKIT.md) (widgets, canvas, host, views), [SHELLS.md](SHELLS.md) (`ShellBase`, threads, platform shells) and [BRIDGE.md](BRIDGE.md) (the Rust core and the FFI). For how to make changes, see [DEVELOPING.md](DEVELOPING.md); the full list of docs is in the [index](README.md).
 
 CMake builds the C++ targets and uses Corrosion to build and link the Rust static
 library and generated bridge. See [BUILD.md](BUILD.md) for build configuration.

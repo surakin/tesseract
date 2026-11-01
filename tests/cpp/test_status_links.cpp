@@ -28,8 +28,8 @@ TEST_CASE("status_links: empty input yields one empty segment")
 
 TEST_CASE("status_links: single link splits into three segments")
 {
-    auto segs = parse_status_links(
-        "Update available \xe2\x80\x94 [Download](https://example.com/d) now");
+    auto segs =
+        parse_status_links("Update available \xe2\x80\x94 [Download](https://example.com/d) now");
     REQUIRE(segs.size() == 3);
     CHECK(segs[0].text == "Update available \xe2\x80\x94 ");
     CHECK(segs[0].url.empty());
@@ -72,11 +72,8 @@ TEST_CASE("status_links: status_plain_text drops the markup")
 TEST_CASE("status_links: non-http schemes stay literal")
 {
     const std::string cases[] = {
-        "[x](javascript:alert(1))",
-        "[x](file:///etc/passwd)",
-        "[x](ftp://host/f)",
-        "[x](mailto:a@b.c)",
-        "[x](httpx://host)",
+        "[x](javascript:alert(1))", "[x](file:///etc/passwd)", "[x](ftp://host/f)",
+        "[x](mailto:a@b.c)",        "[x](httpx://host)",
     };
     for (const auto& msg : cases)
     {

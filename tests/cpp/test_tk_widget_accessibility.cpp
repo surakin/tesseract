@@ -20,16 +20,14 @@
 
 using namespace tk;
 
-TEST_CASE("Label reports StaticText role and its text as the name",
-         "[tk][accessibility]")
+TEST_CASE("Label reports StaticText role and its text as the name", "[tk][accessibility]")
 {
     auto label = tk::create_root_widget<Label>(nullptr, "Hello world");
     CHECK(label->access_role() == Role::StaticText);
     CHECK(label->access_name() == "Hello world");
 }
 
-TEST_CASE("Button reports Button role and its label as the name",
-         "[tk][accessibility]")
+TEST_CASE("Button reports Button role and its label as the name", "[tk][accessibility]")
 {
     auto button = tk::create_root_widget<Button>(nullptr, "Send");
     CHECK(button->access_role() == Role::Button);
@@ -37,8 +35,8 @@ TEST_CASE("Button reports Button role and its label as the name",
 }
 
 TEST_CASE("CheckButton reports CheckBox role, label as name, and reflects "
-         "checked state",
-         "[tk][accessibility]")
+          "checked state",
+          "[tk][accessibility]")
 {
     auto cb = tk::create_root_widget<CheckButton>(nullptr, "Remember me", false);
     CHECK(cb->access_role() == Role::CheckBox);
@@ -50,8 +48,8 @@ TEST_CASE("CheckButton reports CheckBox role, label as name, and reflects "
 }
 
 TEST_CASE("SwitchButton reports Switch role, label as name, and reflects "
-         "checked state",
-         "[tk][accessibility]")
+          "checked state",
+          "[tk][accessibility]")
 {
     auto sw = tk::create_root_widget<SwitchButton>(nullptr, "Enable notifications", true);
     CHECK(sw->access_role() == Role::Switch);
@@ -63,8 +61,8 @@ TEST_CASE("SwitchButton reports Switch role, label as name, and reflects "
 }
 
 TEST_CASE("ComboBox reports ComboBox role, the selected option's display "
-         "label as name (not its value), and expanded state",
-         "[tk][accessibility]")
+          "label as name (not its value), and expanded state",
+          "[tk][accessibility]")
 {
     auto combo = tk::create_root_widget<ComboBox>(nullptr);
     combo->set_options({{"English", "en"}, {"Spanish", "es"}});
@@ -76,8 +74,8 @@ TEST_CASE("ComboBox reports ComboBox role, the selected option's display "
 }
 
 TEST_CASE("ComboBox access_name falls back to empty when nothing matches "
-         "the selected value",
-         "[tk][accessibility]")
+          "the selected value",
+          "[tk][accessibility]")
 {
     auto combo = tk::create_root_widget<ComboBox>(nullptr);
     combo->set_options({{"English", "en"}});
@@ -89,16 +87,21 @@ namespace
 const AccessNode* first_role(const AccessNode& n, Role r)
 {
     if (n.role == r)
+    {
         return &n;
+    }
     for (const auto& c : n.children)
+    {
         if (const AccessNode* hit = first_role(c, r))
+        {
             return hit;
+        }
+    }
     return nullptr;
 }
 } // namespace
 
-TEST_CASE("TabBar exposes a TabList with one selectable Tab node per room",
-         "[tk][accessibility]")
+TEST_CASE("TabBar exposes a TabList with one selectable Tab node per room", "[tk][accessibility]")
 {
     auto tab_bar = tk::create_root_widget<TabBar>(nullptr);
     tab_bar->add_tab("!a:x", "Alpha", nullptr);
@@ -112,30 +115,39 @@ TEST_CASE("TabBar exposes a TabList with one selectable Tab node per room",
     std::vector<std::string> names;
     const AccessNode* beta = nullptr;
     for (const auto& c : list->children)
+    {
         if (c.role == Role::Tab)
         {
             names.push_back(c.name);
             if (c.name == "Beta")
+            {
                 beta = &c;
+            }
         }
+    }
     CHECK(names == std::vector<std::string>{"Alpha", "Beta"});
     REQUIRE(beta != nullptr);
     CHECK(beta->state.selected);
 
     std::string picked;
-    tab_bar->on_tab_selected = [&](const std::string& id) { picked = id; };
+    tab_bar->on_tab_selected = [&](const std::string& id)
+    {
+        picked = id;
+    };
     CHECK(tk::invoke_default_action(*beta));
     CHECK(picked == "!b:x");
 }
 
-TEST_CASE("TabView exposes a Tab node per segment; activation selects it",
-         "[tk][accessibility]")
+TEST_CASE("TabView exposes a Tab node per segment; activation selects it", "[tk][accessibility]")
 {
     auto tv = tk::create_root_widget<TabView>(nullptr);
     tv->set_items({"Join", "Create"});
 
     int selected = -1;
-    tv->on_selected = [&](int i) { selected = i; };
+    tv->on_selected = [&](int i)
+    {
+        selected = i;
+    };
 
     AccessNode tree = build_access_tree(tv.get());
     const AccessNode* list = first_role(tree, Role::TabList);
@@ -148,8 +160,7 @@ TEST_CASE("TabView exposes a Tab node per segment; activation selects it",
     CHECK(selected == 1);
 }
 
-TEST_CASE("SideTabView exposes Tab nodes AND still walks the active content",
-         "[tk][accessibility]")
+TEST_CASE("SideTabView exposes Tab nodes AND still walks the active content", "[tk][accessibility]")
 {
     auto stv = tk::create_root_widget<SideTabView>(nullptr);
     stv->add_tab("General", tk::create_widget<Label>(stv.get(), "general body"));
@@ -165,16 +176,19 @@ TEST_CASE("SideTabView exposes Tab nodes AND still walks the active content",
     for (const auto& c : list->children)
     {
         if (c.role == Role::Tab)
+        {
             ++tab_nodes;
+        }
         if (c.role == Role::StaticText && c.name == "general body")
+        {
             saw_content = true;
+        }
     }
     CHECK(tab_nodes == 2);
     CHECK(saw_content); // the real child widget is still in the tree
 }
 
-TEST_CASE("Avatar reports Image role and the display name as its name",
-         "[tk][accessibility]")
+TEST_CASE("Avatar reports Image role and the display name as its name", "[tk][accessibility]")
 {
     auto avatar = tk::create_root_widget<Avatar>(nullptr, "Alice");
     CHECK(avatar->access_role() == Role::Image);
@@ -182,16 +196,16 @@ TEST_CASE("Avatar reports Image role and the display name as its name",
 }
 
 TEST_CASE("ImageView stays Role::None — no alt-text mechanism exists yet, "
-         "so exposing it would just be unlabeled AT noise",
-         "[tk][accessibility]")
+          "so exposing it would just be unlabeled AT noise",
+          "[tk][accessibility]")
 {
     auto image = tk::create_root_widget<ImageView>(nullptr);
     CHECK(image->access_role() == Role::None);
 }
 
 TEST_CASE("Button::set_accessible_name() overrides label_ for access_name(), "
-         "for icon-only buttons whose label isn't a real name",
-         "[tk][accessibility]")
+          "for icon-only buttons whose label isn't a real name",
+          "[tk][accessibility]")
 {
     auto btn = tk::create_root_widget<Button>(nullptr, "\xE2\x9C\x95" /* × glyph */);
     CHECK(btn->access_name() == "\xE2\x9C\x95"); // falls back to label_ until overridden
@@ -202,9 +216,9 @@ TEST_CASE("Button::set_accessible_name() overrides label_ for access_name(), "
 }
 
 TEST_CASE("TextField/TextArea drive their own accessibility (Role::TextInput) "
-         "— the native overlay is never mapped on screen (WA_DontShowOnScreen "
-         "et al.), so it isn't reliably visible to AT-SPI on its own",
-         "[tk][accessibility]")
+          "— the native overlay is never mapped on screen (WA_DontShowOnScreen "
+          "et al.), so it isn't reliably visible to AT-SPI on its own",
+          "[tk][accessibility]")
 {
     StubHost host;
     auto surface = TestSurface::create(200, 200);
@@ -238,16 +252,31 @@ public:
     using SearchablePicker::set_value;
 
 private:
-    std::size_t entry_count_() const override { return 1; }
-    int match_rank_(std::size_t, std::string_view) const override { return 0; }
-    std::string entry_key_(std::size_t) const override { return "en"; }
-    std::string entry_label_(std::size_t) const override { return "English"; }
-    std::string entry_display_(std::size_t) const override { return "English"; }
+    std::size_t entry_count_() const override
+    {
+        return 1;
+    }
+    int match_rank_(std::size_t, std::string_view) const override
+    {
+        return 0;
+    }
+    std::string entry_key_(std::size_t) const override
+    {
+        return "en";
+    }
+    std::string entry_label_(std::size_t) const override
+    {
+        return "English";
+    }
+    std::string entry_display_(std::size_t) const override
+    {
+        return "English";
+    }
 };
 } // namespace
 
 TEST_CASE("SearchablePicker maps to ComboBox with the committed value as name",
-         "[tk][accessibility]")
+          "[tk][accessibility]")
 {
     StubPicker picker;
     CHECK(picker.access_role() == Role::ComboBox);
@@ -260,12 +289,16 @@ TEST_CASE("SearchablePicker maps to ComboBox with the committed value as name",
 // ── access_default_action() — the generic AT "invoke this node" hook ──────
 
 TEST_CASE("Button::access_default_action() fires on_click, same as a real "
-         "click, and reports whether it had anything to invoke",
-         "[tk][accessibility][action]")
+          "click, and reports whether it had anything to invoke",
+          "[tk][accessibility][action]")
 {
     auto btn = tk::create_root_widget<Button>(nullptr, "Send");
     int clicks = 0;
-    btn->set_on_click([&] { ++clicks; });
+    btn->set_on_click(
+        [&]
+        {
+            ++clicks;
+        });
 
     CHECK(btn->access_default_action());
     CHECK(clicks == 1);
@@ -276,13 +309,17 @@ TEST_CASE("Button::access_default_action() fires on_click, same as a real "
 }
 
 TEST_CASE("CheckButton::access_default_action() toggles checked_ and fires "
-         "on_change — NOT the same as set_checked(), which is silent",
-         "[tk][accessibility][action]")
+          "on_change — NOT the same as set_checked(), which is silent",
+          "[tk][accessibility][action]")
 {
     auto cb = tk::create_root_widget<CheckButton>(nullptr, "Remember me", false);
     bool last_value = false;
     int fires = 0;
-    cb->on_change = [&](bool v) { last_value = v; ++fires; };
+    cb->on_change = [&](bool v)
+    {
+        last_value = v;
+        ++fires;
+    };
 
     CHECK(cb->access_default_action());
     CHECK(cb->checked());
@@ -295,12 +332,15 @@ TEST_CASE("CheckButton::access_default_action() toggles checked_ and fires "
 }
 
 TEST_CASE("SwitchButton::access_default_action() toggles and fires "
-         "on_change",
-         "[tk][accessibility][action]")
+          "on_change",
+          "[tk][accessibility][action]")
 {
     auto sw = tk::create_root_widget<SwitchButton>(nullptr, "Enable notifications", false);
     int fires = 0;
-    sw->on_change = [&](bool) { ++fires; };
+    sw->on_change = [&](bool)
+    {
+        ++fires;
+    };
 
     CHECK(sw->access_default_action());
     CHECK(sw->checked());
@@ -308,8 +348,8 @@ TEST_CASE("SwitchButton::access_default_action() toggles and fires "
 }
 
 TEST_CASE("ComboBox::access_default_action() opens the dropdown when "
-         "collapsed and collapses it when open",
-         "[tk][accessibility][action]")
+          "collapsed and collapses it when open",
+          "[tk][accessibility][action]")
 {
     auto combo = tk::create_root_widget<ComboBox>(nullptr);
     combo->set_options({{"English", "en"}, {"Spanish", "es"}});
@@ -324,8 +364,8 @@ TEST_CASE("ComboBox::access_default_action() opens the dropdown when "
 }
 
 TEST_CASE("a widget with no accessible action (Label) reports false and "
-         "does nothing",
-         "[tk][accessibility][action]")
+          "does nothing",
+          "[tk][accessibility][action]")
 {
     auto label = tk::create_root_widget<Label>(nullptr, "Hello");
     CHECK_FALSE(label->access_default_action());

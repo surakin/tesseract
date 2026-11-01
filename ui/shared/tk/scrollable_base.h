@@ -73,6 +73,17 @@ protected:
 
     KineticScroller kinetic_;
 
+public:
+    bool wheel_motion_active() const override
+    {
+        return kinetic_.active();
+    }
+    void stop_wheel_motion() override
+    {
+        kinetic_.cancel();
+    }
+
+protected:
     struct ThumbGeom
     {
         float track_top, track_h, thumb_h, thumb_top;

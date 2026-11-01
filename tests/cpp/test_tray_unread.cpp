@@ -17,32 +17,29 @@ RoomInfo room_with(std::uint64_t notification, std::uint64_t highlight)
 {
     RoomInfo r{};
     r.notification_count = notification;
-    r.highlight_count    = highlight;
+    r.highlight_count = highlight;
     return r;
 }
 } // namespace
 
-TEST_CASE("compute_tray_unread: empty map -> no unread, no highlight",
-          "[shell][tray_unread]")
+TEST_CASE("compute_tray_unread: empty map -> no unread, no highlight", "[shell][tray_unread]")
 {
     auto [u, h] = ShellBase::compute_tray_unread({});
     CHECK_FALSE(u);
     CHECK_FALSE(h);
 }
 
-TEST_CASE("compute_tray_unread: all zero-count rooms -> no indicator",
-          "[shell][tray_unread]")
+TEST_CASE("compute_tray_unread: all zero-count rooms -> no indicator", "[shell][tray_unread]")
 {
     PerAccount by_account;
     by_account["@alice:example.org"] = {room_with(0, 0), room_with(0, 0)};
-    by_account["@bob:example.org"]   = {room_with(0, 0)};
+    by_account["@bob:example.org"] = {room_with(0, 0)};
     auto [u, h] = ShellBase::compute_tray_unread(by_account);
     CHECK_FALSE(u);
     CHECK_FALSE(h);
 }
 
-TEST_CASE("compute_tray_unread: any notification flips has_unread",
-          "[shell][tray_unread]")
+TEST_CASE("compute_tray_unread: any notification flips has_unread", "[shell][tray_unread]")
 {
     PerAccount by_account;
     by_account["@alice:example.org"] = {room_with(0, 0), room_with(3, 0)};
@@ -51,8 +48,7 @@ TEST_CASE("compute_tray_unread: any notification flips has_unread",
     CHECK_FALSE(h);
 }
 
-TEST_CASE("compute_tray_unread: any highlight flips has_highlight",
-          "[shell][tray_unread]")
+TEST_CASE("compute_tray_unread: any highlight flips has_highlight", "[shell][tray_unread]")
 {
     PerAccount by_account;
     by_account["@alice:example.org"] = {room_with(5, 1)};
@@ -61,12 +57,11 @@ TEST_CASE("compute_tray_unread: any highlight flips has_highlight",
     CHECK(h);
 }
 
-TEST_CASE("compute_tray_unread: aggregates across accounts",
-          "[shell][tray_unread]")
+TEST_CASE("compute_tray_unread: aggregates across accounts", "[shell][tray_unread]")
 {
     PerAccount by_account;
     by_account["@alice:example.org"] = {room_with(0, 0)};
-    by_account["@bob:example.org"]   = {room_with(2, 0)};
+    by_account["@bob:example.org"] = {room_with(2, 0)};
     by_account["@carol:example.org"] = {room_with(7, 3)};
     auto [u, h] = ShellBase::compute_tray_unread(by_account);
     CHECK(u);

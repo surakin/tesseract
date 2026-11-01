@@ -64,7 +64,11 @@ pub(super) struct GatedPermit {
 }
 
 impl GateRegistry {
-    pub(super) fn new(origin_max_limit: usize, origin_ceiling: usize, global_permits: usize) -> Arc<Self> {
+    pub(super) fn new(
+        origin_max_limit: usize,
+        origin_ceiling: usize,
+        global_permits: usize,
+    ) -> Arc<Self> {
         Arc::new(Self {
             inner: Mutex::new(RegistryInner {
                 origins: HashMap::new(),
@@ -150,7 +154,11 @@ impl GateRegistry {
     /// assert on its AIMD state without going through a full acquire/release.
     #[cfg(test)]
     fn peek_gate(&self, origin: &OriginKey) -> Option<Arc<PriorityGate>> {
-        self.inner.lock().origins.get(origin).map(|e| Arc::clone(&e.gate))
+        self.inner
+            .lock()
+            .origins
+            .get(origin)
+            .map(|e| Arc::clone(&e.gate))
     }
 
     /// Spawn the single reaper task that periodically evicts idle origins.
@@ -163,7 +171,11 @@ impl GateRegistry {
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(REAP_INTERVAL).await;
-                let _job = crate::client::activity::begin("media-origin-reaper", "Media", crate::client::activity::JobKind::Periodic);
+                let _job = crate::client::activity::begin(
+                    "media-origin-reaper",
+                    "Media",
+                    crate::client::activity::JobKind::Periodic,
+                );
                 let mut inner = registry.inner.lock();
                 let now = Instant::now();
                 inner.origins.retain(|_, entry| {
@@ -182,8 +194,8 @@ impl GateRegistry {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::media_queue::{PRIO_NORMAL, PRIO_VISIBLE};
+    use super::*;
 
     fn origin(s: &str) -> OriginKey {
         super::super::media_origin::origin_from_url(&format!("https://{s}/"))
@@ -204,13 +216,23 @@ mod tests {
         drop(p0); // >50% stale among remaining 3 -> MD halves dead's dynamic_limit
 
         let dead_gate = registry.peek_gate(&dead).unwrap();
-        assert!(dead_gate.dynamic_limit() < 4, "dead origin's limit collapsed");
+        assert!(
+            dead_gate.dynamic_limit() < 4,
+            "dead origin's limit collapsed"
+        );
 
         // `healthy` shares the registry/global semaphore but not `dead`'s gate.
         let h = registry.acquire(&healthy, PRIO_VISIBLE, 4, 2).await;
-        assert!(h.is_some(), "healthy origin admitted immediately, unaffected by dead's collapse");
+        assert!(
+            h.is_some(),
+            "healthy origin admitted immediately, unaffected by dead's collapse"
+        );
         let healthy_gate = registry.peek_gate(&healthy).unwrap();
-        assert_eq!(healthy_gate.dynamic_limit(), 4, "healthy origin's own limit is untouched");
+        assert_eq!(
+            healthy_gate.dynamic_limit(),
+            4,
+            "healthy origin's own limit is untouched"
+        );
 
         drop(p1);
         drop(p2);
@@ -263,7 +285,11 @@ mod tests {
 
         let _p1 = registry.acquire(&a, PRIO_NORMAL, 1, 1).await.unwrap();
         let fresh_gate = registry.peek_gate(&a).unwrap();
-        assert_eq!(fresh_gate.dynamic_limit(), 4, "reaped origin restarts with clean AIMD state");
+        assert_eq!(
+            fresh_gate.dynamic_limit(),
+            4,
+            "reaped origin restarts with clean AIMD state"
+        );
     }
 
     #[tokio::test]
@@ -287,7 +313,13 @@ mod tests {
             tokio::task::yield_now().await;
         }
         registry.cancel_group(7);
-        assert!(ha.await.unwrap().is_none(), "parked waiter on origin a cancelled");
-        assert!(hb.await.unwrap().is_none(), "parked waiter on origin b cancelled");
+        assert!(
+            ha.await.unwrap().is_none(),
+            "parked waiter on origin a cancelled"
+        );
+        assert!(
+            hb.await.unwrap().is_none(),
+            "parked waiter on origin b cancelled"
+        );
     }
 }

@@ -37,8 +37,7 @@ public:
     // Add a tab. If this makes count > 1 the bar becomes visible.
     // The new tab is NOT automatically made active.
     // avatar may be nullptr — falls back to initials disc.
-    void add_tab(std::string room_id, std::string display_name,
-                 const Image* avatar);
+    void add_tab(std::string room_id, std::string display_name, const Image* avatar);
 
     // Remove the tab for room_id. If count drops to 1 the bar hides itself.
     // No-op if room_id is absent.
@@ -48,8 +47,7 @@ public:
     void set_active(const std::string& room_id);
 
     // Update display_name and avatar for an existing tab. No-op if absent.
-    void update_tab(const std::string& room_id, std::string display_name,
-                    const Image* avatar);
+    void update_tab(const std::string& room_id, std::string display_name, const Image* avatar);
 
     // Remove all tabs and reset scroll. Use before a full rebuild.
     void clear();
@@ -101,14 +99,29 @@ public:
     // switch its active tab on a stray Left/Right meant elsewhere.
     bool on_key_down(const KeyEvent& e) override
     {
-        if (!has_focus()) return false;
-        if (e.ctrl || e.alt || e.meta) return false;
-        if (e.key != Key::Left && e.key != Key::Right) return false;
+        if (!has_focus())
+        {
+            return false;
+        }
+        if (e.ctrl || e.alt || e.meta)
+        {
+            return false;
+        }
+        if (e.key != Key::Left && e.key != Key::Right)
+        {
+            return false;
+        }
         const int n = item_count();
-        if (n == 0) return false;
+        if (n == 0)
+        {
+            return false;
+        }
         const int delta = (e.key == Key::Right) ? 1 : -1;
         const int next = (active_idx_ < 0) ? 0 : (active_idx_ + delta + n) % n;
-        if (on_tab_selected) on_tab_selected(items_[next].room_id);
+        if (on_tab_selected)
+        {
+            on_tab_selected(items_[next].room_id);
+        }
         return true;
     }
 
@@ -121,15 +134,17 @@ public:
     }
 
     // ── tk::WidgetRowAccessibility ──────────────────────────────────────
-    std::size_t access_row_count() const override { return items_.size(); }
+    std::size_t access_row_count() const override
+    {
+        return items_.size();
+    }
     Role access_role_for_widget_row(std::size_t) const override
     {
         return Role::Tab;
     }
     std::string access_name_for_widget_row(std::size_t index) const override
     {
-        return index < items_.size() ? items_[index].display_name
-                                     : std::string{};
+        return index < items_.size() ? items_[index].display_name : std::string{};
     }
     AccessState access_state_for_widget_row(std::size_t index) const override
     {
@@ -140,7 +155,9 @@ public:
     bool access_activate_widget_row(std::size_t index) override
     {
         if (index >= items_.size() || !on_tab_selected)
+        {
             return false;
+        }
         // Mirror a tab-body click exactly (see on_key_down): fire the
         // callback only; the app calls set_active() back in.
         on_tab_selected(items_[index].room_id);
@@ -149,7 +166,9 @@ public:
     Rect access_rect_for_widget_row(std::size_t index) const override
     {
         if (index >= items_.size())
+        {
             return {};
+        }
         const TabItem& t = items_[index];
         return {bounds_.x + t.x - scroll_x_, bounds_.y, t.width, kHeight};
     }

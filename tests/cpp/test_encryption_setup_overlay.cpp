@@ -20,8 +20,14 @@ namespace
 struct EncryptionSetupOverlayStage
 {
     std::unique_ptr<TestSurface> surface = TestSurface::create(800, 600);
-    LayoutCtx layout_ctx() { return {surface->factory(), Theme::light()}; }
-    PaintCtx  paint_ctx()  { return {surface->canvas(), surface->factory(), Theme::light()}; }
+    LayoutCtx layout_ctx()
+    {
+        return {surface->factory(), Theme::light()};
+    }
+    PaintCtx paint_ctx()
+    {
+        return {surface->canvas(), surface->factory(), Theme::light()};
+    }
     void run(Widget& root, Rect bounds)
     {
         auto lc = layout_ctx();
@@ -41,15 +47,36 @@ struct EncryptionSetupOverlayStage
 // keyboard focus on the hide and never got it back on the reshow.
 struct EncSetupFocusClearingNative : public tk::NativeTextField
 {
-    void set_rect(tk::Rect) override {}
-    void set_text(std::string t) override { text_ = std::move(t); }
-    std::string text() const override { return text_; }
-    void set_placeholder(std::string) override {}
-    void set_enabled(bool) override {}
-    void set_password(bool) override {}
-    void set_on_changed(std::function<void(const std::string&)>) override {}
-    void set_on_submit(std::function<void()>) override {}
-    void set_focused(bool f) override { focused_ = f; }
+    void set_rect(tk::Rect) override
+    {
+    }
+    void set_text(std::string t) override
+    {
+        text_ = std::move(t);
+    }
+    std::string text() const override
+    {
+        return text_;
+    }
+    void set_placeholder(std::string) override
+    {
+    }
+    void set_enabled(bool) override
+    {
+    }
+    void set_password(bool) override
+    {
+    }
+    void set_on_changed(std::function<void(const std::string&)>) override
+    {
+    }
+    void set_on_submit(std::function<void()>) override
+    {
+    }
+    void set_focused(bool f) override
+    {
+        focused_ = f;
+    }
     void set_visible(bool v) override
     {
         if (!v && focused_ && on_focus_changed)
@@ -72,7 +99,9 @@ struct EncSetupFocusClearingNative : public tk::NativeTextField
 
 struct EncSetupFocusClearingHost : public TestHost
 {
-    EncSetupFocusClearingHost() : TestHost(nullptr) {}
+    EncSetupFocusClearingHost() : TestHost(nullptr)
+    {
+    }
 
     std::unique_ptr<tk::NativeTextField> make_text_field() override
     {
@@ -91,19 +120,23 @@ struct EncSetupFocusClearingHost : public TestHost
 TEST_CASE("Fresh: starts in Intro step", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Fresh);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Fresh);
     st.run(*ov, {0, 0, 800, 600});
     CHECK(ov->step() == EncryptionSetupOverlay::Step::Intro);
 }
 
-TEST_CASE("Fresh: Intro primary generates a recovery key straight away",
-          "[encryption][overlay]")
+TEST_CASE("Fresh: Intro primary generates a recovery key straight away", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Fresh);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Fresh);
     st.run(*ov, {0, 0, 800, 600});
     std::string fired_passphrase = "sentinel";
-    ov->on_enable_recovery = [&](std::string p) { fired_passphrase = p; };
+    ov->on_enable_recovery = [&](std::string p)
+    {
+        fired_passphrase = p;
+    };
     ov->simulate_primary_action();
     CHECK(fired_passphrase.empty()); // empty passphrase → generated key
     CHECK(ov->step() == EncryptionSetupOverlay::Step::Progress);
@@ -112,19 +145,23 @@ TEST_CASE("Fresh: Intro primary generates a recovery key straight away",
 TEST_CASE("Fresh: Intro Skip fires on_close", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Fresh);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Fresh);
     bool closed = false;
-    ov->on_close = [&]() { closed = true; };
+    ov->on_close = [&]()
+    {
+        closed = true;
+    };
     st.run(*ov, {0, 0, 800, 600});
     ov->simulate_skip();
     CHECK(closed);
 }
 
-TEST_CASE("Fresh: passphrase link → PassphraseEntry, Back → Intro",
-          "[encryption][overlay]")
+TEST_CASE("Fresh: passphrase link → PassphraseEntry, Back → Intro", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Fresh);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Fresh);
     st.run(*ov, {0, 0, 800, 600});
     ov->simulate_select_passphrase_mode();
     CHECK(ov->step() == EncryptionSetupOverlay::Step::PassphraseEntry);
@@ -138,14 +175,19 @@ TEST_CASE("Fresh: PassphraseEntry Continue fires on_enable_recovery once both "
 {
     EncryptionSetupOverlayStage st;
     StubHost host;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(&host, EncryptionSetupOverlay::Mode::Fresh);
+    auto ov =
+        tk::create_root_widget<EncryptionSetupOverlay>(&host, EncryptionSetupOverlay::Mode::Fresh);
     st.run(*ov, {0, 0, 800, 600});
     ov->simulate_select_passphrase_mode();
     REQUIRE(ov->passphrase_field() != nullptr);
     REQUIRE(ov->passphrase_confirm_field() != nullptr);
     std::string fired_passphrase;
     bool fired = false;
-    ov->on_enable_recovery = [&](std::string p) { fired = true; fired_passphrase = p; };
+    ov->on_enable_recovery = [&](std::string p)
+    {
+        fired = true;
+        fired_passphrase = p;
+    };
 
     // Mismatch: Continue is disabled and does nothing.
     ov->passphrase_field()->set_text("s3cr3t-passphrase");
@@ -165,18 +207,21 @@ TEST_CASE("Fresh: PassphraseEntry Continue fires on_enable_recovery once both "
     CHECK(ov->step() == EncryptionSetupOverlay::Step::Progress);
 }
 
-TEST_CASE("Fresh: a short recovery passphrase is refused, not sent",
-          "[encryption][overlay]")
+TEST_CASE("Fresh: a short recovery passphrase is refused, not sent", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
     StubHost host;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(&host, EncryptionSetupOverlay::Mode::Fresh);
+    auto ov =
+        tk::create_root_widget<EncryptionSetupOverlay>(&host, EncryptionSetupOverlay::Mode::Fresh);
     st.run(*ov, {0, 0, 800, 600});
     ov->simulate_select_passphrase_mode();
     REQUIRE(ov->passphrase_field() != nullptr);
     REQUIRE(ov->passphrase_confirm_field() != nullptr);
     bool fired = false;
-    ov->on_enable_recovery = [&](std::string) { fired = true; };
+    ov->on_enable_recovery = [&](std::string)
+    {
+        fired = true;
+    };
 
     // Both fields match, but the passphrase is one character: it must not be sent.
     ov->passphrase_field()->set_text("x");
@@ -188,23 +233,23 @@ TEST_CASE("Fresh: a short recovery passphrase is refused, not sent",
     CHECK(ov->error_msg().find("12") != std::string::npos);
 }
 
-TEST_CASE("Fresh: advance_progress Done → ShowKey with key string",
-          "[encryption][overlay]")
+TEST_CASE("Fresh: advance_progress Done → ShowKey with key string", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Fresh);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Fresh);
     st.run(*ov, {0, 0, 800, 600});
-    ov->simulate_primary_action(); // → Progress
+    ov->simulate_primary_action();                   // → Progress
     ov->advance_progress(4, "AAAA-BBBB-CCCC", 0, 0); // Done
     CHECK(ov->step() == EncryptionSetupOverlay::Step::ShowKey);
     CHECK(ov->recovery_key() == "AAAA-BBBB-CCCC");
 }
 
-TEST_CASE("Fresh: ShowKey Continue disabled until checkbox checked",
-          "[encryption][overlay]")
+TEST_CASE("Fresh: ShowKey Continue disabled until checkbox checked", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Fresh);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Fresh);
     st.run(*ov, {0, 0, 800, 600});
     ov->simulate_primary_action();
     ov->advance_progress(4, "KEY", 0, 0);
@@ -222,7 +267,8 @@ TEST_CASE("Fresh: the saved-key checkbox is a real CheckButton driving Continue"
           "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Fresh);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Fresh);
     st.run(*ov, {0, 0, 800, 600});
     ov->simulate_primary_action();
     ov->advance_progress(4, "KEY", 0, 0);
@@ -232,8 +278,12 @@ TEST_CASE("Fresh: the saved-key checkbox is a real CheckButton driving Continue"
     // SaveKey's "keep it on this device", stays hidden in Fresh).
     tk::CheckButton* cb = nullptr;
     for (auto& c : ov->children())
+    {
         if (auto* b = dynamic_cast<tk::CheckButton*>(c.get()); b && !cb)
+        {
             cb = b;
+        }
+    }
     REQUIRE(cb);
     CHECK(cb->visible());
     CHECK_FALSE(cb->checked());
@@ -248,9 +298,13 @@ TEST_CASE("Fresh: ShowKey ignores backdrop clicks; Intro and Done honour them",
           "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Fresh);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Fresh);
     int closes = 0;
-    ov->on_close = [&]() { ++closes; };
+    ov->on_close = [&]()
+    {
+        ++closes;
+    };
     st.run(*ov, {0, 0, 800, 600});
 
     ov->simulate_backdrop_click(); // Intro: nothing to lose
@@ -276,9 +330,13 @@ TEST_CASE("Fresh: ShowKey ignores backdrop clicks; Intro and Done honour them",
 TEST_CASE("Fresh: PassphraseEntry ignores backdrop clicks", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Fresh);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Fresh);
     bool closed = false;
-    ov->on_close = [&]() { closed = true; };
+    ov->on_close = [&]()
+    {
+        closed = true;
+    };
     st.run(*ov, {0, 0, 800, 600});
     ov->simulate_select_passphrase_mode();
     st.run(*ov, {0, 0, 800, 600});
@@ -286,11 +344,11 @@ TEST_CASE("Fresh: PassphraseEntry ignores backdrop clicks", "[encryption][overla
     CHECK_FALSE(closed);
 }
 
-TEST_CASE("Fresh: Save to file is offered only when the shell wires it",
-          "[encryption][overlay]")
+TEST_CASE("Fresh: Save to file is offered only when the shell wires it", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Fresh);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Fresh);
     st.run(*ov, {0, 0, 800, 600});
     ov->simulate_primary_action();
     ov->advance_progress(4, "KEY", 0, 0);
@@ -299,23 +357,33 @@ TEST_CASE("Fresh: Save to file is offered only when the shell wires it",
     auto save_button_visible = [&]
     {
         for (const auto& ch : ov->children())
+        {
             if (auto* b = dynamic_cast<tk::Button*>(ch.get()))
-                if (b->label().rfind("Save to file", 0) == 0) return b->visible();
+            {
+                if (b->label().rfind("Save to file", 0) == 0)
+                {
+                    return b->visible();
+                }
+            }
+        }
         return false;
     };
     CHECK_FALSE(save_button_visible());
 
     std::string saved;
-    ov->on_save_to_file = [&](std::string k) { saved = k; };
+    ov->on_save_to_file = [&](std::string k)
+    {
+        saved = k;
+    };
     st.run(*ov, {0, 0, 800, 600});
     CHECK(save_button_visible());
 }
 
-TEST_CASE("Fresh: a successful save ticks the saved checkbox",
-          "[encryption][overlay]")
+TEST_CASE("Fresh: a successful save ticks the saved checkbox", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Fresh);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Fresh);
     st.run(*ov, {0, 0, 800, 600});
     ov->simulate_primary_action();
     ov->advance_progress(4, "KEY", 0, 0);
@@ -328,12 +396,12 @@ TEST_CASE("Fresh: a successful save ticks the saved checkbox",
     CHECK(ov->step() == EncryptionSetupOverlay::Step::Done);
 }
 
-TEST_CASE("Fresh: passphrase mode skips ShowKey → Done directly",
-          "[encryption][overlay]")
+TEST_CASE("Fresh: passphrase mode skips ShowKey → Done directly", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
     StubHost host;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(&host, EncryptionSetupOverlay::Mode::Fresh);
+    auto ov =
+        tk::create_root_widget<EncryptionSetupOverlay>(&host, EncryptionSetupOverlay::Mode::Fresh);
     st.run(*ov, {0, 0, 800, 600});
     ov->simulate_select_passphrase_mode();
     ov->passphrase_field()->set_text("pw");
@@ -343,11 +411,11 @@ TEST_CASE("Fresh: passphrase mode skips ShowKey → Done directly",
     CHECK(ov->step() == EncryptionSetupOverlay::Step::Done);
 }
 
-TEST_CASE("Fresh: Progress error returns to Intro with message",
-          "[encryption][overlay]")
+TEST_CASE("Fresh: Progress error returns to Intro with message", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Fresh);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Fresh);
     st.run(*ov, {0, 0, 800, 600});
     ov->simulate_primary_action();
     ov->advance_progress(5, "network error", 0, 0);
@@ -360,7 +428,8 @@ TEST_CASE("Fresh: passphrase-mode Progress error returns to PassphraseEntry",
 {
     EncryptionSetupOverlayStage st;
     StubHost host;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(&host, EncryptionSetupOverlay::Mode::Fresh);
+    auto ov =
+        tk::create_root_widget<EncryptionSetupOverlay>(&host, EncryptionSetupOverlay::Mode::Fresh);
     st.run(*ov, {0, 0, 800, 600});
     ov->simulate_select_passphrase_mode();
     ov->passphrase_field()->set_text("pw");
@@ -373,11 +442,9 @@ TEST_CASE("Fresh: passphrase-mode Progress error returns to PassphraseEntry",
 
 TEST_CASE("format_recovery_key groups in fours", "[encryption][overlay]")
 {
-    CHECK(EncryptionSetupOverlay::format_recovery_key("EsTcAbCdEfGh12") ==
-          "EsTc AbCd EfGh 12");
+    CHECK(EncryptionSetupOverlay::format_recovery_key("EsTcAbCdEfGh12") == "EsTc AbCd EfGh 12");
     // Already-grouped keys (matrix-sdk's own format) round-trip unchanged.
-    CHECK(EncryptionSetupOverlay::format_recovery_key("EsTc AbCd EfGh") ==
-          "EsTc AbCd EfGh");
+    CHECK(EncryptionSetupOverlay::format_recovery_key("EsTc AbCd EfGh") == "EsTc AbCd EfGh");
     CHECK(EncryptionSetupOverlay::format_recovery_key("").empty());
 }
 
@@ -386,16 +453,17 @@ TEST_CASE("format_recovery_key groups in fours", "[encryption][overlay]")
 TEST_CASE("Recover: starts on the Choose step", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Recover);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Recover);
     st.run(*ov, {0, 0, 800, 600});
     CHECK(ov->step() == EncryptionSetupOverlay::Step::Choose);
 }
 
-TEST_CASE("Recover: Choose › Enter recovery key → EnterKey, Back → Choose",
-          "[encryption][overlay]")
+TEST_CASE("Recover: Choose › Enter recovery key → EnterKey, Back → Choose", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Recover);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Recover);
     st.run(*ov, {0, 0, 800, 600});
     ov->simulate_choose_recovery_key();
     CHECK(ov->step() == EncryptionSetupOverlay::Step::EnterKey);
@@ -403,18 +471,21 @@ TEST_CASE("Recover: Choose › Enter recovery key → EnterKey, Back → Choose"
     CHECK(ov->step() == EncryptionSetupOverlay::Step::Choose);
 }
 
-TEST_CASE("Recover: EnterKey Unlock fires on_recover with key",
-          "[encryption][overlay]")
+TEST_CASE("Recover: EnterKey Unlock fires on_recover with key", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
     StubHost host;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(&host, EncryptionSetupOverlay::Mode::Recover);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(&host,
+                                                             EncryptionSetupOverlay::Mode::Recover);
     st.run(*ov, {0, 0, 800, 600});
     ov->simulate_choose_recovery_key();
     REQUIRE(ov->key_field() != nullptr);
     ov->key_field()->set_text("my-recovery-key");
     std::string fired_key;
-    ov->on_recover = [&](std::string k) { fired_key = k; };
+    ov->on_recover = [&](std::string k)
+    {
+        fired_key = k;
+    };
     ov->simulate_primary_action(); // Unlock
     CHECK(fired_key == "my-recovery-key");
     CHECK(ov->step() == EncryptionSetupOverlay::Step::Progress);
@@ -433,7 +504,8 @@ TEST_CASE("Recover: key_field keeps host-level focus across a repeated "
     // active this step.
     EncryptionSetupOverlayStage st;
     EncSetupFocusClearingHost host;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(&host, EncryptionSetupOverlay::Mode::Recover);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(&host,
+                                                             EncryptionSetupOverlay::Mode::Recover);
     st.run(*ov, {0, 0, 800, 600});
     ov->simulate_choose_recovery_key(); // → EnterKey
     st.run(*ov, {0, 0, 800, 600});
@@ -463,9 +535,13 @@ TEST_CASE("Recover: 'Use another device' is offered only with a verified peer",
           "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Recover);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Recover);
     int relayouts = 0;
-    ov->on_layout_changed = [&] { ++relayouts; };
+    ov->on_layout_changed = [&]
+    {
+        ++relayouts;
+    };
     st.run(*ov, {0, 0, 800, 600});
     CHECK_FALSE(ov->has_verified_other_device());
     ov->set_has_verified_other_device(true);
@@ -475,15 +551,18 @@ TEST_CASE("Recover: 'Use another device' is offered only with a verified peer",
     CHECK(relayouts == 1);
 }
 
-TEST_CASE("Recover: 'Use another device' fires on_request_sas and waits",
-          "[encryption][overlay]")
+TEST_CASE("Recover: 'Use another device' fires on_request_sas and waits", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Recover);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Recover);
     st.run(*ov, {0, 0, 800, 600});
     ov->set_has_verified_other_device(true);
     bool sas_fired = false;
-    ov->on_request_sas = [&]() { sas_fired = true; };
+    ov->on_request_sas = [&]()
+    {
+        sas_fired = true;
+    };
     ov->simulate_sas_link();
     CHECK(sas_fired);
     CHECK(ov->step() == EncryptionSetupOverlay::Step::WaitingForOtherDevice);
@@ -494,7 +573,8 @@ TEST_CASE("Recover: self-verification after verifying a user no longer names the
           "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Recover);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Recover);
     st.run(*ov, {0, 0, 800, 600});
     ov->set_has_verified_other_device(true);
     ov->show_outgoing_user_request("Alice");
@@ -509,30 +589,36 @@ TEST_CASE("Recover: self-verification after verifying a user no longer names the
     CHECK(ov->peer_is_own_device());
 }
 
-TEST_CASE("Recover: Cancel while waiting cancels and returns to Choose",
-          "[encryption][overlay]")
+TEST_CASE("Recover: Cancel while waiting cancels and returns to Choose", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Recover);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Recover);
     st.run(*ov, {0, 0, 800, 600});
     ov->simulate_sas_link();
     bool cancelled = false;
-    ov->on_cancel_verification = [&] { cancelled = true; };
+    ov->on_cancel_verification = [&]
+    {
+        cancelled = true;
+    };
     ov->simulate_primary_action(); // Cancel
     CHECK(cancelled);
     CHECK(ov->step() == EncryptionSetupOverlay::Step::Choose);
 }
 
-TEST_CASE("Recover: lost everything → LostAccess → reset callback",
-          "[encryption][overlay]")
+TEST_CASE("Recover: lost everything → LostAccess → reset callback", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Recover);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Recover);
     st.run(*ov, {0, 0, 800, 600});
     ov->simulate_choose_lost_access();
     CHECK(ov->step() == EncryptionSetupOverlay::Step::LostAccess);
     bool reset = false;
-    ov->on_reset_encryption = [&] { reset = true; };
+    ov->on_reset_encryption = [&]
+    {
+        reset = true;
+    };
     ov->simulate_primary_action();
     CHECK(reset);
 }
@@ -540,7 +626,8 @@ TEST_CASE("Recover: lost everything → LostAccess → reset callback",
 TEST_CASE("Recover: Progress Done → Done step", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Recover);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Recover);
     st.run(*ov, {0, 0, 800, 600});
     ov->simulate_choose_recovery_key();
     ov->advance_progress(0, "", 0, 0);
@@ -549,11 +636,11 @@ TEST_CASE("Recover: Progress Done → Done step", "[encryption][overlay]")
     CHECK(ov->done_kind() == EncryptionSetupOverlay::DoneKind::Unlocked);
 }
 
-TEST_CASE("Recover: Progress error returns to EnterKey with message",
-          "[encryption][overlay]")
+TEST_CASE("Recover: Progress error returns to EnterKey with message", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Recover);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Recover);
     st.run(*ov, {0, 0, 800, 600});
     ov->simulate_choose_recovery_key();
     ov->advance_progress(5, "bad key", 0, 0);
@@ -568,9 +655,12 @@ namespace
 // Both methods agreed: the decimals plus the 7 emoji.
 tesseract::VerificationSas emoji_and_decimal_sas()
 {
-    return {{{"\xf0\x9f\x90\xb6", "Dog"},   {"\xf0\x9f\x90\xb1", "Cat"},
-             {"\xf0\x9f\xa6\x81", "Lion"},  {"\xf0\x9f\x90\xbb", "Bear"},
-             {"\xf0\x9f\x90\xbc", "Panda"}, {"\xf0\x9f\x90\xa8", "Koala"},
+    return {{{"\xf0\x9f\x90\xb6", "Dog"},
+             {"\xf0\x9f\x90\xb1", "Cat"},
+             {"\xf0\x9f\xa6\x81", "Lion"},
+             {"\xf0\x9f\x90\xbb", "Bear"},
+             {"\xf0\x9f\x90\xbc", "Panda"},
+             {"\xf0\x9f\x90\xa8", "Koala"},
              {"\xf0\x9f\x90\xaf", "Tiger"}},
             {1234, 5678, 9012}};
 }
@@ -582,16 +672,19 @@ tesseract::VerificationSas decimal_only_sas()
 }
 } // namespace
 
-TEST_CASE("Verify: incoming request → Continue accepts and waits",
-          "[encryption][overlay]")
+TEST_CASE("Verify: incoming request → Continue accepts and waits", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Verify);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Verify);
     CHECK(ov->step() == EncryptionSetupOverlay::Step::IncomingRequest);
     ov->show_incoming_request("Phone", true);
     st.run(*ov, {0, 0, 800, 600});
     bool accepted = false;
-    ov->on_accept_request = [&] { accepted = true; };
+    ov->on_accept_request = [&]
+    {
+        accepted = true;
+    };
     ov->simulate_primary_action();
     CHECK(accepted);
     CHECK(ov->step() == EncryptionSetupOverlay::Step::WaitingForOtherDevice);
@@ -600,20 +693,24 @@ TEST_CASE("Verify: incoming request → Continue accepts and waits",
 TEST_CASE("Verify: 'Not me' fires on_decline_request", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Verify);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Verify);
     ov->show_incoming_request("Phone", true);
     st.run(*ov, {0, 0, 800, 600});
     bool declined = false;
-    ov->on_decline_request = [&] { declined = true; };
+    ov->on_decline_request = [&]
+    {
+        declined = true;
+    };
     ov->simulate_secondary();
     CHECK(declined);
 }
 
-TEST_CASE("Verify: emoji + decimal → They match → Confirming → Done",
-          "[encryption][overlay]")
+TEST_CASE("Verify: emoji + decimal → They match → Confirming → Done", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Verify);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Verify);
     ov->show_incoming_request("Phone", true);
     ov->simulate_primary_action(); // Continue
     ov->show_sas(emoji_and_decimal_sas());
@@ -623,7 +720,10 @@ TEST_CASE("Verify: emoji + decimal → They match → Confirming → Done",
     CHECK(ov->sas().decimals[2] == 9012);
 
     bool matched = false;
-    ov->on_sas_match = [&] { matched = true; };
+    ov->on_sas_match = [&]
+    {
+        matched = true;
+    };
     ov->simulate_primary_action();
     CHECK(matched);
     CHECK(ov->step() == EncryptionSetupOverlay::Step::Confirming);
@@ -638,7 +738,8 @@ TEST_CASE("Verify: decimal-only SAS → CompareCodes → They match → Confirmi
           "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Verify);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Verify);
     ov->show_incoming_request("Phone", true);
     ov->simulate_primary_action(); // Continue
     ov->show_sas(decimal_only_sas());
@@ -649,7 +750,10 @@ TEST_CASE("Verify: decimal-only SAS → CompareCodes → They match → Confirmi
     CHECK(ov->sas().decimals[2] == 9191);
 
     bool matched = false;
-    ov->on_sas_match = [&] { matched = true; };
+    ov->on_sas_match = [&]
+    {
+        matched = true;
+    };
     ov->simulate_primary_action();
     CHECK(matched);
     CHECK(ov->step() == EncryptionSetupOverlay::Step::Confirming);
@@ -660,12 +764,16 @@ TEST_CASE("Verify: They don't match → VerifyFailed; the SDK echo keeps the "
           "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Verify);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Verify);
     ov->show_incoming_request("Phone", true);
     ov->simulate_primary_action();
     ov->show_sas(emoji_and_decimal_sas());
     bool mismatch = false;
-    ov->on_sas_mismatch = [&] { mismatch = true; };
+    ov->on_sas_mismatch = [&]
+    {
+        mismatch = true;
+    };
     ov->simulate_secondary();
     CHECK(mismatch);
     CHECK(ov->step() == EncryptionSetupOverlay::Step::VerifyFailed);
@@ -675,17 +783,20 @@ TEST_CASE("Verify: They don't match → VerifyFailed; the SDK echo keeps the "
     CHECK(ov->error_msg() == local);
 }
 
-TEST_CASE("Recover: a failed outgoing verification offers Try again",
-          "[encryption][overlay]")
+TEST_CASE("Recover: a failed outgoing verification offers Try again", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Recover);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Recover);
     st.run(*ov, {0, 0, 800, 600});
     ov->simulate_sas_link(); // we started it
     ov->verification_failed("timed out", true);
     CHECK(ov->step() == EncryptionSetupOverlay::Step::VerifyFailed);
     bool retried = false;
-    ov->on_retry_verification = [&] { retried = true; };
+    ov->on_retry_verification = [&]
+    {
+        retried = true;
+    };
     ov->simulate_primary_action(); // Try again
     CHECK(retried);
     CHECK(ov->step() == EncryptionSetupOverlay::Step::WaitingForOtherDevice);
@@ -693,7 +804,8 @@ TEST_CASE("Recover: a failed outgoing verification offers Try again",
 
 TEST_CASE("ShowKey and Progress count as busy", "[encryption][overlay]")
 {
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Fresh);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Fresh);
     CHECK_FALSE(ov->busy());
     ov->simulate_primary_action(); // → Progress
     CHECK(ov->busy());
@@ -706,7 +818,8 @@ TEST_CASE("ShowKey and Progress count as busy", "[encryption][overlay]")
 TEST_CASE("advance_progress shows one label plus a fraction while backing up",
           "[encryption][overlay]")
 {
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Fresh);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Fresh);
     ov->simulate_primary_action();
     ov->advance_progress(1, "", 0, 0); // CreatingBackup
     const auto first = ov->progress_label();
@@ -722,14 +835,18 @@ TEST_CASE("advance_progress shows one label plus a fraction while backing up",
 
 TEST_CASE("Done: close button fires on_close", "[encryption][overlay]")
 {
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Fresh);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Fresh);
     ov->simulate_primary_action();
     ov->advance_progress(4, "KEY", 0, 0);
     ov->simulate_check_key_saved();
     ov->simulate_primary_action();
     CHECK(ov->step() == EncryptionSetupOverlay::Step::Done);
     bool closed = false;
-    ov->on_close = [&]() { closed = true; };
+    ov->on_close = [&]()
+    {
+        closed = true;
+    };
     ov->simulate_primary_action(); // Close
     CHECK(closed);
 }
@@ -739,30 +856,34 @@ TEST_CASE("Done: close button fires on_close", "[encryption][overlay]")
 TEST_CASE("Reset: begin_reset_wait enters ResetApproving", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Fresh);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Fresh);
     st.run(*ov, {0, 0, 800, 600});
     ov->begin_reset_wait();
     CHECK(ov->step() == EncryptionSetupOverlay::Step::ResetApproving);
 }
 
-TEST_CASE("Reset: approval hands off to the Fresh recovery-key flow",
-          "[encryption][overlay]")
+TEST_CASE("Reset: approval hands off to the Fresh recovery-key flow", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Fresh);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Fresh);
     st.run(*ov, {0, 0, 800, 600});
     ov->begin_reset_wait();
     ov->reset_approved();
     CHECK(ov->step() == EncryptionSetupOverlay::Step::Intro);
 }
 
-TEST_CASE("Reset: Cancel on ResetApproving fires on_cancel_reset",
-          "[encryption][overlay]")
+TEST_CASE("Reset: Cancel on ResetApproving fires on_cancel_reset", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Fresh);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Fresh);
     bool cancelled = false;
-    ov->on_cancel_reset = [&]() { cancelled = true; };
+    ov->on_cancel_reset = [&]()
+    {
+        cancelled = true;
+    };
     st.run(*ov, {0, 0, 800, 600});
     ov->begin_reset_wait();
     ov->simulate_primary_action(); // Cancel
@@ -773,7 +894,8 @@ TEST_CASE("Reset: report_reset_error stays on ResetApproving with a message",
           "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Fresh);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Fresh);
     st.run(*ov, {0, 0, 800, 600});
     ov->begin_reset_wait();
     ov->report_reset_error("approval timed out");
@@ -787,7 +909,8 @@ TEST_CASE("Verify: declining a request that interrupted Done returns to Done",
     // Otherwise "Not me" would land on Fresh Intro, whose button would make
     // a new recovery key replacing the one just saved.
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Fresh);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Fresh);
     st.run(*ov, {0, 0, 800, 600});
     ov->simulate_primary_action();
     ov->advance_progress(4, "KEY", 0, 0);
@@ -806,7 +929,8 @@ TEST_CASE("Verify: a failed incoming request never offers a retry, even after "
           "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Recover);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Recover);
     st.run(*ov, {0, 0, 800, 600});
     ov->simulate_sas_link();       // outgoing: retry would be allowed
     ov->simulate_primary_action(); // Cancel → Choose
@@ -814,24 +938,33 @@ TEST_CASE("Verify: a failed incoming request never offers a retry, even after "
     ov->show_incoming_request("Phone", true);
     ov->simulate_primary_action(); // Continue
     ov->show_sas(emoji_and_decimal_sas());
-    ov->simulate_secondary();      // They don't match
+    ov->simulate_secondary(); // They don't match
     REQUIRE(ov->step() == EncryptionSetupOverlay::Step::VerifyFailed);
 
     bool retried = false, closed = false;
-    ov->on_retry_verification = [&] { retried = true; };
-    ov->on_close = [&] { closed = true; };
+    ov->on_retry_verification = [&]
+    {
+        retried = true;
+    };
+    ov->on_close = [&]
+    {
+        closed = true;
+    };
     ov->simulate_primary_action(); // Close, not Try again
     CHECK_FALSE(retried);
     CHECK(closed);
 }
 
-TEST_CASE("Reset: 'Copy link' copies the approval URL, not a recovery key",
-          "[encryption][overlay]")
+TEST_CASE("Reset: 'Copy link' copies the approval URL, not a recovery key", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Fresh);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Fresh);
     std::string copied;
-    ov->on_copy_to_clipboard = [&](std::string s) { copied = s; };
+    ov->on_copy_to_clipboard = [&](std::string s)
+    {
+        copied = s;
+    };
     ov->set_reset_account("@test:example.org");
     ov->begin_reset_wait();
     ov->set_reset_approval_url("https://auth.example.org/account/?action=reset");
@@ -839,8 +972,12 @@ TEST_CASE("Reset: 'Copy link' copies the approval URL, not a recovery key",
 
     tk::Button* copy = nullptr;
     for (const auto& ch : ov->children())
+    {
         if (auto* b = dynamic_cast<tk::Button*>(ch.get()); b && b->label() == "Copy link")
+        {
             copy = b;
+        }
+    }
     REQUIRE(copy != nullptr);
     CHECK(copy->visible());
     copy->click();
@@ -854,12 +991,19 @@ TEST_CASE("SaveKey: Intro explains, then shows the held key; ticking the box "
           "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(
-        nullptr, EncryptionSetupOverlay::Mode::SaveKey);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::SaveKey);
     ov->set_recovery_key("EsTcabcd");
     bool saved = false, enabled = false, kept = true;
-    ov->on_key_saved       = [&](bool keep) { saved = true; kept = keep; };
-    ov->on_enable_recovery = [&](std::string) { enabled = true; };
+    ov->on_key_saved = [&](bool keep)
+    {
+        saved = true;
+        kept = keep;
+    };
+    ov->on_enable_recovery = [&](std::string)
+    {
+        enabled = true;
+    };
     st.run(*ov, {0, 0, 800, 600});
     CHECK(ov->step() == EncryptionSetupOverlay::Step::Intro);
 
@@ -884,11 +1028,14 @@ TEST_CASE("SaveKey: Intro explains, then shows the held key; ticking the box "
 TEST_CASE("SaveKey: ticking 'keep it on this device' is reported", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(
-        nullptr, EncryptionSetupOverlay::Mode::SaveKey);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::SaveKey);
     ov->set_recovery_key("KEY");
     bool kept = false;
-    ov->on_key_saved = [&](bool keep) { kept = keep; };
+    ov->on_key_saved = [&](bool keep)
+    {
+        kept = keep;
+    };
     ov->show_key_now();
     st.run(*ov, {0, 0, 800, 600});
     ov->simulate_check_key_saved();
@@ -901,13 +1048,19 @@ TEST_CASE("SaveKey before sign-out: skip signs out, Done signs out, closing canc
           "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(
-        nullptr, EncryptionSetupOverlay::Mode::SaveKey);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::SaveKey);
     ov->set_recovery_key("KEY");
     ov->set_before_sign_out(true);
     int sign_outs = 0, closes = 0;
-    ov->on_sign_out = [&](bool) { ++sign_outs; };
-    ov->on_close    = [&] { ++closes; };
+    ov->on_sign_out = [&](bool)
+    {
+        ++sign_outs;
+    };
+    ov->on_close = [&]
+    {
+        ++closes;
+    };
     st.run(*ov, {0, 0, 800, 600});
 
     ov->simulate_backdrop_click(); // cancel
@@ -925,15 +1078,20 @@ TEST_CASE("SaveKey before sign-out: skip signs out, Done signs out, closing canc
     CHECK(sign_outs == 2);
 }
 
-TEST_CASE("SaveKey: Remind me later closes without marking it saved",
-          "[encryption][overlay]")
+TEST_CASE("SaveKey: Remind me later closes without marking it saved", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(
-        nullptr, EncryptionSetupOverlay::Mode::SaveKey);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::SaveKey);
     bool closed = false, saved = false;
-    ov->on_close     = [&] { closed = true; };
-    ov->on_key_saved = [&](bool) { saved = true; };
+    ov->on_close = [&]
+    {
+        closed = true;
+    };
+    ov->on_key_saved = [&](bool)
+    {
+        saved = true;
+    };
     st.run(*ov, {0, 0, 800, 600});
     ov->simulate_skip();
     CHECK(closed);
@@ -943,8 +1101,8 @@ TEST_CASE("SaveKey: Remind me later closes without marking it saved",
 TEST_CASE("SaveKey: show_key_now skips the explanation", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(
-        nullptr, EncryptionSetupOverlay::Mode::SaveKey);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::SaveKey);
     ov->set_recovery_key("KEY");
     ov->show_key_now();
     st.run(*ov, {0, 0, 800, 600});
@@ -956,13 +1114,19 @@ TEST_CASE("SaveKey: a key kept in secure storage can be looked at and left",
           "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(
-        nullptr, EncryptionSetupOverlay::Mode::SaveKey);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::SaveKey);
     ov->set_recovery_key("KEY");
     int closes = 0;
     bool saved = false;
-    ov->on_close     = [&] { ++closes; };
-    ov->on_key_saved = [&](bool) { saved = true; };
+    ov->on_close = [&]
+    {
+        ++closes;
+    };
+    ov->on_key_saved = [&](bool)
+    {
+        saved = true;
+    };
     ov->simulate_primary_action(); // → ShowKey
     st.run(*ov, {0, 0, 800, 600});
     ov->simulate_backdrop_click();
@@ -975,11 +1139,14 @@ TEST_CASE("SaveKey: a key kept in secure storage can be looked at and left",
 TEST_CASE("SaveKey: the only copy of a key can't be left unsaved", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(
-        nullptr, EncryptionSetupOverlay::Mode::SaveKey);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::SaveKey);
     ov->set_recovery_key("KEY");
     int closes = 0;
-    ov->on_close = [&] { ++closes; };
+    ov->on_close = [&]
+    {
+        ++closes;
+    };
     ov->show_key_now();
     st.run(*ov, {0, 0, 800, 600});
     ov->simulate_backdrop_click();
@@ -992,7 +1159,10 @@ TEST_CASE("AutoSetupNotice: OK closes it", "[encryption][overlay]")
     auto ov = tk::create_root_widget<EncryptionSetupOverlay>(
         nullptr, EncryptionSetupOverlay::Mode::AutoSetupNotice);
     bool closed = false;
-    ov->on_close = [&] { closed = true; };
+    ov->on_close = [&]
+    {
+        closed = true;
+    };
     st.run(*ov, {0, 0, 800, 600});
     CHECK(ov->step() == EncryptionSetupOverlay::Step::Intro);
     ov->simulate_primary_action();
@@ -1003,12 +1173,15 @@ TEST_CASE("SaveKey before sign-out: 'Sign out and delete the key' asks to delete
           "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(
-        nullptr, EncryptionSetupOverlay::Mode::SaveKey);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::SaveKey);
     ov->set_recovery_key("KEY");
     ov->set_before_sign_out(true);
     std::vector<bool> removes;
-    ov->on_sign_out = [&](bool remove) { removes.push_back(remove); };
+    ov->on_sign_out = [&](bool remove)
+    {
+        removes.push_back(remove);
+    };
     st.run(*ov, {0, 0, 800, 600});
     ov->simulate_skip();                    // keep it
     ov->simulate_sign_out_and_remove_key(); // delete it
@@ -1017,14 +1190,16 @@ TEST_CASE("SaveKey before sign-out: 'Sign out and delete the key' asks to delete
     CHECK(removes[1]);
 }
 
-TEST_CASE("AutoSetupNotice: Turn off backup shows progress, then Done",
-          "[encryption][overlay]")
+TEST_CASE("AutoSetupNotice: Turn off backup shows progress, then Done", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
     auto ov = tk::create_root_widget<EncryptionSetupOverlay>(
         nullptr, EncryptionSetupOverlay::Mode::AutoSetupNotice);
     bool asked = false;
-    ov->on_turn_off_backup = [&] { asked = true; };
+    ov->on_turn_off_backup = [&]
+    {
+        asked = true;
+    };
     st.run(*ov, {0, 0, 800, 600});
     ov->simulate_turn_off_backup();
     CHECK(asked);
@@ -1050,7 +1225,8 @@ TEST_CASE("AutoSetupNotice: a failed turn-off returns to the notice with the err
 TEST_CASE("Verify: cancel codes map to plain wording", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Recover);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Recover);
     st.run(*ov, {0, 0, 800, 600});
     ov->simulate_sas_link();
     ov->verification_cancelled("m.accepted", false);
@@ -1059,16 +1235,22 @@ TEST_CASE("Verify: cancel codes map to plain wording", "[encryption][overlay]")
     CHECK(ov->error_msg().find("Another of your devices") != std::string::npos);
 }
 
-TEST_CASE("Fresh: an existing server backup asks before it is replaced",
-          "[encryption][overlay]")
+TEST_CASE("Fresh: an existing server backup asks before it is replaced", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Fresh);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Fresh);
     st.run(*ov, {0, 0, 800, 600});
     int enable_calls = 0;
     std::vector<std::string> replace_calls;
-    ov->on_enable_recovery = [&](std::string) { ++enable_calls; };
-    ov->on_replace_backup = [&](std::string p) { replace_calls.push_back(p); };
+    ov->on_enable_recovery = [&](std::string)
+    {
+        ++enable_calls;
+    };
+    ov->on_replace_backup = [&](std::string p)
+    {
+        replace_calls.push_back(p);
+    };
 
     ov->simulate_primary_action(); // Create recovery key → Progress
     REQUIRE(ov->step() == EncryptionSetupOverlay::Step::Progress);
@@ -1097,7 +1279,8 @@ TEST_CASE("Fresh: an existing server backup asks before it is replaced",
 TEST_CASE("Fresh: dismissing the replace-backup prompt forgets it", "[encryption][overlay]")
 {
     EncryptionSetupOverlayStage st;
-    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr, EncryptionSetupOverlay::Mode::Fresh);
+    auto ov = tk::create_root_widget<EncryptionSetupOverlay>(nullptr,
+                                                             EncryptionSetupOverlay::Mode::Fresh);
     st.run(*ov, {0, 0, 800, 600});
     ov->on_enable_recovery = [](std::string) {};
     ov->simulate_primary_action();

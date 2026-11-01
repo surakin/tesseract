@@ -10,9 +10,8 @@ constexpr const char* kSessIf = tesseract::screenlock::kSessionIface;
 constexpr const char* kSessObj = tesseract::screenlock::kSessionPath;
 } // namespace
 
-void LinuxScreenLockGtk::on_signal(GDBusConnection*, const char* /*sender*/,
-                                   const char* /*path*/, const char* /*iface*/,
-                                   const char* signal, GVariant* /*params*/,
+void LinuxScreenLockGtk::on_signal(GDBusConnection*, const char* /*sender*/, const char* /*path*/,
+                                   const char* /*iface*/, const char* signal, GVariant* /*params*/,
                                    gpointer user_data)
 {
     auto* self = static_cast<LinuxScreenLockGtk*>(user_data);
@@ -38,8 +37,8 @@ LinuxScreenLockGtk::LinuxScreenLockGtk()
     GError* err = nullptr;
     GVariant* reply = g_dbus_connection_call_sync(
         bus_, kService, kSessObj, "org.freedesktop.DBus.Properties", "Get",
-        g_variant_new("(ss)", kSessIf, "LockedHint"), G_VARIANT_TYPE("(v)"),
-        G_DBUS_CALL_FLAGS_NONE, -1, nullptr, &err);
+        g_variant_new("(ss)", kSessIf, "LockedHint"), G_VARIANT_TYPE("(v)"), G_DBUS_CALL_FLAGS_NONE,
+        -1, nullptr, &err);
     if (reply)
     {
         GVariant* boxed = nullptr;
@@ -59,14 +58,12 @@ LinuxScreenLockGtk::LinuxScreenLockGtk()
         g_error_free(err);
     }
 
-    sub_lock_ = g_dbus_connection_signal_subscribe(
-        bus_, kService, kSessIf, "Lock", kSessObj, nullptr,
-        G_DBUS_SIGNAL_FLAGS_NONE, &LinuxScreenLockGtk::on_signal, this,
-        nullptr);
-    sub_unlock_ = g_dbus_connection_signal_subscribe(
-        bus_, kService, kSessIf, "Unlock", kSessObj, nullptr,
-        G_DBUS_SIGNAL_FLAGS_NONE, &LinuxScreenLockGtk::on_signal, this,
-        nullptr);
+    sub_lock_ = g_dbus_connection_signal_subscribe(bus_, kService, kSessIf, "Lock", kSessObj,
+                                                   nullptr, G_DBUS_SIGNAL_FLAGS_NONE,
+                                                   &LinuxScreenLockGtk::on_signal, this, nullptr);
+    sub_unlock_ = g_dbus_connection_signal_subscribe(bus_, kService, kSessIf, "Unlock", kSessObj,
+                                                     nullptr, G_DBUS_SIGNAL_FLAGS_NONE,
+                                                     &LinuxScreenLockGtk::on_signal, this, nullptr);
 }
 
 LinuxScreenLockGtk::~LinuxScreenLockGtk()

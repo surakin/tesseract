@@ -26,15 +26,15 @@ enum class EventType
     ReadMarker,
     TimelineStart,
     Location,
-    Utd,    // appended (not slotted near Redacted) so existing enum-int
-            // pinned tests stay valid
-    PinnedEvent, // m.room.pinned_events state-event timeline row
+    Utd,              // appended (not slotted near Redacted) so existing enum-int
+                      // pinned tests stay valid
+    PinnedEvent,      // m.room.pinned_events state-event timeline row
     CallNotification, // org.matrix.msc4075.rtc.notification
-    Membership, // m.room.member state-event row (join/leave/kick/ban/invite/knock/…)
-    RoomName, // m.room.name state-event timeline row
-    RoomTombstone, // m.room.tombstone: this room was upgraded to another
-    Poll, // MSC3381 poll start (appended: enum ints are pinned by tests)
-    Gallery, // m.gallery, MSC4274 inline media gallery
+    Membership,       // m.room.member state-event row (join/leave/kick/ban/invite/knock/…)
+    RoomName,         // m.room.name state-event timeline row
+    RoomTombstone,    // m.room.tombstone: this room was upgraded to another
+    Poll,             // MSC3381 poll start (appended: enum ints are pinned by tests)
+    Gallery,          // m.gallery, MSC4274 inline media gallery
 };
 
 /// One `m.room.member` membership transition, computed server-side by
@@ -161,16 +161,16 @@ struct PronounEntry
 /// When `exists` is false the other fields are empty.
 struct UserProfile
 {
-    bool        exists = false;
+    bool exists = false;
     std::string user_id;
-    std::string display_name; ///< resolves to user_id localpart when unset
-    std::string avatar_url;   ///< mxc:// or empty
+    std::string display_name;           ///< resolves to user_id localpart when unset
+    std::string avatar_url;             ///< mxc:// or empty
     std::vector<PronounEntry> pronouns; ///< MSC4247 entries, one per language; empty if not set
-    std::string tz;           ///< MSC4175 IANA timezone string, empty if not set
-    std::string biography;    ///< MSC4440 plain-text body, empty if not set
-    std::string status_emoji; ///< MSC4426 m.status emoji, empty if not set
-    std::string status_text;  ///< MSC4426 m.status text, empty if not set
-    std::uint64_t call_joined_ts = 0; ///< MSC4426 m.call join time (unix s); 0 = not in a call
+    std::string tz;                     ///< MSC4175 IANA timezone string, empty if not set
+    std::string biography;              ///< MSC4440 plain-text body, empty if not set
+    std::string status_emoji;           ///< MSC4426 m.status emoji, empty if not set
+    std::string status_text;            ///< MSC4426 m.status text, empty if not set
+    std::uint64_t call_joined_ts = 0;   ///< MSC4426 m.call join time (unix s); 0 = not in a call
     /// Deserialise the JSON produced by `get_extended_profile_async` /
     /// `resolve_user_profile_async`. Returns `exists=false` on parse failure.
     static UserProfile from_json(const std::string& json);
@@ -246,6 +246,18 @@ struct Event
     /// True when the body/caption has been superseded by an m.replace edit.
     /// Set for any event kind that supports edits (text bodies and media captions).
     bool is_edited = false;
+    /// MSC4553 forwarded message. When set, the body, media and kind describe
+    /// the forwarded (original) content, never an edit of it, and `is_edited`
+    /// is false. The ids are empty when the forward gives none (or an invalid
+    /// one); `forwarded_sender_name` is empty unless this room's member cache
+    /// knows the sender, so the UI falls back to `forwarded_sender`.
+    bool forwarded = false;
+    std::string forwarded_sender;
+    std::string forwarded_sender_name;
+    std::string forwarded_room_id;
+    std::string forwarded_event_id;
+    /// Original `origin_server_ts` in Unix milliseconds; 0 when absent.
+    std::int64_t forwarded_origin_ts = 0;
     /// MSC3440 threads. Non-empty when this event is an in-thread reply.
     std::string thread_root_id;
     /// True when this event roots a thread.
@@ -262,6 +274,9 @@ struct Event
     std::string pending_error;
     bool pending_recoverable = false;
     std::string pending_txn_id;
+    /// Users named by an encryption check when `pending_error` is
+    /// "identity_violation" or "insecure_devices".
+    std::vector<std::string> pending_error_users;
     virtual ~Event() = default;
 };
 
@@ -370,9 +385,9 @@ struct FileEvent : public Event
 struct AudioEvent : public Event
 {
     MediaSourceRef source; // audio clip source
-    std::string mime_type;                     // e.g. "audio/mpeg"; may be empty
+    std::string mime_type; // e.g. "audio/mpeg"; may be empty
     uint64_t duration_ms = 0;
-    std::string filename;  // from m.audio body / filename field
+    std::string filename; // from m.audio body / filename field
     uint64_t file_size = 0;
 
     AudioEvent()
@@ -387,7 +402,7 @@ struct AudioEvent : public Event
 struct VoiceEvent : public Event
 {
     MediaSourceRef source; // voice clip source
-    std::string mime_type;                     // e.g. "audio/ogg"; may be empty
+    std::string mime_type; // e.g. "audio/ogg"; may be empty
     uint64_t duration_ms = 0;
     std::vector<uint16_t> waveform; // MSC1767 amplitudes, 0..=1024
 
@@ -403,7 +418,7 @@ struct VideoEvent : public Event
 {
     MediaSourceRef source;    // video source
     MediaSourceRef thumbnail; // nullptr when absent
-    std::string mime_type;                        // e.g. "video/mp4"
+    std::string mime_type;    // e.g. "video/mp4"
     uint64_t width = 0;
     uint64_t height = 0;
     uint64_t duration_ms = 0;
@@ -428,9 +443,9 @@ struct LocationEvent : public Event
     double lat = 0.0;
     double lon = 0.0;
     std::string description;
-    bool live_share = false;    // came from a live location share (MSC3489)
-    bool live = false;          // SDK says the share is still active
-    bool awaiting_fix = false;  // no usable beacon received yet
+    bool live_share = false;   // came from a live location share (MSC3489)
+    bool live = false;         // SDK says the share is still active
+    bool awaiting_fix = false; // no usable beacon received yet
     std::uint64_t live_expires_ms = 0;
     std::uint64_t updated_ms = 0;
 
@@ -592,8 +607,8 @@ struct GalleryItemOut
     std::vector<std::uint8_t> bytes;
     std::string mime_type;
     std::string filename;
-    std::uint32_t width = 0, height = 0; ///< Image/video only.
-    bool is_animated = false;            ///< Image only (MSC4230).
+    std::uint32_t width = 0, height = 0;       ///< Image/video only.
+    bool is_animated = false;                  ///< Image only (MSC4230).
     std::vector<std::uint8_t> thumbnail_bytes; ///< Video only: JPEG first frame.
     std::uint32_t thumb_width = 0, thumb_height = 0;
     std::uint64_t duration_ms = 0; ///< Video/audio only.
@@ -622,10 +637,10 @@ struct GalleryItem
     std::string mime_type;
     std::string filename; // explicit MSC2530 filename, may differ from body
     uint64_t file_size = 0;
-    uint64_t duration_ms = 0; // video/audio only
+    uint64_t duration_ms = 0;       // video/audio only
     std::vector<uint16_t> waveform; // MSC1767, audio only
-    std::string blurhash; // MSC2448, image/video only
-    bool animated = false; // MSC4230, image only
+    std::string blurhash;           // MSC2448, image/video only
+    bool animated = false;          // MSC4230, image only
 };
 
 /// `m.gallery` message (MSC4274): a single timeline event grouping multiple
@@ -829,40 +844,32 @@ struct RoomInfo
     {
         return id == other.id && name == other.name && topic == other.topic &&
                notification_count == other.notification_count &&
-               highlight_count == other.highlight_count &&
-               unread_count == other.unread_count && muted == other.muted &&
-               is_direct == other.is_direct && avatar_url == other.avatar_url &&
-               dm_avatar_url == other.dm_avatar_url &&
+               highlight_count == other.highlight_count && unread_count == other.unread_count &&
+               muted == other.muted && is_direct == other.is_direct &&
+               avatar_url == other.avatar_url && dm_avatar_url == other.dm_avatar_url &&
                dm_counterpart_user_id == other.dm_counterpart_user_id &&
                last_message_body == other.last_message_body &&
                last_message_sender_name == other.last_message_sender_name &&
                last_message_kind == other.last_message_kind &&
                last_message_sticker_url == other.last_message_sticker_url &&
                last_message_thumbnail_url == other.last_message_thumbnail_url &&
-               last_activity_ts == other.last_activity_ts &&
-               is_space == other.is_space && is_call_room == other.is_call_room &&
-               is_favorite == other.is_favorite &&
-               is_low_priority == other.is_low_priority &&
-               topic_html == other.topic_html && language == other.language &&
-               is_encrypted == other.is_encrypted &&
-               has_active_call == other.has_active_call &&
-               call_members == other.call_members &&
-               call_intent == other.call_intent &&
-               is_bridged == other.is_bridged &&
+               last_activity_ts == other.last_activity_ts && is_space == other.is_space &&
+               is_call_room == other.is_call_room && is_favorite == other.is_favorite &&
+               is_low_priority == other.is_low_priority && topic_html == other.topic_html &&
+               language == other.language && is_encrypted == other.is_encrypted &&
+               has_active_call == other.has_active_call && call_members == other.call_members &&
+               call_intent == other.call_intent && is_bridged == other.is_bridged &&
                bridge_overridden == other.bridge_overridden &&
                bridge_network_name == other.bridge_network_name &&
                bridge_network_avatar_url == other.bridge_network_avatar_url &&
                bridge_capabilities == other.bridge_capabilities &&
-               history_visibility == other.history_visibility &&
-               join_rule == other.join_rule &&
-               guest_access == other.guest_access &&
-               pinned_events == other.pinned_events &&
+               history_visibility == other.history_visibility && join_rule == other.join_rule &&
+               guest_access == other.guest_access && pinned_events == other.pinned_events &&
                canonical_alias == other.canonical_alias &&
                predecessor_room_id == other.predecessor_room_id &&
                predecessor_via == other.predecessor_via &&
                successor_room_id == other.successor_room_id &&
-               successor_reason == other.successor_reason &&
-               successor_via == other.successor_via &&
+               successor_reason == other.successor_reason && successor_via == other.successor_via &&
                successor_joined == other.successor_joined;
     }
     bool operator!=(const RoomInfo& other) const
@@ -882,11 +889,11 @@ struct InviteInfo
     std::string room_name;
     std::string room_avatar_url;
     std::string room_topic;
-    bool        is_direct = false;
+    bool is_direct = false;
     std::string inviter_user_id;
     std::string inviter_display_name;
     std::string inviter_avatar_url;
-    uint64_t    invited_at_ts = 0;
+    uint64_t invited_at_ts = 0;
     /// From the invitee's own m.room.member event content; empty when
     /// absent. Sent unencrypted by the inviter, even in encrypted rooms.
     std::string reason;
@@ -903,7 +910,7 @@ struct KnockedRoomInfo
     std::string room_name;
     std::string room_avatar_url;
     std::string room_topic;
-    uint64_t    knocked_at_ts = 0;
+    uint64_t knocked_at_ts = 0;
     /// The reason supplied when knocking, if any. Empty when absent.
     std::string reason;
 };
@@ -921,7 +928,7 @@ struct KnockRequestInfo
     std::string avatar_url;
     /// The reason the requester supplied, if any. Empty when absent.
     std::string reason;
-    uint64_t    timestamp_ts = 0;
+    uint64_t timestamp_ts = 0;
 };
 
 /// MSC3266 room summary — metadata about a room fetched without joining.
@@ -939,8 +946,7 @@ struct RoomSummary
     std::string join_rule;
     bool world_readable = false;
     bool guest_can_join = false;
-    std::string
-        encryption; ///< encryption algorithm or empty when not encrypted
+    std::string encryption; ///< encryption algorithm or empty when not encrypted
     bool is_space = false;
     /// True when creation_content.type is the MSC3417 call-room type.
     bool is_call_room = false;
@@ -1021,23 +1027,29 @@ struct SpecVersion
 struct ServerInfo
 {
     std::string homeserver_url;
-    std::vector<SpecVersion> spec_versions;  ///< e.g. v1.1, v1.6
-    bool supports_msc3030          = false;  ///< Jump-to-Date; true if server advertises MSC3030 or spec >= v1.6
-    bool can_change_password       = true;
-    bool can_set_displayname       = true;
-    bool can_set_avatar            = true;
-    bool supports_profile_fields   = false;  ///< server advertises uk.tcpip.msc4133
-    bool profile_fields_enabled    = true;   ///< m.profile_fields.enabled capability
-    bool preview_url_enabled       = true;   ///< MSC4452 m.preview_url.enabled capability
-    bool supports_qr_grant         = false;  ///< server advertises org.matrix.msc4108 (QR grant login)
-    bool supports_calls            = false;  ///< server has a livekit RTC transport (MSC4195/MSC4143/well-known)
-    std::string default_room_version;        ///< e.g. "10"; empty when absent
-    bool profile_fields_stable     = false;  ///< MSC4133 advertised under its stable key
-    bool supports_invite_reason    = false;  ///< server advertises MSC4491 invite reasons
-    std::string server_name;                 ///< e.g. "Synapse"; empty when the federation version endpoint is unreachable
-    std::string server_version;              ///< e.g. "1.120.0"; empty when unknown
-    uint64_t upload_size_limit     = 0;      ///< max upload bytes from the media config; 0 when unknown
-    std::vector<std::string> login_flows;    ///< `m.login.*` types without the prefix ("password", "sso", "token"); empty when unknown
+    std::vector<SpecVersion> spec_versions; ///< e.g. v1.1, v1.6
+    bool supports_msc3030 =
+        false; ///< Jump-to-Date; true if server advertises MSC3030 or spec >= v1.6
+    bool can_change_password = true;
+    bool can_set_displayname = true;
+    bool can_set_avatar = true;
+    bool supports_profile_fields = false; ///< server advertises uk.tcpip.msc4133
+    bool profile_fields_enabled = true;   ///< m.profile_fields.enabled capability
+    bool preview_url_enabled = true;      ///< MSC4452 m.preview_url.enabled capability
+    bool supports_qr_grant = false;       ///< server advertises org.matrix.msc4108 (QR grant login)
+    bool supports_calls =
+        false; ///< server has a livekit RTC transport (MSC4195/MSC4143/well-known)
+    std::string default_room_version;    ///< e.g. "10"; empty when absent
+    bool profile_fields_stable = false;  ///< MSC4133 advertised under its stable key
+    bool supports_invite_reason = false; ///< server advertises MSC4491 invite reasons
+    bool supports_mutual_rooms =
+        false; ///< server supports MSC2666 mutual rooms (unstable or stable)
+    std::string
+        server_name; ///< e.g. "Synapse"; empty when the federation version endpoint is unreachable
+    std::string server_version;     ///< e.g. "1.120.0"; empty when unknown
+    uint64_t upload_size_limit = 0; ///< max upload bytes from the media config; 0 when unknown
+    std::vector<std::string>
+        login_flows; ///< `m.login.*` types without the prefix ("password", "sso", "token"); empty when unknown
 };
 
 /// A direct GET /state read of the four Security & Privacy tab fields,
@@ -1069,14 +1081,14 @@ struct RoomSecurityState
 /// step; it's a direct typed mirror of the FFI's `RoomPowerLevelsFfi`.
 struct RoomPermissions
 {
-    int64_t default_role       = 0;  // users_default
-    int64_t send_messages      = 0;  // events_default
-    int64_t invite_users       = 0;  // invite
-    int64_t change_settings    = 50; // state_default
-    int64_t kick_users         = 50; // kick
-    int64_t ban_users          = 50; // ban
-    int64_t remove_messages    = 50; // redact
-    int64_t notify_everyone    = 50; // notifications.room
+    int64_t default_role = 0;        // users_default
+    int64_t send_messages = 0;       // events_default
+    int64_t invite_users = 0;        // invite
+    int64_t change_settings = 50;    // state_default
+    int64_t kick_users = 50;         // kick
+    int64_t ban_users = 50;          // ban
+    int64_t remove_messages = 50;    // redact
+    int64_t notify_everyone = 50;    // notifications.room
     int64_t change_permissions = 50; // events["m.room.power_levels"], falls back to state_default
     // events["org.matrix.msc3401.call"], falling back to state_default.
     // Gates opening the call slot (Element's "Start Element Call calls").
@@ -1106,8 +1118,8 @@ struct RoomCreateOptions
     /// field (room-directory listing) and a PublicChat/TrustedPrivateChat
     /// preset (join_rule + history_visibility defaults).
     std::string visibility = "private";
-    bool encrypted = false;   // adds an m.room.encryption initial_state event
-    bool is_space = false;    // sets creation_content.type = "m.space"
+    bool encrypted = false;    // adds an m.room.encryption initial_state event
+    bool is_space = false;     // sets creation_content.type = "m.space"
     bool is_call_room = false; // sets creation_content.type = "org.matrix.msc3417.call" (MSC3417)
     std::vector<std::string> invite; // initial invitee Matrix user IDs
     /// Reason shown to invitees, e.g. "Invited to discuss project updates"
@@ -1272,7 +1284,7 @@ struct VerificationEmoji
 struct VerificationSas
 {
     std::vector<VerificationEmoji> emojis;
-    std::array<uint16_t, 3>        decimals{};
+    std::array<uint16_t, 3> decimals{};
 };
 
 /// One GIF search result, surfaced via `IEventHandler::on_gif_results`. URLs
@@ -1390,9 +1402,9 @@ struct RoomSummaryBackoffEntry
 
 enum class ActivityState : std::uint8_t
 {
-    Idle    = 0,
+    Idle = 0,
     Running = 1,
-    Error   = 2,
+    Error = 2,
 };
 
 /// One background job shown in the Activity Monitor. Rust-side jobs come from
@@ -1431,8 +1443,8 @@ struct RtcParticipantInfo
     std::string participant_id;
     std::string user_id;
     std::string device_id;
-    bool is_audio_muted    = false;
-    bool is_video_muted    = false;
+    bool is_audio_muted = false;
+    bool is_video_muted = false;
     bool is_screen_sharing = false;
 };
 
@@ -1460,7 +1472,7 @@ enum class RoomListState : uint8_t
 /// (`Client::get_user_trust`). Mirrors the u8 codes in sdk/src/client/identity.rs.
 enum class UserTrust : uint8_t
 {
-    Unknown = 0,               ///< no cross-signing identity known
+    Unknown = 0, ///< no cross-signing identity known
     NotVerified = 1,
     Verified = 2,
     VerificationViolation = 3, ///< was verified; identity reset since
@@ -1484,7 +1496,7 @@ struct IdentityWarning
 
     std::string user_id;
     std::string display_name; // may be empty
-    Kind        kind = Kind::Changed;
+    Kind kind = Kind::Changed;
 };
 
 } // namespace tesseract

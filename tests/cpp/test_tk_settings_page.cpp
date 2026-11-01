@@ -36,8 +36,7 @@ struct TkSettingsPageStage
     }
     tk::PaintCtx paint_ctx()
     {
-        return tk::PaintCtx{surface->canvas(), surface->factory(),
-                            tk::Theme::light()};
+        return tk::PaintCtx{surface->canvas(), surface->factory(), tk::Theme::light()};
     }
     void run(tk::Widget& root, tk::Rect bounds)
     {
@@ -51,8 +50,7 @@ struct TkSettingsPageStage
 
 } // namespace
 
-TEST_CASE("SettingsPage: wheel scrolls when content exceeds viewport",
-          "[settings][page][scroll]")
+TEST_CASE("SettingsPage: wheel scrolls when content exceeds viewport", "[settings][page][scroll]")
 {
     TkSettingsPageStage st;
     SettingsPage page;
@@ -64,8 +62,7 @@ TEST_CASE("SettingsPage: wheel scrolls when content exceeds viewport",
     }
     st.run(page, {0.0f, 0.0f, 640.0f, 240.0f});
 
-    INFO("content_height = " << page.content_height_for_testing()
-                              << ", viewport = 240");
+    INFO("content_height = " << page.content_height_for_testing() << ", viewport = 240");
     REQUIRE(page.content_height_for_testing() > 240.0f);
 
     REQUIRE(page.on_wheel({10.0f, 10.0f}, 0.0f, 60.0f) == true);

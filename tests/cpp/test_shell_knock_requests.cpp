@@ -23,14 +23,17 @@ namespace
 struct KnockShell : tesseract::test::TestShellBase
 {
 
-    void apply_thread_messages_(
-        const std::string&,
-        std::vector<tesseract::views::MessageRowData>, bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
 
     using ShellBase::client_;
     using ShellBase::my_user_id_;
@@ -66,8 +69,9 @@ KnockRequestInfo make_request(std::string room_id, std::string user_id)
 
 } // namespace
 
-TEST_CASE("push_my_knocks_ populates my_knocks_ for the active account and find_my_knock_ resolves it",
-          "[shell][knock]")
+TEST_CASE(
+    "push_my_knocks_ populates my_knocks_ for the active account and find_my_knock_ resolves it",
+    "[shell][knock]")
 {
     KnockShell s;
     s.my_user_id_ = "@me:example.org";
@@ -85,8 +89,7 @@ TEST_CASE("push_my_knocks_ populates my_knocks_ for the active account and find_
     CHECK(s.find_my_knock_("!missing:example.org") == nullptr);
 }
 
-TEST_CASE("push_my_knocks_ for a non-active account does not touch my_knocks_",
-          "[shell][knock]")
+TEST_CASE("push_my_knocks_ for a non-active account does not touch my_knocks_", "[shell][knock]")
 {
     KnockShell s;
     s.my_user_id_ = "@me:example.org";
@@ -131,8 +134,7 @@ TEST_CASE("decline_and_ban_knock_request_async_ optimistically removes the reque
     CHECK(s.current_room_knock_requests_.empty());
 }
 
-TEST_CASE("decline_knock_request_async_ is a no-op without a live client",
-          "[shell][knock]")
+TEST_CASE("decline_knock_request_async_ is a no-op without a live client", "[shell][knock]")
 {
     KnockShell s;
     // client_ defaults to nullptr.
@@ -145,8 +147,9 @@ TEST_CASE("decline_knock_request_async_ is a no-op without a live client",
     CHECK(s.current_room_knock_requests_.size() == 1);
 }
 
-TEST_CASE("handle_room_action_complete_ui_ resolves a pending Knock/AcceptKnock action without crashing",
-          "[shell][knock]")
+TEST_CASE(
+    "handle_room_action_complete_ui_ resolves a pending Knock/AcceptKnock action without crashing",
+    "[shell][knock]")
 {
     KnockShell s;
 

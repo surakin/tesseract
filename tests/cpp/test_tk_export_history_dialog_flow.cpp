@@ -15,19 +15,36 @@ namespace
 
 struct EhdStage : vt::Stage
 {
-    std::unique_ptr<ExportHistoryDialog> dlg =
-        tk::create_root_widget<ExportHistoryDialog>(&host);
+    std::unique_ptr<ExportHistoryDialog> dlg = tk::create_root_widget<ExportHistoryDialog>(&host);
     int layouts = 0;
     EhdStage()
     {
-        dlg->on_layout_changed = [this] { ++layouts; };
+        dlg->on_layout_changed = [this]
+        {
+            ++layouts;
+        };
         host.set_root(dlg.get());
     }
-    void run() { relayout_paint(*dlg, {0, 0, 800, 600}); }
-    tk::ComboBox* format() { return vt::find_all<tk::ComboBox>(*dlg).at(0); }
-    tk::ComboBox* range() { return vt::find_all<tk::ComboBox>(*dlg).at(1); }
-    tk::CheckButton* images() { return vt::find_all<tk::CheckButton>(*dlg).at(0); }
-    tk::CheckButton* zip() { return vt::find_all<tk::CheckButton>(*dlg).at(1); }
+    void run()
+    {
+        relayout_paint(*dlg, {0, 0, 800, 600});
+    }
+    tk::ComboBox* format()
+    {
+        return vt::find_all<tk::ComboBox>(*dlg).at(0);
+    }
+    tk::ComboBox* range()
+    {
+        return vt::find_all<tk::ComboBox>(*dlg).at(1);
+    }
+    tk::CheckButton* images()
+    {
+        return vt::find_all<tk::CheckButton>(*dlg).at(0);
+    }
+    tk::CheckButton* zip()
+    {
+        return vt::find_all<tk::CheckButton>(*dlg).at(1);
+    }
 };
 
 } // namespace
@@ -40,7 +57,10 @@ TEST_CASE("ExportHistoryDialog is hidden until opened and queries for a resume "
     CHECK_FALSE(s.dlg->visible());
     CHECK_FALSE(s.dlg->access_modal());
     std::string queried;
-    s.dlg->on_query_resume = [&](std::string r) { queried = r; };
+    s.dlg->on_query_resume = [&](std::string r)
+    {
+        queried = r;
+    };
     s.dlg->open("!r:x", "Room X");
     CHECK(s.dlg->is_open());
     CHECK(s.dlg->access_modal());
@@ -116,7 +136,10 @@ TEST_CASE("ExportHistoryDialog resume checkpoint offers resume or start over",
     CHECK_FALSE(vt::has_name(*s.dlg, "Export"));
 
     ExportHistoryDialog::Request got;
-    s.dlg->on_export_requested = [&](ExportHistoryDialog::Request r) { got = std::move(r); };
+    s.dlg->on_export_requested = [&](ExportHistoryDialog::Request r)
+    {
+        got = std::move(r);
+    };
     REQUIRE(vt::press(*s.dlg, "Resume export"));
     CHECK(got.resume_from_event_id == "$old");
 
@@ -133,8 +156,14 @@ TEST_CASE("ExportHistoryDialog progress: gathering, finalizing, stop/cancel, "
     EhdStage s;
     s.dlg->open("!r:x", "Room X");
     int stops = 0, cancels = 0;
-    s.dlg->on_stop_requested = [&] { ++stops; };
-    s.dlg->on_cancel_requested = [&] { ++cancels; };
+    s.dlg->on_stop_requested = [&]
+    {
+        ++stops;
+    };
+    s.dlg->on_cancel_requested = [&]
+    {
+        ++cancels;
+    };
 
     tesseract::RoomExportProgress p;
     p.room_id = "!r:x";
@@ -217,7 +246,10 @@ TEST_CASE("ExportHistoryDialog busy-elsewhere navigates to the other export",
 {
     EhdStage s;
     std::string go;
-    s.dlg->on_go_to_other_export = [&](std::string id) { go = id; };
+    s.dlg->on_go_to_other_export = [&](std::string id)
+    {
+        go = id;
+    };
     s.dlg->open_busy_elsewhere("!busy:x", "Busy Room", {});
     s.run();
     CHECK(s.dlg->access_name() == "Export in progress");

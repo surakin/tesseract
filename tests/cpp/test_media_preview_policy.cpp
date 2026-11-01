@@ -35,24 +35,21 @@ TEST_CASE("Private mode shows media in non-public rooms", "[media_preview_policy
     CHECK(media_allowed(Mode::Private, "private", /*is_own=*/true, false));
 }
 
-TEST_CASE("Private mode suppresses other people's media in public rooms",
-          "[media_preview_policy]")
+TEST_CASE("Private mode suppresses other people's media in public rooms", "[media_preview_policy]")
 {
     CHECK_FALSE(media_allowed(Mode::Private, "public", /*is_own=*/false, false));
     // Empty / unknown join rule is treated as public.
     CHECK_FALSE(media_allowed(Mode::Private, "", /*is_own=*/false, false));
 }
 
-TEST_CASE("Private mode exempts the user's own media in public rooms",
-          "[media_preview_policy]")
+TEST_CASE("Private mode exempts the user's own media in public rooms", "[media_preview_policy]")
 {
     CHECK(media_allowed(Mode::Private, "public", /*is_own=*/true, false));
     // Even when the join rule is unknown (treated as public).
     CHECK(media_allowed(Mode::Private, "", /*is_own=*/true, false));
 }
 
-TEST_CASE("Revealed media is always shown regardless of mode",
-          "[media_preview_policy]")
+TEST_CASE("Revealed media is always shown regardless of mode", "[media_preview_policy]")
 {
     CHECK(media_allowed(Mode::Off, "public", /*is_own=*/false, /*revealed=*/true));
     CHECK(media_allowed(Mode::Private, "public", /*is_own=*/false,

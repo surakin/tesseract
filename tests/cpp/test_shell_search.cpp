@@ -35,14 +35,17 @@ struct SearchShell : tesseract::test::TestShellBase
         mut_pool_.drain();
         media_prefetch_pool_.drain();
     }
-    void apply_thread_messages_(
-        const std::string&, std::vector<tesseract::views::MessageRowData>,
-        bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
     void post_to_ui_after_(int, std::function<void()> fn) override
     {
         delayed.push_back(std::move(fn));
@@ -51,14 +54,26 @@ struct SearchShell : tesseract::test::TestShellBase
     {
         statuses.push_back(m);
     }
-    void on_restore_status_ui_() override { ++restores; }
-    void request_relayout_() override { ++relayouts; }
+    void on_restore_status_ui_() override
+    {
+        ++restores;
+    }
+    void request_relayout_() override
+    {
+        ++relayouts;
+    }
+    // Runs the queued posts, including the ones a debounce re-arms while firing.
     void fire_delayed()
     {
-        auto pending = std::move(delayed);
-        delayed.clear();
-        for (auto& fn : pending)
-            fn();
+        while (!delayed.empty())
+        {
+            auto pending = std::move(delayed);
+            delayed.clear();
+            for (auto& fn : pending)
+            {
+                fn();
+            }
+        }
     }
     std::vector<std::function<void()>> delayed;
     std::vector<std::string> statuses;
@@ -123,7 +138,7 @@ struct SearchShell : tesseract::test::TestShellBase
 };
 
 tesseract::SearchHit srch_hit(const std::string& ev, std::uint64_t ts,
-                         const std::string& room = "!r:x")
+                              const std::string& room = "!r:x")
 {
     tesseract::SearchHit h;
     h.event_id = ev;
@@ -155,7 +170,9 @@ struct SearchRoomFixture
         rv->set_room(info);
         std::vector<MessageRowData> rows;
         for (auto& e : loaded)
+        {
             rows.push_back(srch_row(e));
+        }
         rv->message_list()->set_messages(std::move(rows), true);
         s.room_view_ = rv.get();
         s.client_ = &client;
@@ -164,13 +181,15 @@ struct SearchRoomFixture
         s.rooms_ = {info};
         s.mark_room_index_dirty_();
     }
-    tesseract::views::MessageListView* ml() { return rv->message_list(); }
+    tesseract::views::MessageListView* ml()
+    {
+        return rv->message_list();
+    }
 };
 
 } // namespace
 
-TEST_CASE("global search: empty query or no client schedules nothing",
-          "[shell][search]")
+TEST_CASE("global search: empty query or no client schedules nothing", "[shell][search]")
 {
     SearchShell s;
     s.handle_search_query_("hello"); // no client
@@ -194,15 +213,14 @@ TEST_CASE("global search: a keystroke burst issues one request for the last quer
     s.handle_search_query_("h");
     s.handle_search_query_("he");
     s.handle_search_query_("hel");
-    REQUIRE(s.delayed.size() == 3);
+    CHECK(s.delayed.size() == 1); // one pending post however many keystrokes
     s.fire_delayed();
     CHECK(s.search_request_id_ == 1);
     REQUIRE(s.search_pending_queries_.size() == 1);
     CHECK(s.search_pending_queries_.at(1) == "hel");
 }
 
-TEST_CASE("global search: clearing the field cancels the pending debounce",
-          "[shell][search]")
+TEST_CASE("global search: clearing the field cancels the pending debounce", "[shell][search]")
 {
     tesseract::Client client;
     SearchShell s;
@@ -213,8 +231,7 @@ TEST_CASE("global search: clearing the field cancels the pending debounce",
     CHECK(s.search_request_id_ == 0);
 }
 
-TEST_CASE("global search results: unknown and superseded ids are dropped",
-          "[shell][search]")
+TEST_CASE("global search results: unknown and superseded ids are dropped", "[shell][search]")
 {
     SearchShell s;
     s.search_pending_queries_[1] = "old";
@@ -234,8 +251,7 @@ TEST_CASE("global search results: unknown and superseded ids are dropped",
     CHECK(s.search_pending_queries_.empty());
 }
 
-TEST_CASE("global search results: room names resolve from the cached list",
-          "[shell][search]")
+TEST_CASE("global search results: room names resolve from the cached list", "[shell][search]")
 {
     tesseract::Client client;
     SearchShell s;
@@ -253,9 +269,8 @@ TEST_CASE("global search results: room names resolve from the cached list",
 
     s.search_pending_queries_[1] = "q";
     s.search_request_id_ = 1;
-    s.handle_search_results_ui_(
-        1, {srch_hit("$a", 1, "!named:x"), srch_hit("$b", 2, "!unnamed:x"),
-            srch_hit("$c", 3, "!gone:x")});
+    s.handle_search_results_ui_(1, {srch_hit("$a", 1, "!named:x"), srch_hit("$b", 2, "!unnamed:x"),
+                                    srch_hit("$c", 3, "!gone:x")});
     CHECK(s.search_pending_queries_.empty());
 
     // Failure path also consumes the id.
@@ -269,8 +284,7 @@ TEST_CASE("global search results: room names resolve from the cached list",
     s.handle_search_failed_ui_(2, "boom"); // unknown now: no-op
 }
 
-TEST_CASE("room directory results with no add-room view are ignored",
-          "[shell][search]")
+TEST_CASE("room directory results with no add-room view are ignored", "[shell][search]")
 {
     SearchShell s;
     s.handle_room_directory_search_results_ui_(1, {}, true);
@@ -307,8 +321,7 @@ TEST_CASE("in-room search: empty query resets state", "[shell][search][inroom]")
     CHECK_FALSE(f.ml()->has_search_matches());
 }
 
-TEST_CASE("in-room search: query is debounced, tagged and stale-guarded",
-          "[shell][search][inroom]")
+TEST_CASE("in-room search: query is debounced, tagged and stale-guarded", "[shell][search][inroom]")
 {
     SearchRoomFixture f({"$a"});
     f.s.active_account_ = std::make_shared<tesseract::AccountSession>();
@@ -327,8 +340,7 @@ TEST_CASE("in-room search: query is debounced, tagged and stale-guarded",
     CHECK(f.s.in_room_search_request_id_ == 1);
 }
 
-TEST_CASE("in-room search results: sorted oldest-first, newest focused",
-          "[shell][search][inroom]")
+TEST_CASE("in-room search results: sorted oldest-first, newest focused", "[shell][search][inroom]")
 {
     SearchRoomFixture f({"$a", "$b", "$c"});
     f.s.in_room_search_pending_[1] = "q";
@@ -343,22 +355,20 @@ TEST_CASE("in-room search results: sorted oldest-first, newest focused",
     CHECK(f.ml()->search_match_ids().size() == 3);
 }
 
-TEST_CASE("in-room search results: focus is restored across a refresh",
-          "[shell][search][inroom]")
+TEST_CASE("in-room search results: focus is restored across a refresh", "[shell][search][inroom]")
 {
     SearchRoomFixture f({"$a", "$b", "$c"});
     f.s.in_room_search_matches_ = {srch_hit("$a", 10), srch_hit("$b", 20)};
     f.s.in_room_search_current_ = 0; // focused on $a
     f.s.in_room_search_pending_[5] = "q";
     f.s.in_room_search_request_id_ = 5;
-    f.s.handle_in_room_search_results_ui_(5, {srch_hit("$a", 10), srch_hit("$b", 20),
-                                              srch_hit("$c", 30)});
+    f.s.handle_in_room_search_results_ui_(
+        5, {srch_hit("$a", 10), srch_hit("$b", 20), srch_hit("$c", 30)});
     CHECK(f.s.in_room_search_current_ == 0);
     CHECK(f.ml()->highlighted_event() == "$a");
 }
 
-TEST_CASE("in-room search results: goto-oldest focuses the first match",
-          "[shell][search][inroom]")
+TEST_CASE("in-room search results: goto-oldest focuses the first match", "[shell][search][inroom]")
 {
     SearchRoomFixture f({"$a", "$b"});
     f.s.in_room_search_goto_oldest_ = true;
@@ -369,8 +379,7 @@ TEST_CASE("in-room search results: goto-oldest focuses the first match",
     CHECK_FALSE(f.s.in_room_search_goto_oldest_);
 }
 
-TEST_CASE("in-room search results: stale and unknown ids are ignored",
-          "[shell][search][inroom]")
+TEST_CASE("in-room search results: stale and unknown ids are ignored", "[shell][search][inroom]")
 {
     SearchRoomFixture f({"$a"});
     f.s.in_room_search_pending_[1] = "q";
@@ -383,8 +392,7 @@ TEST_CASE("in-room search results: stale and unknown ids are ignored",
     CHECK(f.s.in_room_search_pending_.size() == 1);
 }
 
-TEST_CASE("in-room search results: zero matches clears and may paginate",
-          "[shell][search][inroom]")
+TEST_CASE("in-room search results: zero matches clears and may paginate", "[shell][search][inroom]")
 {
     SearchRoomFixture f({"$a"});
     f.s.in_room_search_matches_ = {srch_hit("$a", 1)};
@@ -411,8 +419,7 @@ TEST_CASE("in-room search failure clears matches", "[shell][search][inroom]")
     CHECK(f.s.in_room_search_current_ == -1);
 }
 
-TEST_CASE("in-room search navigation wraps in both directions",
-          "[shell][search][inroom]")
+TEST_CASE("in-room search navigation wraps in both directions", "[shell][search][inroom]")
 {
     SearchRoomFixture f({"$a", "$b", "$c"});
     f.s.in_room_search_navigate_(-1); // nothing: no-op
@@ -433,8 +440,7 @@ TEST_CASE("in-room search navigation wraps in both directions",
     CHECK(f.s.in_room_search_current_ == 1);
 }
 
-TEST_CASE("in-room search navigation paginates at the oldest boundary",
-          "[shell][search][inroom]")
+TEST_CASE("in-room search navigation paginates at the oldest boundary", "[shell][search][inroom]")
 {
     SearchRoomFixture f({"$a"});
     f.s.in_room_search_matches_ = {srch_hit("$a", 1), srch_hit("$b", 2)};
@@ -458,8 +464,7 @@ TEST_CASE("in-room search navigation paginates at the oldest boundary",
     CHECK(f.s.next_paginate_id_ == id);
 }
 
-TEST_CASE("in-room search pagination stops at the start of history",
-          "[shell][search][inroom]")
+TEST_CASE("in-room search pagination stops at the start of history", "[shell][search][inroom]")
 {
     SearchRoomFixture f({"$a"});
     f.s.in_room_search_matches_ = {srch_hit("$a", 1), srch_hit("$b", 2)};
@@ -483,8 +488,7 @@ TEST_CASE("in-room search pagination stops at the start of history",
     CHECK(f.s.in_room_search_current_ == 1);
 }
 
-TEST_CASE("in-room search paginate toggle: off restores the status line",
-          "[shell][search][inroom]")
+TEST_CASE("in-room search paginate toggle: off restores the status line", "[shell][search][inroom]")
 {
     SearchRoomFixture f({"$a"});
     f.s.status_override_active_ = true;
@@ -520,8 +524,7 @@ TEST_CASE("in-room search clear resets all state", "[shell][search][inroom]")
     CHECK(f.s.in_room_search_prev_match_count_ == 0);
 }
 
-TEST_CASE("thread search: no open thread behaves as empty query",
-          "[shell][search][thread]")
+TEST_CASE("thread search: no open thread behaves as empty query", "[shell][search][thread]")
 {
     SearchRoomFixture f({"$a"});
     f.s.thread_search_matches_ = {srch_hit("$a", 1)};
@@ -533,8 +536,7 @@ TEST_CASE("thread search: no open thread behaves as empty query",
     CHECK(f.s.thread_search_request_id_ == 0);
 }
 
-TEST_CASE("thread search results: ordering, focus restore and failure",
-          "[shell][search][thread]")
+TEST_CASE("thread search results: ordering, focus restore and failure", "[shell][search][thread]")
 {
     SearchRoomFixture f;
     f.s.thread_search_pending_[1] = "q";
@@ -618,8 +620,7 @@ TEST_CASE("try_scroll_to_room_event_ defers a loaded event and requests the "
     CHECK(none.s.pending_scroll_room_event_id_.empty());
 }
 
-TEST_CASE("clear_focused_state_ resets the focused-timeline bookkeeping",
-          "[shell][search]")
+TEST_CASE("clear_focused_state_ resets the focused-timeline bookkeeping", "[shell][search]")
 {
     SearchShell s;
     auto& st = s.pagination_["!r:x"];

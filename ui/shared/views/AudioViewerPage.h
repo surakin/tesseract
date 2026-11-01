@@ -36,8 +36,6 @@ public:
     void paint_content(tk::PaintCtx&) override;
     void paint_controls(tk::PaintCtx&) override;
     bool on_content_pointer_down(tk::Point world, tk::Point local) override;
-    bool on_content_pointer_up(tk::Point world, tk::Point local, bool inside_self) override;
-    void on_pointer_drag(tk::Point local) override;
     // Space / K play-pause, Home restarts. Left/Right/PageUp/PageDown are never
     // consumed, so they navigate the sequence.
     bool on_key(const tk::KeyEvent& e) override;

@@ -14,10 +14,10 @@ namespace tesseract::views
 
 namespace
 {
-constexpr float kKnockRowBtnH   = 28.0f;
+constexpr float kKnockRowBtnH = 28.0f;
 constexpr float kKnockRowBtnGap = 6.0f;
-constexpr float kKnockRowPadX   = 8.0f;
-constexpr float kKnockAvatarD   = 32.0f;
+constexpr float kKnockRowPadX = 8.0f;
+constexpr float kKnockAvatarD = 32.0f;
 } // namespace
 
 // ── RowWidget ────────────────────────────────────────────────────────────
@@ -29,35 +29,61 @@ constexpr float kKnockAvatarD   = 32.0f;
 class KnockRequestsPanel::RowWidget : public tk::Widget
 {
 public:
-    RowWidget(tesseract::KnockRequestInfo info, bool can_ban,
-              ImageProvider avatar_provider)
+    RowWidget(tesseract::KnockRequestInfo info, bool can_ban, ImageProvider avatar_provider)
         : info_(std::move(info)), avatar_provider_(std::move(avatar_provider))
     {
-        auto accept = tk::create_widget<tk::Button>(
-            this, tk::tr("Accept"), std::function<void()>{}, tk::Button::Variant::Primary);
-        accept->set_on_click([this]() { if (on_accept) on_accept(); });
+        auto accept = tk::create_widget<tk::Button>(this, tk::tr("Accept"), std::function<void()>{},
+                                                    tk::Button::Variant::Primary);
+        accept->set_on_click(
+            [this]()
+            {
+                if (on_accept)
+                {
+                    on_accept();
+                }
+            });
         accept_btn_ = add_child(std::move(accept));
 
-        auto decline = tk::create_widget<tk::Button>(
-            this, tk::tr("Deny"), std::function<void()>{}, tk::Button::Variant::Subtle);
-        decline->set_on_click([this]() { if (on_decline) on_decline(); });
+        auto decline = tk::create_widget<tk::Button>(this, tk::tr("Deny"), std::function<void()>{},
+                                                     tk::Button::Variant::Subtle);
+        decline->set_on_click(
+            [this]()
+            {
+                if (on_decline)
+                {
+                    on_decline();
+                }
+            });
         decline_btn_ = add_child(std::move(decline));
 
         if (can_ban)
         {
-            auto ban = tk::create_widget<tk::Button>(
-                this, tk::tr("Deny & Ban"), std::function<void()>{},
-                tk::Button::Variant::Destructive);
-            ban->set_on_click([this]() { if (on_ban) on_ban(); });
+            auto ban =
+                tk::create_widget<tk::Button>(this, tk::tr("Deny & Ban"), std::function<void()>{},
+                                              tk::Button::Variant::Destructive);
+            ban->set_on_click(
+                [this]()
+                {
+                    if (on_ban)
+                    {
+                        on_ban();
+                    }
+                });
             ban_btn_ = add_child(std::move(ban));
         }
     }
 
-    const tesseract::KnockRequestInfo& info() const { return info_; }
+    const tesseract::KnockRequestInfo& info() const
+    {
+        return info_;
+    }
 
     // A group named by the requester (mxid or reason as its description),
     // so the Accept / Deny buttons inside are announced with their context.
-    tk::Role access_role() const override { return tk::Role::Group; }
+    tk::Role access_role() const override
+    {
+        return tk::Role::Group;
+    }
     std::string access_name() const override
     {
         return info_.display_name.empty() ? info_.user_id : info_.display_name;
@@ -120,8 +146,8 @@ public:
             info_.display_name.empty() ? info_.user_id : info_.display_name;
         {
             tk::TextStyle ts{};
-            ts.role      = tk::FontRole::Body;
-            ts.trim      = tk::TextTrim::Ellipsis;
+            ts.role = tk::FontRole::Body;
+            ts.trim = tk::TextTrim::Ellipsis;
             ts.max_width = text_w;
             if (auto lo = ctx.factory.build_text(name_str, ts))
             {
@@ -131,12 +157,12 @@ public:
         y += 18.0f;
         {
             tk::TextStyle ts{};
-            ts.role      = tk::FontRole::Small;
-            ts.trim      = tk::TextTrim::Ellipsis;
+            ts.role = tk::FontRole::Small;
+            ts.trim = tk::TextTrim::Ellipsis;
             ts.max_width = text_w;
-            const std::string secondary =
-                info_.reason.empty() ? info_.user_id
-                                     : tk::trf(tk::tr("Reason: {0}"), {info_.reason});
+            const std::string secondary = info_.reason.empty()
+                                              ? info_.user_id
+                                              : tk::trf(tk::tr("Reason: {0}"), {info_.reason});
             if (auto lo = ctx.factory.build_text(secondary, ts))
             {
                 ctx.canvas.draw_text(*lo, {text_x, y}, pal.text_muted);
@@ -144,8 +170,7 @@ public:
         }
 
         // Row separator.
-        ctx.canvas.fill_rect({bounds_.x, bounds_.bottom() - 1.0f, bounds_.w, 1.0f},
-                             pal.border);
+        ctx.canvas.fill_rect({bounds_.x, bounds_.bottom() - 1.0f, bounds_.w, 1.0f}, pal.border);
     }
 
     static constexpr float kRowH = 96.0f;
@@ -153,9 +178,9 @@ public:
 private:
     tesseract::KnockRequestInfo info_;
     ImageProvider avatar_provider_;
-    tk::Button* accept_btn_  = nullptr;
+    tk::Button* accept_btn_ = nullptr;
     tk::Button* decline_btn_ = nullptr;
-    tk::Button* ban_btn_     = nullptr; // only when can_ban
+    tk::Button* ban_btn_ = nullptr; // only when can_ban
 };
 
 // ── KnockRequestsPanel ───────────────────────────────────────────────────
@@ -172,9 +197,16 @@ std::string KnockRequestsPanel::access_description() const
 
 KnockRequestsPanel::KnockRequestsPanel()
 {
-    auto close = tk::create_widget<tk::Button>(
-        this, "\xC3\x97", std::function<void()>{}, tk::Button::Variant::Subtle);
-    close->set_on_click([this]() { if (on_close) on_close(); });
+    auto close = tk::create_widget<tk::Button>(this, "\xC3\x97", std::function<void()>{},
+                                               tk::Button::Variant::Subtle);
+    close->set_on_click(
+        [this]()
+        {
+            if (on_close)
+            {
+                on_close();
+            }
+        });
     close->set_accessible_name(tk::tr("Close"));
     close_btn_ = add_child(std::move(close));
 
@@ -185,8 +217,8 @@ KnockRequestsPanel::~KnockRequestsPanel() = default;
 
 void KnockRequestsPanel::open(const std::string& room_id)
 {
-    room_id_       = room_id;
-    open_          = true;
+    room_id_ = room_id;
+    open_ = true;
     scroll_offset_ = 0.0f;
     set_visible(true);
 }
@@ -205,17 +237,23 @@ void KnockRequestsPanel::set_requests(std::vector<tesseract::KnockRequestInfo> r
     requests_ = std::move(requests);
     rebuild_rows_();
     if (on_layout_changed)
+    {
         on_layout_changed();
+    }
 }
 
 void KnockRequestsPanel::set_can_ban(bool can_ban)
 {
     if (can_ban_ == can_ban)
+    {
         return;
+    }
     can_ban_ = can_ban;
     rebuild_rows_();
     if (on_layout_changed)
+    {
         on_layout_changed();
+    }
 }
 
 void KnockRequestsPanel::set_avatar_provider(ImageProvider p)
@@ -238,11 +276,26 @@ void KnockRequestsPanel::rebuild_rows_()
         // reference — the row itself outlives this loop iteration, so the
         // copy just needs to be independent of the source vector's storage.
         const std::string user_id = req.user_id;
-        row->on_accept = [this, user_id]() { if (on_accept) on_accept(user_id); };
-        row->on_decline = [this, user_id]() { if (on_decline) on_decline(user_id); };
+        row->on_accept = [this, user_id]()
+        {
+            if (on_accept)
+            {
+                on_accept(user_id);
+            }
+        };
+        row->on_decline = [this, user_id]()
+        {
+            if (on_decline)
+            {
+                on_decline(user_id);
+            }
+        };
         row->on_ban = [this, user_id]()
         {
-            if (on_decline_and_ban) on_decline_and_ban(user_id, "");
+            if (on_decline_and_ban)
+            {
+                on_decline_and_ban(user_id, "");
+            }
         };
         rows_.push_back(add_child(std::move(row)));
     }
@@ -264,7 +317,7 @@ void KnockRequestsPanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     bounds_ = bounds;
 
     backdrop_rect_ = bounds;
-    panel_rect_    = {bounds.x + bounds.w - kPanelW, bounds.y, kPanelW, bounds.h};
+    panel_rect_ = {bounds.x + bounds.w - kPanelW, bounds.y, kPanelW, bounds.h};
 
     const float px = panel_rect_.x;
 
@@ -292,10 +345,12 @@ void KnockRequestsPanel::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 void KnockRequestsPanel::paint(tk::PaintCtx& ctx)
 {
     if (!open_)
+    {
         return;
+    }
 
     const auto& pal = ctx.theme.palette;
-    auto&       cv  = ctx.canvas;
+    auto& cv = ctx.canvas;
 
     cv.fill_rect(backdrop_rect_, tk::Color{0, 0, 0, 100});
     cv.fill_rect(panel_rect_, pal.bg);
@@ -306,17 +361,15 @@ void KnockRequestsPanel::paint(tk::PaintCtx& ctx)
     if (!title_layout_)
     {
         tk::TextStyle ts{};
-        ts.role      = tk::FontRole::Title;
-        ts.trim      = tk::TextTrim::Ellipsis;
+        ts.role = tk::FontRole::Title;
+        ts.trim = tk::TextTrim::Ellipsis;
         ts.max_width = kPanelW - kPadX * 2.0f - kCloseSz - 8.0f;
         title_layout_ = ctx.factory.build_text(
-            tk::trf(tk::tr("Requests to Join ({0})"), {std::to_string(requests_.size())}),
-            ts);
+            tk::trf(tk::tr("Requests to Join ({0})"), {std::to_string(requests_.size())}), ts);
     }
     if (title_layout_)
     {
-        cv.draw_text(*title_layout_, {px + kPadX, panel_rect_.y + kPadY},
-                     pal.text_primary);
+        cv.draw_text(*title_layout_, {px + kPadX, panel_rect_.y + kPadY}, pal.text_primary);
     }
     if (close_btn_)
     {
@@ -327,22 +380,21 @@ void KnockRequestsPanel::paint(tk::PaintCtx& ctx)
 
     const float scroll_top = panel_rect_.y + kHeaderH;
     const float viewport_h = std::max(0.0f, panel_rect_.h - kHeaderH);
-    cv.push_clip_rect({px, scroll_top, kPanelW, viewport_h});
+    tk::ClipScope clip(cv, {px, scroll_top, kPanelW, viewport_h});
 
     if (rows_.empty())
     {
         if (!empty_layout_)
         {
             tk::TextStyle ts{};
-            ts.role      = tk::FontRole::Body;
-            ts.halign    = tk::TextHAlign::Center;
+            ts.role = tk::FontRole::Body;
+            ts.halign = tk::TextHAlign::Center;
             ts.max_width = kPanelW - kPadX * 2.0f;
             empty_layout_ = ctx.factory.build_text(tk::tr("No pending requests"), ts);
         }
         if (empty_layout_)
         {
-            cv.draw_text(*empty_layout_, {px + kPadX, scroll_top + kPadY},
-                         pal.text_muted);
+            cv.draw_text(*empty_layout_, {px + kPadX, scroll_top + kPadY}, pal.text_muted);
         }
     }
     else
@@ -352,14 +404,14 @@ void KnockRequestsPanel::paint(tk::PaintCtx& ctx)
             row->paint(ctx);
         }
     }
-
-    cv.pop_clip();
 }
 
 bool KnockRequestsPanel::on_pointer_down(tk::Point local)
 {
     if (!open_)
+    {
         return false;
+    }
     const tk::Point w{local.x + bounds_.x, local.y + bounds_.y};
     press_backdrop_ = rect_contains(backdrop_rect_, w) && !rect_contains(panel_rect_, w);
     return press_backdrop_ || rect_contains(panel_rect_, w);
@@ -368,18 +420,23 @@ bool KnockRequestsPanel::on_pointer_down(tk::Point local)
 void KnockRequestsPanel::on_pointer_up(tk::Point local, bool inside_self)
 {
     if (!press_backdrop_)
+    {
         return;
+    }
     press_backdrop_ = false;
     const tk::Point w{local.x + bounds_.x, local.y + bounds_.y};
     if (inside_self && !rect_contains(panel_rect_, w) && on_close)
+    {
         on_close();
+    }
 }
 
-bool KnockRequestsPanel::on_wheel(tk::Point /*local*/, float /*dx*/, float dy,
-                                  bool /*is_touchpad*/)
+bool KnockRequestsPanel::on_wheel(tk::Point /*local*/, float /*dx*/, float dy, bool /*is_touchpad*/)
 {
     if (!open_)
+    {
         return false;
+    }
     scroll_offset_ += dy * 20.0f;
     scroll_offset_ = std::max(0.0f, scroll_offset_);
     return true;

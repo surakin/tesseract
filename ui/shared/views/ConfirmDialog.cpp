@@ -15,52 +15,71 @@ ConfirmDialog::ConfirmDialog()
 {
     // Two child buttons; their roles are reassigned every open() so the
     // labels and variant track the caller's Options.
-    confirm_btn_ = add_child(
-        tk::create_widget<tk::Button>(this, "", std::function<void()>{},
-                                     tk::Button::Variant::Primary));
-    cancel_btn_ = add_child(
-        tk::create_widget<tk::Button>(this, "", std::function<void()>{},
-                                     tk::Button::Variant::Subtle));
+    confirm_btn_ = add_child(tk::create_widget<tk::Button>(this, "", std::function<void()>{},
+                                                           tk::Button::Variant::Primary));
+    cancel_btn_ = add_child(tk::create_widget<tk::Button>(this, "", std::function<void()>{},
+                                                          tk::Button::Variant::Subtle));
 
-    secondary_btn_ = add_child(
-        tk::create_widget<tk::Button>(this, "", std::function<void()>{},
-                                     tk::Button::Variant::Subtle));
+    secondary_btn_ = add_child(tk::create_widget<tk::Button>(this, "", std::function<void()>{},
+                                                             tk::Button::Variant::Subtle));
     secondary_btn_->set_visible(false);
-    secondary_btn_->set_on_click([this]() {
-        auto cb = std::move(opts_.on_secondary);
-        close();
-        if (cb) cb();
-    });
+    secondary_btn_->set_on_click(
+        [this]()
+        {
+            auto cb = std::move(opts_.on_secondary);
+            close();
+            if (cb)
+            {
+                cb();
+            }
+        });
 
-    confirm_btn_->set_on_click([this]() {
-        // Capture the callbacks locally before close() so re-entrant open()
-        // calls inside on_confirm_ see the new state, not the previous one.
-        auto cb = std::move(on_confirm_);
-        auto reason_cb = opts_.reason_field ? std::move(opts_.on_reason)
-                                            : std::function<void(std::string)>{};
-        std::string reason =
-            reason_field_ ? text::trim(reason_field_->text()) : std::string();
-        close();
-        if (reason_cb) reason_cb(std::move(reason));
-        if (cb) cb();
-    });
+    confirm_btn_->set_on_click(
+        [this]()
+        {
+            // Capture the callbacks locally before close() so re-entrant open()
+            // calls inside on_confirm_ see the new state, not the previous one.
+            auto cb = std::move(on_confirm_);
+            auto reason_cb = opts_.reason_field ? std::move(opts_.on_reason)
+                                                : std::function<void(std::string)>{};
+            std::string reason = reason_field_ ? text::trim(reason_field_->text()) : std::string();
+            close();
+            if (reason_cb)
+            {
+                reason_cb(std::move(reason));
+            }
+            if (cb)
+            {
+                cb();
+            }
+        });
 
     if (host())
     {
         auto field = tk::create_widget<tk::TextField>(this, kFieldH);
-        field->set_on_submit([this]() { confirm(); });
-        field->push_popup_nav([this](tk::NavKey k) {
-            if (k != tk::NavKey::Escape)
-                return false;
-            close();
-            return true;
-        });
+        field->set_on_submit(
+            [this]()
+            {
+                confirm();
+            });
+        field->push_popup_nav(
+            [this](tk::NavKey k)
+            {
+                if (k != tk::NavKey::Escape)
+                {
+                    return false;
+                }
+                close();
+                return true;
+            });
         field->set_visible(false);
         reason_field_ = add_child(std::move(field));
     }
-    cancel_btn_->set_on_click([this]() {
-        close();
-    });
+    cancel_btn_->set_on_click(
+        [this]()
+        {
+            close();
+        });
 
     // Closed-by-default overlay. Same idiom as RoomInfoPanel: tying widget
     // visibility to the open state lets the widget tree's hit-test walk
@@ -72,9 +91,9 @@ void ConfirmDialog::open(Options opts, std::function<void()> on_confirm)
 {
     const bool was_open = open_;
 
-    opts_       = std::move(opts);
+    opts_ = std::move(opts);
     on_confirm_ = std::move(on_confirm);
-    open_       = true;
+    open_ = true;
     set_visible(true);
     press_backdrop_ = false;
 
@@ -82,9 +101,8 @@ void ConfirmDialog::open(Options opts, std::function<void()> on_confirm)
     // before the first arrange(). Layouts depend on theme/factory and are
     // rebuilt lazily inside paint().
     confirm_btn_->set_label(opts_.confirm_label);
-    confirm_btn_->set_variant(opts_.destructive
-                                  ? tk::Button::Variant::Destructive
-                                  : tk::Button::Variant::Primary);
+    confirm_btn_->set_variant(opts_.destructive ? tk::Button::Variant::Destructive
+                                                : tk::Button::Variant::Primary);
     cancel_btn_->set_label(opts_.cancel_label);
     secondary_btn_->set_label(opts_.secondary_label);
     secondary_btn_->set_visible(!opts_.secondary_label.empty());
@@ -98,19 +116,26 @@ void ConfirmDialog::open(Options opts, std::function<void()> on_confirm)
         reason_field_->set_placeholder(opts_.reason_placeholder);
         reason_field_->set_visible(opts_.reason_field);
         if (opts_.reason_field)
+        {
             reason_field_->set_focused(true);
+        }
     }
 
-    // Tell the shell to re-query rect accessors — this is what makes the
-    // compose textarea + room-search NativeTextField overlays hide while
-    // the dialog is up. Skip the fire when we were already open so back-
-    // to-back open() calls don't churn the shell layout.
-    if (!was_open && on_layout_changed) on_layout_changed();
+    // Tell the shell to re-query rect accessors, so the compose text area
+    // hides while the dialog is up. Skip the fire when we were already open so
+    // back-to-back open() calls don't churn the shell layout.
+    if (!was_open && on_layout_changed)
+    {
+        on_layout_changed();
+    }
 }
 
 void ConfirmDialog::confirm()
 {
-    if (open_ && confirm_btn_) confirm_btn_->click();
+    if (open_ && confirm_btn_)
+    {
+        confirm_btn_->click();
+    }
 }
 
 void ConfirmDialog::close()
@@ -127,7 +152,10 @@ void ConfirmDialog::close()
         reason_field_->set_focused(false);
         reason_field_->set_visible(false);
     }
-    if (was_open && on_layout_changed) on_layout_changed();
+    if (was_open && on_layout_changed)
+    {
+        on_layout_changed();
+    }
 }
 
 // ── layout ────────────────────────────────────────────────────────────────
@@ -153,8 +181,8 @@ void ConfirmDialog::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     if (!title_layout_)
     {
         tk::TextStyle st{};
-        st.role      = tk::FontRole::Title;
-        st.trim      = tk::TextTrim::Ellipsis;
+        st.role = tk::FontRole::Title;
+        st.trim = tk::TextTrim::Ellipsis;
         st.max_width = text_w;
         title_layout_ = lc.factory.build_text(opts_.title, st);
     }
@@ -164,27 +192,26 @@ void ConfirmDialog::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
         if (!body_layout_)
         {
             tk::TextStyle st{};
-            st.role      = tk::FontRole::Body;
-            st.wrap      = true;
+            st.role = tk::FontRole::Body;
+            st.wrap = true;
             st.max_width = text_w;
             body_layout_ = lc.factory.build_text(opts_.body, st);
         }
         if (body_layout_)
+        {
             body_h = body_layout_->measure().h;
+        }
     }
-    const float title_h =
-        title_layout_ ? std::max(title_layout_->measure().h, kTitleH) : kTitleH;
+    const float title_h = title_layout_ ? std::max(title_layout_->measure().h, kTitleH) : kTitleH;
 
     const bool show_field = opts_.reason_field && reason_field_;
 
     // Card grows to fit the content, but never taller than the surface.
     const float card_h = kCardPad * 2 + title_h +
                          (opts_.body.empty() ? 0.0f : (kTitleGap + body_h)) +
-                         (show_field ? kTitleGap + kFieldH : 0.0f) +
-                         kBodyGap + kBtnH;
+                         (show_field ? kTitleGap + kFieldH : 0.0f) + kBodyGap + kBtnH;
     const float clamped_h = std::min(card_h, bounds.h);
-    card_rect_ = {bounds.x + (bounds.w - card_w) * 0.5f,
-                  bounds.y + (bounds.h - clamped_h) * 0.5f,
+    card_rect_ = {bounds.x + (bounds.w - card_w) * 0.5f, bounds.y + (bounds.h - clamped_h) * 0.5f,
                   card_w, clamped_h};
 
     // Buttons sit at the bottom-right of the card, cancel left of confirm.
@@ -192,15 +219,14 @@ void ConfirmDialog::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     const float btn_w_min = 88.0f;
 
     // Measure both labels so the buttons size to fit, with a floor of 88 px.
-    tk::Size confirm_sz = confirm_btn_ ? confirm_btn_->measure(lc, {-1.0f, kBtnH})
-                                        : tk::Size{btn_w_min, kBtnH};
-    tk::Size cancel_sz  = cancel_btn_ ? cancel_btn_->measure(lc, {-1.0f, kBtnH})
-                                       : tk::Size{btn_w_min, kBtnH};
+    tk::Size confirm_sz =
+        confirm_btn_ ? confirm_btn_->measure(lc, {-1.0f, kBtnH}) : tk::Size{btn_w_min, kBtnH};
+    tk::Size cancel_sz =
+        cancel_btn_ ? cancel_btn_->measure(lc, {-1.0f, kBtnH}) : tk::Size{btn_w_min, kBtnH};
     const float confirm_w = std::max(confirm_sz.w, btn_w_min);
-    const float cancel_w  = std::max(cancel_sz.w,  btn_w_min);
+    const float cancel_w = std::max(cancel_sz.w, btn_w_min);
 
-    const float confirm_x =
-        card_rect_.x + card_rect_.w - kCardPad - confirm_w;
+    const float confirm_x = card_rect_.x + card_rect_.w - kCardPad - confirm_w;
     const float cancel_x = confirm_x - kBtnGap - cancel_w;
 
     // Order, left to right: Cancel, [secondary], Confirm. Without a
@@ -208,38 +234,50 @@ void ConfirmDialog::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
     float secondary_w = 0.0f;
     if (has_secondary && secondary_btn_)
     {
-        secondary_w = std::max(
-            secondary_btn_->measure(lc, {-1.0f, kBtnH}).w, btn_w_min);
+        secondary_w = std::max(secondary_btn_->measure(lc, {-1.0f, kBtnH}).w, btn_w_min);
     }
     const float secondary_x = confirm_x - kBtnGap - secondary_w;
-    const float cancel_left =
-        has_secondary ? secondary_x - kBtnGap - cancel_w : cancel_x;
+    const float cancel_left = has_secondary ? secondary_x - kBtnGap - cancel_w : cancel_x;
     if (has_secondary && secondary_btn_)
+    {
         secondary_btn_->arrange(lc, {secondary_x, btns_y, secondary_w, kBtnH});
+    }
     if (cancel_btn_)
+    {
         cancel_btn_->arrange(lc, {cancel_left, btns_y, cancel_w, kBtnH});
+    }
     if (confirm_btn_)
+    {
         confirm_btn_->arrange(lc, {confirm_x, btns_y, confirm_w, kBtnH});
+    }
 
     // Reason field sits directly above the button row.
     if (show_field)
-        reason_field_->arrange(lc, {card_rect_.x + kCardPad,
-                                    btns_y - kBodyGap - kFieldH, text_w, kFieldH});
+    {
+        reason_field_->arrange(
+            lc, {card_rect_.x + kCardPad, btns_y - kBodyGap - kFieldH, text_w, kFieldH});
+    }
 }
 
 void ConfirmDialog::on_theme_changed(const tk::Theme& t)
 {
     tk::Widget::on_theme_changed(t);
-    if (reason_field_) reason_field_->set_text_color(t.palette.text_primary);
+    if (reason_field_)
+    {
+        reason_field_->set_text_color(t.palette.text_primary);
+    }
 }
 
 // ── paint ─────────────────────────────────────────────────────────────────
 
 void ConfirmDialog::paint_before_children(tk::PaintCtx& ctx)
 {
-    if (!open_) return;
+    if (!open_)
+    {
+        return;
+    }
 
-    auto& cv        = ctx.canvas;
+    auto& cv = ctx.canvas;
     const auto& pal = ctx.theme.palette;
 
     // 1. Semi-transparent backdrop.
@@ -251,14 +289,14 @@ void ConfirmDialog::paint_before_children(tk::PaintCtx& ctx)
 
     const float text_x = card_rect_.x + kCardPad;
     const float text_w = card_rect_.w - kCardPad * 2.0f;
-    float       y      = card_rect_.y + kCardPad;
+    float y = card_rect_.y + kCardPad;
 
     // 3. Title.
     if (!title_layout_)
     {
         tk::TextStyle st{};
-        st.role      = tk::FontRole::Title;
-        st.trim      = tk::TextTrim::Ellipsis;
+        st.role = tk::FontRole::Title;
+        st.trim = tk::TextTrim::Ellipsis;
         st.max_width = text_w;
         title_layout_ = ctx.factory.build_text(opts_.title, st);
     }
@@ -275,34 +313,33 @@ void ConfirmDialog::paint_before_children(tk::PaintCtx& ctx)
         if (!body_layout_)
         {
             tk::TextStyle st{};
-            st.role      = tk::FontRole::Body;
-            st.wrap      = true;
+            st.role = tk::FontRole::Body;
+            st.wrap = true;
             st.max_width = text_w;
             // Don't let the body push the buttons off-card.
-            const float max_body_h =
-                card_rect_.y + card_rect_.h - kCardPad - kBtnH - kBodyGap - y;
+            const float max_body_h = card_rect_.y + card_rect_.h - kCardPad - kBtnH - kBodyGap - y;
             st.max_height = std::max(0.0f, max_body_h);
-            body_layout_  = ctx.factory.build_text(opts_.body, st);
+            body_layout_ = ctx.factory.build_text(opts_.body, st);
         }
         if (body_layout_)
         {
             const float field_h =
                 (opts_.reason_field && reason_field_) ? kTitleGap + kFieldH : 0.0f;
-            cv.push_clip_rect({card_rect_.x, card_rect_.y,
-                               card_rect_.w,
-                               card_rect_.h - kCardPad - kBtnH - kBodyGap - field_h});
+            tk::ClipScope clip(cv, {card_rect_.x, card_rect_.y, card_rect_.w,
+                                    card_rect_.h - kCardPad - kBtnH - kBodyGap - field_h});
             cv.draw_text(*body_layout_, {text_x, y}, pal.text_secondary);
-            cv.pop_clip();
         }
     }
-
 }
 
 // ── pointer events ────────────────────────────────────────────────────────
 
 bool ConfirmDialog::on_pointer_down(tk::Point local)
 {
-    if (!open_) return false;
+    if (!open_)
+    {
+        return false;
+    }
 
     const tk::Point w{local.x + bounds().x, local.y + bounds().y};
 
@@ -319,9 +356,15 @@ bool ConfirmDialog::on_pointer_down(tk::Point local)
 
 void ConfirmDialog::on_pointer_up(tk::Point local, bool inside_self)
 {
-    if (!press_backdrop_) return;
+    if (!press_backdrop_)
+    {
+        return;
+    }
     press_backdrop_ = false;
-    if (!inside_self) return;
+    if (!inside_self)
+    {
+        return;
+    }
 
     const tk::Point w{local.x + bounds().x, local.y + bounds().y};
     if (!rect_contains(card_rect_, w))

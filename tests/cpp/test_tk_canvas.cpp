@@ -102,8 +102,7 @@ TEST_CASE("Canvas::push_clip_rounded_rect masks corners", "[tk][canvas]")
     CHECK(nearly_black(s->read_pixel(32, 32)));
 }
 
-TEST_CASE("Canvas::clip_rect reports full coverage with no clip pushed",
-          "[tk][canvas]")
+TEST_CASE("Canvas::clip_rect reports full coverage with no clip pushed", "[tk][canvas]")
 {
     auto s = TestSurface::create(64, 64);
     auto& c = s->canvas();
@@ -145,8 +144,7 @@ TEST_CASE("Canvas::clip_rect intersects nested pushes", "[tk][canvas]")
     CHECK(r.h == Catch::Approx(20.0f).margin(0.5));
 }
 
-TEST_CASE("Canvas::clip_rect on a disjoint nested push is empty",
-          "[tk][canvas]")
+TEST_CASE("Canvas::clip_rect on a disjoint nested push is empty", "[tk][canvas]")
 {
     auto s = TestSurface::create(64, 64);
     auto& c = s->canvas();
@@ -160,8 +158,7 @@ TEST_CASE("Canvas::clip_rect on a disjoint nested push is empty",
     CHECK(r.h <= 0.5f);
 }
 
-TEST_CASE("CanvasFactory::build_text returns a measurable layout",
-          "[tk][canvas]")
+TEST_CASE("CanvasFactory::build_text returns a measurable layout", "[tk][canvas]")
 {
     auto s = TestSurface::create(200, 50);
     auto layout = s->factory().build_text("Hello, world", tk::TextStyle{});
@@ -174,17 +171,16 @@ TEST_CASE("CanvasFactory::build_text returns a measurable layout",
 
 // build_text is a shim over build_rich_text with one span; a plain call and
 // the equivalent one-span rich call must lay out identically.
-TEST_CASE("build_text == build_rich_text of a single plain span",
-          "[tk][canvas]")
+TEST_CASE("build_text == build_rich_text of a single plain span", "[tk][canvas]")
 {
-    auto  s = TestSurface::create(300, 80);
+    auto s = TestSurface::create(300, 80);
     auto& f = s->factory();
 
     for (bool wrap : {false, true})
     {
         tk::TextStyle st{};
-        st.role      = tk::FontRole::Body;
-        st.wrap      = wrap;
+        st.role = tk::FontRole::Body;
+        st.wrap = wrap;
         st.max_width = 240.0f;
 
         auto plain = f.build_text("The quick brown fox", st);
@@ -204,28 +200,27 @@ TEST_CASE("build_text layout char_index_at returns valid offset for plain text",
 {
     auto s = TestSurface::create(400, 60);
     tk::TextStyle st{};
-    st.role      = tk::FontRole::Body;
-    st.wrap      = true;
+    st.role = tk::FontRole::Body;
+    st.wrap = true;
     st.max_width = 380.0f;
-    auto layout  = s->factory().build_text("Hello world", st);
+    auto layout = s->factory().build_text("Hello world", st);
     REQUIRE(layout);
 
-    auto sz  = layout->measure();
+    auto sz = layout->measure();
     tk::Point mid{sz.w * 0.5f, sz.h * 0.5f};
     int idx = layout->char_index_at(mid);
     CHECK(idx >= 0);
     CHECK(idx <= static_cast<int>(std::string("Hello world").size()));
 }
 
-TEST_CASE("build_text layout selection_rects returns non-empty rects",
-          "[tk][canvas][selection]")
+TEST_CASE("build_text layout selection_rects returns non-empty rects", "[tk][canvas][selection]")
 {
     auto s = TestSurface::create(400, 60);
     tk::TextStyle st{};
-    st.role      = tk::FontRole::Body;
-    st.wrap      = true;
+    st.role = tk::FontRole::Body;
+    st.wrap = true;
     st.max_width = 380.0f;
-    auto layout  = s->factory().build_text("Hello world", st);
+    auto layout = s->factory().build_text("Hello world", st);
     REQUIRE(layout);
 
     auto rects = layout->selection_rects(0, 5); // "Hello"
@@ -242,13 +237,13 @@ TEST_CASE("build_text layout text_range extracts correct UTF-8 substring",
 {
     auto s = TestSurface::create(400, 60);
     tk::TextStyle st{};
-    st.role      = tk::FontRole::Body;
-    st.wrap      = true;
+    st.role = tk::FontRole::Body;
+    st.wrap = true;
     st.max_width = 380.0f;
-    auto layout  = s->factory().build_text("Hello world", st);
+    auto layout = s->factory().build_text("Hello world", st);
     REQUIRE(layout);
 
-    CHECK(layout->text_range(0, 5)  == "Hello");
+    CHECK(layout->text_range(0, 5) == "Hello");
     CHECK(layout->text_range(6, 11) == "world");
     CHECK(layout->text_range(3, 3).empty());
 }
@@ -263,13 +258,13 @@ TEST_CASE("build_rich_text single-line ellipsis stays one line with a big "
           "emoji run",
           "[tk][canvas][emoji]")
 {
-    auto  s = TestSurface::create(400, 80);
+    auto s = TestSurface::create(400, 80);
     auto& f = s->factory();
 
     tk::TextStyle st{};
-    st.role      = tk::FontRole::Body;
-    st.trim      = tk::TextTrim::Ellipsis;
-    st.wrap      = false;
+    st.role = tk::FontRole::Body;
+    st.trim = tk::TextTrim::Ellipsis;
+    st.wrap = false;
     st.max_width = 100.0f; // deliberately tight
 
     // Reference: one space, same style — exactly one line of body text.
@@ -285,10 +280,12 @@ TEST_CASE("build_rich_text single-line ellipsis stays one line with a big "
     // (measure().h ~= 2x ref_h); it must ellipsize on a single line.
     std::string emoji;
     for (int i = 0; i < 16; ++i)
+    {
         emoji += "\xF0\x9F\x98\x80"; // 😀
+    }
     std::vector<tk::TextSpan> spans(2);
-    spans[0].text         = "Room ";
-    spans[1].text         = emoji;
+    spans[0].text = "Room ";
+    spans[1].text = emoji;
     spans[1].is_emoji_run = true;
 
     auto lay = f.build_rich_text(spans, st);
@@ -305,13 +302,13 @@ TEST_CASE("build_text with a big emoji run stays one line for an ellipsis "
           "style",
           "[tk][canvas][emoji]")
 {
-    auto  s = TestSurface::create(400, 80);
+    auto s = TestSurface::create(400, 80);
     auto& f = s->factory();
 
     tk::TextStyle st{};
-    st.role      = tk::FontRole::Body;
-    st.trim      = tk::TextTrim::Ellipsis;
-    st.wrap      = false;
+    st.role = tk::FontRole::Body;
+    st.trim = tk::TextTrim::Ellipsis;
+    st.wrap = false;
     st.max_width = 100.0f;
 
     auto ref = f.build_text(" ", st);
@@ -321,7 +318,9 @@ TEST_CASE("build_text with a big emoji run stays one line for an ellipsis "
 
     std::string name = "Room ";
     for (int i = 0; i < 16; ++i)
+    {
         name += "\xF0\x9F\x98\x80"; // 😀
+    }
 
     auto lay = f.build_text(name, st);
     REQUIRE(lay);
@@ -363,8 +362,7 @@ TEST_CASE("Canvas::draw_text writes glyphs into the surface", "[tk][canvas]")
     CHECK(found_glyph_pixel);
 }
 
-TEST_CASE("tk::initials_of applies the shared word-split policy",
-          "[tk][canvas][initials]")
+TEST_CASE("tk::initials_of applies the shared word-split policy", "[tk][canvas][initials]")
 {
     using tk::initials_of;
 
@@ -411,7 +409,7 @@ TEST_CASE("tk::initials_of applies the shared word-split policy",
     // A 4-byte code point (emoji) as a single-word name → that whole cluster.
     {
         const std::string r = initials_of("\xF0\x9F\x98\x80 face"); // 😀 face
-        CHECK(r == "\xF0\x9F\x98\x80\x66");                          // 😀 + 'f'
+        CHECK(r == "\xF0\x9F\x98\x80\x66");                         // 😀 + 'f'
     }
     // Multi-code-point emoji keep their whole cluster.
     {
@@ -419,10 +417,9 @@ TEST_CASE("tk::initials_of applies the shared word-split policy",
         const std::string flag = "\xF0\x9F\x87\xAB\xF0\x9F\x87\xB7";
         CHECK(initials_of(flag + " Paris") == flag + "P");
         // Scottish flag: black flag + tag sequence + cancel tag.
-        const std::string scot =
-            "\xF0\x9F\x8F\xB4\xF3\xA0\x81\xA7\xF3\xA0\x81\xA2"
-            "\xF3\xA0\x81\xB3\xF3\xA0\x81\xA3\xF3\xA0\x81\xB4"
-            "\xF3\xA0\x81\xBF";
+        const std::string scot = "\xF0\x9F\x8F\xB4\xF3\xA0\x81\xA7\xF3\xA0\x81\xA2"
+                                 "\xF3\xA0\x81\xB3\xF3\xA0\x81\xA3\xF3\xA0\x81\xB4"
+                                 "\xF3\xA0\x81\xBF";
         CHECK(initials_of(scot + " Scot") == scot + "S");
         // 👍🏽 → thumbs up + skin tone.
         const std::string thumb = "\xF0\x9F\x91\x8D\xF0\x9F\x8F\xBD";
@@ -431,9 +428,8 @@ TEST_CASE("tk::initials_of applies the shared word-split policy",
         const std::string heart = "\xE2\x9D\xA4\xEF\xB8\x8F";
         CHECK(initials_of(heart + " Love") == heart + "L");
         // 👨‍👩‍👧 → full ZWJ family.
-        const std::string family =
-            "\xF0\x9F\x91\xA8\xE2\x80\x8D\xF0\x9F\x91\xA9"
-            "\xE2\x80\x8D\xF0\x9F\x91\xA7";
+        const std::string family = "\xF0\x9F\x91\xA8\xE2\x80\x8D\xF0\x9F\x91\xA9"
+                                   "\xE2\x80\x8D\xF0\x9F\x91\xA7";
         CHECK(initials_of(family + " Fam") == family + "F");
         // An emoji in brackets is still found.
         CHECK(initials_of("(" + heart + ")") == heart);
@@ -444,8 +440,7 @@ TEST_CASE("tk::initials_of applies the shared word-split policy",
     CHECK(initials_of("Ada\xC2\xA0Lovelace") == "AL");
 }
 
-TEST_CASE("Canvas::draw_initials_circle fills bg and draws letter",
-          "[tk][canvas]")
+TEST_CASE("Canvas::draw_initials_circle fills bg and draws letter", "[tk][canvas]")
 {
     auto s = TestSurface::create(64, 64);
     auto& c = s->canvas();

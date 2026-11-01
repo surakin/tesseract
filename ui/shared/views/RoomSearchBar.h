@@ -41,12 +41,18 @@ public:
     // stealing it into the search field.
     void open(bool grab_focus = true);
     void close();
-    bool is_open() const { return is_open_; }
+    bool is_open() const
+    {
+        return is_open_;
+    }
 
     // ── Data ──────────────────────────────────────────────────────────────
     // Host pipes NativeTextField changes in here; fires on_query_changed.
     void set_query(const std::string& q);
-    const std::string& query() const { return query_; }
+    const std::string& query() const
+    {
+        return query_;
+    }
     // Resets the query to empty without touching focus or open/closed state
     // (unlike open(), which is written for "the user just invoked search"
     // and steals focus) — for callers that need to silently reset between
@@ -75,8 +81,14 @@ public:
 
     // ── Native-field rect delegation (driven by the host every frame) ─────
     // Returns empty rect when the bar is closed.
-    tk::Rect search_field_rect() const { return field_rect_; }
-    bool search_field_visible() const { return is_open_; }
+    tk::Rect search_field_rect() const
+    {
+        return field_rect_;
+    }
+    bool search_field_visible() const
+    {
+        return is_open_;
+    }
 
     // The self-owned search field, or null when constructed without a
     // Host. Unlike the other search overlays, this field has no popup-nav
@@ -101,24 +113,36 @@ public:
     void paint(tk::PaintCtx&) override;
 
     // ── Test-only accessors ───────────────────────────────────────────────
-    tk::Rect up_btn_rect_for_test() const { return up_btn_ ? up_btn_->bounds() : tk::Rect{}; }
-    tk::Rect down_btn_rect_for_test() const { return down_btn_ ? down_btn_->bounds() : tk::Rect{}; }
-    tk::Rect close_btn_rect_for_test() const { return close_btn_ ? close_btn_->bounds() : tk::Rect{}; }
-    tk::Rect paginate_rect_for_test() const { return paginate_cb_ ? paginate_cb_->bounds() : tk::Rect{}; }
+    tk::Rect up_btn_rect_for_test() const
+    {
+        return up_btn_ ? up_btn_->bounds() : tk::Rect{};
+    }
+    tk::Rect down_btn_rect_for_test() const
+    {
+        return down_btn_ ? down_btn_->bounds() : tk::Rect{};
+    }
+    tk::Rect close_btn_rect_for_test() const
+    {
+        return close_btn_ ? close_btn_->bounds() : tk::Rect{};
+    }
+    tk::Rect paginate_rect_for_test() const
+    {
+        return paginate_cb_ ? paginate_cb_->bounds() : tk::Rect{};
+    }
 
 private:
     bool is_open_ = false;
     bool show_close_button_ = true;
-    bool show_paginate_     = true;
+    bool show_paginate_ = true;
     std::string query_;
     std::string count_text_ = tk::tr("Type to search");
 
     // Child widgets (owned by widget tree).
-    tk::Label*       count_label_ = nullptr;
-    tk::Button*      up_btn_      = nullptr;
-    tk::Button*      down_btn_    = nullptr;
+    tk::Label* count_label_ = nullptr;
+    tk::Button* up_btn_ = nullptr;
+    tk::Button* down_btn_ = nullptr;
     tk::CheckButton* paginate_cb_ = nullptr;
-    tk::Button*      close_btn_   = nullptr;
+    tk::Button* close_btn_ = nullptr;
 
     // Widest count_label_ width seen so far; never shrinks so the text field
     // doesn't jitter as the match count grows during pagination.

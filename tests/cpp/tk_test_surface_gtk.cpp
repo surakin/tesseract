@@ -14,8 +14,7 @@ class GtkTestSurface : public TestSurface
 public:
     GtkTestSurface(int w, int h)
         : surface_(cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h)),
-          cr_(cairo_create(surface_)),
-          factory_(tk::cairo_pango::make_factory()),
+          cr_(cairo_create(surface_)), factory_(tk::cairo_pango::make_factory()),
           canvas_(tk::cairo_pango::make_canvas(cr_))
     {
         // Default-fill the offscreen surface white so tests have a

@@ -30,27 +30,42 @@ namespace tk::cairo_pango
 namespace
 {
 
+// Theme link colour (see set_link_color), as a Pango "#RRGGBB" string. The
+// default stands in until the shell applies a theme.
+std::string g_link_color = "#2563EB";
+
 // Query the GTK theme body font once at first call (family and size won't
 // change while the process runs). Returns the system font family name and pt.
-struct SystemFont { std::string family; int pt; };
+struct SystemFont
+{
+    std::string family;
+    int pt;
+};
 
 const SystemFont& gtk_system_font()
 {
-    static const SystemFont sf = []() -> SystemFont {
+    static const SystemFont sf = []() -> SystemFont
+    {
         GtkSettings* settings = gtk_settings_get_default();
         if (!settings)
+        {
             return {"Sans", 11};
+        }
         gchar* font_name = nullptr;
         g_object_get(settings, "gtk-font-name", &font_name, nullptr);
         if (!font_name)
+        {
             return {"Sans", 11};
+        }
         PangoFontDescription* d = pango_font_description_from_string(font_name);
         g_free(font_name);
         if (!d)
+        {
             return {"Sans", 11};
+        }
         const char* fam = pango_font_description_get_family(d);
-        int size        = pango_font_description_get_size(d);
-        int pt          = (size > 0) ? std::max(size / PANGO_SCALE, 8) : 11;
+        int size = pango_font_description_get_size(d);
+        int pt = (size > 0) ? std::max(size / PANGO_SCALE, 8) : 11;
         SystemFont result{fam ? fam : "Sans", pt};
         pango_font_description_free(d);
         return result;
@@ -68,15 +83,13 @@ PangoFontDescription* desc_for(FontRole role, bool monospace = false)
     // the <tt> markup used by `TextSpan::code` resolves to.
     // User families (font_config.h) win over the GTK theme font; the mono one
     // replaces Pango's generic "monospace" alias.
-    std::string user_family(monospace ? font_mono_family()
-                                      : font_role_family(role));
-    pango_font_description_set_family(
-        d, !user_family.empty() ? user_family.c_str()
-                                : (monospace ? "monospace" : sf.family.c_str()));
+    std::string user_family(monospace ? font_mono_family() : font_role_family(role));
+    pango_font_description_set_family(d, !user_family.empty()
+                                             ? user_family.c_str()
+                                             : (monospace ? "monospace" : sf.family.c_str()));
     pango_font_description_set_size(d, font_role_pt(role, sf.pt) * PANGO_SCALE);
-    pango_font_description_set_weight(d, font_role_is_semibold(role)
-                                            ? PANGO_WEIGHT_SEMIBOLD
-                                            : PANGO_WEIGHT_NORMAL);
+    pango_font_description_set_weight(d, font_role_is_semibold(role) ? PANGO_WEIGHT_SEMIBOLD
+                                                                     : PANGO_WEIGHT_NORMAL);
     return d;
 }
 
@@ -84,8 +97,7 @@ PangoFontDescription* desc_for(FontRole role, bool monospace = false)
 // locale-aware uppercasing to the result before drawing.
 std::string initials_upper(std::string_view name, AvatarText text)
 {
-    std::string base =
-        text == AvatarText::Literal ? std::string(name) : initials_of(name);
+    std::string base = text == AvatarText::Literal ? std::string(name) : initials_of(name);
     char* up = g_utf8_strup(base.c_str(), static_cast<gssize>(base.size()));
     std::string out(up);
     g_free(up);
@@ -147,8 +159,7 @@ public:
             return 0;
         }
         const int stride = cairo_image_surface_get_stride(surface_);
-        std::size_t bytes = static_cast<std::size_t>(stride) *
-                            static_cast<std::size_t>(height_);
+        std::size_t bytes = static_cast<std::size_t>(stride) * static_cast<std::size_t>(height_);
         for (const auto& e : scaled_cache_)
         {
             const int es = cairo_image_surface_get_stride(e.surface);
@@ -189,17 +200,16 @@ public:
             {
                 if (it != scaled_cache_.begin())
                 {
-                    scaled_cache_.splice(scaled_cache_.begin(), scaled_cache_,
-                                         it);
+                    scaled_cache_.splice(scaled_cache_.begin(), scaled_cache_, it);
                 }
                 return scaled_cache_.front().surface;
             }
         }
-        cairo_surface_t* scaled = cairo_image_surface_create(
-            CAIRO_FORMAT_ARGB32, target_w, target_h);
+        cairo_surface_t* scaled =
+            cairo_image_surface_create(CAIRO_FORMAT_ARGB32, target_w, target_h);
         cairo_t* cr = cairo_create(scaled);
         cairo_scale(cr, static_cast<double>(target_w) / width_,
-                   static_cast<double>(target_h) / height_);
+                    static_cast<double>(target_h) / height_);
         cairo_set_source_surface(cr, surface_, 0, 0);
         cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_BEST);
         cairo_paint(cr);
@@ -264,8 +274,8 @@ public:
     // math — matching build_text's single elided line and the Qt6 backend.
     void clamp_to_single_line(float nominal_h, float nominal_ascent)
     {
-        single_line_    = true;
-        nominal_h_      = nominal_h;
+        single_line_ = true;
+        nominal_h_ = nominal_h;
         nominal_ascent_ = nominal_ascent;
     }
 
@@ -292,32 +302,33 @@ public:
         int byte_idx = 0, trailing = 0;
         // pango_layout_xy_to_index returns FALSE when the point is outside
         // the layout extents, but still fills byte_idx with the nearest char.
-        pango_layout_xy_to_index(layout_,
-            static_cast<int>(local.x * PANGO_SCALE),
-            static_cast<int>(local.y * PANGO_SCALE),
-            &byte_idx, &trailing);
+        pango_layout_xy_to_index(layout_, static_cast<int>(local.x * PANGO_SCALE),
+                                 static_cast<int>(local.y * PANGO_SCALE), &byte_idx, &trailing);
         // When trailing==1 the hit is past the glyph's midpoint; advance one
         // grapheme cluster so the caret lands after it.
         if (trailing)
         {
             const char* text = pango_layout_get_text(layout_);
-            const char* p    = text + byte_idx;
+            const char* p = text + byte_idx;
             byte_idx = static_cast<int>(g_utf8_next_char(p) - text);
         }
         return byte_idx;
     }
 
-    std::vector<tk::Rect> selection_rects(int start_byte,
-                                          int end_byte) const override
+    std::vector<tk::Rect> selection_rects(int start_byte, int end_byte) const override
     {
         if (start_byte >= end_byte)
+        {
             return {};
-        const char* text  = pango_layout_get_text(layout_);
+        }
+        const char* text = pango_layout_get_text(layout_);
         int text_len = static_cast<int>(strlen(text));
         int lo = std::max(0, start_byte);
         int hi = std::min(end_byte, text_len);
         if (lo >= hi)
+        {
             return {};
+        }
 
         std::vector<tk::Rect> out;
         int n_lines = pango_layout_get_line_count(layout_);
@@ -327,29 +338,30 @@ public:
         {
             PangoLayoutLine* line = pango_layout_get_line_readonly(layout_, li);
             int line_start = line->start_index;
-            int line_end   = line_start + line->length;
+            int line_end = line_start + line->length;
 
             int seg_start = std::max(lo, line_start);
-            int seg_end   = std::min(hi, line_end);
+            int seg_end = std::min(hi, line_end);
             if (seg_start < seg_end)
             {
                 int x1_pu = 0, x2_pu = 0;
                 pango_layout_line_index_to_x(line, seg_start, FALSE, &x1_pu);
-                pango_layout_line_index_to_x(line, seg_end,   FALSE, &x2_pu);
+                pango_layout_line_index_to_x(line, seg_end, FALSE, &x2_pu);
 
                 PangoRectangle logical{};
                 pango_layout_iter_get_line_extents(iter, nullptr, &logical);
 
-                float x1   = static_cast<float>(x1_pu) / PANGO_SCALE;
-                float x2   = static_cast<float>(x2_pu) / PANGO_SCALE;
-                float y    = static_cast<float>(logical.y) / PANGO_SCALE;
-                float h    = static_cast<float>(logical.height) / PANGO_SCALE;
-                out.push_back({std::min(x1, x2), y,
-                               std::abs(x2 - x1), h});
+                float x1 = static_cast<float>(x1_pu) / PANGO_SCALE;
+                float x2 = static_cast<float>(x2_pu) / PANGO_SCALE;
+                float y = static_cast<float>(logical.y) / PANGO_SCALE;
+                float h = static_cast<float>(logical.height) / PANGO_SCALE;
+                out.push_back({std::min(x1, x2), y, std::abs(x2 - x1), h});
             }
 
             if (li < n_lines - 1)
+            {
                 pango_layout_iter_next_line(iter);
+            }
         }
         pango_layout_iter_free(iter);
         return out;
@@ -362,7 +374,9 @@ public:
         int lo = std::max(0, start_byte);
         int hi = std::min(end_byte, len);
         if (lo >= hi)
+        {
             return {};
+        }
         return std::string(text + lo, hi - lo);
     }
 
@@ -400,9 +414,9 @@ public:
     std::string link_at(tk::Point local) const override
     {
         int byte_idx = 0, trailing = 0;
-        if (!pango_layout_xy_to_index(
-                raw(), static_cast<int>(local.x * PANGO_SCALE),
-                static_cast<int>(local.y * PANGO_SCALE), &byte_idx, &trailing))
+        if (!pango_layout_xy_to_index(raw(), static_cast<int>(local.x * PANGO_SCALE),
+                                      static_cast<int>(local.y * PANGO_SCALE), &byte_idx,
+                                      &trailing))
         {
             return {};
         }
@@ -431,8 +445,7 @@ public:
     void clear(Color c) override
     {
         cairo_save(cr_);
-        cairo_set_source_rgba(cr_, c.r / 255.0, c.g / 255.0, c.b / 255.0,
-                              c.a / 255.0);
+        cairo_set_source_rgba(cr_, c.r / 255.0, c.g / 255.0, c.b / 255.0, c.a / 255.0);
         cairo_set_operator(cr_, CAIRO_OPERATOR_SOURCE);
         cairo_paint(cr_);
         cairo_restore(cr_);
@@ -471,8 +484,7 @@ public:
         cairo_stroke(cr_);
     }
 
-    void stroke_rounded_rect(Rect r, float radius, Color c,
-                             float width) override
+    void stroke_rounded_rect(Rect r, float radius, Color c, float width) override
     {
         set_source(c);
         cairo_set_line_width(cr_, width);
@@ -486,13 +498,13 @@ public:
         blit(static_cast<const CairoImage&>(image), dst);
     }
 
-    bool draw_bgra_premult_pixels(const std::uint8_t* pixels,
-                                   std::uint32_t w, std::uint32_t h,
-                                   Rect dst, bool flip_h = false,
-                                   bool high_quality = false) override
+    bool draw_bgra_premult_pixels(const std::uint8_t* pixels, std::uint32_t w, std::uint32_t h,
+                                  Rect dst, bool flip_h = false, bool high_quality = false) override
     {
         if (!pixels || w == 0 || h == 0 || dst.w <= 0.0f || dst.h <= 0.0f)
+        {
             return false;
+        }
         const int iw = static_cast<int>(w), ih = static_cast<int>(h);
         // pixels is already premultiplied BGRA in CAIRO_FORMAT_ARGB32 layout.
         // Stride may differ from w*4 (Cairo requires aligned rows), so we copy
@@ -502,20 +514,20 @@ public:
         if (stride == iw * 4)
         {
             // Stride matches packed width — wrap directly, zero extra copy.
-            surf = cairo_image_surface_create_for_data(
-                const_cast<std::uint8_t*>(pixels),
-                CAIRO_FORMAT_ARGB32, iw, ih, stride);
+            surf = cairo_image_surface_create_for_data(const_cast<std::uint8_t*>(pixels),
+                                                       CAIRO_FORMAT_ARGB32, iw, ih, stride);
         }
         else
         {
             static thread_local std::vector<unsigned char> buf;
             buf.resize(static_cast<std::size_t>(stride * ih));
             for (int y = 0; y < ih; ++y)
-                std::memcpy(buf.data() + y * stride,
-                            pixels + static_cast<std::size_t>(y) * iw * 4,
+            {
+                std::memcpy(buf.data() + y * stride, pixels + static_cast<std::size_t>(y) * iw * 4,
                             static_cast<std::size_t>(iw) * 4);
-            surf = cairo_image_surface_create_for_data(
-                buf.data(), CAIRO_FORMAT_ARGB32, iw, ih, stride);
+            }
+            surf = cairo_image_surface_create_for_data(buf.data(), CAIRO_FORMAT_ARGB32, iw, ih,
+                                                       stride);
         }
         if (cairo_surface_status(surf) != CAIRO_STATUS_SUCCESS)
         {
@@ -548,11 +560,13 @@ public:
         return true;
     }
 
-    bool draw_rgba_pixels(const std::uint8_t* pixels,
-                          std::uint32_t w, std::uint32_t h, Rect dst) override
+    bool draw_rgba_pixels(const std::uint8_t* pixels, std::uint32_t w, std::uint32_t h,
+                          Rect dst) override
     {
         if (!pixels || w == 0 || h == 0 || dst.w <= 0.0f || dst.h <= 0.0f)
+        {
             return false;
+        }
         const int iw = static_cast<int>(w), ih = static_cast<int>(h);
         // Cairo's native pixel format is premultiplied BGRA (CAIRO_FORMAT_ARGB32).
         // Convert straight RGBA → premultiplied BGRA into a temporary buffer.
@@ -569,8 +583,7 @@ public:
         for (int y = 0; y < ih; ++y)
         {
             const std::uint8_t* src_row = pixels + y * iw * 4;
-            auto* dst_row = reinterpret_cast<std::uint32_t*>(
-                buf.data() + y * stride);
+            auto* dst_row = reinterpret_cast<std::uint32_t*>(buf.data() + y * stride);
             if (opaque)
             {
                 for (int x = 0; x < iw; ++x)
@@ -589,16 +602,14 @@ public:
                     const unsigned g = src_row[x * 4 + 1];
                     const unsigned b = src_row[x * 4 + 2];
                     const unsigned a = src_row[x * 4 + 3];
-                    dst_row[x] = (a << 24) |
-                                 (((r * a + 127) / 255) << 16) |
-                                 (((g * a + 127) / 255) <<  8) |
-                                  ((b * a + 127) / 255);
+                    dst_row[x] = (a << 24) | (((r * a + 127) / 255) << 16) |
+                                 (((g * a + 127) / 255) << 8) | ((b * a + 127) / 255);
                 }
             }
         }
         // Wrap the converted buffer in a non-owning surface (zero additional copy).
-        cairo_surface_t* surf = cairo_image_surface_create_for_data(
-            buf.data(), CAIRO_FORMAT_ARGB32, iw, ih, stride);
+        cairo_surface_t* surf =
+            cairo_image_surface_create_for_data(buf.data(), CAIRO_FORMAT_ARGB32, iw, ih, stride);
         if (cairo_surface_status(surf) != CAIRO_STATUS_SUCCESS)
         {
             cairo_surface_destroy(surf);
@@ -645,22 +656,19 @@ public:
         cairo_restore(cr_);
     }
 
-    void draw_circle_image(const Image& image, Point centre,
-                           float diameter) override
+    void draw_circle_image(const Image& image, Point centre, float diameter) override
     {
         const auto& ci = static_cast<const CairoImage&>(image);
         cairo_save(cr_);
         cairo_arc(cr_, centre.x, centre.y, diameter * 0.5f, 0.0, 2.0 * M_PI);
         cairo_clip(cr_);
-        Rect dst{centre.x - diameter * 0.5f, centre.y - diameter * 0.5f,
-                 diameter, diameter};
+        Rect dst{centre.x - diameter * 0.5f, centre.y - diameter * 0.5f, diameter, diameter};
         blit(ci, dst);
         cairo_restore(cr_);
     }
 
-    void draw_initials_circle_(std::string_view name, Point centre,
-                               float diameter, Color bg, Color fg,
-                               AvatarText text) override
+    void draw_initials_circle_(std::string_view name, Point centre, float diameter, Color bg,
+                               Color fg, AvatarText text) override
     {
         set_source(bg);
         cairo_arc(cr_, centre.x, centre.y, diameter * 0.5f, 0.0, 2.0 * M_PI);
@@ -675,8 +683,8 @@ public:
         pango_font_description_set_weight(d, PANGO_WEIGHT_SEMIBOLD);
         // Pango font sizes use PANGO_SCALE units, with absolute set via
         // set_absolute_size taking device units * PANGO_SCALE.
-        pango_font_description_set_absolute_size(
-            d, diameter * kAvatarInitialsFontRatio * PANGO_SCALE);
+        pango_font_description_set_absolute_size(d,
+                                                 diameter * kAvatarInitialsFontRatio * PANGO_SCALE);
         pango_layout_set_font_description(lay, d);
         pango_font_description_free(d);
         pango_layout_set_text(lay, s.c_str(), static_cast<int>(s.size()));
@@ -752,8 +760,8 @@ public:
     {
         double x1, y1, x2, y2;
         cairo_clip_extents(cr_, &x1, &y1, &x2, &y2);
-        return {static_cast<float>(x1), static_cast<float>(y1),
-                static_cast<float>(x2 - x1), static_cast<float>(y2 - y1)};
+        return {static_cast<float>(x1), static_cast<float>(y1), static_cast<float>(x2 - x1),
+                static_cast<float>(y2 - y1)};
     }
 
     float scale_factor() const override
@@ -775,8 +783,7 @@ private:
 
     void set_source(Color c)
     {
-        cairo_set_source_rgba(cr_, c.r / 255.0, c.g / 255.0, c.b / 255.0,
-                              c.a / 255.0);
+        cairo_set_source_rgba(cr_, c.r / 255.0, c.g / 255.0, c.b / 255.0, c.a / 255.0);
     }
 
     void rounded_path(Rect r, float radius)
@@ -796,8 +803,7 @@ private:
     {
         // Guard against a zero-dimension decoded image / dst: a non-finite
         // scale poisons the cairo context for the whole frame.
-        if (image.width() <= 0 || image.height() <= 0 || dst.w <= 0.0f ||
-            dst.h <= 0.0f)
+        if (image.width() <= 0 || image.height() <= 0 || dst.w <= 0.0f || dst.h <= 0.0f)
         {
             return;
         }
@@ -852,17 +858,20 @@ std::unique_ptr<Canvas> make_canvas(cairo_t* cr)
 class CairoOffscreenSurface : public CanvasFactory::OffscreenSurface
 {
 public:
-    CairoOffscreenSurface(cairo_surface_t* surface, cairo_t* cr,
-                          std::unique_ptr<Canvas> canvas)
+    CairoOffscreenSurface(cairo_surface_t* surface, cairo_t* cr, std::unique_ptr<Canvas> canvas)
         : surface_(surface), cr_(cr), canvas_(std::move(canvas))
     {
     }
     ~CairoOffscreenSurface() override
     {
         if (cr_)
+        {
             cairo_destroy(cr_);
+        }
         if (surface_)
+        {
             cairo_surface_destroy(surface_);
+        }
     }
     CairoOffscreenSurface(const CairoOffscreenSurface&) = delete;
     CairoOffscreenSurface& operator=(const CairoOffscreenSurface&) = delete;
@@ -905,32 +914,36 @@ public:
     }
     CairoPangoFactory(const CairoPangoFactory&) = delete;
 
-    std::unique_ptr<Image>
-    decode_image(std::span<const std::uint8_t> bytes) override
+    std::unique_ptr<Image> decode_image(std::span<const std::uint8_t> bytes) override
     {
         if (bytes.empty())
         {
             return nullptr;
         }
         if (tesseract::is_jxl_data(bytes))
+        {
             return tesseract::jxl::decode_still(*this, bytes);
+        }
         if (!tk::decode_size_allowed(bytes, /*animated=*/false))
+        {
             return nullptr;
+        }
         GdkPixbufLoader* loader = gdk_pixbuf_loader_new();
         // Formats probe_image_dimensions doesn't know still go through
         // whatever gdk-pixbuf loaders are installed; cap their output size.
         g_signal_connect(loader, "size-prepared",
                          G_CALLBACK(+[](GdkPixbufLoader* l, int w, int h, gpointer)
                                     {
-                                        const std::uint64_t px =
-                                            std::uint64_t(std::max(w, 0)) *
-                                            std::uint64_t(std::max(h, 0));
+                                        const std::uint64_t px = std::uint64_t(std::max(w, 0)) *
+                                                                 std::uint64_t(std::max(h, 0));
                                         if (px <= tk::kMaxStillDecodePixels)
+                                        {
                                             return;
+                                        }
                                         const double s = std::sqrt(
                                             double(tk::kMaxStillDecodePixels) / double(px));
-                                        gdk_pixbuf_loader_set_size(
-                                            l, std::max(1, int(w * s)), std::max(1, int(h * s)));
+                                        gdk_pixbuf_loader_set_size(l, std::max(1, int(w * s)),
+                                                                   std::max(1, int(h * s)));
                                     }),
                          nullptr);
         GError* err = nullptr;
@@ -968,14 +981,12 @@ public:
         return std::make_unique<CairoImage>(surface);
     }
 
-    std::unique_ptr<Image>
-    create_image_rgba(const std::uint8_t* pixels, int w, int h) override
+    std::unique_ptr<Image> create_image_rgba(const std::uint8_t* pixels, int w, int h) override
     {
         return make_image_rgba(pixels, w, h);
     }
 
-    std::unique_ptr<Image>
-    scale_image(const Image& src, int max_w, int max_h) override
+    std::unique_ptr<Image> scale_image(const Image& src, int max_w, int max_h) override
     {
         const auto& ci = static_cast<const CairoImage&>(src);
         int sw = src.width();
@@ -984,13 +995,11 @@ public:
         {
             return nullptr;
         }
-        float scale = std::min(static_cast<float>(max_w) / sw,
-                               static_cast<float>(max_h) / sh);
+        float scale = std::min(static_cast<float>(max_w) / sw, static_cast<float>(max_h) / sh);
         int tw = static_cast<int>(std::ceil(sw * scale));
         int th = static_cast<int>(std::ceil(sh * scale));
 
-        cairo_surface_t* dst =
-            cairo_image_surface_create(CAIRO_FORMAT_ARGB32, tw, th);
+        cairo_surface_t* dst = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, tw, th);
         if (cairo_surface_status(dst) != CAIRO_STATUS_SUCCESS)
         {
             cairo_surface_destroy(dst);
@@ -1006,24 +1015,28 @@ public:
         return std::make_unique<CairoImage>(dst);
     }
 
-    std::unique_ptr<AnimatedImage>
-    decode_animated_image(std::span<const std::uint8_t> bytes,
-                          int max_px) override
+    std::unique_ptr<AnimatedImage> decode_animated_image(std::span<const std::uint8_t> bytes,
+                                                         int max_px) override
     {
         if (bytes.empty())
+        {
             return nullptr;
+        }
         if (tesseract::is_jxl_data(bytes))
+        {
             return tesseract::jxl::decode_animated(*this, bytes, max_px);
+        }
         if (!tk::decode_size_allowed(bytes, /*animated=*/true))
+        {
             return nullptr;
+        }
 
         GInputStream* stream = g_memory_input_stream_new_from_data(
             bytes.data(), static_cast<gssize>(bytes.size()), nullptr);
 
         GError* err = nullptr;
         G_GNUC_BEGIN_IGNORE_DEPRECATIONS
-        GdkPixbufAnimation* anim =
-            gdk_pixbuf_animation_new_from_stream(stream, nullptr, &err);
+        GdkPixbufAnimation* anim = gdk_pixbuf_animation_new_from_stream(stream, nullptr, &err);
         g_object_unref(stream);
         bool is_static = anim && gdk_pixbuf_animation_is_static_image(anim);
         G_GNUC_END_IGNORE_DEPRECATIONS
@@ -1031,9 +1044,13 @@ public:
         if (!anim || err || is_static)
         {
             if (err)
+            {
                 g_error_free(err);
+            }
             if (anim)
+            {
                 g_object_unref(anim);
+            }
             return nullptr;
         }
 
@@ -1051,8 +1068,7 @@ public:
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
         GTimeVal tv = {0, 0};
-        GdkPixbufAnimationIter* iter =
-            gdk_pixbuf_animation_get_iter(anim, &tv);
+        GdkPixbufAnimationIter* iter = gdk_pixbuf_animation_get_iter(anim, &tv);
 
         std::vector<std::unique_ptr<Image>> frames;
         std::vector<int> delays;
@@ -1064,18 +1080,21 @@ public:
         for (;;)
         {
             if (static_cast<int>(frames.size()) >= tk::kAnimDecodeMaxFrames)
+            {
                 break;
+            }
 
             GdkPixbuf* pb = gdk_pixbuf_animation_iter_get_pixbuf(iter);
             if (!pb)
+            {
                 break;
+            }
 
             // Snapshot frame 0 so we can detect when the animation loops back.
             const guchar* cur_pixels = gdk_pixbuf_read_pixels(pb);
-            const int cur_rowstride  = gdk_pixbuf_get_rowstride(pb);
-            const int cur_h          = gdk_pixbuf_get_height(pb);
-            const gsize cur_bytes    =
-                static_cast<gsize>(cur_rowstride) * static_cast<gsize>(cur_h);
+            const int cur_rowstride = gdk_pixbuf_get_rowstride(pb);
+            const int cur_h = gdk_pixbuf_get_height(pb);
+            const gsize cur_bytes = static_cast<gsize>(cur_rowstride) * static_cast<gsize>(cur_h);
 
             if (frames.empty())
             {
@@ -1089,8 +1108,8 @@ public:
                 break;
             }
 
-            int delay = tk::normalize_frame_delay_ms(
-                gdk_pixbuf_animation_iter_get_delay_time(iter));
+            int delay =
+                tk::normalize_frame_delay_ms(gdk_pixbuf_animation_iter_get_delay_time(iter));
 
             int w = gdk_pixbuf_get_width(pb);
             int h = gdk_pixbuf_get_height(pb);
@@ -1115,7 +1134,9 @@ public:
 
             cairo_surface_t* surf = pixbuf_to_image_surface(scaled);
             if (owned)
+            {
                 g_object_unref(scaled);
+            }
             if (surf)
             {
                 frames.push_back(std::make_unique<CairoImage>(surf));
@@ -1125,7 +1146,9 @@ public:
             g_time_val_add(&tv, static_cast<glong>(delay) * 1000L);
 
             if (!gdk_pixbuf_animation_iter_advance(iter, &tv))
+            {
                 break; // animation ended (non-looping)
+            }
         }
 #pragma GCC diagnostic pop
 
@@ -1133,17 +1156,17 @@ public:
         g_object_unref(anim);
 
         if (frames.size() < 2)
+        {
             return nullptr;
-        return std::make_unique<AnimatedImage>(std::move(frames),
-                                              std::move(delays));
+        }
+        return std::make_unique<AnimatedImage>(std::move(frames), std::move(delays));
     }
 
     // Cheap plain-string path (plain PangoLayout, no markup parse) for a
     // single is_plain() run. Only reached for !s.wrap (see build_rich_text),
     // so it stays one line; hard breaks are folded first (otherwise Pango's
     // single_paragraph_mode still renders a visible glyph for each).
-    std::unique_ptr<TextLayout> build_plain_(std::string_view text_in,
-                                             const TextStyle& s)
+    std::unique_ptr<TextLayout> build_plain_(std::string_view text_in, const TextStyle& s)
     {
         const std::string folded = fold_hard_breaks_utf8(text_in);
 
@@ -1152,8 +1175,7 @@ public:
         pango_layout_set_font_description(lay, d);
         pango_font_description_free(d);
 
-        pango_layout_set_text(lay, folded.data(),
-                              static_cast<int>(folded.size()));
+        pango_layout_set_text(lay, folded.data(), static_cast<int>(folded.size()));
 
         PangoAlignment a = PANGO_ALIGN_LEFT;
         switch (s.halign)
@@ -1174,18 +1196,21 @@ public:
         // for trim == Ellipsis (room names/previews), else clear it so "no
         // wrap" doesn't wrap.
         if (s.max_width > 0 && s.trim == TextTrim::Ellipsis)
-            pango_layout_set_width(lay,
-                                   static_cast<int>(s.max_width * PANGO_SCALE));
+        {
+            pango_layout_set_width(lay, static_cast<int>(s.max_width * PANGO_SCALE));
+        }
         else
+        {
             pango_layout_set_width(lay, -1);
+        }
         if (s.max_height > 0)
-            pango_layout_set_height(
-                lay, static_cast<int>(s.max_height * PANGO_SCALE));
+        {
+            pango_layout_set_height(lay, static_cast<int>(s.max_height * PANGO_SCALE));
+        }
 
         pango_layout_set_wrap(lay, PANGO_WRAP_WORD_CHAR);
-        pango_layout_set_ellipsize(lay, s.trim == TextTrim::Ellipsis
-                                            ? PANGO_ELLIPSIZE_END
-                                            : PANGO_ELLIPSIZE_NONE);
+        pango_layout_set_ellipsize(lay, s.trim == TextTrim::Ellipsis ? PANGO_ELLIPSIZE_END
+                                                                     : PANGO_ELLIPSIZE_NONE);
         pango_layout_set_single_paragraph_mode(lay, TRUE);
 
         return std::make_unique<PangoTextLayout>(lay);
@@ -1199,21 +1224,21 @@ public:
         // branch did before the merge) instead of building + parsing markup.
         // Wrapped text keeps the markup path (parity with Qt6).
         if (spans.size() == 1 && is_plain(spans[0]) && !s.wrap)
+        {
             return build_plain_(spans[0].text, s);
+        }
 
         // Emoji-run point size: BigEmoji for an emoji-only body (the
         // build_text shim routes those here), else InlineEmoji; then the
         // shared tweak knob, then GTK's stock-rendering compensation (1.0 —
         // see canvas_cairo.h). Parallel to the Qt6 backend's build_rich_text.
-        const FontRole emoji_role = (s.role == FontRole::BigEmoji)
-                                        ? FontRole::BigEmoji
-                                        : FontRole::InlineEmoji;
-        const int emoji_pt = std::max(
-            static_cast<int>(
-                font_role_pt(emoji_role, gtk_system_font().pt) *
-                    kEmojiSizeAdjust * kGtkEmojiStockComp +
-                0.5),
-            6);
+        const FontRole emoji_role =
+            (s.role == FontRole::BigEmoji) ? FontRole::BigEmoji : FontRole::InlineEmoji;
+        const int emoji_pt =
+            std::max(static_cast<int>(font_role_pt(emoji_role, gtk_system_font().pt) *
+                                          kEmojiSizeAdjust * kGtkEmojiStockComp +
+                                      0.5),
+                     6);
 
         // Custom-emoticon (MSC2545, TextSpan::is_image) box size: BigEmoji
         // for an emoji-only body, else InlineCustomEmoji — independent of
@@ -1221,11 +1246,10 @@ public:
         // (still InlineEmoji, a deliberate same-as-body no-op). No stock-
         // rendering compensation here: kGtkEmojiStockComp corrects for
         // color-emoji-font rendering quirks, not an arbitrary bitmap image.
-        const FontRole custom_emoji_role = (s.role == FontRole::BigEmoji)
-                                                ? FontRole::BigEmoji
-                                                : FontRole::InlineCustomEmoji;
-        const int custom_emoji_pt = std::max(
-            font_role_pt(custom_emoji_role, gtk_system_font().pt), 6);
+        const FontRole custom_emoji_role =
+            (s.role == FontRole::BigEmoji) ? FontRole::BigEmoji : FontRole::InlineCustomEmoji;
+        const int custom_emoji_pt =
+            std::max(font_role_pt(custom_emoji_role, gtk_system_font().pt), 6);
 
         // Ascent/descent of this layout's own role — needed to size a pill
         // span's reserved box to exactly what tk::measure_pill() computes,
@@ -1280,8 +1304,8 @@ public:
                         (sp.pill_kind == PillKind::User) ||
                         (sp.pill_kind == PillKind::Room && sp.url.empty());
                     pspec.text_role = s.role;
-                    const tk::PillMetrics m = tk::measure_pill(
-                        *this, pspec, role_ascent, role_descent);
+                    const tk::PillMetrics m =
+                        tk::measure_pill(*this, pspec, role_ascent, role_descent);
                     pill_ranges.push_back({start, end, m.width});
                     if (!sp.url.empty())
                     {
@@ -1321,10 +1345,9 @@ public:
                 }
                 else
                 {
-                    gchar* fam = g_markup_escape_text(
-                        mono.data(), static_cast<gssize>(mono.size()));
-                    t = "<span font_family=\"" + std::string(fam) + "\">" + t +
-                        "</span>";
+                    gchar* fam =
+                        g_markup_escape_text(mono.data(), static_cast<gssize>(mono.size()));
+                    t = "<span font_family=\"" + std::string(fam) + "\">" + t + "</span>";
                     g_free(fam);
                 }
             }
@@ -1351,18 +1374,16 @@ public:
                 // and the pill background is drawn by the view).
                 if (!sp.is_mention)
                 {
-                    t = "<span underline=\"single\" foreground=\"#2563EB\">" + t +
+                    t = "<span underline=\"single\" foreground=\"" + g_link_color + "\">" + t +
                         "</span>";
                 }
                 url_ranges.push_back(
-                    {byte_offset,
-                     byte_offset + static_cast<int>(sp.text.size()), sp.url});
+                    {byte_offset, byte_offset + static_cast<int>(sp.text.size()), sp.url});
             }
             if (sp.is_emoji_run)
             {
-                t = "<span size=\"" +
-                    std::to_string(emoji_pt * PANGO_SCALE) + "\">" +
-                    t + "</span>";
+                t = "<span size=\"" + std::to_string(emoji_pt * PANGO_SCALE) + "\">" + t +
+                    "</span>";
             }
             markup += t;
             byte_offset += static_cast<int>(sp.text.size());
@@ -1371,8 +1392,7 @@ public:
         PangoFontDescription* d = desc_for(s.role, s.monospace);
         pango_layout_set_font_description(lay, d);
         pango_font_description_free(d);
-        pango_layout_set_markup(lay, markup.c_str(),
-                                static_cast<int>(markup.size()));
+        pango_layout_set_markup(lay, markup.c_str(), static_cast<int>(markup.size()));
         if (!image_ranges.empty() || !pill_ranges.empty())
         {
             // Extend (not replace) the attribute list pango_set_markup just
@@ -1399,10 +1419,8 @@ public:
             // growing the line's reported height beyond plain text next to
             // it, since Pango computes a line's ascent/descent as the max
             // across every shape/glyph run sharing it.
-            const int pill_ascent_px =
-                static_cast<int>(role_ascent * PANGO_SCALE);
-            const int pill_h_px =
-                static_cast<int>((role_ascent + role_descent) * PANGO_SCALE);
+            const int pill_ascent_px = static_cast<int>(role_ascent * PANGO_SCALE);
+            const int pill_h_px = static_cast<int>((role_ascent + role_descent) * PANGO_SCALE);
             for (const auto& r : pill_ranges)
             {
                 const int w_px = static_cast<int>(r.width * PANGO_SCALE);
@@ -1417,8 +1435,7 @@ public:
         }
         if (s.max_width > 0)
         {
-            pango_layout_set_width(lay,
-                                   static_cast<int>(s.max_width * PANGO_SCALE));
+            pango_layout_set_width(lay, static_cast<int>(s.max_width * PANGO_SCALE));
         }
         else
         {
@@ -1435,18 +1452,19 @@ public:
         // Mirrors build_text's ellipsize handling above — this was missing
         // here entirely, so a single-line, ellipsis-trimmed rich-text style
         // (e.g. the room-list preview) never truncated at all.
-        pango_layout_set_ellipsize(lay, s.trim == TextTrim::Ellipsis
-                                            ? PANGO_ELLIPSIZE_END
-                                            : PANGO_ELLIPSIZE_NONE);
-        pango_layout_set_single_paragraph_mode(
-            lay, !s.wrap || s.trim == TextTrim::Ellipsis);
+        pango_layout_set_ellipsize(lay, s.trim == TextTrim::Ellipsis ? PANGO_ELLIPSIZE_END
+                                                                     : PANGO_ELLIPSIZE_NONE);
+        pango_layout_set_single_paragraph_mode(lay, !s.wrap || s.trim == TextTrim::Ellipsis);
 
         std::unique_ptr<PangoTextLayout> out;
         if (!url_ranges.empty())
-            out = std::make_unique<PangoRichTextLayout>(lay,
-                                                        std::move(url_ranges));
+        {
+            out = std::make_unique<PangoRichTextLayout>(lay, std::move(url_ranges));
+        }
         else
+        {
             out = std::make_unique<PangoTextLayout>(lay);
+        }
 
         if (!s.wrap)
         {
@@ -1455,12 +1473,8 @@ public:
             // upsized emoji makes the actual Pango line box taller.
             PangoFontDescription* nd = desc_for(s.role, s.monospace);
             PangoFontMetrics* fm = pango_context_get_metrics(ctx_, nd, nullptr);
-            const float asc =
-                static_cast<float>(pango_font_metrics_get_ascent(fm)) /
-                PANGO_SCALE;
-            const float desc =
-                static_cast<float>(pango_font_metrics_get_descent(fm)) /
-                PANGO_SCALE;
+            const float asc = static_cast<float>(pango_font_metrics_get_ascent(fm)) / PANGO_SCALE;
+            const float desc = static_cast<float>(pango_font_metrics_get_descent(fm)) / PANGO_SCALE;
             pango_font_metrics_unref(fm);
             pango_font_description_free(nd);
             out->clamp_to_single_line(asc + desc, asc);
@@ -1486,11 +1500,15 @@ public:
         {
             PangoLayoutRun* run = pango_layout_iter_get_run_readonly(it);
             if (!run)
+            {
                 continue;
+            }
             for (int i = 0; i < run->glyphs->num_glyphs; ++i)
             {
                 if (run->glyphs->glyphs[i].geometry.width > 0)
+                {
                     ++visible;
+                }
             }
         } while (pango_layout_iter_next_run(it));
         pango_layout_iter_free(it);
@@ -1552,8 +1570,7 @@ private:
         int in_stride = gdk_pixbuf_get_rowstride(pb);
         const guchar* pixels = gdk_pixbuf_read_pixels(pb);
 
-        cairo_surface_t* surface =
-            cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
+        cairo_surface_t* surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
         if (cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS)
         {
             cairo_surface_destroy(surface);
@@ -1588,24 +1605,26 @@ private:
         return surface;
     }
 
-    std::unique_ptr<CanvasFactory::OffscreenSurface>
-    create_offscreen(Size logical_size, float scale_factor) override
+    std::unique_ptr<CanvasFactory::OffscreenSurface> create_offscreen(Size logical_size,
+                                                                      float scale_factor) override
     {
         if (logical_size.w <= 0 || logical_size.h <= 0 || scale_factor <= 0)
+        {
             return nullptr;
-        const int pw =
-            static_cast<int>(std::ceil(logical_size.w * scale_factor));
-        const int ph =
-            static_cast<int>(std::ceil(logical_size.h * scale_factor));
+        }
+        const int pw = static_cast<int>(std::ceil(logical_size.w * scale_factor));
+        const int ph = static_cast<int>(std::ceil(logical_size.h * scale_factor));
         if (pw <= 0 || ph <= 0)
+        {
             return nullptr;
-        cairo_surface_t* surface =
-            cairo_image_surface_create(CAIRO_FORMAT_ARGB32, pw, ph);
-        if (!surface ||
-            cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS)
+        }
+        cairo_surface_t* surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, pw, ph);
+        if (!surface || cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS)
         {
             if (surface)
+            {
                 cairo_surface_destroy(surface);
+            }
             return nullptr;
         }
         // Logical-unit drawing on this surface then maps to its pw×ph
@@ -1615,8 +1634,7 @@ private:
         cairo_surface_set_device_scale(surface, scale_factor, scale_factor);
         cairo_t* cr = cairo_create(surface);
         auto canvas = make_canvas(cr);
-        return std::make_unique<CairoOffscreenSurface>(surface, cr,
-                                                        std::move(canvas));
+        return std::make_unique<CairoOffscreenSurface>(surface, cr, std::move(canvas));
     }
 };
 
@@ -1628,7 +1646,9 @@ std::unique_ptr<CanvasFactory> make_factory()
 std::unique_ptr<Image> make_image_rgba(const std::uint8_t* pixels, int w, int h)
 {
     if (!pixels || w <= 0 || h <= 0)
+    {
         return nullptr;
+    }
     cairo_surface_t* surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
     if (cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS)
     {
@@ -1672,6 +1692,18 @@ std::unique_ptr<Image> make_image(cairo_surface_t* surface)
 NativeImageHandle to_native_image(const Image& img)
 {
     return static_cast<const CairoImage&>(img).surface();
+}
+
+void set_link_color(Color c)
+{
+    static const char* kHex = "0123456789ABCDEF";
+    std::string col = "#";
+    for (std::uint8_t v : {c.r, c.g, c.b})
+    {
+        col += kHex[v >> 4];
+        col += kHex[v & 0x0F];
+    }
+    g_link_color = std::move(col);
 }
 
 } // namespace tk::cairo_pango

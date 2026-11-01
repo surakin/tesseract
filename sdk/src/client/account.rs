@@ -35,6 +35,41 @@ enum ValidateOutcome {
     NotMatrix,
 }
 
+/// First half of deleting a device on an OAuth (MAS) homeserver: hand the UI
+/// the account-management page for that device. `session` stays empty.
+#[cfg(not(test))]
+async fn oauth_delete_device_begin(
+    client: &Client,
+    device_id: &matrix_sdk::ruma::DeviceId,
+) -> crate::ffi::DeleteDeviceBegin {
+    use matrix_sdk::ruma::api::client::discovery::get_authorization_server_metadata::v1::{
+        AccountManagementActionData, DeviceDeleteData,
+    };
+    let fail = |message: String| crate::ffi::DeleteDeviceBegin {
+        ok: false,
+        message,
+        needs_uia: false,
+        fallback_url: String::new(),
+        session: String::new(),
+    };
+    let metadata = match client.oauth().server_metadata().await {
+        Ok(m) => m,
+        Err(e) => return fail(e.to_string()),
+    };
+    match metadata.account_management_url_with_action(AccountManagementActionData::DeviceDelete(
+        DeviceDeleteData::new(device_id),
+    )) {
+        Some(url) => crate::ffi::DeleteDeviceBegin {
+            ok: true,
+            message: String::new(),
+            needs_uia: true,
+            fallback_url: url.to_string(),
+            session: String::new(),
+        },
+        None => fail(super::NO_ACCOUNT_MANAGEMENT_PAGE.into()),
+    }
+}
+
 /// Read the user's MSC4356 recent-emoji blob with stable → unstable →
 /// Element (`io.element.recent_emoji`) precedence. Returns an empty Vec if no blob exists, the client
 /// is in a fresh-login state, or every parse path errors out.
@@ -503,11 +538,24 @@ impl ClientFfi {
                 #[cfg(debug_assertions)]
                 "account/save_prefs".to_string(),
             );
-            let Ok(raw_value) = serde_json::from_str::<serde_json::Value>(&json) else {
-                return;
+            let report = |msg: String| {
+                tracing::warn!("save_prefs: {msg}");
+                if order.note_result(true) {
+                    if let Some(h) = handler_for_guard.as_ref() {
+                        h.lock().on_error(
+                            "save_prefs",
+                            &format!("Couldn't save your room layout: {msg}"),
+                            false,
+                        );
+                    }
+                }
             };
-            let Ok(raw) = Raw::new(&raw_value) else {
-                return;
+            let raw = match serde_json::from_str::<serde_json::Value>(&json)
+                .map_err(|e| e.to_string())
+                .and_then(|v| Raw::new(&v).map_err(|e| e.to_string()))
+            {
+                Ok(raw) => raw,
+                Err(e) => return report(format!("invalid prefs json: {e}")),
             };
             // Writes do not interleave, and an older save that a newer one has
             // overtaken is not sent: the server would keep the older document.
@@ -516,10 +564,16 @@ impl ClientFfi {
                 return;
             }
             let et = GlobalAccountDataEventType::from("im.gnomos.tesseract");
-            let _ = client
+            match client
                 .account()
                 .set_account_data_raw(et, raw.cast_unchecked())
-                .await;
+                .await
+            {
+                Ok(_) => {
+                    order.note_result(false);
+                }
+                Err(e) => report(e.to_string()),
+            }
         });
     }
 
@@ -539,8 +593,7 @@ impl ClientFfi {
         use matrix_sdk::ruma::events::GlobalAccountDataEventType;
         use matrix_sdk::ruma::serde::Raw;
 
-        const SAVE_PREFS_SHUTDOWN_TIMEOUT: std::time::Duration =
-            std::time::Duration::from_secs(3);
+        const SAVE_PREFS_SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 
         let Some(client) = self.client.clone() else {
             return err("not logged in");
@@ -554,6 +607,7 @@ impl ClientFfi {
         let ad_lock = Arc::clone(&self.account_data_lock);
         let order = Arc::clone(&self.prefs_saves);
         let seq = order.next();
+        let _in_flight = self.in_flight_guard("save-prefs");
         self.rt.block_on(async move {
             let et = GlobalAccountDataEventType::from("im.gnomos.tesseract");
             // The lock and the newest check are inside the timeout, so waiting
@@ -1169,6 +1223,11 @@ impl ClientFfi {
             "account/begin_delete_device".to_string(),
         );
         self.rt.block_on(async move {
+            // OAuth (MAS) homeservers don't serve `/delete_devices`; the user
+            // ends the session on the account-management page instead.
+            if client.oauth().full_session().is_some() {
+                return oauth_delete_device_begin(&client, &owned).await;
+            }
             match client.delete_devices(&[owned], None).await {
                 Ok(_) => crate::ffi::DeleteDeviceBegin {
                     ok: true,
@@ -1226,6 +1285,25 @@ impl ClientFfi {
             return err("not logged in");
         };
         let owned: OwnedDeviceId = device_id.into();
+        if client.oauth().full_session().is_some() {
+            // The session was ended on the account-management page: confirm
+            // the device is really gone instead of replaying a UIA session.
+            let _guard = super::InFlightGuard::new(
+                &self.in_flight,
+                &self.handler,
+                #[cfg(debug_assertions)]
+                &self.in_flight_urls,
+                #[cfg(debug_assertions)]
+                "account/complete_delete_device".to_string(),
+            );
+            return match self.rt.block_on(client.devices()) {
+                Ok(r) if r.devices.iter().any(|d| d.device_id == owned) => {
+                    err(super::DEVICE_STILL_SIGNED_IN)
+                }
+                Ok(_) => ok(""),
+                Err(e) => err(e.to_string()),
+            };
+        }
         let auth = uiaa::AuthData::FallbackAcknowledgement(uiaa::FallbackAcknowledgement::new(
             session.to_owned(),
         ));
@@ -1352,10 +1430,15 @@ impl ClientFfi {
             // so a bridged 1:1 (you + bot + puppet) still matches as a DM.
             for room in client.joined_rooms() {
                 if room.is_direct().await.unwrap_or(false) {
-                    if let Ok(ids) = room.human_member_ids(matrix_sdk::RoomMemberships::JOIN).await {
+                    if let Ok(ids) = room
+                        .human_member_ids(matrix_sdk::RoomMemberships::JOIN)
+                        .await
+                    {
                         if ids.len() == 2
                             && ids.iter().any(|id| *id == uid)
-                            && client.user_id().is_some_and(|me| ids.iter().any(|id| id == me))
+                            && client
+                                .user_id()
+                                .is_some_and(|me| ids.iter().any(|id| id == me))
                         {
                             return room.room_id().to_string();
                         }
@@ -1393,8 +1476,8 @@ impl ClientFfi {
     /// (`build_msc4491_dm_create_room_body`) wants `invite` populated with
     /// the one target user, since the reason rides along as an extra JSON
     /// key merged onto this same request's fields. Pulled out as a pure
-    /// function so its shape (is_direct, preset, exactly one initial_state
-    /// entry) can be unit tested without a live homeserver.
+    /// function so its shape (is_direct, preset, the encryption and call-slot
+    /// initial_state entries) can be unit tested without a live homeserver.
     fn build_dm_create_room_request(
         invite: Vec<matrix_sdk::ruma::OwnedUserId>,
     ) -> matrix_sdk::ruma::api::client::room::create_room::v3::Request {
@@ -1407,10 +1490,14 @@ impl ClientFfi {
         request.is_direct = true;
         request.preset = Some(RoomPreset::TrustedPrivateChat);
         request.invite = invite;
-        request.initial_state = vec![InitialStateEvent::with_empty_state_key(
-            RoomEncryptionEventContent::with_recommended_defaults(),
-        )
-        .to_raw_any()];
+        request.initial_state = vec![
+            InitialStateEvent::with_empty_state_key(
+                RoomEncryptionEventContent::with_recommended_defaults(),
+            )
+            .to_raw_any(),
+            // MSC4196: a private room starts with calls enabled.
+            crate::client::rtc::mrtc_membership::slot_initial_state_event(true),
+        ];
         request
     }
 
@@ -1735,7 +1822,12 @@ mod account_dm_tests {
             request.preset.as_ref().map(|p| p.as_str()),
             Some("trusted_private_chat")
         );
-        assert_eq!(request.initial_state.len(), 1);
+        // Encryption, then the call slot (a DM is a private room: calls on).
+        assert_eq!(request.initial_state.len(), 2);
+        let slot: serde_json::Value =
+            serde_json::from_str(request.initial_state[1].json().get()).unwrap();
+        assert_eq!(slot["type"], "org.matrix.msc4143.rtc.slot");
+        assert_eq!(slot["content"]["encryption"]["type"], "m.per_member");
     }
 
     #[test]
@@ -1761,8 +1853,9 @@ mod account_dm_tests {
         assert_eq!(body["is_direct"], true);
         assert_eq!(body["preset"], "trusted_private_chat");
         let initial_state = body["initial_state"].as_array().unwrap();
-        assert_eq!(initial_state.len(), 1);
+        assert_eq!(initial_state.len(), 2);
         assert_eq!(initial_state[0]["type"], "m.room.encryption");
+        assert_eq!(initial_state[1]["type"], "org.matrix.msc4143.rtc.slot");
     }
 }
 
@@ -1823,9 +1916,12 @@ mod json_helper_tests {
 
     #[test]
     fn discovery_json_carries_all_three_fields() {
-        let v: serde_json::Value =
-            serde_json::from_str(&ClientFfi::discovery_json_str("https://hs.example.org", "", true))
-                .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&ClientFfi::discovery_json_str(
+            "https://hs.example.org",
+            "",
+            true,
+        ))
+        .unwrap();
         assert_eq!(v["base_url"], "https://hs.example.org");
         assert_eq!(v["error"], "");
         assert_eq!(v["supports_password"], true);

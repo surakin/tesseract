@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tesseract Release Stats</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            --bg: #0d1117;
+            --panel: #161b22;
+            --panel-2: #21262d;
+            --border: #30363d;
+            --text: #c9d1d9;
+            --muted: #8b949e;
+            --blue: #58a6ff;
+            --green: #7ee787;
+            --yellow: #e3b341;
+            --pink: #f778ba;
+            --cyan: #a2edeb;
+            --purple: #a371f7;
+            --red: #ff7b72;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            margin: 40px auto;
+            max-width: 1100px;
+            padding: 0 20px;
+            line-height: 1.5;
+        }
+        h1 { border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+        h2 { margin-top: 36px; }
+        .loading { color: var(--blue); font-style: italic; }
+        .note { color: var(--muted); font-size: 0.9em; }
+        .summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 16px;
+            margin-top: 24px;
+        }
+        .summary-card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px 20px;
+            text-align: center;
+        }
+        .summary-card .label {
+            font-size: 0.8em;
+            color: var(--muted);
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .summary-card .value { font-size: 1.8em; font-weight: bold; }
+        .summary-card.total .value { color: var(--yellow); }
+        .summary-card.win .value { color: var(--pink); }
+        .summary-card.mac .value { color: var(--cyan); }
+        .summary-card.lin .value { color: var(--green); }
+        .summary-card.flatpak .value { color: var(--purple); }
+        .chart {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 18px;
+            margin-top: 16px;
+        }
+        .bar-row {
+            display: grid;
+            grid-template-columns: 90px minmax(120px, 1fr) 80px;
+            gap: 12px;
+            align-items: center;
+            margin: 10px 0;
+        }
+        .bar-label { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+        .bar-track { height: 18px; background: var(--panel-2); border-radius: 4px; overflow: hidden; }
+        .bar-fill { height: 100%; background: var(--blue); min-width: 2px; }
+        .bar-value { text-align: right; color: var(--green); font-weight: bold; }
+        .table-wrap { overflow-x: auto; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 16px;
+            background: var(--panel);
+            border: 1px solid var(--border);
+        }
+        th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+        th { background: var(--panel-2); color: #fff; position: sticky; top: 0; }
+        tr:hover { background: #1f242c; }
+        .num { text-align: right; font-variant-numeric: tabular-nums; }
+        .count { font-weight: bold; color: var(--green); }
+        .rate { font-weight: bold; color: var(--blue); }
+        .platform-tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: bold;
+        }
+        .tag-win { background: rgba(247,120,186,.2); color: var(--pink); }
+        .tag-mac { background: rgba(162,237,235,.2); color: var(--cyan); }
+        .tag-lin { background: rgba(126,231,135,.2); color: var(--green); }
+        .tag-flatpak { background: rgba(163,113,247,.2); color: var(--purple); }
+        .tag-other { background: var(--border); color: #fff; }
+        footer { margin-top: 30px; font-size: 0.9em; color: var(--muted); }
+    </style>
+</head>
+<body>
+    <h1>📊 Tesseract Release Downloads</h1>
+    <p id="status" class="loading">Fetching latest release data from GitHub...</p>
+
+    <div id="content" style="display:none;">
+        <div class="summary">
+            <div class="summary-card total"><div class="label">All Platforms</div><div class="value" id="sum-total">0</div></div>
+            <div class="summary-card win"><div class="label">Windows</div><div class="value" id="sum-win">0</div></div>
+            <div class="summary-card mac"><div class="label">macOS</div><div class="value" id="sum-mac">0</div></div>
+            <div class="summary-card lin"><div class="label">Linux</div><div class="value" id="sum-lin">0</div></div>
+            <div class="summary-card flatpak"><div class="label">Flatpak</div><div class="value" id="sum-flatpak">0</div></div>
+        </div>
+
+        <h2>Release velocity</h2>
+        <p class="note">Downloads per day while each release was the newest available version. Historical releases use the time until the next release; the current release uses time since publication. This better reflects launch/adoption velocity, though GitHub still only exposes cumulative asset counts.</p>
+        <div id="velocity-chart" class="chart"></div>
+
+        <h2>By release</h2>
+        <div class="table-wrap">
+            <table>
+                <thead><tr>
+                    <th>Release</th><th>Published</th><th class="num">Latest for</th><th class="num">Downloads</th><th class="num">Downloads/day while latest</th>
+                    <th class="num">Windows</th><th class="num">macOS</th><th class="num">Linux</th><th class="num">Flatpak</th>
+                </tr></thead>
+                <tbody id="release-body"></tbody>
+            </table>
+        </div>
+
+        <h2>Raw assets</h2>
+        <div class="table-wrap">
+            <table>
+                <thead><tr><th>Release</th><th>Asset</th><th>Platform</th><th class="num">Downloads</th></tr></thead>
+                <tbody id="asset-body"></tbody>
+            </table>
+        </div>
+
+        <footer>
+            Data fetched live from <code>api.github.com</code>. GitHub exposes cumulative asset download counts, not historical daily counts. For historical releases, velocity is <em>current cumulative downloads / time until the next release</em>; for the newest release it is <em>current cumulative downloads / time since publication</em>.
+        </footer>
+    </div>
+
+    <script>
+        const repoOwner = 'surakin';
+        const repoName = 'tesseract';
+        const apiUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/releases?per_page=100`;
+
+        function classifyAsset(name) {
+            const lower = name.toLowerCase();
+            if (lower.endsWith('.exe') || lower.endsWith('.msi')) return ['win', 'Windows', 'tag-win'];
+            if (lower.includes('mac') || lower.includes('osx') || lower.endsWith('.dmg') || lower.endsWith('.pkg')) return ['mac', 'macOS', 'tag-mac'];
+            if (lower.endsWith('.flatpak')) return ['flatpak', 'Flatpak', 'tag-flatpak'];
+            if (lower.includes('linux') || lower.includes('appimage') || lower.endsWith('.deb') || lower.endsWith('.rpm')) return ['lin', 'Linux', 'tag-lin'];
+            return ['other', 'Other', 'tag-other'];
+        }
+
+        function releaseAgeDays(publishedAt) {
+            const elapsedMs = Math.max(0, Date.now() - new Date(publishedAt).getTime());
+            return Math.max(1, elapsedMs / 86400000);
+        }
+
+        function formatAge(days) {
+            if (days < 2) return '1 day';
+            return `${Math.floor(days)} days`;
+        }
+
+        function formatDate(iso) {
+            return new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(iso));
+        }
+
+        async function fetchStats() {
+            try {
+                const response = await fetch(apiUrl);
+                if (!response.ok) throw new Error(`API Error: ${response.status}`);
+
+                const releases = await response.json();
+                const totals = { win: 0, mac: 0, lin: 0, flatpak: 0, other: 0 };
+                const releaseRows = [];
+                const assetBody = document.getElementById('asset-body');
+
+                releases.sort((a, b) => new Date(b.published_at) - new Date(a.published_at));
+
+                for (let releaseIndex = 0; releaseIndex < releases.length; releaseIndex++) {
+                    const release = releases[releaseIndex];
+                    if (!release.assets || release.assets.length === 0) continue;
+
+                    const perPlatform = { win: 0, mac: 0, lin: 0, flatpak: 0, other: 0 };
+                    let releaseTotal = 0;
+
+                    for (const asset of release.assets) {
+                        const [key, label, cssClass] = classifyAsset(asset.name);
+                        const count = asset.download_count || 0;
+                        totals[key] += count;
+                        perPlatform[key] += count;
+                        releaseTotal += count;
+
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>${release.tag_name}</td>
+                            <td><code>${asset.name}</code></td>
+                            <td><span class="platform-tag ${cssClass}">${label}</span></td>
+                            <td class="num count">${count.toLocaleString()}</td>`;
+                        assetBody.appendChild(row);
+                    }
+
+                    const publishedMs = new Date(release.published_at).getTime();
+                    const newerReleaseMs = releaseIndex === 0
+                        ? Date.now()
+                        : new Date(releases[releaseIndex - 1].published_at).getTime();
+                    const latestForDays = Math.max(1, (newerReleaseMs - publishedMs) / 86400000);
+                    releaseRows.push({
+                        tag: release.tag_name,
+                        publishedAt: release.published_at,
+                        latestForDays,
+                        total: releaseTotal,
+                        rate: releaseTotal / latestForDays,
+                        ...perPlatform
+                    });
+                }
+
+                const grandTotal = Object.values(totals).reduce((a, b) => a + b, 0);
+                document.getElementById('sum-total').textContent = grandTotal.toLocaleString();
+                document.getElementById('sum-win').textContent = totals.win.toLocaleString();
+                document.getElementById('sum-mac').textContent = totals.mac.toLocaleString();
+                document.getElementById('sum-lin').textContent = totals.lin.toLocaleString();
+                document.getElementById('sum-flatpak').textContent = totals.flatpak.toLocaleString();
+
+                const releaseBody = document.getElementById('release-body');
+                for (const r of releaseRows) {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td><strong>${r.tag}</strong></td>
+                        <td>${formatDate(r.publishedAt)}</td>
+                        <td class="num">${formatAge(r.latestForDays)}</td>
+                        <td class="num count">${r.total.toLocaleString()}</td>
+                        <td class="num rate">${r.rate.toFixed(2)}</td>
+                        <td class="num">${r.win.toLocaleString()}</td>
+                        <td class="num">${r.mac.toLocaleString()}</td>
+                        <td class="num">${r.lin.toLocaleString()}</td>
+                        <td class="num">${r.flatpak.toLocaleString()}</td>`;
+                    releaseBody.appendChild(row);
+                }
+
+                const chart = document.getElementById('velocity-chart');
+                const chartRows = [...releaseRows].sort((a, b) => b.rate - a.rate).slice(0, 15);
+                const maxRate = Math.max(1, ...chartRows.map(r => r.rate));
+                chart.innerHTML = chartRows.map(r => `
+                    <div class="bar-row" title="${r.total} downloads; release was latest for ${r.latestForDays.toFixed(1)} days">
+                        <div class="bar-label">${r.tag}</div>
+                        <div class="bar-track"><div class="bar-fill" style="width:${(r.rate / maxRate) * 100}%"></div></div>
+                        <div class="bar-value">${r.rate.toFixed(2)}/day</div>
+                    </div>`).join('') || '<div class="note">No release assets found.</div>';
+
+                document.getElementById('status').style.display = 'none';
+                document.getElementById('content').style.display = 'block';
+            } catch (error) {
+                document.getElementById('status').innerHTML = `<span style="color:var(--red)">Error loading data: ${error.message}.<br>GitHub may be rate-limiting unauthenticated requests.</span>`;
+            }
+        }
+
+        fetchStats();
+    </script>
+</body>
+</html>

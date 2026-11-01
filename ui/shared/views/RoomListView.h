@@ -50,14 +50,10 @@ protected:
     TK_WIDGET_FACTORY_FRIEND(RoomListView)
 
 public:
-    using AvatarProvider =
-        std::function<const tk::Image*(const std::string& mxc_url)>;
-    using StickerProvider =
-        std::function<const tk::Image*(const std::string& mxc_url)>;
-    using PresenceProvider =
-        std::function<tesseract::PresenceState(const std::string& user_id)>;
-    using MediaAllowedProvider =
-        std::function<bool(const std::string& room_id, bool is_own)>;
+    using AvatarProvider = std::function<const tk::Image*(const std::string& mxc_url)>;
+    using StickerProvider = std::function<const tk::Image*(const std::string& mxc_url)>;
+    using PresenceProvider = std::function<tesseract::PresenceState(const std::string& user_id)>;
+    using MediaAllowedProvider = std::function<bool(const std::string& room_id, bool is_own)>;
 
     ~RoomListView() override; // out-of-line — Adapter is opaque here
 
@@ -195,28 +191,38 @@ public:
     // it, or an empty vector if it's closed.
     const std::vector<PopupMenu::Item>& context_menu_items_for_test() const;
 
+    // Test-only: the data sources last passed to set_invites / set_my_knocks.
+    const std::vector<tesseract::InviteInfo>* invites_for_test() const
+    {
+        return invites_;
+    }
+    const std::vector<tesseract::KnockedRoomInfo>* my_knocks_for_test() const
+    {
+        return my_knocks_;
+    }
+
     // Section indices (matches array positions throughout the class).
     // kSecInvites is fed from invites_; all others are fed from rooms_.
     // kSecSpaceUnjoined is fed from space_unjoined_rooms_ (not section_rooms_).
-    static constexpr int kSecInvites       = 0;
-    static constexpr int kSecUnread        = 1;  // NEW
-    static constexpr int kSecFavorites     = 2;  // was 1
-    static constexpr int kSecDMs           = 3;  // was 2
-    static constexpr int kSecRooms         = 4;  // was 3
-    static constexpr int kSecCallRooms     = 5;  // NEW
-    static constexpr int kSecSpaces        = 6;  // was 4/5
-    static constexpr int kSecInactive      = 7;  // was 5/6
-    static constexpr int kSecSpaceUnjoined = 8;  // was 6/7
-    static constexpr int kSecKnocks        = 9;  // rooms the user has knocked on (MSC2403); was 8
-    static constexpr int kNumSections      = 10; // was 9
+    static constexpr int kSecInvites = 0;
+    static constexpr int kSecUnread = 1;        // NEW
+    static constexpr int kSecFavorites = 2;     // was 1
+    static constexpr int kSecDMs = 3;           // was 2
+    static constexpr int kSecRooms = 4;         // was 3
+    static constexpr int kSecCallRooms = 5;     // NEW
+    static constexpr int kSecSpaces = 6;        // was 4/5
+    static constexpr int kSecInactive = 7;      // was 5/6
+    static constexpr int kSecSpaceUnjoined = 8; // was 6/7
+    static constexpr int kSecKnocks = 9;        // rooms the user has knocked on (MSC2403); was 8
+    static constexpr int kNumSections = 10;     // was 9
 
     // kSectionTitles[kSecInvites] / [kSecKnocks] are placeholders; the actual
     // header labels ("Invitations (N)" / "Requests to Join (N)") are
     // constructed dynamically in paint_header.
     static constexpr const char* kSectionTitles[kNumSections] = {
-        tk::N_("Invitations"), tk::N_("Unread"), tk::N_("Favorites"),
-        tk::N_("Direct Messages"), tk::N_("Rooms"), tk::N_("Call Rooms"),
-        tk::N_("Spaces"), tk::N_("Inactive"), tk::N_("Available to Join"),
+        tk::N_("Invitations"),     tk::N_("Unread"),   tk::N_("Favorites"),
+        tk::N_("Direct Messages"), tk::N_("Rooms"),    tk::N_("Call Rooms"),
+        tk::N_("Spaces"),          tk::N_("Inactive"), tk::N_("Available to Join"),
         tk::N_("Requests to Join")};
 
     // Programmatically collapse or expand a section (e.g. to restore saved
@@ -265,7 +271,7 @@ public:
     // "Open in window" should render enabled or disabled (already open in
     // that context). The host (shell) answers from its own tab/pop-out-
     // window bookkeeping — see ShellBase::room_open_in_tab/room_open_in_window.
-    using RoomOpenInTabProvider    = std::function<bool(const std::string& room_id)>;
+    using RoomOpenInTabProvider = std::function<bool(const std::string& room_id)>;
     using RoomOpenInWindowProvider = std::function<bool(const std::string& room_id)>;
     void set_room_open_in_tab_provider(RoomOpenInTabProvider p);
     void set_room_open_in_window_provider(RoomOpenInWindowProvider p);
@@ -277,9 +283,12 @@ public:
     std::function<void(const std::string& /*room_id*/)> on_open_in_window_requested;
     std::function<void(const std::string& /*room_id*/)> on_leave_room_requested;
     std::function<void(const std::string& /*room_id*/)> on_mark_read_requested;
+    // Fired by a space row's "Pin to sidebar" item (spaces get their own,
+    // shorter menu: pin + leave).
+    std::function<void(const std::string& /*space_id*/)> on_pin_space_requested;
 
     // Test helpers.
-    int  unjoined_room_count() const;
+    int unjoined_room_count() const;
     bool unjoined_rows_visible() const;
 
     // Re-run section classification (e.g. after a settings change) and repaint.
@@ -294,25 +303,36 @@ public:
     // separator can be dragged. Cheap on repeat calls: the result is cached and
     // invalidated whenever rebuild_items() runs or the canvas factory changes.
     // Returns 0 when there are no rows to measure (→ treat as "no cap").
-    float longest_visible_row_width(tk::CanvasFactory& factory,
-                                    const tk::Theme& theme);
+    float longest_visible_row_width(tk::CanvasFactory& factory, const tk::Theme& theme);
 
     // Icon-only (collapsed) mode: hides the search field, the + button and all
     // section headers, and renders each joined room as a centred avatar only.
     // Hovering an avatar shows that room's full row as a flyout drawn over the
     // chat pane (see paint_overlay()).
     void set_icon_only(bool on);
-    bool icon_only() const { return icon_only_; }
+    bool icon_only() const
+    {
+        return icon_only_;
+    }
 
     // Compact density: name-only rows with a small avatar (no last-message
     // preview). Independent of icon-only mode.
     void set_compact(bool on);
 
     // Hides the search field + join button (used by the settings preview).
-    void set_search_hidden(bool hidden) { search_hidden_ = hidden; }
-    bool compact() const { return compact_; }
+    void set_search_hidden(bool hidden)
+    {
+        search_hidden_ = hidden;
+    }
+    bool compact() const
+    {
+        return compact_;
+    }
     // Avatar size compact rows use (from the sidebar font size); 0 when not compact.
-    float compact_avatar_size() const { return compact_ ? avatar_size_() : 0.0f; }
+    float compact_avatar_size() const
+    {
+        return compact_ ? avatar_size_() : 0.0f;
+    }
 
     void paint_overlay(tk::PaintCtx&) override;
 
@@ -339,7 +359,7 @@ private:
             SpaceUnjoined, // row into space_unjoined_rooms_
             Knock          // row into *my_knocks_
         } kind = Kind::Room;
-        int section  = 0; // which section (0–8)
+        int section = 0;  // which section (0–8)
         int room_idx = 0; // index within section_rooms_[section] (Room/Header);
                           // index within *invites_ (Invite);
                           // index within space_unjoined_rooms_ (SpaceUnjoined);
@@ -383,10 +403,10 @@ private:
     // list while its section's rooms occupy the viewport top, and where.
     struct StickyHeader
     {
-        bool  show        = false;
-        int   header_item = -1; // index into items_
-        int   section     = -1;
-        float world_y     = 0.f; // world-space top of the pinned header
+        bool show = false;
+        int header_item = -1; // index into items_
+        int section = -1;
+        float world_y = 0.f; // world-space top of the pinned header
     };
     StickyHeader sticky_header_() const;
 
@@ -424,11 +444,11 @@ private:
     // rebuild_items(); the cache is also keyed on the canvas factory so a DPI
     // migration invalidates it.
     std::uint64_t layout_epoch_ = 0;
-    float         longest_row_w_cache_ = -1.0f;
+    float longest_row_w_cache_ = -1.0f;
     std::uint64_t longest_row_cache_epoch_ = 0;
-    const void*   longest_row_cache_factory_ = nullptr;
-    int           longest_row_cache_first_ = 0;
-    int           longest_row_cache_last_ = -1;
+    const void* longest_row_cache_factory_ = nullptr;
+    int longest_row_cache_first_ = 0;
+    int longest_row_cache_last_ = -1;
 
     AvatarProvider avatar_provider_;
     StickerProvider sticker_provider_;
@@ -452,7 +472,7 @@ private:
     tk::IconCache call_icon_;
     // Sticky-header interaction: section pressed on the pinned header (-1 =
     // none), and whether the pointer is currently over the pinned header.
-    int  press_sticky_section_ = -1;
+    int press_sticky_section_ = -1;
     bool sticky_hovered_ = false;
 
     // Last-known selected room ID, preserved across filter/collapse changes
@@ -480,6 +500,7 @@ private:
     // the icon-only hover flyout); room_at_ filters them out (selection /
     // context menu are for joined rooms only).
     const tesseract::RoomInfo* room_row_at_(tk::Point local) const;
+    bool open_space_context_menu_(const tesseract::RoomInfo& space, tk::Point local);
     const tesseract::RoomInfo* room_at_(tk::Point local) const;
 };
 
@@ -487,8 +508,7 @@ private:
 // `group_inactive` is true, DMs and Rooms whose `last_activity_ts` is more than
 // `threshold_days` before `now_ms` go to kSecInactive. `last_activity_ts == 0`
 // (timestamp not yet available from sync) is treated as active.
-int classify_room_section(const tesseract::RoomInfo& r,
-                          bool group_unread, bool group_inactive,
+int classify_room_section(const tesseract::RoomInfo& r, bool group_unread, bool group_inactive,
                           int threshold_days, std::uint64_t now_ms);
 
 // Builds the filtered room list for the root view (space_stack empty case).
@@ -496,9 +516,9 @@ int classify_room_section(const tesseract::RoomInfo& r,
 // group_unread_rooms is true and the room has a visible unread indicator.
 // Spaces that are themselves children of another space are also excluded.
 // Non-space, non-child rooms are always included.
-std::vector<tesseract::RoomInfo> filter_root_rooms(
-    const std::vector<tesseract::RoomInfo>& rooms,
-    const std::unordered_map<std::string, std::vector<std::string>>& sc_cache,
-    bool group_unread_rooms);
+std::vector<tesseract::RoomInfo>
+filter_root_rooms(const std::vector<tesseract::RoomInfo>& rooms,
+                  const std::unordered_map<std::string, std::vector<std::string>>& sc_cache,
+                  bool group_unread_rooms);
 
 } // namespace tesseract::views

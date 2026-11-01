@@ -563,7 +563,11 @@ impl ClientFfi {
             // searches on the shared one are not held up behind it.
             let path = self.data_dir.join("search_index.db");
             self.rt.spawn_blocking(move || {
-                let _job = super::activity::begin("search-index-clear", "Search", super::activity::JobKind::OneShot);
+                let _job = super::activity::begin(
+                    "search-index-clear",
+                    "Search",
+                    super::activity::JobKind::OneShot,
+                );
                 if path.exists() {
                     if let Err(e) = clear_file(&path) {
                         tracing::warn!("clearing the search index failed: {e}");
@@ -634,7 +638,11 @@ impl ClientFfi {
             self.timelines.read().keys().cloned().collect();
 
         self.rt.spawn(async move {
-            let _job = super::activity::begin("search-index-backfill", "Search", super::activity::JobKind::Loop);
+            let _job = super::activity::begin(
+                "search-index-backfill",
+                "Search",
+                super::activity::JobKind::Loop,
+            );
             // Completion check off the UI thread — skip a crawl that already
             // finished in a prior session.
             {
@@ -817,7 +825,16 @@ mod tests {
         ts_ms: u64,
         body: &str,
     ) -> rusqlite::Result<()> {
-        index_record(conn, event_id, room_id, sender, sender_name, ts_ms, body, "")
+        index_record(
+            conn,
+            event_id,
+            room_id,
+            sender,
+            sender_name,
+            ts_ms,
+            body,
+            "",
+        )
     }
 
     // Thin wrapper over search for tests that don't care about thread
@@ -871,8 +888,28 @@ mod tests {
     #[test]
     fn thread_filter_scopes_results() {
         let conn = db();
-        index_record(&conn, "$e1", "!r:x", "@u:x", "U", 1, "shared token", "$root1").unwrap();
-        index_record(&conn, "$e2", "!r:x", "@u:x", "U", 2, "shared token", "$root2").unwrap();
+        index_record(
+            &conn,
+            "$e1",
+            "!r:x",
+            "@u:x",
+            "U",
+            1,
+            "shared token",
+            "$root1",
+        )
+        .unwrap();
+        index_record(
+            &conn,
+            "$e2",
+            "!r:x",
+            "@u:x",
+            "U",
+            2,
+            "shared token",
+            "$root2",
+        )
+        .unwrap();
         index_record(&conn, "$e3", "!r:x", "@u:x", "U", 3, "shared token", "").unwrap();
         // No thread filter: all three match.
         assert_eq!(search(&conn, "shared", None, None, 10).unwrap().len(), 3);
@@ -926,7 +963,9 @@ mod tests {
             idx(&conn, "$e1", "!r:x", "@a:x", "A", 1, "zanzibarqwerty").unwrap();
             // The reader keeps the shared connection open while the file is cleared.
             clear_file(&path).unwrap();
-            assert!(search_room(&conn, "zanzibarqwerty", None, 10).unwrap().is_empty());
+            assert!(search_room(&conn, "zanzibarqwerty", None, 10)
+                .unwrap()
+                .is_empty());
             assert!(!is_backfill_complete(&conn));
         }
         for name in ["search_index.db", "search_index.db-wal"] {
@@ -955,10 +994,8 @@ mod tests {
 
     #[test]
     fn clear_leaves_no_message_text_in_the_database_file() {
-        let path = std::env::temp_dir().join(format!(
-            "tesseract-search-clear-{}.db",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("tesseract-search-clear-{}.db", std::process::id()));
         let _ = std::fs::remove_file(&path);
         {
             let conn = Connection::open(&path).unwrap();
@@ -1073,8 +1110,17 @@ mod tests {
         assert!(scoped.is_empty());
 
         // Newly indexed rows can now carry a thread scope.
-        index_record(&conn, "$new", "!r:x", "@a:x", "A", 2, "postmigration message", "$root")
-            .unwrap();
+        index_record(
+            &conn,
+            "$new",
+            "!r:x",
+            "@a:x",
+            "A",
+            2,
+            "postmigration message",
+            "$root",
+        )
+        .unwrap();
         let scoped = search(&conn, "postmigration", None, Some("$root"), 10).unwrap();
         assert_eq!(scoped.len(), 1);
         assert_eq!(scoped[0].event_id, "$new");

@@ -178,11 +178,12 @@ impl ClientFfi {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
-        if !self.msc2545_legacy_compat.load(std::sync::atomic::Ordering::Relaxed) {
-            return err(
-                "personal image pack is disabled (Settings → Advanced → \
-                 Use historical MSC2545 compatibility)",
-            );
+        if !self
+            .msc2545_legacy_compat
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            return err("personal image pack is disabled (Settings → Advanced → \
+                 Use historical MSC2545 compatibility)");
         }
 
         if image_url.is_empty() {
@@ -476,11 +477,12 @@ impl ClientFfi {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
-        if !self.msc2545_legacy_compat.load(std::sync::atomic::Ordering::Relaxed) {
-            return err(
-                "personal image pack is disabled (Settings → Advanced → \
-                 Use historical MSC2545 compatibility)",
-            );
+        if !self
+            .msc2545_legacy_compat
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            return err("personal image pack is disabled (Settings → Advanced → \
+                 Use historical MSC2545 compatibility)");
         }
         if image_url.is_empty() {
             return err("image_url is empty");
@@ -570,11 +572,12 @@ impl ClientFfi {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
-        if !self.msc2545_legacy_compat.load(std::sync::atomic::Ordering::Relaxed) {
-            return err(
-                "personal image pack is disabled (Settings → Advanced → \
-                 Use historical MSC2545 compatibility)",
-            );
+        if !self
+            .msc2545_legacy_compat
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            return err("personal image pack is disabled (Settings → Advanced → \
+                 Use historical MSC2545 compatibility)");
         }
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
@@ -656,11 +659,12 @@ impl ClientFfi {
         let Some(client) = self.client.clone() else {
             return err("not logged in");
         };
-        if !self.msc2545_legacy_compat.load(std::sync::atomic::Ordering::Relaxed) {
-            return err(
-                "personal image pack is disabled (Settings → Advanced → \
-                 Use historical MSC2545 compatibility)",
-            );
+        if !self
+            .msc2545_legacy_compat
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            return err("personal image pack is disabled (Settings → Advanced → \
+                 Use historical MSC2545 compatibility)");
         }
         let _guard = super::InFlightGuard::new(
             &self.in_flight,
@@ -890,7 +894,10 @@ impl ClientFfi {
             };
             entry.insert("url".to_owned(), serde_json::Value::String(img.url.clone()));
             if !img.body.is_empty() {
-                entry.insert("body".to_owned(), serde_json::Value::String(img.body.clone()));
+                entry.insert(
+                    "body".to_owned(),
+                    serde_json::Value::String(img.body.clone()),
+                );
             }
             let shortcode = if img.shortcode.is_empty() || images_obj.contains_key(&img.shortcode) {
                 crate::image_packs::suggest_shortcode(&img.body, &images_obj)
@@ -921,7 +928,10 @@ impl ClientFfi {
             // legacy_compat ON (default) dual-writes both event types for a
             // brand-new pack, matching pre-flag read behavior; OFF writes
             // only the stable type.
-            (key, crate::image_packs::room_pack_types(legacy_compat).to_vec())
+            (
+                key,
+                crate::image_packs::room_pack_types(legacy_compat).to_vec(),
+            )
         } else if legacy_compat {
             let Some(types) = self.rt.block_on(super::room_pack_event_types_for_key(
                 &client,
@@ -1024,7 +1034,8 @@ impl ClientFfi {
             return ok("");
         }
 
-        let content = serde_json::json!({ "images": serde_json::Value::Object(serde_json::Map::new()) });
+        let content =
+            serde_json::json!({ "images": serde_json::Value::Object(serde_json::Map::new()) });
         for ev_type in &types {
             let room_for_write = match client.get_room(&rid) {
                 Some(r) => r,
@@ -1073,7 +1084,15 @@ impl ClientFfi {
             .msc2545_legacy_compat
             .load(std::sync::atomic::Ordering::Relaxed);
         let packs = self.rt.block_on(async move {
-            super::rebuild_image_packs(&client, &mut http_cache, &active_rooms_snapshot, &app_cache_db, &room_state_cache, legacy_compat).await
+            super::rebuild_image_packs(
+                &client,
+                &mut http_cache,
+                &active_rooms_snapshot,
+                &app_cache_db,
+                &room_state_cache,
+                legacy_compat,
+            )
+            .await
         });
         {
             let mut cache = self.image_packs.lock();

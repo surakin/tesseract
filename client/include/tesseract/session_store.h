@@ -136,8 +136,7 @@ public:
     /// Atomically write a PersistedSession JSON into the account directory.
     /// Creates the directory tree on demand. Returns false on filesystem
     /// error.
-    static bool save_account(const std::string& user_id,
-                             const std::string& json);
+    static bool save_account(const std::string& user_id, const std::string& json);
 
     /// A session JSON blob plus the key (if any) encrypting its matrix-sdk
     /// SQLite store. `store_key` is empty for a session that predates store
@@ -155,16 +154,14 @@ public:
     /// written by the plain `save_account` (or one written before this
     /// existed) is recognised as such and returned with an empty
     /// `store_key`, unencrypted, unchanged from today.
-    static std::optional<LoadedAccount> load_account_with_key(
-        const std::string& user_id);
+    static std::optional<LoadedAccount> load_account_with_key(const std::string& user_id);
 
     /// Like `save_account`, but also persists `store_key` alongside the
     /// session (pass an empty vector for a session that has none). Wraps
     /// both into one JSON blob stored through the same `save_account` path,
     /// so it's subject to the exact same atomicity/SecretStore-vs-plaintext
     /// fallback behavior.
-    static bool save_account_with_key(const std::string& user_id,
-                                      const std::string& session_json,
+    static bool save_account_with_key(const std::string& user_id, const std::string& session_json,
                                       const std::vector<uint8_t>& store_key);
 
     /// Persist an updated session JSON (e.g. after a token refresh) while
@@ -175,15 +172,13 @@ public:
     /// yet. Use this — never a bare `save_account` — for any persistence
     /// path that doesn't itself know the account's store_key, so a refresh
     /// can never silently strip the key from an already-encrypted account.
-    static bool save_session_update(const std::string& user_id,
-                                    const std::string& session_json);
+    static bool save_session_update(const std::string& user_id, const std::string& session_json);
 
     /// Queue a `save_session_update` on the single background writer that
     /// matrix-sdk's own save callback also uses. Every token-refresh write
     /// goes through this one queue, so they land in arrival order (newest
     /// wins per account) instead of racing a direct write.
-    static void queue_session_update(const std::string& user_id,
-                                     const std::string& session_json);
+    static void queue_session_update(const std::string& user_id, const std::string& session_json);
 
     /// Register a callback for a queued session write that still failed after
     /// its retries (the next launch may need a sign-in). It runs on the writer

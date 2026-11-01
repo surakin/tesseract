@@ -32,25 +32,25 @@ TEST_CASE("FormLayout: add_row returns the control pointer", "[form_layout]")
 {
     auto form_owner = tk::create_root_widget<tk::FormLayout>(nullptr);
     tk::FormLayout& form = *form_owner;
-    auto           lbl  = tk::create_root_widget<tk::Label>(nullptr, "Value");
-    tk::Label*     ptr  = form.add_row("Key", std::move(lbl));
+    auto lbl = tk::create_root_widget<tk::Label>(nullptr, "Value");
+    tk::Label* ptr = form.add_row("Key", std::move(lbl));
     REQUIRE(ptr != nullptr);
 }
 
 TEST_CASE("FormLayout: empty form measures to zero height", "[form_layout]")
 {
-    TkFormLayoutStage          st;
-    auto           lc = st.lc();
+    TkFormLayoutStage st;
+    auto lc = st.lc();
     auto form_owner = tk::create_root_widget<tk::FormLayout>(nullptr);
     tk::FormLayout& form = *form_owner;
-    tk::Size       s = form.measure(lc, {640.0f, 800.0f});
+    tk::Size s = form.measure(lc, {640.0f, 800.0f});
     REQUIRE(s.h == 0.0f);
 }
 
 TEST_CASE("FormLayout: measure returns positive height with rows", "[form_layout]")
 {
-    TkFormLayoutStage          st;
-    auto           lc = st.lc();
+    TkFormLayoutStage st;
+    auto lc = st.lc();
     auto form_owner = tk::create_root_widget<tk::FormLayout>(nullptr);
     tk::FormLayout& form = *form_owner;
     form.add_row("Key", tk::create_root_widget<tk::Label>(nullptr, "Value"));
@@ -58,16 +58,15 @@ TEST_CASE("FormLayout: measure returns positive height with rows", "[form_layout
     REQUIRE(s.h > 0.0f);
 }
 
-TEST_CASE("FormLayout: all controls align to the same x after arrange",
-          "[form_layout]")
+TEST_CASE("FormLayout: all controls align to the same x after arrange", "[form_layout]")
 {
-    TkFormLayoutStage          st;
+    TkFormLayoutStage st;
     auto form_owner = tk::create_root_widget<tk::FormLayout>(nullptr);
     tk::FormLayout& form = *form_owner;
     form.set_label_gap(8.0f).set_spacing(4.0f);
-    tk::Label* c1 = form.add_row("Short",        tk::create_root_widget<tk::Label>(nullptr, "A"));
-    tk::Label* c2 = form.add_row("Microphone",   tk::create_root_widget<tk::Label>(nullptr, "B"));
-    tk::Label* c3 = form.add_row("Cam",          tk::create_root_widget<tk::Label>(nullptr, "C"));
+    tk::Label* c1 = form.add_row("Short", tk::create_root_widget<tk::Label>(nullptr, "A"));
+    tk::Label* c2 = form.add_row("Microphone", tk::create_root_widget<tk::Label>(nullptr, "B"));
+    tk::Label* c3 = form.add_row("Cam", tk::create_root_widget<tk::Label>(nullptr, "C"));
     st.run(form);
     REQUIRE(c1->bounds().x == c2->bounds().x);
     REQUIRE(c2->bounds().x == c3->bounds().x);
@@ -75,7 +74,7 @@ TEST_CASE("FormLayout: all controls align to the same x after arrange",
 
 TEST_CASE("FormLayout: controls x is beyond label x", "[form_layout]")
 {
-    TkFormLayoutStage          st;
+    TkFormLayoutStage st;
     auto form_owner = tk::create_root_widget<tk::FormLayout>(nullptr);
     tk::FormLayout& form = *form_owner;
     form.set_label_gap(8.0f);
@@ -89,11 +88,11 @@ TEST_CASE("FormLayout: controls x is beyond label x", "[form_layout]")
 
 TEST_CASE("FormLayout: paints without crash with multiple rows", "[form_layout]")
 {
-    TkFormLayoutStage          st;
+    TkFormLayoutStage st;
     auto form_owner = tk::create_root_widget<tk::FormLayout>(nullptr);
     tk::FormLayout& form = *form_owner;
     form.add_row("Alpha", tk::create_root_widget<tk::Label>(nullptr, "1"));
-    form.add_row("Beta",  tk::create_root_widget<tk::Label>(nullptr, "2"));
+    form.add_row("Beta", tk::create_root_widget<tk::Label>(nullptr, "2"));
     form.add_row("Gamma", tk::create_root_widget<tk::Label>(nullptr, "3"));
     st.run(form); // must not throw
 }

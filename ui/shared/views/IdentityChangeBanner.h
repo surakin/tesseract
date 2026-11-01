@@ -29,8 +29,14 @@ public:
 
     // Replace the room's warning set. Hides the banner when empty.
     void set_warnings(std::vector<tesseract::IdentityWarning> warnings);
-    const std::vector<tesseract::IdentityWarning>& warnings() const { return warnings_; }
-    bool has_warning() const { return !warnings_.empty(); }
+    const std::vector<tesseract::IdentityWarning>& warnings() const
+    {
+        return warnings_;
+    }
+    bool has_warning() const
+    {
+        return !warnings_.empty();
+    }
     std::string label_text() const;
 
     // Fired with the shown warning when its button is clicked.
@@ -39,8 +45,14 @@ public:
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
     void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
 
-    tk::Role access_role() const override { return tk::Role::Group; }
-    std::string access_name() const override { return label_text(); }
+    tk::Role access_role() const override
+    {
+        return tk::Role::Group;
+    }
+    std::string access_name() const override
+    {
+        return label_text();
+    }
 
     void paint_before_children(tk::PaintCtx&) override;
 
@@ -51,7 +63,7 @@ private:
 
     std::vector<tesseract::IdentityWarning> warnings_;
 
-    tk::Label*  label_  = nullptr; // borrowed
+    tk::Label* label_ = nullptr;   // borrowed
     tk::Button* action_ = nullptr; // borrowed
 };
 

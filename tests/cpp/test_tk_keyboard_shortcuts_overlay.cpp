@@ -35,7 +35,10 @@ struct ShortcutsStage
     StubHost host;
     std::unique_ptr<MainAppWidget> app = tk::create_root_widget<MainAppWidget>(&host);
 
-    ShortcutsStage() { host.set_root(app.get()); }
+    ShortcutsStage()
+    {
+        host.set_root(app.get());
+    }
 
     void run()
     {
@@ -47,7 +50,10 @@ struct ShortcutsStage
         app->paint(pc);
     }
 
-    KeyboardShortcutsOverlay& overlay() { return *app->keyboard_shortcuts_overlay(); }
+    KeyboardShortcutsOverlay& overlay()
+    {
+        return *app->keyboard_shortcuts_overlay();
+    }
 };
 
 KeyEvent ctrl_slash()
@@ -62,9 +68,13 @@ KeyEvent ctrl_slash()
 void collect_static_text(const AccessNode& n, std::vector<std::string>& out)
 {
     if (n.role == Role::StaticText)
+    {
         out.push_back(n.name);
+    }
     for (const auto& ch : n.children)
+    {
         collect_static_text(ch, out);
+    }
 }
 
 } // namespace
@@ -86,8 +96,7 @@ TEST_CASE("Ctrl+/ toggles the keyboard shortcuts overlay", "[shortcuts][overlay]
     CHECK_FALSE(st.overlay().visible());
 }
 
-TEST_CASE("F1 opens the shortcuts overlay and Escape closes it",
-          "[shortcuts][overlay]")
+TEST_CASE("F1 opens the shortcuts overlay and Escape closes it", "[shortcuts][overlay]")
 {
     ShortcutsStage st;
     st.run();
@@ -140,8 +149,7 @@ TEST_CASE("shortcuts overlay lists every registry entry", "[shortcuts][overlay]"
     for (const auto& def : all)
     {
         const std::string want =
-            std::string(def.description) + ", " +
-            tesseract::views::shortcut_label(def.id);
+            std::string(def.description) + ", " + tesseract::views::shortcut_label(def.id);
         CHECK(std::find(texts.begin(), texts.end(), want) != texts.end());
     }
     REQUIRE(access_test::find_named(tree, "Close") != nullptr);
@@ -161,8 +169,7 @@ TEST_CASE("Page Down scrolls the shortcuts list", "[shortcuts][overlay]")
     CHECK(scroll->scroll_y() == 0.0f);
 }
 
-TEST_CASE("shortcuts overlay takes focus from the composer behind it",
-          "[shortcuts][overlay]")
+TEST_CASE("shortcuts overlay takes focus from the composer behind it", "[shortcuts][overlay]")
 {
     ShortcutsStage st;
     st.run();
@@ -215,7 +222,9 @@ TEST_CASE("shortcut rows keep clear of the scrollbar", "[shortcuts][overlay]")
     const Rect sb = scroll->bounds();
     const float gutter_left = sb.x + sb.w - ScrollableBase::kScrollbarGutter;
     for (const auto& row : scroll->child()->children())
+    {
         CHECK(row->bounds().x + row->bounds().w <= gutter_left + 0.01f);
+    }
     // ...and the rows still line up with the Close button's right edge.
     const Rect close = st.overlay().close_button()->bounds();
     CHECK(gutter_left == Catch::Approx(close.x + close.w).margin(0.5));

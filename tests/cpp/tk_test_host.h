@@ -21,9 +21,20 @@
 class TestHost : public tk::Host
 {
 public:
-    explicit TestHost(tk::Widget* root) : root_(root) {}
+    explicit TestHost(tk::Widget* root) : root_(root)
+    {
+    }
 
-    void request_repaint() override { ++repaint_count; }
+    void request_repaint() override
+    {
+        ++repaint_count;
+    }
+
+    const tk::Theme& theme() const override
+    {
+        return theme_;
+    }
+    tk::Theme theme_ = tk::Theme::light();
 
     // Records every cursor the shared hover logic hands to the backend.
     void apply_cursor_(tk::CursorShape shape) override
@@ -62,7 +73,9 @@ public:
         auto tasks = std::move(pending_ui_tasks_);
         pending_ui_tasks_.clear();
         for (auto& t : tasks)
+        {
             t();
+        }
     }
 
     // Captures delayed callbacks instead of firing them, so tests can
@@ -79,7 +92,9 @@ public:
         auto delays = std::move(pending_delays_);
         pending_delays_.clear();
         for (auto& d : delays)
+        {
             d.fn();
+        }
     }
 
     std::unique_ptr<tk::NativeTextField> make_text_field() override
@@ -110,12 +125,13 @@ public:
     {
         return nullptr;
     }
-    tk::EncodedImage encode_for_send(const std::uint8_t*, std::size_t,
-                                     bool) override
+    tk::EncodedImage encode_for_send(const std::uint8_t*, std::size_t, bool) override
     {
         return {};
     }
-    void set_clipboard_text(std::string_view) override {}
+    void set_clipboard_text(std::string_view) override
+    {
+    }
     bool set_clipboard_image(std::span<const std::uint8_t>) override
     {
         return false;
@@ -147,6 +163,7 @@ public:
     using tk::Host::toast_visible_;
     using tk::Host::kToastDurationMs;
     using tk::Host::active_drag_;
+    using tk::Host::pending_popup_;
 
     // Drive the popup the way a paint pass would: register then promote.
     void set_active_popup(tk::Widget* w, tk::Widget* trigger = nullptr)
@@ -164,7 +181,10 @@ public:
     // Point input_root_() at a tree built after construction (e.g. a view
     // that itself needed this host passed to *its* constructor) — the
     // constructor-only `root` param can't express that ordering.
-    void set_root(tk::Widget* root) { root_ = root; }
+    void set_root(tk::Widget* root)
+    {
+        root_ = root;
+    }
 
     int repaint_count = 0;
     int relayout_count = 0;
@@ -178,7 +198,10 @@ public:
     std::vector<std::function<void()>> pending_ui_tasks_;
 
 protected:
-    tk::Widget* input_root_() const override { return root_; }
+    tk::Widget* input_root_() const override
+    {
+        return root_;
+    }
 
 private:
     tk::Widget* root_;
@@ -190,18 +213,35 @@ private:
 // native backend instead of silently no-op'ing against a null field_.
 struct StubTextField : public tk::NativeTextField
 {
-    void set_rect(tk::Rect) override {}
-    void set_text(std::string t) override { text_ = std::move(t); }
-    std::string text() const override { return text_; }
-    void set_placeholder(std::string) override {}
-    void set_focused(bool f) override { focused_ = f; }
+    void set_rect(tk::Rect) override
+    {
+    }
+    void set_text(std::string t) override
+    {
+        text_ = std::move(t);
+    }
+    std::string text() const override
+    {
+        return text_;
+    }
+    void set_placeholder(std::string) override
+    {
+    }
+    void set_focused(bool f) override
+    {
+        focused_ = f;
+    }
     void set_visible(bool v) override
     {
         ++set_visible_calls;
         visible_ = v;
     }
-    void set_enabled(bool) override {}
-    void set_password(bool) override {}
+    void set_enabled(bool) override
+    {
+    }
+    void set_password(bool) override
+    {
+    }
     void set_on_changed(std::function<void(const std::string&)> f) override
     {
         on_changed = std::move(f);
@@ -236,26 +276,58 @@ struct StubTextField : public tk::NativeTextField
 // native backend instead of silently no-op'ing against a null area_.
 struct StubTextArea : public tk::NativeTextArea
 {
-    void set_rect(tk::Rect) override {}
-    void set_text(std::string t) override { text_ = std::move(t); }
-    std::string text() const override { return text_; }
-    void set_placeholder(std::string) override {}
-    void set_focused(bool f) override { focused_ = f; }
-    void set_visible(bool v) override { visible_ = v; }
-    bool visible() const override { return visible_; }
-    void set_enabled(bool) override {}
-    float natural_height() const override { return natural_height_; }
+    void set_rect(tk::Rect) override
+    {
+    }
+    void set_text(std::string t) override
+    {
+        text_ = std::move(t);
+    }
+    std::string text() const override
+    {
+        return text_;
+    }
+    void set_placeholder(std::string) override
+    {
+    }
+    void set_focused(bool f) override
+    {
+        focused_ = f;
+    }
+    void set_visible(bool v) override
+    {
+        visible_ = v;
+    }
+    bool visible() const override
+    {
+        return visible_;
+    }
+    void set_enabled(bool) override
+    {
+    }
+    float natural_height() const override
+    {
+        return natural_height_;
+    }
     void set_on_changed(std::function<void(const std::string&)> f) override
     {
         on_changed = std::move(f);
     }
-    void set_on_submit(std::function<void()>) override {}
+    void set_on_submit(std::function<void()>) override
+    {
+    }
     void set_on_height_changed(std::function<void(float)> f) override
     {
         on_height_changed = std::move(f);
     }
-    void insert_at_cursor(std::string text) override { text_ += text; }
-    tk::Rect cursor_rect() const override { return {}; }
+    void insert_at_cursor(std::string text) override
+    {
+        text_ += text;
+    }
+    tk::Rect cursor_rect() const override
+    {
+        return {};
+    }
     void replace_range(int start, int end, std::string text) override
     {
         text_ = text_.substr(0, start) + text + text_.substr(end);
@@ -295,7 +367,9 @@ struct StubTextArea : public tk::NativeTextArea
 // tests that care about round-tripped text, not just layout/paint.
 struct StubHost : public TestHost
 {
-    StubHost() : TestHost(nullptr) {}
+    StubHost() : TestHost(nullptr)
+    {
+    }
 
     std::unique_ptr<tk::NativeTextField> make_text_field() override
     {
@@ -329,21 +403,87 @@ struct StubHost : public TestHost
 class StubPopupSurface : public tk::PopupSurfaceHandle
 {
 public:
+    // Mounts `root` under a RootWidget on the stub's own host, as a real popup
+    // surface does, so keys and focus can be driven through popup_host().
     void set_root(std::unique_ptr<tk::Widget> root) override
     {
-        root_ = std::move(root);
+        auto wrapper = tk::create_root_widget<tk::RootWidget>(&host_);
+        mounted_ = root.get();
+        wrapper->add_child(std::move(root));
+        root_ = std::move(wrapper);
+        host_.set_root(root_.get());
     }
-    tk::Widget* root() const { return root_.get(); }
+    tk::Widget* root() const
+    {
+        return mounted_;
+    }
+    tk::Host* popup_host() override
+    {
+        return &host_;
+    }
+    StubHost& stub_host()
+    {
+        return host_;
+    }
 
-    void set_rect(tk::Rect, tk::Size, tk::PopupPlacement) override {}
-    void set_visible(bool v) override { visible_ = v; }
-    bool visible() const override { return visible_; }
-    void set_theme(const tk::Theme&) override {}
-    void request_repaint() override {}
-    void request_relayout() override {}
+    void set_rect(tk::Rect a, tk::Size sz, tk::PopupPlacement p) override
+    {
+        last_anchor = a;
+        last_size = sz;
+        last_placement = p;
+        ++rect_sets;
+    }
+    void set_corner_radius(float r) override
+    {
+        corner_radius = r;
+    }
+    tk::Rect last_anchor{};
+    tk::Size last_size{};
+    tk::PopupPlacement last_placement = tk::PopupPlacement::PreferBelow;
+    float corner_radius = 0.f;
+    int rect_sets = 0;
+    void set_visible(bool v) override
+    {
+        visible_ = v;
+    }
+    bool visible() const override
+    {
+        return visible_;
+    }
+    void set_theme(const tk::Theme&) override
+    {
+        ++theme_sets;
+    }
+    int theme_sets = 0;
+    void request_repaint() override
+    {
+        ++repaints;
+    }
+    int repaints = 0;
+    void request_relayout() override
+    {
+        ++relayouts;
+    }
+    int relayouts = 0;
+    void set_anim_cache(const tk::AnimImageCache* c) override
+    {
+        anim_cache_ = c;
+    }
+    void update_anim_regions() override
+    {
+        ++anim_region_updates;
+    }
+    const tk::AnimImageCache* anim_cache() const
+    {
+        return anim_cache_;
+    }
+    int anim_region_updates = 0;
 
 private:
+    const tk::AnimImageCache* anim_cache_ = nullptr;
+    StubHost host_; // outlives the widget tree
     std::unique_ptr<tk::Widget> root_;
+    tk::Widget* mounted_ = nullptr;
     bool visible_ = false;
 };
 

@@ -5,8 +5,7 @@
 namespace tk
 {
 
-TextArea::TextArea(float min_height)
-    : Label("", FontRole::Body), min_height_(min_height)
+TextArea::TextArea(float min_height) : Label("", FontRole::Body), min_height_(min_height)
 {
     set_halign(TextHAlign::Leading);
     set_min_size({0.0f, min_height_});
@@ -15,13 +14,18 @@ TextArea::TextArea(float min_height)
 void TextArea::ensure_native_()
 {
     // Not attached to a host yet: the native area is made on a later call.
-    if (area_ || creating_native_ || !host()) return;
+    if (area_ || creating_native_ || !host())
+    {
+        return;
+    }
     creating_native_ = true;
     auto a = host()->make_text_area();
     creating_native_ = false;
     area_ = std::move(a);
     if (!area_)
+    {
         return; // e.g. a test Host with no native backend — stay a plain spacer
+    }
 
     // Sync canvas focus when the user clicks directly into the native
     // area — that click bypasses canvas hit-testing entirely (the native
@@ -32,9 +36,13 @@ void TextArea::ensure_native_()
         {
             syncing_from_native_ = true;
             if (now_focused)
+            {
                 host()->request_focus(this);
+            }
             else if (host()->focused_widget() == this)
+            {
                 host()->clear_focus();
+            }
             syncing_from_native_ = false;
         });
 
@@ -43,11 +51,19 @@ void TextArea::ensure_native_()
     // above can't catch is one that doesn't change OS focus, which is
     // exactly the click that needs to dismiss an open register_popup()'d
     // popup while the composer was already focused).
-    area_->set_on_pointer_down([this] { host()->request_focus(this); });
+    area_->set_on_pointer_down(
+        [this]
+        {
+            host()->request_focus(this);
+        });
 
     // Keep an open popup drawn over this control from losing pointer input
     // to it — see NativeTextField::set_occlusion_query.
-    area_->set_occlusion_query([this] { return host()->popup_rect_over(this); });
+    area_->set_occlusion_query(
+        [this]
+        {
+            return host()->popup_rect_over(this);
+        });
 
     // Unlike tk::TextField (which always claims Tab/ShiftTab for canvas
     // traversal before consulting its handler stack), TextArea gives the
@@ -60,29 +76,62 @@ void TextArea::ensure_native_()
         [this](NavKey nk) -> bool
         {
             for (auto it = nav_handlers_.rbegin(); it != nav_handlers_.rend(); ++it)
-                if ((*it)(nk)) return true;
-            if (nk == NavKey::Tab)      return host()->advance_focus(true);
-            if (nk == NavKey::ShiftTab) return host()->advance_focus(false);
+            {
+                if ((*it)(nk))
+                {
+                    return true;
+                }
+            }
+            if (nk == NavKey::Tab)
+            {
+                return host()->advance_focus(true);
+            }
+            if (nk == NavKey::ShiftTab)
+            {
+                return host()->advance_focus(false);
+            }
             return false;
         });
 
     // See tk::TextField's constructor — same canvas-drawn-text repaint hook,
     // mirrored here for TextArea. No-op on backends that still composite on
     // screen directly.
-    area_->set_on_repaint_needed([this](Rect r) { host()->request_repaint_rect(r); });
+    area_->set_on_repaint_needed(
+        [this](Rect r)
+        {
+            host()->request_repaint_rect(r);
+        });
 
     // Replay whatever was set before this area existed — see PendingState's
     // doc comment. area_ is the sole source of truth from here on, so
     // pending_ is fully consumed and left empty.
-    if (pending_.text)             area_->set_text(std::move(*pending_.text));
-    if (pending_.placeholder)      area_->set_placeholder(std::move(*pending_.placeholder));
+    if (pending_.text)
+    {
+        area_->set_text(std::move(*pending_.text));
+    }
+    if (pending_.placeholder)
+    {
+        area_->set_placeholder(std::move(*pending_.placeholder));
+    }
     area_->set_accessible_name(accessible_name_.empty() ? placeholder_ : accessible_name_);
-    if (pending_.text_color)       area_->set_text_color(*pending_.text_color);
+    if (pending_.text_color)
+    {
+        area_->set_text_color(*pending_.text_color);
+    }
     // Every area follows the user's font config; Body unless a role was set.
     area_->set_font_role(font_role_.value_or(FontRole::Body));
-    if (pending_.enabled)          area_->set_enabled(*pending_.enabled);
-    if (pending_.on_changed)       area_->set_on_changed(std::move(pending_.on_changed));
-    if (pending_.on_submit)        area_->set_on_submit(std::move(pending_.on_submit));
+    if (pending_.enabled)
+    {
+        area_->set_enabled(*pending_.enabled);
+    }
+    if (pending_.on_changed)
+    {
+        area_->set_on_changed(std::move(pending_.on_changed));
+    }
+    if (pending_.on_submit)
+    {
+        area_->set_on_submit(std::move(pending_.on_submit));
+    }
     // Always wire height-change notifications through notify_height_changed_
     // — regardless of whether an owner has registered on_height_changed_cb_
     // yet, since that member is read dynamically each time the native
@@ -96,58 +145,117 @@ void TextArea::ensure_native_()
     // which can be smaller than one empty line's real content height on
     // backends with their own fixed internal padding, e.g. Win32's
     // BetterTextArea).
-    area_->set_on_height_changed([this](float h) { notify_height_changed_(h); });
+    area_->set_on_height_changed(
+        [this](float h)
+        {
+            notify_height_changed_(h);
+        });
     notify_height_changed_(area_->natural_height());
-    if (pending_.mention_colors)   area_->set_mention_colors(*pending_.mention_colors);
-    if (pending_.on_edit_last)     area_->set_on_edit_last(std::move(pending_.on_edit_last));
-    if (pending_.on_image_paste)   area_->set_on_image_paste(std::move(pending_.on_image_paste));
-    if (pending_.on_file_paste)    area_->set_on_file_paste(std::move(pending_.on_file_paste));
-    if (pending_.image_resolver)   area_->set_image_resolver(std::move(pending_.image_resolver));
+    if (pending_.mention_colors)
+    {
+        area_->set_mention_colors(*pending_.mention_colors);
+    }
+    if (pending_.on_edit_last)
+    {
+        area_->set_on_edit_last(std::move(pending_.on_edit_last));
+    }
+    if (pending_.on_image_paste)
+    {
+        area_->set_on_image_paste(std::move(pending_.on_image_paste));
+    }
+    if (pending_.on_file_paste)
+    {
+        area_->set_on_file_paste(std::move(pending_.on_file_paste));
+    }
+    if (pending_.image_resolver)
+    {
+        area_->set_image_resolver(std::move(pending_.image_resolver));
+    }
     pending_ = PendingState{};
 }
 
 void TextArea::set_text(std::string text)
 {
-    if (area_) area_->set_text(std::move(text));
-    else pending_.text = std::move(text);
+    if (area_)
+    {
+        area_->set_text(std::move(text));
+    }
+    else
+    {
+        pending_.text = std::move(text);
+    }
 }
 
 std::string TextArea::text() const
 {
-    if (area_) return area_->text();
+    if (area_)
+    {
+        return area_->text();
+    }
     return pending_.text.value_or(std::string{});
 }
 
 void TextArea::set_placeholder(std::string text)
 {
     placeholder_ = text; // kept for access_name()'s empty-field fallback
-    if (area_) area_->set_placeholder(std::move(text));
-    else pending_.placeholder = std::move(text);
-    if (area_) area_->set_accessible_name(accessible_name_.empty() ? placeholder_ : accessible_name_);
+    if (area_)
+    {
+        area_->set_placeholder(std::move(text));
+    }
+    else
+    {
+        pending_.placeholder = std::move(text);
+    }
+    if (area_)
+    {
+        area_->set_accessible_name(accessible_name_.empty() ? placeholder_ : accessible_name_);
+    }
 }
 
 void TextArea::set_accessible_name(std::string name)
 {
     accessible_name_ = std::move(name);
-    if (area_) area_->set_accessible_name(accessible_name_.empty() ? placeholder_ : accessible_name_);
+    if (area_)
+    {
+        area_->set_accessible_name(accessible_name_.empty() ? placeholder_ : accessible_name_);
+    }
 }
 
 void TextArea::set_text_color(Color c)
 {
-    if (area_) area_->set_text_color(c);
-    else pending_.text_color = c;
+    if (area_)
+    {
+        area_->set_text_color(c);
+    }
+    else
+    {
+        pending_.text_color = c;
+    }
+}
+
+void TextArea::on_theme_changed(const Theme& t)
+{
+    // Default text colour follows the palette; backends that don't draw
+    // from the OS theme (Qt) would otherwise keep their own default.
+    set_text_color(t.palette.text_primary);
 }
 
 void TextArea::on_fonts_changed()
 {
-    if (area_) area_->set_font_role(font_role_.value_or(FontRole::Body));
+    if (area_)
+    {
+        area_->set_font_role(font_role_.value_or(FontRole::Body));
+    }
     Label::on_fonts_changed();
 }
 
 void TextArea::set_font_role(FontRole role)
 {
     font_role_ = role;
-    if (area_) area_->set_font_role(role);
+    if (area_)
+    {
+        area_->set_font_role(role);
+    }
 }
 
 bool TextArea::visible() const
@@ -167,20 +275,38 @@ void TextArea::set_on_height_changed(std::function<void(float)> cb)
 
 void TextArea::notify_height_changed_(float h)
 {
-    if (on_height_changed_cb_) on_height_changed_cb_(h);
-    if (host()) host()->mark_needs_relayout();
+    if (on_height_changed_cb_)
+    {
+        on_height_changed_cb_(h);
+    }
+    if (host())
+    {
+        host()->mark_needs_relayout();
+    }
 }
 
 void TextArea::set_on_changed(std::function<void(const std::string&)> cb)
 {
-    if (area_) area_->set_on_changed(std::move(cb));
-    else pending_.on_changed = std::move(cb);
+    if (area_)
+    {
+        area_->set_on_changed(std::move(cb));
+    }
+    else
+    {
+        pending_.on_changed = std::move(cb);
+    }
 }
 
 void TextArea::set_on_submit(std::function<void()> cb)
 {
-    if (area_) area_->set_on_submit(std::move(cb));
-    else pending_.on_submit = std::move(cb);
+    if (area_)
+    {
+        area_->set_on_submit(std::move(cb));
+    }
+    else
+    {
+        pending_.on_submit = std::move(cb);
+    }
 }
 
 void TextArea::set_on_focus_changed(std::function<void(bool)> cb)
@@ -190,7 +316,10 @@ void TextArea::set_on_focus_changed(std::function<void(bool)> cb)
 
 void TextArea::insert_at_cursor(std::string text)
 {
-    if (area_) area_->insert_at_cursor(std::move(text));
+    if (area_)
+    {
+        area_->insert_at_cursor(std::move(text));
+    }
 }
 
 Rect TextArea::cursor_rect() const
@@ -200,7 +329,10 @@ Rect TextArea::cursor_rect() const
 
 void TextArea::replace_range(int start, int end, std::string text)
 {
-    if (area_) area_->replace_range(start, end, std::move(text));
+    if (area_)
+    {
+        area_->replace_range(start, end, std::move(text));
+    }
 }
 
 int TextArea::cursor_byte_pos() const
@@ -210,21 +342,28 @@ int TextArea::cursor_byte_pos() const
 
 void TextArea::set_cursor_byte_pos(int byte_pos)
 {
-    if (area_) area_->set_cursor_byte_pos(byte_pos);
+    if (area_)
+    {
+        area_->set_cursor_byte_pos(byte_pos);
+    }
 }
 
 void TextArea::insert_mention(int start, int end, const std::string& user_id,
-                              const std::string& display_name, bool is_room,
-                              const Image* avatar)
+                              const std::string& display_name, bool is_room, const Image* avatar)
 {
     if (area_)
+    {
         area_->insert_mention(start, end, user_id, display_name, is_room, avatar);
+    }
 }
 
 void TextArea::insert_emoticon(int start, int end, const std::string& shortcode,
                                const std::string& mxc_url, const Image* image)
 {
-    if (area_) area_->insert_emoticon(start, end, shortcode, mxc_url, image);
+    if (area_)
+    {
+        area_->insert_emoticon(start, end, shortcode, mxc_url, image);
+    }
 }
 
 std::vector<tesseract::MentionSeg> TextArea::composer_draft() const
@@ -232,45 +371,80 @@ std::vector<tesseract::MentionSeg> TextArea::composer_draft() const
     return area_ ? area_->composer_draft() : std::vector<tesseract::MentionSeg>{};
 }
 
-void TextArea::refresh_mention_avatar(const std::string& user_id,
-                                      const Image* avatar)
+void TextArea::refresh_mention_avatar(const std::string& user_id, const Image* avatar)
 {
-    if (area_) area_->refresh_mention_avatar(user_id, avatar);
+    if (area_)
+    {
+        area_->refresh_mention_avatar(user_id, avatar);
+    }
 }
 
 void TextArea::refresh_room_mention_avatar(const Image* avatar)
 {
-    if (area_) area_->refresh_room_mention_avatar(avatar);
+    if (area_)
+    {
+        area_->refresh_room_mention_avatar(avatar);
+    }
 }
 
 void TextArea::set_mention_colors(const MentionColors& colors)
 {
-    if (area_) area_->set_mention_colors(colors);
-    else pending_.mention_colors = colors;
+    if (area_)
+    {
+        area_->set_mention_colors(colors);
+    }
+    else
+    {
+        pending_.mention_colors = colors;
+    }
 }
 
 void TextArea::set_on_edit_last(std::function<bool()> cb)
 {
-    if (area_) area_->set_on_edit_last(std::move(cb));
-    else pending_.on_edit_last = std::move(cb);
+    if (area_)
+    {
+        area_->set_on_edit_last(std::move(cb));
+    }
+    else
+    {
+        pending_.on_edit_last = std::move(cb);
+    }
 }
 
 void TextArea::set_on_image_paste(NativeTextArea::ImagePasteHandler cb)
 {
-    if (area_) area_->set_on_image_paste(std::move(cb));
-    else pending_.on_image_paste = std::move(cb);
+    if (area_)
+    {
+        area_->set_on_image_paste(std::move(cb));
+    }
+    else
+    {
+        pending_.on_image_paste = std::move(cb);
+    }
 }
 
 void TextArea::set_on_file_paste(NativeTextArea::FilePasteHandler cb)
 {
-    if (area_) area_->set_on_file_paste(std::move(cb));
-    else pending_.on_file_paste = std::move(cb);
+    if (area_)
+    {
+        area_->set_on_file_paste(std::move(cb));
+    }
+    else
+    {
+        pending_.on_file_paste = std::move(cb);
+    }
 }
 
 void TextArea::set_image_resolver(std::function<const Image*(const std::string& uri)> cb)
 {
-    if (area_) area_->set_image_resolver(std::move(cb));
-    else pending_.image_resolver = std::move(cb);
+    if (area_)
+    {
+        area_->set_image_resolver(std::move(cb));
+    }
+    else
+    {
+        pending_.image_resolver = std::move(cb);
+    }
 }
 
 void TextArea::push_popup_nav(std::function<bool(NavKey)> cb)
@@ -281,39 +455,65 @@ void TextArea::push_popup_nav(std::function<bool(NavKey)> cb)
 void TextArea::pop_popup_nav()
 {
     if (!nav_handlers_.empty())
+    {
         nav_handlers_.pop_back();
+    }
 }
 
 void TextArea::set_enabled(bool enabled)
 {
     Widget::set_enabled(enabled);
-    if (area_) area_->set_enabled(enabled);
-    else pending_.enabled = enabled;
+    if (area_)
+    {
+        area_->set_enabled(enabled);
+    }
+    else
+    {
+        pending_.enabled = enabled;
+    }
 }
 
 void TextArea::set_visible(bool v)
 {
-    if (v == own_visible()) return; // own flag unchanged — see header comment
-    if (v && !area_) ensure_native_();
+    if (v == own_visible())
+    {
+        return; // own flag unchanged — see header comment
+    }
+    if (v && !area_)
+    {
+        ensure_native_();
+    }
     Widget::set_visible(v);
     // Effective visibility (v && every ancestor) — see tk::TextField::set_visible.
-    if (area_) area_->set_visible(Widget::visible());
+    if (area_)
+    {
+        area_->set_visible(Widget::visible());
+    }
 }
 
 void TextArea::on_effective_visibility_changed_(bool now_visible)
 {
-    if (area_) area_->set_visible(now_visible);
+    if (area_)
+    {
+        area_->set_visible(now_visible);
+    }
 }
 
 void TextArea::set_focused(bool focused)
 {
     auto* h = host();
     if (!h)
+    {
         return; // not attached: there is nothing to focus yet
+    }
     if (focused)
+    {
         h->request_focus(this);
+    }
     else if (h->focused_widget() == this)
+    {
         h->clear_focus();
+    }
 }
 
 void TextArea::arrange(LayoutCtx& ctx, Rect bounds)
@@ -324,13 +524,17 @@ void TextArea::arrange(LayoutCtx& ctx, Rect bounds)
     if (!area_)
     {
         ensure_native_();
-        if (area_) area_->set_visible(Widget::visible());
+        if (area_)
+        {
+            area_->set_visible(Widget::visible());
+        }
     }
     if (!area_)
+    {
         return;
+    }
     float h = std::max(bounds_.h, min_height_);
-    Rect r{bounds_.x + overlay_inset_,
-           bounds_.y - (h - bounds_.h) * 0.5f + overlay_inset_,
+    Rect r{bounds_.x + overlay_inset_, bounds_.y - (h - bounds_.h) * 0.5f + overlay_inset_,
            std::max(0.0f, bounds_.w - overlay_inset_ * 2.0f),
            std::max(0.0f, h - overlay_inset_ * 2.0f)};
     area_->set_rect(r);
@@ -343,7 +547,9 @@ void TextArea::paint(PaintCtx& ctx)
     // parity with a plain Label for the no-native-backend test-Host case.
     Label::paint(ctx);
     if (!area_)
+    {
         return;
+    }
     // See TextField::paint's identical background-forwarding block — same
     // rationale, mirrored here for TextArea.
     if (auto bg = background_color(); bg && bg != last_bg_pushed_)
@@ -357,7 +563,9 @@ void TextArea::paint(PaintCtx& ctx)
         // rationale, mirrored here for TextArea.
         Rect draw_rect = area_->rendered_image_rect();
         if (draw_rect.w <= 0.0f || draw_rect.h <= 0.0f)
+        {
             draw_rect = bounds_;
+        }
         ctx.canvas.draw_image(*img, draw_rect);
     }
     // See TextField::paint's identical canvas-owned-caret block — same
@@ -375,13 +583,18 @@ void TextArea::paint(PaintCtx& ctx)
 
 void TextArea::on_scale_changed(float)
 {
-    if (area_) area_->invalidate_for_scale_change();
+    if (area_)
+    {
+        area_->invalidate_for_scale_change();
+    }
 }
 
 bool TextArea::on_pointer_down(Point local)
 {
     if (!area_)
+    {
         return false;
+    }
     area_->forward_pointer_down({bounds_.x + local.x, bounds_.y + local.y});
     return true;
 }
@@ -389,32 +602,42 @@ bool TextArea::on_pointer_down(Point local)
 void TextArea::on_pointer_drag(Point local)
 {
     if (area_)
+    {
         area_->forward_pointer_drag({bounds_.x + local.x, bounds_.y + local.y});
+    }
 }
 
 void TextArea::on_pointer_up(Point local, bool)
 {
     if (area_)
+    {
         area_->forward_pointer_up({bounds_.x + local.x, bounds_.y + local.y});
+    }
 }
 
 bool TextArea::on_pointer_move(Point)
 {
     if (area_)
+    {
         area_->set_hovering(true);
+    }
     return false;
 }
 
 void TextArea::on_pointer_leave()
 {
     if (area_)
+    {
         area_->set_hovering(false);
+    }
 }
 
 bool TextArea::on_wheel(Point local, float, float dy, bool)
 {
     if (!area_)
+    {
         return false;
+    }
     area_->forward_wheel({bounds_.x + local.x, bounds_.y + local.y}, dy);
     return true;
 }

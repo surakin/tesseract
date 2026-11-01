@@ -19,16 +19,30 @@ std::vector<std::uint8_t> read_fixture(const char* name)
 
 struct JxlFakeImage : tk::Image
 {
-    JxlFakeImage(int w, int h, std::uint8_t p0) : w_(w), h_(h), p0_(p0) {}
-    int width() const override { return w_; }
-    int height() const override { return h_; }
-    std::size_t memory_bytes() const noexcept override { return static_cast<std::size_t>(w_) * h_ * 4; }
+    JxlFakeImage(int w, int h, std::uint8_t p0) : w_(w), h_(h), p0_(p0)
+    {
+    }
+    int width() const override
+    {
+        return w_;
+    }
+    int height() const override
+    {
+        return h_;
+    }
+    std::size_t memory_bytes() const noexcept override
+    {
+        return static_cast<std::size_t>(w_) * h_ * 4;
+    }
     int w_, h_;
     std::uint8_t p0_; // first pixel's red byte
 };
 
-const tesseract::jxl::MakeImage kMake = [](const std::uint8_t* px, int w, int h) -> std::unique_ptr<tk::Image>
-{ return std::make_unique<JxlFakeImage>(w, h, px[0]); };
+const tesseract::jxl::MakeImage kMake = [](const std::uint8_t* px, int w,
+                                           int h) -> std::unique_ptr<tk::Image>
+{
+    return std::make_unique<JxlFakeImage>(w, h, px[0]);
+};
 
 } // namespace
 
@@ -105,7 +119,8 @@ TEST_CASE("jxl::decode_image: bad input is empty", "[jxl]")
 {
     const auto good = read_fixture("still_rgb.jxl");
     const std::vector<std::uint8_t> truncated(good.begin(), good.begin() + good.size() / 2);
-    CHECK(tesseract::jxl::decode_image(std::vector<std::uint8_t>{1, 2, 3}, 100, 100, kMake).empty());
+    CHECK(
+        tesseract::jxl::decode_image(std::vector<std::uint8_t>{1, 2, 3}, 100, 100, kMake).empty());
     CHECK(tesseract::jxl::decode_image(truncated, 100, 100, kMake).empty());
     // Header declaring 60000 x 60000: refused before any decode.
     const std::vector<std::uint8_t> huge{0xFF, 0x0A, 0xFE, 0x52, 0x07, 0x00, 0x02, 0, 0, 0, 0, 0};
@@ -118,13 +133,17 @@ TEST_CASE("jxl::decode_streamed_windowed: short animation decodes whole", "[jxl]
     std::vector<int> idx;
     const bool ok = tesseract::jxl::decode_streamed_windowed(
         read_fixture("anim3.jxl"), 4096, 4096, kMake,
-        [&](std::unique_ptr<tk::Image>, int, std::shared_ptr<tk::AnimDecodeSession> s, std::size_t total)
+        [&](std::unique_ptr<tk::Image>, int, std::shared_ptr<tk::AnimDecodeSession> s,
+            std::size_t total)
         {
             ++firsts;
             CHECK(s == nullptr);
             CHECK(total == 0);
         },
-        [&](int i, std::unique_ptr<tk::Image>, int) { idx.push_back(i); });
+        [&](int i, std::unique_ptr<tk::Image>, int)
+        {
+            idx.push_back(i);
+        });
     CHECK(ok);
     CHECK(firsts == 1);
     CHECK(idx == std::vector<int>{1, 2});
@@ -135,8 +154,14 @@ TEST_CASE("jxl::decode_streamed_windowed: still returns false", "[jxl]")
     bool called = false;
     const bool ok = tesseract::jxl::decode_streamed_windowed(
         read_fixture("still_rgb.jxl"), 4096, 4096, kMake,
-        [&](std::unique_ptr<tk::Image>, int, std::shared_ptr<tk::AnimDecodeSession>, std::size_t) { called = true; },
-        [&](int, std::unique_ptr<tk::Image>, int) { called = true; });
+        [&](std::unique_ptr<tk::Image>, int, std::shared_ptr<tk::AnimDecodeSession>, std::size_t)
+        {
+            called = true;
+        },
+        [&](int, std::unique_ptr<tk::Image>, int)
+        {
+            called = true;
+        });
     CHECK_FALSE(ok);
     CHECK_FALSE(called);
 }
@@ -148,13 +173,17 @@ TEST_CASE("jxl::decode_streamed_windowed: long animation yields a session", "[jx
     int delivered = 0;
     const bool ok = tesseract::jxl::decode_streamed_windowed(
         read_fixture("anim250.jxl"), 4096, 4096, kMake,
-        [&](std::unique_ptr<tk::Image>, int, std::shared_ptr<tk::AnimDecodeSession> s, std::size_t t)
+        [&](std::unique_ptr<tk::Image>, int, std::shared_ptr<tk::AnimDecodeSession> s,
+            std::size_t t)
         {
             session = std::move(s);
             total = t;
             ++delivered;
         },
-        [&](int, std::unique_ptr<tk::Image>, int) { ++delivered; });
+        [&](int, std::unique_ptr<tk::Image>, int)
+        {
+            ++delivered;
+        });
     REQUIRE(ok);
     REQUIRE(session);
     CHECK(total == static_cast<std::size_t>(tk::kAnimDecodeMaxFrames));
@@ -164,15 +193,24 @@ TEST_CASE("jxl::decode_streamed_windowed: long animation yields a session", "[jx
     int produced = 0;
     int last_idx = -1;
     while (!session->exhausted())
-        produced += session->decode_next_batch(
-            50, [&](int i, std::unique_ptr<tk::Image>, int) { last_idx = i; });
+    {
+        produced += session->decode_next_batch(50,
+                                               [&](int i, std::unique_ptr<tk::Image>, int)
+                                               {
+                                                   last_idx = i;
+                                               });
+    }
     CHECK(produced == tk::kAnimDecodeMaxFrames - tk::kAnimDecodeInitialBatchFrames);
     CHECK(last_idx == tk::kAnimDecodeMaxFrames - 1);
 
     session->restart();
     CHECK_FALSE(session->exhausted());
     int first_idx = -1;
-    session->decode_next_batch(1, [&](int i, std::unique_ptr<tk::Image>, int) { first_idx = i; });
+    session->decode_next_batch(1,
+                               [&](int i, std::unique_ptr<tk::Image>, int)
+                               {
+                                   first_idx = i;
+                               });
     CHECK(first_idx == 0);
 }
 
@@ -181,8 +219,14 @@ TEST_CASE("jxl::decode_streamed: delivers every frame", "[jxl]")
     int firsts = 0, rest = 0;
     const bool ok = tesseract::jxl::decode_streamed(
         read_fixture("anim3.jxl"), 4096, 4096, kMake,
-        [&](std::unique_ptr<tk::Image>, int) { ++firsts; },
-        [&](int, std::unique_ptr<tk::Image>, int) { ++rest; });
+        [&](std::unique_ptr<tk::Image>, int)
+        {
+            ++firsts;
+        },
+        [&](int, std::unique_ptr<tk::Image>, int)
+        {
+            ++rest;
+        });
     CHECK(ok);
     CHECK(firsts == 1);
     CHECK(rest == 2);

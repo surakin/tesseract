@@ -27,14 +27,21 @@ using PostFn = tk::AudioCapturePostFn;
 class AudioCaptureGtk : public tk::AudioCapture
 {
 public:
-    explicit AudioCaptureGtk(PostFn post) : post_(std::move(post)) {}
+    explicit AudioCaptureGtk(PostFn post) : post_(std::move(post))
+    {
+    }
 
-    ~AudioCaptureGtk() override { cancel(); }
+    ~AudioCaptureGtk() override
+    {
+        cancel();
+    }
 
     void start() override
     {
         if (recording_)
+        {
             return;
+        }
 
         {
             // Build the pipeline with a named pulsesrc so we can set the
@@ -51,8 +58,7 @@ public:
             const std::string& pref = tesseract::Settings::instance().audio_input_device_id;
             if (!pref.empty())
             {
-                GstElement* src_elem =
-                    gst_bin_get_by_name(GST_BIN(pipeline_), "aud_src");
+                GstElement* src_elem = gst_bin_get_by_name(GST_BIN(pipeline_), "aud_src");
                 if (src_elem)
                 {
                     g_object_set(src_elem, "device", pref.c_str(), nullptr);
@@ -76,8 +82,7 @@ public:
             return;
         }
 
-        g_signal_connect(sink_, "new-sample",
-                         G_CALLBACK(on_new_sample_), this);
+        g_signal_connect(sink_, "new-sample", G_CALLBACK(on_new_sample_), this);
 
         pcm_.clear();
         waveform_.clear();
@@ -95,30 +100,38 @@ public:
     void stop() override
     {
         if (!recording_)
+        {
             return;
+        }
         finish_(/*send=*/true);
     }
 
     void cancel() override
     {
         if (!recording_)
+        {
             return;
+        }
         finish_(/*send=*/false);
     }
 
-    bool is_recording() const override { return recording_; }
+    bool is_recording() const override
+    {
+        return recording_;
+    }
 
     std::uint64_t duration_ms() const override
     {
         if (!recording_)
+        {
             return 0;
+        }
         using namespace std::chrono;
         return static_cast<uint64_t>(
             duration_cast<milliseconds>(steady_clock::now() - start_tp_).count());
     }
 
-    void set_frame_callback(
-        std::function<void(const std::int16_t*, std::size_t)> cb) override
+    void set_frame_callback(std::function<void(const std::int16_t*, std::size_t)> cb) override
     {
         std::lock_guard<std::mutex> lk(mu_);
         frame_callback_ = std::move(cb);
@@ -135,7 +148,9 @@ private:
         auto* self = static_cast<AudioCaptureGtk*>(user_data);
         GstSample* sample = gst_app_sink_pull_sample(GST_APP_SINK(sink));
         if (!sample)
+        {
             return GST_FLOW_OK;
+        }
 
         GstBuffer* buf = gst_sample_get_buffer(sample);
         GstMapInfo info;
@@ -153,7 +168,9 @@ private:
             }
             gst_buffer_unmap(buf, &info);
             if (frame_cb)
+            {
                 frame_cb(s16, n / 2);
+            }
         }
         gst_sample_unref(sample);
         return GST_FLOW_OK;
@@ -166,7 +183,9 @@ private:
         {
             std::lock_guard<std::mutex> lk(self->mu_);
             if (self->window_byte_count_ < 9600)
+            {
                 return G_SOURCE_CONTINUE;
+            }
             window = std::move(self->window_buf_);
             self->window_buf_.clear();
             self->window_byte_count_ = 0;
@@ -174,9 +193,10 @@ private:
 
         int16_t peak = 0;
         for (int16_t v : window)
+        {
             peak = std::max(peak, static_cast<int16_t>(std::abs(v)));
-        std::uint16_t amp =
-            static_cast<uint16_t>(static_cast<uint32_t>(peak) * 1000 / 32767);
+        }
+        std::uint16_t amp = static_cast<uint16_t>(static_cast<uint32_t>(peak) * 1000 / 32767);
 
         {
             std::lock_guard<std::mutex> lk(self->mu_);
@@ -186,7 +206,11 @@ private:
         if (self->on_amplitude)
         {
             auto cb = self->on_amplitude;
-            self->post_([cb, amp]() { cb(amp); });
+            self->post_(
+                [cb, amp]()
+                {
+                    cb(amp);
+                });
         }
         return G_SOURCE_CONTINUE;
     }
@@ -196,7 +220,11 @@ private:
         if (on_stopped)
         {
             auto cb = on_stopped;
-            post_([cb]() mutable { cb({}, {}, 0); });
+            post_(
+                [cb]() mutable
+                {
+                    cb({}, {}, 0);
+                });
         }
     }
 
@@ -233,26 +261,29 @@ private:
             {
                 std::lock_guard<std::mutex> lk(mu_);
                 pcm = std::move(pcm_);
-                wf  = std::move(waveform_);
+                wf = std::move(waveform_);
             }
             auto cb = on_stopped;
-            post_([cb, pcm = std::move(pcm), wf = std::move(wf), dur]() mutable
-                  { cb(std::move(pcm), std::move(wf), dur); });
+            post_(
+                [cb, pcm = std::move(pcm), wf = std::move(wf), dur]() mutable
+                {
+                    cb(std::move(pcm), std::move(wf), dur);
+                });
         }
     }
 
     PostFn post_;
-    bool recording_        = false;
-    GstElement* pipeline_  = nullptr;
-    GstElement* sink_      = nullptr;
-    guint timer_source_    = 0;
+    bool recording_ = false;
+    GstElement* pipeline_ = nullptr;
+    GstElement* sink_ = nullptr;
+    guint timer_source_ = 0;
     std::chrono::steady_clock::time_point start_tp_;
 
     std::mutex mu_;
-    std::vector<std::uint8_t>  pcm_;
+    std::vector<std::uint8_t> pcm_;
     std::vector<std::uint16_t> waveform_;
-    std::vector<int16_t>       window_buf_;
-    std::size_t                window_byte_count_ = 0;
+    std::vector<int16_t> window_buf_;
+    std::size_t window_byte_count_ = 0;
     std::function<void(const std::int16_t*, std::size_t)> frame_callback_;
 };
 
@@ -261,13 +292,14 @@ private:
 namespace tk::gtk4
 {
 
-std::unique_ptr<tk::AudioCapture>
-make_audio_capture_gtk(tk::AudioCapturePostFn post)
+std::unique_ptr<tk::AudioCapture> make_audio_capture_gtk(tk::AudioCapturePostFn post)
 {
     // Return nullptr if the pulsesrc element is unavailable (no audio input).
     GstElementFactory* factory = gst_element_factory_find("pulsesrc");
     if (!factory)
+    {
         return nullptr;
+    }
     gst_object_unref(factory);
     return std::make_unique<AudioCaptureGtk>(std::move(post));
 }

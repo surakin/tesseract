@@ -26,12 +26,15 @@ RoomBridgeSection::RoomBridgeSection()
     explanation->set_wrap(true);
     group->add_widget(std::move(explanation));
 
-    auto check = tk::create_widget<tk::CheckButton>(
-        this, tk::tr("This room isn't actually bridged"));
+    auto check =
+        tk::create_widget<tk::CheckButton>(this, tk::tr("This room isn't actually bridged"));
     override_check_ = group->add_widget(std::move(check));
     override_check_->on_change = [this](bool checked)
     {
-        if (on_override_changed) on_override_changed(checked);
+        if (on_override_changed)
+        {
+            on_override_changed(checked);
+        }
     };
 }
 

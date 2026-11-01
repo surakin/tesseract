@@ -10,6 +10,7 @@
 #include "canvas.h"
 #include "canvas_d2d.h"
 #include "host.h"
+#include "surface.h"
 #include "theme.h"
 #include "widget.h"
 
@@ -70,7 +71,7 @@ enum class Cursor
 
 // Embed `hwnd()` (a child HWND) into your normal Win32 layout, then
 // SetWindowPos / MoveWindow it as the parent resizes.
-class Surface
+class Surface : public tk::SurfaceBase
 {
 public:
     // transparent=true creates the HWND with WS_EX_NOREDIRECTIONBITMAP and
@@ -85,11 +86,11 @@ public:
     Surface& operator=(const Surface&) = delete;
 
     HWND hwnd() const;
-    tk::Host& host();
-    const Theme& theme() const;
+    tk::Host& host() override;
+    const Theme& theme() const override;
 
-    void set_root(std::unique_ptr<Widget> root);
-    Widget* root() const;
+    void set_root(std::unique_ptr<Widget> root) override;
+    Widget* root() const override;
 
     // Physical-pixel-to-DIP scale factor for this surface's monitor
     // (GetDpiForWindow(hwnd()) / 96). The widget tree (and so AccessNode::
@@ -101,50 +102,41 @@ public:
 
     // Re-run measure + arrange + repaint on the existing root. WM_SIZE
     // calls this automatically.
-    void relayout();
-    void set_theme(const Theme& t);
+    void relayout() override;
+    void set_theme(const Theme& t) override;
 
     // Pushes `scale` through the whole widget tree via
     // Widget::apply_scale_change() (see widget.h) — call from WM_DPICHANGED
     // so native-control image captures (tk::NativeTextField/NativeTextArea)
     // don't stay stale/blurry.
-    void apply_scale_change(float scale);
+    void apply_scale_change(float scale) override;
 
     // Fired at the tail of apply_scale_change() above, with the new scale.
     // Lets integration code (the owning shell) track the display's current
     // scale — see ShellBase::set_current_scale_()'s doc comment — without
     // needing its own separate DPI-change plumbing.
-    void set_on_scale_changed(std::function<void(float)> cb);
+    void set_on_scale_changed(std::function<void(float)> cb) override;
 
     // Animated-image partial repaints. Point the surface at the shell's
     // animation cache once at setup; then call update_anim_regions() from
     // the animation timer to invalidate only the rects where animated images
     // were drawn on the last paint.
-    void set_anim_cache(const tk::AnimImageCache* cache);
-    void update_anim_regions();
+    void set_anim_cache(const tk::AnimImageCache* cache) override;
+    void update_anim_regions() override;
 
-    // Callback fired at the tail of every relayout — use this from
-    // integration code to keep native overlays aligned with the widget
-    // tree (e.g. SetWindowPos on a child EDIT). Single-slot: a second
-    // caller silently replaces the first's callback, so use this only
-    // where a Surface is known to have exactly one interested subsystem.
-    void set_on_layout(std::function<void()> cb);
-
-    // Same trigger point as set_on_layout, but additive — for a subsystem
-    // that can't assume it's the only thing interested in relayout (e.g.
-    // the accessibility bridge, which must coexist with whatever a given
-    // Surface's owner already wired via set_on_layout).
-    void add_layout_listener(std::function<void()> cb);
+    // Called at the tail of every relayout, additive — for a subsystem such as
+    // the accessibility bridge that must follow layout changes.
+    void add_layout_listener(std::function<void()> cb) override;
 
     // Borrowed reference to the per-process D2D + DWrite + WIC canvas
     // factory the Surface paints through. Integration code can call
     // factory().decode_image(bytes) to decode media on demand and hand
     // the resulting tk::Image to the shared views' provider lambdas
     // without re-decoding through GDI+.
-    CanvasFactory& factory();
+    CanvasFactory& factory() override;
 
     // Called when a drop fails because the file could not be read.
-    void set_on_file_drop_error(FileDropErrorHandler cb);
+    void set_on_file_drop_error(FileDropErrorHandler cb) override;
 
     // Install a right-click handler. Receives surface-local coordinates in
     // the same logical pixel space as pointer-down/up events. Fired on
@@ -168,6 +160,11 @@ private:
 // backend's shared factory (see canvas_d2d.h) and is only called from
 // dedicated threads that initialise COM themselves.
 tk::d2d::Backend& backend_singleton();
+
+// True for the top-level HWND of a live popup surface (Host::make_popup_surface).
+// Clicking one activates it, which the owning window sees as WM_ACTIVATE with
+// WA_INACTIVE; callers use this to tell that from the app being left.
+bool is_popup_surface_hwnd(HWND hwnd);
 
 // The same IBetterTextFontProvider every BetterTextField/BetterTextArea in
 // this app uses (see host_win32.cpp) — routes BetterText's emoji glyph

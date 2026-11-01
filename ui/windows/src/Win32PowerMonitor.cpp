@@ -11,15 +11,9 @@ constexpr const wchar_t* kPowerSinkClass = L"TesseractPowerMonitorSink";
 // rather than referencing the SDK symbols, which need <initguid.h> / a lib to
 // materialise and GUID_POWER_SAVING_STATUS is missing from older SDK headers.
 constexpr GUID kAcDcPowerSource = {
-    0x5D3E9A59,
-    0xE9D5,
-    0x4B00,
-    {0xA6, 0xBD, 0xFF, 0x34, 0xFF, 0x51, 0x65, 0x48}};
+    0x5D3E9A59, 0xE9D5, 0x4B00, {0xA6, 0xBD, 0xFF, 0x34, 0xFF, 0x51, 0x65, 0x48}};
 constexpr GUID kPowerSavingStatus = {
-    0xE00958C0,
-    0xC213,
-    0x4ACE,
-    {0x9B, 0x36, 0x4E, 0x0A, 0x53, 0xB1, 0x9E, 0x4A}};
+    0xE00958C0, 0xC213, 0x4ACE, {0x9B, 0x36, 0x4E, 0x0A, 0x53, 0xB1, 0x9E, 0x4A}};
 
 // SYSTEM_POWER_STATUS::SystemStatusFlag: low bit set ⇒ Windows battery saver on.
 bool battery_saver_from_status(const SYSTEM_POWER_STATUS& sps)
@@ -28,18 +22,15 @@ bool battery_saver_from_status(const SYSTEM_POWER_STATUS& sps)
 }
 } // namespace
 
-LRESULT CALLBACK Win32PowerMonitor::wnd_proc_(HWND hwnd, UINT msg, WPARAM wParam,
-                                              LPARAM lParam)
+LRESULT CALLBACK Win32PowerMonitor::wnd_proc_(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     if (msg == WM_NCCREATE)
     {
         auto* cs = reinterpret_cast<CREATESTRUCTW*>(lParam);
-        SetWindowLongPtrW(hwnd, GWLP_USERDATA,
-                          reinterpret_cast<LONG_PTR>(cs->lpCreateParams));
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(cs->lpCreateParams));
         return DefWindowProcW(hwnd, msg, wParam, lParam);
     }
-    auto* self = reinterpret_cast<Win32PowerMonitor*>(
-        GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+    auto* self = reinterpret_cast<Win32PowerMonitor*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
     if (self && msg == WM_POWERBROADCAST && wParam == PBT_POWERSETTINGCHANGE)
     {
         auto* p = reinterpret_cast<POWERBROADCAST_SETTING*>(lParam);
@@ -89,17 +80,17 @@ Win32PowerMonitor::Win32PowerMonitor(HINSTANCE inst)
     wc.lpszClassName = kPowerSinkClass;
     RegisterClassExW(&wc); // harmless if already registered
 
-    hwnd_ = CreateWindowExW(0, kPowerSinkClass, L"", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr,
-                            inst, this);
+    hwnd_ =
+        CreateWindowExW(0, kPowerSinkClass, L"", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, inst, this);
 
     refresh_from_system_();
 
     if (hwnd_)
     {
-        acdc_notify_ = RegisterPowerSettingNotification(
-            hwnd_, &kAcDcPowerSource, DEVICE_NOTIFY_WINDOW_HANDLE);
-        saver_notify_ = RegisterPowerSettingNotification(
-            hwnd_, &kPowerSavingStatus, DEVICE_NOTIFY_WINDOW_HANDLE);
+        acdc_notify_ =
+            RegisterPowerSettingNotification(hwnd_, &kAcDcPowerSource, DEVICE_NOTIFY_WINDOW_HANDLE);
+        saver_notify_ = RegisterPowerSettingNotification(hwnd_, &kPowerSavingStatus,
+                                                         DEVICE_NOTIFY_WINDOW_HANDLE);
     }
 }
 

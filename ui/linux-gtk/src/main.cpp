@@ -11,9 +11,9 @@
 #include "MainWindow.h"
 #include "app/AccountManager.h"
 #include "app/Launch.h"
-#include "tk/gst_hw_probe.h"
+#include "platform/linux/gst_hw_probe.h"
 #include "tk/i18n.h"
-#include "tk/single_instance.h"
+#include "platform/single_instance.h"
 #include <tesseract/paths.h>
 #include <tesseract/settings.h>
 
@@ -63,7 +63,9 @@ int main(int argc, char** argv)
     setlocale(LC_ALL, "");
 
     if (!getenv("GST_DEBUG"))
+    {
         setenv("GST_DEBUG", "0", 1);
+    }
 
     // Shared startup pipeline (ui/shared/app/Launch.h): parses argv, selects
     // --profile, loads settings + locale, and handles --help / --version /
@@ -74,9 +76,7 @@ int main(int argc, char** argv)
         // Derive from the environment (setlocale already called above).
         const char* lc_messages = setlocale(LC_MESSAGES, nullptr);
         std::string lang =
-            (lc_messages && lc_messages[0] != 'C' && lc_messages[0] != '\0')
-                ? lc_messages
-                : "en";
+            (lc_messages && lc_messages[0] != 'C' && lc_messages[0] != '\0') ? lc_messages : "en";
         // Strip encoding suffix if present (e.g. "es_MX.UTF-8" -> "es_MX")
         auto dot = lang.find('.');
         if (dot != std::string::npos)
@@ -94,13 +94,14 @@ int main(int argc, char** argv)
         {
             return std::string{};
         }
-        return (std::filesystem::path{ldir}.parent_path() / "tesseract" / "i18n")
-            .string();
+        return (std::filesystem::path{ldir}.parent_path() / "tesseract" / "i18n").string();
     };
     hooks.acquire_instance_lock = []
-    { return tk::acquire_single_instance_lock().acquired; };
-    static const tesseract::LaunchPlan plan = tesseract::prepare_launch(
-        std::vector<std::string>(argv + 1, argv + argc), hooks);
+    {
+        return tk::acquire_single_instance_lock().acquired;
+    };
+    static const tesseract::LaunchPlan plan =
+        tesseract::prepare_launch(std::vector<std::string>(argv + 1, argv + argc), hooks);
     if (plan.exit_code)
     {
         return *plan.exit_code;
@@ -153,8 +154,7 @@ int main(int argc, char** argv)
     {
         app_id += ".p_" + tesseract::profile();
     }
-    GtkApplication* app =
-        gtk_application_new(app_id.c_str(), G_APPLICATION_HANDLES_OPEN);
+    GtkApplication* app = gtk_application_new(app_id.c_str(), G_APPLICATION_HANDLES_OPEN);
     install_graceful_shutdown_signal_handlers(app);
 
     tesseract::AccountManager account_manager;
@@ -167,15 +167,18 @@ int main(int argc, char** argv)
         [&window](tk::ActivationRequest req)
         {
             if (!req.token.empty())
+            {
                 setenv("XDG_ACTIVATION_TOKEN", req.token.c_str(), 1);
+            }
             if (window)
             {
                 window->present();
                 if (!req.uri.empty())
+                {
                     window->open_matrix_link(req.uri);
-                window->dispatch_launch_action(
-                    tesseract::launch_action_from_option_id(req.action),
-                    std::move(req.room_id));
+                }
+                window->dispatch_launch_action(tesseract::launch_action_from_option_id(req.action),
+                                               std::move(req.room_id));
             }
         });
     if (activation_listener->fd() >= 0)
@@ -190,7 +193,8 @@ int main(int argc, char** argv)
             activation_listener.get());
     }
 
-    struct ActivateData {
+    struct ActivateData
+    {
         tesseract::AccountManager* account_manager;
         std::unique_ptr<gtk4::MainWindow>* window;
     };
@@ -198,57 +202,55 @@ int main(int argc, char** argv)
 
     g_signal_connect(
         app, "activate",
-        G_CALLBACK(
-            +[](GtkApplication* app, gpointer data)
-            {
-                auto& d = *static_cast<ActivateData*>(data);
-                auto& win = *d.window;
-                if (!win)
-                {
-                    win = std::make_unique<gtk4::MainWindow>(
-                        *d.account_manager, app, start_hidden
+        G_CALLBACK(+[](GtkApplication* app, gpointer data)
+                   {
+                       auto& d = *static_cast<ActivateData*>(data);
+                       auto& win = *d.window;
+                       if (!win)
+                       {
+                           win = std::make_unique<gtk4::MainWindow>(*d.account_manager, app,
+                                                                    start_hidden
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
-                        , screenshot_dir
+                                                                    ,
+                                                                    screenshot_dir
 #endif
-                        );
+                           );
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
-                    if (!screenshot_dir.empty())
-                        win->start_screenshot_mode();
+                           if (!screenshot_dir.empty())
+                               win->start_screenshot_mode();
 #endif
-                    if (!startup_uri.empty())
-                    {
-                        win->open_matrix_link(startup_uri);
-                        startup_uri.clear();
-                    }
-                    // Held by ShellBase until the main content is showing.
-                    win->dispatch_launch_action(
-                        plan.args.action,
-                        plan.args.room_id.value_or(std::string{}));
-                }
-                else
-                {
-                    win->present(); // second-instance launch raises the existing window
-                }
-            }),
+                           if (!startup_uri.empty())
+                           {
+                               win->open_matrix_link(startup_uri);
+                               startup_uri.clear();
+                           }
+                           // Held by ShellBase until the main content is showing.
+                           win->dispatch_launch_action(plan.args.action,
+                                                       plan.args.room_id.value_or(std::string{}));
+                       }
+                       else
+                       {
+                           win->present(); // second-instance launch raises the existing window
+                       }
+                   }),
         &activate_data);
 
     // Handles matrix: URIs dispatched via D-Bus activation (xdg-open / second instance).
     g_signal_connect(
         app, "open",
-        G_CALLBACK(
-            +[](GApplication*, GFile** files, gint n_files, const gchar*, gpointer data)
-            {
-                auto& win = *static_cast<ActivateData*>(data)->window;
-                if (n_files > 0 && win)
-                {
-                    char* uri = g_file_get_uri(files[0]);
-                    if (uri)
-                    {
-                        win->open_matrix_link(std::string(uri));
-                        g_free(uri);
-                    }
-                }
-            }),
+        G_CALLBACK(+[](GApplication*, GFile** files, gint n_files, const gchar*, gpointer data)
+                   {
+                       auto& win = *static_cast<ActivateData*>(data)->window;
+                       if (n_files > 0 && win)
+                       {
+                           char* uri = g_file_get_uri(files[0]);
+                           if (uri)
+                           {
+                               win->open_matrix_link(std::string(uri));
+                               g_free(uri);
+                           }
+                       }
+                   }),
         &activate_data);
 
     int status = g_application_run(G_APPLICATION(app), argc, argv);

@@ -14,7 +14,10 @@
 #include <memory>
 #include <string>
 
-namespace win32 { class MainWindow; }
+namespace win32
+{
+class MainWindow;
+}
 
 namespace win32
 {
@@ -30,19 +33,19 @@ public:
     explicit CallWindow(MainWindow* parent_shell);
     ~CallWindow() override;
 
-    void bring_to_front()               override;
-    void close_window()                 override;
-    void apply_theme(const tk::Theme&)  override;
+    void bring_to_front() override;
+    void close_window() override;
+    void apply_theme(const tk::Theme&) override;
     void apply_scale_change(float scale) override;
-    void request_relayout()             override;
-    void request_repaint()              override;
+    void request_relayout() override;
+    void request_repaint() override;
 
 private:
     static LRESULT CALLBACK wnd_proc_(HWND, UINT, WPARAM, LPARAM);
     LRESULT handle_msg_(HWND, UINT, WPARAM, LPARAM);
 
-    HWND                              hwnd_    = nullptr;
-    MainWindow*                       parent_shell_ = nullptr;
+    HWND hwnd_ = nullptr;
+    MainWindow* parent_shell_ = nullptr;
     std::unique_ptr<tk::win32::Surface> surface_;
 
     static constexpr const wchar_t* kClassName = L"TesseractCallWnd";

@@ -35,7 +35,9 @@ bool launch_detached(const char* opener, const std::string& arg)
     };
     pid_t pid = -1;
     if (posix_spawn(&pid, "/bin/sh", nullptr, nullptr, argv, environ) != 0)
+    {
         return false;
+    }
 
     int status = 0;
     pid_t reaped = -1;

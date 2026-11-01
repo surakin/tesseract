@@ -24,7 +24,11 @@ fn open_db(path: &Path) -> Option<Connection> {
     }
     let on_disk = Connection::open(path)
         .map_err(|e| e.to_string())
-        .and_then(|conn| conn.execute_batch(SCHEMA).map(|_| conn).map_err(|e| e.to_string()));
+        .and_then(|conn| {
+            conn.execute_batch(SCHEMA)
+                .map(|_| conn)
+                .map_err(|e| e.to_string())
+        });
     match on_disk {
         Ok(conn) => return Some(conn),
         Err(e) => tracing::warn!(
@@ -155,10 +159,8 @@ mod tests {
     fn open_db_falls_back_when_path_is_unusable() {
         // A regular file where the parent directory should be: neither
         // create_dir_all nor Connection::open can succeed.
-        let dir = std::env::temp_dir().join(format!(
-            "tesseract-waveform-test-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("tesseract-waveform-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let blocker = dir.join("not-a-dir");
         std::fs::write(&blocker, b"x").unwrap();

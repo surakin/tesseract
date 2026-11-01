@@ -10,15 +10,19 @@
 namespace tesseract::views
 {
 
-GifController::GifController(tk::TextArea* text_area, GifPopup* popup,
-                            Hooks hooks)
+GifController::GifController(tk::TextArea* text_area, GifPopup* popup, Hooks hooks)
     : text_area_(text_area), popup_(popup), hooks_(std::move(hooks))
 {
     if (popup_)
     {
         popup_->on_accepted = [this](const tesseract::GifResult& g)
-        { accept(g); };
-        popup_->on_dismissed = [this] { hide(); };
+        {
+            accept(g);
+        };
+        popup_->on_dismissed = [this]
+        {
+            hide();
+        };
     }
 }
 
@@ -42,15 +46,15 @@ bool GifController::on_text_changed(const std::string& text)
     const std::uint64_t gen = ++debounce_seq_;
     if (hooks_.post_delayed)
     {
-        hooks_.post_delayed(kDebounceMs,
-                            guarded([this, gen]
-                            {
-                                if (gen != debounce_seq_)
-                                {
-                                    return;
-                                }
-                                run_search(pending_query_);
-                            }));
+        hooks_.post_delayed(kDebounceMs, guarded(
+                                             [this, gen]
+                                             {
+                                                 if (gen != debounce_seq_)
+                                                 {
+                                                     return;
+                                                 }
+                                                 run_search(pending_query_);
+                                             }));
     }
     return true;
 }
@@ -90,8 +94,7 @@ void GifController::run_search(std::string query)
         show_status(tk::tr("No GIF API key configured"));
         return;
     }
-    const std::string ck =
-        hooks_.client_key ? hooks_.client_key() : std::string{};
+    const std::string ck = hooks_.client_key ? hooks_.client_key() : std::string{};
     // Process-global id so the shell can fan on_gif_results() to every
     // controller and only the issuing one matches (per-controller counters
     // would collide across composers).
@@ -101,8 +104,7 @@ void GifController::run_search(std::string query)
     client->gif_search(id, query, key, ck, kLimit);
 }
 
-void GifController::on_results(std::uint64_t request_id,
-                              std::vector<tesseract::GifResult> results)
+void GifController::on_results(std::uint64_t request_id, std::vector<tesseract::GifResult> results)
 {
     // Drop results for a superseded search.
     if (request_id != request_seq_ || !popup_)
@@ -126,8 +128,7 @@ void GifController::on_results(std::uint64_t request_id,
     }
 }
 
-void GifController::on_search_failed(std::uint64_t request_id,
-                                    const std::string& /*message*/)
+void GifController::on_search_failed(std::uint64_t request_id, const std::string& /*message*/)
 {
     if (request_id == request_seq_)
     {
@@ -194,8 +195,7 @@ void GifController::accept(const tesseract::GifResult& gif)
     // Use the user's typed search query as the event body/filename (what other
     // clients display) instead of a generic "gif.webp". Captured before hide()
     // since pending_query_ is unaffected, but copy for the async closure.
-    const std::string body =
-        pending_query_.empty() ? std::string("gif") : pending_query_;
+    const std::string body = pending_query_.empty() ? std::string("gif") : pending_query_;
 
     hide(); // dismiss the strip immediately; the upload runs in the background
     auto clear = hooks_.clear_composer;
@@ -207,13 +207,9 @@ void GifController::accept(const tesseract::GifResult& gif)
 
     if (client)
     {
-        client->send_gif_from_urls_async(
-            0, room,
-            g.image_url, g.image_mime, body,
-            g.image_w, g.image_h,
-            g.preview_url,
-            g.preview_w, g.preview_h,
-            /*reply*/ "", /*thread*/ "");
+        client->send_gif_from_urls_async(0, room, g.image_url, g.image_mime, body, g.image_w,
+                                         g.image_h, g.preview_url, g.preview_w, g.preview_h,
+                                         /*reply*/ "", /*thread*/ "");
     }
 }
 

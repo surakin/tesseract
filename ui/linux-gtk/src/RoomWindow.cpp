@@ -13,19 +13,16 @@
 
 #include <string_view>
 
-
 namespace gtk4
 {
 
 RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
-    : tesseract::RoomWindowBase(parent_shell, room_id),
-      parent_shell_(parent_shell)
+    : tesseract::RoomWindowBase(parent_shell, room_id), parent_shell_(parent_shell)
 {
     window_ = GTK_WINDOW(gtk_window_new());
-    gtk_widget_set_size_request(
-        GTK_WIDGET(window_),
-        static_cast<int>(tesseract::visual::kMinWindowWidth),
-        static_cast<int>(tesseract::visual::kMinWindowHeight));
+    gtk_widget_set_size_request(GTK_WIDGET(window_),
+                                static_cast<int>(tesseract::visual::kMinWindowWidth),
+                                static_cast<int>(tesseract::visual::kMinWindowHeight));
     // Associate with the GtkApplication so this is a proper application window.
     // Without it, a bare gtk_window_new() pop-out mis-routes popover keyboard
     // grabs — the composer stops receiving keys while any popup is open even
@@ -40,8 +37,7 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     // Apply saved size (GTK4/Wayland: position is compositor-managed).
     {
         const auto saved = get_saved_popout_geometry_(800, 600);
-        gtk_window_set_default_size(window_,
-                                    saved.valid ? saved.w : 800,
+        gtk_window_set_default_size(window_, saved.valid ? saved.w : 800,
                                     saved.valid ? saved.h : 600);
     }
 
@@ -50,41 +46,38 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     // it doubles as the popup-dismiss hook: a popup's screen position is
     // captured once when it opens and never recomputed, so leaving one open
     // across a resize would strand it away from whatever control anchored it.
-    g_signal_connect(
-        window_, "notify::default-width",
-        G_CALLBACK(+[](GObject* /*obj*/, GParamSpec* /*ps*/, gpointer data)
-                   {
-                       auto* self = static_cast<RoomWindow*>(data);
-                       int w = 0;
-                       int h = 0;
-                       gtk_window_get_default_size(self->window_, &w, &h);
-                       self->save_popout_geometry_(0, 0, w, h);
-                       self->dismiss_popups_on_resize_();
-                   }),
-        this);
-    g_signal_connect(
-        window_, "notify::default-height",
-        G_CALLBACK(+[](GObject* /*obj*/, GParamSpec* /*ps*/, gpointer data)
-                   {
-                       auto* self = static_cast<RoomWindow*>(data);
-                       int w = 0;
-                       int h = 0;
-                       gtk_window_get_default_size(self->window_, &w, &h);
-                       self->save_popout_geometry_(0, 0, w, h);
-                       self->dismiss_popups_on_resize_();
-                   }),
-        this);
+    g_signal_connect(window_, "notify::default-width",
+                     G_CALLBACK(+[](GObject* /*obj*/, GParamSpec* /*ps*/, gpointer data)
+                                {
+                                    auto* self = static_cast<RoomWindow*>(data);
+                                    int w = 0;
+                                    int h = 0;
+                                    gtk_window_get_default_size(self->window_, &w, &h);
+                                    self->save_popout_geometry_(0, 0, w, h);
+                                    self->dismiss_popups_on_resize_();
+                                }),
+                     this);
+    g_signal_connect(window_, "notify::default-height",
+                     G_CALLBACK(+[](GObject* /*obj*/, GParamSpec* /*ps*/, gpointer data)
+                                {
+                                    auto* self = static_cast<RoomWindow*>(data);
+                                    int w = 0;
+                                    int h = 0;
+                                    gtk_window_get_default_size(self->window_, &w, &h);
+                                    self->save_popout_geometry_(0, 0, w, h);
+                                    self->dismiss_popups_on_resize_();
+                                }),
+                     this);
 
     surface_ = std::make_unique<tk::gtk4::Surface>(tk::Theme::light());
     gtk_window_set_child(window_, surface_->widget());
 
-    auto room_widget = tk::create_root_widget<tesseract::views::PopoutRoomWidget>(
-        &surface_->host());
-    room_view_             = room_widget->room_view();
-    media_viewer_          = room_widget->media_viewer();
+    auto room_widget =
+        tk::create_root_widget<tesseract::views::PopoutRoomWidget>(&surface_->host());
+    room_view_ = room_widget->room_view();
+    media_viewer_ = room_widget->media_viewer();
     forward_picker_widget_ = room_widget->forward_picker();
     room_media_view_widget_ = room_widget->room_media_view();
-    confirm_dialog_widget_ = room_widget->confirm_dialog();
     room_widget->on_layout_changed = [this]
     {
         if (surface_)
@@ -101,21 +94,29 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         .media_viewer = media_viewer_,
         .forward_picker = forward_picker_widget_,
         .room_media_view = room_media_view_widget_,
-        .focus_forward_picker_field = [this]
+        .focus_forward_picker_field =
+            [this]
         {
             if (!forward_picker_widget_)
+            {
                 return;
+            }
             if (auto* f = forward_picker_widget_->search_field())
             {
                 f->set_text("");
                 f->set_focused(true);
             }
         },
-        .hide_forward_picker_field = [this]
+        .hide_forward_picker_field =
+            [this]
         {
             if (forward_picker_widget_)
+            {
                 if (auto* f = forward_picker_widget_->search_field())
+                {
                     f->set_visible(false);
+                }
+            }
         },
     });
 
@@ -129,30 +130,31 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     // player above — MessageListView falls back to a static thumbnail unless
     // both of these are set).
     room_view_->set_video_player_factory(
-        [this]() { return surface_->host().make_video_player(); });
+        [this]()
+        {
+            return surface_->host().make_video_player();
+        });
     room_view_->set_video_fetch_provider(
-        [this](const std::string& src,
-               std::function<void(std::vector<std::uint8_t>)> on_ready)
+        [this](const std::string& src, std::function<void(std::vector<std::uint8_t>)> on_ready)
         {
             pane_->fetch_source_bytes_(src, std::move(on_ready));
         });
 
     // ── Media save dialog ─────────────────────────────────────────────────
     pane_->install_media_viewer_save_(
-        [this](const tesseract::views::MediaSaveSpec& spec,
-               std::function<void(std::string)> done)
+        [this](const tesseract::views::MediaSaveSpec& spec, std::function<void(std::string)> done)
         {
             GtkFileDialog* dlg = gtk_file_dialog_new();
             gtk_file_dialog_set_title(dlg, spec.title.c_str());
             gtk_file_dialog_set_initial_name(dlg, spec.suggested_name.c_str());
             auto* ctx = new std::function<void(std::string)>(std::move(done));
-            gtk_file_dialog_save(dlg, GTK_WINDOW(window_), nullptr,
+            gtk_file_dialog_save(
+                dlg, GTK_WINDOW(window_), nullptr,
                 +[](GObject* dialog_obj, GAsyncResult* res, gpointer p)
                 {
                     auto* done_fn = static_cast<std::function<void(std::string)>*>(p);
                     GError* err = nullptr;
-                    GFile* gf = gtk_file_dialog_save_finish(
-                        GTK_FILE_DIALOG(dialog_obj), res, &err);
+                    GFile* gf = gtk_file_dialog_save_finish(GTK_FILE_DIALOG(dialog_obj), res, &err);
                     if (gf)
                     {
                         char* cpath = g_file_get_path(gf);
@@ -161,9 +163,13 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
                         g_object_unref(gf);
                         (*done_fn)(std::move(dest));
                     }
-                    if (err) g_error_free(err);
+                    if (err)
+                    {
+                        g_error_free(err);
+                    }
                     delete done_fn;
-                }, ctx);
+                },
+                ctx);
             g_object_unref(dlg);
         });
 
@@ -171,11 +177,17 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     const auto set_fs = [this](bool on)
     {
         if (!window_)
+        {
             return;
+        }
         if (on)
+        {
             gtk_window_fullscreen(window_);
+        }
         else
+        {
             gtk_window_unfullscreen(window_);
+        }
     };
     media_viewer_->on_request_fullscreen = set_fs;
 
@@ -215,12 +227,16 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     room_view_->on_set_clipboard = [this](std::string_view t)
     {
         if (surface_)
+        {
             surface_->host().set_clipboard_text(t);
+        }
     };
     room_view_->on_selection_started = [this]()
     {
         if (surface_)
+        {
             surface_->host().release_focus_to_canvas();
+        }
     };
     room_view_->on_show_copy_menu = [this]()
     {
@@ -233,8 +249,7 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         }
         {
             GMenu* menu = g_menu_new();
-            g_menu_append(menu, room_view_->copy_menu_label().c_str(),
-                          "copy-sel.copy");
+            g_menu_append(menu, room_view_->copy_menu_label().c_str(), "copy-sel.copy");
             copy_ctx_menu_ = gtk_popover_menu_new_from_model(G_MENU_MODEL(menu));
             gtk_popover_set_has_arrow(GTK_POPOVER(copy_ctx_menu_), FALSE);
             gtk_widget_set_parent(copy_ctx_menu_, surface_->widget());
@@ -242,8 +257,7 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
             copy_ctx_actions_ = g_simple_action_group_new();
             GSimpleAction* act = g_simple_action_new("copy", nullptr);
             g_signal_connect(act, "activate", G_CALLBACK(on_copy_action_), this);
-            g_action_map_add_action(G_ACTION_MAP(copy_ctx_actions_),
-                                    G_ACTION(act));
+            g_action_map_add_action(G_ACTION_MAP(copy_ctx_actions_), G_ACTION(act));
             g_object_unref(act);
             gtk_widget_insert_action_group(surface_->widget(), "copy-sel",
                                            G_ACTION_GROUP(copy_ctx_actions_));
@@ -252,16 +266,18 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
         GdkDisplay* dpy = gtk_widget_get_display(w);
         GdkSeat* seat = gdk_display_get_default_seat(dpy);
         GdkDevice* ptr = gdk_seat_get_pointer(seat);
-        GdkSurface* surf = gtk_native_get_surface(
-            GTK_NATIVE(gtk_widget_get_native(w)));
+        GdkSurface* surf = gtk_native_get_surface(GTK_NATIVE(gtk_widget_get_native(w)));
         double sx = 0, sy = 0;
         if (surf)
+        {
             gdk_surface_get_device_position(surf, ptr, &sx, &sy, nullptr);
+        }
         graphene_point_t pt_in{static_cast<float>(sx), static_cast<float>(sy)};
         graphene_point_t pt_out{};
-        if (!gtk_widget_compute_point(
-                GTK_WIDGET(gtk_widget_get_native(w)), w, &pt_in, &pt_out))
+        if (!gtk_widget_compute_point(GTK_WIDGET(gtk_widget_get_native(w)), w, &pt_in, &pt_out))
+        {
             pt_out = {};
+        }
         GdkRectangle r{static_cast<int>(pt_out.x), static_cast<int>(pt_out.y), 1, 1};
         gtk_popover_set_pointing_to(GTK_POPOVER(copy_ctx_menu_), &r);
         gtk_popover_popup(GTK_POPOVER(copy_ctx_menu_));
@@ -269,43 +285,8 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
 
     // ── Compose text area (self-owned) + composer popups ─────────────────
     room_text_area_ = room_view_->compose_bar()->text_area();
-    popups_ = std::make_unique<tesseract::ComposerPopups>(
-        surface_->host(), room_text_area_, pane_.get(), room_view_);
-
-    surface_->set_on_layout(
-        [this]
-        {
-            // Native child controls always paint over canvas-drawn overlays,
-            // so hide them while the confirm dialog covers the window —
-            // otherwise the compose box/search fields would poke through on
-            // top of the modal backdrop. room_text_area_ self-positions via
-            // ComposeBar::arrange() otherwise (reached via the relayout this
-            // set_on_layout callback runs after), so only a force-hide is
-            // needed here — mirrors the search fields' own gating below.
-            const bool confirm_open =
-                confirm_dialog_widget_ && confirm_dialog_widget_->is_open();
-            if (confirm_open && room_text_area_)
-            {
-                room_text_area_->set_visible(false);
-            }
-            if (confirm_open && room_view_)
-            {
-                // Search field self-positions via RoomSearchBar::arrange(),
-                // but the ConfirmDialog covering this window is pop-out-local
-                // state the widget doesn't know about — force it off here.
-                if (auto* bar = room_view_->room_search_bar())
-                    if (auto* f = bar->search_field())
-                        f->set_visible(false);
-            }
-            if (confirm_open && forward_picker_widget_)
-            {
-                // Search field self-positions via ForwardRoomPicker::arrange(),
-                // but the ConfirmDialog covering this window is pop-out-local
-                // state the widget doesn't know about — force it off here.
-                if (auto* f = forward_picker_widget_->search_field())
-                    f->set_visible(false);
-            }
-        });
+    popups_ = std::make_unique<tesseract::ComposerPopups>(surface_->host(), room_text_area_,
+                                                          pane_.get(), room_view_);
 
     // Per-room "find in conversation" — search field is self-owned; only the
     // shell-level Up/Down/Escape nav needs wiring here (on_close is already
@@ -320,16 +301,22 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
                     [this](tk::NavKey nk) -> bool
                     {
                         if (!room_view_ || !room_view_->room_search_open())
+                        {
                             return false;
+                        }
                         switch (nk)
                         {
                         case tk::NavKey::Up:
                             if (room_view_->on_room_search_navigate)
+                            {
                                 room_view_->on_room_search_navigate(-1);
+                            }
                             return true;
                         case tk::NavKey::Down:
                             if (room_view_->on_room_search_navigate)
+                            {
                                 room_view_->on_room_search_navigate(+1);
+                            }
                             return true;
                         case tk::NavKey::Escape:
                             room_view_->close_room_search();
@@ -352,16 +339,24 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
                 [this](tk::NavKey nk) -> bool
                 {
                     if (!forward_picker_widget_ || !forward_picker_widget_->is_open())
+                    {
                         return false;
+                    }
                     switch (nk)
                     {
                     case tk::NavKey::Up:
                         forward_picker_widget_->move_selection(-1);
-                        if (surface_) surface_->relayout();
+                        if (surface_)
+                        {
+                            surface_->relayout();
+                        }
                         return true;
                     case tk::NavKey::Down:
                         forward_picker_widget_->move_selection(+1);
-                        if (surface_) surface_->relayout();
+                        if (surface_)
+                        {
+                            surface_->relayout();
+                        }
                         return true;
                     case tk::NavKey::Escape:
                         forward_picker_widget_->close();
@@ -377,9 +372,9 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     {
         using HC = tesseract::views::MessageListView::HoverCursor;
         const HC hc = tesseract::views::MessageListView::hover_cursor_for(url);
-        gtk_widget_set_cursor_from_name(
-            surface_->widget(),
-            hc == HC::Text ? "text" : hc == HC::Pointer ? "pointer" : "default");
+        gtk_widget_set_cursor_from_name(surface_->widget(), hc == HC::Text      ? "text"
+                                                            : hc == HC::Pointer ? "pointer"
+                                                                                : "default");
     };
 
     // "destroy" fires when the GtkWindow is destroyed (user clicks X or
@@ -390,8 +385,7 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     // Escape key: close open viewer overlays regardless of focused widget.
     {
         GtkEventController* key_ctl = gtk_event_controller_key_new();
-        g_signal_connect(key_ctl, "key-pressed",
-                         G_CALLBACK(on_key_pressed_), this);
+        g_signal_connect(key_ctl, "key-pressed", G_CALLBACK(on_key_pressed_), this);
         gtk_widget_add_controller(GTK_WIDGET(window_), key_ctl);
     }
 
@@ -400,13 +394,11 @@ RoomWindow::RoomWindow(MainWindow* parent_shell, const std::string& room_id)
     // switcher widget lives in the main window, so we route there and raise it.
     {
         GtkEventController* sc = gtk_shortcut_controller_new();
-        gtk_shortcut_controller_set_scope(GTK_SHORTCUT_CONTROLLER(sc),
-                                          GTK_SHORTCUT_SCOPE_GLOBAL);
-        GtkShortcut* shortcut = gtk_shortcut_new(
-            gtk_keyval_trigger_new(GDK_KEY_k, GDK_CONTROL_MASK),
-            gtk_callback_action_new(on_quick_switch_shortcut_, this, nullptr));
-        gtk_shortcut_controller_add_shortcut(GTK_SHORTCUT_CONTROLLER(sc),
-                                             shortcut);
+        gtk_shortcut_controller_set_scope(GTK_SHORTCUT_CONTROLLER(sc), GTK_SHORTCUT_SCOPE_GLOBAL);
+        GtkShortcut* shortcut =
+            gtk_shortcut_new(gtk_keyval_trigger_new(GDK_KEY_k, GDK_CONTROL_MASK),
+                             gtk_callback_action_new(on_quick_switch_shortcut_, this, nullptr));
+        gtk_shortcut_controller_add_shortcut(GTK_SHORTCUT_CONTROLLER(sc), shortcut);
         gtk_widget_add_controller(GTK_WIDGET(window_), sc);
     }
 
@@ -425,13 +417,13 @@ RoomWindow::~RoomWindow()
 }
 
 // static
-void RoomWindow::on_copy_action_(GSimpleAction* /*action*/,
-                                  GVariant* /*parameter*/,
-                                  gpointer self)
+void RoomWindow::on_copy_action_(GSimpleAction* /*action*/, GVariant* /*parameter*/, gpointer self)
 {
     auto* w = static_cast<RoomWindow*>(self);
     if (w->room_view_)
+    {
         w->room_view_->copy_context_menu_target();
+    }
 }
 
 // static
@@ -443,9 +435,8 @@ void RoomWindow::on_destroy_(GtkWidget* /*widget*/, gpointer self)
 }
 
 // static
-gboolean RoomWindow::on_key_pressed_(GtkEventControllerKey*, guint keyval,
-                                      guint, GdkModifierType state,
-                                      gpointer self)
+gboolean RoomWindow::on_key_pressed_(GtkEventControllerKey*, guint keyval, guint,
+                                     GdkModifierType state, gpointer self)
 {
     auto* w = static_cast<RoomWindow*>(self);
     if (keyval == GDK_KEY_Escape)
@@ -464,12 +455,13 @@ gboolean RoomWindow::on_key_pressed_(GtkEventControllerKey*, guint keyval,
 }
 
 // static
-gboolean RoomWindow::on_quick_switch_shortcut_(GtkWidget*, GVariant*,
-                                               gpointer self)
+gboolean RoomWindow::on_quick_switch_shortcut_(GtkWidget*, GVariant*, gpointer self)
 {
     auto* w = static_cast<RoomWindow*>(self);
     if (w->parent_shell_)
+    {
         w->parent_shell_->request_quick_switch_from_popout();
+    }
     return TRUE;
 }
 
@@ -521,21 +513,28 @@ void RoomWindow::apply_theme(const tk::Theme& t)
 void RoomWindow::apply_scale_change(float scale)
 {
     if (surface_)
+    {
         surface_->apply_scale_change(scale);
+    }
 }
 
 void RoomWindow::dismiss_popups_on_resize_()
 {
-    if (surface_) surface_->host().dismiss_active_popup();
-    if (room_view_) room_view_->dismiss_popups();
+    if (surface_)
+    {
+        surface_->host().dismiss_active_popup();
+    }
+    if (room_view_)
+    {
+        room_view_->dismiss_popups();
+    }
     if (popups_)
     {
         popups_->hide_all();
     }
 }
 
-void RoomWindow::on_gif_results(std::uint64_t request_id,
-                                std::vector<tesseract::GifResult> results)
+void RoomWindow::on_gif_results(std::uint64_t request_id, std::vector<tesseract::GifResult> results)
 {
     if (popups_)
     {
@@ -543,8 +542,7 @@ void RoomWindow::on_gif_results(std::uint64_t request_id,
     }
 }
 
-void RoomWindow::on_gif_search_failed(std::uint64_t request_id,
-                                      const std::string& message)
+void RoomWindow::on_gif_search_failed(std::uint64_t request_id, const std::string& message)
 {
     if (popups_)
     {
@@ -571,8 +569,7 @@ void RoomWindow::repaint_anim_frame()
 
 // ---------------------------------------------------------------------------
 
-tesseract::RoomWindowBase*
-MainWindow::create_secondary_room_window_(const std::string& room_id)
+tesseract::RoomWindowBase* MainWindow::create_secondary_room_window_(const std::string& room_id)
 {
     return new RoomWindow(this, room_id);
 }

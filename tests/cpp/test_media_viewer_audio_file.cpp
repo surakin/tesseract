@@ -6,6 +6,7 @@
 #include "fake_media_players.h"
 #include "media_viewer_test_items.h"
 #include "tk/canvas.h"
+#include "tk/slider.h"
 #include "tk/theme.h"
 #include "tk_test_surface.h"
 #include "views/MediaViewerOverlay.h"
@@ -94,7 +95,10 @@ struct AudioFx
         auto p = std::make_unique<FakeAudioPlayer>();
         fake = p.get();
         overlay.set_audio_player(std::move(p));
-        overlay.on_playback_started = [this] { ++started; };
+        overlay.on_playback_started = [this]
+        {
+            ++started;
+        };
     }
 };
 
@@ -248,7 +252,10 @@ TEST_CASE("without an audio backend the page reports it and Save still works",
     AfStage st;
     MediaViewerOverlay overlay;
     std::vector<MediaViewerItem> saved;
-    overlay.on_save = [&](const MediaViewerItem& i) { saved.push_back(i); };
+    overlay.on_save = [&](const MediaViewerItem& i)
+    {
+        saved.push_back(i);
+    };
 
     overlay.open(audio_item());
     st.run(overlay);
@@ -273,7 +280,10 @@ TEST_CASE("on_playback_started fires when a video starts playing", "[mediaviewer
     auto* fake = player.get();
     overlay.set_video_player(std::move(player));
     int started = 0;
-    overlay.on_playback_started = [&] { ++started; };
+    overlay.on_playback_started = [&]
+    {
+        ++started;
+    };
 
     overlay.open(video_item("{}", "", "video/mp4", 5000, 640, 360));
     st.run(overlay);
@@ -299,7 +309,10 @@ TEST_CASE("file page shows a labelled Save button and no copy button", "[mediavi
     AfStage st;
     MediaViewerOverlay overlay;
     std::vector<MediaViewerItem> saved;
-    overlay.on_save = [&](const MediaViewerItem& i) { saved.push_back(i); };
+    overlay.on_save = [&](const MediaViewerItem& i)
+    {
+        saved.push_back(i);
+    };
 
     overlay.open(file_item());
     st.run(overlay);
@@ -425,4 +438,31 @@ TEST_CASE("media_save_spec for files falls back filename, caption, then 'downloa
     CHECK(spec.suggested_name == "r.pdf");
     CHECK(spec.filter_name.empty());
     CHECK(spec.patterns.empty());
+}
+
+TEST_CASE("audio page: pressing the scrub slider seeks the player", "[mediaviewer][audio]")
+{
+    AudioFx f;
+    f.overlay.open(audio_item());
+    f.overlay.load_audio_bytes(f.overlay.load_token(), {1, 2, 3});
+    f.st.run(f.overlay);
+
+    std::vector<Slider*> sliders;
+    for (const auto& c : f.overlay.children())
+    {
+        if (auto* s = dynamic_cast<Slider*>(c.get()); s && s->visible())
+        {
+            sliders.push_back(s); // the video page owns a hidden one too
+        }
+    }
+    REQUIRE(sliders.size() == 1);
+
+    const Rect r = sliders[0]->bounds();
+    const Point p{r.x + r.w * 0.5f, r.y + r.h * 0.5f};
+    Widget* claimed = f.overlay.dispatch_pointer_down(p);
+    CHECK(claimed == sliders[0]);
+    CHECK(f.fake->seek_count == 1);
+    CHECK(f.fake->last_seek > 4500);
+    CHECK(f.fake->last_seek < 5500); // ~half of the fake player's 10000 ms
+    claimed->on_pointer_up(claimed->world_to_local(p), true);
 }

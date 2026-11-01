@@ -49,6 +49,9 @@ mod preview_tests {
     #[test]
     fn a_first_line_preview_drops_the_marker() {
         assert_eq!(super::super::first_line("\u{1}deleted"), "deleted");
-        assert_eq!(super::super::poll_permalink_preview("\u{1}x"), "\u{1}poll\u{1}x");
+        assert_eq!(
+            super::super::poll_permalink_preview("\u{1}x"),
+            "\u{1}poll\u{1}x"
+        );
     }
 }

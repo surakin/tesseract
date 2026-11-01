@@ -35,25 +35,30 @@ struct SmShell : tesseract::test::TestShellBase
 {
     ~SmShell() override
     {
-        pool_.wait_idle(std::chrono::seconds(5));
-        mut_pool_.wait_idle(std::chrono::seconds(5));
+        wait_pools_idle();
         pool_.drain();
         mut_pool_.drain();
         media_prefetch_pool_.drain();
     }
-    void apply_thread_messages_(
-        const std::string&, std::vector<tesseract::views::MessageRowData>,
-        bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
     void post_to_ui_after_(int, std::function<void()> fn) override
     {
         delayed.push_back(std::move(fn));
     }
-    void on_active_room_bot_commands_changed_ui_() override { ++bot_changes; }
+    void on_active_room_bot_commands_changed_ui_() override
+    {
+        ++bot_changes;
+    }
     void on_show_status_message_ui_(const std::string& m) override
     {
         statuses.push_back(m);
@@ -111,8 +116,7 @@ tesseract::ImagePackImage sm_img(const std::string& code, const std::string& url
 
 } // namespace
 
-TEST_CASE("committing room settings with no client fails with a reason",
-          "[shell][settings_misc]")
+TEST_CASE("committing room settings with no client fails with a reason", "[shell][settings_misc]")
 {
     tv::RoomSettingsChanges c;
     c.name = "x";
@@ -129,8 +133,7 @@ TEST_CASE("an empty change set commits trivially", "[shell][settings_misc]")
     CHECK(out.error.empty());
 }
 
-TEST_CASE("every populated field is attempted and its failure named",
-          "[shell][settings_misc]")
+TEST_CASE("every populated field is attempted and its failure named", "[shell][settings_misc]")
 {
     tesseract::Client client; // sessionless: each write fails
     tv::RoomSettingsChanges c;
@@ -142,15 +145,15 @@ TEST_CASE("every populated field is attempted and its failure named",
     c.guest_access = true;
     c.history_visibility = "shared";
     c.permissions = tesseract::RoomPermissions{};
-    c.media_override = tv::RoomMediaOverrideChange{
-        true, tesseract::MediaPreviewConfig::Mode::Off};
+    c.media_override = tv::RoomMediaOverrideChange{true, tesseract::MediaPreviewConfig::Mode::Off};
     auto out = SmShell::apply_room_settings_(&client, "!r:x", c);
     CHECK_FALSE(out.ok);
     for (const char* field :
-         {"name:", "topic:", "avatar:", "encryption:", "join_rule:",
-          "guest_access:", "history_visibility:", "permissions:",
-          "media_preview:"})
+         {"name:", "topic:", "avatar:", "encryption:", "join_rule:", "guest_access:",
+          "history_visibility:", "permissions:", "media_preview:"})
+    {
         CHECK(out.error.find(field) != std::string::npos);
+    }
     CHECK(out.error.find("; ") != std::string::npos); // joined
 }
 
@@ -169,8 +172,7 @@ TEST_CASE("a staged avatar upload takes precedence over an mxc and a disabled "
     CHECK(out.error.find("encryption:") == std::string::npos);
 }
 
-TEST_CASE("image pack commits report removal, upload and save failures",
-          "[shell][settings_misc]")
+TEST_CASE("image pack commits report removal, upload and save failures", "[shell][settings_misc]")
 {
     auto errors = SmShell::apply_image_pack_changes_(nullptr, {});
     REQUIRE(errors.size() == 1);
@@ -204,8 +206,7 @@ TEST_CASE("image pack commits report removal, upload and save failures",
     CHECK(errors[3].rfind("image_packs.Faces:", 0) == 0);
 }
 
-TEST_CASE("image pack errors surface through the room-settings commit",
-          "[shell][settings_misc]")
+TEST_CASE("image pack errors surface through the room-settings commit", "[shell][settings_misc]")
 {
     tesseract::Client client;
     tv::RoomSettingsChanges c;
@@ -250,7 +251,7 @@ TEST_CASE("bridge overrides mark rooms and are only persisted on change",
     s.set_bridge_override_("!r:x", false);
     CHECK(s.active_account_->bridge_not_bridged_overrides.empty());
     CHECK_FALSE(s.rooms_[0].bridge_overridden); // removing the last one clears it
-    s.set_bridge_override_("!never:x", false); // already not overridden
+    s.set_bridge_override_("!never:x", false);  // already not overridden
 }
 
 TEST_CASE("apply_bridge_overrides_ clears stale flags, including for an empty list",
@@ -303,8 +304,7 @@ TEST_CASE("shortcodes and room emoticons come from the cached packs",
 {
     SmShell s;
     CHECK(s.shortcode_for_mxc_("").empty());
-    s.cached_emoticons_ = {sm_img("wave", "mxc://hs/wave"),
-                           sm_img("tada", "mxc://hs/tada")};
+    s.cached_emoticons_ = {sm_img("wave", "mxc://hs/wave"), sm_img("tada", "mxc://hs/tada")};
     CHECK(s.shortcode_for_mxc_("mxc://hs/tada") == "tada");
     CHECK(s.shortcode_for_mxc_("mxc://hs/none").empty());
 
@@ -364,12 +364,11 @@ TEST_CASE("pending pack images are decoded off-thread into a preview",
     SmShell s;
     s.handle_image_pack_pending_image_added_(7, {1, 2, 3}, "image/png", nullptr);
     s.handle_user_pack_pending_image_added_(8, {1, 2, 3}, "image/png", nullptr);
-    s.pool_.wait_idle(std::chrono::seconds(5));
+    s.drain_workers();
     SUCCEED();
 }
 
-TEST_CASE("the activity monitor reports when the platform cannot host it",
-          "[shell][settings_misc]")
+TEST_CASE("the activity monitor reports when the platform cannot host it", "[shell][settings_misc]")
 {
     SmShell s;
     s.open_activity_monitor_();

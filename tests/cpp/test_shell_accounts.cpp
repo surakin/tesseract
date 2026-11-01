@@ -25,20 +25,27 @@ namespace
 
 struct AccountsShell : tesseract::test::TestShellBase
 {
+    AccountsShell() = default;
+    explicit AccountsShell(tesseract::AccountManager& am) : TestShellBase(am)
+    {
+    }
     ~AccountsShell() override
     {
         pool_.drain();
         mut_pool_.drain();
         media_prefetch_pool_.drain();
     }
-    void apply_thread_messages_(
-        const std::string&, std::vector<tesseract::views::MessageRowData>,
-        bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
     void post_to_ui_after_(int ms, std::function<void()> fn) override
     {
         delayed.emplace_back(ms, std::move(fn));
@@ -80,10 +87,16 @@ struct AccountsShell : tesseract::test::TestShellBase
     }
     std::vector<std::string> spawned;
 
-    bool is_ctrl_held_() const override { return ctrl; }
+    bool is_ctrl_held_() const override
+    {
+        return ctrl;
+    }
     bool ctrl = false;
 
-    void raise_and_activate_() override { ++raised; }
+    void raise_and_activate_() override
+    {
+        ++raised;
+    }
     int raised = 0;
 
     using ShellBase::account_manager_;
@@ -102,8 +115,7 @@ struct AccountsShell : tesseract::test::TestShellBase
     using ShellBase::set_initial_account;
 };
 
-std::shared_ptr<tesseract::AccountSession> acct(const std::string& uid,
-                                                bool with_client)
+std::shared_ptr<tesseract::AccountSession> acct(const std::string& uid, bool with_client)
 {
     auto s = std::make_shared<tesseract::AccountSession>();
     s->user_id = uid;
@@ -163,7 +175,9 @@ TEST_CASE("repeated terminal sync errors back off, capped at five minutes",
     s.handle_sync_error_impl_("sync_error", "@a:x", "", false);
     CHECK(s.restarts_scheduled(10000) == 1);
     for (int i = 0; i < 10; ++i)
+    {
         s.handle_sync_error_impl_("sync_error", "@a:x", "", false);
+    }
     CHECK(s.restarts_scheduled(300000) == 6); // attempts 7 through 12
 }
 
@@ -209,8 +223,7 @@ TEST_CASE("a soft logout whose restore fails keeps the account and its stored ke
     // network, bogus session), which used to wipe the account's crypto store
     // and force a fresh login; now it must leave everything in place.
     const std::string uid = "@softlogout:x";
-    REQUIRE(tesseract::SessionStore::save_account_with_key(uid, R"({"bogus":true})",
-                                                           {1, 2, 3, 4}));
+    REQUIRE(tesseract::SessionStore::save_account_with_key(uid, R"({"bogus":true})", {1, 2, 3, 4}));
     {
         AccountsShell s;
         auto a = acct(uid, true);
@@ -218,7 +231,7 @@ TEST_CASE("a soft logout whose restore fails keeps the account and its stored ke
         s.account_manager_.add_account(a);
 
         s.handle_sync_error_impl_("sync_auth_error", uid, "", true);
-        REQUIRE(s.mut_pool_.wait_idle(std::chrono::seconds(10)));
+        s.drain_workers();
 
         CHECK(s.relogins.empty());
         CHECK_FALSE(a->sync_started);
@@ -291,6 +304,31 @@ TEST_CASE("the account picker raises a window that already shows the account",
     s.account_manager_.clear_dedicated("@a:x");
 }
 
+TEST_CASE("the account picker raises a window showing the account, else switches",
+          "[shell][accounts][picker]")
+{
+    tesseract::AccountManager am;
+    AccountsShell s(am), other(am);
+    am.register_window(&s);
+    am.register_window(&other);
+    auto a = acct("@a:x", false);
+    auto b = acct("@b:x", false);
+    am.add_account(a);
+    am.add_account(b);
+    other.active_account_ = a; // shown there, no dedicated mapping
+
+    s.on_account_picker_select_("@a:x");
+    CHECK(other.raised == 1);
+    CHECK(s.switched.empty());
+
+    // Signed in but shown nowhere: this window takes it.
+    s.on_account_picker_select_("@b:x");
+    CHECK(other.raised == 1);
+    CHECK(s.switched == std::vector<std::string>{"@b:x"});
+    am.unregister_window(&s);
+    am.unregister_window(&other);
+}
+
 TEST_CASE("the account picker does not raise itself", "[shell][accounts][picker]")
 {
     AccountsShell s;
@@ -302,8 +340,7 @@ TEST_CASE("the account picker does not raise itself", "[shell][accounts][picker]
     s.account_manager_.clear_dedicated("@a:x");
 }
 
-TEST_CASE("Ctrl-click opens the account in a new window",
-          "[shell][accounts][picker]")
+TEST_CASE("Ctrl-click opens the account in a new window", "[shell][accounts][picker]")
 {
     AccountsShell s;
     s.account_manager_.add_account(acct("@a:x", false));
@@ -316,8 +353,7 @@ TEST_CASE("Ctrl-click opens the account in a new window",
     CHECK(s.spawned.size() == 1);
 }
 
-TEST_CASE("a pinned window opens the chosen account elsewhere",
-          "[shell][accounts][picker]")
+TEST_CASE("a pinned window opens the chosen account elsewhere", "[shell][accounts][picker]")
 {
     AccountsShell s;
     s.account_manager_.add_account(acct("@a:x", false));
@@ -327,8 +363,7 @@ TEST_CASE("a pinned window opens the chosen account elsewhere",
     CHECK(s.switched.empty());
 }
 
-TEST_CASE("a normal window switches to the chosen account",
-          "[shell][accounts][picker]")
+TEST_CASE("a normal window switches to the chosen account", "[shell][accounts][picker]")
 {
     AccountsShell s;
     s.account_manager_.add_account(acct("@a:x", false));
@@ -336,8 +371,7 @@ TEST_CASE("a normal window switches to the chosen account",
     CHECK(s.switched == std::vector<std::string>{"@a:x"});
 }
 
-TEST_CASE("secondary-window startup reuses restored accounts",
-          "[shell][accounts]")
+TEST_CASE("secondary-window startup reuses restored accounts", "[shell][accounts]")
 {
     AccountsShell s;
     CHECK_FALSE(s.is_secondary_window_startup_()); // empty manager
@@ -351,8 +385,7 @@ TEST_CASE("secondary-window startup reuses restored accounts",
     CHECK_FALSE(s.is_secondary_window_startup_()); // already bound
 }
 
-TEST_CASE("dedicated-window claim never steals another live window's account",
-          "[shell][accounts]")
+TEST_CASE("dedicated-window claim never steals another live window's account", "[shell][accounts]")
 {
     AccountsShell mine;
     AccountsShell other;

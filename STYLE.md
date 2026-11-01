@@ -57,10 +57,11 @@ This prevents goto-fail style bugs and keeps diffs clean when statements are add
 
 > Rust uses standard idiomatic style — opening brace on the **same line**
 > (the Allman rule in Universal Rules §1 is C++/Objective-C only). Run
-> `rustfmt` (`cargo fmt`) with its defaults; it produces the correct
-> layout, including brace placement and `match`-arm formatting. No
-> manual brace pass is needed for Rust — per Universal Rules §2, trivial
-> single-expression `match` arms stay idiomatic and unbraced.
+> `cargo fmt` with its defaults before every commit that touches Rust; it
+> produces the correct layout, including brace placement and `match`-arm
+> formatting. The `rust_fmt_check` ctest fails if anything in `sdk/` is
+> unformatted. Per Universal Rules §2, trivial single-expression `match`
+> arms stay idiomatic and unbraced.
 
 Functions:
 

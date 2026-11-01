@@ -13,11 +13,12 @@ resolver = "2"
 debug = "line-tables-only"
 
 # Use our fork instead of the upstream crates.io releases (pinned to the fork's
-# matrix-sdk-0.19.1 tag commit). matrix-sdk-base and matrix-sdk-ui come along
+# copy of upstream main at c6ad52ecc, the first commit with MSC4354 sticky
+# events: sliding-sync extension, Room::sticky_events, sticky send). matrix-sdk-base and matrix-sdk-ui come along
 # via path deps within the fork's own workspace, as do the transitive
 # matrix-sdk-crypto/-common/-sqlite/-qrcode/-indexeddb/-store-encryption
 # crates. ruma comes from crates.io, at the version the fork's matrix-sdk asks for.
 [patch.crates-io]
-matrix-sdk      = { git = "https://github.com/surakin/matrix-rust-sdk.git", rev = "b18166c68bb958a21f0bca8b2d8320cb53583362" }
-matrix-sdk-base = { git = "https://github.com/surakin/matrix-rust-sdk.git", rev = "b18166c68bb958a21f0bca8b2d8320cb53583362" }
-matrix-sdk-ui   = { git = "https://github.com/surakin/matrix-rust-sdk.git", rev = "b18166c68bb958a21f0bca8b2d8320cb53583362" }
+matrix-sdk      = { git = "https://github.com/surakin/matrix-rust-sdk.git", rev = "c6ad52ecc09eaa36601f55effb0a48a533eb87dd" }
+matrix-sdk-base = { git = "https://github.com/surakin/matrix-rust-sdk.git", rev = "c6ad52ecc09eaa36601f55effb0a48a533eb87dd" }
+matrix-sdk-ui   = { git = "https://github.com/surakin/matrix-rust-sdk.git", rev = "c6ad52ecc09eaa36601f55effb0a48a533eb87dd" }

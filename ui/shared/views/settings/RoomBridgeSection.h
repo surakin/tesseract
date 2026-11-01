@@ -29,7 +29,10 @@ public:
     // Fired immediately on toggle (not staged) — see the class comment above.
     std::function<void(bool)> on_override_changed;
 
-    tk::CheckButton* override_checkbox() const { return override_check_; }
+    tk::CheckButton* override_checkbox() const
+    {
+        return override_check_;
+    }
 
 private:
     tk::CheckButton* override_check_ = nullptr;

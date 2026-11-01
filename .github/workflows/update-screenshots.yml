@@ -58,7 +58,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> build/linux-release/cargo/build
-          cache-on-failure: true
 
       - name: Configure screenshot-only build
         run: >-
@@ -133,7 +132,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> build/macos-appkit-arm64-release/cargo/build
-          cache-on-failure: true
 
       - name: Configure screenshot-only build
         run: >-
@@ -184,7 +182,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> build/windows-release/cargo/build
-          cache-on-failure: true
 
       # resvg-py 0.3.2 only ships wheels up to cp312, so pin Python 3.12 and
       # hand that exact interpreter to CMake below.

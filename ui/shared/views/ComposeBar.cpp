@@ -55,8 +55,11 @@ inline tk::Color card_bg(const tk::Theme& t)
 // send paths both treat such text as empty.
 inline bool is_blank_text(const std::string& text)
 {
-    return std::all_of(text.begin(), text.end(), [](char c)
-                       { return c == ' ' || c == '\t' || c == '\n' || c == '\r'; });
+    return std::all_of(text.begin(), text.end(),
+                       [](char c)
+                       {
+                           return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+                       });
 }
 
 // True while a queued video or audio attachment is still reading its metadata.
@@ -64,7 +67,9 @@ inline bool any_loading(const std::vector<ComposeBar::PendingAttachment>& pendin
 {
     return std::any_of(pending.begin(), pending.end(),
                        [](const ComposeBar::PendingAttachment& pa)
-                       { return pa.loading; });
+                       {
+                           return pa.loading;
+                       });
 }
 
 } // namespace
@@ -83,9 +88,8 @@ std::string ComposeBar::make_filename(const std::string& mime)
     gmtime_r(&tt, &tm);
 #endif
     char buf[64];
-    std::snprintf(buf, sizeof(buf), "clipboard-%04d%02d%02d-%02d%02d%02d",
-                  tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour,
-                  tm.tm_min, tm.tm_sec);
+    std::snprintf(buf, sizeof(buf), "clipboard-%04d%02d%02d-%02d%02d%02d", tm.tm_year + 1900,
+                  tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
     std::string ext = "bin";
     if (mime == "image/png")
     {
@@ -170,23 +174,34 @@ ComposeBar::ComposeBar()
         // tk::TextArea requests its own relayout internally on height
         // changes — this only needs to track the natural height for
         // recompute_height()'s own [kMinHeight, kMaxHeight] clamp.
-        ta->set_on_height_changed([this](float h) { set_text_area_natural_height(h); });
+        ta->set_on_height_changed(
+            [this](float h)
+            {
+                set_text_area_natural_height(h);
+            });
         ta->set_on_image_paste(
             [this](std::vector<std::uint8_t> bytes, std::string mime)
-            { add_pending_image(std::move(bytes), std::move(mime)); });
+            {
+                add_pending_image(std::move(bytes), std::move(mime));
+            });
         ta->set_on_file_paste(
             [this](std::vector<tk::FileDropPayload> files)
-            { if (on_file_paste) on_file_paste(std::move(files)); });
+            {
+                if (on_file_paste)
+                {
+                    on_file_paste(std::move(files));
+                }
+            });
         text_area_ = add_child(std::move(ta));
     }
 
-    auto emoji = tk::create_widget<tk::Button>(this,
+    auto emoji = tk::create_widget<tk::Button>(
+        this,
         // U+1F600 GRINNING FACE. We keep the glyph as the Button's label
         // (even though Icon variant doesn't paint it) so test scaffolding
         // that scans buttons by label can still find it; the visible icon
         // is the SVG set via set_icon() below, self-painted by the button.
-        std::string("\xF0\x9F\x98\x80"), std::function<void()>{},
-        tk::Button::Variant::Icon);
+        std::string("\xF0\x9F\x98\x80"), std::function<void()>{}, tk::Button::Variant::Icon);
     emoji->set_on_click(
         [this]
         {
@@ -203,9 +218,9 @@ ComposeBar::ComposeBar()
     // Sticker button. Glyph: U+1F5BC FE0F FRAMED PICTURE — distinct from
     // the emoji face so the two icons are visually unambiguous. Same
     // Icon variant + self-painted SVG icon as the emoji button.
-    auto sticker = tk::create_widget<tk::Button>(this,
-        std::string("\xF0\x9F\x96\xBC\xEF\xB8\x8F"), std::function<void()>{},
-        tk::Button::Variant::Icon);
+    auto sticker =
+        tk::create_widget<tk::Button>(this, std::string("\xF0\x9F\x96\xBC\xEF\xB8\x8F"),
+                                      std::function<void()>{}, tk::Button::Variant::Icon);
     sticker->set_on_click(
         [this]
         {
@@ -220,7 +235,7 @@ ComposeBar::ComposeBar()
     sticker_btn_ = add_child(std::move(sticker));
 
     auto send = tk::create_widget<tk::BusyButton>(this, tk::tr("Send"), std::function<void()>{},
-                                                 tk::Button::Variant::Primary);
+                                                  tk::Button::Variant::Primary);
     send->set_on_click(
         [this]
         {
@@ -232,10 +247,16 @@ ComposeBar::ComposeBar()
     send_btn_ = add_child(std::move(send));
 
     {
-        auto b = tk::create_widget<tk::Button>(this,
-            std::string("\xF0\x9F\x8E\x99"), std::function<void()>{},
-            tk::Button::Variant::Icon);
-        b->set_on_click([this] { if (on_mic_clicked) on_mic_clicked(); });
+        auto b = tk::create_widget<tk::Button>(this, std::string("\xF0\x9F\x8E\x99"),
+                                               std::function<void()>{}, tk::Button::Variant::Icon);
+        b->set_on_click(
+            [this]
+            {
+                if (on_mic_clicked)
+                {
+                    on_mic_clicked();
+                }
+            });
         b->set_min_size({kButtonSide, kButtonSide});
         b->set_icon(kMicSvg, kIconPx); // recording_ starts false — see paint()
         // Kept in sync with recording_ in set_recording() below — same
@@ -247,9 +268,9 @@ ComposeBar::ComposeBar()
     }
 
     auto remove = tk::create_widget<tk::Button>(this,
-        // ✕ small (U+2715)
-        std::string("\xE2\x9C\x95"), std::function<void()>{},
-        tk::Button::Variant::Icon);
+                                                // ✕ small (U+2715)
+                                                std::string("\xE2\x9C\x95"),
+                                                std::function<void()>{}, tk::Button::Variant::Icon);
     remove->set_on_click(
         [this]
         {
@@ -274,11 +295,23 @@ ComposeBar::ComposeBar()
                                    {
                                        clear_editing();
                                        if (on_edit_cancelled)
+                                       {
                                            on_edit_cancelled();
+                                       }
                                    });
-    reply_cancel_btn_ = make_cancel(tk::tr("Cancel reply"), 14.0f, [this] { clear_reply(); });
+    reply_cancel_btn_ = make_cancel(tk::tr("Cancel reply"), 14.0f,
+                                    [this]
+                                    {
+                                        clear_reply();
+                                    });
     voice_cancel_btn_ = make_cancel(tk::tr("Cancel recording"), 16.0f,
-                                    [this] { if (on_cancel_voice) on_cancel_voice(); });
+                                    [this]
+                                    {
+                                        if (on_cancel_voice)
+                                        {
+                                            on_cancel_voice();
+                                        }
+                                    });
 
     refresh_send_enabled();
 }
@@ -286,11 +319,15 @@ ComposeBar::ComposeBar()
 void ComposeBar::trigger_send()
 {
     if (recording_)
+    {
         return;
+    }
     // A video or audio attachment goes out only once its metadata is in.
     // Enter reaches here without the send button's enabled state, so check again.
     if (any_loading(pending_))
+    {
         return;
+    }
     if (pending_.size() == 1)
     {
         std::string reply_id = reply_event_id_;
@@ -303,9 +340,8 @@ void ComposeBar::trigger_send()
                 std::uint32_t w = pa.width;
                 std::uint32_t h = pa.height;
                 bool anim = pa.is_animated;
-                on_send_image(std::move(pa.bytes), std::move(pa.mime),
-                             std::move(pa.filename), current_text_, w, h,
-                             anim, std::move(reply_id));
+                on_send_image(std::move(pa.bytes), std::move(pa.mime), std::move(pa.filename),
+                              current_text_, w, h, anim, std::move(reply_id));
             }
         }
         else if (pa.kind == PendingAttachment::Kind::Video)
@@ -317,10 +353,9 @@ void ComposeBar::trigger_send()
                 std::uint32_t tw = pa.thumb_width;
                 std::uint32_t th = pa.thumb_height;
                 std::uint64_t dur = pa.duration_ms;
-                on_send_video(std::move(pa.bytes), std::move(pa.mime),
-                             std::move(pa.filename), current_text_, w, h,
-                             std::move(pa.thumb_bytes_raw), tw, th, dur,
-                             std::move(reply_id));
+                on_send_video(std::move(pa.bytes), std::move(pa.mime), std::move(pa.filename),
+                              current_text_, w, h, std::move(pa.thumb_bytes_raw), tw, th, dur,
+                              std::move(reply_id));
             }
         }
         else if (pa.kind == PendingAttachment::Kind::Audio)
@@ -328,18 +363,16 @@ void ComposeBar::trigger_send()
             if (on_send_audio)
             {
                 std::uint64_t dur = pa.duration_ms;
-                on_send_audio(std::move(pa.bytes), std::move(pa.mime),
-                             std::move(pa.filename), current_text_, dur,
-                             std::move(reply_id));
+                on_send_audio(std::move(pa.bytes), std::move(pa.mime), std::move(pa.filename),
+                              current_text_, dur, std::move(reply_id));
             }
         }
         else
         {
             if (on_send_file)
             {
-                on_send_file(std::move(pa.bytes), std::move(pa.mime),
-                            std::move(pa.filename), current_text_,
-                            std::move(reply_id));
+                on_send_file(std::move(pa.bytes), std::move(pa.mime), std::move(pa.filename),
+                             current_text_, std::move(reply_id));
             }
         }
         pending_.clear();
@@ -379,8 +412,7 @@ void ComposeBar::trigger_send()
         }
         if (on_send_gallery)
         {
-            on_send_gallery(std::move(items), current_text_,
-                            std::move(reply_id));
+            on_send_gallery(std::move(items), current_text_, std::move(reply_id));
         }
     }
     else if (has_editing())
@@ -388,7 +420,9 @@ void ComposeBar::trigger_send()
         // Blank text is not sent as a message edit. Keep edit mode so the
         // user is not dropped out of it without a send. A caption may be cleared.
         if (!edit_is_caption_ && is_blank_text(current_text_))
+        {
             return;
+        }
         std::string ev = edit_event_id_;
         std::string text = current_text_;
         bool is_caption = edit_is_caption_;
@@ -402,7 +436,9 @@ void ComposeBar::trigger_send()
     {
         // Same as an edit: blank text keeps reply mode rather than exiting it.
         if (is_blank_text(current_text_))
+        {
             return;
+        }
         std::string id = reply_event_id_;
         std::string text = current_text_;
         clear_reply();
@@ -428,8 +464,8 @@ void ComposeBar::set_text_area_natural_height(float h)
 
 void ComposeBar::recompute_height()
 {
-    float text_h = std::clamp(
-        text_area_natural_ + kComposeBarPadY * 2 + kComposeBtnPadY * 2, kMinHeight, kMaxHeight);
+    float text_h = std::clamp(text_area_natural_ + kComposeBarPadY * 2 + kComposeBtnPadY * 2,
+                              kMinHeight, kMaxHeight);
     float top_h = 0.0f;
     if (has_editing())
     {
@@ -443,10 +479,9 @@ void ComposeBar::recompute_height()
     if (pending_.size() == 1)
     {
         const PendingAttachment& pa = pending_.front();
-        if (pa.kind == PendingAttachment::Kind::File ||
-            pa.kind == PendingAttachment::Kind::Audio ||
-            (pa.kind == PendingAttachment::Kind::Video &&
-             !pa.preview && pa.thumb_bytes_raw.empty()))
+        if (pa.kind == PendingAttachment::Kind::File || pa.kind == PendingAttachment::Kind::Audio ||
+            (pa.kind == PendingAttachment::Kind::Video && !pa.preview &&
+             pa.thumb_bytes_raw.empty()))
         {
             // Image/video-with-thumbnail float above the bar (no extra height).
             // Chips (file, audio, loading video) push the bar up instead.
@@ -459,8 +494,7 @@ void ComposeBar::recompute_height()
     // that offset once when any band is present so natural_height_ matches
     // the full space that arrange() actually consumes.
     float total_bands = top_h + band_h;
-    natural_height_ =
-        text_h + total_bands + (total_bands > 0.0f ? kComposeBarPadY : 0.0f);
+    natural_height_ = text_h + total_bands + (total_bands > 0.0f ? kComposeBarPadY : 0.0f);
 }
 
 void ComposeBar::set_reply_to(std::string event_id, std::string sender_name,
@@ -473,7 +507,9 @@ void ComposeBar::set_reply_to(std::string event_id, std::string sender_name,
     for (char& c : body_preview)
     {
         if (c == '\n' || c == '\r')
+        {
             c = ' ';
+        }
     }
     reply_body_preview_ = std::move(body_preview);
     notify_size_changed_();
@@ -526,10 +562,22 @@ void ComposeBar::set_current_text(std::string text)
     refresh_send_enabled();
 }
 
+void ComposeBar::set_text(std::string text)
+{
+    if (text_area_)
+    {
+        text_area_->set_text(text);
+        text_area_->set_cursor_byte_pos(static_cast<int>(text.size()));
+    }
+    set_current_text(std::move(text));
+}
+
 void ComposeBar::focus()
 {
     if (text_area_)
+    {
         text_area_->set_focused(true);
+    }
 }
 
 void ComposeBar::on_theme_changed(const tk::Theme& t)
@@ -541,8 +589,7 @@ void ComposeBar::on_theme_changed(const tk::Theme& t)
     if (text_area_)
     {
         text_area_->set_text_color(t.palette.text_primary);
-        text_area_->set_mention_colors({t.palette.accent,
-                                        t.palette.text_on_accent,
+        text_area_->set_mention_colors({t.palette.accent, t.palette.text_on_accent,
                                         t.palette.avatar_initials_bg,
                                         t.palette.avatar_initials_text});
     }
@@ -582,26 +629,35 @@ void ComposeBar::set_enabled(bool e)
 void ComposeBar::set_mic_available(bool available)
 {
     if (mic_available_ == available)
+    {
         return;
+    }
     mic_available_ = available;
     if (mic_btn_)
+    {
         mic_btn_->set_visible(available);
+    }
     recompute_height();
     if (on_size_changed)
+    {
         on_size_changed();
+    }
 }
 
 void ComposeBar::set_recording(bool recording)
 {
     if (recording_ == recording)
+    {
         return;
+    }
     recording_ = recording;
     if (recording)
     {
         waveform_samples_.clear();
-        recording_start_ms_ = static_cast<std::uint64_t>(
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now().time_since_epoch()).count());
+        recording_start_ms_ =
+            static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                           std::chrono::steady_clock::now().time_since_epoch())
+                                           .count());
     }
     if (mic_btn_)
     {
@@ -615,31 +671,37 @@ void ComposeBar::set_recording(bool recording)
     // Fire on_size_changed so the host relayouts and updates the NativeTextArea
     // visibility (hidden while recording, restored when done).
     if (on_size_changed)
+    {
         on_size_changed();
+    }
 }
 
 void ComposeBar::push_amplitude(std::uint16_t amplitude)
 {
     if (!recording_)
+    {
         return;
+    }
     if (waveform_samples_.size() >= kMaxWaveformSamples)
+    {
         waveform_samples_.erase(waveform_samples_.begin());
+    }
     waveform_samples_.push_back(amplitude);
     // Visual-only change: host repaints on next cycle.
 }
 
-void ComposeBar::add_pending_image(std::vector<std::uint8_t> bytes,
-                                   std::string mime, std::string filename,
-                                   bool is_animated)
+void ComposeBar::add_pending_image(std::vector<std::uint8_t> bytes, std::string mime,
+                                   std::string filename, bool is_animated)
 {
     if (pending_.size() >= kMaxAttachments)
+    {
         return;
+    }
     PendingAttachment pa;
     pa.kind = PendingAttachment::Kind::Image;
     pa.bytes = std::move(bytes);
     pa.mime = std::move(mime);
-    pa.filename =
-        filename.empty() ? make_filename(pa.mime) : std::move(filename);
+    pa.filename = filename.empty() ? make_filename(pa.mime) : std::move(filename);
     pa.is_animated = is_animated;
     pa.gen = ++pending_gen_;
     pending_.push_back(std::move(pa));
@@ -660,11 +722,13 @@ void ComposeBar::add_pending_image(std::vector<std::uint8_t> bytes,
     }
 }
 
-void ComposeBar::add_pending_file(std::vector<std::uint8_t> bytes,
-                                  std::string mime, std::string filename)
+void ComposeBar::add_pending_file(std::vector<std::uint8_t> bytes, std::string mime,
+                                  std::string filename)
 {
     if (pending_.size() >= kMaxAttachments)
+    {
         return;
+    }
     PendingAttachment pa;
     pa.kind = PendingAttachment::Kind::File;
     pa.bytes = std::move(bytes);
@@ -687,11 +751,13 @@ void ComposeBar::add_pending_file(std::vector<std::uint8_t> bytes,
     }
 }
 
-void ComposeBar::add_pending_video(std::vector<std::uint8_t> bytes,
-                                   std::string mime, std::string filename)
+void ComposeBar::add_pending_video(std::vector<std::uint8_t> bytes, std::string mime,
+                                   std::string filename)
 {
     if (pending_.size() >= kMaxAttachments)
+    {
         return;
+    }
     PendingAttachment pa;
     pa.kind = PendingAttachment::Kind::Video;
     pa.loading = true;
@@ -706,17 +772,23 @@ void ComposeBar::add_pending_video(std::vector<std::uint8_t> bytes,
     video_badge_layout_.reset();
     recompute_height();
     if (remove_btn_)
+    {
         remove_btn_->set_visible(pending_.size() == 1);
+    }
     refresh_send_enabled();
     if (on_size_changed)
+    {
         on_size_changed();
+    }
 }
 
-void ComposeBar::add_pending_audio(std::vector<std::uint8_t> bytes,
-                                   std::string mime, std::string filename)
+void ComposeBar::add_pending_audio(std::vector<std::uint8_t> bytes, std::string mime,
+                                   std::string filename)
 {
     if (pending_.size() >= kMaxAttachments)
+    {
         return;
+    }
     PendingAttachment pa;
     pa.kind = PendingAttachment::Kind::Audio;
     pa.loading = true;
@@ -730,19 +802,27 @@ void ComposeBar::add_pending_audio(std::vector<std::uint8_t> bytes,
     file_layout_key_.clear();
     recompute_height();
     if (remove_btn_)
+    {
         remove_btn_->set_visible(pending_.size() == 1);
+    }
     refresh_send_enabled();
     if (on_size_changed)
+    {
         on_size_changed();
+    }
 }
 
 void ComposeBar::update_pending_attachment(const MediaInfo& info)
 {
     auto it = std::find_if(pending_.begin(), pending_.end(),
                            [&](const PendingAttachment& pa)
-                           { return pa.gen == info.pending_gen; });
+                           {
+                               return pa.gen == info.pending_gen;
+                           });
     if (it == pending_.end())
+    {
         return; // stale result — item was removed before extraction finished
+    }
     PendingAttachment& pa = *it;
     switch (pa.kind)
     {
@@ -753,7 +833,7 @@ void ComposeBar::update_pending_attachment(const MediaInfo& info)
         pa.thumb_width = info.thumb_w;
         pa.thumb_height = info.thumb_h;
         pa.duration_ms = info.duration_ms;
-        pa.preview.reset(); // decoded lazily from thumb_bytes_raw in arrange()
+        pa.preview.reset();       // decoded lazily from thumb_bytes_raw in arrange()
         pa.decode_failed = false; // new bytes deserve a fresh decode attempt
         break;
     case PendingAttachment::Kind::Audio:
@@ -856,7 +936,9 @@ void ComposeBar::restore_pending(std::vector<PendingAttachment> attachments)
 void ComposeBar::remove_pending(std::size_t index)
 {
     if (index >= pending_.size())
+    {
         return;
+    }
     pending_.erase(pending_.begin() + static_cast<std::ptrdiff_t>(index));
     chip_rects_.clear();
     chip_remove_rects_.clear();
@@ -879,18 +961,21 @@ void ComposeBar::notify_size_changed_()
 {
     recompute_height();
     if (on_size_changed)
+    {
         on_size_changed();
+    }
 }
 
 void ComposeBar::rebuild_chip_layouts_(tk::LayoutCtx& ctx, const std::string& key,
-                                        const std::string& secondary_text)
+                                       const std::string& secondary_text)
 {
     if (file_layout_key_ == key)
+    {
         return;
+    }
     tk::TextStyle name_style{};
     name_style.role = tk::FontRole::Body;
-    file_name_layout_ =
-        ctx.factory.build_text(pending_.front().filename, name_style);
+    file_name_layout_ = ctx.factory.build_text(pending_.front().filename, name_style);
     tk::TextStyle size_style{};
     size_style.role = tk::FontRole::Small;
     file_size_layout_ = ctx.factory.build_text(secondary_text, size_style);
@@ -900,15 +985,16 @@ void ComposeBar::rebuild_chip_layouts_(tk::LayoutCtx& ctx, const std::string& ke
 void ComposeBar::paint_two_line_chip_(tk::PaintCtx& ctx) const
 {
     if (!file_name_layout_ || !file_size_layout_)
+    {
         return;
+    }
     constexpr float kChipPadX = 12.0f;
     float text_x = preview_band_rect_.x + kChipPadX;
     tk::Size name_sz = file_name_layout_->measure();
     tk::Size size_sz = file_size_layout_->measure();
     float total_h = name_sz.h + size_sz.h;
     float ty = preview_band_rect_.y + (preview_band_rect_.h - total_h) * 0.5f;
-    ctx.canvas.draw_text(*file_name_layout_, {text_x, ty},
-                         ctx.theme.palette.text_primary);
+    ctx.canvas.draw_text(*file_name_layout_, {text_x, ty}, ctx.theme.palette.text_primary);
     ctx.canvas.draw_text(*file_size_layout_, {text_x, ty + name_sz.h},
                          ctx.theme.palette.text_secondary);
 }
@@ -921,58 +1007,57 @@ void ComposeBar::paint_gallery_chips_(tk::PaintCtx& ctx) const
         const tk::Rect& cell = chip_rects_[i];
 
         ctx.canvas.fill_rounded_rect(cell, 6.0f, card_bg(ctx.theme));
-        ctx.canvas.push_clip_rounded_rect(cell, 6.0f);
-        if (pa.preview)
         {
-            tk::Size fitted = fit_media(
-                static_cast<float>(pa.preview->width()),
-                static_cast<float>(pa.preview->height()), cell.w, cell.h);
-            tk::Rect dst{cell.x + (cell.w - fitted.w) * 0.5f,
-                        cell.y + (cell.h - fitted.h) * 0.5f, fitted.w, fitted.h};
-            ctx.canvas.draw_image(*pa.preview, dst);
-        }
-        else
-        {
-            // File/audio (no thumbnail) or an image/video whose decode
-            // hasn't landed yet — a short kind glyph beats an empty cell.
-            std::string glyph =
-                pa.kind == PendingAttachment::Kind::Audio ? tk::tr("Audio")
-                : pa.kind == PendingAttachment::Kind::File ? tk::tr("File")
-                                                            : "…";
-            tk::TextStyle st{};
-            st.role = tk::FontRole::Small;
-            if (auto lo = ctx.factory.build_text(glyph, st))
+            tk::ClipScope clip(ctx.canvas, cell, 6.0f);
+            if (pa.preview)
             {
-                tk::Size sz = lo->measure();
-                ctx.canvas.draw_text(
-                    *lo,
-                    {cell.x + (cell.w - sz.w) * 0.5f, cell.y + (cell.h - sz.h) * 0.5f},
-                    ctx.theme.palette.text_muted);
+                tk::Size fitted =
+                    fit_media(static_cast<float>(pa.preview->width()),
+                              static_cast<float>(pa.preview->height()), cell.w, cell.h);
+                tk::Rect dst{cell.x + (cell.w - fitted.w) * 0.5f,
+                             cell.y + (cell.h - fitted.h) * 0.5f, fitted.w, fitted.h};
+                ctx.canvas.draw_image(*pa.preview, dst);
+            }
+            else
+            {
+                // File/audio (no thumbnail) or an image/video whose decode
+                // hasn't landed yet — a short kind glyph beats an empty cell.
+                std::string glyph = pa.kind == PendingAttachment::Kind::Audio  ? tk::tr("Audio")
+                                    : pa.kind == PendingAttachment::Kind::File ? tk::tr("File")
+                                                                               : "…";
+                tk::TextStyle st{};
+                st.role = tk::FontRole::Small;
+                if (auto lo = ctx.factory.build_text(glyph, st))
+                {
+                    tk::Size sz = lo->measure();
+                    ctx.canvas.draw_text(
+                        *lo, {cell.x + (cell.w - sz.w) * 0.5f, cell.y + (cell.h - sz.h) * 0.5f},
+                        ctx.theme.palette.text_muted);
+                }
+            }
+            if (pa.kind == PendingAttachment::Kind::Video)
+            {
+                tk::TextStyle ts{};
+                ts.role = tk::FontRole::Small;
+                if (auto lo = ctx.factory.build_text("\xe2\x96\xb6", ts)) // ▶
+                {
+                    tk::Size sz = lo->measure();
+                    tk::Rect badge{cell.x + (cell.w - sz.w) * 0.5f - 6.0f,
+                                   cell.y + (cell.h - sz.h) * 0.5f - 3.0f, sz.w + 12.0f,
+                                   sz.h + 6.0f};
+                    ctx.canvas.fill_rounded_rect(badge, 5.0f, tk::Color::rgba(0, 0, 0, 140));
+                    ctx.canvas.draw_text(
+                        *lo, {cell.x + (cell.w - sz.w) * 0.5f, cell.y + (cell.h - sz.h) * 0.5f},
+                        tk::Color::rgba(255, 255, 255, 220));
+                }
             }
         }
-        if (pa.kind == PendingAttachment::Kind::Video)
-        {
-            tk::TextStyle ts{};
-            ts.role = tk::FontRole::Small;
-            if (auto lo = ctx.factory.build_text("\xe2\x96\xb6", ts)) // ▶
-            {
-                tk::Size sz = lo->measure();
-                tk::Rect badge{cell.x + (cell.w - sz.w) * 0.5f - 6.0f,
-                              cell.y + (cell.h - sz.h) * 0.5f - 3.0f,
-                              sz.w + 12.0f, sz.h + 6.0f};
-                ctx.canvas.fill_rounded_rect(badge, 5.0f,
-                                             tk::Color::rgba(0, 0, 0, 140));
-                ctx.canvas.draw_text(*lo,
-                                     {cell.x + (cell.w - sz.w) * 0.5f,
-                                      cell.y + (cell.h - sz.h) * 0.5f},
-                                     tk::Color::rgba(255, 255, 255, 220));
-            }
-        }
-        ctx.canvas.pop_clip();
 
         // Per-chip × remove badge, top-right corner (a real Button).
         if (i < chip_remove_btns_.size() && chip_remove_btns_[i]->visible())
+        {
             chip_remove_btns_[i]->paint(ctx);
+        }
     }
 }
 
@@ -983,8 +1068,7 @@ void ComposeBar::refresh_send_enabled()
         return;
     }
     const bool any_text = !is_blank_text(current_text_);
-    send_btn_->set_enabled(enabled_ && !any_loading(pending_) &&
-                           (any_text || !pending_.empty()));
+    send_btn_->set_enabled(enabled_ && !any_loading(pending_) && (any_text || !pending_.empty()));
 }
 
 tk::Size ComposeBar::measure(tk::LayoutCtx&, tk::Size constraints)
@@ -1004,31 +1088,34 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         PendingAttachment& pa = pending_.front();
         if (pa.kind == PendingAttachment::Kind::Image && !pa.preview && !pa.decode_failed)
         {
-            auto img = ctx.factory.decode_image(std::span<const std::uint8_t>(
-                pa.bytes.data(), pa.bytes.size()));
+            auto img = ctx.factory.decode_image(
+                std::span<const std::uint8_t>(pa.bytes.data(), pa.bytes.size()));
             if (!img)
+            {
                 pa.decode_failed = true;
+            }
             if (img)
             {
                 pa.width = static_cast<std::uint32_t>(img->width());
                 pa.height = static_cast<std::uint32_t>(img->height());
                 constexpr int kMaxPx = static_cast<int>(kPreviewBandH) * 4;
                 if (auto scaled = ctx.factory.scale_image(*img, kMaxPx, kMaxPx))
+                {
                     pa.preview = std::move(scaled);
+                }
                 else
+                {
                     pa.preview = std::move(img);
+                }
             }
         }
 
         // ── Decode animated frames once is_animated is confirmed ────────
-        if (pa.kind == PendingAttachment::Kind::Image && pa.is_animated &&
-            !pa.anim_preview)
+        if (pa.kind == PendingAttachment::Kind::Image && pa.is_animated && !pa.anim_preview)
         {
             constexpr int kMaxPx = static_cast<int>(kPreviewBandH) * 4;
             pa.anim_preview = ctx.factory.decode_animated_image(
-                std::span<const std::uint8_t>(pa.bytes.data(),
-                                              pa.bytes.size()),
-                kMaxPx);
+                std::span<const std::uint8_t>(pa.bytes.data(), pa.bytes.size()), kMaxPx);
             if (pa.anim_preview)
             {
                 pa.width = static_cast<std::uint32_t>(pa.anim_preview->width());
@@ -1037,22 +1124,28 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         }
 
         // ── Decode video thumbnail lazily once extraction fills thumb_bytes_raw ──
-        if (pa.kind == PendingAttachment::Kind::Video && !pa.preview &&
-            !pa.decode_failed && !pa.thumb_bytes_raw.empty())
+        if (pa.kind == PendingAttachment::Kind::Video && !pa.preview && !pa.decode_failed &&
+            !pa.thumb_bytes_raw.empty())
         {
             auto img = ctx.factory.decode_image(std::span<const std::uint8_t>(
                 pa.thumb_bytes_raw.data(), pa.thumb_bytes_raw.size()));
             if (!img)
+            {
                 pa.decode_failed = true;
+            }
             if (img)
             {
                 pa.thumb_width = static_cast<std::uint32_t>(img->width());
                 pa.thumb_height = static_cast<std::uint32_t>(img->height());
                 constexpr int kMaxPx = static_cast<int>(kPreviewBandH) * 4;
                 if (auto scaled = ctx.factory.scale_image(*img, kMaxPx, kMaxPx))
+                {
                     pa.preview = std::move(scaled);
+                }
                 else
+                {
                     pa.preview = std::move(img);
+                }
             }
         }
 
@@ -1060,24 +1153,23 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         if (pa.kind == PendingAttachment::Kind::File)
         {
             std::string key = pa.filename + "|" + std::to_string(pa.bytes.size());
-            rebuild_chip_layouts_(
-                ctx, key, format_size(static_cast<std::uint64_t>(pa.bytes.size())));
+            rebuild_chip_layouts_(ctx, key,
+                                  format_size(static_cast<std::uint64_t>(pa.bytes.size())));
         }
 
         // Video chip: filename + size (no thumbnail yet) or thumbnail (no chip).
         if (pa.kind == PendingAttachment::Kind::Video && !pa.preview)
         {
             std::string key = pa.filename + "|" + std::to_string(pa.bytes.size());
-            std::string size_str =
-                format_size(static_cast<std::uint64_t>(pa.bytes.size()));
+            std::string size_str = format_size(static_cast<std::uint64_t>(pa.bytes.size()));
             rebuild_chip_layouts_(ctx, key, pa.loading ? "…" : size_str);
         }
 
         // Audio chip: filename + duration (or "…" while loading).
         if (pa.kind == PendingAttachment::Kind::Audio)
         {
-            std::string key = pa.filename + "|" + std::to_string(pa.duration_ms) +
-                              (pa.loading ? "L" : "");
+            std::string key =
+                pa.filename + "|" + std::to_string(pa.duration_ms) + (pa.loading ? "L" : "");
             std::string dur_str;
             if (pa.loading)
             {
@@ -1086,7 +1178,7 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
             else if (pa.duration_ms > 0)
             {
                 std::uint64_t secs = pa.duration_ms / 1000;
-                char buf[48];  // worst case: two 20-digit uint64 fields + ':' + NUL
+                char buf[48]; // worst case: two 20-digit uint64 fields + ':' + NUL
                 std::snprintf(buf, sizeof(buf), "%llu:%02llu",
                               static_cast<unsigned long long>(secs / 60),
                               static_cast<unsigned long long>(secs % 60));
@@ -1104,8 +1196,7 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
             if (pa.kind == PendingAttachment::Kind::Image && !pa.preview && !pa.decode_failed)
             {
                 if (auto img = ctx.factory.decode_image(
-                        std::span<const std::uint8_t>(pa.bytes.data(),
-                                                       pa.bytes.size())))
+                        std::span<const std::uint8_t>(pa.bytes.data(), pa.bytes.size())))
                 {
                     pa.width = static_cast<std::uint32_t>(img->width());
                     pa.height = static_cast<std::uint32_t>(img->height());
@@ -1113,9 +1204,13 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
                     // would hold about a gigabyte of pixels while staged.
                     constexpr int kChipPx = static_cast<int>(kPreviewBandH) * 4;
                     if (auto scaled = ctx.factory.scale_image(*img, kChipPx, kChipPx))
+                    {
                         pa.preview = std::move(scaled);
+                    }
                     else
+                    {
                         pa.preview = std::move(img);
+                    }
                 }
                 else
                 {
@@ -1125,9 +1220,8 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
             else if (pa.kind == PendingAttachment::Kind::Video && !pa.preview &&
                      !pa.decode_failed && !pa.thumb_bytes_raw.empty())
             {
-                if (auto img = ctx.factory.decode_image(
-                        std::span<const std::uint8_t>(pa.thumb_bytes_raw.data(),
-                                                       pa.thumb_bytes_raw.size())))
+                if (auto img = ctx.factory.decode_image(std::span<const std::uint8_t>(
+                        pa.thumb_bytes_raw.data(), pa.thumb_bytes_raw.size())))
                 {
                     pa.thumb_width = static_cast<std::uint32_t>(img->width());
                     pa.thumb_height = static_cast<std::uint32_t>(img->height());
@@ -1149,10 +1243,9 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
                            std::max(0.0f, bounds.w - kComposeBarPadX * 2), kEditBandH};
         constexpr float kCancelSide = 20.0f;
         constexpr float kCancelInsetX = 8.0f;
-        edit_cancel_rect_ = {
-            edit_band_rect_.x + edit_band_rect_.w - kCancelSide - kCancelInsetX,
-            edit_band_rect_.y + (kEditBandH - kCancelSide) * 0.5f, kCancelSide,
-            kCancelSide};
+        edit_cancel_rect_ = {edit_band_rect_.x + edit_band_rect_.w - kCancelSide - kCancelInsetX,
+                             edit_band_rect_.y + (kEditBandH - kCancelSide) * 0.5f, kCancelSide,
+                             kCancelSide};
         text_top = edit_band_rect_.y + edit_band_rect_.h + kEditBandGap;
         reply_band_rect_ = {};
         reply_cancel_rect_ = {};
@@ -1163,11 +1256,9 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
                             std::max(0.0f, bounds.w - kComposeBarPadX * 2), kReplyBandH};
         constexpr float kCancelSide = 20.0f;
         constexpr float kCancelInsetX = 8.0f;
-        reply_cancel_rect_ = {reply_band_rect_.x + reply_band_rect_.w -
-                                  kCancelSide - kCancelInsetX,
-                              reply_band_rect_.y +
-                                  (kReplyBandH - kCancelSide) * 0.5f,
-                              kCancelSide, kCancelSide};
+        reply_cancel_rect_ = {reply_band_rect_.x + reply_band_rect_.w - kCancelSide - kCancelInsetX,
+                              reply_band_rect_.y + (kReplyBandH - kCancelSide) * 0.5f, kCancelSide,
+                              kCancelSide};
         text_top = reply_band_rect_.y + reply_band_rect_.h + kReplyBandGap;
         edit_band_rect_ = {};
         edit_cancel_rect_ = {};
@@ -1182,9 +1273,13 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     edit_cancel_btn_->set_visible(!edit_cancel_rect_.empty());
     reply_cancel_btn_->set_visible(!reply_cancel_rect_.empty());
     if (!edit_cancel_rect_.empty())
+    {
         edit_cancel_btn_->arrange(ctx, edit_cancel_rect_);
+    }
     if (!reply_cancel_rect_.empty())
+    {
         reply_cancel_btn_->arrange(ctx, reply_cancel_rect_);
+    }
 
     // ── Attachment band ───────────────────────────────────────────────
     chip_rects_.clear();
@@ -1192,20 +1287,17 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     if (pending_.size() == 1)
     {
         const PendingAttachment& pa = pending_.front();
-        const bool is_floating =
-            pa.kind == PendingAttachment::Kind::Image ||
-            (pa.kind == PendingAttachment::Kind::Video && pa.preview);
+        const bool is_floating = pa.kind == PendingAttachment::Kind::Image ||
+                                 (pa.kind == PendingAttachment::Kind::Video && pa.preview);
 
         if (is_floating)
         {
             // Image / video-with-thumbnail: preview floats ABOVE the bar.
             constexpr float kDisplayH = kPreviewBandH * 1.25f;
             float img_w = static_cast<float>(
-                pa.kind == PendingAttachment::Kind::Video ? pa.thumb_width
-                                                          : pa.width);
+                pa.kind == PendingAttachment::Kind::Video ? pa.thumb_width : pa.width);
             float img_h = static_cast<float>(
-                pa.kind == PendingAttachment::Kind::Video ? pa.thumb_height
-                                                          : pa.height);
+                pa.kind == PendingAttachment::Kind::Video ? pa.thumb_height : pa.height);
             float max_w = std::max(0.0f, bounds.w - kComposeBarPadX * 2);
             float dw, dh;
             if (img_w <= 0 || img_h <= 0)
@@ -1219,33 +1311,26 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
                 dw = img_w * s;
                 dh = img_h * s;
             }
-            preview_band_rect_ = {bounds.x + kComposeBarPadX,
-                                  bounds.y - dh - kPreviewBandGap, dw, dh};
+            preview_band_rect_ = {bounds.x + kComposeBarPadX, bounds.y - dh - kPreviewBandGap, dw,
+                                  dh};
             preview_image_rect_ = preview_band_rect_;
             remove_btn_rect_ = {
-                preview_band_rect_.x + preview_band_rect_.w -
-                    kRemoveBtnSide - kRemoveBtnInset,
-                preview_band_rect_.y + kRemoveBtnInset,
-                kRemoveBtnSide, kRemoveBtnSide};
+                preview_band_rect_.x + preview_band_rect_.w - kRemoveBtnSide - kRemoveBtnInset,
+                preview_band_rect_.y + kRemoveBtnInset, kRemoveBtnSide, kRemoveBtnSide};
             // text_top is NOT advanced — bar height is unchanged.
         }
         else
         {
             // File / video-loading / audio chip stays inside the bar.
-            float band_y = (has_reply() || has_editing()) ? text_top
-                                                          : bounds.y + kComposeBarPadY;
+            float band_y = (has_reply() || has_editing()) ? text_top : bounds.y + kComposeBarPadY;
             preview_band_rect_ = {bounds.x + kComposeBarPadX, band_y,
-                                  std::max(0.0f, bounds.w - kComposeBarPadX * 2),
-                                  kFileBandH};
+                                  std::max(0.0f, bounds.w - kComposeBarPadX * 2), kFileBandH};
             preview_image_rect_ = {};
             remove_btn_rect_ = {
-                preview_band_rect_.x + preview_band_rect_.w -
-                    kRemoveBtnSide - kRemoveBtnInset,
-                preview_band_rect_.y +
-                    (preview_band_rect_.h - kRemoveBtnSide) * 0.5f,
+                preview_band_rect_.x + preview_band_rect_.w - kRemoveBtnSide - kRemoveBtnInset,
+                preview_band_rect_.y + (preview_band_rect_.h - kRemoveBtnSide) * 0.5f,
                 kRemoveBtnSide, kRemoveBtnSide};
-            text_top =
-                preview_band_rect_.y + preview_band_rect_.h + kPreviewBandGap;
+            text_top = preview_band_rect_.y + preview_band_rect_.h + kPreviewBandGap;
         }
     }
     else if (pending_.size() >= 2)
@@ -1261,18 +1346,17 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 
         float max_w = std::max(0.0f, bounds.w - kComposeBarPadX * 2);
         int n = static_cast<int>(pending_.size());
-        int cols = std::max(
-            1, std::min(kMaxCols, static_cast<int>((max_w + kChipSpacing) /
-                                                    (kChipSize + kChipSpacing))));
+        int cols = std::max(1, std::min(kMaxCols, static_cast<int>((max_w + kChipSpacing) /
+                                                                   (kChipSize + kChipSpacing))));
         cols = std::min(cols, n);
         int rows = (n + cols - 1) / cols;
-        float grid_w = static_cast<float>(cols) * kChipSize +
-                      static_cast<float>(cols - 1) * kChipSpacing;
-        float grid_h = static_cast<float>(rows) * kChipSize +
-                      static_cast<float>(rows - 1) * kChipSpacing;
+        float grid_w =
+            static_cast<float>(cols) * kChipSize + static_cast<float>(cols - 1) * kChipSpacing;
+        float grid_h =
+            static_cast<float>(rows) * kChipSize + static_cast<float>(rows - 1) * kChipSpacing;
 
-        preview_band_rect_ = {bounds.x + kComposeBarPadX,
-                              bounds.y - grid_h - kPreviewBandGap, grid_w, grid_h};
+        preview_band_rect_ = {bounds.x + kComposeBarPadX, bounds.y - grid_h - kPreviewBandGap,
+                              grid_w, grid_h};
         preview_image_rect_ = {};
         remove_btn_rect_ = {};
 
@@ -1281,15 +1365,14 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         for (int i = 0; i < n; ++i)
         {
             int row_i = i / cols, col_i = i % cols;
-            float cx = preview_band_rect_.x +
-                      static_cast<float>(col_i) * (kChipSize + kChipSpacing);
-            float cy = preview_band_rect_.y +
-                      static_cast<float>(row_i) * (kChipSize + kChipSpacing);
+            float cx =
+                preview_band_rect_.x + static_cast<float>(col_i) * (kChipSize + kChipSpacing);
+            float cy =
+                preview_band_rect_.y + static_cast<float>(row_i) * (kChipSize + kChipSpacing);
             tk::Rect cell{cx, cy, kChipSize, kChipSize};
             chip_rects_.push_back(cell);
-            chip_remove_rects_.push_back(
-                {cell.x + cell.w - kChipRemoveSide - 2.0f, cell.y + 2.0f,
-                 kChipRemoveSide, kChipRemoveSide});
+            chip_remove_rects_.push_back({cell.x + cell.w - kChipRemoveSide - 2.0f, cell.y + 2.0f,
+                                          kChipRemoveSide, kChipRemoveSide});
         }
         // text_top is NOT advanced — bar height is unchanged (floating).
     }
@@ -1354,8 +1437,7 @@ void ComposeBar::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     // Waveform strip occupies the card between the × cancel button (left) and
     // the ⏹ stop button (right). Emoji/sticker buttons are hidden while recording.
     constexpr float kVoiceCancelSide = 28.0f;
-    voice_cancel_rect_ = {card_left,
-                          text_top + (text_strip_h - kVoiceCancelSide) * 0.5f,
+    voice_cancel_rect_ = {card_left, text_top + (text_strip_h - kVoiceCancelSide) * 0.5f,
                           kVoiceCancelSide, kVoiceCancelSide};
     const float wave_right = (mic_available_ && !mic_btn_rect_.empty())
                                  ? mic_btn_rect_.x - kComposeBarGap
@@ -1400,24 +1482,22 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
     {
         const PendingAttachment& pa = pending_.front();
         // Subtle card behind the preview band, with a thin border.
-        ctx.canvas.fill_rounded_rect(preview_band_rect_, 8.0f,
-                                     card_bg(ctx.theme));
-        ctx.canvas.stroke_rounded_rect(preview_band_rect_, 8.0f,
-                                       ctx.theme.palette.border, 1.0f);
+        ctx.canvas.fill_rounded_rect(preview_band_rect_, 8.0f, card_bg(ctx.theme));
+        ctx.canvas.stroke_rounded_rect(preview_band_rect_, 8.0f, ctx.theme.palette.border, 1.0f);
         if (pa.kind == PendingAttachment::Kind::Image)
         {
             constexpr float kImgInset = 1.0f;
-            tk::Rect img_rect{
-                preview_image_rect_.x + kImgInset,
-                preview_image_rect_.y + kImgInset,
-                std::max(0.0f, preview_image_rect_.w - kImgInset * 2),
-                std::max(0.0f, preview_image_rect_.h - kImgInset * 2)};
+            tk::Rect img_rect{preview_image_rect_.x + kImgInset, preview_image_rect_.y + kImgInset,
+                              std::max(0.0f, preview_image_rect_.w - kImgInset * 2),
+                              std::max(0.0f, preview_image_rect_.h - kImgInset * 2)};
 
             if (pa.anim_preview)
             {
                 ctx.canvas.draw_image(pa.anim_preview->current_frame(), img_rect);
                 if (on_request_anim_repaint_)
+                {
                     on_request_anim_repaint_(pa.anim_preview->ms_until_next_frame());
+                }
             }
             else if (pa.preview)
             {
@@ -1430,37 +1510,32 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
             {
                 // Video thumbnail band (same layout as image).
                 constexpr float kImgInset = 1.0f;
-                tk::Rect img_rect{
-                    preview_image_rect_.x + kImgInset,
-                    preview_image_rect_.y + kImgInset,
-                    std::max(0.0f, preview_image_rect_.w - kImgInset * 2),
-                    std::max(0.0f, preview_image_rect_.h - kImgInset * 2)};
+                tk::Rect img_rect{preview_image_rect_.x + kImgInset,
+                                  preview_image_rect_.y + kImgInset,
+                                  std::max(0.0f, preview_image_rect_.w - kImgInset * 2),
+                                  std::max(0.0f, preview_image_rect_.h - kImgInset * 2)};
                 ctx.canvas.draw_image(*pa.preview, img_rect);
 
                 // ▶ badge: dark rounded rect in bottom-right corner.
                 constexpr float kBadgeSize = 20.0f;
                 constexpr float kBadgePad = 4.0f;
-                tk::Rect badge{
-                    img_rect.x + img_rect.w - kBadgeSize - kBadgePad,
-                    img_rect.y + img_rect.h - kBadgeSize - kBadgePad,
-                    kBadgeSize, kBadgeSize};
-                ctx.canvas.fill_rounded_rect(badge, 4.0f,
-                                             tk::Color::rgba(0, 0, 0, 160));
+                tk::Rect badge{img_rect.x + img_rect.w - kBadgeSize - kBadgePad,
+                               img_rect.y + img_rect.h - kBadgeSize - kBadgePad, kBadgeSize,
+                               kBadgeSize};
+                ctx.canvas.fill_rounded_rect(badge, 4.0f, tk::Color::rgba(0, 0, 0, 160));
                 if (!video_badge_layout_)
                 {
                     tk::TextStyle ts{};
                     ts.role = tk::FontRole::Small;
                     // U+25B6 BLACK RIGHT-POINTING TRIANGLE
-                    video_badge_layout_ =
-                        ctx.factory.build_text("\xe2\x96\xb6", ts);
+                    video_badge_layout_ = ctx.factory.build_text("\xe2\x96\xb6", ts);
                 }
                 if (video_badge_layout_)
                 {
                     tk::Size gs = video_badge_layout_->measure();
                     ctx.canvas.draw_text(
                         *video_badge_layout_,
-                        {badge.x + (badge.w - gs.w) * 0.5f,
-                         badge.y + (badge.h - gs.h) * 0.5f},
+                        {badge.x + (badge.w - gs.w) * 0.5f, badge.y + (badge.h - gs.h) * 0.5f},
                         tk::Color::rgba(255, 255, 255, 220));
                 }
             }
@@ -1494,29 +1569,29 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
         constexpr float kEditPadY = 5.0f;
 
         ctx.canvas.fill_rounded_rect(edit_band_rect_, 6.0f, card_bg(ctx.theme));
-        ctx.canvas.push_clip_rounded_rect(edit_band_rect_, 6.0f);
-        ctx.canvas.fill_rect(
-            {edit_band_rect_.x, edit_band_rect_.y, kAccentW, edit_band_rect_.h},
-            ctx.theme.palette.accent);
-        ctx.canvas.pop_clip();
+        {
+            tk::ClipScope clip(ctx.canvas, edit_band_rect_, 6.0f);
+            ctx.canvas.fill_rect(
+                {edit_band_rect_.x, edit_band_rect_.y, kAccentW, edit_band_rect_.h},
+                ctx.theme.palette.accent);
+        }
 
         float text_x = edit_band_rect_.x + kAccentW + kEditPadX;
 
         tk::TextStyle label_style{};
         label_style.role = tk::FontRole::Small;
-        auto label_layout =
-            ctx.factory.build_text(tk::tr("Editing message"), label_style);
+        auto label_layout = ctx.factory.build_text(tk::tr("Editing message"), label_style);
         if (label_layout)
         {
             tk::Size sz = label_layout->measure();
-            float text_y = edit_band_rect_.y +
-                           (edit_band_rect_.h - sz.h) * 0.5f;
-            ctx.canvas.draw_text(*label_layout, {text_x, text_y},
-                                 ctx.theme.palette.text_secondary);
+            float text_y = edit_band_rect_.y + (edit_band_rect_.h - sz.h) * 0.5f;
+            ctx.canvas.draw_text(*label_layout, {text_x, text_y}, ctx.theme.palette.text_secondary);
         }
 
         if (edit_cancel_btn_->visible())
+        {
             edit_cancel_btn_->paint(ctx);
+        }
     }
 
     // ── Reply preview banner ──────────────────────────────────────────
@@ -1525,18 +1600,17 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
         constexpr float kAccentW = 3.0f;
         constexpr float kReplyPadX = 8.0f;
 
-        ctx.canvas.fill_rounded_rect(reply_band_rect_, 6.0f,
-                                     card_bg(ctx.theme));
-        ctx.canvas.push_clip_rounded_rect(reply_band_rect_, 6.0f);
-        ctx.canvas.fill_rect({reply_band_rect_.x, reply_band_rect_.y, kAccentW,
-                              reply_band_rect_.h},
-                             ctx.theme.palette.accent);
-        ctx.canvas.pop_clip();
+        ctx.canvas.fill_rounded_rect(reply_band_rect_, 6.0f, card_bg(ctx.theme));
+        {
+            tk::ClipScope clip(ctx.canvas, reply_band_rect_, 6.0f);
+            ctx.canvas.fill_rect(
+                {reply_band_rect_.x, reply_band_rect_.y, kAccentW, reply_band_rect_.h},
+                ctx.theme.palette.accent);
+        }
 
         float text_x = reply_band_rect_.x + kAccentW + kReplyPadX;
         // Keep text clear of the trailing "×" cancel button.
-        float text_w = std::max(0.0f, reply_cancel_rect_.x - text_x -
-                                          kReplyPadX);
+        float text_w = std::max(0.0f, reply_cancel_rect_.x - text_x - kReplyPadX);
 
         // Build both lines first so we can measure heights and centre the
         // pair vertically within the band. Both are single-line, ellipsized,
@@ -1546,15 +1620,13 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
         label_style.trim = tk::TextTrim::Ellipsis;
         label_style.max_width = text_w;
         auto label_layout = ctx.factory.build_text(
-            tk::trf(tk::tr("Replying to {0}"), {reply_sender_name_}),
-            label_style);
+            tk::trf(tk::tr("Replying to {0}"), {reply_sender_name_}), label_style);
 
         tk::TextStyle body_style{};
         body_style.role = tk::FontRole::Caption;
         body_style.trim = tk::TextTrim::Ellipsis;
         body_style.max_width = text_w;
-        auto body_layout =
-            ctx.factory.build_text(reply_body_preview_, body_style);
+        auto body_layout = ctx.factory.build_text(reply_body_preview_, body_style);
 
         constexpr float kLineGap = 2.0f;
         float label_h = label_layout ? label_layout->measure().h : 0.0f;
@@ -1564,18 +1636,18 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
 
         if (label_layout)
         {
-            ctx.canvas.draw_text(*label_layout, {text_x, text_y},
-                                 ctx.theme.palette.text_secondary);
+            ctx.canvas.draw_text(*label_layout, {text_x, text_y}, ctx.theme.palette.text_secondary);
         }
         if (body_layout)
         {
-            ctx.canvas.draw_text(*body_layout,
-                                 {text_x, text_y + label_h + kLineGap},
+            ctx.canvas.draw_text(*body_layout, {text_x, text_y + label_h + kLineGap},
                                  ctx.theme.palette.text_muted);
         }
 
         if (reply_cancel_btn_->visible())
+        {
             reply_cancel_btn_->paint(ctx);
+        }
     }
 
     // Draw the compose card: a rounded rect that contains the text area
@@ -1584,8 +1656,7 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
     // inside this card, so the card fill provides the input background.
     if (!compose_card_rect_.empty())
     {
-        ctx.canvas.fill_rounded_rect(compose_card_rect_, kComposeCardRadius,
-                                     card_bg(ctx.theme));
+        ctx.canvas.fill_rounded_rect(compose_card_rect_, kComposeCardRadius, card_bg(ctx.theme));
         ctx.canvas.stroke_rounded_rect(compose_card_rect_, kComposeCardRadius,
                                        ctx.theme.palette.border, 1.0f);
     }
@@ -1600,9 +1671,13 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
                                    : ctx.theme.palette.text_secondary;
     };
     if (emoji_btn_)
+    {
         emoji_btn_->set_icon_color_override(btn_tint(emoji_btn_));
+    }
     if (sticker_btn_)
+    {
         sticker_btn_->set_icon_color_override(btn_tint(sticker_btn_));
+    }
     if (mic_btn_)
     {
         mic_btn_->set_icon(recording_ ? std::span<const std::uint8_t>(kVoiceStopSvg)
@@ -1625,9 +1700,8 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
         // (see arrange()), but clip to the card here too so a future geometry
         // miscalculation can't paint the native-captured image over the
         // border again — mirrors edit_band_rect_/reply_band_rect_ above.
-        ctx.canvas.push_clip_rounded_rect(compose_card_rect_, kComposeCardRadius);
+        tk::ClipScope clip(ctx.canvas, compose_card_rect_, kComposeCardRadius);
         text_area_->paint(ctx);
-        ctx.canvas.pop_clip();
     }
     if (emoji_btn_ && !recording_)
     {
@@ -1650,41 +1724,41 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
     if (recording_ && !waveform_strip_rect_.empty())
     {
         if (voice_cancel_btn_->visible())
+        {
             voice_cancel_btn_->paint(ctx);
+        }
 
         // Amplitude bars
-        const float center_y =
-            waveform_strip_rect_.y + waveform_strip_rect_.h / 2.0f;
+        const float center_y = waveform_strip_rect_.y + waveform_strip_rect_.h / 2.0f;
         const float max_h = waveform_strip_rect_.h * 0.8f;
         constexpr float kBarW = 3.0f;
         constexpr float kBarGap = 2.0f;
         std::uint16_t wf_peak = 0;
-        for (std::uint16_t v : waveform_samples_) wf_peak = std::max(wf_peak, v);
-        const float wf_norm =
-            wf_peak > 0 ? 1.0f / static_cast<float>(wf_peak) : 0.0f;
+        for (std::uint16_t v : waveform_samples_)
+        {
+            wf_peak = std::max(wf_peak, v);
+        }
+        const float wf_norm = wf_peak > 0 ? 1.0f / static_cast<float>(wf_peak) : 0.0f;
 
         float x = waveform_strip_rect_.x;
         for (std::uint16_t amp : waveform_samples_)
         {
             float h = std::max(2.0f, static_cast<float>(amp) * wf_norm * max_h);
-            ctx.canvas.fill_rect({x, center_y - h / 2.0f, kBarW, h},
-                                 ctx.theme.palette.accent);
+            ctx.canvas.fill_rect({x, center_y - h / 2.0f, kBarW, h}, ctx.theme.palette.accent);
             x += kBarW + kBarGap;
             if (x > waveform_strip_rect_.right())
+            {
                 break;
+            }
         }
 
         // Elapsed timer label
         using namespace std::chrono;
         auto now_ms = static_cast<std::uint64_t>(
-            duration_cast<milliseconds>(
-                steady_clock::now().time_since_epoch())
-                .count());
+            duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count());
         std::uint64_t elapsed_s =
-            (now_ms > recording_start_ms_)
-                ? (now_ms - recording_start_ms_) / 1000
-                : 0;
-        char buf[48];  // worst case: '●' prefix + two 20-digit uint64 + ':' + NUL
+            (now_ms > recording_start_ms_) ? (now_ms - recording_start_ms_) / 1000 : 0;
+        char buf[48]; // worst case: '●' prefix + two 20-digit uint64 + ':' + NUL
         std::snprintf(buf, sizeof(buf), "\xe2\x97\x8f %llu:%02llu",
                       static_cast<unsigned long long>(elapsed_s / 60),
                       static_cast<unsigned long long>(elapsed_s % 60));
@@ -1693,36 +1767,30 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
         elapsed_layout_ = ctx.factory.build_text(buf, timer_style);
         if (elapsed_layout_)
         {
-            float lx = waveform_strip_rect_.right() -
-                       elapsed_layout_->measure().w - 4.0f;
+            float lx = waveform_strip_rect_.right() - elapsed_layout_->measure().w - 4.0f;
             float ly = center_y - elapsed_layout_->ascent() / 2.0f;
-            ctx.canvas.draw_text(*elapsed_layout_, {lx, ly},
-                                 ctx.theme.palette.text_secondary);
+            ctx.canvas.draw_text(*elapsed_layout_, {lx, ly}, ctx.theme.palette.text_secondary);
         }
     }
     if (remove_btn_ && pending_.size() == 1 && !remove_btn_rect_.empty())
     {
         const PendingAttachment& pa = pending_.front();
-        const bool on_image =
-            pa.kind == PendingAttachment::Kind::Image ||
-            (pa.kind == PendingAttachment::Kind::Video && pa.preview);
+        const bool on_image = pa.kind == PendingAttachment::Kind::Image ||
+                              (pa.kind == PendingAttachment::Kind::Video && pa.preview);
         // Dark semi-transparent badge so the × is legible on any image;
         // std::nullopt for the file-chip case restores the standard
         // Icon-button hover background. The clip (mirrors
         // MediaOverlayBase::paint_chrome_buttons_) shapes the button's own
         // square fill into the circular badge the image case wants.
         remove_btn_->set_fill_override(
-            on_image ? std::optional<tk::Button::FillOverride>{
-                           {tk::Color::rgba(0, 0, 0, 110),
-                            tk::Color::rgba(0, 0, 0, 160),
-                            tk::Color::rgba(0, 0, 0, 160)}}
+            on_image ? std::optional<tk::Button::FillOverride>{{tk::Color::rgba(0, 0, 0, 110),
+                                                                tk::Color::rgba(0, 0, 0, 160),
+                                                                tk::Color::rgba(0, 0, 0, 160)}}
                      : std::nullopt);
         if (on_image)
         {
-            ctx.canvas.push_clip_rounded_rect(remove_btn_rect_,
-                                              kRemoveBtnSide * 0.5f);
+            tk::ClipScope clip(ctx.canvas, remove_btn_rect_, kRemoveBtnSide * 0.5f);
             remove_btn_->paint(ctx);
-            ctx.canvas.pop_clip();
         }
         else
         {
@@ -1735,47 +1803,52 @@ void ComposeBar::paint(tk::PaintCtx& ctx)
         // proportionally smaller icon (14px) keeps the same ~20% margin
         // instead of filling the button edge-to-edge.
         constexpr float kRemoveIconPx = 14.0f;
-        remove_icon_.draw(ctx.canvas, ctx.factory, kCloseSvg, remove_btn_rect_,
-                          kRemoveIconPx, tint);
+        remove_icon_.draw(ctx.canvas, ctx.factory, kCloseSvg, remove_btn_rect_, kRemoveIconPx,
+                          tint);
     }
-
 }
 
 bool ComposeBar::contains_world(tk::Point world) const
 {
     if (tk::Widget::contains_world(world))
+    {
         return true;
+    }
     // Also claim the floating preview panel (image/video thumbnail, or the
     // multi-attachment chip grid) above the bar.
     if (pending_.empty() || preview_band_rect_.empty())
+    {
         return false;
+    }
     bool is_floating;
     if (pending_.size() == 1)
     {
         const PendingAttachment& pa = pending_.front();
         is_floating = pa.kind == PendingAttachment::Kind::Image ||
-                     (pa.kind == PendingAttachment::Kind::Video && pa.preview);
+                      (pa.kind == PendingAttachment::Kind::Video && pa.preview);
     }
     else
     {
         is_floating = true; // multi-attachment mode always floats
     }
-    return is_floating &&
-           world.x >= preview_band_rect_.x &&
+    return is_floating && world.x >= preview_band_rect_.x &&
            world.x < preview_band_rect_.x + preview_band_rect_.w &&
-           world.y >= preview_band_rect_.y &&
-           world.y < preview_band_rect_.y + preview_band_rect_.h;
+           world.y >= preview_band_rect_.y && world.y < preview_band_rect_.y + preview_band_rect_.h;
 }
 
 tk::Widget* ComposeBar::hit_test(tk::Point world)
 {
     if (tk::Widget* w = tk::Widget::hit_test(world))
+    {
         return w;
+    }
 
     // Extend to the floating preview panel (image/video thumbnail, or the
     // multi-attachment chip grid).
     if (pending_.empty() || preview_band_rect_.empty())
+    {
         return nullptr;
+    }
 
     if (pending_.size() >= 2)
     {
@@ -1793,19 +1866,14 @@ tk::Widget* ComposeBar::hit_test(tk::Point world)
     }
 
     const PendingAttachment& pa = pending_.front();
-    const bool is_floating =
-        pa.kind == PendingAttachment::Kind::Image ||
-        (pa.kind == PendingAttachment::Kind::Video && pa.preview);
-    if (is_floating &&
-        world.x >= preview_band_rect_.x &&
-        world.x < preview_band_rect_.x + preview_band_rect_.w &&
-        world.y >= preview_band_rect_.y &&
+    const bool is_floating = pa.kind == PendingAttachment::Kind::Image ||
+                             (pa.kind == PendingAttachment::Kind::Video && pa.preview);
+    if (is_floating && world.x >= preview_band_rect_.x &&
+        world.x < preview_band_rect_.x + preview_band_rect_.w && world.y >= preview_band_rect_.y &&
         world.y < preview_band_rect_.y + preview_band_rect_.h)
     {
-        if (remove_btn_ && !remove_btn_rect_.empty() &&
-            world.x >= remove_btn_rect_.x &&
-            world.x < remove_btn_rect_.x + remove_btn_rect_.w &&
-            world.y >= remove_btn_rect_.y &&
+        if (remove_btn_ && !remove_btn_rect_.empty() && world.x >= remove_btn_rect_.x &&
+            world.x < remove_btn_rect_.x + remove_btn_rect_.w && world.y >= remove_btn_rect_.y &&
             world.y < remove_btn_rect_.y + remove_btn_rect_.h)
         {
             return remove_btn_;
@@ -1818,36 +1886,39 @@ tk::Widget* ComposeBar::hit_test(tk::Point world)
 void ComposeBar::set_room_name(const std::string& room_name)
 {
     if (text_area_)
+    {
         text_area_->set_accessible_name(tk::trf(tk::tr("Message {0}"), {room_name}));
+    }
 }
 
 std::vector<std::pair<std::string, tk::Rect>> ComposeBar::access_texts_() const
 {
     std::vector<std::pair<std::string, tk::Rect>> out;
     if (has_editing())
+    {
         out.emplace_back(tk::tr("Editing message"), edit_band_rect_);
+    }
     else if (has_reply())
+    {
         out.emplace_back(reply_body_preview_.empty()
                              ? tk::trf(tk::tr("Replying to {0}"), {reply_sender_name_})
                              : tk::trf(tk::tr("{0}: {1}"),
                                        {tk::trf(tk::tr("Replying to {0}"), {reply_sender_name_}),
                                         reply_body_preview_}),
                          reply_band_rect_);
+    }
     if (pending_.size() == 1)
     {
         const PendingAttachment& pa = pending_.front();
-        const std::string name =
-            pa.filename.empty() ? tk::tr("Attachment") : pa.filename;
-        out.emplace_back(tk::trf(tk::tr("Attachment: {0}, {1}"),
-                                 {name, tk::format_size(pa.bytes.size())}),
-                         preview_band_rect_);
+        const std::string name = pa.filename.empty() ? tk::tr("Attachment") : pa.filename;
+        out.emplace_back(
+            tk::trf(tk::tr("Attachment: {0}, {1}"), {name, tk::format_size(pa.bytes.size())}),
+            preview_band_rect_);
     }
     else if (pending_.size() > 1)
     {
-        out.emplace_back(
-            tk::trf(tk::tr("{0} attachments"),
-                    {std::to_string(pending_.size())}),
-            preview_band_rect_);
+        out.emplace_back(tk::trf(tk::tr("{0} attachments"), {std::to_string(pending_.size())}),
+                         preview_band_rect_);
     }
     return out;
 }
@@ -1858,8 +1929,7 @@ void ComposeBar::sync_chip_remove_buttons_(tk::LayoutCtx& ctx)
     while (chip_remove_btns_.size() < n)
     {
         const std::size_t idx = chip_remove_btns_.size();
-        auto b = tk::create_widget<tk::Button>(this, std::string{},
-                                               std::function<void()>{},
+        auto b = tk::create_widget<tk::Button>(this, std::string{}, std::function<void()>{},
                                                tk::Button::Variant::Icon);
         b->set_icon(kCloseSvg, 10.0f);
         b->set_icon_color_override(tk::Color::rgba(255, 255, 255, 255));
@@ -1868,7 +1938,11 @@ void ComposeBar::sync_chip_remove_buttons_(tk::LayoutCtx& ctx)
                                                       tk::Color::rgba(0, 0, 0, 230)});
         b->set_min_size({0.0f, 0.0f});
         b->set_accessible_name(tk::tr("Remove attachment"));
-        b->set_on_click([this, idx] { remove_pending(idx); });
+        b->set_on_click(
+            [this, idx]
+            {
+                remove_pending(idx);
+            });
         b->set_visible(false);
         chip_remove_btns_.push_back(add_child(std::move(b)));
     }
@@ -1900,14 +1974,13 @@ bool ComposeBar::on_pointer_down(tk::Point local)
         {
             const PendingAttachment& pa = pending_.front();
             is_floating = pa.kind == PendingAttachment::Kind::Image ||
-                         (pa.kind == PendingAttachment::Kind::Video && pa.preview);
+                          (pa.kind == PendingAttachment::Kind::Video && pa.preview);
         }
         else
         {
             is_floating = true;
         }
-        if (is_floating &&
-            world.x >= preview_band_rect_.x &&
+        if (is_floating && world.x >= preview_band_rect_.x &&
             world.x < preview_band_rect_.x + preview_band_rect_.w &&
             world.y >= preview_band_rect_.y &&
             world.y < preview_band_rect_.y + preview_band_rect_.h)
@@ -1919,14 +1992,18 @@ bool ComposeBar::on_pointer_down(tk::Point local)
     // presses before on_pointer_down is reached). Focus the native text area so
     // clicking anywhere in the compose card works as the user expects.
     if (!recording_)
+    {
         focus();
+    }
     return tk::Widget::on_pointer_down(local);
 }
 
 tk::Widget* ComposeBar::dispatch_pointer_move(tk::Point world, bool* dirty)
 {
     if (!visible_ || !contains_world(world))
+    {
         return nullptr;
+    }
     // Buttons are the deepest hit children; the default dispatch would return
     // one of them and skip our on_pointer_move(), so tooltips would never fire.
     // Mirror the RoomHeader fix: delegate first, then always call our own
@@ -1936,7 +2013,9 @@ tk::Widget* ComposeBar::dispatch_pointer_move(tk::Point world, bool* dirty)
     {
         tk::Point local{world.x - bounds_.x, world.y - bounds_.y};
         if (on_pointer_move(local) && dirty)
+        {
             *dirty = true;
+        }
     }
     // Always returning `this` below hides hit's transitions from Host's own
     // hovered_widget_ tracking, so a child like text_area_ (whose
@@ -1951,7 +2030,9 @@ tk::Widget* ComposeBar::dispatch_pointer_move(tk::Point world, bool* dirty)
     if (inner_hit != inner_hovered_.lock().get())
     {
         if (auto prev = inner_hovered_.lock())
+        {
             prev->on_pointer_leave();
+        }
         inner_hovered_ = tk::track(inner_hit);
     }
     return this;
@@ -1963,33 +2044,40 @@ bool ComposeBar::on_pointer_move(tk::Point local)
 
     auto hit = [&](tk::Rect r) -> bool
     {
-        return !r.empty() && world.x >= r.x && world.x < r.x + r.w &&
-               world.y >= r.y && world.y < r.y + r.h;
+        return !r.empty() && world.x >= r.x && world.x < r.x + r.w && world.y >= r.y &&
+               world.y < r.y + r.h;
     };
 
     TooltipBtn next = TooltipBtn::None;
     if (!recording_ && emoji_btn_ && hit(emoji_rect_))
+    {
         next = TooltipBtn::Emoji;
+    }
     else if (!recording_ && sticker_btn_ && hit(sticker_rect_))
+    {
         next = TooltipBtn::Sticker;
+    }
     else if (mic_btn_ && mic_available_ && hit(mic_btn_rect_))
+    {
         next = TooltipBtn::Mic;
+    }
 
     if (next != tooltip_hover_)
     {
         if (tooltip_hover_ != TooltipBtn::None && host())
+        {
             host()->hide_tooltip(this);
+        }
         tooltip_hover_ = next;
         if (next != TooltipBtn::None && host())
         {
-            const std::string text =
-                next == TooltipBtn::Emoji   ? tk::tr("Emoji")
-                : next == TooltipBtn::Sticker ? tk::tr("Stickers")
-                : recording_                  ? tk::tr("Stop recording")
-                                              : tk::tr("Voice message");
-            tk::Rect anchor = next == TooltipBtn::Emoji   ? emoji_rect_
+            const std::string text = next == TooltipBtn::Emoji     ? tk::tr("Emoji")
+                                     : next == TooltipBtn::Sticker ? tk::tr("Stickers")
+                                     : recording_                  ? tk::tr("Stop recording")
+                                                                   : tk::tr("Voice message");
+            tk::Rect anchor = next == TooltipBtn::Emoji     ? emoji_rect_
                               : next == TooltipBtn::Sticker ? sticker_rect_
-                                                             : mic_btn_rect_;
+                                                            : mic_btn_rect_;
             host()->show_tooltip(this, text, anchor);
         }
     }
@@ -2000,7 +2088,10 @@ void ComposeBar::on_pointer_leave()
 {
     if (tooltip_hover_ != TooltipBtn::None)
     {
-        if (host()) host()->hide_tooltip(this);
+        if (host())
+        {
+            host()->hide_tooltip(this);
+        }
         tooltip_hover_ = TooltipBtn::None;
     }
     // Host calls this when the pointer leaves ComposeBar entirely; forward it

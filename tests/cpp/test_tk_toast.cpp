@@ -22,16 +22,23 @@ namespace
 class ToastProbeWidget : public Widget
 {
 public:
-    explicit ToastProbeWidget(Rect rect) { bounds_ = rect; }
+    explicit ToastProbeWidget(Rect rect)
+    {
+        bounds_ = rect;
+    }
 
-    Size measure(LayoutCtx&, Size) override { return {bounds_.w, bounds_.h}; }
-    void paint(PaintCtx&) override {}
+    Size measure(LayoutCtx&, Size) override
+    {
+        return {bounds_.w, bounds_.h};
+    }
+    void paint(PaintCtx&) override
+    {
+    }
 };
 
 } // namespace
 
-TEST_CASE("show_toast becomes visible immediately and schedules an auto-hide",
-          "[tk][host][toast]")
+TEST_CASE("show_toast becomes visible immediately and schedules an auto-hide", "[tk][host][toast]")
 {
     ToastProbeWidget root({0, 0, 400, 400});
     TestHost host(&root);
@@ -75,8 +82,7 @@ TEST_CASE("a second show_toast call before the first's delay fires "
     CHECK_FALSE(host.toast_visible_);
 }
 
-TEST_CASE("paint_toast_overlay is a no-op when nothing has been shown",
-          "[tk][host][toast]")
+TEST_CASE("paint_toast_overlay is a no-op when nothing has been shown", "[tk][host][toast]")
 {
     ToastProbeWidget root({0, 0, 400, 400});
     TestHost host(&root);
@@ -86,8 +92,7 @@ TEST_CASE("paint_toast_overlay is a no-op when nothing has been shown",
     REQUIRE_NOTHROW(host.paint_toast_overlay(pc, {0, 0, 400, 400}));
 }
 
-TEST_CASE("paint_toast_overlay draws without crashing once shown",
-          "[tk][host][toast]")
+TEST_CASE("paint_toast_overlay draws without crashing once shown", "[tk][host][toast]")
 {
     ToastProbeWidget root({0, 0, 400, 400});
     TestHost host(&root);

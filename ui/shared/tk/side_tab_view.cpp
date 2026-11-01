@@ -33,8 +33,7 @@ void SideTabView::add_tab(std::string label, std::unique_ptr<Widget> content)
     }
 }
 
-void SideTabView::add_bottom_tab(std::string label,
-                                 std::unique_ptr<Widget> content)
+void SideTabView::add_bottom_tab(std::string label, std::unique_ptr<Widget> content)
 {
     Tab t;
     t.label = std::move(label);
@@ -164,8 +163,7 @@ Size SideTabView::measure(LayoutCtx& ctx, Size constraints)
 
     // Sidebar height is at least the number of visible tabs × tab height.
     const float sidebar_h =
-        static_cast<float>(num_visible_top_tabs_() + num_visible_bottom_tabs_()) *
-        kTabHeight;
+        static_cast<float>(num_visible_top_tabs_() + num_visible_bottom_tabs_()) * kTabHeight;
     const float h = avail_h > 0 ? avail_h : std::max(sidebar_h, content_h);
 
     return {avail_w, h};
@@ -224,63 +222,66 @@ void SideTabView::paint_before_children(PaintCtx& ctx)
     // Clip tab-button painting to the sidebar column so a scrolled-off top
     // tab never draws past the sidebar's own bounds (e.g. over the content
     // pane or the window edge).
-    ctx.canvas.push_clip_rect(sidebar);
-
-    auto button_y = [&](int i) -> float {
-        const int slot = visible_slot_(i);
-        if (!tabs_[i].bottom)
-        {
-            return bounds_.y + static_cast<float>(slot) * kTabHeight - scroll_y_;
-        }
-        // Bottom group: lay out from the bottom of the sidebar upwards.
-        // Never scrolls — always pinned to the bottom of the column.
-        const float group_top =
-            bounds_.y + bounds_.h - static_cast<float>(n_vis_bot) * kTabHeight;
-        return group_top + static_cast<float>(slot) * kTabHeight;
-    };
-
-    for (int i = 0; i < n_total; ++i)
     {
-        auto& t = tabs_[i];
-        if (!t.visible)
-        {
-            continue;
-        }
+        ClipScope clip(ctx.canvas, sidebar);
 
-        Rect btn{btn_x,
-                 button_y(i) + kTabVPad * 0.5f,
-                 btn_w, kTabHeight - kTabVPad};
+        auto button_y = [&](int i) -> float
+        {
+            const int slot = visible_slot_(i);
+            if (!tabs_[i].bottom)
+            {
+                return bounds_.y + static_cast<float>(slot) * kTabHeight - scroll_y_;
+            }
+            // Bottom group: lay out from the bottom of the sidebar upwards.
+            // Never scrolls — always pinned to the bottom of the column.
+            const float group_top =
+                bounds_.y + bounds_.h - static_cast<float>(n_vis_bot) * kTabHeight;
+            return group_top + static_cast<float>(slot) * kTabHeight;
+        };
 
-        // Choose fill colour based on state.
-        Color fill = Color::rgba(0, 0, 0, 0); // transparent default
-        if (i == selected_idx_)
+        for (int i = 0; i < n_total; ++i)
         {
-            fill = pal.sidebar_selected;
-        }
-        else if (t.hovered)
-        {
-            fill = pal.sidebar_hover;
-        }
+            auto& t = tabs_[i];
+            if (!t.visible)
+            {
+                continue;
+            }
 
-        if (fill.a > 0)
-        {
-            ctx.canvas.fill_rounded_rect(btn, kTabRadius, fill);
-        }
+            Rect btn{btn_x, button_y(i) + kTabVPad * 0.5f, btn_w, kTabHeight - kTabVPad};
 
-        // Draw label text.
-        ensure_layout_(ctx, i, label_w);
-        if (t.layout)
-        {
-            Size ts = t.layout->measure();
-            float tx = btn.x + kTabHPad;
-            float ty = btn.y + (btn.h - ts.h) * 0.5f;
-            Color tc =
-                (i == selected_idx_) ? pal.text_primary : pal.text_secondary;
-            ctx.canvas.draw_text(*t.layout, {tx, ty}, tc);
+            // Choose fill colour based on state.
+            Color fill = Color::rgba(0, 0, 0, 0); // transparent default
+            if (i == selected_idx_)
+            {
+                fill = pal.sidebar_selected;
+            }
+            else if (t.hovered)
+            {
+                fill = pal.sidebar_hover;
+            }
+
+            if (fill.a > 0)
+            {
+                ctx.canvas.fill_rounded_rect(btn, kTabRadius, fill);
+            }
+            if (i != selected_idx_ && t.hovered)
+            {
+                paint_hc_hover_outline(ctx.canvas, ctx.theme, btn, kTabRadius);
+            }
+
+            // Draw label text.
+            ensure_layout_(ctx, i, label_w);
+            if (t.layout)
+            {
+                Size ts = t.layout->measure();
+                float tx = btn.x + kTabHPad;
+                float ty = btn.y + (btn.h - ts.h) * 0.5f;
+                Color tc = (i == selected_idx_) ? on_selected(ctx.theme, pal.text_primary)
+                                                : pal.text_secondary;
+                ctx.canvas.draw_text(*t.layout, {tx, ty}, tc);
+            }
         }
     }
-
-    ctx.canvas.pop_clip();
 
     // Lightweight scrollbar thumb over the sidebar's inner right edge when
     // the top tab group overflows the space left for it.
@@ -290,34 +291,25 @@ void SideTabView::paint_before_children(PaintCtx& ctx)
         constexpr float kThumbW = 3.0f;
         constexpr float kThumbInset = 2.0f;
         constexpr float kThumbMinLen = 16.0f;
-        const float available_top_h =
-            bounds_.h - static_cast<float>(n_vis_bot) * kTabHeight;
+        const float available_top_h = bounds_.h - static_cast<float>(n_vis_bot) * kTabHeight;
         const float top_h = static_cast<float>(n_vis_top) * kTabHeight;
-        const float thumb_h = std::max(
-            kThumbMinLen, available_top_h * (available_top_h / top_h));
+        const float thumb_h = std::max(kThumbMinLen, available_top_h * (available_top_h / top_h));
         const float frac = scroll_y_ / max_scroll;
-        const float thumb_y =
-            bounds_.y + frac * (available_top_h - thumb_h);
-        Rect thumb{bounds_.x + kSidebarWidth - kThumbW - kThumbInset, thumb_y,
-                   kThumbW, thumb_h};
-        ctx.canvas.fill_rounded_rect(thumb, kThumbW * 0.5f,
-                                     pal.text_muted.with_alpha(120));
+        const float thumb_y = bounds_.y + frac * (available_top_h - thumb_h);
+        Rect thumb{bounds_.x + kSidebarWidth - kThumbW - kThumbInset, thumb_y, kThumbW, thumb_h};
+        ctx.canvas.fill_rounded_rect(thumb, kThumbW * 0.5f, pal.text_muted.with_alpha(120));
     }
 
     // Separator line above the bottom-tab group (when both groups exist and
     // there is real space between them).
     if (n_vis_bot > 0 && n_vis_top > 0)
     {
-        const float group_top =
-            bounds_.y + bounds_.h - static_cast<float>(n_vis_bot) * kTabHeight;
-        const float top_stack_bottom =
-            bounds_.y + static_cast<float>(n_vis_top) * kTabHeight;
+        const float group_top = bounds_.y + bounds_.h - static_cast<float>(n_vis_bot) * kTabHeight;
+        const float top_stack_bottom = bounds_.y + static_cast<float>(n_vis_top) * kTabHeight;
         if (group_top > top_stack_bottom + kTabVPad)
         {
-            Rect divider{bounds_.x + kTabInset,
-                         group_top - kTabVPad * 0.5f - 0.5f,
-                         kSidebarWidth - kTabInset * 2,
-                         1.0f};
+            Rect divider{bounds_.x + kTabInset, group_top - kTabVPad * 0.5f - 0.5f,
+                         kSidebarWidth - kTabInset * 2, 1.0f};
             ctx.canvas.fill_rect(divider, pal.separator);
         }
     }
@@ -372,8 +364,7 @@ void SideTabView::on_pointer_up(Point local, bool inside_self)
 
 bool SideTabView::on_pointer_move(Point local)
 {
-    const int hit =
-        (local.x >= 0 && local.x < kSidebarWidth) ? tab_at_y(local.y) : -1;
+    const int hit = (local.x >= 0 && local.x < kSidebarWidth) ? tab_at_y(local.y) : -1;
     if (hit == hovered_idx_)
     {
         return false;
@@ -441,8 +432,7 @@ int SideTabView::tab_at_y(float y) const
     // Bottom group: anchored at the bottom of the column.
     if (n_vis_bot > 0)
     {
-        const float group_top =
-            bounds_.h - static_cast<float>(n_vis_bot) * kTabHeight;
+        const float group_top = bounds_.h - static_cast<float>(n_vis_bot) * kTabHeight;
         if (y >= group_top && y < bounds_.h)
         {
             const int slot = static_cast<int>((y - group_top) / kTabHeight);
@@ -505,8 +495,7 @@ int SideTabView::num_visible_bottom_tabs_() const
 float SideTabView::max_top_scroll_() const
 {
     const float top_h = static_cast<float>(num_visible_top_tabs_()) * kTabHeight;
-    const float bottom_h =
-        static_cast<float>(num_visible_bottom_tabs_()) * kTabHeight;
+    const float bottom_h = static_cast<float>(num_visible_bottom_tabs_()) * kTabHeight;
     const float available_top_h = std::max(0.0f, bounds_.h - bottom_h);
     return std::max(0.0f, top_h - available_top_h);
 }
@@ -558,10 +547,9 @@ void SideTabView::scroll_tab_into_view_(int idx)
     {
         return; // hidden tab
     }
-    const float top    = static_cast<float>(slot) * kTabHeight;
+    const float top = static_cast<float>(slot) * kTabHeight;
     const float bottom = top + kTabHeight;
-    const float bottom_h =
-        static_cast<float>(num_visible_bottom_tabs_()) * kTabHeight;
+    const float bottom_h = static_cast<float>(num_visible_bottom_tabs_()) * kTabHeight;
     const float available_top_h = std::max(0.0f, bounds_.h - bottom_h);
     if (top < scroll_y_)
     {

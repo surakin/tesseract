@@ -67,8 +67,9 @@ QFont font_for(FontRole role)
     QFont f; // inherits app family from platform theme
     const std::string_view family = font_role_family(role);
     if (!family.empty())
-        f.setFamily(QString::fromUtf8(family.data(),
-                                      static_cast<qsizetype>(family.size())));
+    {
+        f.setFamily(QString::fromUtf8(family.data(), static_cast<qsizetype>(family.size())));
+    }
     f.setPointSize(font_role_pt(role, base));
     f.setWeight(font_role_is_semibold(role) ? QFont::DemiBold : QFont::Normal);
     return f;
@@ -80,12 +81,13 @@ QFont font_for(FontRole role)
 void apply_monospace(QFont& f)
 {
     const std::string_view user = font_mono_family();
-    const QString fam =
-        user.empty()
-            ? QFontDatabase::systemFont(QFontDatabase::FixedFont).family()
-            : QString::fromUtf8(user.data(), static_cast<qsizetype>(user.size()));
+    const QString fam = user.empty()
+                            ? QFontDatabase::systemFont(QFontDatabase::FixedFont).family()
+                            : QString::fromUtf8(user.data(), static_cast<qsizetype>(user.size()));
     if (!fam.isEmpty())
+    {
         f.setFamily(fam);
+    }
     f.setStyleHint(QFont::Monospace);
     f.setFixedPitch(true);
 }
@@ -94,10 +96,8 @@ void apply_monospace(QFont& f)
 // uppercasing to the result before drawing.
 QString initials_upper(std::string_view name, AvatarText text)
 {
-    std::string base =
-        text == AvatarText::Literal ? std::string(name) : initials_of(name);
-    return QString::fromUtf8(base.data(), static_cast<int>(base.size()))
-        .toUpper();
+    std::string base = text == AvatarText::Literal ? std::string(name) : initials_of(name);
+    return QString::fromUtf8(base.data(), static_cast<int>(base.size())).toUpper();
 }
 
 // Theme link colour (see set_link_color); invalid until the shell applies a
@@ -134,21 +134,18 @@ constexpr int kBlankObjectType = QTextFormat::UserObject + 1;
 constexpr int kBlankObjectWidthProperty = QTextFormat::UserProperty + 1;
 constexpr int kBlankObjectHeightProperty = QTextFormat::UserProperty + 2;
 
-class BlankTextObjectInterface final : public QObject,
-                                       public QTextObjectInterface
+class BlankTextObjectInterface final : public QObject, public QTextObjectInterface
 {
     Q_OBJECT
     Q_INTERFACES(QTextObjectInterface)
 
 public:
-    QSizeF intrinsicSize(QTextDocument*, int,
-                         const QTextFormat& format) override
+    QSizeF intrinsicSize(QTextDocument*, int, const QTextFormat& format) override
     {
         return {format.property(kBlankObjectWidthProperty).toReal(),
                 format.property(kBlankObjectHeightProperty).toReal()};
     }
-    void drawObject(QPainter*, const QRectF&, QTextDocument*, int,
-                    const QTextFormat&) override
+    void drawObject(QPainter*, const QRectF&, QTextDocument*, int, const QTextFormat&) override
     {
         // Intentional no-op.
     }
@@ -227,8 +224,8 @@ public:
                 return cache_.front().img;
             }
         }
-        QImage scaled = image_.scaled(target_w, target_h, Qt::IgnoreAspectRatio,
-                                      Qt::SmoothTransformation);
+        QImage scaled =
+            image_.scaled(target_w, target_h, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
         scaled.setDevicePixelRatio(dpr);
         cache_.push_front(Entry{target_w, target_h, std::move(scaled)});
         if (cache_.size() > kCacheLimit)
@@ -274,13 +271,13 @@ public:
 class QtTextLayout : public QtTextLayoutBase
 {
 public:
-    QtTextLayout(QString text, QFont font, QTextOption option, QSizeF measured,
-                 int line_count, qreal max_width, qreal max_height,
-                 bool elide_single_line, qreal ascent, qreal explicit_max_height)
-        : text_(std::move(text)), font_(std::move(font)), option_(option),
-          measured_(measured), line_count_(line_count), max_width_(max_width),
-          max_height_(max_height), elide_single_line_(elide_single_line),
-          ascent_(ascent), explicit_max_height_(explicit_max_height)
+    QtTextLayout(QString text, QFont font, QTextOption option, QSizeF measured, int line_count,
+                 qreal max_width, qreal max_height, bool elide_single_line, qreal ascent,
+                 qreal explicit_max_height)
+        : text_(std::move(text)), font_(std::move(font)), option_(option), measured_(measured),
+          line_count_(line_count), max_width_(max_width), max_height_(max_height),
+          elide_single_line_(elide_single_line), ascent_(ascent),
+          explicit_max_height_(explicit_max_height)
     {
         // Pre-build QStaticText for single-line (non-wrap) layouts so draw()
         // submits pre-shaped glyph data instead of re-shaping on every frame.
@@ -290,8 +287,7 @@ public:
             if (elide_single_line_)
             {
                 QFontMetricsF fm(font_);
-                const qreal draw_w =
-                    max_width_ > 0 ? max_width_ : measured_.width();
+                const qreal draw_w = max_width_ > 0 ? max_width_ : measured_.width();
                 drawn = fm.elidedText(text_, Qt::ElideRight, draw_w);
             }
             else
@@ -306,8 +302,7 @@ public:
 
     Size measure() const override
     {
-        return Size{static_cast<float>(measured_.width()),
-                    static_cast<float>(measured_.height())};
+        return Size{static_cast<float>(measured_.width()), static_cast<float>(measured_.height())};
     }
     int line_count() const override
     {
@@ -330,28 +325,23 @@ public:
             // is requested, let Qt handle both axes natively via drawText(rect).
             // drawStaticText ignores QTextOption alignment for the vertical axis,
             // so this is the only reliable path for VCenter.
-            const Qt::Alignment valign =
-                option_.alignment() & Qt::AlignVertical_Mask;
+            const Qt::Alignment valign = option_.alignment() & Qt::AlignVertical_Mask;
             if (valign == Qt::AlignVCenter && explicit_max_height_ > 0)
             {
-                p.drawText(
-                    QRectF(origin.x, origin.y, max_width_, explicit_max_height_),
-                    static_cast<int>(option_.alignment()), text_);
+                p.drawText(QRectF(origin.x, origin.y, max_width_, explicit_max_height_),
+                           static_cast<int>(option_.alignment()), text_);
             }
             else
             {
                 // Non-wrap path: submit pre-shaped glyph data via QStaticText.
                 // Adjust x for non-leading horizontal alignment.
                 qreal draw_x = origin.x;
-                const Qt::Alignment halign =
-                    option_.alignment() & Qt::AlignHorizontal_Mask;
+                const Qt::Alignment halign = option_.alignment() & Qt::AlignHorizontal_Mask;
                 if (halign == Qt::AlignHCenter || halign == Qt::AlignRight)
                 {
-                    const qreal avail =
-                        max_width_ > 0 ? max_width_ : measured_.width();
+                    const qreal avail = max_width_ > 0 ? max_width_ : measured_.width();
                     const qreal tw = measured_.width();
-                    draw_x += (halign == Qt::AlignHCenter) ? (avail - tw) * 0.5
-                                                           : (avail - tw);
+                    draw_x += (halign == Qt::AlignHCenter) ? (avail - tw) * 0.5 : (avail - tw);
                 }
                 p.drawStaticText(QPointF(draw_x, origin.y), static_text_);
             }
@@ -369,10 +359,14 @@ public:
     int char_index_at(tk::Point local) const override
     {
         if (elide_single_line_)
+        {
             return -1;
+        }
         ensure_ql_();
         if (!ql_ || ql_->lineCount() == 0)
+        {
             return -1;
+        }
         int target = ql_->lineCount() - 1;
         for (int i = 0; i < ql_->lineCount(); ++i)
         {
@@ -384,23 +378,27 @@ public:
             }
         }
         QTextLine ln = ql_->lineAt(target);
-        int qt16 = ln.xToCursor(static_cast<qreal>(local.x),
-                                 QTextLine::CursorBetweenCharacters);
+        int qt16 = ln.xToCursor(static_cast<qreal>(local.x), QTextLine::CursorBetweenCharacters);
         return qt16_to_utf8_(qt16);
     }
 
-    std::vector<tk::Rect> selection_rects(int start_byte,
-                                          int end_byte) const override
+    std::vector<tk::Rect> selection_rects(int start_byte, int end_byte) const override
     {
         if (start_byte >= end_byte || elide_single_line_)
+        {
             return {};
+        }
         ensure_ql_();
         if (!ql_)
+        {
             return {};
+        }
         int qs = utf8_to_qt16_(start_byte);
         int qe = utf8_to_qt16_(end_byte);
         if (qs >= qe)
+        {
             return {};
+        }
         std::vector<tk::Rect> out;
         for (int i = 0; i < ql_->lineCount(); ++i)
         {
@@ -410,15 +408,17 @@ public:
             int cs = std::max(qs, ls);
             int ce = std::min(qe, le);
             if (cs >= ce)
+            {
                 continue;
+            }
             qreal x1 = ln.cursorToX(cs, QTextLine::Leading);
             qreal x2 = ln.cursorToX(ce, QTextLine::Leading);
             if (x1 > x2)
+            {
                 std::swap(x1, x2);
-            out.push_back({static_cast<float>(x1),
-                           static_cast<float>(ln.position().y()),
-                           static_cast<float>(x2 - x1),
-                           static_cast<float>(ln.height())});
+            }
+            out.push_back({static_cast<float>(x1), static_cast<float>(ln.position().y()),
+                           static_cast<float>(x2 - x1), static_cast<float>(ln.height())});
         }
         return out;
     }
@@ -426,21 +426,26 @@ public:
     std::string text_range(int start_byte, int end_byte) const override
     {
         if (start_byte >= end_byte)
+        {
             return {};
+        }
         QByteArray utf8 = text_.toUtf8();
         int lo = std::max(0, start_byte);
         int hi = std::min(end_byte, static_cast<int>(utf8.size()));
         if (lo >= hi)
+        {
             return {};
-        return std::string(utf8.constData() + lo,
-                           static_cast<std::size_t>(hi - lo));
+        }
+        return std::string(utf8.constData() + lo, static_cast<std::size_t>(hi - lo));
     }
 
 private:
     void ensure_ql_() const
     {
         if (ql_)
+        {
             return;
+        }
         // QTextLayout does not break on '\n'; it only honors
         // QChar::LineSeparator (U+2028). Substitute so hard breaks render.
         // text_ keeps real '\n' so byte/QChar index mapping and clipboard copy
@@ -456,7 +461,9 @@ private:
         {
             QTextLine ln = ql_->createLine();
             if (!ln.isValid())
+            {
                 break;
+            }
             ln.setLineWidth(w);
             ln.setPosition(QPointF(0, y));
             y += ln.height();
@@ -467,7 +474,9 @@ private:
     int qt16_to_utf8_(int qt16) const
     {
         if (qt16 <= 0)
+        {
             return 0;
+        }
         int clamped = std::min(qt16, static_cast<int>(text_.size()));
         return static_cast<int>(text_.left(clamped).toUtf8().size());
     }
@@ -475,11 +484,12 @@ private:
     int utf8_to_qt16_(int utf8_byte) const
     {
         if (utf8_byte <= 0)
+        {
             return 0;
+        }
         QByteArray ba = text_.toUtf8();
         int clamped = std::min(utf8_byte, static_cast<int>(ba.size()));
-        return static_cast<int>(
-            QString::fromUtf8(ba.constData(), clamped).size());
+        return static_cast<int>(QString::fromUtf8(ba.constData(), clamped).size());
     }
 
     QString text_;
@@ -522,8 +532,7 @@ public:
 
     Size measure() const override
     {
-        return Size{static_cast<float>(ink_.width()),
-                    static_cast<float>(ink_.height())};
+        return Size{static_cast<float>(ink_.width()), static_cast<float>(ink_.height())};
     }
     int line_count() const override
     {
@@ -612,16 +621,14 @@ public:
         p_.restore();
     }
 
-    void stroke_rounded_rect(Rect r, float radius, Color c,
-                             float width) override
+    void stroke_rounded_rect(Rect r, float radius, Color c, float width) override
     {
         p_.save();
         p_.setBrush(Qt::NoBrush);
         p_.setPen(QPen(to_qcolor(c), width));
         qreal half = width * 0.5;
-        p_.drawRoundedRect(
-            QRectF(r.x + half, r.y + half, r.w - width, r.h - width), radius,
-            radius);
+        p_.drawRoundedRect(QRectF(r.x + half, r.y + half, r.w - width, r.h - width), radius,
+                           radius);
         p_.restore();
     }
 
@@ -640,10 +647,13 @@ public:
         p_.drawImage(to_qrect(dst), qi.image(), to_qrect(src));
     }
 
-    bool draw_rgba_pixels(const std::uint8_t* pixels,
-                          std::uint32_t w, std::uint32_t h, Rect dst) override
+    bool draw_rgba_pixels(const std::uint8_t* pixels, std::uint32_t w, std::uint32_t h,
+                          Rect dst) override
     {
-        if (!pixels || w == 0 || h == 0) return false;
+        if (!pixels || w == 0 || h == 0)
+        {
+            return false;
+        }
         // Wrap the caller's buffer without copying. The buffer must remain
         // valid for the duration of this synchronous paint() call. QPainter::drawImage()
         // scales bilinearly (SmoothPixmapTransform is already set on the
@@ -651,27 +661,28 @@ public:
         // filter that pick_image_()/scaled_for() would apply — sufficient for
         // live video and eliminates the per-frame cache miss that occurred
         // because create_image_rgba() allocated a new QtImage every frame.
-        QImage img(pixels, static_cast<int>(w), static_cast<int>(h),
-                   static_cast<qsizetype>(w) * 4, QImage::Format_RGBA8888);
+        QImage img(pixels, static_cast<int>(w), static_cast<int>(h), static_cast<qsizetype>(w) * 4,
+                   QImage::Format_RGBA8888);
         p_.drawImage(to_qrect(dst), img);
         return true;
     }
 
-    bool draw_bgra_premult_pixels(const std::uint8_t* pixels,
-                                   std::uint32_t w, std::uint32_t h,
-                                   Rect dst, bool flip_h = false,
-                                   bool /*high_quality*/ = false) override
+    bool draw_bgra_premult_pixels(const std::uint8_t* pixels, std::uint32_t w, std::uint32_t h,
+                                  Rect dst, bool flip_h = false,
+                                  bool /*high_quality*/ = false) override
     {
         // QPainter::SmoothPixmapTransform (set globally, see constructor) is
         // the only image-scaling quality lever Qt exposes here — already the
         // backend's best, so high_quality has nothing further to select.
-        if (!pixels || w == 0 || h == 0) return false;
+        if (!pixels || w == 0 || h == 0)
+        {
+            return false;
+        }
         // Wrap the pre-converted buffer without copying.
         // Format_ARGB32_Premultiplied matches CAIRO_FORMAT_ARGB32 memory layout:
         // [B, G, R, A] per pixel (0xAARRGGBB in little-endian 32-bit).
         // Qt blits this without any per-pixel conversion.
-        QImage img(pixels, static_cast<int>(w), static_cast<int>(h),
-                   static_cast<qsizetype>(w) * 4,
+        QImage img(pixels, static_cast<int>(w), static_cast<int>(h), static_cast<qsizetype>(w) * 4,
                    QImage::Format_ARGB32_Premultiplied);
         if (flip_h)
         {
@@ -690,14 +701,12 @@ public:
         return true;
     }
 
-    void draw_circle_image(const Image& image, Point centre,
-                           float diameter) override
+    void draw_circle_image(const Image& image, Point centre, float diameter) override
     {
         const auto& qi = static_cast<const QtImage&>(image);
         static std::unordered_map<int, QPainterPath> s_paths;
         // Key on half-pixel units so distinct rendered sizes get distinct paths.
-        const int key =
-            static_cast<int>(std::round(static_cast<qreal>(diameter) * 2.0));
+        const int key = static_cast<int>(std::round(static_cast<qreal>(diameter) * 2.0));
         auto& path = s_paths[key];
         if (path.isEmpty())
         {
@@ -705,24 +714,20 @@ public:
             path.addEllipse(QPointF(0.0, 0.0), r, r);
         }
         p_.save();
-        p_.translate(static_cast<qreal>(centre.x),
-                     static_cast<qreal>(centre.y));
+        p_.translate(static_cast<qreal>(centre.x), static_cast<qreal>(centre.y));
         p_.setClipPath(path, Qt::IntersectClip);
-        p_.drawImage(
-            QRectF(-diameter * 0.5, -diameter * 0.5, diameter, diameter),
-            pick_image_(qi, diameter, diameter));
+        p_.drawImage(QRectF(-diameter * 0.5, -diameter * 0.5, diameter, diameter),
+                     pick_image_(qi, diameter, diameter));
         p_.restore();
     }
 
-    void draw_initials_circle_(std::string_view name, Point centre,
-                               float diameter, Color bg, Color fg,
-                               AvatarText text) override
+    void draw_initials_circle_(std::string_view name, Point centre, float diameter, Color bg,
+                               Color fg, AvatarText text) override
     {
         p_.save();
         p_.setBrush(to_qcolor(bg));
         p_.setPen(Qt::NoPen);
-        p_.drawEllipse(QPointF(centre.x, centre.y), diameter * 0.5,
-                       diameter * 0.5);
+        p_.drawEllipse(QPointF(centre.x, centre.y), diameter * 0.5, diameter * 0.5);
 
         QFont f;
         f.setPointSizeF(diameter * kAvatarInitialsFontRatio);
@@ -730,8 +735,7 @@ public:
         p_.setFont(f);
         p_.setPen(to_qcolor(fg));
         QString s = initials_upper(name, text);
-        QRectF box(centre.x - diameter * 0.5, centre.y - diameter * 0.5,
-                   diameter, diameter);
+        QRectF box(centre.x - diameter * 0.5, centre.y - diameter * 0.5, diameter, diameter);
         p_.drawText(box, Qt::AlignCenter, s);
         p_.restore();
     }
@@ -851,10 +855,10 @@ public:
     // regardless of a taller inline-emoji run, matching what build_text
     // already reports for a single elided line. A bigger emoji glyph still
     // *draws* past that box; callers that need it bounded clip.
-    QtRichTextLayout(std::unique_ptr<QTextDocument> doc, bool single_line,
-                     qreal nominal_h, qreal nominal_ascent)
-        : doc_(std::move(doc)), single_line_(single_line),
-          nominal_h_(nominal_h), nominal_ascent_(nominal_ascent)
+    QtRichTextLayout(std::unique_ptr<QTextDocument> doc, bool single_line, qreal nominal_h,
+                     qreal nominal_ascent)
+        : doc_(std::move(doc)), single_line_(single_line), nominal_h_(nominal_h),
+          nominal_ascent_(nominal_ascent)
     {
         sz_ = doc_->size();
         ideal_w_ = doc_->idealWidth();
@@ -864,8 +868,7 @@ public:
         // line count instead, the same source selection_rects() below reads
         // per line.
         lines_ = 0;
-        for (QTextBlock blk = doc_->begin(); blk != doc_->end();
-             blk = blk.next())
+        for (QTextBlock blk = doc_->begin(); blk != doc_->end(); blk = blk.next())
         {
             const QTextLayout* tl = blk.layout();
             lines_ += tl ? std::max(1, tl->lineCount()) : 1;
@@ -878,8 +881,7 @@ public:
         // wrapped line) — NOT size().width(), which after setTextWidth() is
         // exactly the constraint. Matches the Pango / DirectWrite / CoreText
         // backends, and message-bubble hugging relies on it.
-        const qreal h = single_line_ ? nominal_h_
-                                     : static_cast<qreal>(sz_.height());
+        const qreal h = single_line_ ? nominal_h_ : static_cast<qreal>(sz_.height());
         return {static_cast<float>(ideal_w_), static_cast<float>(h)};
     }
     int line_count() const override
@@ -888,10 +890,8 @@ public:
     }
     float ascent() const override
     {
-        return single_line_
-                   ? static_cast<float>(nominal_ascent_)
-                   : static_cast<float>(
-                         QFontMetricsF(doc_->defaultFont()).ascent());
+        return single_line_ ? static_cast<float>(nominal_ascent_)
+                            : static_cast<float>(QFontMetricsF(doc_->defaultFont()).ascent());
     }
 
     void draw(QPainter& p, Point origin, Color c) const override
@@ -907,8 +907,7 @@ public:
     std::string link_at(tk::Point local) const override
     {
         int pos = doc_->documentLayout()->hitTest(
-            QPointF(static_cast<qreal>(local.x), static_cast<qreal>(local.y)),
-            Qt::FuzzyHit);
+            QPointF(static_cast<qreal>(local.x), static_cast<qreal>(local.y)), Qt::FuzzyHit);
         if (pos < 0)
         {
             return {};
@@ -922,62 +921,73 @@ public:
     int char_index_at(tk::Point local) const override
     {
         int qt_pos = doc_->documentLayout()->hitTest(
-            QPointF(static_cast<qreal>(local.x), static_cast<qreal>(local.y)),
-            Qt::FuzzyHit);
+            QPointF(static_cast<qreal>(local.x), static_cast<qreal>(local.y)), Qt::FuzzyHit);
         if (qt_pos < 0)
+        {
             return -1;
+        }
         return qt_pos_to_utf8_byte(qt_pos);
     }
 
-    std::vector<tk::Rect> selection_rects(int start_byte,
-                                          int end_byte) const override
+    std::vector<tk::Rect> selection_rects(int start_byte, int end_byte) const override
     {
         if (start_byte >= end_byte)
+        {
             return {};
+        }
         int qt_start = utf8_byte_to_qt_pos(start_byte);
-        int qt_end   = utf8_byte_to_qt_pos(end_byte);
+        int qt_end = utf8_byte_to_qt_pos(end_byte);
         if (qt_start >= qt_end)
+        {
             return {};
+        }
 
         std::vector<tk::Rect> out;
         // Walk each block's QTextLayout and collect line-level selection rects.
         for (QTextBlock blk = doc_->begin(); blk != doc_->end(); blk = blk.next())
         {
             int blk_start = blk.position();
-            int blk_end   = blk_start + blk.length();
+            int blk_end = blk_start + blk.length();
             if (blk_end <= qt_start || blk_start >= qt_end)
+            {
                 continue;
+            }
             int sel_start = std::max(qt_start, blk_start) - blk_start;
-            int sel_end   = std::min(qt_end,   blk_end)   - blk_start;
+            int sel_end = std::min(qt_end, blk_end) - blk_start;
             const QTextLayout* tl = blk.layout();
             if (!tl)
+            {
                 continue;
+            }
             for (int li = 0; li < tl->lineCount(); ++li)
             {
                 QTextLine line = tl->lineAt(li);
                 int line_start = line.textStart();
-                int line_end   = line_start + line.textLength();
+                int line_end = line_start + line.textLength();
                 if (line_end < sel_start || line_start > sel_end)
+                {
                     continue;
+                }
                 int clamped_start = std::max(sel_start, line_start);
-                int clamped_end   = std::min(sel_end,   line_end);
+                int clamped_end = std::min(sel_end, line_end);
                 // A range starting exactly at this line's end belongs to the
                 // next line; an empty rect here would make callers that
                 // paint per rect (paint_span_images) draw a second copy.
                 if (clamped_start >= clamped_end)
+                {
                     continue;
+                }
                 qreal x1 = line.cursorToX(clamped_start, QTextLine::Leading);
-                qreal x2 = line.cursorToX(clamped_end,   QTextLine::Leading);
+                qreal x2 = line.cursorToX(clamped_end, QTextLine::Leading);
                 if (x1 > x2)
+                {
                     std::swap(x1, x2);
+                }
                 QRectF lr = line.naturalTextRect();
                 // naturalTextRect y is block-local; add block's visual y
-                qreal block_y =
-                    doc_->documentLayout()->blockBoundingRect(blk).top();
-                out.push_back({static_cast<float>(x1),
-                               static_cast<float>(block_y + lr.top()),
-                               static_cast<float>(x2 - x1),
-                               static_cast<float>(lr.height())});
+                qreal block_y = doc_->documentLayout()->blockBoundingRect(blk).top();
+                out.push_back({static_cast<float>(x1), static_cast<float>(block_y + lr.top()),
+                               static_cast<float>(x2 - x1), static_cast<float>(lr.height())});
             }
         }
         return out;
@@ -986,11 +996,15 @@ public:
     std::string text_range(int start_byte, int end_byte) const override
     {
         if (start_byte >= end_byte)
+        {
             return {};
+        }
         int qt_start = utf8_byte_to_qt_pos(start_byte);
-        int qt_end   = utf8_byte_to_qt_pos(end_byte);
+        int qt_end = utf8_byte_to_qt_pos(end_byte);
         if (qt_start >= qt_end)
+        {
             return {};
+        }
         QTextCursor cur(doc_.get());
         cur.setPosition(qt_start);
         cur.setPosition(qt_end, QTextCursor::KeepAnchor);
@@ -1004,7 +1018,9 @@ private:
     {
         QString plain = doc_->toPlainText();
         if (qt_pos <= 0)
+        {
             return 0;
+        }
         int clamped = std::min(qt_pos, static_cast<int>(plain.size()));
         return plain.left(clamped).toUtf8().size();
     }
@@ -1012,7 +1028,9 @@ private:
     int utf8_byte_to_qt_pos(int byte_offset) const
     {
         if (byte_offset <= 0)
+        {
             return 0;
+        }
         QByteArray utf8 = doc_->toPlainText().toUtf8();
         int clamped = std::min(byte_offset, static_cast<int>(utf8.size()));
         return QString::fromUtf8(utf8.constData(), clamped).size();
@@ -1047,8 +1065,7 @@ public:
     // every draw call silently fell back to a 1:1 transform — filling only
     // the bitmap's top-left logical-sized region on a HiDPI target instead
     // of the whole device-pixel buffer.
-    explicit QtOffscreenSurface(QImage img)
-        : image_(std::move(img)), painter_(&image_)
+    explicit QtOffscreenSurface(QImage img) : image_(std::move(img)), painter_(&image_)
     {
         painter_.setRenderHint(QPainter::Antialiasing, true);
         canvas_ = make_canvas(painter_);
@@ -1073,16 +1090,14 @@ private:
 
 class QtFactory : public CanvasFactory
 {
-    static constexpr std::size_t kNumRoles =
-        static_cast<std::size_t>(FontRole::ReactionText) + 1;
+    static constexpr std::size_t kNumRoles = static_cast<std::size_t>(FontRole::ReactionText) + 1;
     std::array<QFont, kNumRoles> font_cache_;
     std::uint64_t font_cache_generation_ = 0;
 
     void rebuild_font_cache()
     {
-        static_assert(
-            static_cast<int>(FontRole::ReactionText) == 15,
-            "FontRole layout changed — verify font_cache_ index mapping");
+        static_assert(static_cast<int>(FontRole::ReactionText) == 15,
+                      "FontRole layout changed — verify font_cache_ index mapping");
         for (std::size_t i = 0; i < kNumRoles; ++i)
         {
             font_cache_[i] = font_for(static_cast<FontRole>(i));
@@ -1094,24 +1109,32 @@ class QtFactory : public CanvasFactory
     const QFont& cached_font(FontRole role)
     {
         if (font_cache_generation_ != font_config_generation())
+        {
             rebuild_font_cache();
+        }
         return font_cache_[static_cast<std::size_t>(role)];
     }
 
 public:
-    QtFactory() { rebuild_font_cache(); }
+    QtFactory()
+    {
+        rebuild_font_cache();
+    }
 
-    std::unique_ptr<Image>
-    decode_image(std::span<const std::uint8_t> bytes) override
+    std::unique_ptr<Image> decode_image(std::span<const std::uint8_t> bytes) override
     {
         if (bytes.empty())
         {
             return nullptr;
         }
         if (tesseract::is_jxl_data(bytes))
+        {
             return tesseract::jxl::decode_still(*this, bytes);
+        }
         if (!tk::decode_size_allowed(bytes, /*animated=*/false))
+        {
             return nullptr;
+        }
         QImage img;
         if (!img.loadFromData(bytes.data(), static_cast<int>(bytes.size())))
         {
@@ -1120,19 +1143,19 @@ public:
         return std::make_unique<QtImage>(std::move(img));
     }
 
-    std::unique_ptr<Image>
-    create_image_rgba(const std::uint8_t* pixels, int w, int h) override
+    std::unique_ptr<Image> create_image_rgba(const std::uint8_t* pixels, int w, int h) override
     {
         if (!pixels || w <= 0 || h <= 0)
+        {
             return nullptr;
+        }
         // QImage::Format_RGBA8888 matches nanosvg's RGBA output byte order.
         // .copy() detaches from the caller's buffer before it's freed.
         QImage img(pixels, w, h, w * 4, QImage::Format_RGBA8888);
         return std::make_unique<QtImage>(img.copy());
     }
 
-    std::unique_ptr<Image>
-    scale_image(const Image& src, int max_w, int max_h) override
+    std::unique_ptr<Image> scale_image(const Image& src, int max_w, int max_h) override
     {
         const auto& qi = static_cast<const QtImage&>(src);
         const QImage& orig = qi.image();
@@ -1140,32 +1163,34 @@ public:
         {
             return nullptr; // already fits — caller keeps original
         }
-        QImage scaled = orig.scaled(max_w, max_h, Qt::KeepAspectRatio,
-                                    Qt::SmoothTransformation);
+        QImage scaled = orig.scaled(max_w, max_h, Qt::KeepAspectRatio, Qt::SmoothTransformation);
         return std::make_unique<QtImage>(std::move(scaled));
     }
 
-    std::unique_ptr<AnimatedImage>
-    decode_animated_image(std::span<const std::uint8_t> bytes,
-                          int max_px) override
+    std::unique_ptr<AnimatedImage> decode_animated_image(std::span<const std::uint8_t> bytes,
+                                                         int max_px) override
     {
         if (tesseract::is_jxl_data(bytes))
+        {
             return tesseract::jxl::decode_animated(*this, bytes, max_px);
+        }
         if (!tk::decode_size_allowed(bytes, /*animated=*/true))
+        {
             return nullptr;
+        }
         std::vector<std::unique_ptr<Image>> frames;
         std::vector<int> delays;
-        decode_animated_frames_(
-            bytes, max_px,
-            [&](int /*index*/, std::unique_ptr<Image> img, int delay)
-            {
-                frames.push_back(std::move(img));
-                delays.push_back(delay);
-            });
+        decode_animated_frames_(bytes, max_px,
+                                [&](int /*index*/, std::unique_ptr<Image> img, int delay)
+                                {
+                                    frames.push_back(std::move(img));
+                                    delays.push_back(delay);
+                                });
         if (frames.size() < 2)
+        {
             return nullptr;
-        return std::make_unique<AnimatedImage>(std::move(frames),
-                                              std::move(delays));
+        }
+        return std::make_unique<AnimatedImage>(std::move(frames), std::move(delays));
     }
 
 private:
@@ -1178,11 +1203,13 @@ private:
     // decode failure. (Named deliver_frame, not the more obvious "emit" —
     // Qt's <QtCore/qglobal.h> #defines `emit` as a keyword macro.)
     template <typename DeliverFrame>
-    void decode_animated_frames_(std::span<const std::uint8_t> bytes,
-                                 int max_px, DeliverFrame&& deliver_frame)
+    void decode_animated_frames_(std::span<const std::uint8_t> bytes, int max_px,
+                                 DeliverFrame&& deliver_frame)
     {
         if (bytes.empty())
+        {
             return;
+        }
 
         QByteArray qba(reinterpret_cast<const char*>(bytes.data()),
                        static_cast<qsizetype>(bytes.size()));
@@ -1192,7 +1219,9 @@ private:
         QImageReader reader(&buf);
         const int count = reader.imageCount();
         if (count <= 1)
+        {
             return;
+        }
 
         // Hard cap on decoded frame count — matches canvas_cairo.cpp's GTK
         // decoder. A pathological/malicious animated image (huge frame count)
@@ -1202,11 +1231,9 @@ private:
         const int frame_limit = std::min(count, kMaxFrames);
 
         const QSize native = reader.size();
-        if (max_px > 0 && native.isValid() &&
-            (native.width() > max_px || native.height() > max_px))
+        if (max_px > 0 && native.isValid() && (native.width() > max_px || native.height() > max_px))
         {
-            reader.setScaledSize(
-                native.scaled(max_px, max_px, Qt::KeepAspectRatio));
+            reader.setScaledSize(native.scaled(max_px, max_px, Qt::KeepAspectRatio));
         }
 
         int produced = 0;
@@ -1216,37 +1243,37 @@ private:
             // even when the read succeeds — ignore its return value and rely on
             // read() returning a null image to detect real failures.
             if (i > 0)
+            {
                 reader.jumpToNextImage();
+            }
             QImage img = reader.read();
             if (img.isNull())
+            {
                 break;
+            }
 
             const int delay = qMax(reader.nextImageDelay(), 20);
 
             // Safety clamp — a no-op when setScaledSize already handled it
             // (some format plugins ignore setScaledSize on later frames).
-            if (max_px > 0 &&
-                (img.width() > max_px || img.height() > max_px))
-                img = img.scaled(max_px, max_px, Qt::KeepAspectRatio,
-                                 Qt::SmoothTransformation);
+            if (max_px > 0 && (img.width() > max_px || img.height() > max_px))
+            {
+                img = img.scaled(max_px, max_px, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            }
 
-            deliver_frame(produced++, std::make_unique<QtImage>(std::move(img)),
-                         delay);
+            deliver_frame(produced++, std::make_unique<QtImage>(std::move(img)), delay);
         }
     }
 
 public:
-
     // Cheap plain-string path (QStaticText, no QTextDocument) for a single
     // is_plain() run. Only reached for !s.wrap (see build_rich_text), so it
     // stays one line; hard breaks are folded first (QPainter::drawText
     // honours them even under NoWrap).
-    std::unique_ptr<TextLayout> build_plain_(std::string_view text_u8, QFont f,
-                                             const TextStyle& s)
+    std::unique_ptr<TextLayout> build_plain_(std::string_view text_u8, QFont f, const TextStyle& s)
     {
         const std::string folded = fold_hard_breaks_utf8(text_u8);
-        QString text = QString::fromUtf8(folded.data(),
-                                         static_cast<int>(folded.size()));
+        QString text = QString::fromUtf8(folded.data(), static_cast<int>(folded.size()));
 
         QTextOption opt;
         Qt::Alignment a = Qt::AlignTop;
@@ -1299,9 +1326,8 @@ public:
         }
 
         return std::make_unique<QtTextLayout>(
-            std::move(text), std::move(f), opt, measured, /*line_count=*/1,
-            max_w, s.max_height > 0 ? s.max_height : 8192.0, elide_single_line,
-            fm.ascent(), s.max_height);
+            std::move(text), std::move(f), opt, measured, /*line_count=*/1, max_w,
+            s.max_height > 0 ? s.max_height : 8192.0, elide_single_line, fm.ascent(), s.max_height);
     }
 
     std::unique_ptr<TextLayout> build_rich_text(std::span<const TextSpan> spans,
@@ -1309,7 +1335,9 @@ public:
     {
         QFont base = cached_font(s.role);
         if (s.monospace)
+        {
             apply_monospace(base);
+        }
 
         // A single unformatted, single-line run == a plain label: take the
         // cheap QStaticText path (this is what build_text's !wrap branch did
@@ -1327,14 +1355,11 @@ public:
             // instead of taking the nominal-metrics build_plain_ path.
             if (tk::is_emoji_only(spans[0].text))
             {
-                const std::string folded =
-                    fold_hard_breaks_utf8(spans[0].text);
-                QString qtext = QString::fromUtf8(
-                    folded.data(), static_cast<int>(folded.size()));
+                const std::string folded = fold_hard_breaks_utf8(spans[0].text);
+                QString qtext = QString::fromUtf8(folded.data(), static_cast<int>(folded.size()));
                 QFontMetricsF fm(base);
                 QRectF ink = fm.tightBoundingRect(qtext);
-                return std::make_unique<QtGlyphLayout>(
-                    std::move(qtext), std::move(base), ink);
+                return std::make_unique<QtGlyphLayout>(std::move(qtext), std::move(base), ink);
             }
             return build_plain_(spans[0].text, std::move(base), s);
         }
@@ -1343,14 +1368,11 @@ public:
         // build_text shim routes those here), else InlineEmoji; then the
         // shared tweak knob, then Qt's CBDT stock-rendering compensation so
         // it matches GTK4 visually (see canvas_qpainter.h / canvas.h).
-        const FontRole emoji_role = (s.role == FontRole::BigEmoji)
-                                        ? FontRole::BigEmoji
-                                        : FontRole::InlineEmoji;
+        const FontRole emoji_role =
+            (s.role == FontRole::BigEmoji) ? FontRole::BigEmoji : FontRole::InlineEmoji;
         const int emoji_pt = std::max(
             static_cast<int>(
-                cached_font(emoji_role).pointSize() *
-                    kEmojiSizeAdjust * kQtEmojiStockComp +
-                0.5),
+                cached_font(emoji_role).pointSize() * kEmojiSizeAdjust * kQtEmojiStockComp + 0.5),
             6);
 
         // Custom-emoticon (MSC2545, TextSpan::is_image) box size: BigEmoji
@@ -1360,12 +1382,9 @@ public:
         // stock-rendering compensation here: kQtEmojiStockComp corrects for
         // Qt's Noto Color Emoji CBDT glyphs rendering smaller than Cairo's,
         // which doesn't apply to an arbitrary bitmap drawn via draw_image().
-        const FontRole custom_emoji_role = (s.role == FontRole::BigEmoji)
-                                                ? FontRole::BigEmoji
-                                                : FontRole::InlineCustomEmoji;
-        const int custom_emoji_pt = std::max(
-            cached_font(custom_emoji_role).pointSize(),
-            6);
+        const FontRole custom_emoji_role =
+            (s.role == FontRole::BigEmoji) ? FontRole::BigEmoji : FontRole::InlineCustomEmoji;
+        const int custom_emoji_pt = std::max(cached_font(custom_emoji_role).pointSize(), 6);
 
         // QTextDocument has no native "truncate rich content to one line +
         // …" support — unlike build_text's QFontMetrics::elidedText, which
@@ -1388,7 +1407,8 @@ public:
         // Width of a pill span's reserved box — shared by the truncation
         // pass below and the inline-object reservation after it, so the cut
         // point accounts for the pill's real width, not an emoji square.
-        const auto pill_width = [&](const TextSpan& sp) -> qreal {
+        const auto pill_width = [&](const TextSpan& sp) -> qreal
+        {
             tk::PillSpec pspec;
             pspec.text = sp.image_alt;
             pspec.kind = sp.pill_kind;
@@ -1397,13 +1417,11 @@ public:
             // spellings) and shows the current room's own avatar, same
             // slot-reservation treatment as a User pill; a Room-kind pill
             // WITH a url is a permalink to some other room and has no avatar.
-            pspec.reserve_leading_visual =
-                (sp.pill_kind == PillKind::User) ||
-                (sp.pill_kind == PillKind::Room && sp.url.empty());
+            pspec.reserve_leading_visual = (sp.pill_kind == PillKind::User) ||
+                                           (sp.pill_kind == PillKind::Room && sp.url.empty());
             pspec.text_role = s.role;
             return static_cast<qreal>(
-                tk::measure_pill(*this, pspec, role_ascent, role_descent)
-                    .width);
+                tk::measure_pill(*this, pspec, role_ascent, role_descent).width);
         };
 
         std::vector<TextSpan> truncated_storage;
@@ -1420,43 +1438,41 @@ public:
             QFont code_font = base;
             apply_monospace(code_font);
             const QFontMetricsF code_fm(code_font);
-            const auto metrics_for = [&](const TextSpan& sp)
-                -> const QFontMetricsF& {
+            const auto metrics_for = [&](const TextSpan& sp) -> const QFontMetricsF&
+            {
                 return sp.code ? code_fm : (sp.is_emoji_run ? emoji_fm : base_fm);
             };
-            const qreal ell_w =
-                base_fm.horizontalAdvance(QChar(0x2026)); // "…"
-            const qreal img_w =
-                static_cast<qreal>(custom_emoji_pt) * 96.0 / 72.0;
+            const qreal ell_w = base_fm.horizontalAdvance(QChar(0x2026)); // "…"
+            const qreal img_w = static_cast<qreal>(custom_emoji_pt) * 96.0 / 72.0;
 
             std::vector<QString> span_q;
             span_q.reserve(spans.size());
             qreal total = 0.0;
-            const auto run_width = [&](const TextSpan& sp,
-                                      const QString& q) -> qreal {
+            const auto run_width = [&](const TextSpan& sp, const QString& q) -> qreal
+            {
                 if (sp.is_image)
-                    return sp.pill_kind != PillKind::Generic ? pill_width(sp)
-                                                             : img_w;
+                {
+                    return sp.pill_kind != PillKind::Generic ? pill_width(sp) : img_w;
+                }
                 return metrics_for(sp).horizontalAdvance(q);
             };
             for (const auto& sp : spans)
             {
-                span_q.emplace_back(QString::fromUtf8(
-                    sp.text.data(), static_cast<int>(sp.text.size())));
+                span_q.emplace_back(
+                    QString::fromUtf8(sp.text.data(), static_cast<int>(sp.text.size())));
                 total += run_width(sp, span_q.back());
             }
 
             if (total > static_cast<qreal>(s.max_width))
             {
-                const qreal budget = std::max<qreal>(
-                    0.0, static_cast<qreal>(s.max_width) - ell_w);
+                const qreal budget = std::max<qreal>(0.0, static_cast<qreal>(s.max_width) - ell_w);
                 qreal acc = 0.0;
                 truncated_storage.reserve(spans.size() + 1);
                 for (std::size_t i = 0; i < spans.size(); ++i)
                 {
                     const TextSpan& sp = spans[i];
-                    const QString& q   = span_q[i];
-                    const qreal w      = run_width(sp, q);
+                    const QString& q = span_q[i];
+                    const qreal w = run_width(sp, q);
                     if (acc + w <= budget)
                     {
                         truncated_storage.push_back(sp);
@@ -1470,23 +1486,20 @@ public:
                         for (int c = 0; c < q.size();)
                         {
                             const int step =
-                                (q.at(c).isHighSurrogate() &&
-                                 c + 1 < q.size())
-                                    ? 2
-                                    : 1;
+                                (q.at(c).isHighSurrogate() && c + 1 < q.size()) ? 2 : 1;
                             const QString cand = q.left(c + step);
                             if (acc + m.horizontalAdvance(cand) > budget)
+                            {
                                 break;
+                            }
                             kept = cand;
                             c += step;
                         }
                         if (!kept.isEmpty())
                         {
-                            TextSpan cut       = sp;
+                            TextSpan cut = sp;
                             const QByteArray u8 = kept.toUtf8();
-                            cut.text.assign(
-                                u8.constData(),
-                                static_cast<std::size_t>(u8.size()));
+                            cut.text.assign(u8.constData(), static_cast<std::size_t>(u8.size()));
                             truncated_storage.push_back(std::move(cut));
                         }
                     }
@@ -1526,13 +1539,11 @@ public:
                         // glyph itself never draws, since Qt's underline
                         // painting pass is independent of drawObject().
                         QString href =
-                            QString::fromUtf8(sp.url.data(),
-                                              static_cast<int>(sp.url.size()))
+                            QString::fromUtf8(sp.url.data(), static_cast<int>(sp.url.size()))
                                 .toHtmlEscaped();
                         t = QLatin1String("<a href=\"") + href +
-                            QLatin1String(
-                                "\" style=\"text-decoration:none;\">") +
-                            t + QLatin1String("</a>");
+                            QLatin1String("\" style=\"text-decoration:none;\">") + t +
+                            QLatin1String("</a>");
                     }
                     html += t;
                     image_span_widths.push_back(pill_width(sp));
@@ -1544,15 +1555,13 @@ public:
                 }
                 continue;
             }
-            QString t = QString::fromUtf8(sp.text.data(),
-                                          static_cast<int>(sp.text.size()))
-                            .toHtmlEscaped();
+            QString t =
+                QString::fromUtf8(sp.text.data(), static_cast<int>(sp.text.size())).toHtmlEscaped();
             t.replace(QLatin1Char('\n'), QLatin1String("<br>"));
             if (sp.has_color)
             {
-                t = QLatin1String("<span style=\"color:") +
-                    to_qcolor(sp.color).name() + QLatin1String(";\">") + t +
-                    QLatin1String("</span>");
+                t = QLatin1String("<span style=\"color:") + to_qcolor(sp.color).name() +
+                    QLatin1String(";\">") + t + QLatin1String("</span>");
             }
             if (sp.code)
             {
@@ -1578,39 +1587,36 @@ public:
             }
             if (sp.semibold)
             {
-                t = QLatin1String("<span style=\"font-weight:600\">") + t + QLatin1String("</span>");
+                t = QLatin1String("<span style=\"font-weight:600\">") + t +
+                    QLatin1String("</span>");
             }
             if (!sp.url.empty())
             {
-                QString href =
-                    QString::fromUtf8(sp.url.data(),
-                                      static_cast<int>(sp.url.size()))
-                        .toHtmlEscaped();
+                QString href = QString::fromUtf8(sp.url.data(), static_cast<int>(sp.url.size()))
+                                   .toHtmlEscaped();
                 if (sp.is_mention)
                 {
                     // Keep the anchor for hit-testing but drop the link
                     // underline; the accent colour comes from has_color and the
                     // pill background is drawn by the view.
-                    QString col = sp.has_color ? to_qcolor(sp.color).name()
-                                               : QStringLiteral("#1B4AC2");
+                    QString col =
+                        sp.has_color ? to_qcolor(sp.color).name() : QStringLiteral("#1B4AC2");
                     t = QLatin1String("<a href=\"") + href +
-                        QLatin1String("\" style=\"text-decoration:none;color:") +
-                        col + QLatin1String(";\">") + t + QLatin1String("</a>");
+                        QLatin1String("\" style=\"text-decoration:none;color:") + col +
+                        QLatin1String(";\">") + t + QLatin1String("</a>");
                 }
                 else
                 {
                     t = QLatin1String("<a href=\"") + href +
-                        (g_link_color.isValid()
-                             ? QLatin1String("\" style=\"color:") +
-                                   g_link_color.name() + QLatin1String(";\">")
-                             : QLatin1String("\">")) +
+                        (g_link_color.isValid() ? QLatin1String("\" style=\"color:") +
+                                                      g_link_color.name() + QLatin1String(";\">")
+                                                : QLatin1String("\">")) +
                         t + QLatin1String("</a>");
                 }
             }
             if (sp.is_emoji_run)
             {
-                t = QLatin1String("<span style=\"font-size:") +
-                    QString::number(emoji_pt) +
+                t = QLatin1String("<span style=\"font-size:") + QString::number(emoji_pt) +
                     QLatin1String("pt;\">") + t + QLatin1String("</span>");
             }
             html += t;
@@ -1636,18 +1642,16 @@ public:
         // offsets, so selection_rects() for a pill (paint_span_images) lands
         // on the wrong character. Wrapping is still governed by the
         // QTextOption wrap mode above.
-        doc->setHtml(QLatin1String("<body style=\"white-space:pre-wrap;\">") +
-                     html + QLatin1String("</body>"));
+        doc->setHtml(QLatin1String("<body style=\"white-space:pre-wrap;\">") + html +
+                     QLatin1String("</body>"));
         if (!image_span_widths.empty())
         {
-            doc->documentLayout()->registerHandler(
-                kBlankObjectType, blank_object_handler());
+            doc->documentLayout()->registerHandler(kBlankObjectType, blank_object_handler());
             // Shared square box for plain custom emoticons (image_span_widths
             // == -1), sized from custom_emoji_pt (InlineCustomEmoji /
             // BigEmoji) — independent of emoji_pt, which only sizes native
             // is_emoji_run text runs.
-            const qreal emoji_box =
-                static_cast<qreal>(custom_emoji_pt) * 96.0 / 72.0;
+            const qreal emoji_box = static_cast<qreal>(custom_emoji_pt) * 96.0 / 72.0;
             // Pill height: full ascent+descent of the paragraph's own role,
             // matching tk::measure_pill()'s width computation above. Note
             // this backend has no ascent/descent *split* the way CTRunDelegate
@@ -1658,15 +1662,15 @@ public:
             // slightly more than macOS does. Not verified live (no Qt
             // toolchain in this environment) — flagging for whoever builds
             // this first.
-            const qreal pill_box_h =
-                static_cast<qreal>(role_ascent + role_descent);
+            const qreal pill_box_h = static_cast<qreal>(role_ascent + role_descent);
             int pos = 0;
             for (qreal width : image_span_widths)
             {
-                QTextCursor found =
-                    doc->find(QString(QChar(0xFFFC)), pos);
+                QTextCursor found = doc->find(QString(QChar(0xFFFC)), pos);
                 if (found.isNull())
+                {
                     break;
+                }
                 QTextCharFormat fmt;
                 fmt.setObjectType(kBlankObjectType);
                 if (width >= 0.0)
@@ -1696,19 +1700,23 @@ public:
         // QtRichTextLayout) so a taller inline-emoji run can't inflate the
         // caller's height math — matching build_text's single elided line.
         const QFontMetricsF base_fm(base);
-        return std::make_unique<QtRichTextLayout>(
-            std::move(doc), !s.wrap, base_fm.height(), base_fm.ascent());
+        return std::make_unique<QtRichTextLayout>(std::move(doc), !s.wrap, base_fm.height(),
+                                                  base_fm.ascent());
     }
 
-    std::unique_ptr<CanvasFactory::OffscreenSurface>
-    create_offscreen(Size logical_size, float scale_factor) override
+    std::unique_ptr<CanvasFactory::OffscreenSurface> create_offscreen(Size logical_size,
+                                                                      float scale_factor) override
     {
         if (logical_size.w <= 0 || logical_size.h <= 0 || scale_factor <= 0)
+        {
             return nullptr;
+        }
         const int pw = static_cast<int>(std::ceil(logical_size.w * scale_factor));
         const int ph = static_cast<int>(std::ceil(logical_size.h * scale_factor));
         if (pw <= 0 || ph <= 0)
+        {
             return nullptr;
+        }
         QImage img(pw, ph, QImage::Format_ARGB32_Premultiplied);
         // Must happen before QtOffscreenSurface attaches a QPainter to this
         // image (see its constructor's comment) — QImage's move constructor
@@ -1724,13 +1732,14 @@ public:
         // Same font the picker cell asks for; Qt's fallback supplies the
         // emoji face, or a .notdef (glyph 0) from the primary font when no
         // installed font has the codepoint.
-        QTextLayout layout(
-            QString::fromUtf8(glyph.data(), static_cast<qsizetype>(glyph.size())),
-            cached_font(FontRole::EmojiPickerCell));
+        QTextLayout layout(QString::fromUtf8(glyph.data(), static_cast<qsizetype>(glyph.size())),
+                           cached_font(FontRole::EmojiPickerCell));
         layout.beginLayout();
         QTextLine line = layout.createLine();
         if (line.isValid())
+        {
             line.setLineWidth(1.0e6);
+        }
         layout.endLayout();
 
         // Zero-advance glyphs (a shaped-away VS16/ZWJ) don't count; a
@@ -1744,9 +1753,13 @@ public:
             for (qsizetype i = 0; i < ids.size() && i < adv.size(); ++i)
             {
                 if (adv[i].x() <= 0.0)
+                {
                     continue;
+                }
                 if (ids[i] == 0)
+                {
                     return false;
+                }
                 ++visible;
             }
         }
@@ -1767,7 +1780,9 @@ std::unique_ptr<Image> make_image(QImage img)
 std::unique_ptr<Image> make_image_rgba(const std::uint8_t* rgba, int w, int h)
 {
     if (!rgba || w <= 0 || h <= 0)
+    {
         return nullptr;
+    }
     return std::make_unique<QtImage>(QImage(rgba, w, h, w * 4, QImage::Format_RGBA8888).copy());
 }
 

@@ -25,13 +25,12 @@ enum class Category : std::uint8_t
 /// embedded data table — never owned, never freed.
 struct Entry
 {
-    std::string_view
-        glyph;             ///< UTF-8 glyph (may be a multi-codepoint sequence).
-    std::string_view name; ///< CLDR short name, e.g. "grinning face".
+    std::string_view glyph;    ///< UTF-8 glyph (may be a multi-codepoint sequence).
+    std::string_view name;     ///< CLDR short name, e.g. "grinning face".
     std::string_view keywords; ///< Space-separated search terms, lowercase.
     Category category;
     std::string_view
-        shortcodes; ///< Space-separated; first token is canonical (snake_case CLDR name).
+        shortcodes;        ///< Space-separated; first token is canonical (snake_case CLDR name).
     std::uint16_t version; ///< Emoji version, major*10 + minor (E12.1 → 121).
 };
 
@@ -48,8 +47,7 @@ std::vector<const Entry*> by_category(Category c);
 /// Entries whose shortcode tokens (canonical + aliases) contain `prefix`
 /// (case-insensitive substring). Returns pairs of (entry, matched_shortcode)
 /// so callers can rank by match quality. Pointers into the static table.
-std::vector<std::pair<const Entry*, std::string_view>>
-by_shortcode_prefix(std::string_view prefix);
+std::vector<std::pair<const Entry*, std::string_view>> by_shortcode_prefix(std::string_view prefix);
 
 /// Human-readable category label, e.g. "Smileys & People".
 const char* category_name(Category c);
@@ -108,9 +106,8 @@ std::vector<std::string_view> glyphs_introduced_in(std::uint16_t version);
 /// Iteration helper — categories in tab order, suitable for building the
 /// tab strip.
 constexpr Category kCategories[] = {
-    Category::SmileysPeople, Category::AnimalsNature, Category::FoodDrink,
-    Category::Activities,    Category::TravelPlaces,  Category::Objects,
-    Category::Symbols,       Category::Flags,
+    Category::SmileysPeople, Category::AnimalsNature, Category::FoodDrink, Category::Activities,
+    Category::TravelPlaces,  Category::Objects,       Category::Symbols,   Category::Flags,
 };
 
 } // namespace tesseract::emoji

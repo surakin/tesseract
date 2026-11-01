@@ -8,8 +8,7 @@ namespace tesseract::cli
 namespace
 {
 
-const OptionSpec* find_long(std::span<const OptionSpec> specs,
-                            std::string_view name)
+const OptionSpec* find_long(std::span<const OptionSpec> specs, std::string_view name)
 {
     for (const auto& s : specs)
     {
@@ -37,8 +36,7 @@ const OptionSpec* find_short(std::span<const OptionSpec> specs, char c)
     return nullptr;
 }
 
-const ForeignOption* find_foreign(std::span<const ForeignOption> foreign,
-                                  std::string_view arg)
+const ForeignOption* find_foreign(std::span<const ForeignOption> foreign, std::string_view arg)
 {
     for (const auto& f : foreign)
     {
@@ -91,24 +89,23 @@ std::vector<std::string> ParseResult::values(std::string_view id) const
 
 std::size_t ParseResult::count(std::string_view id) const
 {
-    return static_cast<std::size_t>(
-        std::count_if(occurrences_.begin(), occurrences_.end(),
-                      [id](const auto& o) { return o.first == id; }));
+    return static_cast<std::size_t>(std::count_if(occurrences_.begin(), occurrences_.end(),
+                                                  [id](const auto& o)
+                                                  {
+                                                      return o.first == id;
+                                                  }));
 }
 
-ParseResult parse(std::span<const OptionSpec> specs,
-                  std::span<const std::string> args,
+ParseResult parse(std::span<const OptionSpec> specs, std::span<const std::string> args,
                   std::span<const ForeignOption> foreign)
 {
     ParseResult r;
 
-    auto record = [&r](const OptionSpec& spec, std::string value,
-                       const std::string& as_typed)
+    auto record = [&r](const OptionSpec& spec, std::string value, const std::string& as_typed)
     {
         if (!spec.repeatable && r.has(spec.id))
         {
-            r.diagnostics_.push_back(
-                {Diagnostic::Kind::Duplicate, as_typed, {}});
+            r.diagnostics_.push_back({Diagnostic::Kind::Duplicate, as_typed, {}});
         }
         r.occurrences_.emplace_back(spec.id, std::move(value));
     };
@@ -132,8 +129,7 @@ ParseResult parse(std::span<const OptionSpec> specs,
 
         if (const ForeignOption* f = find_foreign(foreign, arg))
         {
-            if (f->takes_value && arg.find('=') == std::string::npos &&
-                i + 1 < args.size())
+            if (f->takes_value && arg.find('=') == std::string::npos && i + 1 < args.size())
             {
                 ++i;
             }
@@ -158,8 +154,7 @@ ParseResult parse(std::span<const OptionSpec> specs,
             {
                 if (eq != std::string_view::npos)
                 {
-                    r.diagnostics_.push_back(
-                        {Diagnostic::Kind::UnexpectedValue, as_typed, {}});
+                    r.diagnostics_.push_back({Diagnostic::Kind::UnexpectedValue, as_typed, {}});
                     continue;
                 }
                 record(*spec, {}, as_typed);
@@ -176,8 +171,7 @@ ParseResult parse(std::span<const OptionSpec> specs,
             }
             else
             {
-                r.diagnostics_.push_back(
-                    {Diagnostic::Kind::MissingValue, as_typed, {}});
+                r.diagnostics_.push_back({Diagnostic::Kind::MissingValue, as_typed, {}});
             }
             continue;
         }
@@ -215,8 +209,7 @@ ParseResult parse(std::span<const OptionSpec> specs,
             }
             else
             {
-                r.diagnostics_.push_back(
-                    {Diagnostic::Kind::MissingValue, as_typed, {}});
+                r.diagnostics_.push_back({Diagnostic::Kind::MissingValue, as_typed, {}});
             }
             break;
         }
@@ -225,10 +218,8 @@ ParseResult parse(std::span<const OptionSpec> specs,
     return r;
 }
 
-std::string format_usage(std::span<const OptionSpec> specs,
-                         std::string_view program,
-                         std::string_view synopsis,
-                         std::string_view usage_label,
+std::string format_usage(std::span<const OptionSpec> specs, std::string_view program,
+                         std::string_view synopsis, std::string_view usage_label,
                          std::string_view options_heading)
 {
     std::vector<std::pair<std::string, const OptionSpec*>> rows;
@@ -239,9 +230,8 @@ std::string format_usage(std::span<const OptionSpec> specs,
         {
             continue;
         }
-        std::string left = s.short_name != '\0'
-                               ? std::string("-") + s.short_name
-                               : std::string("    ");
+        std::string left =
+            s.short_name != '\0' ? std::string("-") + s.short_name : std::string("    ");
         if (!s.long_name.empty())
         {
             if (s.short_name != '\0')
@@ -302,8 +292,7 @@ std::string format_diagnostic(const Diagnostic& d)
         return "option '" + d.arg + "' given more than once";
     case Diagnostic::Kind::InvalidValue:
         return "invalid value for '" + d.arg + "'" +
-               (d.detail.empty() ? std::string() : ": " + d.detail) +
-               " (ignored)";
+               (d.detail.empty() ? std::string() : ": " + d.detail) + " (ignored)";
     }
     return {};
 }

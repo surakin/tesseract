@@ -1,13 +1,12 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "linux_up_connector_core.h"
+#include "platform/linux/linux_up_connector_core.h"
 
 using tesseract::up::extract_push_room_id;
 using tesseract::up::normalize_gateway_url;
 using tesseract::up::sanitize_token;
 
-TEST_CASE("sanitize_token keeps alphanumerics and replaces the rest",
-          "[linux_up]")
+TEST_CASE("sanitize_token keeps alphanumerics and replaces the rest", "[linux_up]")
 {
     CHECK(sanitize_token("@alice:example.org") == "_alice_example_org");
     CHECK(sanitize_token("abc123") == "abc123");
@@ -22,8 +21,7 @@ TEST_CASE("normalize_gateway_url accepts https endpoints", "[linux_up]")
           "https://push.example.org/_matrix/push/v1/notify");
 }
 
-TEST_CASE("normalize_gateway_url keeps the port and drops path/query/fragment",
-          "[linux_up]")
+TEST_CASE("normalize_gateway_url keeps the port and drops path/query/fragment", "[linux_up]")
 {
     CHECK(normalize_gateway_url("https://push.example.org:8443/up?x=1#f") ==
           "https://push.example.org:8443/_matrix/push/v1/notify");
@@ -31,8 +29,7 @@ TEST_CASE("normalize_gateway_url keeps the port and drops path/query/fragment",
           "https://push.example.org/_matrix/push/v1/notify");
 }
 
-TEST_CASE("normalize_gateway_url accepts boundary ports and IPv6 literals",
-          "[linux_up]")
+TEST_CASE("normalize_gateway_url accepts boundary ports and IPv6 literals", "[linux_up]")
 {
     CHECK(normalize_gateway_url("https://push.example.org:65535/up") ==
           "https://push.example.org:65535/_matrix/push/v1/notify");
@@ -46,8 +43,7 @@ TEST_CASE("normalize_gateway_url accepts an uppercase scheme", "[linux_up]")
           "https://push.example.org/_matrix/push/v1/notify");
 }
 
-TEST_CASE("normalize_gateway_url accepts underscores in reg-name hosts",
-          "[linux_up]")
+TEST_CASE("normalize_gateway_url accepts underscores in reg-name hosts", "[linux_up]")
 {
     CHECK(normalize_gateway_url("https://my_host.lan/up") ==
           "https://my_host.lan/_matrix/push/v1/notify");
@@ -80,8 +76,7 @@ TEST_CASE("normalize_gateway_url rejects untrusted endpoints", "[linux_up]")
 
 TEST_CASE("extract_push_room_id reads notification.room_id", "[linux_up]")
 {
-    CHECK(extract_push_room_id(
-              R"({"notification":{"room_id":"!abc:example.org","counts":{}}})") ==
+    CHECK(extract_push_room_id(R"({"notification":{"room_id":"!abc:example.org","counts":{}}})") ==
           "!abc:example.org");
 }
 

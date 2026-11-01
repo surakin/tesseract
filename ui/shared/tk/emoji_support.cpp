@@ -21,7 +21,9 @@ std::uint16_t detect_emoji_version(CanvasFactory& f)
             }
         }
         if (all)
+        {
             return version;
+        }
     }
     // Not even the oldest version draws cleanly (no colour-emoji font, or a
     // fallback that splits flags/keycaps): this font is outside what the
@@ -30,8 +32,7 @@ std::uint16_t detect_emoji_version(CanvasFactory& f)
     return kAllEmojiVersions;
 }
 
-std::uint16_t cached_emoji_version(
-    const std::function<std::unique_ptr<CanvasFactory>()>& make)
+std::uint16_t cached_emoji_version(const std::function<std::unique_ptr<CanvasFactory>()>& make)
 {
     static std::optional<std::uint16_t> cached;
     if (!cached)
@@ -42,9 +43,8 @@ std::uint16_t cached_emoji_version(
     return *cached;
 }
 
-std::optional<std::string_view>
-offered_emoji(std::string_view glyph, emoji::SkinTone tone,
-              std::uint16_t max_version)
+std::optional<std::string_view> offered_emoji(std::string_view glyph, emoji::SkinTone tone,
+                                              std::uint16_t max_version)
 {
     const auto within = [max_version](std::string_view g)
     {
@@ -52,10 +52,14 @@ offered_emoji(std::string_view glyph, emoji::SkinTone tone,
     };
     const std::string_view toned = emoji::with_skin_tone(glyph, tone);
     if (within(toned))
+    {
         return toned;
+    }
     const std::string_view base = emoji::base_glyph(glyph);
     if (within(base))
+    {
         return base;
+    }
     return std::nullopt;
 }
 
@@ -64,7 +68,9 @@ bool all_skin_tones_supported(std::string_view glyph, std::uint16_t max_version)
     for (emoji::SkinTone t : emoji::kSkinTones)
     {
         if (emoji::emoji_version(emoji::with_skin_tone(glyph, t)) > max_version)
+        {
             return false;
+        }
     }
     return true;
 }

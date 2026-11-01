@@ -105,8 +105,7 @@ int GifPopup::cell_at(tk::Point local) const
     for (int i = 0; i < n; ++i)
     {
         tk::Rect r = cell_rect(i);
-        if (local.x >= r.x && local.x < r.x + r.w && local.y >= r.y &&
-            local.y < r.y + r.h)
+        if (local.x >= r.x && local.x < r.x + r.w && local.y >= r.y && local.y < r.y + r.h)
         {
             return i;
         }
@@ -182,55 +181,54 @@ void GifPopup::paint(tk::PaintCtx& ctx)
 
     // Clip the cell row to the scrollable viewport so overflowing / partially
     // scrolled cells don't paint over the side padding, border or attribution.
-    ctx.canvas.push_clip_rect(
-        {bounds_.x + kPad, bounds_.y + kPad,
-         std::max(0.0f, bounds_.w - 2.0f * kPad), kCellH});
-    for (int i = 0; i < n; ++i)
     {
-        tk::Rect cell = cell_rect(i);
-        const bool sel = (i == selected_index_);
-        const bool hov = (i == hovered_index_);
+        tk::ClipScope clip(ctx.canvas, {bounds_.x + kPad, bounds_.y + kPad,
+                                        std::max(0.0f, bounds_.w - 2.0f * kPad), kCellH});
+        for (int i = 0; i < n; ++i)
+        {
+            tk::Rect cell = cell_rect(i);
+            const bool sel = (i == selected_index_);
+            const bool hov = (i == hovered_index_);
 
-        // Cell backing — selected/hovered tint shows through transparent PNGs
-        // and fills the letterbox bars around landscape GIFs.
-        ctx.canvas.fill_rect(cell, sel ? pal.sidebar_selected
-                                       : hov ? pal.subtle_hover
+            // Cell backing — selected/hovered tint shows through transparent PNGs
+            // and fills the letterbox bars around landscape GIFs.
+            ctx.canvas.fill_rect(cell, sel   ? pal.sidebar_selected
+                                       : hov ? tk::hot_row_fill(ctx.theme)
                                              : pal.chrome_bg);
 
-        const tk::Image* img =
-            image_provider_ ? image_provider_(results_[std::size_t(i)])
-                            : nullptr;
-        if (img)
-        {
-            float iw = static_cast<float>(img->width());
-            float ih = static_cast<float>(img->height());
-            if (iw > 0.0f && ih > 0.0f)
+            const tk::Image* img =
+                image_provider_ ? image_provider_(results_[std::size_t(i)]) : nullptr;
+            if (img)
             {
-                float sc = std::min(cell.w / iw, cell.h / ih);
-                float dw = iw * sc, dh = ih * sc;
-                ctx.canvas.draw_image(*img, {cell.x + (cell.w - dw) * 0.5f,
-                                             cell.y + (cell.h - dh) * 0.5f, dw,
-                                             dh});
+                float iw = static_cast<float>(img->width());
+                float ih = static_cast<float>(img->height());
+                if (iw > 0.0f && ih > 0.0f)
+                {
+                    float sc = std::min(cell.w / iw, cell.h / ih);
+                    float dw = iw * sc, dh = ih * sc;
+                    ctx.canvas.draw_image(*img, {cell.x + (cell.w - dw) * 0.5f,
+                                                 cell.y + (cell.h - dh) * 0.5f, dw, dh});
+                }
+                if (ctx.anim_damage)
+                {
+                    ctx.anim_damage->note_image(
+                        tk::CacheKey::media(results_[std::size_t(i)].strip_url), cell);
+                }
             }
-            if (ctx.anim_damage)
-                ctx.anim_damage->note_image(
-                    tk::CacheKey::media(results_[std::size_t(i)].strip_url),
-                    cell);
-        }
 
-        // Selection border.
-        if (sel)
-        {
-            const float t = 2.0f;
-            ctx.canvas.fill_rect({cell.x, cell.y, cell.w, t}, pal.accent);
-            ctx.canvas.fill_rect({cell.x, cell.y + cell.h - t, cell.w, t},
-                                 pal.accent);
-            ctx.canvas.fill_rect({cell.x, cell.y, t, cell.h}, pal.accent);
-            ctx.canvas.fill_rect({cell.x + cell.w - t, cell.y, t, cell.h},
-                                 pal.accent);
+            // Selection border.
+            if (sel)
+            {
+                const float t = 2.0f;
+                // High Contrast: the cell fill is Highlight, so use the text colour.
+                const tk::Color edge = ctx.theme.high_contrast ? pal.text_primary : pal.accent;
+                ctx.canvas.fill_rect({cell.x, cell.y, cell.w, t}, edge);
+                ctx.canvas.fill_rect({cell.x, cell.y + cell.h - t, cell.w, t}, edge);
+                ctx.canvas.fill_rect({cell.x, cell.y, t, cell.h}, edge);
+                ctx.canvas.fill_rect({cell.x + cell.w - t, cell.y, t, cell.h}, edge);
+            }
         }
     }
-    ctx.canvas.pop_clip();
 
     // Attribution — required by the provider's ToS. Bottom-right, secondary.
     {
@@ -243,8 +241,7 @@ void GifPopup::paint(tk::PaintCtx& ctx)
         {
             tk::Size tsz = tl->measure();
             float lx = bounds_.x + bounds_.w - kPad - tsz.w;
-            float ly = bounds_.y + bounds_.h - kAttribH +
-                       (kAttribH - tsz.h) * 0.5f;
+            float ly = bounds_.y + bounds_.h - kAttribH + (kAttribH - tsz.h) * 0.5f;
             ctx.canvas.draw_text(*tl, {lx, ly}, pal.text_secondary);
         }
     }
@@ -288,28 +285,42 @@ void GifPopup::on_pointer_leave()
 bool GifPopup::on_wheel(tk::Point /*local*/, float dx, float dy, bool /*is_touchpad*/)
 {
     if (visible_count() <= 0)
+    {
         return false;
+    }
     // Vertical scroll is the primary axis for most mice; horizontal (trackpad
     // swipe) also navigates. Each standard notch (90 px in tk convention) moves
     // one GIF; accumulate sub-notch input from smooth-scroll devices.
     float combined = dy != 0.0f ? dy : dx;
     if (combined == 0.0f)
+    {
         return false;
+    }
     wheel_carry_ += combined;
     const float kNotch = 90.0f;
     int steps = static_cast<int>(wheel_carry_ / kNotch);
     if (steps == 0)
     {
         // Smooth-scroll: fire after a quarter-notch so trackpads feel responsive.
-        if (wheel_carry_ >= kNotch * 0.25f)       { steps = 1;  wheel_carry_ = 0.0f; }
-        else if (wheel_carry_ <= -kNotch * 0.25f) { steps = -1; wheel_carry_ = 0.0f; }
+        if (wheel_carry_ >= kNotch * 0.25f)
+        {
+            steps = 1;
+            wheel_carry_ = 0.0f;
+        }
+        else if (wheel_carry_ <= -kNotch * 0.25f)
+        {
+            steps = -1;
+            wheel_carry_ = 0.0f;
+        }
     }
     else
     {
         wheel_carry_ -= steps * kNotch;
     }
     if (steps == 0)
+    {
         return false;
+    }
     return move_selection(steps);
 }
 

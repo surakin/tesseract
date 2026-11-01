@@ -41,18 +41,24 @@ struct GridPickerAccessibilityStage
 const AccessNode* find_node_with_role(const AccessNode& node, Role role)
 {
     if (node.role == role)
+    {
         return &node;
+    }
     for (const auto& ch : node.children)
+    {
         if (const AccessNode* found = find_node_with_role(ch, role))
+        {
             return found;
+        }
+    }
     return nullptr;
 }
 
 } // namespace
 
 TEST_CASE("EmojiPicker's grid cells are accessible GridCells named after "
-         "their shortcode, under a Grid node",
-         "[tk][view][emoji][accessibility]")
+          "their shortcode, under a Grid node",
+          "[tk][view][emoji][accessibility]")
 {
     GridPickerAccessibilityStage st;
     auto picker_owner = tk::create_root_widget<EmojiPicker>(nullptr);
@@ -96,9 +102,9 @@ TEST_CASE("EmojiPicker's grid cells are accessible GridCells named after "
 }
 
 TEST_CASE("StickerPicker's grid cells are accessible GridCells under a "
-         "Grid node (empty when no shortcode, matching cell_tooltip's own "
-         "suppression)",
-         "[tk][view][sticker][accessibility]")
+          "Grid node (empty when no shortcode, matching cell_tooltip's own "
+          "suppression)",
+          "[tk][view][sticker][accessibility]")
 {
     GridPickerAccessibilityStage st;
     auto picker_owner = tk::create_root_widget<StickerPicker>(nullptr);
@@ -114,12 +120,14 @@ TEST_CASE("StickerPicker's grid cells are accessible GridCells under a "
     // outcome; the real assertion is that the Grid node itself exists and
     // any cells that do appear are well-formed.
     for (const auto& cell : grid->children)
+    {
         CHECK(cell.role == Role::GridCell);
+    }
 }
 
 TEST_CASE("EmojiPicker's tab strip is a TabList of named Tabs, with the "
-         "active category marked selected",
-         "[tk][view][emoji][accessibility]")
+          "active category marked selected",
+          "[tk][view][emoji][accessibility]")
 {
     GridPickerAccessibilityStage st;
     auto picker_owner = tk::create_root_widget<EmojiPicker>(nullptr);
@@ -140,15 +148,17 @@ TEST_CASE("EmojiPicker's tab strip is a TabList of named Tabs, with the "
         CHECK(tab.row_index >= 0);
         CHECK(tab.row_set_size == static_cast<int>(tablist->children.size()));
         if (tab.state.selected)
+        {
             ++selected_count;
+        }
     }
     // Exactly one category is active at a time (no search query set here).
     CHECK(selected_count == 1);
 }
 
 TEST_CASE("invoking an EmojiPicker tab's default action switches category, "
-         "the same as a real click",
-         "[tk][view][emoji][accessibility][action]")
+          "the same as a real click",
+          "[tk][view][emoji][accessibility][action]")
 {
     GridPickerAccessibilityStage st;
     auto picker_owner = tk::create_root_widget<EmojiPicker>(nullptr);
@@ -164,7 +174,10 @@ TEST_CASE("invoking an EmojiPicker tab's default action switches category, "
     // Pick a tab that isn't already active, and confirm activating it moves
     // the selection there.
     auto it = std::find_if(tablist->children.begin(), tablist->children.end(),
-                           [](const AccessNode& n) { return !n.state.selected; });
+                           [](const AccessNode& n)
+                           {
+                               return !n.state.selected;
+                           });
     REQUIRE(it != tablist->children.end());
     int target_row = it->row_index;
 
@@ -178,8 +191,8 @@ TEST_CASE("invoking an EmojiPicker tab's default action switches category, "
 }
 
 TEST_CASE("invoking an EmojiPicker grid cell's default action fires "
-         "on_selected with that cell's glyph, the same as a real click",
-         "[tk][view][emoji][accessibility][action]")
+          "on_selected with that cell's glyph, the same as a real click",
+          "[tk][view][emoji][accessibility][action]")
 {
     GridPickerAccessibilityStage st;
     auto picker_owner = tk::create_root_widget<EmojiPicker>(nullptr);
@@ -188,7 +201,10 @@ TEST_CASE("invoking an EmojiPicker grid cell's default action fires "
     st.run(picker, {0, 0, 320, 360});
 
     std::string selected;
-    picker.on_selected = [&](const std::string& glyph) { selected = glyph; };
+    picker.on_selected = [&](const std::string& glyph)
+    {
+        selected = glyph;
+    };
 
     AccessNode tree = build_access_tree(&picker);
     const AccessNode* grid = find_node_with_role(tree, Role::Grid);

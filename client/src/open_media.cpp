@@ -62,7 +62,9 @@ bool make_private_dir(const fs::path& p)
     std::error_code ec;
     fs::create_directories(p, ec);
     if (ec)
+    {
         return false;
+    }
 #if !defined(_WIN32)
     ::chmod(p.c_str(), 0700);
 #endif
@@ -84,8 +86,8 @@ std::size_t name_budget(const fs::path& dir)
 #if defined(_WIN32)
     constexpr std::size_t kMaxPath = 260;
     constexpr std::size_t kZoneSuffix = 16; // ":Zone.Identifier"
-    const std::size_t used = dir.native().size() + 1 /* separator */ + kZoneSuffix +
-                             1 /* terminating NUL */;
+    const std::size_t used =
+        dir.native().size() + 1 /* separator */ + kZoneSuffix + 1 /* terminating NUL */;
     return used >= kMaxPath ? 0 : std::min(kMaxNameBytes, kMaxPath - used);
 #else
     (void)dir;
@@ -98,23 +100,31 @@ std::size_t name_budget(const fs::path& dir)
 std::string fit_name(const std::string& name, std::size_t max_bytes)
 {
     if (name.size() <= max_bytes)
+    {
         return name;
+    }
     std::string ext;
     const auto dot = name.find_last_of('.');
     if (dot != std::string::npos && name.size() - dot <= 16 && name.size() - dot < max_bytes)
+    {
         ext = name.substr(dot);
+    }
     std::string stem = name.substr(0, max_bytes - ext.size());
     // Drop a sequence the cut split: find the last lead byte and keep it only if
     // all of its continuation bytes made it in.
     std::size_t lead = stem.size();
     while (lead > 0 && (static_cast<unsigned char>(stem[lead - 1]) & 0xC0) == 0x80)
+    {
         --lead;
+    }
     if (lead > 0)
     {
         const auto b = static_cast<unsigned char>(stem[lead - 1]);
         const std::size_t need = b >= 0xF0 ? 4 : b >= 0xE0 ? 3 : b >= 0xC0 ? 2 : 1;
         if (stem.size() - (lead - 1) < need)
+        {
             stem.resize(lead - 1);
+        }
     }
     return stem + ext;
 }
@@ -124,16 +134,22 @@ bool is_inside(const fs::path& root, const fs::path& candidate)
     std::error_code ec;
     const fs::path r = fs::weakly_canonical(root, ec);
     if (ec)
+    {
         return false;
+    }
     const fs::path c = fs::weakly_canonical(candidate, ec);
     if (ec)
+    {
         return false;
+    }
     auto ri = r.begin();
     auto ci = c.begin();
     for (; ri != r.end(); ++ri, ++ci)
     {
         if (ci == c.end() || *ri != *ci)
+        {
             return false;
+        }
     }
     return ci != c.end();
 }
@@ -145,25 +161,37 @@ std::optional<fs::path> write_open_media_file(const std::string& filename,
 {
     if (filename.empty() || filename == "." || filename == ".." ||
         filename.find_first_of("/\\:") != std::string::npos) // ':' = NTFS stream
+    {
         return std::nullopt;
+    }
     for (unsigned char c : filename)
     {
         if (c < 0x20 || c == 0x7F)
+        {
             return std::nullopt;
+        }
     }
 
     const fs::path root = open_media_dir();
     if (!make_private_dir(root))
+    {
         return std::nullopt;
+    }
     const fs::path dir = root / random_hex(8);
     if (!make_private_dir(dir))
+    {
         return std::nullopt;
+    }
     const std::size_t budget = name_budget(dir);
     if (budget == 0)
+    {
         return std::nullopt;
+    }
     const std::string name = fit_name(filename, budget);
     if (name.empty())
+    {
         return std::nullopt;
+    }
     fs::path file;
     try
     {
@@ -177,12 +205,16 @@ std::optional<fs::path> write_open_media_file(const std::string& filename,
 #if defined(_WIN32)
     std::ofstream f(file, std::ios::binary | std::ios::trunc);
     if (!f)
+    {
         return std::nullopt;
+    }
     f.write(reinterpret_cast<const char*>(bytes.data()),
             static_cast<std::streamsize>(bytes.size()));
     f.close();
     if (!f)
+    {
         return std::nullopt;
+    }
     // Mark as downloaded from the Internet so the shell applies its
     // untrusted-file protections (SmartScreen / Protected View).
     {
@@ -192,7 +224,9 @@ std::optional<fs::path> write_open_media_file(const std::string& filename,
 #else
     const int fd = ::open(file.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
     if (fd < 0)
+    {
         return std::nullopt;
+    }
     const std::uint8_t* p = bytes.data();
     std::size_t left = bytes.size();
     while (left > 0)
@@ -201,7 +235,9 @@ std::optional<fs::path> write_open_media_file(const std::string& filename,
         if (n < 0)
         {
             if (errno == EINTR)
+            {
                 continue; // interrupted before any byte moved: try again
+            }
             ::close(fd);
             return std::nullopt;
         }
@@ -209,7 +245,9 @@ std::optional<fs::path> write_open_media_file(const std::string& filename,
         left -= static_cast<std::size_t>(n);
     }
     if (::close(fd) != 0)
+    {
         return std::nullopt;
+    }
 #if defined(__APPLE__)
     // Mark as downloaded so Gatekeeper treats it like a browser download
     // (quarantine flags;hex timestamp;agent name). Best-effort.
@@ -229,7 +267,9 @@ void purge_open_media_dir()
     std::error_code ec;
     const fs::path root = open_media_dir();
     if (!fs::is_directory(root, ec))
+    {
         return;
+    }
     for (const auto& entry : fs::directory_iterator(root, ec))
     {
         std::error_code rec;
@@ -241,31 +281,34 @@ bool open_local_file(const fs::path& path)
 {
     std::error_code ec;
     if (!path.is_absolute() || !is_inside(open_media_dir(), path))
+    {
         return false;
+    }
     const auto st = fs::symlink_status(path, ec);
     if (ec || st.type() != fs::file_type::regular)
+    {
         return false;
+    }
 
     // Defence in depth: callers already vet the file, but never hand anything
     // that can run code to the OS launcher, whoever asks.
     {
         std::vector<std::uint8_t> head(8192);
         std::ifstream in(path, std::ios::binary);
-        in.read(reinterpret_cast<char*>(head.data()),
-                static_cast<std::streamsize>(head.size()));
+        in.read(reinterpret_cast<char*>(head.data()), static_cast<std::streamsize>(head.size()));
         head.resize(static_cast<std::size_t>(in.gcount()));
         // u8string, not string(): on Windows string() throws for names with
         // characters the ANSI code page can't hold, and the name is the sender's.
         const auto u8 = path.filename().u8string();
-        const auto chk = Client::check_media_file(
-            std::string(u8.begin(), u8.end()), "", head);
+        const auto chk = Client::check_media_file(std::string(u8.begin(), u8.end()), "", head);
         if (chk.verdict == Client::MediaTypeVerdict::Executable)
+        {
             return false;
+        }
     }
 
 #if defined(_WIN32)
-    HINSTANCE hi = ShellExecuteW(nullptr, L"open", path.c_str(), nullptr, nullptr,
-                                 SW_SHOWNORMAL);
+    HINSTANCE hi = ShellExecuteW(nullptr, L"open", path.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
     return reinterpret_cast<INT_PTR>(hi) > 32;
 #else
 #if defined(__APPLE__)

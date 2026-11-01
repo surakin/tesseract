@@ -1,6 +1,5 @@
 #include "PopoutRoomWidget.h"
 
-
 namespace tesseract::views
 {
 
@@ -21,7 +20,9 @@ PopoutRoomWidget::PopoutRoomWidget()
     confirm_dialog_ = add_child(std::move(confirm));
     room_view_->set_confirm_provider(
         [this](ConfirmDialog::Options opts, std::function<void()> on_confirm)
-        { confirm_dialog_->open(std::move(opts), std::move(on_confirm)); });
+        {
+            confirm_dialog_->open(std::move(opts), std::move(on_confirm));
+        });
     confirm_dialog_->on_layout_changed = [this]
     {
         if (on_layout_changed)
@@ -41,18 +42,22 @@ void PopoutRoomWidget::show_media_viewer(bool show)
 
 bool PopoutRoomWidget::any_modal_open_() const
 {
-    return (room_view_       && room_view_->is_overlay_open()) ||
-           (media_viewer_    && media_viewer_->is_open()) ||
-           (forward_picker_  && forward_picker_->is_open()) ||
-           (confirm_dialog_  && confirm_dialog_->is_open());
+    return (room_view_ && room_view_->is_overlay_open()) ||
+           (media_viewer_ && media_viewer_->is_open()) ||
+           (forward_picker_ && forward_picker_->is_open()) ||
+           (confirm_dialog_ && confirm_dialog_->is_open());
 }
 
 tk::Rect PopoutRoomWidget::compose_text_area_rect() const
 {
     if (any_modal_open_())
+    {
         return {};
+    }
     if (!room_view_ || !room_view_->visible_in_tree())
+    {
         return {};
+    }
     return room_view_->compose_text_area_rect();
 }
 
@@ -71,7 +76,9 @@ void PopoutRoomWidget::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
         if (auto* ta = room_view_->compose_bar()->text_area())
         {
             if (compose_text_area_rect().empty())
+            {
                 ta->set_visible(false);
+            }
         }
     }
 }

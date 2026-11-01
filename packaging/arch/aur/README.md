@@ -50,7 +50,28 @@ Both PKGBUILDs' `build()` pass extra `cmake` flags beyond `-DTESSERACT_UI=qt6`:
    sudo pacman -S devtools namcap
    ```
 
-## Publishing `tesseract-matrix` (stable)
+## Automated publishing (`tesseract-matrix`)
+
+The `aur` job in `.github/workflows/publish-release.yml` does steps 2, 3 and 6
+of the manual procedure below when a release is marked as released (or via
+*Run workflow* with the `aur` toggle). It sets `pkgver`, resets `pkgrel=1`,
+recomputes `sha256sums`, regenerates `.SRCINFO` and pushes to the AUR. It does
+not build or lint; run steps 4–5 by hand if the PKGBUILD itself changed.
+
+One-time setup:
+
+1. Do the manual publish below once, so the AUR repo exists.
+2. Generate a dedicated key: `ssh-keygen -t ed25519 -f aur_deploy -C tesseract-ci`.
+3. Add `aur_deploy.pub` under *My Account > SSH Public Key* on the AUR.
+4. Create a GitHub environment named `aur` (Settings > Environments) and store
+   the contents of `aur_deploy` as its `AUR_SSH_PRIVATE_KEY` secret, then
+   delete the local copy. Add required reviewers there if you want a manual
+   approval gate before each AUR push.
+
+The workflow edits only its checkout, so the PKGBUILD in this repo keeps its
+old `pkgver`; the AUR repo is the one that's current.
+
+## Publishing `tesseract-matrix` (stable), manually
 
 1. Cut the release in the main repo, same as any other release:
    ```bash

@@ -24,16 +24,20 @@ void MentionController::expire_member_cache_for_test()
     cached_members_at_ = {};
 }
 
-MentionController::MentionController(tk::TextArea* text_area,
-                                    tesseract::Client* client,
-                                    MentionPopup* popup, Hooks hooks)
-    : text_area_(text_area), client_(client), popup_(popup),
-      hooks_(std::move(hooks))
+MentionController::MentionController(tk::TextArea* text_area, tesseract::Client* client,
+                                     MentionPopup* popup, Hooks hooks)
+    : text_area_(text_area), client_(client), popup_(popup), hooks_(std::move(hooks))
 {
     if (popup_)
     {
-        popup_->on_accepted = [this](MentionCandidate c) { accept(c); };
-        popup_->on_dismissed = [this] { hide(); };
+        popup_->on_accepted = [this](MentionCandidate c)
+        {
+            accept(c);
+        };
+        popup_->on_dismissed = [this]
+        {
+            hide();
+        };
     }
 }
 
@@ -73,12 +77,10 @@ bool MentionController::on_text_changed(const std::string& text, int cursor)
     // still answers the lookup while its refresh runs.
     const bool same_room = cached_members_room_ == rid;
     const auto ttl = cached_members_.empty() ? kEmptyRosterTtl : kRosterTtl;
-    const bool stale = !same_room ||
-        std::chrono::steady_clock::now() - cached_members_at_ >= ttl;
+    const bool stale = !same_room || std::chrono::steady_clock::now() - cached_members_at_ >= ttl;
     if (stale)
     {
-        if (fetching_room_ != rid && client && hooks_.run_async &&
-            hooks_.post_to_ui)
+        if (fetching_room_ != rid && client && hooks_.run_async && hooks_.post_to_ui)
         {
             fetching_room_ = rid;
             auto* c = client;
@@ -103,21 +105,20 @@ bool MentionController::on_text_changed(const std::string& text, int cursor)
                     // members already known for this room rather than
                     // dropping them. The timestamp still moves, so the next
                     // retry waits out the full TTL.
-                    const bool keep_known = members.empty() &&
-                        cached_members_room_ == rid &&
-                        !cached_members_.empty();
+                    const bool keep_known =
+                        members.empty() && cached_members_room_ == rid && !cached_members_.empty();
                     if (!keep_known)
                     {
                         cached_members_ = std::move(members);
                         cached_members_room_ = rid;
                     }
                     cached_members_at_ = std::chrono::steady_clock::now();
-                    on_text_changed(text_area_->text(),
-                                    text_area_->cursor_byte_pos());
+                    on_text_changed(text_area_->text(), text_area_->cursor_byte_pos());
                 });
             auto hooks = hooks_;
+            auto owner = hooks_.client_owner ? hooks_.client_owner() : nullptr;
             hooks.run_async(
-                [c, rid, hooks, on_ready]() mutable
+                [c, owner, rid, hooks, on_ready]() mutable
                 {
                     auto members = c->get_room_members(rid);
                     hooks.post_to_ui(
@@ -244,9 +245,8 @@ void MentionController::accept(const MentionCandidate& c)
         {
             avatar = hooks_.resolve_avatar(c.avatar_url);
         }
-        text_area_->insert_mention(active_match_.start, active_match_.end,
-                                   c.user_id, c.display_name, c.is_room,
-                                   avatar);
+        text_area_->insert_mention(active_match_.start, active_match_.end, c.user_id,
+                                   c.display_name, c.is_room, avatar);
     }
     hide();
 }

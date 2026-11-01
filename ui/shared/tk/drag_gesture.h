@@ -35,11 +35,15 @@ public:
     bool crossed_threshold(Point local)
     {
         if (!armed_)
+        {
             return false;
+        }
         float dx = local.x - down_.x;
         float dy = local.y - down_.y;
         if (dx * dx + dy * dy < kDragThresholdPx * kDragThresholdPx)
+        {
             return false;
+        }
         armed_ = false;
         return true;
     }

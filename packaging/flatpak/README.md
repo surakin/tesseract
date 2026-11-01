@@ -249,7 +249,7 @@ network; the CI check and a release build both depend on it):
    so the manifest just passes `-DTESSERACT_BUILD_TESTS=OFF` (a CMake option
    added specifically for this) and skips the problem entirely.
 3. `webrtc-sys-build`'s `build.rs` (pulled in via `livekit`, pinned
-   `webrtc-sys = "=0.3.39"` in `sdk/Cargo.toml`) downloads a prebuilt
+   `webrtc-sys = "=0.3.51"` in `sdk/Cargo.toml`) downloads a prebuilt
    libwebrtc archive over HTTP during `cargo build` — not something
    `flatpak-cargo-generator.py` can vendor, since it isn't a crates.io
    dependency. The manifest adds that exact archive as a pinned, checksummed
@@ -258,6 +258,13 @@ network; the CI check and a release build both depend on it):
    LK_CUSTOM_WEBRTC=...)`, guarded on the env var being set) forwards it into
    Cargo's build-script environment, alongside the other
    `corrosion_set_env_vars` calls there.
+4. webrtc-sys compiles its C++ with clang against libwebrtc's hermetic libc++
+   and its build script panics on a clang older than 21, so the manifest
+   enables the `org.freedesktop.Sdk.Extension.llvm21` SDK extension
+   (`sdk-extensions:`) and puts `/usr/lib/sdk/llvm21/bin` on the
+   `tesseract` module's `PATH`. The extension must be installed next to the
+   runtime (the CI workflows do this) and its branch must match the one
+   `org.kde.Sdk` declares for `org.freedesktop.Sdk.Extension.*` (25.08).
 
 The matrix-rust-sdk dependency is a git pin (`surakin/matrix-rust-sdk`, a
 fork), not a crates.io release. `flatpak-cargo-generator.py` handles this: it

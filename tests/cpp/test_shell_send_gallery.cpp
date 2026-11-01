@@ -35,12 +35,17 @@ namespace
 
 struct GalleryShell : tesseract::test::TestShellBase
 {
-    void apply_thread_messages_(const std::string&,
-                                std::vector<tesseract::views::MessageRowData>,
-                                bool) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
     void apply_thread_message_insert_(const std::string&, std::size_t,
-                                      tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&, std::size_t) override {}
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
     using ShellBase::client_;
 };
 
@@ -49,9 +54,9 @@ std::vector<tesseract::views::ComposeBar::PendingAttachment> two_files()
     std::vector<tesseract::views::ComposeBar::PendingAttachment> v(2);
     for (auto& pa : v)
     {
-        pa.kind     = tesseract::views::ComposeBar::PendingAttachment::Kind::File;
-        pa.bytes    = {1, 2, 3};
-        pa.mime     = "application/octet-stream";
+        pa.kind = tesseract::views::ComposeBar::PendingAttachment::Kind::File;
+        pa.bytes = {1, 2, 3};
+        pa.mime = "application/octet-stream";
         pa.filename = "f.bin";
     }
     return v;
@@ -59,8 +64,7 @@ std::vector<tesseract::views::ComposeBar::PendingAttachment> two_files()
 
 } // namespace
 
-TEST_CASE("on_send_gallery uses the pane's own client, not the shell's",
-          "[shell][gallery]")
+TEST_CASE("on_send_gallery uses the pane's own client, not the shell's", "[shell][gallery]")
 {
     GalleryShell s;
     tesseract::Client shell_client;
@@ -82,8 +86,7 @@ TEST_CASE("on_send_gallery uses the pane's own client, not the shell's",
     CHECK(view->compose_bar()->current_text() == "caption draft");
 }
 
-TEST_CASE("on_send_gallery clears the composer when the pane has a client",
-          "[shell][gallery]")
+TEST_CASE("on_send_gallery clears the composer when the pane has a client", "[shell][gallery]")
 {
     GalleryShell s;
     tesseract::Client shell_client;

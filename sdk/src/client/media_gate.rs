@@ -256,7 +256,11 @@ impl PriorityGate {
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(RECHECK_INTERVAL).await;
-                let _job = crate::client::activity::begin("media-gate-recheck", "Media", crate::client::activity::JobKind::Periodic);
+                let _job = crate::client::activity::begin(
+                    "media-gate-recheck",
+                    "Media",
+                    crate::client::activity::JobKind::Periodic,
+                );
                 let mut inner = gate.inner.lock();
                 inner.dispatch(Instant::now());
                 if inner.queue.is_empty() {
@@ -294,13 +298,6 @@ impl PriorityGate {
     /// `media_gate_registry`'s idle reaper (see `pending_len`).
     pub(super) fn active_len(&self) -> usize {
         self.inner.lock().active.len()
-    }
-
-    /// Number of held slots past the stall deadline (test/diagnostics).
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub(super) fn stale_len(&self) -> usize {
-        let inner = self.inner.lock();
-        inner.stale(Instant::now())
     }
 
     /// Current adaptive concurrency limit (test/diagnostics).
@@ -346,7 +343,7 @@ impl Drop for GatePermit {
 #[cfg(test)]
 mod tests {
     use super::super::media_queue::{PRIO_NORMAL, PRIO_VISIBLE};
-    use super::{CEILING_STALL_DEADLINE, PriorityGate, RECHECK_INTERVAL, STALL_DEADLINE};
+    use super::{PriorityGate, CEILING_STALL_DEADLINE, RECHECK_INTERVAL, STALL_DEADLINE};
     use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
     use std::sync::Arc;
     use std::time::Duration;
@@ -576,10 +573,7 @@ mod tests {
         // p0's own admission — so p0 (the oldest slot) crosses
         // CEILING_STALL_DEADLINE this much further out. Advance to just
         // before that and confirm the ceiling still blocks.
-        tokio::time::advance(
-            CEILING_STALL_DEADLINE - STALL_DEADLINE - RECHECK_INTERVAL,
-        )
-        .await;
+        tokio::time::advance(CEILING_STALL_DEADLINE - STALL_DEADLINE - RECHECK_INTERVAL).await;
         tokio::task::yield_now().await;
         assert_eq!(
             gate.pending_len(),

@@ -10,12 +10,12 @@ namespace tesseract::views
 namespace
 {
 
-constexpr float kQRGrantCardWidth   = 360.0f;
+constexpr float kQRGrantCardWidth = 360.0f;
 constexpr float kQRGrantCardPadding = 24.0f;
 constexpr float kQRGrantCardSpacing = 12.0f;
-constexpr float kQrSize      = 240.0f;
-constexpr float kButtonH     = 36.0f;
-constexpr float kQRGrantFieldH      = 36.0f;
+constexpr float kQrSize = 240.0f;
+constexpr float kButtonH = 36.0f;
+constexpr float kQRGrantFieldH = 36.0f;
 
 } // namespace
 
@@ -45,57 +45,89 @@ void QRGrantView::rebuild_tree_()
     {
         check_input = tk::create_widget<tk::TextField>(this, kQRGrantFieldH);
         check_input->set_on_changed(
-            [this](const std::string& text) { check_code_text_ = text; });
+            [this](const std::string& text)
+            {
+                check_code_text_ = text;
+            });
         check_input->set_visible(false);
     }
 
-    auto confirm = tk::create_widget<tk::Button>(
-        this, tk::tr("Confirm"), std::function<void()>{}, tk::Button::Variant::Primary);
+    auto confirm = tk::create_widget<tk::Button>(this, tk::tr("Confirm"), std::function<void()>{},
+                                                 tk::Button::Variant::Primary);
     confirm->set_min_size({0.0f, kButtonH});
-    confirm->set_on_click([this] {
-        int v = -1;
-        try {
-            v = std::stoi(check_code_text_);
-        } catch (...) {}
-        // A bad or empty code keeps Confirm enabled so it can be corrected.
-        if (!client_ || v < 0 || v > 255)
-            return;
-        client_->submit_qr_check_code(static_cast<uint8_t>(v));
-        // Prevent double-submit while the worker is still in await_qr_auth().
-        confirm_btn_->set_enabled(false);
-    });
+    confirm->set_on_click(
+        [this]
+        {
+            int v = -1;
+            try
+            {
+                v = std::stoi(check_code_text_);
+            }
+            catch (...)
+            {
+            }
+            // A bad or empty code keeps Confirm enabled so it can be corrected.
+            if (!client_ || v < 0 || v > 255)
+            {
+                return;
+            }
+            client_->submit_qr_check_code(static_cast<uint8_t>(v));
+            // Prevent double-submit while the worker is still in await_qr_auth().
+            confirm_btn_->set_enabled(false);
+        });
     confirm->set_visible(false);
 
-    auto cancel = tk::create_widget<tk::Button>(
-        this, tk::tr("Cancel"), std::function<void()>{}, tk::Button::Variant::Subtle);
+    auto cancel = tk::create_widget<tk::Button>(this, tk::tr("Cancel"), std::function<void()>{},
+                                                tk::Button::Variant::Subtle);
     cancel->set_min_size({0.0f, kButtonH});
-    cancel->set_on_click([this] {
-        cancelled_.store(true);
-        if (client_) client_->cancel_qr_grant();
-        if (on_cancel_) on_cancel_();
-    });
+    cancel->set_on_click(
+        [this]
+        {
+            cancelled_.store(true);
+            if (client_)
+            {
+                client_->cancel_qr_grant();
+            }
+            if (on_cancel_)
+            {
+                on_cancel_();
+            }
+        });
     cancel->set_visible(false);
 
-    auto close = tk::create_widget<tk::Button>(
-        this, tk::tr("Close"), std::function<void()>{}, tk::Button::Variant::Primary);
+    auto close = tk::create_widget<tk::Button>(this, tk::tr("Close"), std::function<void()>{},
+                                               tk::Button::Variant::Primary);
     close->set_min_size({0.0f, kButtonH});
-    close->set_on_click([this] { if (on_done_) on_done_(); });
+    close->set_on_click(
+        [this]
+        {
+            if (on_done_)
+            {
+                on_done_();
+            }
+        });
     close->set_visible(false);
 
-    auto retry = tk::create_widget<tk::Button>(
-        this, tk::tr("Try again"), std::function<void()>{}, tk::Button::Variant::Primary);
+    auto retry = tk::create_widget<tk::Button>(this, tk::tr("Try again"), std::function<void()>{},
+                                               tk::Button::Variant::Primary);
     retry->set_min_size({0.0f, kButtonH});
-    retry->set_on_click([this] { start(); });
+    retry->set_on_click(
+        [this]
+        {
+            start();
+        });
     retry->set_visible(false);
 
-    status_lbl_        = card->add_child(std::move(status));
-    qr_view_           = card->add_child(std::move(qr));
+    status_lbl_ = card->add_child(std::move(status));
+    qr_view_ = card->add_child(std::move(qr));
     if (check_input)
+    {
         check_input_field_ = card->add_child(std::move(check_input));
-    confirm_btn_       = card->add_child(std::move(confirm));
-    cancel_btn_        = card->add_child(std::move(cancel));
-    close_btn_         = card->add_child(std::move(close));
-    retry_btn_         = card->add_child(std::move(retry));
+    }
+    confirm_btn_ = card->add_child(std::move(confirm));
+    cancel_btn_ = card->add_child(std::move(cancel));
+    close_btn_ = card->add_child(std::move(close));
+    retry_btn_ = card->add_child(std::move(retry));
 
     card_ = add_child(std::move(card));
 }
@@ -107,12 +139,17 @@ void QRGrantView::rebuild_tree_()
 void QRGrantView::set_state_(State s)
 {
     state_ = s;
-    if (!card_) return;
+    if (!card_)
+    {
+        return;
+    }
 
     // Hide everything, then show per state.
     qr_view_->set_visible(false);
     if (check_input_field_)
+    {
         check_input_field_->set_visible(false);
+    }
     confirm_btn_->set_visible(false);
     cancel_btn_->set_visible(false);
     close_btn_->set_visible(false);
@@ -136,7 +173,9 @@ void QRGrantView::set_state_(State s)
         status_lbl_->set_text(
             tk::tr("Enter the numeric code shown on the device you are linking:"));
         if (check_input_field_)
+        {
             check_input_field_->set_visible(true);
+        }
         confirm_btn_->set_enabled(true);
         confirm_btn_->set_visible(true);
         cancel_btn_->set_label(tk::tr("Cancel"));
@@ -144,8 +183,7 @@ void QRGrantView::set_state_(State s)
         break;
 
     case State::WaitingForAuth:
-        status_lbl_->set_text(
-            tk::tr("Approve the sign-in in your browser\xe2\x80\xa6"));
+        status_lbl_->set_text(tk::tr("Approve the sign-in in your browser\xe2\x80\xa6"));
         cancel_btn_->set_label(tk::tr("Cancel"));
         cancel_btn_->set_visible(true);
         break;
@@ -179,27 +217,43 @@ void QRGrantView::set_client(tesseract::Client* c)
 
 void QRGrantView::start()
 {
-    if (!client_) return;
+    if (!client_)
+    {
+        return;
+    }
     join_worker_();
     alive_ = std::make_shared<bool>(true);
     cancelled_.store(false);
     qr_pixels_.clear();
     qr_image_.reset();
     set_state_(State::Loading);
-    if (relayout_) relayout_();
+    if (relayout_)
+    {
+        relayout_();
+    }
 
     auto* c = client_;
-    auto run = [this, c] {
+    auto run = [this, c]
+    {
         // Step 1: generate QR bitmap
         auto bitmap = c->begin_qr_grant();
-        if (cancelled_.load()) return;
-        if (!bitmap) {
+        if (cancelled_.load())
+        {
+            return;
+        }
+        if (!bitmap)
+        {
             post_to_ui_(
-                [alive = std::weak_ptr<bool>(alive_), this, msg = bitmap.message] {
-                    if (auto p = alive.lock()) {
+                [alive = std::weak_ptr<bool>(alive_), this, msg = bitmap.message]
+                {
+                    if (auto p = alive.lock())
+                    {
                         error_msg_ = msg;
                         set_state_(State::Error);
-                        if (relayout_) relayout_();
+                        if (relayout_)
+                        {
+                            relayout_();
+                        }
                     }
                 });
             return;
@@ -207,115 +261,178 @@ void QRGrantView::start()
 
         // Step 2: show QR
         post_to_ui_(
-            [alive = std::weak_ptr<bool>(alive_), this,
-             pixels = bitmap.pixels, side = bitmap.side] {
-                if (auto p = alive.lock()) {
-                    qr_pixels_    = pixels;
-                    qr_side_      = side;
-                    qr_image_.reset();   // re-create in next paint
+            [alive = std::weak_ptr<bool>(alive_), this, pixels = bitmap.pixels, side = bitmap.side]
+            {
+                if (auto p = alive.lock())
+                {
+                    qr_pixels_ = pixels;
+                    qr_side_ = side;
+                    qr_image_.reset(); // re-create in next paint
                     last_factory_ = nullptr;
                     set_state_(State::ShowQR);
-                    if (relayout_) relayout_();
+                    if (relayout_)
+                    {
+                        relayout_();
+                    }
                 }
             });
 
         // Step 3: wait for phone scan
         auto scanned = c->await_qr_scanned();
-        if (cancelled_.load()) return;
-        if (!scanned) {
+        if (cancelled_.load())
+        {
+            return;
+        }
+        if (!scanned)
+        {
             post_to_ui_(
-                [alive = std::weak_ptr<bool>(alive_), this, msg = scanned.message] {
-                    if (auto p = alive.lock()) {
+                [alive = std::weak_ptr<bool>(alive_), this, msg = scanned.message]
+                {
+                    if (auto p = alive.lock())
+                    {
                         error_msg_ = msg;
                         set_state_(State::Error);
-                        if (relayout_) relayout_();
+                        if (relayout_)
+                        {
+                            relayout_();
+                        }
                     }
                 });
             return;
         }
         post_to_ui_(
-            [alive = std::weak_ptr<bool>(alive_), this] {
-                if (auto p = alive.lock()) {
+            [alive = std::weak_ptr<bool>(alive_), this]
+            {
+                if (auto p = alive.lock())
+                {
                     set_state_(State::CheckCode);
-                    if (relayout_) relayout_();
+                    if (relayout_)
+                    {
+                        relayout_();
+                    }
                 }
             });
 
         // Step 4: blocks until check code is submitted AND Rust reaches WaitingForAuth
         auto auth = c->await_qr_auth();
-        if (cancelled_.load()) return;
-        if (!auth) {
+        if (cancelled_.load())
+        {
+            return;
+        }
+        if (!auth)
+        {
             post_to_ui_(
-                [alive = std::weak_ptr<bool>(alive_), this, msg = auth.message] {
-                    if (auto p = alive.lock()) {
+                [alive = std::weak_ptr<bool>(alive_), this, msg = auth.message]
+                {
+                    if (auto p = alive.lock())
+                    {
                         error_msg_ = msg;
                         set_state_(State::Error);
-                        if (relayout_) relayout_();
+                        if (relayout_)
+                        {
+                            relayout_();
+                        }
                     }
                 });
             return;
         }
         post_to_ui_(
-            [alive = std::weak_ptr<bool>(alive_), this, uri = auth.verification_uri] {
-                if (auto p = alive.lock()) {
-                    if (open_browser_) open_browser_(uri);
+            [alive = std::weak_ptr<bool>(alive_), this, uri = auth.verification_uri]
+            {
+                if (auto p = alive.lock())
+                {
+                    if (open_browser_)
+                    {
+                        open_browser_(uri);
+                    }
                     set_state_(State::WaitingForAuth);
-                    if (relayout_) relayout_();
+                    if (relayout_)
+                    {
+                        relayout_();
+                    }
                 }
             });
 
         // Step 5: wait for completion
         auto complete = c->await_qr_complete();
-        if (cancelled_.load()) return;
-        if (!complete) {
+        if (cancelled_.load())
+        {
+            return;
+        }
+        if (!complete)
+        {
             post_to_ui_(
-                [alive = std::weak_ptr<bool>(alive_), this, msg = complete.message] {
-                    if (auto p = alive.lock()) {
+                [alive = std::weak_ptr<bool>(alive_), this, msg = complete.message]
+                {
+                    if (auto p = alive.lock())
+                    {
                         error_msg_ = msg;
                         set_state_(State::Error);
-                        if (relayout_) relayout_();
+                        if (relayout_)
+                        {
+                            relayout_();
+                        }
                     }
                 });
             return;
         }
         post_to_ui_(
-            [alive = std::weak_ptr<bool>(alive_), this] {
-                if (auto p = alive.lock()) {
+            [alive = std::weak_ptr<bool>(alive_), this]
+            {
+                if (auto p = alive.lock())
+                {
                     set_state_(State::Done);
-                    if (relayout_) relayout_();
+                    if (relayout_)
+                    {
+                        relayout_();
+                    }
                 }
             });
     };
 
     if (run_async_)
+    {
         run_async_(std::move(run));
+    }
     else
+    {
         worker_ = std::thread(std::move(run));
+    }
 }
 
 void QRGrantView::shutdown()
 {
     cancelled_.store(true);
-    if (client_) client_->cancel_qr_grant();
+    if (client_)
+    {
+        client_->cancel_qr_grant();
+    }
     join_worker_();
 }
 
 void QRGrantView::join_worker_()
 {
-    if (worker_.joinable()) worker_.join();
+    if (worker_.joinable())
+    {
+        worker_.join();
+    }
 }
 
 void QRGrantView::on_theme_changed(const tk::Theme& t)
 {
     if (check_input_field_)
+    {
         check_input_field_->set_text_color(t.palette.text_primary);
+    }
 }
 
 void QRGrantView::set_visible(bool v)
 {
     tk::Widget::set_visible(v);
     if (!v && check_input_field_)
+    {
         check_input_field_->set_visible(false);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -330,30 +447,37 @@ tk::Size QRGrantView::measure(tk::LayoutCtx&, tk::Size constraints)
 void QRGrantView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 {
     bounds_ = bounds;
-    if (!card_) return;
+    if (!card_)
+    {
+        return;
+    }
 
     tk::Size card_size = card_->measure(ctx, {kQRGrantCardWidth, bounds.h});
-    float    card_w    = std::min(kQRGrantCardWidth, bounds.w);
-    float    card_h    = std::min(card_size.h, bounds.h);
-    float    card_x    = bounds.x + (bounds.w - card_w) * 0.5f;
-    float    card_y    = bounds.y + (bounds.h - card_h) * 0.5f;
+    float card_w = std::min(kQRGrantCardWidth, bounds.w);
+    float card_h = std::min(card_size.h, bounds.h);
+    float card_x = bounds.x + (bounds.w - card_w) * 0.5f;
+    float card_y = bounds.y + (bounds.h - card_h) * 0.5f;
     card_->arrange(ctx, {card_x, card_y, card_w, card_h});
 }
 
 void QRGrantView::paint_before_children(tk::PaintCtx& ctx)
 {
     ctx.canvas.fill_rect(bounds_, ctx.theme.palette.bg);
-    if (!card_) return;
+    if (!card_)
+    {
+        return;
+    }
 
     // Lazy QR image creation — factory is not available until paint.
-    if (!qr_pixels_.empty() &&
-        (qr_image_ == nullptr || last_factory_ != &ctx.factory)) {
+    if (!qr_pixels_.empty() && (qr_image_ == nullptr || last_factory_ != &ctx.factory))
+    {
         last_factory_ = &ctx.factory;
-        qr_image_ = ctx.factory.create_image_rgba(
-            qr_pixels_.data(),
-            static_cast<int>(qr_side_),
-            static_cast<int>(qr_side_));
-        if (qr_view_) qr_view_->set_image(qr_image_.get());
+        qr_image_ = ctx.factory.create_image_rgba(qr_pixels_.data(), static_cast<int>(qr_side_),
+                                                  static_cast<int>(qr_side_));
+        if (qr_view_)
+        {
+            qr_view_->set_image(qr_image_.get());
+        }
     }
 
     tk::Rect cb = card_->bounds();
@@ -361,9 +485,11 @@ void QRGrantView::paint_before_children(tk::PaintCtx& ctx)
     ctx.canvas.stroke_rounded_rect(cb, 10.0f, ctx.theme.palette.border, 1.0f);
 
     if (status_lbl_)
+    {
         status_lbl_->set_colour(state_ == State::Error
-                                     ? std::optional<tk::Color>(ctx.theme.palette.destructive)
-                                     : std::nullopt);
+                                    ? std::optional<tk::Color>(ctx.theme.palette.destructive)
+                                    : std::nullopt);
+    }
 }
 
 } // namespace tesseract::views

@@ -82,8 +82,7 @@ TEST_CASE("MediaViewerOverlay video: is_open starts false", "[tk][videoviewer]")
     REQUIRE_FALSE(overlay.is_loading());
 }
 
-TEST_CASE("MediaViewerOverlay video: open sets is_open and is_loading true",
-          "[tk][videoviewer]")
+TEST_CASE("MediaViewerOverlay video: open sets is_open and is_loading true", "[tk][videoviewer]")
 {
     MediaViewerOverlay overlay;
     open_video(overlay, "mxc://example.org/v", "", "video/mp4", 30000u, 1280, 720);
@@ -91,23 +90,20 @@ TEST_CASE("MediaViewerOverlay video: open sets is_open and is_loading true",
     REQUIRE(overlay.is_loading());
 }
 
-TEST_CASE("MediaViewerOverlay video: on_wheel returns true when open",
-          "[tk][videoviewer]")
+TEST_CASE("MediaViewerOverlay video: on_wheel returns true when open", "[tk][videoviewer]")
 {
     MediaViewerOverlay overlay;
     open_video(overlay, "mxc://example.org/v", "", "video/mp4", 0u, 640, 360);
     CHECK(overlay.on_wheel({300.0f, 200.0f}, 0.0f, -3.0f));
 }
 
-TEST_CASE("MediaViewerOverlay video: on_wheel returns false when closed",
-          "[tk][videoviewer]")
+TEST_CASE("MediaViewerOverlay video: on_wheel returns false when closed", "[tk][videoviewer]")
 {
     MediaViewerOverlay overlay;
     CHECK_FALSE(overlay.on_wheel({300.0f, 200.0f}, 0.0f, -3.0f));
 }
 
-TEST_CASE("MediaViewerOverlay video: close fires on_close and resets is_open",
-          "[tk][videoviewer]")
+TEST_CASE("MediaViewerOverlay video: close fires on_close and resets is_open", "[tk][videoviewer]")
 {
     MediaViewerOverlay overlay;
     open_video(overlay, "mxc://example.org/v", "", "video/mp4", 0u, 640, 360);
@@ -140,8 +136,7 @@ TEST_CASE("MediaViewerOverlay video: load_bytes transitions out of loading state
     CHECK(overlay.is_open()); // overlay stays open
 }
 
-TEST_CASE("MediaViewerOverlay video: paint does not crash when is_loading",
-          "[tk][videoviewer]")
+TEST_CASE("MediaViewerOverlay video: paint does not crash when is_loading", "[tk][videoviewer]")
 {
     TkVideoViewerStage st;
     MediaViewerOverlay overlay;
@@ -151,9 +146,8 @@ TEST_CASE("MediaViewerOverlay video: paint does not crash when is_loading",
 
 // ── Pointer interactions ──────────────────────────────────────────────────
 
-TEST_CASE(
-    "MediaViewerOverlay video: pointer-down outside fires on_close via pointer-up",
-    "[tk][videoviewer]")
+TEST_CASE("MediaViewerOverlay video: pointer-down outside fires on_close via pointer-up",
+          "[tk][videoviewer]")
 {
     TkVideoViewerStage st;
     MediaViewerOverlay overlay;
@@ -172,9 +166,8 @@ TEST_CASE(
     CHECK(closed);
 }
 
-TEST_CASE(
-    "MediaViewerOverlay video: pointer-down on play button does not fire on_close",
-    "[tk][videoviewer]")
+TEST_CASE("MediaViewerOverlay video: pointer-down on play button does not fire on_close",
+          "[tk][videoviewer]")
 {
     TkVideoViewerStage st;
     MediaViewerOverlay overlay;
@@ -235,7 +228,10 @@ TEST_CASE("MediaViewerOverlay video: a hidden controls bar does not swallow pres
     st.run(overlay, {0, 0, 600, 400});
 
     bool closed = false;
-    overlay.on_close = [&] { closed = true; };
+    overlay.on_close = [&]
+    {
+        closed = true;
+    };
     // Bottom strip below the 600x338 video, where the (hidden) bar would sit.
     tk::Point p{300.0f, 392.0f};
     tk::Widget* claimed = overlay.dispatch_pointer_down(p);
@@ -262,7 +258,10 @@ TEST_CASE("MediaViewerOverlay video: full-screen button toggles on_request_fulls
     st.run(overlay, {0, 0, 600, 400});
 
     std::vector<bool> states;
-    overlay.on_request_fullscreen = [&](bool on) { states.push_back(on); };
+    overlay.on_request_fullscreen = [&](bool on)
+    {
+        states.push_back(on);
+    };
 
     // Video chrome has no copy button: close={556,8}, save={516,8},
     // fullscreen={476,8,36,36}, centre (494, 26).
@@ -335,9 +334,8 @@ TEST_CASE("MediaViewerOverlay video: full-screen fills the frame and floats cont
 
 // ── MessageListView video rows ────────────────────────────────────────────
 
-TEST_CASE(
-    "MessageListView Kind::Video rows paint with area taller than text rows",
-    "[tk][videoviewer][messagelist]")
+TEST_CASE("MessageListView Kind::Video rows paint with area taller than text rows",
+          "[tk][videoviewer][messagelist]")
 {
     TkVideoViewerStage st;
     MessageListView view;
@@ -406,7 +404,7 @@ TEST_CASE("MessageListView on_video_clicked fires when video row is clicked",
     vid.kind = MessageRowData::Kind::Video;
     vid.event_id = "$vid3";
     vid.sender_name = "Dave";
-    vid.source    = tesseract::MediaSource::plain("mxc://example.org/video.mp4");
+    vid.source = tesseract::MediaSource::plain("mxc://example.org/video.mp4");
     vid.media_w = 320;
     vid.media_h = 180;
     vid.duration_ms = 7500u;

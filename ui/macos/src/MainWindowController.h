@@ -8,10 +8,10 @@
 #include <string>
 #include <vector>
 
-/// Top-level AppKit window controller. Owns the `tesseract::Client`,
-/// implements `IEventHandler`, and hosts the shared widget tree via two
-/// `tk::macos::Surface` views (sidebar room list, message list) plus
-/// native AppKit chrome (room header, compose bar).
+/// Top-level AppKit window controller. A thin forwarder: it owns the
+/// `macos::MainWindow` (a `ShellBase`), which holds the client, the event
+/// handler and the shared widget tree, and passes AppKit delegate and menu
+/// callbacks to it.
 @interface MainWindowController : NSWindowController
 
 /// Set by AppDelegate right after -init when launched via the OS
@@ -19,7 +19,7 @@
 /// window was therefore not shown. -beginLogin's async restore completion
 /// reads this: stays hidden on a successful silent restore, force-shows
 /// the window (and clears this back to NO) if there's no saved session.
-@property (nonatomic) BOOL startedHidden;
+@property(nonatomic) BOOL startedHidden;
 
 /// Kick off the sign-in flow. Called from AppDelegate after the window
 /// is on screen (or, when startedHidden, without showing it).
@@ -39,7 +39,7 @@
 - (void)showEmojiPicker:(id)sender;
 
 /// Application-menu-bar actions. Each mirrors a keyboard shortcut already
-/// handled by MainWindowController's local NSEvent monitor; the menu items
+/// handled by macos::MainWindow's local NSEvent monitor; the menu items
 /// exist for discoverability and mouse access. AppDelegate forwards the
 /// responder-chain selectors here (it is always reachable via NSApp.delegate,
 /// even while a pop-out room window is key).
@@ -66,8 +66,7 @@
 /// Held until the main content is showing — see
 /// ShellBase::dispatch_launch_action_. `roomId` is used only for
 /// LaunchAction::Room.
-- (void)dispatchLaunchAction:(tesseract::LaunchAction)action
-                      roomId:(NSString*)roomId;
+- (void)dispatchLaunchAction:(tesseract::LaunchAction)action roomId:(NSString*)roomId;
 
 /// Navigate to the highest-priority unread room across all signed-in accounts.
 /// No-op when there is nothing unread.

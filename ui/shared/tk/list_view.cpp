@@ -30,7 +30,10 @@ void ListView::invalidate_data(bool container_may_resize)
 {
     heights_dirty_ = true;
     has_dirty_range_ = false;
-    if (container_may_resize && host()) host()->mark_needs_relayout();
+    if (container_may_resize && host())
+    {
+        host()->mark_needs_relayout();
+    }
 }
 
 void ListView::mark_dirty_range_(std::size_t lo, std::size_t hi)
@@ -279,8 +282,7 @@ void ListView::scroll_to_bottom()
 
 void ListView::scroll_to_index(int idx, bool align_top)
 {
-    if (!adapter_ || idx < 0 ||
-        static_cast<std::size_t>(idx) >= adapter_->count())
+    if (!adapter_ || idx < 0 || static_cast<std::size_t>(idx) >= adapter_->count())
     {
         return;
     }
@@ -318,16 +320,24 @@ void ListView::scroll_to_index(int idx, bool align_top)
 void ListView::reveal_index(int idx)
 {
     if (!adapter_ || idx < 0 || static_cast<std::size_t>(idx) + 1 >= row_offsets_.size())
+    {
         return;
+    }
     const float top = row_offsets_[static_cast<std::size_t>(idx)];
     const float bot = row_offsets_[static_cast<std::size_t>(idx) + 1];
     float target = scroll_y_;
     if (top < scroll_y_)
+    {
         target = top;
+    }
     else if (bot > scroll_y_ + bounds_.h)
+    {
         target = bot - bounds_.h;
+    }
     if (target != scroll_y_)
+    {
         apply_scroll_delta(target - scroll_y_);
+    }
     else
     {
         // Already visible (e.g. the cursor reached the oldest loaded row
@@ -357,7 +367,9 @@ float ListView::content_height() const
 float ListView::content_top_pad_() const
 {
     if (!anchor_content_bottom_)
+    {
         return 0.0f;
+    }
     const float ch = content_height();
     return ch < bounds_.h ? (bounds_.h - ch) : 0.0f;
 }
@@ -365,9 +377,7 @@ float ListView::content_top_pad_() const
 std::size_t ListView::first_visible_row_() const
 {
     auto it = std::upper_bound(row_offsets_.begin(), row_offsets_.end(), scroll_y_);
-    return it == row_offsets_.begin()
-               ? 0
-               : static_cast<std::size_t>(it - row_offsets_.begin() - 1);
+    return it == row_offsets_.begin() ? 0 : static_cast<std::size_t>(it - row_offsets_.begin() - 1);
 }
 
 std::pair<int, int> ListView::visible_range() const
@@ -407,8 +417,7 @@ int ListView::index_at(Point local) const
     {
         return kInvalidIndex;
     }
-    auto it =
-        std::upper_bound(row_offsets_.begin(), row_offsets_.end(), content_y);
+    auto it = std::upper_bound(row_offsets_.begin(), row_offsets_.end(), content_y);
     int idx = static_cast<int>(it - row_offsets_.begin()) - 1;
     if (idx < 0)
     {
@@ -437,25 +446,22 @@ void ListView::arrange(LayoutCtx& ctx, Rect bounds)
         return;
     }
     const bool width_changed = measured_width_ != bounds.w;
-    const bool height_changed =
-        measured_height_ != 0.0f && measured_height_ != bounds.h;
+    const bool height_changed = measured_height_ != 0.0f && measured_height_ != bounds.h;
 
     // Bottom-anchored lists (chat timelines) pin content to the viewport's
     // bottom edge across a resize: shrinking the window must keep the newest
     // message visible, not push it off the bottom. A *height-only* change
     // leaves row geometry untouched, so a raw pixel shift is exact — no
     // re-measure needed. clamp_scroll() below handles hitting the top.
-    if (anchor_content_bottom_ && height_changed && !width_changed &&
-        !heights_dirty_ && !anchor_.pending && !stick_to_bottom_ &&
-        !row_offsets_.empty())
+    if (anchor_content_bottom_ && height_changed && !width_changed && !heights_dirty_ &&
+        !anchor_.pending && !stick_to_bottom_ && !row_offsets_.empty())
     {
         scroll_y_ += measured_height_ - bounds.h;
     }
 
     if (heights_dirty_ || width_changed)
     {
-        if (width_changed && !anchor_.pending && !stick_to_bottom_ &&
-            !row_offsets_.empty())
+        if (width_changed && !anchor_.pending && !stick_to_bottom_ && !row_offsets_.empty())
         {
             // A width change re-wraps every row without inserting/removing
             // any — anchor a row through the rebuild so scroll_y_ isn't left
@@ -464,9 +470,13 @@ void ListView::arrange(LayoutCtx& ctx, Rect bounds)
             // bottom (keeping the newest message in view); other lists pin the
             // hovered / topmost-visible row (see capture_anchor_()).
             if (anchor_content_bottom_)
+            {
                 capture_anchor_bottom_();
+            }
             else
+            {
                 capture_anchor_();
+            }
         }
         // Snapshot the last-measured row count (from row_heights_, which
         // rebuild_heights will overwrite) rather than querying the adapter,
@@ -528,9 +538,8 @@ void ListView::arrange(LayoutCtx& ctx, Rect bounds)
         // viewport was never filled would keep re-firing on every unrelated
         // app-wide relayout after it closed.
         const std::size_t n = adapter_ ? adapter_->count() : 0;
-        const bool needs_fill = autofill_only_when_empty_
-                                    ? (n == 0)
-                                    : (n > 0 && content_height() < bounds_.h);
+        const bool needs_fill =
+            autofill_only_when_empty_ ? (n == 0) : (n > 0 && content_height() < bounds_.h);
         if (needs_fill)
         {
             // Safe to call on every arrange: the consumer's own
@@ -587,18 +596,17 @@ void ListView::capture_anchor_()
     // Always record the pre-mutation total height so the height-delta fallback
     // is available even before any per-row layout exists.
     anchor_.key.clear();
-    anchor_.index       = 0;
-    anchor_.offset      = 0.0f;
-    anchor_.pre_height  = content_height();
-    anchor_.pending     = true;
+    anchor_.index = 0;
+    anchor_.offset = 0.0f;
+    anchor_.pre_height = content_height();
+    anchor_.pending = true;
     anchor_.from_bottom = false;
 
     // `measured` is the row count of the *current* (pre-mutation) layout. It
     // may differ from adapter_->count() when the adapter swapped its backing
     // model just before calling preserve_top_through; we anchor against the
     // measured layout the user is actually looking at.
-    const std::size_t measured =
-        row_offsets_.empty() ? 0 : row_offsets_.size() - 1;
+    const std::size_t measured = row_offsets_.empty() ? 0 : row_offsets_.size() - 1;
     if (measured == 0)
     {
         return; // no per-row data yet — height-delta fallback only
@@ -614,7 +622,7 @@ void ListView::capture_anchor_()
     {
         idx = std::min(first_visible_row_(), measured - 1);
     }
-    anchor_.index  = idx;
+    anchor_.index = idx;
     anchor_.offset = row_offsets_[idx] - scroll_y_;
     // row_key must be read against the OLD model. Adapters that swap their
     // model before preserve_top_through (e.g. the thread list) leave the key
@@ -630,14 +638,13 @@ void ListView::capture_anchor_()
 void ListView::capture_anchor_bottom_()
 {
     anchor_.key.clear();
-    anchor_.index       = 0;
-    anchor_.offset      = 0.0f;
-    anchor_.pre_height  = content_height();
-    anchor_.pending     = true;
+    anchor_.index = 0;
+    anchor_.offset = 0.0f;
+    anchor_.pre_height = content_height();
+    anchor_.pending = true;
     anchor_.from_bottom = true;
 
-    const std::size_t measured =
-        row_offsets_.empty() ? 0 : row_offsets_.size() - 1;
+    const std::size_t measured = row_offsets_.empty() ? 0 : row_offsets_.size() - 1;
     if (measured == 0)
     {
         return; // no per-row data yet — height-delta fallback only
@@ -647,9 +654,9 @@ void ListView::capture_anchor_bottom_()
     // used here: it bails while heights_dirty_.) Use the pre-resize height:
     // arrange() has already overwritten bounds_ with the new size, but
     // measured_height_ still holds the height the user was looking at.
-    const float old_h  = measured_height_ != 0.0f ? measured_height_ : bounds_.h;
+    const float old_h = measured_height_ != 0.0f ? measured_height_ : bounds_.h;
     const float vp_bot = scroll_y_ + old_h;
-    std::size_t idx    = std::min(first_visible_row_(), measured - 1);
+    std::size_t idx = std::min(first_visible_row_(), measured - 1);
     for (std::size_t i = idx; i + 1 < row_offsets_.size(); ++i)
     {
         if (row_offsets_[i] >= vp_bot)
@@ -687,14 +694,15 @@ bool ListView::locate_anchor_(std::size_t& out_index) const
     return false; // anchored row removed by a concurrent update
 }
 
-void ListView::fire_latch_(bool now_near, bool& was_near,
-                           const std::function<void()>& callback)
+void ListView::fire_latch_(bool now_near, bool& was_near, const std::function<void()>& callback)
 {
     if (now_near && !was_near)
     {
         was_near = true;
         if (callback)
+        {
             callback();
+        }
     }
     else if (!now_near && was_near)
     {
@@ -705,19 +713,25 @@ void ListView::fire_latch_(bool now_near, bool& was_near,
 void ListView::maybe_fire_near_top()
 {
     if (!adapter_ || adapter_->count() == 0 || stick_to_bottom_ || scrollbar_drag_)
+    {
         return;
+    }
     fire_latch_(scroll_y_ < near_top_threshold_px_, was_near_top_, on_near_top);
 }
 
 void ListView::maybe_fire_near_bottom()
 {
     if (!adapter_ || adapter_->count() == 0 || stick_to_bottom_ || scrollbar_drag_)
+    {
         return;
+    }
     float total = content_height();
     if (total <= bounds_.h)
+    {
         return;
-    fire_latch_((total - (scroll_y_ + bounds_.h)) < near_bottom_threshold_px_,
-                was_near_bottom_, on_near_bottom);
+    }
+    fire_latch_((total - (scroll_y_ + bounds_.h)) < near_bottom_threshold_px_, was_near_bottom_,
+                on_near_bottom);
 }
 
 void ListView::rebuild_heights(LayoutCtx& ctx, float width)
@@ -790,46 +804,45 @@ void ListView::paint(PaintCtx& ctx)
 
     ensure_measured(ctx);
 
-    ctx.canvas.push_clip_rect(bounds_);
-
-    // Find the first row whose end is past the viewport top.
-    float viewport_bot = scroll_y_ + bounds_.h;
-    std::size_t first = first_visible_row_();
-
-    // Snapshot the canvas clip once (after push_clip_rect above). For partial
-    // repaints such as animated-image ticks the clip is a small rect around the
-    // GIF; skipping rows that fall entirely outside it avoids all the per-row
-    // work (build_text, span iteration, image lookups) that QPainter would
-    // otherwise silently discard at pixel-write time.
-    const Rect clip = ctx.canvas.clip_rect();
-
-    // Bound by row_offsets_ (size = count+1 as of the last rebuild), not the
-    // live adapter count: if rows were appended without invalidate_data()
-    // since the last rebuild, the two diverge and row_offsets_[i+1] would be
-    // out of bounds. The next layout pass reconciles them.
-    std::size_t row_limit = row_offsets_.empty() ? 0 : row_offsets_.size() - 1;
-    std::size_t paint_end = std::min(adapter_->count(), row_limit);
-    for (std::size_t i = first; i < paint_end; ++i)
     {
-        float row_top = row_offsets_[i];
-        float row_bottom = row_offsets_[i + 1];
-        if (row_top >= viewport_bot)
-        {
-            break;
-        }
-        Rect row_bounds{bounds_.x,
-                        bounds_.y + content_top_pad_() + (row_top - scroll_y_),
-                        bounds_.w, row_bottom - row_top};
-        if (row_bounds.bottom() <= clip.y || row_bounds.y >= clip.bottom())
-        {
-            continue;
-        }
-        bool selected = (static_cast<int>(i) == selected_index_);
-        bool hovered = (static_cast<int>(i) == hovered_index_);
-        adapter_->paint_row(i, ctx, row_bounds, selected, hovered);
-    }
+        ClipScope list_clip(ctx.canvas, bounds_);
 
-    ctx.canvas.pop_clip();
+        // Find the first row whose end is past the viewport top.
+        float viewport_bot = scroll_y_ + bounds_.h;
+        std::size_t first = first_visible_row_();
+
+        // Snapshot the canvas clip once (after push_clip_rect above). For partial
+        // repaints such as animated-image ticks the clip is a small rect around the
+        // GIF; skipping rows that fall entirely outside it avoids all the per-row
+        // work (build_text, span iteration, image lookups) that QPainter would
+        // otherwise silently discard at pixel-write time.
+        const Rect clip = ctx.canvas.clip_rect();
+
+        // Bound by row_offsets_ (size = count+1 as of the last rebuild), not the
+        // live adapter count: if rows were appended without invalidate_data()
+        // since the last rebuild, the two diverge and row_offsets_[i+1] would be
+        // out of bounds. The next layout pass reconciles them.
+        std::size_t row_limit = row_offsets_.empty() ? 0 : row_offsets_.size() - 1;
+        std::size_t paint_end = std::min(adapter_->count(), row_limit);
+        for (std::size_t i = first; i < paint_end; ++i)
+        {
+            float row_top = row_offsets_[i];
+            float row_bottom = row_offsets_[i + 1];
+            if (row_top >= viewport_bot)
+            {
+                break;
+            }
+            Rect row_bounds{bounds_.x, bounds_.y + content_top_pad_() + (row_top - scroll_y_),
+                            bounds_.w, row_bottom - row_top};
+            if (row_bounds.bottom() <= clip.y || row_bounds.y >= clip.bottom())
+            {
+                continue;
+            }
+            bool selected = (static_cast<int>(i) == selected_index_);
+            bool hovered = (static_cast<int>(i) == hovered_index_);
+            adapter_->paint_row(i, ctx, row_bounds, selected, hovered);
+        }
+    }
 
     // Scrollbar overlay — only if content overflows the viewport.
     paint_scrollbar(ctx);
@@ -1009,8 +1022,7 @@ float GridView::col_w(float available_w, int c) const
         return cell_w_;
     }
     float inner = std::max(0.0f, available_w - padding_.horizontal());
-    float w = (inner - static_cast<float>(c - 1) * h_spacing_) /
-             static_cast<float>(c);
+    float w = (inner - static_cast<float>(c - 1) * h_spacing_) / static_cast<float>(c);
     return std::max(cell_w_, w);
 }
 
@@ -1073,8 +1085,7 @@ void GridView::on_pointer_leave()
 
 tk::Rect GridView::rect_at(int idx) const
 {
-    if (!adapter_ || idx < 0 ||
-        static_cast<std::size_t>(idx) >= adapter_->count())
+    if (!adapter_ || idx < 0 || static_cast<std::size_t>(idx) >= adapter_->count())
     {
         return {};
     }
@@ -1087,8 +1098,7 @@ tk::Rect GridView::rect_at(int idx) const
     int row = idx / c;
     int col = idx % c;
     float x = bounds_.x + padding_.left + col * (cw + h_spacing_);
-    float y =
-        bounds_.y + padding_.top + row * (cell_h_ + v_spacing_) - scroll_y_;
+    float y = bounds_.y + padding_.top + row * (cell_h_ + v_spacing_) - scroll_y_;
     return {x, y, cw, cell_h_};
 }
 
@@ -1135,8 +1145,7 @@ std::pair<int, int> GridView::visible_range() const
     return {first_idx, last_idx};
 }
 
-std::pair<int, int> grid_prefetch_range(const GridView& grid,
-                                        std::size_t item_count, int lookahead)
+std::pair<int, int> grid_prefetch_range(const GridView& grid, std::size_t item_count, int lookahead)
 {
     if (item_count == 0)
     {
@@ -1175,8 +1184,7 @@ float GridView::content_height() const
     }
     int c = cols(bounds_.w);
     int r = rows(static_cast<int>(adapter_->count()), c);
-    return padding_.vertical() +
-           (r > 0 ? r * cell_h_ + (r - 1) * v_spacing_ : 0);
+    return padding_.vertical() + (r > 0 ? r * cell_h_ + (r - 1) * v_spacing_ : 0);
 }
 
 void GridView::paint(PaintCtx& ctx)
@@ -1188,41 +1196,40 @@ void GridView::paint(PaintCtx& ctx)
         return;
     }
 
-    ctx.canvas.push_clip_rect(bounds_);
-
-    int c = cols(bounds_.w);
-    float cw = col_w(bounds_.w, c);
-    int total = static_cast<int>(adapter_->count());
-    float row_h = cell_h_ + v_spacing_;
-    float origin_x = bounds_.x + padding_.left;
-    float origin_y = bounds_.y + padding_.top - scroll_y_;
-
-    auto [first_idx, last_idx] = visible_range();
-    if (last_idx >= first_idx && c > 0)
     {
-        int first_row = first_idx / c;
-        int last_row = last_idx / c;
-        for (int row = first_row; row <= last_row; ++row)
+        ClipScope clip(ctx.canvas, bounds_);
+
+        int c = cols(bounds_.w);
+        float cw = col_w(bounds_.w, c);
+        int total = static_cast<int>(adapter_->count());
+        float row_h = cell_h_ + v_spacing_;
+        float origin_x = bounds_.x + padding_.left;
+        float origin_y = bounds_.y + padding_.top - scroll_y_;
+
+        auto [first_idx, last_idx] = visible_range();
+        if (last_idx >= first_idx && c > 0)
         {
-            float row_top = origin_y + row * row_h;
-            for (int col = 0; col < c; ++col)
+            int first_row = first_idx / c;
+            int last_row = last_idx / c;
+            for (int row = first_row; row <= last_row; ++row)
             {
-                int idx = row * c + col;
-                if (idx >= total)
+                float row_top = origin_y + row * row_h;
+                for (int col = 0; col < c; ++col)
                 {
-                    break;
+                    int idx = row * c + col;
+                    if (idx >= total)
+                    {
+                        break;
+                    }
+                    Rect cell_bounds{origin_x + col * (cw + h_spacing_), row_top, cw, cell_h_};
+                    bool selected = (idx == selected_index_);
+                    bool hovered = (idx == hovered_index_);
+                    adapter_->paint_cell(static_cast<std::size_t>(idx), ctx, cell_bounds, selected,
+                                         hovered);
                 }
-                Rect cell_bounds{origin_x + col * (cw + h_spacing_), row_top,
-                                 cw, cell_h_};
-                bool selected = (idx == selected_index_);
-                bool hovered = (idx == hovered_index_);
-                adapter_->paint_cell(static_cast<std::size_t>(idx), ctx,
-                                     cell_bounds, selected, hovered);
             }
         }
     }
-
-    ctx.canvas.pop_clip();
 
     // Scrollbar overlay — only when content overflows the viewport.
     paint_scrollbar(ctx);
@@ -1263,12 +1270,19 @@ bool GridView::on_pointer_down(Point local)
     if (on_cell_context_requested && host())
     {
         press_point_ = local;
-        host()->post_delayed(kLongPressMs, guarded([this, gen, idx] {
-            if (gen != long_press_gen_ || pressed_index_ != idx)
-                return;
-            if (on_cell_context_requested && on_cell_context_requested(idx))
-                long_press_fired_ = true;
-        }));
+        host()->post_delayed(
+            kLongPressMs, guarded(
+                              [this, gen, idx]
+                              {
+                                  if (gen != long_press_gen_ || pressed_index_ != idx)
+                                  {
+                                      return;
+                                  }
+                                  if (on_cell_context_requested && on_cell_context_requested(idx))
+                                  {
+                                      long_press_fired_ = true;
+                                  }
+                              }));
     }
     return true;
 }
@@ -1287,7 +1301,9 @@ void GridView::reveal_context_anchor()
 {
     const Rect r = rect_at(selected_index_);
     if (r.w > 0.0f && r.h > 0.0f)
+    {
         scroll_into_view(r);
+    }
 }
 
 Rect GridView::context_anchor_rect() const
@@ -1338,8 +1354,7 @@ void GridView::on_pointer_up(Point local, bool inside_self)
 
 void GridView::scroll_cell_into_view_(int idx)
 {
-    if (!adapter_ || idx < 0 ||
-        static_cast<std::size_t>(idx) >= adapter_->count())
+    if (!adapter_ || idx < 0 || static_cast<std::size_t>(idx) >= adapter_->count())
     {
         return;
     }
@@ -1349,8 +1364,7 @@ void GridView::scroll_cell_into_view_(int idx)
         return;
     }
     const int row = idx / c;
-    const float row_top =
-        padding_.top + static_cast<float>(row) * (cell_h_ + v_spacing_);
+    const float row_top = padding_.top + static_cast<float>(row) * (cell_h_ + v_spacing_);
     const float row_bottom = row_top + cell_h_;
     if (row_top < scroll_y_)
     {
@@ -1419,9 +1433,7 @@ bool GridView::on_key_down(const KeyEvent& e)
     {
         return false;
     }
-    const int next = (selected_index_ < 0)
-                         ? (delta > 0 ? 0 : n - 1)
-                         : selected_index_ + delta;
+    const int next = (selected_index_ < 0) ? (delta > 0 ? 0 : n - 1) : selected_index_ + delta;
     if (next < 0 || next >= n)
     {
         return false; // clamp at the edge — let it bubble, don't wrap
@@ -1496,8 +1508,7 @@ bool ListView::on_key_down(const KeyEvent& e)
     }
     if (e.key == Key::Up || e.key == Key::Down)
     {
-        const int next =
-            next_selectable_(selected_index_, e.key == Key::Down ? 1 : -1);
+        const int next = next_selectable_(selected_index_, e.key == Key::Down ? 1 : -1);
         if (next < 0)
         {
             return false; // already at the edge — let it bubble
@@ -1506,20 +1517,19 @@ bool ListView::on_key_down(const KeyEvent& e)
         reveal_index(next);
         return true;
     }
-    if (!e.ctrl && !e.alt && !e.meta &&
-        (e.key == Key::Home || e.key == Key::End))
+    if (!e.ctrl && !e.alt && !e.meta && (e.key == Key::Home || e.key == Key::End))
     {
         const int n = static_cast<int>(adapter_->count());
-        const int next = e.key == Key::Home ? next_selectable_(-1, 1)
-                                            : next_selectable_(n, -1);
+        const int next = e.key == Key::Home ? next_selectable_(-1, 1) : next_selectable_(n, -1);
         if (next < 0)
+        {
             return false;
+        }
         set_selected_index(next);
         reveal_index(next);
         return true;
     }
-    if (!e.ctrl && !e.alt && !e.meta &&
-        (e.key == Key::PageUp || e.key == Key::PageDown))
+    if (!e.ctrl && !e.alt && !e.meta && (e.key == Key::PageUp || e.key == Key::PageDown))
     {
         // Step by however many rows fit in the viewport (at least one),
         // stopping early at the last selectable row in that direction.
@@ -1531,11 +1541,15 @@ bool ListView::on_key_down(const KeyEvent& e)
         {
             const int step = next_selectable_(target, dir);
             if (step < 0)
+            {
                 break;
+            }
             target = step;
         }
         if (target < 0 || target == selected_index_)
+        {
             return false; // at the edge — let the scroll fallback have it
+        }
         set_selected_index(target);
         reveal_index(target);
         return true;
@@ -1557,9 +1571,10 @@ bool ListView::on_key_down(const KeyEvent& e)
 
 Rect ListView::context_anchor_rect() const
 {
-    if (!adapter_ || selected_index_ < 0 ||
-        selected_index_ >= static_cast<int>(adapter_->count()))
+    if (!adapter_ || selected_index_ < 0 || selected_index_ >= static_cast<int>(adapter_->count()))
+    {
         return bounds_;
+    }
     // Clamp to the viewport: a selection scrolled out of view still gets a
     // menu anchored on-screen, and the synthesised right-click must land
     // inside bounds_ for dispatch_right_click to reach this list at all.
@@ -1567,7 +1582,9 @@ Rect ListView::context_anchor_rect() const
     const float top = std::max(r.y, bounds_.y);
     const float bottom = std::min(r.y + r.h, bounds_.y + bounds_.h);
     if (bottom <= top)
+    {
         return bounds_;
+    }
     r.y = top;
     r.h = bottom - top;
     return r;

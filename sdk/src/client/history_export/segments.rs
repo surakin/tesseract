@@ -33,7 +33,12 @@ impl SegmentWriter {
     /// Starts a fresh segment sequence in a new directory.
     pub(super) fn create(dir: &Path) -> io::Result<Self> {
         fs::create_dir_all(dir)?;
-        Ok(Self { dir: dir.to_path_buf(), finished: Vec::new(), current: None, next_index: 0 })
+        Ok(Self {
+            dir: dir.to_path_buf(),
+            finished: Vec::new(),
+            current: None,
+            next_index: 0,
+        })
     }
 
     /// Resumes into an existing segment directory, preserving
@@ -55,7 +60,12 @@ impl SegmentWriter {
             }
         }
         let next_index = existing_segment_count;
-        Ok(Self { dir: dir.to_path_buf(), finished, current: None, next_index })
+        Ok(Self {
+            dir: dir.to_path_buf(),
+            finished,
+            current: None,
+            next_index,
+        })
     }
 
     pub(super) fn begin_segment(&mut self) -> io::Result<()> {
@@ -67,7 +77,10 @@ impl SegmentWriter {
 
     pub(super) fn write(&mut self, s: &str) -> io::Result<()> {
         let Some(w) = self.current.as_mut() else {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, "no segment open"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "no segment open",
+            ));
         };
         w.write_all(s.as_bytes())
     }
@@ -77,7 +90,10 @@ impl SegmentWriter {
     /// checkpoint's `segments_written`).
     pub(super) fn finish_segment(&mut self) -> io::Result<u32> {
         let Some(mut w) = self.current.take() else {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, "no segment open"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "no segment open",
+            ));
         };
         w.flush()?;
         self.finished.push(segment_path(&self.dir, self.next_index));
@@ -132,8 +148,12 @@ mod tests {
     fn unique_test_dir(name: &str) -> PathBuf {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let dir = std::env::temp_dir()
-            .join(format!("tesseract_history_export_test_{}_{}_{}", std::process::id(), name, n));
+        let dir = std::env::temp_dir().join(format!(
+            "tesseract_history_export_test_{}_{}_{}",
+            std::process::id(),
+            name,
+            n
+        ));
         let _ = fs::remove_dir_all(&dir);
         dir
     }
@@ -148,7 +168,8 @@ mod tests {
         assert_eq!(w.finish_segment().unwrap(), 1);
 
         let out = dir.join("out.part");
-        w.concatenate_reverse(&out, "HEADER\n", "FOOTER\n", |_| {}).unwrap();
+        w.concatenate_reverse(&out, "HEADER\n", "FOOTER\n", |_| {})
+            .unwrap();
         let content = fs::read_to_string(&out).unwrap();
         assert_eq!(content, "HEADER\nline one\nline two\nFOOTER\n");
         w.cleanup().unwrap();
@@ -212,7 +233,8 @@ mod tests {
 
         let out = dir.join("out.part");
         let mut seen = Vec::new();
-        w.concatenate_reverse(&out, "", "", |done| seen.push(done)).unwrap();
+        w.concatenate_reverse(&out, "", "", |done| seen.push(done))
+            .unwrap();
         assert_eq!(seen, vec![1, 2, 3]);
         w.cleanup().unwrap();
     }

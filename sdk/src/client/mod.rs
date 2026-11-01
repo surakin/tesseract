@@ -26,6 +26,7 @@ mod media_gate;
 mod media_gate_registry;
 mod media_origin;
 mod media_queue;
+mod mutual_rooms;
 mod notifications;
 mod pins;
 mod polls;
@@ -53,6 +54,28 @@ mod sync;
 mod tags;
 pub(crate) mod text_code;
 pub(crate) use text_code::{text_code, text_code_arg, user_text};
+#[cfg(feature = "server_browser")]
+mod server_list;
+// The cxx bridge always declares `load_server_list` (cxxbridge can't see Cargo
+// features), so builds without the feature keep a failing stub.
+#[cfg(all(not(feature = "server_browser"), not(test)))]
+mod server_list {
+    impl super::ClientFfi {
+        pub fn fetch_server_icon(&self, _homepage: &str) -> Vec<u8> {
+            Vec::new()
+        }
+
+        pub fn load_server_list(&self, _cache_dir: &str) -> crate::ffi::ServerListFfi {
+            crate::ffi::ServerListFfi {
+                entries: Vec::new(),
+                ok: false,
+                from_cache: false,
+                source_name: String::new(),
+                source_url: String::new(),
+            }
+        }
+    }
+}
 mod thread;
 mod timeline;
 mod timeline_convert;
@@ -170,6 +193,57 @@ impl Drop for InFlightGuard {
         }
     }
 }
+
+/// Cloneable handle that mints [`InFlightGuard`]s from inside spawned tasks
+/// and free functions that cannot borrow the `ClientFfi`.
+#[cfg(not(test))]
+#[derive(Clone)]
+pub(crate) struct InFlightCtx {
+    counter: Arc<std::sync::atomic::AtomicU32>,
+    handler: Option<Arc<Mutex<SendHandler>>>,
+    #[cfg(debug_assertions)]
+    urls: Arc<Mutex<Vec<String>>>,
+}
+
+#[cfg(not(test))]
+impl InFlightCtx {
+    /// Count one in-flight operation until the returned guard drops. `label`
+    /// is only shown by the debug-build tooltip.
+    pub(crate) fn guard(&self, label: impl Into<String>) -> InFlightGuard {
+        let label = label.into();
+        #[cfg(not(debug_assertions))]
+        let _ = &label;
+        InFlightGuard::new(
+            &self.counter,
+            &self.handler,
+            #[cfg(debug_assertions)]
+            &self.urls,
+            #[cfg(debug_assertions)]
+            label,
+        )
+    }
+}
+
+#[cfg(not(test))]
+impl ClientFfi {
+    pub(super) fn in_flight_ctx(&self) -> InFlightCtx {
+        InFlightCtx {
+            counter: Arc::clone(&self.in_flight),
+            handler: self.handler.clone(),
+            #[cfg(debug_assertions)]
+            urls: Arc::clone(&self.in_flight_urls),
+        }
+    }
+
+    pub(super) fn in_flight_guard(&self, label: impl Into<String>) -> InFlightGuard {
+        self.in_flight_ctx().guard(label)
+    }
+}
+
+/// Concurrent timeline warm-ups (`/messages` pagination) shared by the
+/// visible-rooms backfill and the unread/favourite prefetch.
+#[cfg(not(test))]
+const WARM_CONCURRENCY: usize = 16;
 
 /// AIMD upper bound for interactive media downloads (avatars + thumbnails),
 /// applied per origin (see `media_gate_registry`) — the gate for a given
@@ -298,6 +372,10 @@ pub(super) async fn member_display_name_local(
     }
 }
 
+/// Message codes the UI maps to translated text (the SDK has no catalog).
+pub(crate) const DEVICE_STILL_SIGNED_IN: &str = "device_still_signed_in";
+pub(crate) const NO_ACCOUNT_MANAGEMENT_PAGE: &str = "no_account_management_page";
+
 /// Build the spec'd UIAA fallback URL for `stage` and `session`. The
 /// homeserver base may or may not end with `/`; the spec path is
 /// `_matrix/client/v3/auth/<stage>/fallback/web?session=<session>`.
@@ -412,7 +490,13 @@ fn fallback_data_base() -> PathBuf {
         .or_else(|_| std::env::var("USERNAME"))
         .unwrap_or_else(|_| "user".to_owned())
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .take(32)
         .collect();
     let temp = std::env::temp_dir();
@@ -421,7 +505,9 @@ fn fallback_data_base() -> PathBuf {
     {
         use std::os::unix::fs::{DirBuilderExt, MetadataExt};
         let private = |p: &std::path::Path| -> bool {
-            let Ok(meta) = std::fs::symlink_metadata(p) else { return false };
+            let Ok(meta) = std::fs::symlink_metadata(p) else {
+                return false;
+            };
             // Our uid, read from a file this process just created.
             let probe = temp.join(format!(".tesseract-uid-{}", std::process::id()));
             let uid = std::fs::OpenOptions::new()
@@ -542,9 +628,19 @@ pub(super) struct KnockRequestsHandle {
 /// newest is skipped. Every save carries the whole document, and the writes
 /// run as spawned tasks, so they can start in any order.
 #[derive(Default)]
-pub(super) struct PrefsSaveOrder(std::sync::atomic::AtomicU64);
+pub(super) struct PrefsSaveOrder(
+    std::sync::atomic::AtomicU64,
+    /// Set while saves are failing, so the user hears about a streak once.
+    std::sync::atomic::AtomicBool,
+);
 
 impl PrefsSaveOrder {
+    /// Records a save's outcome; true when this failure starts a streak and
+    /// should be reported.
+    pub(super) fn note_result(&self, failed: bool) -> bool {
+        self.1.swap(failed, std::sync::atomic::Ordering::SeqCst) != failed && failed
+    }
+
     pub(super) fn next(&self) -> u64 {
         self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1
     }
@@ -644,6 +740,18 @@ pub struct ClientFfi {
     /// `Mutex`-wrapped for the same `&self` reason as `backfill_task`.
     #[cfg(not(test))]
     pub(super) bridge_check_task: parking_lot::Mutex<Option<tokio::task::AbortHandle>>,
+    /// Orchestrator of the all-rooms (inactive-grouping) timestamp backfill.
+    /// Separate from `backfill_task` so the visible-rooms backfill's
+    /// stop-and-restart on every scroll never aborts it, and it never blocks
+    /// that one through the shared idempotency guard.
+    #[cfg(not(test))]
+    pub(super) uncached_backfill_task: parking_lot::Mutex<Option<tokio::task::AbortHandle>>,
+
+    /// Newest room set requested while a bridge check was running; the
+    /// running task picks it up when its pass finishes.
+    #[cfg(not(test))]
+    pub(super) pending_bridge_check:
+        std::sync::Arc<parking_lot::Mutex<Option<Vec<matrix_sdk::ruma::OwnedRoomId>>>>,
     /// One-shot unread-prefetch orchestrator handle. Kept separate from
     /// `backfill_task` so the inactive-grouping backfill and the unread
     /// prefetch never abort one another (they share neither handle nor
@@ -814,7 +922,8 @@ pub struct ClientFfi {
     /// `super::fetch_room_bot_commands`. Read by `list_room_bot_commands`
     /// without blocking; empty for a room never visited this session.
     #[cfg(not(test))]
-    pub(super) bot_commands: Arc<Mutex<HashMap<OwnedRoomId, Vec<crate::bot_commands::CommandDescription>>>>,
+    pub(super) bot_commands:
+        Arc<Mutex<HashMap<OwnedRoomId, Vec<crate::bot_commands::CommandDescription>>>>,
     /// Serializes every account-data read-modify-write (`recent_emoji_bump`,
     /// `save_sticker_to_user_pack`, `toggle_favorite_sticker`). Matrix
     /// account-data is last-write-wins with no server-side merge, so two
@@ -1009,10 +1118,18 @@ pub struct ClientFfi {
     /// `false` = fall back to create-then-follow-up-invite (room_list.rs /
     /// account.rs).
     pub(super) supports_invite_reason: std::sync::Arc<std::sync::RwLock<bool>>,
-    /// Active MatrixRTC call session, or `None` when not in a call.
-    /// Owned here so `rtc_push_video_frame_i420` can reach it without a
-    /// separate handle.
-    pub(super) active_rtc_call: Option<Box<crate::client::rtc::RtcSession>>,
+    /// MSC2666 mutual-rooms support, populated by `get_server_info`:
+    /// `MUTUAL_ROOMS_NONE` / `_UNSTABLE` / `_STABLE`. Picks the request type
+    /// `get_mutual_rooms_async` sends.
+    pub(super) mutual_rooms_mode: std::sync::Arc<std::sync::atomic::AtomicU8>,
+    /// The MatrixRTC call: none, being set up on the runtime, or active. Owned
+    /// here so `rtc_push_video_frame_i420` can reach it without a separate
+    /// handle; shared with the setup, which installs the session when it is up.
+    pub(super) rtc_call: rtc_ffi::SharedCall,
+    /// The teardown of the call last hung up with `rtc_end_call`, still running
+    /// on the runtime. The next call, a blocking hang-up and the drop of this
+    /// client wait for it, so an old call's leave never lands after a new one's.
+    pub(super) rtc_teardown: rtc_ffi::PendingTeardown,
     // Declared last so it drops after all SDK resources; deadpool/SQLite cleanup
     // uses tokio primitives and requires the runtime to still be alive.
     pub(super) rt: Runtime,
@@ -1026,6 +1143,10 @@ impl Drop for ClientFfi {
             h.abort();
         }
         #[cfg(not(test))]
+        if let Some(h) = self.uncached_backfill_task.lock().take() {
+            h.abort();
+        }
+        #[cfg(not(test))]
         if let Some(h) = self.bridge_check_task.lock().take() {
             h.abort();
         }
@@ -1033,6 +1154,16 @@ impl Drop for ClientFfi {
         if let Some(h) = self.prefetch_task.lock().take() {
             h.abort();
         }
+        // A hang-up still withdrawing the call's announcements, or a call still
+        // being set up (which then takes itself down), gets to finish (bounded)
+        // before the runtime that carries it goes away.
+        if let Some(setup) = self.rtc_call.lock().take_starting() {
+            let handle = self.rt.handle().clone();
+            self.rtc_teardown
+                .spawn(&handle, async move { rtc_ffi::wait_for(Some(setup)).await });
+        }
+        self.rt
+            .block_on(self.rtc_teardown.finish(std::time::Duration::from_secs(10)));
         // Drop SDK objects that call Handle::current() in their Drop impls
         // (SqliteStateStore via matrix_sdk::Client, Timeline) with the runtime
         // handle in TLS.  Without enter() here, dropping pending_login_client_
@@ -1153,7 +1284,8 @@ async fn send_fully_read(
     event_id: matrix_sdk::ruma::OwnedEventId,
 ) -> matrix_sdk::Result<()> {
     use matrix_sdk::room::Receipts;
-    room.send_multiple_receipts(Receipts::new().fully_read_marker(event_id)).await
+    room.send_multiple_receipts(Receipts::new().fully_read_marker(event_id))
+        .await
 }
 
 /// Encode raw 16-bit mono PCM samples (48 kHz) into an Ogg/Opus byte stream.
@@ -1244,8 +1376,7 @@ impl ClientFfi {
         // matrix_sdk the same way the persisted setting is; anything else is
         // taken as a full EnvFilter directive string.
         const LEVELS: [&str; 5] = ["error", "warn", "info", "debug", "trace"];
-        let level_filter =
-            |level: &str| format!("matrix_sdk={level},matrix_sdk::http_client=off");
+        let level_filter = |level: &str| format!("matrix_sdk={level},matrix_sdk::http_client=off");
         let level = if LEVELS.contains(&log_level) {
             log_level
         } else {
@@ -1258,6 +1389,32 @@ impl ClientFfi {
         } else {
             std::env::var("RUST_LOG").unwrap_or_else(|_| level_filter(level))
         };
+        #[cfg(feature = "request_log")]
+        {
+            use tracing_subscriber::filter::{LevelFilter, Targets};
+            use tracing_subscriber::prelude::*;
+            // The matrix-sdk request spans are switched off for the text log
+            // (`matrix_sdk::http_client=off`) but still feed the request
+            // timing log, which has its own filter and is only installed
+            // when TESSERACT_REQUEST_LOG is set.
+            let log_dir = default_data_dir()
+                .parent()
+                .map(std::path::Path::to_path_buf)
+                .unwrap_or_else(default_data_dir);
+            let request_layer = crate::request_log::init(&log_dir).map(|l| {
+                l.with_filter(
+                    Targets::new().with_target(crate::request_log::SPAN_TARGET, LevelFilter::INFO),
+                )
+            });
+            let _ = tracing_subscriber::registry()
+                .with(
+                    tracing_subscriber::fmt::layer()
+                        .with_filter(tracing_subscriber::EnvFilter::new(filter_str)),
+                )
+                .with(request_layer)
+                .try_init();
+        }
+        #[cfg(not(feature = "request_log"))]
         let _ = tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::new(filter_str))
             .try_init();
@@ -1293,11 +1450,15 @@ impl ClientFfi {
             #[cfg(not(test))]
             bridge_check_task: parking_lot::Mutex::new(None),
             #[cfg(not(test))]
+            uncached_backfill_task: parking_lot::Mutex::new(None),
+            #[cfg(not(test))]
+            pending_bridge_check: std::sync::Arc::new(parking_lot::Mutex::new(None)),
+            #[cfg(not(test))]
             prefetch_task: parking_lot::Mutex::new(None),
             #[cfg(not(test))]
             pending_prefetch: Arc::new(parking_lot::Mutex::new(None)),
             #[cfg(not(test))]
-            warm_semaphore: Arc::new(tokio::sync::Semaphore::new(3)),
+            warm_semaphore: Arc::new(tokio::sync::Semaphore::new(WARM_CONCURRENCY)),
             #[cfg(not(test))]
             crypto_reset_handle: None,
             #[cfg(not(test))]
@@ -1416,7 +1577,9 @@ impl ClientFfi {
             ))),
             profile_fields_prefix: std::sync::Arc::new(std::sync::RwLock::new(None)),
             supports_invite_reason: std::sync::Arc::new(std::sync::RwLock::new(false)),
-            active_rtc_call: None,
+            mutual_rooms_mode: std::sync::Arc::new(std::sync::atomic::AtomicU8::new(0)),
+            rtc_call: Default::default(),
+            rtc_teardown: Default::default(),
             rt: tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 // Timeline construction collects cached events into an
@@ -1486,7 +1649,9 @@ impl ClientFfi {
             msc2545_legacy_compat: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             profile_fields_prefix: std::sync::Arc::new(std::sync::RwLock::new(None)),
             supports_invite_reason: std::sync::Arc::new(std::sync::RwLock::new(false)),
-            active_rtc_call: None,
+            mutual_rooms_mode: std::sync::Arc::new(std::sync::atomic::AtomicU8::new(0)),
+            rtc_call: Default::default(),
+            rtc_teardown: Default::default(),
             rt: tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 .build()
@@ -1673,12 +1838,14 @@ const ROOM_STATE_CACHE_ROOMS: usize = 8;
 /// by every consumer that needs to filter a room's live state for some
 /// event type — see `fetch_room_state_cached`.
 #[cfg(not(test))]
-pub(super) type RoomStateCache = Arc<Mutex<
-    std::collections::HashMap<
-        OwnedRoomId,
-        Arc<Vec<matrix_sdk::ruma::serde::Raw<matrix_sdk::ruma::events::AnyStateEvent>>>,
+pub(super) type RoomStateCache = Arc<
+    Mutex<
+        std::collections::HashMap<
+            OwnedRoomId,
+            Arc<Vec<matrix_sdk::ruma::serde::Raw<matrix_sdk::ruma::events::AnyStateEvent>>>,
+        >,
     >,
->>;
+>;
 
 /// One full `GET /rooms/{roomId}/state` per room, shared by every consumer
 /// that needs to filter a room's live state for some event type (MSC2545
@@ -1882,7 +2049,11 @@ pub(super) async fn room_pack_event_types_for_key(
     for &ev_type_str in crate::image_packs::room_pack_types(legacy_compat) {
         let has_content = state.iter().any(|raw| {
             raw.get_field::<String>("type").ok().flatten().as_deref() == Some(ev_type_str)
-                && raw.get_field::<String>("state_key").ok().flatten().as_deref()
+                && raw
+                    .get_field::<String>("state_key")
+                    .ok()
+                    .flatten()
+                    .as_deref()
                     == Some(state_key)
         });
         if has_content {
@@ -1908,10 +2079,9 @@ async fn discover_and_parse_room_packs(
 ) -> Vec<crate::image_packs::ImagePack> {
     let mut room_name: Option<String> = None;
     let mut packs = Vec::new();
-    for (state_key, content) in
-        fetch_all_room_pack_contents(client, cache, room_id, legacy_compat)
-            .await
-            .unwrap_or_default()
+    for (state_key, content) in fetch_all_room_pack_contents(client, cache, room_id, legacy_compat)
+        .await
+        .unwrap_or_default()
     {
         let source = crate::image_packs::PackSource::Room {
             room_id: room_id_str.to_owned(),
@@ -1933,7 +2103,11 @@ async fn discover_and_parse_room_packs(
         if pack.display_name.is_empty() {
             if room_name.is_none() {
                 room_name = Some(match client.get_room(room_id) {
-                    Some(r) => r.display_name().await.map(|n| n.to_string()).unwrap_or_default(),
+                    Some(r) => r
+                        .display_name()
+                        .await
+                        .map(|n| n.to_string())
+                        .unwrap_or_default(),
                     None => String::new(),
                 });
             }
@@ -2032,8 +2206,11 @@ async fn fetch_room_pack(
                     return None;
                 }
                 if pack.display_name.is_empty() {
-                    pack.display_name =
-                        room.display_name().await.map(|n| n.to_string()).unwrap_or_default();
+                    pack.display_name = room
+                        .display_name()
+                        .await
+                        .map(|n| n.to_string())
+                        .unwrap_or_default();
                 }
                 return Some(pack);
             }
@@ -2095,7 +2272,11 @@ async fn fetch_room_pack(
     }
     if pack.display_name.is_empty() {
         pack.display_name = match client.get_room(room_id) {
-            Some(r) => r.display_name().await.map(|n| n.to_string()).unwrap_or_default(),
+            Some(r) => r
+                .display_name()
+                .await
+                .map(|n| n.to_string())
+                .unwrap_or_default(),
             None => String::new(),
         };
     }
@@ -2158,20 +2339,39 @@ pub(super) async fn rebuild_image_packs(
     // named packs use distinct non-empty ones. The shared room_state_cache
     // memoizes the network fetch per room until set_active_room invalidates
     // it on a genuine new visit, so this doesn't hit the network on every
-    // periodic rebuild pass.
+    // periodic rebuild pass. Bounded-concurrent (`buffered` keeps the
+    // result order, so the pack list stays deterministic): this runs inside
+    // the room-list watcher, so serial round trips would stall its updates.
+    use futures_util::StreamExt;
+    const PACK_FETCH_CONCURRENCY: usize = 16;
+    // Futures are collected into a Vec first: a `filter_map` closure
+    // returning an async block trips a higher-ranked-lifetime error once
+    // this future has to be `Send` inside `spawn_tracked`.
+    let mut active_futs = Vec::new();
     for room_id_str in &active_set {
         let Ok(room_id) = room_id_str.parse::<OwnedRoomId>() else {
             continue;
         };
-        let discovered = discover_and_parse_room_packs(
-            client,
-            room_state_cache,
-            &room_id,
-            room_id_str,
-            &subscribed_set,
-            legacy_compat,
-        )
-        .await;
+        let subscribed_set = &subscribed_set;
+        active_futs.push(async move {
+            let discovered = discover_and_parse_room_packs(
+                client,
+                room_state_cache,
+                &room_id,
+                room_id_str,
+                subscribed_set,
+                legacy_compat,
+            )
+            .await;
+            (room_id_str.clone(), discovered)
+        });
+    }
+    let active_results: Vec<(String, Vec<crate::image_packs::ImagePack>)> =
+        futures_util::stream::iter(active_futs)
+            .buffered(PACK_FETCH_CONCURRENCY)
+            .collect()
+            .await;
+    for (room_id_str, discovered) in active_results {
         {
             let db = app_cache_db.lock();
             if let Some(conn) = db.as_ref() {
@@ -2179,7 +2379,7 @@ pub(super) async fn rebuild_image_packs(
                     .duration_since(std::time::UNIX_EPOCH)
                     .map(|d| d.as_secs() as i64)
                     .unwrap_or(0);
-                backfill::replace_known_room_packs(conn, room_id_str, &discovered, checked_at);
+                backfill::replace_known_room_packs(conn, &room_id_str, &discovered, checked_at);
             }
         }
         packs.extend(discovered);
@@ -2188,7 +2388,10 @@ pub(super) async fn rebuild_image_packs(
     // -- Subscribed rooms not also active (already fully covered above) --
     // Exact (room_id, state_key) from account data — a single-key fetch is
     // correct here since the state_key is already known precisely, no
-    // discovery needed.
+    // discovery needed. Each future gets a private one-entry copy of the
+    // fetch cache (the shared map is `&mut`); new entries merge back after.
+    type PackCache = std::collections::HashMap<(OwnedRoomId, String), Option<Value>>;
+    let mut subscribed_futs = Vec::new();
     for (room_id_str, state_key) in &subscribed_set {
         if active_set.contains(room_id_str) {
             continue;
@@ -2196,15 +2399,36 @@ pub(super) async fn rebuild_image_packs(
         let Ok(room_id) = room_id_str.parse::<OwnedRoomId>() else {
             continue;
         };
-        let fetched = fetch_room_pack(
-            client,
-            http_cache,
-            &room_id,
-            room_id_str,
-            state_key,
-            legacy_compat,
-        )
+        let key = (room_id.clone(), state_key.clone());
+        let mut local: PackCache = PackCache::new();
+        if let Some(v) = http_cache.get(&key) {
+            local.insert(key, v.clone());
+        }
+        subscribed_futs.push(async move {
+            let fetched = fetch_room_pack(
+                client,
+                &mut local,
+                &room_id,
+                room_id_str,
+                state_key,
+                legacy_compat,
+            )
+            .await;
+            (room_id_str.clone(), state_key.clone(), fetched, local)
+        });
+    }
+    let subscribed_results: Vec<(
+        String,
+        String,
+        Option<crate::image_packs::ImagePack>,
+        PackCache,
+    )> = futures_util::stream::iter(subscribed_futs)
+        .buffered(PACK_FETCH_CONCURRENCY)
+        .collect()
         .await;
+    for (room_id_str, state_key, fetched, local) in subscribed_results {
+        http_cache.extend(local);
+        let (room_id_str, state_key) = (room_id_str.as_str(), state_key.as_str());
 
         // Keep the persisted "Known Packs" cache in sync with what we just
         // learned: found a pack -> upsert (also covers display_name
@@ -2483,6 +2707,24 @@ pub(super) fn strip_plain_reply_fallback(body: &str) -> &str {
     }
 }
 
+/// The event a room-list preview describes. A forward (MSC4553) previews the
+/// content it carries, not its "Forwarded from ..." fallback text.
+fn preview_event(
+    raw: &matrix_sdk::ruma::serde::Raw<matrix_sdk::ruma::events::AnySyncTimelineEvent>,
+) -> Option<matrix_sdk::ruma::events::AnySyncTimelineEvent> {
+    let json = raw.json().get();
+    if crate::msc::msc4553::might_be_forward(json) {
+        let shown = serde_json::from_str::<serde_json::Value>(json)
+            .ok()
+            .and_then(|v| crate::msc::msc4553::display_event(&v))
+            .and_then(|v| serde_json::from_value(v).ok());
+        if shown.is_some() {
+            return shown;
+        }
+    }
+    raw.deserialize().ok()
+}
+
 fn latest_event_preview(value: &matrix_sdk::latest_events::LatestEventValue) -> LatestPreview {
     use matrix_sdk::latest_events::LatestEventValue;
     use matrix_sdk::ruma::events::{
@@ -2517,7 +2759,7 @@ fn latest_event_preview(value: &matrix_sdk::latest_events::LatestEventValue) -> 
 
     match value {
         LatestEventValue::Remote(timeline_event) => {
-            let Some(event) = timeline_event.raw().deserialize().ok() else {
+            let Some(event) = preview_event(timeline_event.raw()) else {
                 return LatestPreview::default();
             };
             match event {
@@ -2617,7 +2859,9 @@ fn latest_event_preview(value: &matrix_sdk::latest_events::LatestEventValue) -> 
                         thumbnail_url: url,
                     }
                 }
-                AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::UnstablePollStart(ev)) => {
+                AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::UnstablePollStart(
+                    ev,
+                )) => {
                     use matrix_sdk::ruma::events::poll::unstable_start::UnstablePollStartEventContent;
                     let Some(orig) = ev.as_original() else {
                         return LatestPreview::default();
@@ -2661,9 +2905,9 @@ fn latest_event_sender(
                 AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::Sticker(ev)) => {
                     ev.as_original().map(|e| e.sender.clone())
                 }
-                AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::UnstablePollStart(ev)) => {
-                    ev.as_original().map(|e| e.sender.clone())
-                }
+                AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::UnstablePollStart(
+                    ev,
+                )) => ev.as_original().map(|e| e.sender.clone()),
                 _ => None,
             }
         }
@@ -2680,13 +2924,34 @@ fn poll_permalink_preview(question: &str) -> String {
     }
 }
 
+/// The message type a local echo of a forward (MSC4553) carries, so the
+/// preview shows the forwarded content instead of the "Forwarded from ..."
+/// fallback. `None` for any other message.
+fn forwarded_local_msgtype(
+    content: &matrix_sdk::store::SerializableEventContent,
+) -> Option<matrix_sdk::ruma::events::room::message::MessageType> {
+    use crate::msc::msc4553;
+    use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
+    let json = content.raw().0.json().get();
+    if !msc4553::might_be_forward(json) {
+        return None;
+    }
+    let value: serde_json::Value = serde_json::from_str(json).ok()?;
+    let shown = msc4553::parse(&value, "m.room.message")?.content?;
+    serde_json::from_value::<RoomMessageEventContent>(msc4553::without_relations(shown))
+        .ok()
+        .map(|c| c.msgtype)
+}
+
 fn extract_local_preview(content: &matrix_sdk::store::SerializableEventContent) -> LatestPreview {
     use matrix_sdk::ruma::events::{room::message::MessageType, AnyMessageLikeEventContent};
     let Some(c) = content.deserialize().ok() else {
         return LatestPreview::default();
     };
     let msgtype = match c {
-        AnyMessageLikeEventContent::RoomMessage(c) => c.msgtype,
+        AnyMessageLikeEventContent::RoomMessage(c) => {
+            forwarded_local_msgtype(content).unwrap_or(c.msgtype)
+        }
         // Your own poll while it is still sending (mirrors latest_event_preview).
         AnyMessageLikeEventContent::UnstablePollStart(
             matrix_sdk::ruma::events::poll::unstable_start::UnstablePollStartEventContent::New(c),
@@ -2808,7 +3073,10 @@ pub(super) async fn dm_other_user(room: &Room, me: &UserId) -> Option<crate::ffi
     if active.saturating_sub(service) != 2 {
         return None;
     }
-    if let Ok(ids) = room.human_member_ids(matrix_sdk::RoomMemberships::JOIN).await {
+    if let Ok(ids) = room
+        .human_member_ids(matrix_sdk::RoomMemberships::JOIN)
+        .await
+    {
         let mut real = ids.iter().filter(|id| **id != *me);
         if let Some(first) = real.next() {
             if real.next().is_none() {
@@ -2871,13 +3139,20 @@ fn latest_valid_edit_body(
     relations_json
         .iter()
         .filter(|json| {
-            json.pointer("/content/m.relates_to/rel_type").and_then(|v| v.as_str())
+            json.pointer("/content/m.relates_to/rel_type")
+                .and_then(|v| v.as_str())
                 == Some("m.replace")
-                && json.pointer("/content/m.relates_to/event_id").and_then(|v| v.as_str())
+                && json
+                    .pointer("/content/m.relates_to/event_id")
+                    .and_then(|v| v.as_str())
                     == Some(target_event_id)
                 && json.pointer("/sender").and_then(|v| v.as_str()) == Some(target_sender)
         })
-        .max_by_key(|json| json.pointer("/origin_server_ts").and_then(|v| v.as_u64()).unwrap_or(0))
+        .max_by_key(|json| {
+            json.pointer("/origin_server_ts")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0)
+        })
         .and_then(|json| json.pointer("/content/m.new_content"))
         .and_then(|new_content| serde_json::from_value::<MessageType>(new_content.clone()).ok())
         .map(|msgtype| message_type_preview(&msgtype))
@@ -3018,13 +3293,17 @@ pub(super) fn parse_bridge_network_info(
         network: Option<NetworkOrProtocol>,
         protocol: Option<NetworkOrProtocol>,
     }
-    let content: BridgeContent =
-        serde_json::from_value(content.clone()).unwrap_or_default();
+    let content: BridgeContent = serde_json::from_value(content.clone()).unwrap_or_default();
     let name = content
         .network
         .as_ref()
         .and_then(|n| n.displayname.clone())
-        .or_else(|| content.protocol.as_ref().and_then(|p| p.displayname.clone()));
+        .or_else(|| {
+            content
+                .protocol
+                .as_ref()
+                .and_then(|p| p.displayname.clone())
+        });
     let avatar = content
         .network
         .as_ref()
@@ -3045,8 +3324,7 @@ pub(super) fn parse_bridge_capabilities(
     struct Features {
         thread: Option<i64>,
     }
-    let features: Features =
-        serde_json::from_value(room_features.clone()).unwrap_or_default();
+    let features: Features = serde_json::from_value(room_features.clone()).unwrap_or_default();
     crate::ffi::BridgeCapabilities {
         threads: features.thread.is_some_and(|t| t >= 1),
     }
@@ -3239,34 +3517,40 @@ pub(super) async fn build_room_info_unfiltered(
     };
     let is_encrypted = room.encryption_state().is_encrypted();
     let (has_active_call, call_members, call_intent) = {
-        use matrix_sdk::deserialized_responses::SyncOrStrippedState;
-        use matrix_sdk::ruma::events::{call::member::CallMemberEventContent, SyncStateEvent};
         let own_user = client.user_id();
         let own_device = client.device_id();
-        let mut active = false;
-        let mut participants = Vec::new();
-        for raw in room
-            .get_state_events_static::<CallMemberEventContent>()
-            .await
-            .unwrap_or_default()
-        {
-            if let Ok(SyncOrStrippedState::Sync(SyncStateEvent::Original(o))) = raw.deserialize() {
-                // active_memberships() filters out expired memberships using
-                // origin_server_ts as the fallback for created_ts; non-empty
-                // result means at least one participant is still in the call.
-                if !o.content.active_memberships(Some(o.origin_server_ts)).is_empty() {
-                    active = true;
-                }
-                if let (Some(u), Some(d)) = (own_user, own_device) {
-                    participants.extend(rtc::members::call_participants(
-                        &o.content,
-                        &o.sender,
-                        o.origin_server_ts,
-                        u,
-                        d,
-                    ));
-                }
+        // Every live legacy membership, ours included, read from the raw
+        // events (ruma's typed model drops those of newer clients).
+        let all =
+            rtc::members::read_call_members(room, None, rtc::members::JoinCheck::Cached).await;
+        // Users the account ignores do not make a call show up. Read from the
+        // store only when the room has a call member to judge.
+        let mrtc = match (own_user, own_device) {
+            (Some(u), Some(d)) => {
+                rtc::slots::read_mrtc_members(room, u, d, rtc::members::JoinCheck::Cached).await
             }
+            _ => Vec::new(),
+        };
+        let ignored = if all.is_empty() && mrtc.is_empty() {
+            std::collections::HashSet::new()
+        } else {
+            rtc::sticky::ignored_users(client).await
+        };
+        let all = rtc::members::without_ignored(all, &ignored);
+        let mrtc = rtc::members::without_ignored(mrtc, &ignored);
+        let mut active = !all.is_empty();
+        let others: Vec<rtc::members::CallMember> = all
+            .into_iter()
+            .filter(|m| match (own_user, own_device) {
+                (Some(u), Some(d)) => !(m.user_id == u.as_str() && m.device_id == d.as_str()),
+                _ => true,
+            })
+            .collect();
+        let mut participants = rtc::slots::participants_from_members(&others);
+        // Sticky MatrixRTC members (only those seen in timelines / history).
+        if !mrtc.is_empty() {
+            active = true;
+            participants.extend(rtc::slots::participants_from_members(&mrtc));
         }
         let (members, intent) = rtc::members::summarize_participants(participants);
         (active, members, intent)
@@ -3316,7 +3600,12 @@ pub(super) async fn build_room_info_unfiltered(
                 })
                 .map(|c| parse_bridge_capabilities(&c))
                 .unwrap_or_default();
-            (true, name.unwrap_or_default(), avatar.unwrap_or_default(), caps)
+            (
+                true,
+                name.unwrap_or_default(),
+                avatar.unwrap_or_default(),
+                caps,
+            )
         } else {
             // Persistent cache from SQLite — written by start_bridge_status_check.
             let guard = app_cache_db.lock();
@@ -3333,9 +3622,7 @@ pub(super) async fn build_room_info_unfiltered(
                                 row.get::<_, Option<String>>(1)?.unwrap_or_default(),
                                 row.get::<_, Option<String>>(2)?.unwrap_or_default(),
                                 crate::ffi::BridgeCapabilities {
-                                    threads: row
-                                        .get::<_, Option<bool>>(3)?
-                                        .unwrap_or(false),
+                                    threads: row.get::<_, Option<bool>>(3)?.unwrap_or(false),
                                 },
                             ))
                         },
@@ -3355,7 +3642,10 @@ pub(super) async fn build_room_info_unfiltered(
             _ => "shared".to_string(),
         }
     };
-    let join_rule = room.join_rule().map(|r| r.as_str().to_owned()).unwrap_or_default();
+    let join_rule = room
+        .join_rule()
+        .map(|r| r.as_str().to_owned())
+        .unwrap_or_default();
     let guest_access = matches!(
         room.guest_access(),
         matrix_sdk::ruma::events::room::guest_access::GuestAccess::CanJoin
@@ -3613,9 +3903,7 @@ pub(super) struct RoomListFingerprintKey {
 ///
 /// Not `#[cfg(not(test))]`: it is pure (operates on `RoomInfo` only) so it can
 /// be unit-tested without a live client.
-pub(super) fn room_list_fingerprint(
-    rooms: &[crate::ffi::RoomInfo],
-) -> Vec<RoomListFingerprintKey> {
+pub(super) fn room_list_fingerprint(rooms: &[crate::ffi::RoomInfo]) -> Vec<RoomListFingerprintKey> {
     let mut tmp: Vec<&crate::ffi::RoomInfo> = rooms.iter().collect();
     tmp.sort_by(|a, b| {
         let au = a.notification_count > 0 || a.highlight_count > 0;
@@ -3820,7 +4108,13 @@ pub(super) async fn build_invite_infos(client: &Client) -> Vec<crate::ffi::Invit
                         ),
                     }
                 }
-                Err(_) => (String::new(), String::new(), String::new(), 0, String::new()),
+                Err(_) => (
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    0,
+                    String::new(),
+                ),
             };
 
         result.push(crate::ffi::InviteInfo {
@@ -3943,7 +4237,9 @@ mod tests {
     #[test]
     fn merge_via_dedups_in_order_and_drops_empties() {
         let v = merge_via(
-            ["b.org", "", "a.org", "b.org"].into_iter().map(String::from),
+            ["b.org", "", "a.org", "b.org"]
+                .into_iter()
+                .map(String::from),
         );
         assert_eq!(v, vec!["b.org".to_string(), "a.org".to_string()]);
     }
@@ -3977,17 +4273,39 @@ mod tests {
         let fp = |r: &crate::ffi::RoomInfo| room_list_fingerprint(std::slice::from_ref(r));
         let before = fp(&fresh());
         let mut changed: Vec<crate::ffi::RoomInfo> = Vec::new();
-        let mut r = fresh(); r.notification_count = 3; changed.push(r);
-        let mut r = fresh(); r.highlight_count = 1; changed.push(r);
-        let mut r = fresh(); r.muted = true; changed.push(r);
-        let mut r = fresh(); r.is_direct = true; changed.push(r);
-        let mut r = fresh(); r.last_message_body = "hi".into(); changed.push(r);
-        let mut r = fresh(); r.last_message_sender_name = "Ann".into(); changed.push(r);
-        let mut r = fresh(); r.last_message_kind = "m.image".into(); changed.push(r);
-        let mut r = fresh(); r.last_message_sticker_url = "mxc://x/s".into(); changed.push(r);
-        let mut r = fresh(); r.last_message_thumbnail_url = "mxc://x/t".into(); changed.push(r);
+        let mut r = fresh();
+        r.notification_count = 3;
+        changed.push(r);
+        let mut r = fresh();
+        r.highlight_count = 1;
+        changed.push(r);
+        let mut r = fresh();
+        r.muted = true;
+        changed.push(r);
+        let mut r = fresh();
+        r.is_direct = true;
+        changed.push(r);
+        let mut r = fresh();
+        r.last_message_body = "hi".into();
+        changed.push(r);
+        let mut r = fresh();
+        r.last_message_sender_name = "Ann".into();
+        changed.push(r);
+        let mut r = fresh();
+        r.last_message_kind = "m.image".into();
+        changed.push(r);
+        let mut r = fresh();
+        r.last_message_sticker_url = "mxc://x/s".into();
+        changed.push(r);
+        let mut r = fresh();
+        r.last_message_thumbnail_url = "mxc://x/t".into();
+        changed.push(r);
         for (i, r) in changed.iter().enumerate() {
-            assert_ne!(before, fp(r), "field change #{i} must change the fingerprint");
+            assert_ne!(
+                before,
+                fp(r),
+                "field change #{i} must change the fingerprint"
+            );
         }
     }
 
@@ -4282,8 +4600,7 @@ mod tests {
         let latest = event_id!("$latest:server");
         // Acked reply is used verbatim even when the thread list knows a
         // different (newer) latest reply.
-        let (target, ts) =
-            pick_thread_receipt_target(root, Some(acked), Some((latest, 999)));
+        let (target, ts) = pick_thread_receipt_target(root, Some(acked), Some((latest, 999)));
         assert_eq!(target, acked);
         assert_eq!(ts, 0, "ts only carried when acked == list latest");
     }
@@ -4293,8 +4610,7 @@ mod tests {
         use matrix_sdk::ruma::event_id;
         let root = event_id!("$root:server");
         let latest = event_id!("$latest:server");
-        let (target, ts) =
-            pick_thread_receipt_target(root, Some(latest), Some((latest, 4242)));
+        let (target, ts) = pick_thread_receipt_target(root, Some(latest), Some((latest, 4242)));
         assert_eq!(target, latest);
         assert_eq!(ts, 4242);
     }
@@ -4305,8 +4621,7 @@ mod tests {
         let root = event_id!("$root:server");
         let latest = event_id!("$latest:server");
         // No acked id, but the thread list has a latest reply.
-        let (target, ts) =
-            pick_thread_receipt_target(root, None, Some((latest, 7)));
+        let (target, ts) = pick_thread_receipt_target(root, None, Some((latest, 7)));
         assert_eq!(target, latest);
         assert_eq!(ts, 7);
         // Nothing known at all → the root, as a last resort.
@@ -4428,12 +4743,6 @@ mod tests {
     }
 
     #[test]
-    fn list_rooms_is_empty_when_not_logged_in() {
-        let c = ClientFfi::new();
-        assert!(c.list_rooms().is_empty());
-    }
-
-    #[test]
     fn list_invites_is_empty_when_not_logged_in() {
         let c = ClientFfi::new();
         assert!(c.list_invites().is_empty());
@@ -4449,6 +4758,13 @@ mod tests {
     fn decline_invite_async_does_not_panic_when_not_logged_in() {
         let c = ClientFfi::new();
         c.decline_invite_async("!room:example.com");
+    }
+
+    #[test]
+    fn rtc_decline_invite_async_does_not_panic_when_not_logged_in() {
+        let c = ClientFfi::new();
+        c.rtc_decline_invite_async("!room:example.com", "$invite:example.com");
+        c.rtc_decline_invite_async("not a room id", "");
     }
 
     #[test]
@@ -4553,17 +4869,11 @@ mod tests {
     #[test]
     fn set_low_power_mode_roundtrips() {
         let c = ClientFfi::new();
-        assert!(!c
-            .low_power_mode
-            .load(std::sync::atomic::Ordering::Relaxed));
+        assert!(!c.low_power_mode.load(std::sync::atomic::Ordering::Relaxed));
         c.set_low_power_mode(true);
-        assert!(c
-            .low_power_mode
-            .load(std::sync::atomic::Ordering::Relaxed));
+        assert!(c.low_power_mode.load(std::sync::atomic::Ordering::Relaxed));
         c.set_low_power_mode(false);
-        assert!(!c
-            .low_power_mode
-            .load(std::sync::atomic::Ordering::Relaxed));
+        assert!(!c.low_power_mode.load(std::sync::atomic::Ordering::Relaxed));
     }
 
     #[test]
@@ -4824,7 +5134,13 @@ mod tests {
     #[test]
     fn send_reply_not_logged_in() {
         let c = ClientFfi::new();
-        let r = c.send_reply("!room:example.com", "$event:example.com", "reply body", "", "");
+        let r = c.send_reply(
+            "!room:example.com",
+            "$event:example.com",
+            "reply body",
+            "",
+            "",
+        );
         assert!(!r.ok);
     }
 
@@ -4879,14 +5195,27 @@ mod tests {
     #[test]
     fn send_thread_reply_not_logged_in() {
         let c = ClientFfi::new();
-        let r = c.send_thread_reply("!room:server", "$root:server", "$reply:server", "hi", "", "");
+        let r = c.send_thread_reply(
+            "!room:server",
+            "$root:server",
+            "$reply:server",
+            "hi",
+            "",
+            "",
+        );
         assert!(!r.ok);
     }
 
     #[test]
     fn send_edit_not_logged_in() {
         let c = ClientFfi::new();
-        let r = c.send_edit("!room:example.com", "$event:example.com", "new body", "", "");
+        let r = c.send_edit(
+            "!room:example.com",
+            "$event:example.com",
+            "new body",
+            "",
+            "",
+        );
         assert!(!r.ok);
     }
 
@@ -4900,14 +5229,14 @@ mod tests {
     #[test]
     fn send_caption_edit_not_logged_in() {
         let c = ClientFfi::new();
-        let r = c.send_caption_edit("!room:example.com", "$event:example.com", "new caption");
+        let r = c.send_caption_edit("!room:example.com", "$event:example.com", "new caption", "");
         assert!(!r.ok);
     }
 
     #[test]
     fn send_caption_edit_invalid_room_id() {
         let c = ClientFfi::new();
-        let r = c.send_caption_edit("not-a-room-id", "$event:example.com", "new caption");
+        let r = c.send_caption_edit("not-a-room-id", "$event:example.com", "new caption", "");
         assert!(!r.ok);
     }
 
@@ -4915,6 +5244,15 @@ mod tests {
     fn load_prefs_returns_empty_object_when_not_logged_in() {
         let c = ClientFfi::new();
         assert_eq!(c.load_prefs(), "{}");
+    }
+
+    #[test]
+    fn prefs_save_failure_is_reported_once_per_streak() {
+        let o = PrefsSaveOrder::default();
+        assert!(o.note_result(true));
+        assert!(!o.note_result(true));
+        assert!(!o.note_result(false));
+        assert!(o.note_result(true));
     }
 
     #[test]
@@ -4982,6 +5320,7 @@ mod tests {
             GifMedia::Plain("mxc://server/abc123".into()),
             "anim.gif",
             "", // no caption
+            "",
             "image/gif",
             320,
             240,
@@ -5015,6 +5354,7 @@ mod tests {
             GifMedia::Encrypted(enc.clone()),
             "anim.webp",
             "",
+            "",
             "image/webp",
             320,
             240,
@@ -5036,6 +5376,7 @@ mod tests {
             GifMedia::Plain("mxc://server/xyz".into()),
             "cat.gif",
             "Look at this",
+            "",
             "image/gif",
             0,
             0,
@@ -5052,10 +5393,53 @@ mod tests {
     }
 
     #[test]
+    fn animated_image_content_with_html_caption_carries_format_and_mentions() {
+        let html = r#"<a href="https://matrix.to/#/@alice:x.org">Alice</a> <em>hi</em>"#;
+        let val = build_animated_image_content(
+            GifMedia::Plain("mxc://server/xyz".into()),
+            "cat.gif",
+            "Alice *hi*",
+            html,
+            "image/gif",
+            0,
+            0,
+            512,
+            "",
+            "",
+        );
+        assert_eq!(val["body"], "Alice *hi*");
+        assert_eq!(val["filename"], "cat.gif");
+        assert_eq!(val["format"], "org.matrix.custom.html");
+        assert_eq!(val["formatted_body"], html);
+        assert_eq!(val["m.mentions"]["user_ids"][0], "@alice:x.org");
+    }
+
+    #[test]
+    fn animated_image_content_without_caption_ignores_html() {
+        let val = build_animated_image_content(
+            GifMedia::Plain("mxc://server/xyz".into()),
+            "cat.gif",
+            "",
+            "<b>x</b>",
+            "image/gif",
+            0,
+            0,
+            512,
+            "",
+            "",
+        );
+        assert_eq!(val["body"], "cat.gif");
+        assert!(val.get("formatted_body").is_none());
+        assert!(val.get("format").is_none());
+        assert!(val.get("m.mentions").is_none());
+    }
+
+    #[test]
     fn animated_image_content_threaded() {
         let val = build_animated_image_content(
             GifMedia::Plain("mxc://server/abc".into()),
             "a.gif",
+            "",
             "",
             "image/gif",
             1,
@@ -5078,6 +5462,7 @@ mod tests {
         let val = build_animated_image_content(
             GifMedia::Plain("mxc://server/abc".into()),
             "a.gif",
+            "",
             "",
             "image/gif",
             1,
@@ -5376,9 +5761,9 @@ mod tests_latest_event_body {
             true,
         )
         .unwrap();
-        let content = SerializableEventContent::new(&AnyMessageLikeEventContent::UnstablePollStart(
-            UnstablePollStartEventContent::New(new),
-        ))
+        let content = SerializableEventContent::new(
+            &AnyMessageLikeEventContent::UnstablePollStart(UnstablePollStartEventContent::New(new)),
+        )
         .unwrap();
         let v = LatestEventValue::LocalIsSending(LocalLatestEventValue {
             timestamp: MilliSecondsSinceUnixEpoch(ruma::uint!(0)),
@@ -5392,7 +5777,10 @@ mod tests_latest_event_body {
     #[test]
     fn poll_permalink_preview_falls_back_without_question() {
         assert_eq!(super::poll_permalink_preview(""), "\u{1}poll");
-        assert_eq!(super::poll_permalink_preview("Lunch?"), "\u{1}poll\u{1}Lunch?");
+        assert_eq!(
+            super::poll_permalink_preview("Lunch?"),
+            "\u{1}poll\u{1}Lunch?"
+        );
     }
 
     #[test]
@@ -5515,10 +5903,7 @@ mod tests_pinned_event_edit_body {
 
     #[test]
     fn no_relations_returns_none() {
-        assert_eq!(
-            latest_valid_edit_body(&[], "$orig", "@a:e.com"),
-            None
-        );
+        assert_eq!(latest_valid_edit_body(&[], "$orig", "@a:e.com"), None);
     }
 
     #[test]
@@ -5533,7 +5918,10 @@ mod tests_pinned_event_edit_body {
     #[test]
     fn edit_from_different_sender_ignored() {
         let relations = [replacement("@mallory:e.com", 2, "$e1", "not my edit")];
-        assert_eq!(latest_valid_edit_body(&relations, "$orig", "@a:e.com"), None);
+        assert_eq!(
+            latest_valid_edit_body(&relations, "$orig", "@a:e.com"),
+            None
+        );
     }
 
     #[test]
@@ -5541,7 +5929,10 @@ mod tests_pinned_event_edit_body {
         let mut edit = replacement("@a:e.com", 2, "$e1", "wrong target");
         edit["content"]["m.relates_to"]["event_id"] = serde_json::json!("$other");
         let relations = [edit];
-        assert_eq!(latest_valid_edit_body(&relations, "$orig", "@a:e.com"), None);
+        assert_eq!(
+            latest_valid_edit_body(&relations, "$orig", "@a:e.com"),
+            None
+        );
     }
 
     #[test]
@@ -5562,7 +5953,10 @@ mod tests_pinned_event_edit_body {
         let mut edit = replacement("@a:e.com", 2, "$e1", "annotation");
         edit["content"]["m.relates_to"]["rel_type"] = serde_json::json!("m.annotation");
         let relations = [edit];
-        assert_eq!(latest_valid_edit_body(&relations, "$orig", "@a:e.com"), None);
+        assert_eq!(
+            latest_valid_edit_body(&relations, "$orig", "@a:e.com"),
+            None
+        );
     }
 }
 
@@ -5875,18 +6269,36 @@ mod html_preview_tests {
             "shown"
         );
         // A bare attribute, with or without a value, hides the span.
-        assert_eq!(html_first_line("a <span data-mx-spoiler>x</span> b"), "a  b");
-        assert_eq!(html_first_line(r#"a <SPAN DATA-MX-SPOILER="why">x</SPAN> b"#), "a  b");
+        assert_eq!(
+            html_first_line("a <span data-mx-spoiler>x</span> b"),
+            "a  b"
+        );
+        assert_eq!(
+            html_first_line(r#"a <SPAN DATA-MX-SPOILER="why">x</SPAN> b"#),
+            "a  b"
+        );
     }
 
     #[test]
     fn has_attribute_reads_attribute_names_only() {
         use super::has_attribute;
         assert!(has_attribute("span data-mx-spoiler", "data-mx-spoiler"));
-        assert!(has_attribute("span class=\"a b\" data-mx-spoiler=\"r\"", "data-mx-spoiler"));
-        assert!(has_attribute("span class=a  data-mx-spoiler", "data-mx-spoiler"));
-        assert!(!has_attribute("span title=\"x data-mx-spoiler y\"", "data-mx-spoiler"));
-        assert!(!has_attribute("span title=data-mx-spoiler", "data-mx-spoiler"));
+        assert!(has_attribute(
+            "span class=\"a b\" data-mx-spoiler=\"r\"",
+            "data-mx-spoiler"
+        ));
+        assert!(has_attribute(
+            "span class=a  data-mx-spoiler",
+            "data-mx-spoiler"
+        ));
+        assert!(!has_attribute(
+            "span title=\"x data-mx-spoiler y\"",
+            "data-mx-spoiler"
+        ));
+        assert!(!has_attribute(
+            "span title=data-mx-spoiler",
+            "data-mx-spoiler"
+        ));
         assert!(!has_attribute("span", "data-mx-spoiler"));
     }
 
@@ -5901,8 +6313,93 @@ mod html_preview_tests {
         assert_eq!(strip_plain_reply_fallback(body), "The reply");
         assert_eq!(strip_plain_reply_fallback("plain text"), "plain text");
         // A quote that is not a reply fallback (no blank line after it) stays.
-        assert_eq!(strip_plain_reply_fallback("> quoted\nnext"), "> quoted\nnext");
+        assert_eq!(
+            strip_plain_reply_fallback("> quoted\nnext"),
+            "> quoted\nnext"
+        );
         // A user's own blockquote followed by a blank line is not a fallback.
-        assert_eq!(strip_plain_reply_fallback("> some quote\n\nmy comment"), "> some quote\n\nmy comment");
+        assert_eq!(
+            strip_plain_reply_fallback("> some quote\n\nmy comment"),
+            "> some quote\n\nmy comment"
+        );
+    }
+}
+
+#[cfg(test)]
+mod forward_preview_tests {
+    use super::{forwarded_local_msgtype, preview_event};
+    use matrix_sdk::ruma::events::room::message::MessageType;
+    use matrix_sdk::ruma::events::{
+        AnyMessageLikeEventContent, AnySyncMessageLikeEvent, AnySyncTimelineEvent,
+    };
+    use matrix_sdk::ruma::serde::Raw;
+    use matrix_sdk::store::SerializableEventContent;
+    use serde_json::{json, Value};
+
+    const KEY: &str = "org.matrix.msc4553.forwarded";
+
+    fn forward_content() -> Value {
+        json!({
+            "msgtype": "m.text",
+            "body": "Forwarded from Bob - view original message: https://matrix.to/#/x\nhello",
+            KEY: { "content": { "msgtype": "m.emote", "body": "waves",
+                                "m.relates_to": { "rel_type": "m.replace", "event_id": "$x" } },
+                   "sender": "@bob:other.org" }
+        })
+    }
+
+    fn body_of(event: AnySyncTimelineEvent) -> (String, bool) {
+        let AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::RoomMessage(ev)) = event
+        else {
+            panic!("not a message");
+        };
+        let orig = ev.as_original().unwrap();
+        (
+            orig.content.body().to_owned(),
+            orig.content.relates_to.is_some(),
+        )
+    }
+
+    #[test]
+    fn a_forward_previews_the_forwarded_content() {
+        let raw = Raw::<AnySyncTimelineEvent>::from_json_string(
+            json!({ "type": "m.room.message", "event_id": "$e", "sender": "@alice:x",
+                    "origin_server_ts": 1, "content": forward_content() })
+            .to_string(),
+        )
+        .unwrap();
+        let (body, has_relation) = body_of(preview_event(&raw).unwrap());
+        assert_eq!(body, "waves");
+        assert!(!has_relation);
+    }
+
+    #[test]
+    fn an_ordinary_message_previews_as_before() {
+        let raw = Raw::<AnySyncTimelineEvent>::from_json_string(
+            json!({ "type": "m.room.message", "event_id": "$e", "sender": "@alice:x",
+                    "origin_server_ts": 1, "content": { "msgtype": "m.text", "body": "hi" } })
+            .to_string(),
+        )
+        .unwrap();
+        assert_eq!(body_of(preview_event(&raw).unwrap()).0, "hi");
+    }
+
+    #[test]
+    fn a_local_forward_uses_the_forwarded_message_type() {
+        let raw =
+            Raw::<AnyMessageLikeEventContent>::from_json_string(forward_content().to_string())
+                .unwrap();
+        let local = SerializableEventContent::from_raw(raw, "m.room.message".to_owned());
+        let Some(MessageType::Emote(e)) = forwarded_local_msgtype(&local) else {
+            panic!("expected the forwarded emote");
+        };
+        assert_eq!(e.body, "waves");
+
+        let plain = Raw::<AnyMessageLikeEventContent>::from_json_string(
+            json!({ "msgtype": "m.text", "body": "hi" }).to_string(),
+        )
+        .unwrap();
+        let local = SerializableEventContent::from_raw(plain, "m.room.message".to_owned());
+        assert!(forwarded_local_msgtype(&local).is_none());
     }
 }

@@ -49,11 +49,17 @@ public:
 
     // Paints at (x, y); returns the bottom y. When `interactive`, records hit
     // rects (one per answer, plus the End poll button when `show_end`).
-    float paint(const MessageRowData& m, tk::PaintCtx& ctx, float x, float y,
-                float col_w, bool interactive, bool show_end);
+    float paint(const MessageRowData& m, tk::PaintCtx& ctx, float x, float y, float col_w,
+                bool interactive, bool show_end);
 
-    void clear_geometry() { geom_.clear(); }
-    const std::vector<Hit>& geometry() const { return geom_; }
+    void clear_geometry()
+    {
+        geom_.clear();
+    }
+    const std::vector<Hit>& geometry() const
+    {
+        return geom_;
+    }
     const Hit* hit_test(tk::Point world) const;
 
 private:
@@ -86,8 +92,8 @@ private:
         tk::Rect end_rect; // card-relative; empty when no button
     };
 
-    Layout layout_(const MessageRowData& m, tk::CanvasFactory& factory,
-                   float col_w, bool show_end) const;
+    Layout layout_(const MessageRowData& m, tk::CanvasFactory& factory, float col_w,
+                   bool show_end) const;
 
     std::vector<Hit> geom_;
 };

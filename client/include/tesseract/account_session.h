@@ -76,6 +76,11 @@ struct AccountSession
     /// account-data event. The room browser's server picker lists these.
     std::vector<std::string> directory_servers;
 
+    /// Space room IDs pinned to the space picker sidebar (tab order),
+    /// restored from the `im.gnomos.tesseract` account-data event. Pinned
+    /// spaces are hidden from the room list.
+    std::vector<std::string> pinned_spaces;
+
     /// Room IDs the user has locally marked "not actually bridged", restored
     /// from the `im.gnomos.tesseract` account-data event. Overrides
     /// `RoomInfo::is_bridged` for that room — see
@@ -109,7 +114,6 @@ struct AccountSession
     /// on every state change (including the initial snapshot) so that
     /// switch_active_account can restore the correct banner state.
     bool unverified = false;
-
 };
 
 /// How long after a local tone change a differing synced tone is treated as
@@ -131,9 +135,8 @@ inline void set_local_emoji_skin_tone(AccountSession& a, emoji::SkinTone tone,
 inline void apply_synced_emoji_skin_tone(AccountSession& a, emoji::SkinTone synced,
                                          std::chrono::steady_clock::time_point now)
 {
-    const bool in_window =
-        a.emoji_skin_tone_set_at != std::chrono::steady_clock::time_point{} &&
-        now - a.emoji_skin_tone_set_at < kSkinToneEchoWindow;
+    const bool in_window = a.emoji_skin_tone_set_at != std::chrono::steady_clock::time_point{} &&
+                           now - a.emoji_skin_tone_set_at < kSkinToneEchoWindow;
     if (synced == a.emoji_skin_tone)
     {
         a.emoji_skin_tone_deferred.reset();
@@ -153,11 +156,9 @@ inline void apply_synced_emoji_skin_tone(AccountSession& a, emoji::SkinTone sync
 
 /// Adopt a parked synced tone once the echo window has passed without our
 /// own echo arriving (another device wrote after us, or our save failed).
-inline void settle_emoji_skin_tone(AccountSession& a,
-                                   std::chrono::steady_clock::time_point now)
+inline void settle_emoji_skin_tone(AccountSession& a, std::chrono::steady_clock::time_point now)
 {
-    if (!a.emoji_skin_tone_deferred ||
-        now - a.emoji_skin_tone_set_at < kSkinToneEchoWindow)
+    if (!a.emoji_skin_tone_deferred || now - a.emoji_skin_tone_set_at < kSkinToneEchoWindow)
     {
         return;
     }

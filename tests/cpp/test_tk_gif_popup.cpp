@@ -70,14 +70,12 @@ TEST_CASE("GifPopup empty results clears selection", "[view][gif][popup]")
     CHECK_FALSE(p.move_selection(+1));
 }
 
-TEST_CASE("GifPopup content_size clamps the strip to the window width",
-          "[view][gif][popup]")
+TEST_CASE("GifPopup content_size clamps the strip to the window width", "[view][gif][popup]")
 {
     GifPopup p;
     p.set_results(make_results(GifPopup::kMaxCells)); // far wider than a window
 
-    const float full = 2.0f * GifPopup::kPad +
-                       float(GifPopup::kMaxCells) * GifPopup::kCellW +
+    const float full = 2.0f * GifPopup::kPad + float(GifPopup::kMaxCells) * GifPopup::kCellW +
                        float(GifPopup::kMaxCells - 1) * GifPopup::kGap;
 
     // Unbounded (max_width <= 0) returns the full content width.
@@ -93,8 +91,7 @@ TEST_CASE("GifPopup content_size clamps the strip to the window width",
     CHECK(p.content_size(full + 500.0f).w == full);
 }
 
-TEST_CASE("GifPopup status mode sizes a compact row and shows no cells",
-          "[view][gif][popup]")
+TEST_CASE("GifPopup status mode sizes a compact row and shows no cells", "[view][gif][popup]")
 {
     GifPopup p;
     p.set_results(make_results(3));
@@ -114,8 +111,7 @@ TEST_CASE("GifPopup status mode sizes a compact row and shows no cells",
     CHECK_FALSE(p.has_status());
 }
 
-TEST_CASE("GifPopup with no results and no status has zero size",
-          "[view][gif][popup]")
+TEST_CASE("GifPopup with no results and no status has zero size", "[view][gif][popup]")
 {
     GifPopup p;
     CHECK(p.content_size(800.0f).w == 0.0f);

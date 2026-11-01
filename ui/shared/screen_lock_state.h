@@ -8,8 +8,7 @@ namespace tesseract::screenlock
 inline constexpr const char* kLogindService = "org.freedesktop.login1";
 inline constexpr const char* kSessionIface = "org.freedesktop.login1.Session";
 // "auto" resolves to the calling process's own session.
-inline constexpr const char* kSessionPath =
-    "/org/freedesktop/login1/session/auto";
+inline constexpr const char* kSessionPath = "/org/freedesktop/login1/session/auto";
 
 // Best-effort locked state: defaults to UNLOCKED (false) when the hint is
 // unavailable, matching the prior per-shell policy.

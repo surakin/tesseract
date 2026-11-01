@@ -50,7 +50,8 @@ TEST_CASE("KineticScroller arms a fling after a fast touchpad flick", "[tk][kine
     REQUIRE(coast > 0.0f); // same sign as the flick direction
 }
 
-TEST_CASE("KineticScroller does not arm a fling after a slow, deliberate scroll", "[tk][kinetic_scroller]")
+TEST_CASE("KineticScroller does not arm a fling after a slow, deliberate scroll",
+          "[tk][kinetic_scroller]")
 {
     KineticScroller k;
     // Small deltas spaced far enough apart to average out well under the
@@ -94,7 +95,8 @@ TEST_CASE("KineticScroller cancel() stops an in-flight fling immediately", "[tk]
     REQUIRE(k.step() == 0.0f);
 }
 
-TEST_CASE("KineticScroller: a new sample cancels an in-flight fling instead of stacking", "[tk][kinetic_scroller]")
+TEST_CASE("KineticScroller: a new sample cancels an in-flight fling instead of stacking",
+          "[tk][kinetic_scroller]")
 {
     KineticScroller k;
     feed_touchpad_flick(k, 20.0f, 6);

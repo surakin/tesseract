@@ -52,14 +52,12 @@ public:
     static constexpr int kTimeoutMs = 600;
 
     // --- wiring (forwarded from MessageListView) ---
-    using ImageProvider =
-        std::function<const tk::Image*(const std::string& mxc_or_url)>;
-    using PreviewProvider =
-        std::function<const UrlPreviewData*(const std::string& url)>;
+    using ImageProvider = std::function<const tk::Image*(const std::string& mxc_or_url)>;
+    using PreviewProvider = std::function<const UrlPreviewData*(const std::string& url)>;
 
     void set_providers(ImageProvider image, PreviewProvider preview)
     {
-        image_provider_  = std::move(image);
+        image_provider_ = std::move(image);
         preview_provider_ = std::move(preview);
     }
     // Pure-peek mxc -> tk::Image* lookup for sender/membership-target
@@ -94,9 +92,15 @@ public:
     {
         post_delayed_ = std::move(f);
     }
-    void set_repaint(std::function<void()> f) { request_repaint_ = std::move(f); }
+    void set_repaint(std::function<void()> f)
+    {
+        request_repaint_ = std::move(f);
+    }
     // Liveness guard for the deferred timeout closure (the view's alive_ flag).
-    void set_alive(std::weak_ptr<bool> alive) { alive_ = std::move(alive); }
+    void set_alive(std::weak_ptr<bool> alive)
+    {
+        alive_ = std::move(alive);
+    }
 
     // --- arming ---
     // Supersede any prior gate (rapid re-switch / same-room reset) and arm a
@@ -104,7 +108,10 @@ public:
     // timeout closure on a later re-switch. Returns the bumped epoch.
     std::uint64_t begin_room_switch();
     // Tear down any gate without revealing (room-switch=false or empty list).
-    void clear() { gate_.reset(); }
+    void clear()
+    {
+        gate_.reset();
+    }
     // Re-arm for a same-room timeline reset landing while the gate from the
     // ORIGINAL switch is still pending (e.g. subscribe_room's initial
     // snapshot followed by paginate_back_with_status's refill). No-op if no
@@ -120,17 +127,26 @@ public:
     // --- per-paint evaluation ---
     // True while a gate exists (armed but not yet revealed). Input is swallowed
     // and the list is held invisible while this is true.
-    bool active() const { return gate_.has_value(); }
+    bool active() const
+    {
+        return gate_.has_value();
+    }
     // True once the visible band has been scanned for deps.
-    bool evaluated() const { return gate_ && gate_->evaluated; }
+    bool evaluated() const
+    {
+        return gate_ && gate_->evaluated;
+    }
     // True while the pending dependency set still holds the list invisible.
-    bool blocking() const { return gate_ && !gate_->pending.empty(); }
+    bool blocking() const
+    {
+        return gate_ && !gate_->pending.empty();
+    }
 
     // First-paint scan: fill the pending set from the visible band. `scan`
     // enumerates the currently-visible rows, invoking the supplied per-row
     // visitor for each. Idempotent guard via `evaluated`.
-    void evaluate(const std::function<void(
-                      const std::function<void(const MessageRowData&)>&)>& scan);
+    void
+    evaluate(const std::function<void(const std::function<void(const MessageRowData&)>&)>& scan);
 
     // Drop a resolved key (image token or preview URL) — resolved either by
     // loading or by definitively failing (a failed fetch must release the gate
@@ -164,12 +180,12 @@ private:
     std::optional<Gate> gate_;
     std::uint64_t epoch_ = 0;
 
-    ImageProvider   image_provider_;
-    ImageProvider   avatar_provider_;
-    FailedProvider  failed_provider_;
+    ImageProvider image_provider_;
+    ImageProvider avatar_provider_;
+    FailedProvider failed_provider_;
     PreviewProvider preview_provider_;
     std::function<void(const std::string&)> scroll_to_event_;
-    std::function<void()>                    scroll_to_bottom_;
+    std::function<void()> scroll_to_bottom_;
     std::function<void(int, std::function<void()>)> post_delayed_;
     std::function<void()> request_repaint_;
     std::weak_ptr<bool> alive_;

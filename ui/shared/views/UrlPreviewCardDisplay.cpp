@@ -21,18 +21,16 @@ namespace
 // only — bundled (MSC4095) cards size their image like an inline timeline
 // image instead (see kMaxInlineImageWidth/Height below).
 constexpr float kUrlPreviewCardH = 72.0f;
-constexpr float kPreviewCardGap  = 4.0f; // vertical space between stacked cards
-constexpr float kPreviewCardW    = 280.0f;
+constexpr float kPreviewCardGap = 4.0f; // vertical space between stacked cards
+constexpr float kPreviewCardW = 280.0f;
 constexpr float kPreviewThumbSide = 56.0f;
-constexpr float kPreviewCardPad  = 10.0f;
+constexpr float kPreviewCardPad = 10.0f;
 
 // Bundled (MSC4095) card image cap — the same size an inline image in the
 // timeline is capped at, so a sender-bundled preview reads like a normal
 // shared image rather than a tiny thumbnail.
-constexpr float kBundledImageMaxW =
-    static_cast<float>(tesseract::visual::kMaxInlineImageWidth);
-constexpr float kBundledImageMaxH =
-    static_cast<float>(tesseract::visual::kMaxInlineImageHeight);
+constexpr float kBundledImageMaxW = static_cast<float>(tesseract::visual::kMaxInlineImageWidth);
+constexpr float kBundledImageMaxH = static_cast<float>(tesseract::visual::kMaxInlineImageHeight);
 
 // The link a card opens, and the line shown under its title: the URL the
 // message itself carries (the matched URL, else the row's first URL). The
@@ -45,8 +43,7 @@ std::string card_link_for(const UrlPreviewData& p, const std::string& first_url)
 }
 } // namespace
 
-std::vector<const UrlPreviewData*>
-UrlPreviewCardDisplay::cards_for(const MessageRowData& row) const
+std::vector<const UrlPreviewData*> UrlPreviewCardDisplay::cards_for(const MessageRowData& row) const
 {
     std::vector<const UrlPreviewData*> out;
 
@@ -63,8 +60,7 @@ UrlPreviewCardDisplay::cards_for(const MessageRowData& row) const
             }
             else if (!bp.matched_url.empty() && provider_)
             {
-                if (const auto* hp = provider_(bp.matched_url);
-                    hp && hp->has_content())
+                if (const auto* hp = provider_(bp.matched_url); hp && hp->has_content())
                 {
                     out.push_back(hp);
                 }
@@ -84,8 +80,7 @@ UrlPreviewCardDisplay::cards_for(const MessageRowData& row) const
     return out;
 }
 
-float UrlPreviewCardDisplay::stack_height(const MessageRowData& row,
-                                          tk::CanvasFactory& factory,
+float UrlPreviewCardDisplay::stack_height(const MessageRowData& row, tk::CanvasFactory& factory,
                                           float col_w) const
 {
     auto cards = cards_for(row);
@@ -112,8 +107,7 @@ float UrlPreviewCardDisplay::stack_height(const MessageRowData& row,
     return total;
 }
 
-float UrlPreviewCardDisplay::stack_width(const MessageRowData& row,
-                                         float col_w) const
+float UrlPreviewCardDisplay::stack_width(const MessageRowData& row, float col_w) const
 {
     if (!has_preview(row))
     {
@@ -122,31 +116,26 @@ float UrlPreviewCardDisplay::stack_width(const MessageRowData& row,
     // Every card in a stack shares one width: bundled cards are always
     // min(col_w, kBundledImageMaxW) wide (see bundled_card_size_), legacy
     // cards min(col_w, kPreviewCardW) (see paint_one_legacy_).
-    return std::min(col_w, row.bundled_previews_present ? kBundledImageMaxW
-                                                        : kPreviewCardW);
+    return std::min(col_w, row.bundled_previews_present ? kBundledImageMaxW : kPreviewCardW);
 }
 
-void UrlPreviewCardDisplay::paint_cards(const MessageRowData& row,
-                                        tk::PaintCtx& ctx, float x, float y,
-                                        float col_w)
+void UrlPreviewCardDisplay::paint_cards(const MessageRowData& row, tk::PaintCtx& ctx, float x,
+                                        float y, float col_w)
 {
     float cy = y;
     for (const auto* p : cards_for(row))
     {
         const std::string link = card_link_for(*p, row.first_url);
         const float h = row.bundled_previews_present
-                            ? paint_one_bundled_(link, link, *p, ctx, x, cy,
-                                                 col_w)
-                            : paint_one_legacy_(link, link, *p, ctx, x, cy,
-                                               col_w);
+                            ? paint_one_bundled_(link, link, *p, ctx, x, cy, col_w)
+                            : paint_one_legacy_(link, link, *p, ctx, x, cy, col_w);
         cy += h + kPreviewCardGap;
     }
 }
 
 float UrlPreviewCardDisplay::paint_one_legacy_(const std::string& target_url,
                                                const std::string& third_line,
-                                               const UrlPreviewData& p,
-                                               tk::PaintCtx& ctx, float x,
+                                               const UrlPreviewData& p, tk::PaintCtx& ctx, float x,
                                                float y, float col_w)
 {
     float card_w = std::min(col_w, kPreviewCardW);
@@ -159,8 +148,7 @@ float UrlPreviewCardDisplay::paint_one_legacy_(const std::string& target_url,
     card_geom_.push_back({target_url, card});
 
     float thumb_right = 0.0f;
-    const std::string img_key =
-        p.image_source ? p.image_source->fetch_token() : std::string{};
+    const std::string img_key = p.image_source ? p.image_source->fetch_token() : std::string{};
     if (!img_key.empty() && image_provider_)
     {
         const tk::Image* img = image_provider_(img_key);
@@ -171,9 +159,9 @@ float UrlPreviewCardDisplay::paint_one_legacy_(const std::string& target_url,
         {
             // Contain-fit within the fixed thumbnail slot instead of
             // stretching to fill it, so a non-square image isn't distorted.
-            tk::Size fitted = fit_media(static_cast<float>(img->width()),
-                                       static_cast<float>(img->height()),
-                                       kPreviewThumbSide, kPreviewThumbSide);
+            tk::Size fitted =
+                fit_media(static_cast<float>(img->width()), static_cast<float>(img->height()),
+                          kPreviewThumbSide, kPreviewThumbSide);
             float dx = thumb.x + (thumb.w - fitted.w) * 0.5f;
             float dy = thumb.y + (thumb.h - fitted.h) * 0.5f;
             ctx.canvas.draw_image(*img, {dx, dy, fitted.w, fitted.h});
@@ -197,42 +185,39 @@ float UrlPreviewCardDisplay::paint_one_legacy_(const std::string& target_url,
     if (!p.title.empty())
     {
         tk::TextStyle st{};
-        st.role      = tk::FontRole::UiSemibold;
-        st.trim      = tk::TextTrim::Ellipsis;
+        st.role = tk::FontRole::UiSemibold;
+        st.trim = tk::TextTrim::Ellipsis;
         st.max_width = text_w;
-        auto lo      = ctx.factory.build_text(p.title, st);
+        auto lo = ctx.factory.build_text(p.title, st);
         if (lo)
         {
-            ctx.canvas.draw_text(*lo, {text_x, text_y},
-                                 ctx.theme.palette.text_primary);
+            ctx.canvas.draw_text(*lo, {text_x, text_y}, ctx.theme.palette.text_primary);
             text_y += lo->measure().h + 2.0f;
         }
     }
     if (!p.description.empty())
     {
         tk::TextStyle st{};
-        st.role      = tk::FontRole::Body;
-        st.trim      = tk::TextTrim::Ellipsis;
+        st.role = tk::FontRole::Body;
+        st.trim = tk::TextTrim::Ellipsis;
         st.max_width = text_w;
-        auto lo      = ctx.factory.build_text(p.description, st);
+        auto lo = ctx.factory.build_text(p.description, st);
         if (lo)
         {
-            ctx.canvas.draw_text(*lo, {text_x, text_y},
-                                 ctx.theme.palette.text_secondary);
+            ctx.canvas.draw_text(*lo, {text_x, text_y}, ctx.theme.palette.text_secondary);
             text_y += lo->measure().h + 2.0f;
         }
     }
     if (!third_line.empty())
     {
         tk::TextStyle st{};
-        st.role      = tk::FontRole::Small;
-        st.trim      = tk::TextTrim::Ellipsis;
+        st.role = tk::FontRole::Small;
+        st.trim = tk::TextTrim::Ellipsis;
         st.max_width = text_w;
-        auto lo      = ctx.factory.build_text(third_line, st);
+        auto lo = ctx.factory.build_text(third_line, st);
         if (lo)
         {
-            ctx.canvas.draw_text(*lo, {text_x, text_y},
-                                 ctx.theme.palette.text_muted);
+            ctx.canvas.draw_text(*lo, {text_x, text_y}, ctx.theme.palette.text_muted);
         }
     }
 
@@ -246,16 +231,15 @@ namespace
 // Shared by bundled_card_size_() (measure) and paint_one_bundled_() (paint)
 // so both agree on exactly how tall the text block is. Only measures height;
 // callers already know the width (`text_w`, the card's full text column).
-float bundled_text_block_height(const UrlPreviewData& p,
-                                const std::string& third_line,
+float bundled_text_block_height(const UrlPreviewData& p, const std::string& third_line,
                                 tk::CanvasFactory& factory, float text_w)
 {
     float h = 0.0f;
     if (!p.title.empty())
     {
         tk::TextStyle st{};
-        st.role      = tk::FontRole::UiSemibold;
-        st.trim      = tk::TextTrim::Ellipsis;
+        st.role = tk::FontRole::UiSemibold;
+        st.trim = tk::TextTrim::Ellipsis;
         st.max_width = text_w;
         if (auto lo = factory.build_text(p.title, st))
         {
@@ -265,8 +249,8 @@ float bundled_text_block_height(const UrlPreviewData& p,
     if (!p.description.empty())
     {
         tk::TextStyle st{};
-        st.role      = tk::FontRole::Body;
-        st.trim      = tk::TextTrim::Ellipsis;
+        st.role = tk::FontRole::Body;
+        st.trim = tk::TextTrim::Ellipsis;
         st.max_width = text_w;
         if (auto lo = factory.build_text(p.description, st))
         {
@@ -276,8 +260,8 @@ float bundled_text_block_height(const UrlPreviewData& p,
     if (!third_line.empty())
     {
         tk::TextStyle st{};
-        st.role      = tk::FontRole::Small;
-        st.trim      = tk::TextTrim::Ellipsis;
+        st.role = tk::FontRole::Small;
+        st.trim = tk::TextTrim::Ellipsis;
         st.max_width = text_w;
         if (auto lo = factory.build_text(third_line, st))
         {
@@ -290,24 +274,20 @@ float bundled_text_block_height(const UrlPreviewData& p,
 
 tk::Size UrlPreviewCardDisplay::bundled_card_size_(const UrlPreviewData& p,
                                                    const std::string& third_line,
-                                                   tk::CanvasFactory& factory,
-                                                   float max_w) const
+                                                   tk::CanvasFactory& factory, float max_w) const
 {
     const float text_w = std::max(0.0f, max_w - 2.0f * kPreviewCardPad);
 
     float image_h = 0.0f;
-    const std::string img_key =
-        p.image_source ? p.image_source->fetch_token() : std::string{};
+    const std::string img_key = p.image_source ? p.image_source->fetch_token() : std::string{};
     const bool has_image = !img_key.empty() && image_provider_;
     if (has_image)
     {
         const tk::Image* img = image_provider_(img_key);
         tk::Size fitted =
-            img ? fit_media(static_cast<float>(img->width()),
-                            static_cast<float>(img->height()), max_w,
-                            kBundledImageMaxH)
-                : fit_media(static_cast<float>(p.image_w),
-                            static_cast<float>(p.image_h), max_w,
+            img ? fit_media(static_cast<float>(img->width()), static_cast<float>(img->height()),
+                            max_w, kBundledImageMaxH)
+                : fit_media(static_cast<float>(p.image_w), static_cast<float>(p.image_h), max_w,
                             kBundledImageMaxH);
         image_h = fitted.h;
     }
@@ -331,8 +311,7 @@ tk::Size UrlPreviewCardDisplay::bundled_card_size_(const UrlPreviewData& p,
 
 float UrlPreviewCardDisplay::paint_one_bundled_(const std::string& target_url,
                                                 const std::string& third_line,
-                                                const UrlPreviewData& p,
-                                                tk::PaintCtx& ctx, float x,
+                                                const UrlPreviewData& p, tk::PaintCtx& ctx, float x,
                                                 float y, float col_w)
 {
     const float max_w = std::min(col_w, kBundledImageMaxW);
@@ -348,20 +327,16 @@ float UrlPreviewCardDisplay::paint_one_bundled_(const std::string& target_url,
     const float text_w = std::max(0.0f, max_w - 2.0f * kPreviewCardPad);
     float cursor_y = y + kPreviewCardPad;
 
-    const std::string img_key =
-        p.image_source ? p.image_source->fetch_token() : std::string{};
+    const std::string img_key = p.image_source ? p.image_source->fetch_token() : std::string{};
     if (!img_key.empty() && image_provider_)
     {
         const tk::Image* img = image_provider_(img_key);
         tk::Size fitted =
-            img ? fit_media(static_cast<float>(img->width()),
-                            static_cast<float>(img->height()), max_w,
-                            kBundledImageMaxH)
-                : fit_media(static_cast<float>(p.image_w),
-                            static_cast<float>(p.image_h), max_w,
+            img ? fit_media(static_cast<float>(img->width()), static_cast<float>(img->height()),
+                            max_w, kBundledImageMaxH)
+                : fit_media(static_cast<float>(p.image_w), static_cast<float>(p.image_h), max_w,
                             kBundledImageMaxH);
-        tk::Rect img_rect{x + (max_w - fitted.w) * 0.5f, cursor_y, fitted.w,
-                          fitted.h};
+        tk::Rect img_rect{x + (max_w - fitted.w) * 0.5f, cursor_y, fitted.w, fitted.h};
         if (img)
         {
             ctx.canvas.draw_image(*img, img_rect);
@@ -383,42 +358,39 @@ float UrlPreviewCardDisplay::paint_one_bundled_(const std::string& target_url,
     if (!p.title.empty())
     {
         tk::TextStyle st{};
-        st.role      = tk::FontRole::UiSemibold;
-        st.trim      = tk::TextTrim::Ellipsis;
+        st.role = tk::FontRole::UiSemibold;
+        st.trim = tk::TextTrim::Ellipsis;
         st.max_width = text_w;
-        auto lo      = ctx.factory.build_text(p.title, st);
+        auto lo = ctx.factory.build_text(p.title, st);
         if (lo)
         {
-            ctx.canvas.draw_text(*lo, {text_x, text_y},
-                                 ctx.theme.palette.text_primary);
+            ctx.canvas.draw_text(*lo, {text_x, text_y}, ctx.theme.palette.text_primary);
             text_y += lo->measure().h + 2.0f;
         }
     }
     if (!p.description.empty())
     {
         tk::TextStyle st{};
-        st.role      = tk::FontRole::Body;
-        st.trim      = tk::TextTrim::Ellipsis;
+        st.role = tk::FontRole::Body;
+        st.trim = tk::TextTrim::Ellipsis;
         st.max_width = text_w;
-        auto lo      = ctx.factory.build_text(p.description, st);
+        auto lo = ctx.factory.build_text(p.description, st);
         if (lo)
         {
-            ctx.canvas.draw_text(*lo, {text_x, text_y},
-                                 ctx.theme.palette.text_secondary);
+            ctx.canvas.draw_text(*lo, {text_x, text_y}, ctx.theme.palette.text_secondary);
             text_y += lo->measure().h + 2.0f;
         }
     }
     if (!third_line.empty())
     {
         tk::TextStyle st{};
-        st.role      = tk::FontRole::Small;
-        st.trim      = tk::TextTrim::Ellipsis;
+        st.role = tk::FontRole::Small;
+        st.trim = tk::TextTrim::Ellipsis;
         st.max_width = text_w;
-        auto lo      = ctx.factory.build_text(third_line, st);
+        auto lo = ctx.factory.build_text(third_line, st);
         if (lo)
         {
-            ctx.canvas.draw_text(*lo, {text_x, text_y},
-                                 ctx.theme.palette.text_muted);
+            ctx.canvas.draw_text(*lo, {text_x, text_y}, ctx.theme.palette.text_muted);
         }
     }
 

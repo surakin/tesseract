@@ -15,12 +15,22 @@ UserPackEditor::UserPackEditor()
         shortcode->set_compact(true);
         shortcode->set_visible(false);
         shortcode->set_on_changed(
-            [this](const std::string& t) { set_editing_shortcode_text(t); });
-        shortcode->set_on_submit([this]() { commit_editing_shortcode(); });
+            [this](const std::string& t)
+            {
+                set_editing_shortcode_text(t);
+            });
+        shortcode->set_on_submit(
+            [this]()
+            {
+                commit_editing_shortcode();
+            });
         shortcode->set_on_focus_changed(
             [this](bool focused)
             {
-                if (!focused) cancel_editing_shortcode();
+                if (!focused)
+                {
+                    cancel_editing_shortcode();
+                }
             });
         shortcode_field_ = add_child(std::move(shortcode));
     }
@@ -35,12 +45,12 @@ void UserPackEditor::set_images(std::vector<tesseract::ImagePackImage> images)
     for (auto& img : images)
     {
         StagedPackImage s;
-        s.shortcode    = std::move(img.shortcode);
+        s.shortcode = std::move(img.shortcode);
         s.existing_url = std::move(img.url);
-        s.body         = std::move(img.body);
-        s.info_json    = std::move(img.info_json);
-        s.usage        = img.usage;
-        s.favorite     = img.favorite;
+        s.body = std::move(img.body);
+        s.info_json = std::move(img.info_json);
+        s.usage = img.usage;
+        s.favorite = img.favorite;
         images_.push_back(std::move(s));
     }
     removed_shortcodes_.clear();
@@ -49,8 +59,7 @@ void UserPackEditor::set_images(std::vector<tesseract::ImagePackImage> images)
     layout_changed_();
 }
 
-void UserPackEditor::set_tile_preview(std::uint64_t local_id,
-                                      std::shared_ptr<tk::Image> image)
+void UserPackEditor::set_tile_preview(std::uint64_t local_id, std::shared_ptr<tk::Image> image)
 {
     for (auto& img : images_)
     {
@@ -63,17 +72,22 @@ void UserPackEditor::set_tile_preview(std::uint64_t local_id,
     }
 }
 
-void UserPackEditor::add_pending_image_(std::vector<std::uint8_t> bytes,
-                                        std::string mime, std::string filename)
+void UserPackEditor::add_pending_image_(std::vector<std::uint8_t> bytes, std::string mime,
+                                        std::string filename)
 {
     if (committing_)
+    {
         return;
+    }
     StagedPackImage img;
-    img.local_id      = ++next_local_id_;
+    img.local_id = ++next_local_id_;
     img.pending_bytes = std::move(bytes);
-    img.pending_mime  = std::move(mime);
+    img.pending_mime = std::move(mime);
     if (!filename.empty())
-        img.shortcode = dedupe_pack_shortcode(images_, suggest_pack_shortcode_from_filename(filename));
+    {
+        img.shortcode =
+            dedupe_pack_shortcode(images_, suggest_pack_shortcode_from_filename(filename));
+    }
     images_.push_back(std::move(img));
     const std::size_t new_tile_idx = images_.size() - 1;
     dirty_ = true;
@@ -88,14 +102,12 @@ void UserPackEditor::add_pending_image_(std::vector<std::uint8_t> bytes,
     begin_editing_shortcode_(new_tile_idx);
 }
 
-void UserPackEditor::add_pasted_image(std::vector<std::uint8_t> bytes,
-                                      std::string mime)
+void UserPackEditor::add_pasted_image(std::vector<std::uint8_t> bytes, std::string mime)
 {
     add_pending_image_(std::move(bytes), std::move(mime), {});
 }
 
-void UserPackEditor::add_dropped_image(tk::Point /*world*/,
-                                       std::vector<std::uint8_t> bytes,
+void UserPackEditor::add_dropped_image(tk::Point /*world*/, std::vector<std::uint8_t> bytes,
                                        std::string mime, std::string filename)
 {
     add_pending_image_(std::move(bytes), std::move(mime), std::move(filename));
@@ -140,9 +152,11 @@ std::string UserPackEditor::access_name_for_widget_row(std::size_t i) const
 {
     const std::size_t t = i / 2;
     if (t >= images_.size())
+    {
         return {};
-    const std::string sc = images_[t].shortcode.empty() ? tk::tr("(no shortcode)")
-                                                        : images_[t].shortcode;
+    }
+    const std::string sc =
+        images_[t].shortcode.empty() ? tk::tr("(no shortcode)") : images_[t].shortcode;
     return i % 2 == 0 ? tk::trf(tk::tr("Edit shortcode {0}"), {sc})
                       : tk::trf(tk::tr("Remove {0}"), {sc});
 }
@@ -151,11 +165,17 @@ bool UserPackEditor::access_activate_widget_row(std::size_t i)
 {
     const std::size_t t = i / 2;
     if (committing_ || t >= images_.size())
+    {
         return false;
+    }
     if (i % 2 == 0)
+    {
         begin_editing_shortcode_(t);
+    }
     else
+    {
         remove_tile_(t);
+    }
     return true;
 }
 
@@ -167,36 +187,47 @@ tk::Rect UserPackEditor::access_rect_for_widget_row(std::size_t i) const
 tk::Rect UserPackEditor::shortcode_edit_rect() const
 {
     if (!editing_ || committing_)
+    {
         return {};
+    }
     const auto layout = layout_tile_row_(bounds_.w, images_.size() + 1, 0.0f);
     if (*editing_ >= layout.size())
+    {
         return {};
+    }
     const auto& r = layout[*editing_];
-    const tk::Rect world{bounds_.x + r.x, bounds_.y - scroll_y_ + r.y + kImageH, r.w,
-                         kLabelH};
+    const tk::Rect world{bounds_.x + r.x, bounds_.y - scroll_y_ + r.y + kImageH, r.w, kLabelH};
     if (world.bottom() <= bounds_.y || world.y >= bounds_.y + bounds_.h)
+    {
         return {}; // scrolled out of the viewport
+    }
     return world;
 }
 
 std::string UserPackEditor::shortcode_edit_initial_text() const
 {
     if (!editing_ || *editing_ >= images_.size())
+    {
         return {};
+    }
     return images_[*editing_].shortcode;
 }
 
 void UserPackEditor::set_editing_shortcode_text(std::string text)
 {
     if (!editing_ || *editing_ >= images_.size())
+    {
         return;
+    }
     images_[*editing_].shortcode = std::move(text);
 }
 
 void UserPackEditor::commit_editing_shortcode()
 {
     if (!editing_)
+    {
         return;
+    }
     dirty_ = true;
     editing_.reset();
     layout_changed_();
@@ -205,9 +236,13 @@ void UserPackEditor::commit_editing_shortcode()
 void UserPackEditor::cancel_editing_shortcode()
 {
     if (!editing_)
+    {
         return;
+    }
     if (*editing_ < images_.size())
+    {
         images_[*editing_].shortcode = editing_shortcode_original_;
+    }
     editing_.reset();
     layout_changed_();
 }
@@ -215,7 +250,9 @@ void UserPackEditor::cancel_editing_shortcode()
 void UserPackEditor::begin_editing_shortcode_(std::size_t tile_idx)
 {
     if (tile_idx >= images_.size())
+    {
         return;
+    }
     editing_ = tile_idx;
     editing_shortcode_original_ = images_[tile_idx].shortcode;
     ++shortcode_edit_reset_gen_;
@@ -237,9 +274,10 @@ void UserPackEditor::begin_editing_shortcode_(std::size_t tile_idx)
 void UserPackEditor::remove_tile_(std::size_t tile_idx)
 {
     if (tile_idx >= images_.size() || committing_)
+    {
         return;
-    if (!images_[tile_idx].existing_url.empty() &&
-        !images_[tile_idx].shortcode.empty())
+    }
+    if (!images_[tile_idx].existing_url.empty() && !images_[tile_idx].shortcode.empty())
     {
         removed_shortcodes_.push_back(images_[tile_idx].shortcode);
     }
@@ -249,9 +287,13 @@ void UserPackEditor::remove_tile_(std::size_t tile_idx)
     if (editing_)
     {
         if (*editing_ == tile_idx)
+        {
             editing_.reset();
+        }
         else if (*editing_ > tile_idx)
+        {
             *editing_ -= 1;
+        }
     }
     clamp_scroll();
     layout_changed_();
@@ -260,7 +302,7 @@ void UserPackEditor::remove_tile_(std::size_t tile_idx)
 UserPackEditor::Result UserPackEditor::build_result() const
 {
     Result result;
-    result.images            = images_;
+    result.images = images_;
     result.removed_shortcodes = removed_shortcodes_;
     return result;
 }
@@ -274,7 +316,9 @@ void UserPackEditor::set_committing(bool committing)
 void UserPackEditor::layout_changed_()
 {
     if (on_layout_changed)
+    {
         on_layout_changed();
+    }
 }
 
 // ── layout ────────────────────────────────────────────────────────────────
@@ -283,7 +327,9 @@ float UserPackEditor::content_height() const
 {
     const auto layout = layout_tile_row_(bounds_.w, images_.size() + 1, 0.0f);
     if (layout.empty())
+    {
         return 0.0f;
+    }
     const auto& last = layout.back();
     return last.y + kTileSize + kTilePad;
 }
@@ -308,7 +354,9 @@ void UserPackEditor::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
         const bool show = visible_in_tree() && !committing_ && editing_.has_value();
         shortcode_field_->set_visible(show);
         if (show)
+        {
             shortcode_field_->arrange(lc, shortcode_edit_rect());
+        }
     }
 }
 
@@ -320,7 +368,9 @@ bool UserPackEditor::on_wheel(tk::Point /*local*/, float /*dx*/, float dy, bool 
 bool UserPackEditor::on_pointer_down(tk::Point local)
 {
     if (scrollbar_on_pointer_down(local))
+    {
         return true;
+    }
 
     const auto layout = layout_tile_row_(bounds_.w, images_.size() + 1, 0.0f);
     const float y_content = local.y + scroll_y_;
@@ -328,11 +378,14 @@ bool UserPackEditor::on_pointer_down(tk::Point local)
     for (std::size_t t = 0; t < layout.size(); ++t)
     {
         const auto& r = layout[t];
-        if (local.x < r.x || local.x >= r.x + r.w || y_content < r.y ||
-            y_content >= r.y + r.h)
+        if (local.x < r.x || local.x >= r.x + r.w || y_content < r.y || y_content >= r.y + r.h)
+        {
             continue;
+        }
         if (t >= images_.size())
+        {
             break; // hint tile — not interactive
+        }
 
         if (!committing_)
         {
@@ -372,8 +425,7 @@ bool UserPackEditor::on_pointer_move(tk::Point local)
     for (std::size_t t = 0; t < images_.size() && t < layout.size(); ++t)
     {
         const auto& r = layout[t];
-        if (local.x >= r.x && local.x < r.x + r.w && y_content >= r.y &&
-            y_content < r.y + kImageH)
+        if (local.x >= r.x && local.x < r.x + r.w && y_content >= r.y && y_content < r.y + kImageH)
         {
             new_hovered = t;
             break;
@@ -395,30 +447,37 @@ void UserPackEditor::paint(tk::PaintCtx& ctx)
     step_kinetic();
 
     const auto layout = layout_tile_row_(bounds_.w, images_.size() + 1, 0.0f);
-    ctx.canvas.push_clip_rect(bounds_);
-    const tk::Point origin{bounds_.x, bounds_.y - scroll_y_};
-
-    for (std::size_t t = 0; t < layout.size(); ++t)
     {
-        const auto& r = layout[t];
-        if (origin.y + r.y + kTileSize <= bounds_.y || origin.y + r.y >= bounds_.y + bounds_.h)
-            continue;
-        if (t < images_.size())
+        tk::ClipScope clip(ctx.canvas, bounds_);
+        const tk::Point origin{bounds_.x, bounds_.y - scroll_y_};
+
+        for (std::size_t t = 0; t < layout.size(); ++t)
         {
-            const bool hovered = hovered_tile_ && *hovered_tile_ == t;
-            const bool is_editing = editing_ && *editing_ == t;
-            paint_tile_shared_(ctx, images_[t], r, origin, hovered, is_editing);
+            const auto& r = layout[t];
+            if (origin.y + r.y + kTileSize <= bounds_.y || origin.y + r.y >= bounds_.y + bounds_.h)
+            {
+                continue;
+            }
+            if (t < images_.size())
+            {
+                const bool hovered = hovered_tile_ && *hovered_tile_ == t;
+                const bool is_editing = editing_ && *editing_ == t;
+                paint_tile_shared_(ctx, images_[t], r, origin, hovered, is_editing);
+            }
+            else
+            {
+                paint_hint_tile_shared_(ctx, r, origin);
+            }
         }
-        else
+        if (editing_ && shortcode_field_ && shortcode_field_->visible())
         {
-            paint_hint_tile_shared_(ctx, r, origin);
+            shortcode_field_->paint(ctx);
+        }
+        if (native_drag_hover_)
+        {
+            tk::paint_native_drag_hover_highlight(ctx, bounds_);
         }
     }
-    if (editing_ && shortcode_field_ && shortcode_field_->visible())
-        shortcode_field_->paint(ctx);
-    if (native_drag_hover_)
-        tk::paint_native_drag_hover_highlight(ctx, bounds_);
-    ctx.canvas.pop_clip();
     paint_scrollbar(ctx);
 }
 

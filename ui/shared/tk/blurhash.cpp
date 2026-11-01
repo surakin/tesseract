@@ -48,17 +48,15 @@ static uint32_t decode_b83(const std::string& hash, int start, int num_chars)
 static float srgb_to_linear(int value)
 {
     float f = value / 255.0f;
-    return (f <= 0.04045f) ? (f / 12.92f)
-                           : std::pow((f + 0.055f) / 1.055f, 2.4f);
+    return (f <= 0.04045f) ? (f / 12.92f) : std::pow((f + 0.055f) / 1.055f, 2.4f);
 }
 
 // Linear → sRGB, clamped to 0..255.
 static uint8_t linear_to_srgb(float value)
 {
     float clamped = std::fmax(0.0f, std::fmin(1.0f, value));
-    float encoded = (clamped <= 0.0031308f)
-                        ? (clamped * 12.92f)
-                        : (1.055f * std::pow(clamped, 1.0f / 2.4f) - 0.055f);
+    float encoded = (clamped <= 0.0031308f) ? (clamped * 12.92f)
+                                            : (1.055f * std::pow(clamped, 1.0f / 2.4f) - 0.055f);
     return static_cast<uint8_t>(std::lround(encoded * 255.0f));
 }
 
@@ -71,8 +69,7 @@ static float decode_ac_value(int quantised, float max_ac)
 
 } // namespace
 
-bool decode_blurhash(const std::string& hash, int w, int h,
-                     std::vector<uint8_t>& out_rgba)
+bool decode_blurhash(const std::string& hash, int w, int h, std::vector<uint8_t>& out_rgba)
 {
     if (hash.size() < 6)
     {
@@ -113,8 +110,7 @@ bool decode_blurhash(const std::string& hash, int w, int h,
         int dc_r = static_cast<int>((dc_val >> 16) & 0xFF);
         int dc_g = static_cast<int>((dc_val >> 8) & 0xFF);
         int dc_b = static_cast<int>(dc_val & 0xFF);
-        colors[0] = {srgb_to_linear(dc_r), srgb_to_linear(dc_g),
-                     srgb_to_linear(dc_b)};
+        colors[0] = {srgb_to_linear(dc_r), srgb_to_linear(dc_g), srgb_to_linear(dc_b)};
     }
 
     // AC components (2 chars each, starting at char 6).
@@ -138,17 +134,14 @@ bool decode_blurhash(const std::string& hash, int w, int h,
             float r = 0.0f, g = 0.0f, b = 0.0f;
             for (int j = 0; j < comp_y; ++j)
             {
-                float basis_y = std::cos(
-                    (M_PI * static_cast<float>(j) * static_cast<float>(py)) /
-                    static_cast<float>(h));
+                float basis_y = std::cos((M_PI * static_cast<float>(j) * static_cast<float>(py)) /
+                                         static_cast<float>(h));
                 for (int i = 0; i < comp_x; ++i)
                 {
                     float basis =
-                        basis_y * std::cos((M_PI * static_cast<float>(i) *
-                                            static_cast<float>(px)) /
+                        basis_y * std::cos((M_PI * static_cast<float>(i) * static_cast<float>(px)) /
                                            static_cast<float>(w));
-                    const Color3& c =
-                        colors[static_cast<size_t>(j * comp_x + i)];
+                    const Color3& c = colors[static_cast<size_t>(j * comp_x + i)];
                     r += c.r * basis;
                     g += c.g * basis;
                     b += c.b * basis;

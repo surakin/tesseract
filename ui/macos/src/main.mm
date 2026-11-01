@@ -1,10 +1,12 @@
 #import <AppKit/AppKit.h>
 #import "AppDelegate.h"
+#import "MacRelaunchHandoff.h"
 
 #include "app/Launch.h"
 #include "app/UpdateChecker.h"
-#include "tk/single_instance.h"
+#include "platform/single_instance.h"
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -22,20 +24,29 @@ int main(int argc, const char* argv[])
         hooks.detect_system_lang = []
         {
             NSString* os_lang = NSLocale.preferredLanguages.firstObject ?: @"en";
-            os_lang = [os_lang stringByReplacingOccurrencesOfString:@"-"
-                                                         withString:@"_"];
+            os_lang = [os_lang stringByReplacingOccurrencesOfString:@"-" withString:@"_"];
             return std::string([os_lang UTF8String]);
         };
         hooks.i18n_dir = []
         {
             NSString* resDir = NSBundle.mainBundle.resourcePath;
-            return (resDir ? std::string([resDir UTF8String]) : std::string{}) +
-                   "/i18n";
+            return (resDir ? std::string([resDir UTF8String]) : std::string{}) + "/i18n";
         };
         hooks.acquire_instance_lock = []
-        { return tk::acquire_single_instance_lock().acquired; };
-        tesseract::LaunchPlan plan = tesseract::prepare_launch(
-            std::vector<std::string>(argv + 1, argv + argc), hooks);
+        {
+            return tk::acquire_single_instance_lock().acquired;
+        };
+        std::vector<std::string> args(argv + 1, argv + argc);
+#ifdef TESSERACT_MAC_APP_STORE
+        // A sandboxed relaunch can't pass arguments; the old instance left
+        // them in a handoff file instead (see MacRelaunchHandoff.h).
+        auto handoff = mac::take_relaunch_handoff();
+        if (std::find(args.begin(), args.end(), "--relaunch") == args.end())
+        {
+            args.insert(args.end(), handoff.begin(), handoff.end());
+        }
+#endif
+        tesseract::LaunchPlan plan = tesseract::prepare_launch(args, hooks);
         if (plan.exit_code)
         {
             return *plan.exit_code;

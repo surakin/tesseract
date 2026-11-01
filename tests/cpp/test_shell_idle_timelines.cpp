@@ -20,14 +20,17 @@ namespace
 struct ShellIdleTimelinesTestShell : tesseract::test::TestShellBase
 {
 
-    void apply_thread_messages_(
-        const std::string&,
-        std::vector<tesseract::views::MessageRowData>, bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
 
     using ShellBase::select_idle_room_evictions_;
     using ShellBase::select_idle_thread_evictions_;
@@ -42,8 +45,7 @@ struct ShellIdleTimelinesTestShell : tesseract::test::TestShellBase
 
 } // namespace
 
-TEST_CASE("select_idle_room_evictions_ evicts rooms idle past the ttl",
-          "[shell][idle_timelines]")
+TEST_CASE("select_idle_room_evictions_ evicts rooms idle past the ttl", "[shell][idle_timelines]")
 {
     ShellIdleTimelinesTestShell s;
     const auto now = std::chrono::steady_clock::now();
@@ -53,8 +55,7 @@ TEST_CASE("select_idle_room_evictions_ evicts rooms idle past the ttl",
         {"!stale", now - std::chrono::minutes{31}},
         {"!fresh", now - std::chrono::minutes{5}},
     };
-    auto evicted =
-        s.select_idle_room_evictions_(last_active, {}, now, ttl);
+    auto evicted = s.select_idle_room_evictions_(last_active, {}, now, ttl);
 
     REQUIRE(evicted.size() == 1);
     CHECK(evicted[0] == "!stale");
@@ -74,8 +75,7 @@ TEST_CASE("select_idle_room_evictions_ never evicts a currently-visible room",
     std::unordered_map<std::string, std::chrono::steady_clock::time_point> last_active{
         {"!visible", now - std::chrono::hours{5}},
     };
-    auto evicted =
-        s.select_idle_room_evictions_(last_active, {"!visible"}, now, ttl);
+    auto evicted = s.select_idle_room_evictions_(last_active, {"!visible"}, now, ttl);
 
     CHECK(evicted.empty());
 }
@@ -90,8 +90,7 @@ TEST_CASE("select_idle_room_evictions_ evicts nothing within the ttl window",
     std::unordered_map<std::string, std::chrono::steady_clock::time_point> last_active{
         {"!a", now - std::chrono::minutes{29}},
     };
-    auto evicted =
-        s.select_idle_room_evictions_(last_active, {}, now, ttl);
+    auto evicted = s.select_idle_room_evictions_(last_active, {}, now, ttl);
 
     CHECK(evicted.empty());
 }
@@ -107,7 +106,7 @@ TEST_CASE("select_idle_thread_evictions_ mirrors the room-level partition",
         last_active{
             {{"!room", "$stale_root"}, now - std::chrono::minutes{45}},
             {{"!room", "$visible_root"}, now - std::chrono::hours{2}},
-        };
+    };
     std::set<std::pair<std::string, std::string>> visible{{"!room", "$visible_root"}};
 
     auto evicted = s.select_idle_thread_evictions_(last_active, visible, now, ttl);

@@ -6,14 +6,16 @@ namespace tesseract
 {
 
 PresenceTracker::PresenceTracker()
-    : now_([] { return Clock::now(); })
-    , last_activity_(now_())
+    : now_(
+          []
+          {
+              return Clock::now();
+          }),
+      last_activity_(now_())
 {
 }
 
-PresenceTracker::PresenceTracker(NowProvider now)
-    : now_(std::move(now))
-    , last_activity_(now_())
+PresenceTracker::PresenceTracker(NowProvider now) : now_(std::move(now)), last_activity_(now_())
 {
 }
 

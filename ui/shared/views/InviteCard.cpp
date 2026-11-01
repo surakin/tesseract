@@ -16,14 +16,14 @@ namespace tesseract::views
 namespace
 {
 
-constexpr float kInviteCardRadius  = tesseract::visual::kRadiusMD;
+constexpr float kInviteCardRadius = tesseract::visual::kRadiusMD;
 constexpr float kInviteCardBorderW = 1.0f;
 
 // Estimate text-row heights (used in arrange before we have a real layout).
-constexpr float kInviteCardNameH       = 24.0f; // 18 pt bold — Title role
-constexpr float kSecondaryH  = 18.0f; // 13 pt — Body role
-constexpr float kInvitedByH  = 18.0f; // 12 pt — Small role
-constexpr float kReasonH     = 18.0f; // 12 pt — Small role
+constexpr float kInviteCardNameH = 24.0f; // 18 pt bold — Title role
+constexpr float kSecondaryH = 18.0f;      // 13 pt — Body role
+constexpr float kInvitedByH = 18.0f;      // 12 pt — Small role
+constexpr float kReasonH = 18.0f;         // 12 pt — Small role
 
 } // namespace
 
@@ -31,24 +31,41 @@ constexpr float kReasonH     = 18.0f; // 12 pt — Small role
 
 InviteCard::InviteCard()
 {
-    auto accept = tk::create_widget<tk::Button>(this,
-        tk::tr("Accept"), std::function<void()>{}, tk::Button::Variant::Primary);
-    accept->set_on_click([this]()
-    {
-        accept_btn_->set_enabled(false);
-        if (on_accept)
-            on_accept();
-    });
+    auto accept = tk::create_widget<tk::Button>(this, tk::tr("Accept"), std::function<void()>{},
+                                                tk::Button::Variant::Primary);
+    accept->set_on_click(
+        [this]()
+        {
+            accept_btn_->set_enabled(false);
+            if (on_accept)
+            {
+                on_accept();
+            }
+        });
     accept_btn_ = add_child(std::move(accept));
 
-    auto decline = tk::create_widget<tk::Button>(this,
-        tk::tr("Decline"), std::function<void()>{}, tk::Button::Variant::Subtle);
-    decline->set_on_click([this]() { if (on_decline) on_decline(); });
+    auto decline = tk::create_widget<tk::Button>(this, tk::tr("Decline"), std::function<void()>{},
+                                                 tk::Button::Variant::Subtle);
+    decline->set_on_click(
+        [this]()
+        {
+            if (on_decline)
+            {
+                on_decline();
+            }
+        });
     decline_btn_ = add_child(std::move(decline));
 
-    auto block = tk::create_widget<tk::Button>(this,
-        tk::tr("Block"), std::function<void()>{}, tk::Button::Variant::Destructive);
-    block->set_on_click([this]() { if (on_block) on_block(); });
+    auto block = tk::create_widget<tk::Button>(this, tk::tr("Block"), std::function<void()>{},
+                                               tk::Button::Variant::Destructive);
+    block->set_on_click(
+        [this]()
+        {
+            if (on_block)
+            {
+                on_block();
+            }
+        });
     block_btn_ = add_child(std::move(block));
 
     set_visible(false);
@@ -56,10 +73,9 @@ InviteCard::InviteCard()
 
 // ── public API ────────────────────────────────────────────────────────────
 
-void InviteCard::set_invite(const tesseract::InviteInfo& info,
-                             ImageProvider provider)
+void InviteCard::set_invite(const tesseract::InviteInfo& info, ImageProvider provider)
 {
-    invite_         = info;
+    invite_ = info;
     image_provider_ = std::move(provider);
     reset_layouts();
 
@@ -111,19 +127,13 @@ void InviteCard::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
         return;
     }
 
-    const bool is_dm   = invite_->is_direct;
-    const float av_d   = is_dm ? kAvatarD_DM : kAvatarD_GR;
-    const float btn_w  = (kContentW - (is_dm ? kBtnGap * 2.0f : kBtnGap)) /
-                         (is_dm ? 3.0f : 2.0f);
+    const bool is_dm = invite_->is_direct;
+    const float av_d = is_dm ? kAvatarD_DM : kAvatarD_GR;
+    const float btn_w = (kContentW - (is_dm ? kBtnGap * 2.0f : kBtnGap)) / (is_dm ? 3.0f : 2.0f);
 
     // Estimate total content height for vertical centering.
     const float btn_row_h = kBtnH;
-    float content_h = av_d
-                    + kGap
-                    + kInviteCardNameH
-                    + kGap * 0.5f
-                    + kSecondaryH
-                    + kGap;
+    float content_h = av_d + kGap + kInviteCardNameH + kGap * 0.5f + kSecondaryH + kGap;
     if (!is_dm)
     {
         content_h += kInvitedByH + kGap;
@@ -136,7 +146,7 @@ void InviteCard::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
 
     // Centre the content block horizontally and vertically.
     const float cx = bounds.x + (bounds.w - kContentW) * 0.5f;
-    float       cy = bounds.y + std::max(0.0f, (bounds.h - content_h) * 0.5f);
+    float cy = bounds.y + std::max(0.0f, (bounds.h - content_h) * 0.5f);
 
     // Skip past avatar + text rows to reach buttons.
     cy += av_d + kGap + kInviteCardNameH + kGap * 0.5f + kSecondaryH + kGap;
@@ -176,8 +186,8 @@ void InviteCard::paint_before_children(tk::PaintCtx& ctx)
         return;
     }
 
-    const auto& pal  = ctx.theme.palette;
-    auto&       cv   = ctx.canvas;
+    const auto& pal = ctx.theme.palette;
+    auto& cv = ctx.canvas;
     const bool is_dm = invite_->is_direct;
     const float av_d = is_dm ? kAvatarD_DM : kAvatarD_GR;
 
@@ -199,57 +209,51 @@ void InviteCard::paint_before_children(tk::PaintCtx& ctx)
     content_h += kBtnH + kPadY;
 
     const float cx = bounds_.x + (bounds_.w - kContentW) * 0.5f;
-    float       cy = bounds_.y +
-                     std::max(0.0f, (bounds_.h - content_h) * 0.5f);
+    float cy = bounds_.y + std::max(0.0f, (bounds_.h - content_h) * 0.5f);
 
     // ── Avatar ─────────────────────────────────────────────────────────────
 
-    const std::string& av_mxc = is_dm ? invite_->inviter_avatar_url
-                                       : invite_->room_avatar_url;
-    const std::string& fallback_name = is_dm ? invite_->inviter_display_name
-                                              : invite_->room_name;
+    const std::string& av_mxc = is_dm ? invite_->inviter_avatar_url : invite_->room_avatar_url;
+    const std::string& fallback_name = is_dm ? invite_->inviter_display_name : invite_->room_name;
 
     const tk::Point av_centre{cx + kContentW * 0.5f, cy + av_d * 0.5f};
     const tk::Image* av_img = nullptr;
     // MSC4278: when invite avatars are disabled, never resolve the avatar —
     // fall through to the initials circle for both the room (group) and
     // inviter (DM) avatar.
-    if (image_provider_ && !av_mxc.empty() &&
-        tesseract::Settings::instance().invite_avatars)
+    if (image_provider_ && !av_mxc.empty() && tesseract::Settings::instance().invite_avatars)
     {
         av_img = image_provider_(av_mxc);
     }
 
     {
-        std::string_view disp = fallback_name.empty()
-                                    ? std::string_view("?")
-                                    : std::string_view(fallback_name);
+        std::string_view disp =
+            fallback_name.empty() ? std::string_view("?") : std::string_view(fallback_name);
         draw_avatar(cv, av_img, av_centre, av_d, disp, pal.accent,
-                    tk::Color{255, 255, 255, 255});
+                    tk::accent_foreground(ctx.theme));
     }
 
     cy += av_d + kGap;
 
     // ── Display name ───────────────────────────────────────────────────────
 
-    const std::string& name_str = is_dm
-        ? (invite_->inviter_display_name.empty() ? invite_->inviter_user_id
-                                                 : invite_->inviter_display_name)
-        : (invite_->room_name.empty() ? invite_->room_id
-                                      : invite_->room_name);
+    const std::string& name_str =
+        is_dm ? (invite_->inviter_display_name.empty() ? invite_->inviter_user_id
+                                                       : invite_->inviter_display_name)
+              : (invite_->room_name.empty() ? invite_->room_id : invite_->room_name);
 
     if (!name_layout_)
     {
         tk::TextStyle ts{};
-        ts.role      = tk::FontRole::Title;
-        ts.trim      = tk::TextTrim::Ellipsis;
+        ts.role = tk::FontRole::Title;
+        ts.trim = tk::TextTrim::Ellipsis;
         ts.max_width = kContentW;
         name_layout_ = ctx.factory.build_text(name_str, ts);
     }
     if (name_layout_)
     {
         const tk::Size sz = name_layout_->measure();
-        const float tx    = cx + (kContentW - sz.w) * 0.5f;
+        const float tx = cx + (kContentW - sz.w) * 0.5f;
         cv.draw_text(*name_layout_, {tx, cy}, pal.text_primary);
         cy += sz.h + kGap * 0.5f;
     }
@@ -260,24 +264,22 @@ void InviteCard::paint_before_children(tk::PaintCtx& ctx)
 
     // ── Secondary line: @user_id (DM) or topic (group) ─────────────────────
 
-    const std::string& secondary_str = is_dm
-        ? invite_->inviter_user_id
-        : invite_->room_topic;
+    const std::string& secondary_str = is_dm ? invite_->inviter_user_id : invite_->room_topic;
 
     if (!secondary_str.empty())
     {
         if (!secondary_layout_)
         {
             tk::TextStyle ts{};
-            ts.role      = tk::FontRole::Body;
-            ts.trim      = tk::TextTrim::Ellipsis;
+            ts.role = tk::FontRole::Body;
+            ts.trim = tk::TextTrim::Ellipsis;
             ts.max_width = kContentW;
             secondary_layout_ = ctx.factory.build_text(secondary_str, ts);
         }
         if (secondary_layout_)
         {
             const tk::Size sz = secondary_layout_->measure();
-            const float tx    = cx + (kContentW - sz.w) * 0.5f;
+            const float tx = cx + (kContentW - sz.w) * 0.5f;
             cv.draw_text(*secondary_layout_, {tx, cy}, pal.text_muted);
             cy += sz.h + kGap;
         }
@@ -295,24 +297,23 @@ void InviteCard::paint_before_children(tk::PaintCtx& ctx)
 
     if (!is_dm)
     {
-        const std::string inviter_name =
-            invite_->inviter_display_name.empty()
-                ? invite_->inviter_user_id
-                : invite_->inviter_display_name;
+        const std::string inviter_name = invite_->inviter_display_name.empty()
+                                             ? invite_->inviter_user_id
+                                             : invite_->inviter_display_name;
         const std::string invited_by_str = tk::trf(tk::tr("Invited by {0}"), {inviter_name});
 
         if (!invited_by_layout_)
         {
             tk::TextStyle ts{};
-            ts.role      = tk::FontRole::Small;
-            ts.trim      = tk::TextTrim::Ellipsis;
+            ts.role = tk::FontRole::Small;
+            ts.trim = tk::TextTrim::Ellipsis;
             ts.max_width = kContentW;
             invited_by_layout_ = ctx.factory.build_text(invited_by_str, ts);
         }
         if (invited_by_layout_)
         {
             const tk::Size sz = invited_by_layout_->measure();
-            const float tx    = cx + (kContentW - sz.w) * 0.5f;
+            const float tx = cx + (kContentW - sz.w) * 0.5f;
             cv.draw_text(*invited_by_layout_, {tx, cy}, pal.text_muted);
             cy += sz.h + kGap;
         }
@@ -329,16 +330,16 @@ void InviteCard::paint_before_children(tk::PaintCtx& ctx)
         if (!reason_layout_)
         {
             tk::TextStyle ts{};
-            ts.role      = tk::FontRole::Small;
-            ts.trim      = tk::TextTrim::Ellipsis;
+            ts.role = tk::FontRole::Small;
+            ts.trim = tk::TextTrim::Ellipsis;
             ts.max_width = kContentW;
-            reason_layout_ = ctx.factory.build_text(
-                tk::trf(tk::tr("Reason: {0}"), {invite_->reason}), ts);
+            reason_layout_ =
+                ctx.factory.build_text(tk::trf(tk::tr("Reason: {0}"), {invite_->reason}), ts);
         }
         if (reason_layout_)
         {
             const tk::Size sz = reason_layout_->measure();
-            const float tx    = cx + (kContentW - sz.w) * 0.5f;
+            const float tx = cx + (kContentW - sz.w) * 0.5f;
             cv.draw_text(*reason_layout_, {tx, cy}, pal.text_muted);
             cy += sz.h + kGap;
         }
@@ -347,20 +348,21 @@ void InviteCard::paint_before_children(tk::PaintCtx& ctx)
             cy += kReasonH + kGap;
         }
     }
-
 }
 
 std::string InviteCard::access_name() const
 {
     if (!invite_)
+    {
         return {};
+    }
     const auto& i = *invite_;
-    const std::string inviter = i.inviter_display_name.empty()
-                                    ? i.inviter_user_id
-                                    : i.inviter_display_name;
+    const std::string inviter =
+        i.inviter_display_name.empty() ? i.inviter_user_id : i.inviter_display_name;
     if (i.is_direct)
-        return tk::trf(tk::tr("{0} invited you to a direct message"),
-                       {inviter});
+    {
+        return tk::trf(tk::tr("{0} invited you to a direct message"), {inviter});
+    }
     const std::string rn = i.room_name.empty() ? i.room_id : i.room_name;
     return tk::trf(tk::tr("{0} invited you to {1}"), {inviter, rn});
 }

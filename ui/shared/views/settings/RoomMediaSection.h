@@ -42,12 +42,14 @@ public:
 
     // Fired when the user picks a new option. std::nullopt means "Use
     // global default" (clear the override); otherwise a concrete pick.
-    std::function<void(std::optional<tesseract::MediaPreviewConfig::Mode>)>
-        on_override_changed;
+    std::function<void(std::optional<tesseract::MediaPreviewConfig::Mode>)> on_override_changed;
 
     // ComboBox accessor used by tests to simulate user selections (mirrors
     // MediaSection's audio_input_combo() etc.).
-    tk::ComboBox* override_combo() const { return override_combo_; }
+    tk::ComboBox* override_combo() const
+    {
+        return override_combo_;
+    }
 
 private:
     tk::ComboBox* override_combo_ = nullptr;

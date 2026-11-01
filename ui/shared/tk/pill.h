@@ -61,10 +61,10 @@ struct PillSpec
 struct PillMetrics
 {
     float height = 0;     // == line_ascent + line_descent, verbatim
-    float radius = 0;      // == height / 2 — true stadium, always
-    float image_side = 0;  // leading image/glyph diameter; 0 when spec has none
-    float text_width = 0;  // shaped width of spec.text at text_role
-    float width = 0;       // total pill width including padding
+    float radius = 0;     // == height / 2 — true stadium, always
+    float image_side = 0; // leading image/glyph diameter; 0 when spec has none
+    float text_width = 0; // shaped width of spec.text at text_role
+    float width = 0;      // total pill width including padding
 };
 
 // True stadium radius for a pill of this height. Centralised so no call site
@@ -94,9 +94,10 @@ LineMetrics role_line_metrics(CanvasFactory& factory, FontRole role);
 // either way. Kept as constants (not settings) since pills are a fixed,
 // small UI element unlike e.g. reaction chips
 // (Settings::reaction_chip_height), which the user can resize.
-inline constexpr float kPillOuterPadX = 8.0f;  // left/right padding around content
-inline constexpr float kPillImageGap = 4.0f;   // gap between leading visual and text
-inline constexpr float kPillImageEdgePad = 1.0f; // leading visual's inset from the pill's own left/top/bottom edges
+inline constexpr float kPillOuterPadX = 8.0f; // left/right padding around content
+inline constexpr float kPillImageGap = 4.0f;  // gap between leading visual and text
+inline constexpr float kPillImageEdgePad =
+    1.0f; // leading visual's inset from the pill's own left/top/bottom edges
 
 // Derives PillMetrics from the *line's own* ascent+descent, supplied by the
 // caller — this never invents height independently, which is what
@@ -108,16 +109,15 @@ inline constexpr float kPillImageEdgePad = 1.0f; // leading visual's inset from 
 // calls it again (transitively, via render_pill_bitmap) once the avatar may
 // have resolved. Both calls must be given the same line_ascent/line_descent
 // to agree on a width.
-PillMetrics measure_pill(CanvasFactory& factory, const PillSpec& spec,
-                         float line_ascent, float line_descent);
+PillMetrics measure_pill(CanvasFactory& factory, const PillSpec& spec, float line_ascent,
+                         float line_descent);
 
 // Paints just the rounded background chrome for a pill occupying `bounds`.
 // Exposed for callers that already have a shaped rect (e.g. a test, or a
 // widget drawing a non-text pill-shaped chip) — the timeline paints pills by
 // rasterizing the whole thing via render_pill_bitmap(), not by calling this
 // directly, so its background always matches the composer's.
-void paint_pill_background(Canvas& canvas, Rect bounds, float radius,
-                           Color bg);
+void paint_pill_background(Canvas& canvas, Rect bounds, float radius, Color bg);
 
 // Paints a pill's leading avatar/emoji (or fallback glyph, or nothing) into
 // `visual_rect` (a square, side == PillMetrics::image_side, inset by
@@ -128,8 +128,8 @@ void paint_pill_background(Canvas& canvas, Rect bounds, float radius,
 // or — when only reserve_leading_visual is set — an initials disc in
 // initials_bg/initials_fg: the label's initials for a User pill, "@" for a
 // Room pill (whose label is the literal "room").
-void paint_pill_leading_visual(Canvas& canvas, CanvasFactory& factory,
-                               const PillSpec& spec, Rect visual_rect);
+void paint_pill_leading_visual(Canvas& canvas, CanvasFactory& factory, const PillSpec& spec,
+                               Rect visual_rect);
 
 // Fully self-contained render: background + optional leading visual + text,
 // all in one offscreen bitmap sized to fit line_ascent+line_descent — the
@@ -137,10 +137,8 @@ void paint_pill_leading_visual(Canvas& canvas, CanvasFactory& factory,
 // when the backend has no CanvasFactory::create_offscreen() implementation
 // — callers must degrade gracefully (plain-text insertion), same as
 // insert_mention()'s existing default fallback.
-std::unique_ptr<Image> render_pill_bitmap(CanvasFactory& factory,
-                                          const PillSpec& spec,
-                                          float line_ascent,
-                                          float line_descent,
+std::unique_ptr<Image> render_pill_bitmap(CanvasFactory& factory, const PillSpec& spec,
+                                          float line_ascent, float line_descent,
                                           float scale_factor);
 
 // Cache key covering everything that affects a pill's rendered pixels
@@ -157,8 +155,8 @@ std::unique_ptr<Image> render_pill_bitmap(CanvasFactory& factory,
 // site that maintains its own PixmapCache (each NativeTextArea,
 // MessageListView) hashes pills identically rather than four copy-pasted
 // implementations.
-CacheKey pill_cache_key(const PillSpec& spec, float line_ascent,
-                        float line_descent, float scale_factor);
+CacheKey pill_cache_key(const PillSpec& spec, float line_ascent, float line_descent,
+                        float scale_factor);
 
 // render_pill_bitmap(), wrapped with a PixmapCache lookup: reuses an already-
 // rasterized identical pill (same key) rather than re-rendering, and pins
@@ -170,8 +168,7 @@ CacheKey pill_cache_key(const PillSpec& spec, float line_ascent,
 // cache.sweep() after a fresh render so stale unpinned entries don't
 // accumulate. Returns nullptr on the same conditions render_pill_bitmap()
 // does.
-ImageRef render_pill_bitmap_cached(CanvasFactory& factory, PixmapCache& cache,
-                                   const PillSpec& spec, float line_ascent,
-                                   float line_descent, float scale_factor);
+ImageRef render_pill_bitmap_cached(CanvasFactory& factory, PixmapCache& cache, const PillSpec& spec,
+                                   float line_ascent, float line_descent, float scale_factor);
 
 } // namespace tk

@@ -122,7 +122,11 @@ fn try_matrix_uri(uri: &str) -> Option<MatrixLinkResult> {
             if id.is_empty() || id == "$" {
                 return None;
             }
-            Some(if id.starts_with('$') { id } else { format!("${id}") })
+            Some(if id.starts_with('$') {
+                id
+            } else {
+                format!("${id}")
+            })
         }
         Some(legacy) => Some(percent_decode(legacy)),
     };
@@ -278,7 +282,10 @@ mod tests {
 
     #[test]
     fn matrix_to_over_plain_http_is_not_a_permalink() {
-        assert_eq!(parse_matrix_link("http://matrix.to/#/@alice:example.com").kind, KIND_UNKNOWN);
+        assert_eq!(
+            parse_matrix_link("http://matrix.to/#/@alice:example.com").kind,
+            KIND_UNKNOWN
+        );
     }
 
     #[test]
@@ -312,14 +319,20 @@ mod tests {
         );
         assert_eq!(
             r,
-            with_via(event("!abc123:example.com", "$xyz789:example.com"), &["matrix.org"])
+            with_via(
+                event("!abc123:example.com", "$xyz789:example.com"),
+                &["matrix.org"]
+            )
         );
     }
 
     #[test]
     fn matrix_to_percent_encoded_via() {
         let r = parse_matrix_link("https://matrix.to/#/!abc123:example.com?via=a%2Eb.example.com");
-        assert_eq!(r, with_via(room("!abc123:example.com"), &["a.b.example.com"]));
+        assert_eq!(
+            r,
+            with_via(room("!abc123:example.com"), &["a.b.example.com"])
+        );
     }
 
     #[test]

@@ -15,11 +15,12 @@
 #include "MainWindow.h"
 #include "app/AccountManager.h"
 #include "app/Launch.h"
-#include "tk/gst_hw_probe.h"
+#include "platform/linux/gst_hw_probe.h"
 #include "tk/qt_accessible.h"
 #include "tk/i18n.h"
-#include "tk/single_instance.h"
-extern "C" {
+#include "platform/single_instance.h"
+extern "C"
+{
 }
 #include <tesseract/client.h>
 #include <tesseract/paths.h>
@@ -65,17 +66,16 @@ void install_graceful_shutdown_signal_handlers(QApplication& app)
     {
         return; // best-effort: fall back to default (abrupt) signal behavior
     }
-    auto* notifier = new QSocketNotifier(
-        g_shutdown_signal_fd[0], QSocketNotifier::Read, &app);
+    auto* notifier = new QSocketNotifier(g_shutdown_signal_fd[0], QSocketNotifier::Read, &app);
     QObject::connect(notifier, &QSocketNotifier::activated,
-                      [&app](QSocketDescriptor, QSocketNotifier::Type)
-                      {
-                          char buf[16];
-                          while (::read(g_shutdown_signal_fd[0], buf, sizeof(buf)) > 0)
-                          {
-                          }
-                          app.quit();
-                      });
+                     [&app](QSocketDescriptor, QSocketNotifier::Type)
+                     {
+                         char buf[16];
+                         while (::read(g_shutdown_signal_fd[0], buf, sizeof(buf)) > 0)
+                         {
+                         }
+                         app.quit();
+                     });
 
     struct sigaction sa{};
     sa.sa_handler = handle_shutdown_signal;
@@ -99,16 +99,20 @@ int main(int argc, char* argv[])
     // PipeWire SPA code — not a named category — so filter rules can't catch
     // it.  Install a handler that drops those lines and writes everything else
     // to stderr via qFormatLogMessage (replicates the Qt default handler).
-    qInstallMessageHandler([](QtMsgType type, const QMessageLogContext& ctx,
-                              const QString& msg) {
-        if (msg.startsWith(QLatin1String("spaVisitChoice:")))
-            return;
-        fprintf(stderr, "%s\n",
-                qFormatLogMessage(type, ctx, msg).toLocal8Bit().constData());
-        fflush(stderr);
-        if (type == QtFatalMsg)
-            abort();
-    });
+    qInstallMessageHandler(
+        [](QtMsgType type, const QMessageLogContext& ctx, const QString& msg)
+        {
+            if (msg.startsWith(QLatin1String("spaVisitChoice:")))
+            {
+                return;
+            }
+            fprintf(stderr, "%s\n", qFormatLogMessage(type, ctx, msg).toLocal8Bit().constData());
+            fflush(stderr);
+            if (type == QtFatalMsg)
+            {
+                abort();
+            }
+        });
 #endif
 
     // Shared startup pipeline (ui/shared/app/Launch.h): parses argv, selects
@@ -118,7 +122,9 @@ int main(int argc, char* argv[])
     // the parser and still reach QApplication below via the untouched argv.
     tesseract::LaunchHooks hooks;
     hooks.detect_system_lang = []
-    { return QLocale::system().name().toStdString(); };
+    {
+        return QLocale::system().name().toStdString();
+    };
     hooks.i18n_dir = []
     {
         // <prefix>/bin/tesseract -> <prefix>/share/tesseract/i18n, the same
@@ -133,9 +139,11 @@ int main(int argc, char* argv[])
         return (exe.parent_path() / ".." / "share" / "tesseract" / "i18n").string();
     };
     hooks.acquire_instance_lock = []
-    { return tk::acquire_single_instance_lock().acquired; };
-    const tesseract::LaunchPlan plan = tesseract::prepare_launch(
-        std::vector<std::string>(argv + 1, argv + argc), hooks);
+    {
+        return tk::acquire_single_instance_lock().acquired;
+    };
+    const tesseract::LaunchPlan plan =
+        tesseract::prepare_launch(std::vector<std::string>(argv + 1, argv + argc), hooks);
     if (plan.exit_code)
     {
         return *plan.exit_code;
@@ -146,7 +154,7 @@ int main(int argc, char* argv[])
 #endif
 
     // Single-instance guard shared with the GTK4 build (same flock path,
-    // same activation-socket protocol — see ui/shared/tk/single_instance.h)
+    // same activation-socket protocol — see ui/shared/platform/single_instance.h)
     // so launching one backend while the other already holds the lock is
     // detected too, not just two instances of the same backend.
     if (
@@ -175,7 +183,7 @@ int main(int argc, char* argv[])
     // Matches the desktop file basename packages actually install
     // (packaging/tesseract.desktop.in is renamed tesseract-matrix.desktop —
     // see packaging/debian/rules, packaging/arch/PKGBUILD.in — same name
-    // ui/shared/linux_autostart.h already uses). Read back via desktopFileName() in
+    // ui/shared/platform/linux/linux_autostart.h already uses). Read back via desktopFileName() in
     // LinuxNotifier.cpp to populate the "desktop-entry" hint on legacy D-Bus
     // notifications — required for the daemon's ActivationToken signal to
     // know which app to mint a Wayland xdg_activation_v1 token for (see
@@ -194,11 +202,9 @@ int main(int argc, char* argv[])
     // already running sandboxed, where identity is already known — so this
     // is unconditional and best-effort, not gated to dev builds only.
     {
-        QDBusInterface registry("org.freedesktop.portal.Desktop",
-                                "/org/freedesktop/portal/desktop",
+        QDBusInterface registry("org.freedesktop.portal.Desktop", "/org/freedesktop/portal/desktop",
                                 "org.freedesktop.host.portal.Registry");
-        registry.call("Register", QStringLiteral("tesseract-matrix"),
-                      QVariantMap{});
+        registry.call("Register", QStringLiteral("tesseract-matrix"), QVariantMap{});
     }
 
     install_graceful_shutdown_signal_handlers(app);
@@ -207,11 +213,12 @@ int main(int argc, char* argv[])
     app.setWindowIcon(QIcon(":/icons/tesseract.svg"));
 
     if (!getenv("GST_DEBUG"))
+    {
         setenv("GST_DEBUG", "0", 1);
+    }
 
     {
-        const QString cache_dir =
-            QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+        const QString cache_dir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
         QDir().mkpath(cache_dir);
         tk::gst::apply_hw_decoder_cache(cache_dir.toStdString());
     }
@@ -219,7 +226,8 @@ int main(int argc, char* argv[])
     tesseract::AccountManager account_manager;
     qt6::MainWindow window{account_manager, nullptr, plan.start_hidden()
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
-                           , screenshot_mode
+                                                         ,
+                           screenshot_mode
 #endif
     };
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
@@ -244,9 +252,7 @@ int main(int argc, char* argv[])
         window.openMatrixLink(*launch.matrix_uri);
     }
     // Held by ShellBase until the main content is showing.
-    window.dispatchLaunchAction(launch.action,
-                                launch.room_id.value_or(std::string{}));
+    window.dispatchLaunchAction(launch.action, launch.room_id.value_or(std::string{}));
 
     return app.exec();
-
 }

@@ -25,9 +25,8 @@ namespace tesseract::views
 // because that room was recently visited (see active_rooms in the Rust
 // aggregator) but isn't the room in question, isn't one of its parent
 // spaces, and isn't subscribed.
-bool is_pack_picker_visible(const tesseract::ImagePack& pack,
-                           const std::string& current_room_id,
-                           const std::vector<std::string>& parent_space_ids);
+bool is_pack_picker_visible(const tesseract::ImagePack& pack, const std::string& current_room_id,
+                            const std::vector<std::string>& parent_space_ids);
 
 // Filters `packs` (already usage-filtered by the caller) down to
 // is_pack_picker_visible() entries, then stable-partitions the survivors
@@ -37,8 +36,8 @@ bool is_pack_picker_visible(const tesseract::ImagePack& pack,
 // existing relative order. `current_room_id` empty means no room context
 // (e.g. viewing the room list) — buckets 2 and 3 are simply empty in that
 // case.
-std::vector<tesseract::ImagePack> order_picker_packs(
-    std::vector<tesseract::ImagePack> packs, const std::string& current_room_id,
-    const std::vector<std::string>& parent_space_ids);
+std::vector<tesseract::ImagePack>
+order_picker_packs(std::vector<tesseract::ImagePack> packs, const std::string& current_room_id,
+                   const std::vector<std::string>& parent_space_ids);
 
 } // namespace tesseract::views

@@ -13,8 +13,7 @@ namespace tesseract::views
 // Scale `(natural_w, natural_h)` to fit within `(max_w, max_h)` while
 // preserving aspect ratio and never upscaling beyond the natural size.
 // Returns a reasonable fallback size when intrinsic dimensions are absent.
-inline tk::Size fit_media(float natural_w, float natural_h, float max_w,
-                          float max_h)
+inline tk::Size fit_media(float natural_w, float natural_h, float max_w, float max_h)
 {
     if (natural_w <= 0 || natural_h <= 0)
     {
@@ -30,11 +29,12 @@ inline tk::Size fit_media(float natural_w, float natural_h, float max_w,
 // size is unknown and we're sizing off a low-res placeholder (e.g. a cached
 // avatar thumbnail), so a tiny image still fills a reasonable portion of the
 // viewport instead of opening at native pixel size.
-inline tk::Size fit_media_cover(float natural_w, float natural_h, float max_w,
-                                float max_h)
+inline tk::Size fit_media_cover(float natural_w, float natural_h, float max_w, float max_h)
 {
     if (natural_w <= 0 || natural_h <= 0)
+    {
         return {max_w, max_h};
+    }
     float s = std::min(max_w / natural_w, max_h / natural_h);
     return {natural_w * s, natural_h * s};
 }
@@ -45,30 +45,44 @@ inline bool rect_contains(const tk::Rect& r, tk::Point p)
 }
 
 // Draw a circular avatar into the disc centred at `centre` with the given
-// `diameter`. When `img` is non-null it is centre-fit and clipped to the
-// circle (exactly as `Canvas::draw_circle_image`); otherwise an initials
-// disc is drawn from `initials_name` with the supplied background/foreground
-// colours (exactly as `Canvas::draw_initials_circle`; pass
+// `diameter`. When `img` is non-null it is clipped to the circle: square
+// images go through `Canvas::draw_circle_image`, non-square ones are
+// centre-cropped to a square here (the canvas would stretch them); otherwise
+// an initials disc is drawn from `initials_name` with the supplied
+// background/foreground colours (exactly as `Canvas::draw_initials_circle`; pass
 // tk::AvatarText::Literal to draw a glyph like "#" as-is).
 //
 // Image resolution stays at the call site because it diverges widely
 // (lazy-fetch on miss, MSC4278 invite-avatar gating, presence lookups, the
 // name source picked for the initials fallback). This helper centralises only
 // the invariant image-or-initials draw that was copy-pasted across ~10 views.
-inline void draw_avatar(tk::Canvas& canvas, const tk::Image* img,
-                        tk::Point centre, float diameter,
+inline void draw_avatar(tk::Canvas& canvas, const tk::Image* img, tk::Point centre, float diameter,
                         std::string_view initials_name, tk::Color initials_bg,
-                        tk::Color initials_fg,
-                        tk::AvatarText text = tk::AvatarText::Initials)
+                        tk::Color initials_fg, tk::AvatarText text = tk::AvatarText::Initials)
 {
     if (img)
     {
-        canvas.draw_circle_image(*img, centre, diameter);
+        const int w = img->width();
+        const int h = img->height();
+        if (w == h || w <= 0 || h <= 0)
+        {
+            canvas.draw_circle_image(*img, centre, diameter);
+        }
+        else
+        {
+            const float s = static_cast<float>(std::min(w, h));
+            const tk::Rect src{(static_cast<float>(w) - s) / 2.0f,
+                               (static_cast<float>(h) - s) / 2.0f, s, s};
+            const tk::Rect dst{centre.x - diameter * 0.5f, centre.y - diameter * 0.5f, diameter,
+                               diameter};
+            tk::ClipScope clip(canvas, dst, diameter * 0.5f);
+            canvas.draw_image_subregion(*img, src, dst);
+        }
     }
     else
     {
-        canvas.draw_initials_circle(initials_name, centre, diameter,
-                                    initials_bg, initials_fg, text);
+        canvas.draw_initials_circle(initials_name, centre, diameter, initials_bg, initials_fg,
+                                    text);
     }
 }
 
@@ -80,14 +94,12 @@ inline void draw_avatar(tk::Canvas& canvas, const tk::Image* img,
 inline constexpr float kCheckCircleSize = 18.0f;
 
 inline void paint_check_circle(tk::Canvas& canvas, tk::CanvasFactory& factory,
-                               tk::IconCache& check_icon,
-                               std::span<const std::uint8_t> check_svg,
+                               tk::IconCache& check_icon, std::span<const std::uint8_t> check_svg,
                                tk::Point centre, bool checked, tk::Color accent,
                                tk::Color on_accent, tk::Color border)
 {
     const float r = kCheckCircleSize * 0.5f;
-    const tk::Rect rect{centre.x - r, centre.y - r, kCheckCircleSize,
-                        kCheckCircleSize};
+    const tk::Rect rect{centre.x - r, centre.y - r, kCheckCircleSize, kCheckCircleSize};
     if (!checked)
     {
         canvas.stroke_rounded_rect(rect, r, border, 1.5f);
@@ -108,8 +120,7 @@ inline tk::Color join_rule_bg(const std::string& rule)
         return tk::Color::rgba(0x2e, 0x7d, 0x32,
                                0xff); // green — freely joinable
     }
-    if (rule == "restricted" || rule == "knock_restricted" ||
-        rule == "invite" || rule == "private")
+    if (rule == "restricted" || rule == "knock_restricted" || rule == "invite" || rule == "private")
     {
         return tk::Color::rgba(0xe6, 0x5c, 0x00, 0xff); // amber — restricted
     }

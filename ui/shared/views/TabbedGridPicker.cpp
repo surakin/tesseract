@@ -18,8 +18,7 @@ constexpr float kSearchHeight = 32.0f;
 //  Grid adapter — forwards count + cell paint to the picker subclass.
 // ─────────────────────────────────────────────────────────────────────────
 
-class TabbedGridPicker::GridAdapter : public tk::GridAdapter,
-                                      public tk::GridAdapterAccessibility
+class TabbedGridPicker::GridAdapter : public tk::GridAdapter, public tk::GridAdapterAccessibility
 {
 public:
     explicit GridAdapter(TabbedGridPicker& owner) : owner_(owner)
@@ -31,8 +30,8 @@ public:
         return owner_.item_count();
     }
 
-    void paint_cell(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
-                    bool selected, bool hovered) override
+    void paint_cell(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds, bool selected,
+                    bool hovered) override
     {
         owner_.paint_cell(index, ctx, bounds, selected, hovered);
     }
@@ -58,7 +57,9 @@ public:
         // accessible name only; cell_tooltip() itself is untouched.
         std::string name = owner_.cell_tooltip(static_cast<int>(index));
         if (name.size() >= 2 && name.front() == ':' && name.back() == ':')
+        {
             name = name.substr(1, name.size() - 2);
+        }
         return name;
     }
     // Mirrors on_cell_clicked's identical dispatch, so the mouse and
@@ -66,7 +67,9 @@ public:
     bool access_activate_cell(std::size_t index) override
     {
         if (index >= owner_.item_count())
+        {
             return false;
+        }
         owner_.on_item_activated(static_cast<int>(index));
         return true;
     }
@@ -90,8 +93,7 @@ private:
 //  keypress.
 // ─────────────────────────────────────────────────────────────────────────
 
-class TabbedGridPicker::TabStrip : public tk::Widget,
-                                   public tk::WidgetRowAccessibility
+class TabbedGridPicker::TabStrip : public tk::Widget, public tk::WidgetRowAccessibility
 {
 protected:
     explicit TabStrip(TabbedGridPicker& owner) : owner_(owner)
@@ -103,8 +105,7 @@ public:
     // Index of the tab at `local` (widget-local), or -1.
     int tab_at(tk::Point local) const
     {
-        if (local.x < 0 || local.y < 0 || local.x >= bounds_.w ||
-            local.y >= bounds_.h)
+        if (local.x < 0 || local.y < 0 || local.x >= bounds_.w || local.y >= bounds_.h)
         {
             return -1;
         }
@@ -113,8 +114,7 @@ public:
         {
             return -1;
         }
-        float tab_w = std::max(owner_.tab_slot_min(),
-                               bounds_.w / static_cast<float>(total));
+        float tab_w = std::max(owner_.tab_slot_min(), bounds_.w / static_cast<float>(total));
         int idx = static_cast<int>((local.x + scroll_offset_) / tab_w);
         if (idx < 0 || idx >= total)
         {
@@ -153,22 +153,19 @@ public:
     void paint(tk::PaintCtx& ctx) override
     {
         ctx.canvas.fill_rect(bounds_, ctx.theme.palette.chrome_bg);
-        ctx.canvas.fill_rect({bounds_.x, bounds_.y, bounds_.w, 1.0f},
-                             ctx.theme.palette.separator);
+        ctx.canvas.fill_rect({bounds_.x, bounds_.y, bounds_.w, 1.0f}, ctx.theme.palette.separator);
 
         int total = owner_.tab_count();
         if (total <= 0)
         {
             return;
         }
-        float tab_w = std::max(owner_.tab_slot_min(),
-                               bounds_.w / static_cast<float>(total));
+        float tab_w = std::max(owner_.tab_slot_min(), bounds_.w / static_cast<float>(total));
         int active = owner_.active_tab_index();
-        ctx.canvas.push_clip_rect(bounds_);
+        tk::ClipScope clip(ctx.canvas, bounds_);
         for (int i = 0; i < total; ++i)
         {
-            tk::Rect tab{bounds_.x + i * tab_w - scroll_offset_, bounds_.y,
-                        tab_w, bounds_.h};
+            tk::Rect tab{bounds_.x + i * tab_w - scroll_offset_, bounds_.y, tab_w, bounds_.h};
             if (i == active)
             {
                 ctx.canvas.fill_rect(tab, ctx.theme.palette.subtle_pressed);
@@ -178,6 +175,7 @@ public:
             else if (i == hovered_idx_)
             {
                 ctx.canvas.fill_rect(tab, ctx.theme.palette.subtle_hover);
+                tk::paint_hc_hover_outline(ctx.canvas, ctx.theme, tab);
             }
             if (i == nav_index_ && i != active)
             {
@@ -186,13 +184,11 @@ public:
                 // different tab. Skipped when it coincides with the active
                 // tab — the underline above already marks that one, and
                 // paint_own_focus_ring() below still rings it either way.
-                ctx.canvas.stroke_rect(tab, ctx.theme.palette.border_strong,
-                                       1.0f);
+                ctx.canvas.stroke_rect(tab, ctx.theme.palette.border_strong, 1.0f);
             }
 
             owner_.paint_tab_content(i, ctx, tab);
         }
-        ctx.canvas.pop_clip();
     }
 
     bool on_pointer_down(tk::Point local) override
@@ -222,8 +218,7 @@ public:
     }
     bool on_wheel(tk::Point local, float dx, float dy, bool /*is_touchpad*/) override
     {
-        if (local.x < 0 || local.y < 0 || local.x >= bounds_.w ||
-            local.y >= bounds_.h)
+        if (local.x < 0 || local.y < 0 || local.x >= bounds_.w || local.y >= bounds_.h)
         {
             return false;
         }
@@ -232,8 +227,7 @@ public:
         {
             return false;
         }
-        float tab_w = std::max(owner_.tab_slot_min(),
-                               bounds_.w / static_cast<float>(total));
+        float tab_w = std::max(owner_.tab_slot_min(), bounds_.w / static_cast<float>(total));
         float total_content_w = tab_w * static_cast<float>(total);
         float max_offset = std::max(0.0f, total_content_w - bounds_.w);
         if (max_offset == 0.0f)
@@ -268,8 +262,7 @@ public:
     {
         int active = owner_.active_tab_index();
         int total = owner_.tab_count();
-        nav_index_ = (active >= 0 && active < total) ? active
-                    : (total > 0 ? 0 : -1);
+        nav_index_ = (active >= 0 && active < total) ? active : (total > 0 ? 0 : -1);
     }
     void on_focus_lost() override
     {
@@ -333,10 +326,8 @@ public:
             tk::paint_focus_ring(ctx, bounds_);
             return;
         }
-        float tab_w = std::max(owner_.tab_slot_min(),
-                               bounds_.w / static_cast<float>(total));
-        tk::Rect tab{bounds_.x + nav_index_ * tab_w - scroll_offset_,
-                    bounds_.y, tab_w, bounds_.h};
+        float tab_w = std::max(owner_.tab_slot_min(), bounds_.w / static_cast<float>(total));
+        tk::Rect tab{bounds_.x + nav_index_ * tab_w - scroll_offset_, bounds_.y, tab_w, bounds_.h};
         tk::paint_focus_ring(ctx, tab);
     }
 
@@ -384,10 +375,9 @@ public:
         {
             return {};
         }
-        float tab_w = std::max(owner_.tab_slot_min(),
-                               bounds_.w / static_cast<float>(total));
-        return {bounds_.x + static_cast<float>(index) * tab_w - scroll_offset_,
-                bounds_.y, tab_w, bounds_.h};
+        float tab_w = std::max(owner_.tab_slot_min(), bounds_.w / static_cast<float>(total));
+        return {bounds_.x + static_cast<float>(index) * tab_w - scroll_offset_, bounds_.y, tab_w,
+                bounds_.h};
     }
 
 private:
@@ -404,14 +394,16 @@ private:
 
 TabbedGridPicker::~TabbedGridPicker() = default;
 
-TabbedGridPicker::TabbedGridPicker()
-    : grid_adapter_(std::make_unique<GridAdapter>(*this))
+TabbedGridPicker::TabbedGridPicker() : grid_adapter_(std::make_unique<GridAdapter>(*this))
 {
     if (host())
     {
         auto search = tk::create_widget<tk::TextField>(this, kSearchHeight);
-        search->set_on_changed([this](const std::string& q)
-                               { set_search_query(q); });
+        search->set_on_changed(
+            [this](const std::string& q)
+            {
+                set_search_query(q);
+            });
         search_field_ = add_child(std::move(search));
     }
 
@@ -445,7 +437,9 @@ void TabbedGridPicker::set_visible(bool v)
 {
     tk::Widget::set_visible(v);
     if (search_field_)
+    {
         search_field_->set_visible(v);
+    }
 
     if (!v)
     {
@@ -454,12 +448,16 @@ void TabbedGridPicker::set_visible(bool v)
         // dismiss time (e.g. the one just picked, pointer never moved) would
         // keep its tooltip on screen. Clear the hover + any live tooltip now.
         if (tab_strip_)
+        {
             tab_strip_->reset_interaction();
+        }
         if (grid_)
         {
             grid_->on_pointer_leave();
             if (host())
+            {
                 host()->hide_tooltip(grid_);
+            }
         }
     }
 }
@@ -507,13 +505,17 @@ void TabbedGridPicker::set_search_query(std::string query)
 void TabbedGridPicker::set_search_placeholder(std::string text)
 {
     if (search_field_)
+    {
         search_field_->set_placeholder(std::move(text));
+    }
 }
 
 void TabbedGridPicker::reset_tab_scroll()
 {
     if (tab_strip_)
+    {
         tab_strip_->reset_scroll();
+    }
 }
 
 void TabbedGridPicker::open_at(tk::Rect world_rect)
@@ -522,7 +524,9 @@ void TabbedGridPicker::open_at(tk::Rect world_rect)
     needs_arrange_ = true;
 
     if (tab_strip_)
+    {
         tab_strip_->reset_interaction();
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -543,15 +547,18 @@ void TabbedGridPicker::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     search_rect_ = {bounds.x + kPadding, bounds.y + kPadding,
                     std::max(0.0f, bounds.w - kPadding * 2), kSearchHeight};
     if (search_field_)
+    {
         search_field_->arrange(ctx, search_rect_);
+    }
 
     tab_rect_ = {bounds.x, bounds.y + bounds.h - th, bounds.w, th};
     if (tab_strip_)
+    {
         tab_strip_->arrange(ctx, tab_rect_);
+    }
 
-    grid_rect_ = {
-        bounds.x, bounds.y + kPadding * 2 + kSearchHeight, bounds.w,
-        std::max(0.0f, bounds.h - kPadding * 2 - kSearchHeight - th)};
+    grid_rect_ = {bounds.x, bounds.y + kPadding * 2 + kSearchHeight, bounds.w,
+                  std::max(0.0f, bounds.h - kPadding * 2 - kSearchHeight - th)};
     if (grid_)
     {
         const float cs = cell_size();
@@ -568,7 +575,9 @@ void TabbedGridPicker::on_theme_changed(const tk::Theme& t)
     // Widget::background_color()'s doc comment.
     set_background_color(t.palette.chrome_bg);
     if (search_field_)
+    {
         search_field_->set_text_color(t.palette.text_primary);
+    }
 }
 
 void TabbedGridPicker::paint(tk::PaintCtx& ctx)
@@ -577,12 +586,12 @@ void TabbedGridPicker::paint(tk::PaintCtx& ctx)
     ctx.canvas.fill_rect(bounds_, ctx.theme.palette.bg);
 
     // Search-row affordance behind the search field.
-    ctx.canvas.fill_rounded_rect(search_rect_, 6.0f,
-                                 ctx.theme.palette.chrome_bg);
-    ctx.canvas.stroke_rounded_rect(search_rect_, 6.0f,
-                                   ctx.theme.palette.border_strong, 1.0f);
+    ctx.canvas.fill_rounded_rect(search_rect_, 6.0f, ctx.theme.palette.chrome_bg);
+    ctx.canvas.stroke_rounded_rect(search_rect_, 6.0f, ctx.theme.palette.border_strong, 1.0f);
     if (search_field_ && search_field_->visible())
+    {
         search_field_->paint(ctx);
+    }
 
     if (grid_)
     {
@@ -597,21 +606,29 @@ void TabbedGridPicker::paint(tk::PaintCtx& ctx)
     {
         std::string sc;
         if (grid_ && grid_->hovered_index() >= 0)
+        {
             sc = cell_tooltip(grid_->hovered_index());
+        }
         if (!sc.empty())
+        {
             // from_popup=true — this picker is itself the currently
             // registered popup (see Host::show_tooltip's doc comment), so
             // its own tooltip must bypass the "no tooltip while a popup is
             // open" gate that suppresses unrelated background content.
             host()->show_tooltip(grid_, sc, grid_->rect_at(grid_->hovered_index()),
                                  /*from_popup=*/true);
+        }
         else
+        {
             host()->hide_tooltip(grid_);
+        }
     }
 
     // ─── Tab strip ──────────────────────────────────────────────────────
     if (tab_strip_)
+    {
         tab_strip_->paint(ctx);
+    }
 
     // Outer border drawn last so nothing (grid fill, tab strip) paints over
     // it. Unconditional — TabStrip::paint() already handles the zero-tabs
@@ -622,7 +639,9 @@ void TabbedGridPicker::paint(tk::PaintCtx& ctx)
 void TabbedGridPicker::paint_overlay(tk::PaintCtx& ctx)
 {
     if (bounds_.w <= 0.0f || bounds_.h <= 0.0f)
+    {
         return;
+    }
     if (needs_arrange_)
     {
         tk::LayoutCtx lctx{ctx.factory, ctx.theme};
@@ -657,9 +676,13 @@ bool TabbedGridPicker::on_key_down(const tk::KeyEvent& event)
 void TabbedGridPicker::on_popup_dismiss()
 {
     if (tab_strip_)
+    {
         tab_strip_->reset_interaction();
+    }
     if (on_dismiss)
+    {
         on_dismiss();
+    }
 }
 
 } // namespace tesseract::views

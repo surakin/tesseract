@@ -22,7 +22,9 @@ bool RowKeyboardCursor::row_is_stop(const WidgetRowAccessibility& rows, std::siz
         return false;
     }
     if (rows.access_state_for_widget_row(i).disabled)
+    {
         return false;
+    }
     const Rect r = rows.access_rect_for_widget_row(i);
     return r.w > 0.0f && r.h > 0.0f;
 }
@@ -31,8 +33,12 @@ bool RowKeyboardCursor::has_stops(const WidgetRowAccessibility& rows)
 {
     const std::size_t n = rows.access_row_count();
     for (std::size_t i = 0; i < n; ++i)
+    {
         if (row_is_stop(rows, i))
+        {
             return true;
+        }
+    }
     return false;
 }
 
@@ -42,7 +48,9 @@ void RowKeyboardCursor::land_(Widget& owner, const WidgetRowAccessibility& rows,
     const auto i = static_cast<std::size_t>(index);
     const Rect r = rows.access_rect_for_widget_row(i);
     if (auto* region = dynamic_cast<ScrollableBase*>(&owner))
+    {
         region->scroll_into_view(r);
+    }
     if (Host* h = owner.host())
     {
         // Re-read the rect: scrolling may have moved it.
@@ -52,20 +60,27 @@ void RowKeyboardCursor::land_(Widget& owner, const WidgetRowAccessibility& rows,
     }
 }
 
-bool RowKeyboardCursor::handle_key(Widget& owner, WidgetRowAccessibility& rows,
-                                   const KeyEvent& e)
+bool RowKeyboardCursor::handle_key(Widget& owner, WidgetRowAccessibility& rows, const KeyEvent& e)
 {
     if (!owner.has_focus() || e.ctrl || e.alt || e.meta)
+    {
         return false;
+    }
     const int n = static_cast<int>(rows.access_row_count());
     if (index_ >= n || (index_ >= 0 && !row_is_stop(rows, static_cast<std::size_t>(index_))))
+    {
         index_ = -1;
+    }
 
     const auto next_stop = [&](int from, int dir)
     {
         for (int i = from + dir; i >= 0 && i < n; i += dir)
+        {
             if (row_is_stop(rows, static_cast<std::size_t>(i)))
+            {
                 return i;
+            }
+        }
         return -1;
     };
 
@@ -80,7 +95,9 @@ bool RowKeyboardCursor::handle_key(Widget& owner, WidgetRowAccessibility& rows,
         const int from = index_ >= 0 ? index_ : (dir > 0 ? -1 : n);
         const int to = next_stop(from, dir);
         if (to >= 0)
+        {
             land_(owner, rows, to);
+        }
         return true; // swallow at the ends instead of leaking to a parent
     }
     case Key::Home:
@@ -88,7 +105,9 @@ bool RowKeyboardCursor::handle_key(Widget& owner, WidgetRowAccessibility& rows,
     {
         const int to = e.key == Key::Home ? next_stop(-1, 1) : next_stop(n, -1);
         if (to >= 0)
+        {
             land_(owner, rows, to);
+        }
         return true;
     }
     case Key::Enter:
@@ -97,7 +116,9 @@ bool RowKeyboardCursor::handle_key(Widget& owner, WidgetRowAccessibility& rows,
         {
             const int to = next_stop(-1, 1);
             if (to < 0)
+            {
                 return false;
+            }
             land_(owner, rows, to);
             return true;
         }

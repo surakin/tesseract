@@ -5,8 +5,7 @@
 namespace tk
 {
 
-CompressedImageCache::CompressedImageCache(std::size_t max_bytes,
-                                           std::size_t max_entry_bytes)
+CompressedImageCache::CompressedImageCache(std::size_t max_bytes, std::size_t max_entry_bytes)
     : max_bytes_(max_bytes), max_entry_bytes_(max_entry_bytes)
 {
 }
@@ -26,8 +25,7 @@ CompressedImageCache::Bytes CompressedImageCache::get(const CacheKey& key)
     return it->second.data;
 }
 
-void CompressedImageCache::put(const CacheKey& key,
-                               std::vector<std::uint8_t> bytes)
+void CompressedImageCache::put(const CacheKey& key, std::vector<std::uint8_t> bytes)
 {
     if (bytes.empty() || bytes.size() > max_entry_bytes_)
     {
@@ -41,8 +39,7 @@ void CompressedImageCache::put(const CacheKey& key,
     if (it != map_.end())
     {
         current_bytes_ -= it->second.bytes;
-        it->second.data = std::make_shared<const std::vector<std::uint8_t>>(
-            std::move(bytes));
+        it->second.data = std::make_shared<const std::vector<std::uint8_t>>(std::move(bytes));
         it->second.bytes = n;
         current_bytes_ += n;
         lru_.splice(lru_.begin(), lru_, it->second.lru);

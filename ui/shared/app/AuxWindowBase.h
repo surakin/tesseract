@@ -22,17 +22,23 @@ public:
     // Fired when the user closes the native window.
     std::function<void()> on_window_closed;
 
-    virtual void bring_to_front()                = 0;
-    virtual void close_window()                  = 0;
-    virtual void apply_theme(const tk::Theme&)   = 0;
+    virtual void bring_to_front() = 0;
+    virtual void close_window() = 0;
+    virtual void apply_theme(const tk::Theme&) = 0;
     virtual void apply_scale_change(float scale) = 0;
-    virtual void request_relayout()              = 0;
-    virtual void request_repaint() { request_relayout(); }
+    virtual void request_relayout() = 0;
+    virtual void request_repaint()
+    {
+        request_relayout();
+    }
 
     // Destroy safely, deferring deletion where the platform requires it (Qt6:
     // deleteLater()). The caller must already have nulled on_window_closed and
     // called close_window(). Default: delete immediately.
-    virtual void schedule_delete() { delete this; }
+    virtual void schedule_delete()
+    {
+        delete this;
+    }
 };
 
 } // namespace tesseract

@@ -21,8 +21,8 @@ struct TkAboutSectionStage
     }
     tk::PaintCtx paint_ctx(tk::Host* host)
     {
-        return tk::PaintCtx{surface->canvas(), surface->factory(),
-                            tk::Theme::light(), nullptr, host};
+        return tk::PaintCtx{surface->canvas(), surface->factory(), tk::Theme::light(), nullptr,
+                            host};
     }
     void run(tk::Widget& root, tk::Rect bounds, tk::Host* host)
     {
@@ -37,22 +37,22 @@ struct TkAboutSectionStage
 // Scan downward from y=0 firing pointer-move events until the tooltip is
 // requested (own or fires its dwell delay, whichever the test checks) or the
 // bottom of the widget is reached.
-bool scan_until(tk::Widget& w, float x, float height,
-                std::function<bool()> done)
+bool scan_until(tk::Widget& w, float x, float height, std::function<bool()> done)
 {
     for (float y = 0; y < height; y += 1.0f)
     {
         w.dispatch_pointer_move({x, y});
         if (done())
+        {
             return true;
+        }
     }
     return false;
 }
 
 } // namespace
 
-TEST_CASE("memory cache row shows tooltip on hover when stats are set",
-          "[about-section][tooltip]")
+TEST_CASE("memory cache row shows tooltip on hover when stats are set", "[about-section][tooltip]")
 {
     TkAboutSectionStage st;
     AboutSection section;
@@ -61,19 +61,20 @@ TEST_CASE("memory cache row shows tooltip on hover when stats are set",
 
     section.set_memory_cache_stats(1000, 50);
 
-    const bool fired = scan_until(section, 50, 600, [&] {
-        return host.tooltip_owner_ != nullptr;
-    });
+    const bool fired = scan_until(section, 50, 600,
+                                  [&]
+                                  {
+                                      return host.tooltip_owner_ != nullptr;
+                                  });
 
     REQUIRE(fired);
     host.fire_all_delays();
     CHECK(host.tooltip_visible_);
     CHECK(host.tooltip_text_.find("1000") != std::string::npos);
-    CHECK(host.tooltip_text_.find("50")   != std::string::npos);
+    CHECK(host.tooltip_text_.find("50") != std::string::npos);
 }
 
-TEST_CASE("cache size row value cells are at the same x after layout",
-          "[about-section][layout]")
+TEST_CASE("cache size row value cells are at the same x after layout", "[about-section][layout]")
 {
     TkAboutSectionStage st;
     AboutSection section;
@@ -122,9 +123,11 @@ TEST_CASE("tooltip fires immediately when stats arrive while already hovering",
 
     // Park the pointer on a cache row without stats — tooltip must NOT be
     // requested yet (no owner claimed).
-    const bool pre = scan_until(section, 50, 600, [&] {
-        return host.tooltip_owner_ != nullptr;
-    });
+    const bool pre = scan_until(section, 50, 600,
+                                [&]
+                                {
+                                    return host.tooltip_owner_ != nullptr;
+                                });
     REQUIRE_FALSE(pre);
     REQUIRE(host.tooltip_text_.empty());
 
@@ -137,8 +140,7 @@ TEST_CASE("tooltip fires immediately when stats arrive while already hovering",
     CHECK(host.tooltip_text_.find("500") != std::string::npos);
 }
 
-TEST_CASE("sdk store row never triggers a tooltip",
-          "[about-section][tooltip]")
+TEST_CASE("sdk store row never triggers a tooltip", "[about-section][tooltip]")
 {
     TkAboutSectionStage st;
     AboutSection section;
@@ -152,7 +154,9 @@ TEST_CASE("sdk store row never triggers a tooltip",
     // for the sdk row (which has no stats). We just assert the section
     // compiled and the Host tooltip API is wired.
     for (float y = 0; y < 600; y += 1.0f)
+    {
         section.dispatch_pointer_move({50, y});
+    }
     section.on_pointer_leave();
 
     // Only memory/local rows can ever claim tooltip ownership; sdk row is

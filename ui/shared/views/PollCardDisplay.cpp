@@ -46,8 +46,8 @@ float PollCardDisplay::width(float col_w) const
 }
 
 PollCardDisplay::Layout PollCardDisplay::layout_(const MessageRowData& m,
-                                                 tk::CanvasFactory& factory,
-                                                 float col_w, bool show_end) const
+                                                 tk::CanvasFactory& factory, float col_w,
+                                                 bool show_end) const
 {
     Layout L;
     L.card_w = width(col_w);
@@ -55,16 +55,19 @@ PollCardDisplay::Layout PollCardDisplay::layout_(const MessageRowData& m,
     float cy = kPad;
 
     // Question (semibold at body size).
-    L.question = factory.build_text(
-        m.body.empty() ? tk::tr("Poll") : m.body,
-        style(tk::FontRole::SidebarName, inner_w));
+    L.question = factory.build_text(m.body.empty() ? tk::tr("Poll") : m.body,
+                                    style(tk::FontRole::SidebarName, inner_w));
     if (L.question)
+    {
         cy += L.question->measure().h;
+    }
     cy += kGap;
 
     std::uint32_t top = 0;
     for (const auto& a : m.poll_answers)
+    {
         top = std::max(top, a.votes);
+    }
 
     for (const auto& a : m.poll_answers)
     {
@@ -78,11 +81,12 @@ PollCardDisplay::Layout PollCardDisplay::layout_(const MessageRowData& m,
         {
             const int pct = poll_percent(a.votes, m.poll_total_votes);
             al.stat = factory.build_text(
-                tk::trf(tk::tr("{0}% ({1})"),
-                        {std::to_string(pct), std::to_string(a.votes)}),
+                tk::trf(tk::tr("{0}% ({1})"), {std::to_string(pct), std::to_string(a.votes)}),
                 style(tk::FontRole::Small, inner_w));
             if (al.stat)
+            {
                 al.stat_w = al.stat->measure().w;
+            }
             text_w -= al.stat_w + kGap;
             al.fill_frac = static_cast<float>(pct) / 100.0f;
         }
@@ -106,7 +110,9 @@ PollCardDisplay::Layout PollCardDisplay::layout_(const MessageRowData& m,
         L.hint = factory.build_text(hint, style(tk::FontRole::Small, inner_w));
         L.hint_y = cy;
         if (L.hint)
+        {
             cy += L.hint->measure().h + 2.0f;
+        }
     }
 
     float btn_w = 0.0f;
@@ -127,27 +133,29 @@ PollCardDisplay::Layout PollCardDisplay::layout_(const MessageRowData& m,
             btn_h = L.end_label->measure().h + 2.0f * kBtnPadY;
         }
     }
-    L.status = factory.build_text(
-        poll_status_text(m),
-        style(tk::FontRole::Small, inner_w - (btn_w > 0 ? btn_w + kGap : 0.0f)));
+    L.status =
+        factory.build_text(poll_status_text(m),
+                           style(tk::FontRole::Small, inner_w - (btn_w > 0 ? btn_w + kGap : 0.0f)));
     L.status_y = cy;
     const float status_h = L.status ? L.status->measure().h : 0.0f;
     const float line_h = std::max(status_h, btn_h);
     if (btn_w > 0.0f)
+    {
         L.end_rect = {kPad + inner_w - btn_w, cy + (line_h - btn_h) * 0.5f, btn_w, btn_h};
+    }
     cy += line_h + kPad;
     L.h = cy;
     return L;
 }
 
-float PollCardDisplay::height(const MessageRowData& m, tk::CanvasFactory& factory,
-                              float col_w, bool show_end) const
+float PollCardDisplay::height(const MessageRowData& m, tk::CanvasFactory& factory, float col_w,
+                              bool show_end) const
 {
     return layout_(m, factory, col_w, show_end).h;
 }
 
-float PollCardDisplay::paint(const MessageRowData& m, tk::PaintCtx& ctx, float x,
-                             float y, float col_w, bool interactive, bool show_end)
+float PollCardDisplay::paint(const MessageRowData& m, tk::PaintCtx& ctx, float x, float y,
+                             float col_w, bool interactive, bool show_end)
 {
     const Layout L = layout_(m, ctx.factory, col_w, show_end);
     const auto& pal = ctx.theme.palette;
@@ -159,7 +167,9 @@ float PollCardDisplay::paint(const MessageRowData& m, tk::PaintCtx& ctx, float x
     ctx.canvas.stroke_rounded_rect(card, kRadius, pal.border, 1.0f);
 
     if (L.question)
+    {
         ctx.canvas.draw_text(*L.question, {x + kPad, y + kPad}, pal.text_primary);
+    }
 
     for (const auto& a : L.answers)
     {
@@ -170,9 +180,11 @@ float PollCardDisplay::paint(const MessageRowData& m, tk::PaintCtx& ctx, float x
         {
             ctx.canvas.stroke_rounded_rect(marker, marker.w * 0.5f, pal.accent, 1.5f);
             if (a.mine)
+            {
                 ctx.canvas.fill_rounded_rect(
                     {marker.x + 3.5f, marker.y + 3.5f, marker.w - 7.0f, marker.h - 7.0f},
                     (marker.w - 7.0f) * 0.5f, pal.accent);
+            }
         }
         else if (a.mine)
         {
@@ -181,8 +193,8 @@ float PollCardDisplay::paint(const MessageRowData& m, tk::PaintCtx& ctx, float x
                                  {marker.x + marker.w * 0.42f, marker.y + marker.h - 3.5f},
                                  pal.text_on_accent, 1.8f);
             ctx.canvas.draw_line({marker.x + marker.w * 0.42f, marker.y + marker.h - 3.5f},
-                                 {marker.x + marker.w - 3.0f, marker.y + 3.5f},
-                                 pal.text_on_accent, 1.8f);
+                                 {marker.x + marker.w - 3.0f, marker.y + 3.5f}, pal.text_on_accent,
+                                 1.8f);
         }
         else
         {
@@ -190,10 +202,13 @@ float PollCardDisplay::paint(const MessageRowData& m, tk::PaintCtx& ctx, float x
         }
 
         if (a.text)
+        {
             ctx.canvas.draw_text(*a.text, {x + kPad + kControlW, ry}, pal.text_primary);
+        }
         if (a.stat)
-            ctx.canvas.draw_text(*a.stat, {x + kPad + inner_w - a.stat_w, ry},
-                                 pal.text_secondary);
+        {
+            ctx.canvas.draw_text(*a.stat, {x + kPad + inner_w - a.stat_w, ry}, pal.text_secondary);
+        }
 
         if (m.poll_results_visible)
         {
@@ -205,21 +220,30 @@ float PollCardDisplay::paint(const MessageRowData& m, tk::PaintCtx& ctx, float x
             {
                 const tk::Rect fill{track.x, track.y, fw, kBarH};
                 if (m.poll_ended && !a.leader)
+                {
                     ctx.canvas.stroke_rounded_rect(fill, kBarH * 0.5f, pal.accent, 1.0f);
+                }
                 else
+                {
                     ctx.canvas.fill_rounded_rect(fill, kBarH * 0.5f, pal.accent);
+                }
             }
         }
 
         if (interactive)
-            geom_.push_back({Hit::Type::Answer, m.event_id, a.id,
-                             {x + kPad, ry, inner_w, a.h}});
+        {
+            geom_.push_back({Hit::Type::Answer, m.event_id, a.id, {x + kPad, ry, inner_w, a.h}});
+        }
     }
 
     if (L.hint)
+    {
         ctx.canvas.draw_text(*L.hint, {x + kPad, y + L.hint_y}, pal.text_muted);
+    }
     if (L.status)
+    {
         ctx.canvas.draw_text(*L.status, {x + kPad, y + L.status_y}, pal.text_muted);
+    }
 
     if (show_end && L.end_label && L.end_rect.w > 0.0f)
     {
@@ -228,7 +252,9 @@ float PollCardDisplay::paint(const MessageRowData& m, tk::PaintCtx& ctx, float x
         ctx.canvas.stroke_rounded_rect(b, b.h * 0.5f, pal.accent, 1.0f);
         ctx.canvas.draw_text(*L.end_label, {b.x + kBtnPadX, b.y + kBtnPadY}, pal.accent);
         if (interactive)
+        {
             geom_.push_back({Hit::Type::EndButton, m.event_id, {}, b});
+        }
     }
 
     return y + L.h;
@@ -238,11 +264,19 @@ const PollCardDisplay::Hit* PollCardDisplay::hit_test(tk::Point world) const
 {
     // End button first: it never overlaps an answer row, but be explicit.
     for (const auto& h : geom_)
+    {
         if (h.type == Hit::Type::EndButton && contains(h.rect, world))
+        {
             return &h;
+        }
+    }
     for (const auto& h : geom_)
+    {
         if (contains(h.rect, world))
+        {
             return &h;
+        }
+    }
     return nullptr;
 }
 

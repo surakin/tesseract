@@ -89,9 +89,15 @@ TEST_CASE("on_right_click: open-in-tab/window items disable when providers say a
     st.layout(view);
 
     view.set_room_open_in_tab_provider(
-        [](const std::string& id) { return id == "$r0"; });
+        [](const std::string& id)
+        {
+            return id == "$r0";
+        });
     view.set_room_open_in_window_provider(
-        [](const std::string&) { return false; });
+        [](const std::string&)
+        {
+            return false;
+        });
 
     tk::Rect row = view.room_row_rect_for_test("$r0");
     REQUIRE_FALSE(row.empty());
@@ -115,7 +121,10 @@ TEST_CASE("on_right_click: firing the open-in-tab item's callback requests that 
     st.layout(view);
 
     std::string requested;
-    view.on_open_in_tab_requested = [&](const std::string& id) { requested = id; };
+    view.on_open_in_tab_requested = [&](const std::string& id)
+    {
+        requested = id;
+    };
 
     tk::Rect row = view.room_row_rect_for_test("$r0");
     REQUIRE_FALSE(row.empty());
@@ -128,7 +137,8 @@ TEST_CASE("on_right_click: firing the open-in-tab item's callback requests that 
     CHECK(requested == "$r0");
 }
 
-TEST_CASE("on_right_click: a space row produces no menu", "[roomlist][context-menu]")
+TEST_CASE("on_right_click: a space row offers pin and leave, not the room items",
+          "[roomlist][context-menu]")
 {
     tesseract::Settings::instance().group_inactive_rooms = false;
     RoomListContextMenuStage st;
@@ -140,12 +150,31 @@ TEST_CASE("on_right_click: a space row produces no menu", "[roomlist][context-me
 
     tk::Rect row = view.room_row_rect_for_test("$s0");
     REQUIRE_FALSE(row.empty());
-    CHECK_FALSE(view.on_right_click({row.x + 5.0f, row.y + row.h * 0.5f}));
-    CHECK(view.context_menu_items_for_test().empty());
+    REQUIRE(view.on_right_click({row.x + 5.0f, row.y + row.h * 0.5f}));
+
+    const auto& items = view.context_menu_items_for_test();
+    REQUIRE(items.size() == 3);
+    CHECK(items[0].label == "Pin to sidebar");
+    CHECK(items[1].is_separator);
+    CHECK(items[2].label == "Leave space");
+    CHECK(items[2].destructive);
+
+    std::string pinned, left;
+    view.on_pin_space_requested = [&](const std::string& id)
+    {
+        pinned = id;
+    };
+    view.on_leave_room_requested = [&](const std::string& id)
+    {
+        left = id;
+    };
+    items[0].on_selected();
+    items[2].on_selected();
+    CHECK(pinned == "$s0");
+    CHECK(left == "$s0");
 }
 
-TEST_CASE("on_right_click: a section header row produces no menu",
-          "[roomlist][context-menu]")
+TEST_CASE("on_right_click: a section header row produces no menu", "[roomlist][context-menu]")
 {
     tesseract::Settings::instance().group_inactive_rooms = false;
     RoomListContextMenuStage st;

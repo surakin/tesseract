@@ -52,8 +52,7 @@ public:
     // Host hook: given an mxc:// URL, return a decoded image or null. The
     // shell typically reads a `tk_avatars_` cache and kicks off an async
     // fetch on miss; the UserInfo doesn't care which.
-    using ImageProvider =
-        std::function<const tk::Image*(const std::string& mxc)>;
+    using ImageProvider = std::function<const tk::Image*(const std::string& mxc)>;
     void set_image_provider(ImageProvider provider);
 
     // Fired from paint() when image_provider_ misses on a non-empty
@@ -75,8 +74,14 @@ public:
     // centred, with no name / Matrix ID / status line.
     void set_icon_only(bool on);
     // Smaller avatar for the icon-only strip (compact room list); 0 restores the default.
-    void set_icon_avatar_size(float size) { icon_avatar_size_ = size; }
-    bool icon_only() const { return icon_only_; }
+    void set_icon_avatar_size(float size)
+    {
+        icon_avatar_size_ = size;
+    }
+    bool icon_only() const
+    {
+        return icon_only_;
+    }
 
     // Small dot on the avatar's corner, independent of active_indicator_.
     // Used by the sidebar user-strip (some *other* signed-in account has an
@@ -142,10 +147,19 @@ public:
     // Enter/Space fires on_keyboard_activate (falling back to on_primary at
     // the strip's centre), the context-menu key fires on_secondary, and the
     // editable status line becomes its own Tab stop firing on_status_clicked.
-    void set_keyboard_focusable(bool on) { keyboard_focusable_ = on; }
+    void set_keyboard_focusable(bool on)
+    {
+        keyboard_focusable_ = on;
+    }
     std::function<void()> on_keyboard_activate;
-    bool focusable() const override { return keyboard_focusable_ && enabled_; }
-    bool focus_on_click() const override { return false; }
+    bool focusable() const override
+    {
+        return keyboard_focusable_ && enabled_;
+    }
+    bool focus_on_click() const override
+    {
+        return false;
+    }
     bool on_key_down(const tk::KeyEvent& e) override;
     bool on_context_menu_key() override;
     bool on_pointer_move(tk::Point local) override;
@@ -166,13 +180,21 @@ public:
     {
         std::string base;
         if (display_name_.empty())
+        {
             base = user_id_;
+        }
         else if (user_id_.empty())
+        {
             base = display_name_;
+        }
         else
+        {
             base = display_name_ + " (" + user_id_ + ")";
+        }
         if (status_line_enabled_ && !status_text_.empty())
+        {
             base += " — " + status_text_;
+        }
         return base;
     }
     // active_indicator_ marks "the currently active account" in its one

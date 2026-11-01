@@ -31,14 +31,10 @@ public:
     {
     public:
         Scope() = default;
-        Scope(ActivityRegistry* reg, std::string name)
-            : reg_(reg)
-            , name_(std::move(name))
+        Scope(ActivityRegistry* reg, std::string name) : reg_(reg), name_(std::move(name))
         {
         }
-        Scope(Scope&& o) noexcept
-            : reg_(std::exchange(o.reg_, nullptr))
-            , name_(std::move(o.name_))
+        Scope(Scope&& o) noexcept : reg_(std::exchange(o.reg_, nullptr)), name_(std::move(o.name_))
         {
         }
         Scope& operator=(Scope&& o) noexcept
@@ -46,24 +42,29 @@ public:
             if (this != &o)
             {
                 end_();
-                reg_  = std::exchange(o.reg_, nullptr);
+                reg_ = std::exchange(o.reg_, nullptr);
                 name_ = std::move(o.name_);
             }
             return *this;
         }
-        Scope(const Scope&)            = delete;
+        Scope(const Scope&) = delete;
         Scope& operator=(const Scope&) = delete;
-        ~Scope() { end_(); }
+        ~Scope()
+        {
+            end_();
+        }
 
     private:
         void end_()
         {
             if (reg_)
+            {
                 reg_->end_(name_);
+            }
             reg_ = nullptr;
         }
         ActivityRegistry* reg_ = nullptr;
-        std::string       name_;
+        std::string name_;
     };
 
     /// Mark `name` Running until the returned Scope is destroyed.
@@ -79,21 +80,21 @@ public:
 private:
     struct Job
     {
-        std::string                group;
-        std::string                kind;
-        std::uint32_t              active = 0;
-        std::uint64_t              run_count = 0;
-        std::int64_t               last_started_ms = 0;
-        std::int64_t               last_finished_ms = 0;
+        std::string group;
+        std::string kind;
+        std::uint32_t active = 0;
+        std::uint64_t run_count = 0;
+        std::int64_t last_started_ms = 0;
+        std::int64_t last_finished_ms = 0;
         std::optional<std::string> last_error;
-        std::string                detail;
+        std::string detail;
     };
 
     void end_(const std::string& name);
 
-    NowMs                       now_;
-    mutable std::mutex          mu_;
-    std::map<std::string, Job>  jobs_;
+    NowMs now_;
+    mutable std::mutex mu_;
+    std::map<std::string, Job> jobs_;
 };
 
 } // namespace tesseract

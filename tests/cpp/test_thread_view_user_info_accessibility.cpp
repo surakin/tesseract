@@ -21,27 +21,39 @@ namespace
 const AccessNode* find_role_tv(const AccessNode& node, Role role)
 {
     if (node.role == role)
+    {
         return &node;
+    }
     for (const auto& ch : node.children)
+    {
         if (const AccessNode* found = find_role_tv(ch, role))
+        {
             return found;
+        }
+    }
     return nullptr;
 }
 
 const AccessNode* find_button_named_tv(const AccessNode& node, const std::string& name)
 {
     if (node.role == Role::Button && node.name == name)
+    {
         return &node;
+    }
     for (const auto& ch : node.children)
+    {
         if (const AccessNode* found = find_button_named_tv(ch, name))
+        {
             return found;
+        }
+    }
     return nullptr;
 }
 } // namespace
 
 TEST_CASE("ThreadView flattens through (Role::None), exposing its embedded "
-         "MessageListView and close button directly",
-         "[thread_view][accessibility]")
+          "MessageListView and close button directly",
+          "[thread_view][accessibility]")
 {
     ThreadView v;
     CHECK(v.access_role() == Role::None);
@@ -60,7 +72,7 @@ TEST_CASE("ThreadView flattens through (Role::None), exposing its embedded "
 }
 
 TEST_CASE("UserInfo reports Button role, combining display name and user id",
-         "[user_info][accessibility]")
+          "[user_info][accessibility]")
 {
     UserInfo info;
     info.set_display_name("Alice");
@@ -71,8 +83,8 @@ TEST_CASE("UserInfo reports Button role, combining display name and user id",
 }
 
 TEST_CASE("UserInfo falls back to whichever identity field is present when "
-         "the other is empty",
-         "[user_info][accessibility]")
+          "the other is empty",
+          "[user_info][accessibility]")
 {
     UserInfo name_only;
     name_only.set_display_name("Bob");

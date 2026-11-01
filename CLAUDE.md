@@ -2,127 +2,60 @@
 
 Tesseract is a cross-platform desktop Matrix/chat client. The core networking is Rust (using `matrix-sdk`), exposed to C++ via a `cxx` FFI bridge. Platform-specific UIs are written in C++ targeting Win32 (Windows), AppKit (Objective-C++, macOS), Qt6 Widgets, or GTK4 (Linux).
 
-## Build Commands
+## Build and Test
 
-Per-platform prerequisites, the full preset list, the `-DTESSERACT_UI=` override, and build internals (Corrosion, bundled SQLite, rustls, link strategy) live in [docs/BUILD.md](docs/BUILD.md). The day-to-day loop:
+Per-platform prerequisites, the full preset list, the `-DTESSERACT_UI=` override and build internals live in [docs/BUILD.md](docs/BUILD.md). Day to day:
 
 ```bash
-cmake --preset linux-debug              # full preset list in docs/BUILD.md; builds GTK4 + Qt6
+cmake --preset linux-debug               # macOS: macos-appkit-arm64-debug (or the x86_64 preset)
 cmake --build build/linux-debug
-./build/linux-debug/ui/linux-qt/tesseract    # Qt6 UI
-./build/linux-debug/ui/linux-gtk/tesseract   # GTK4 UI
-
-# macOS (pick the preset matching your CPU):
-cmake --preset macos-appkit-arm64-debug
-cmake --build build/macos-appkit-arm64-debug
-open build/macos-appkit-arm64-debug/ui/macos/Tesseract.app
+ctest --test-dir build/linux-debug --output-on-failure   # each Catch2 TEST_CASE is its own ctest test
+cargo test -p tesseract-sdk-ffi          # Rust unit tests, no C++ needed
 ```
 
 ## Architecture
 
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (including its source map) for the full picture.
+
 ```text
-sdk/         ← Rust crate: matrix-sdk wrapper + cxx FFI bridge
-client/      ← C++ static library: high-level C++ API over the Rust FFI
-ui/
-  shared/    ← tesseract_tk: cross-platform widget toolkit + shared views
-    tk/        ← Canvas / Widget / Layout / Host abstractions (+ genuinely shared
-                  GStreamer video/capture); per-platform backend impls
-                  (canvas_*/host_*/audio_*/video_*/screen_capture_*) live in each
-                  ui/<platform>/tk/, compiled into that platform's own target
-    views/     ← MainAppWidget (root widget tree); LoginView, BrandView;
-                  RoomListView, RoomView, MessageListView, ComposeBar;
-                  ThreadView, ThreadListView (right-side panel inside RoomView);
-                  EmojiPicker, StickerPicker, AccountPicker;
-                  MediaViewerOverlay (the one lightbox; ImageViewerPage /
-                  VideoViewerPage / AudioViewerPage / FileViewerPage are its
-                  per-kind page strategies, video+audio share MediaTransportBar,
-                  items built by media_viewer_items), ShortcodePopup;
-                  SettingsView (preferences: `binder.bind(control, &Settings::field, SettingKey::X)` in
-                  the section; a `case` in ShellBase::handle_setting_changed_ only if it has a
-                  side effect beyond saving), JoinRoomView, UserInfo;
-                  shortcut_registry (every keyboard shortcut, one table) +
-                  KeyboardShortcutsOverlay (Ctrl+/ / F1 list built from it);
-                  EncryptionSetupOverlay (the one encryption dialog: recovery-key
-                  setup, unlocking, SAS emoji verification) + EncryptionReminderBanner;
-                  html_spans (HTML→TextSpan / →BodyBlocks), table_layout
-                  (Markdown-table grid fitting), map_tiles, media_utils
-                  (Markdown→HTML lives in client/src/markdown.cpp, Rust-backed)
-                  shared bases: ListPopupBase, MediaOverlayBase, TabbedGridPicker;
-                  MessageListView collaborators (per-concern, behavior-preserving
-                  split): TimelineMediaController, TimelineVideoPlaylist,
-                  LocationMapPanner, RoomSwitchGateKeeper, UrlPreviewCardDisplay,
-                  LinkLayoutCache, SpoilerRevealer, ReadReceiptTracker
-  windows/   ← Win32 executable (thin shell) + its tk/ backend (+ third_party/bettertext text control)
-  macos/     ← AppKit executable (.app bundle, thin shell) + its tk/ backend
-  linux-qt/  ← Qt6 Widgets executable (thin shell) + its tk/ backend
-  linux-gtk/ ← GTK4 executable (thin shell) + its tk/ backend
+sdk/         Rust crate: matrix-sdk wrapper + cxx FFI bridge (sdk/src/bridge.rs, sdk/src/client/)
+client/      C++ static library: high-level C++ API over the FFI (client/include/tesseract/)
+ui/shared/   four static libs, each linking the previous: tesseract_tk (tk/: Canvas/Widget/Layout/Host) <- tesseract_platform (platform/: OS services)
+             <- tesseract_views (views/: shared views) <- tesseract_app (app/: ShellBase); shells link only tesseract_app
+ui/{windows,macos,linux-qt,linux-gtk}/   thin native shells + their own tk/ backend impls
 ```
 
-### Layer responsibilities
+- **`sdk/`**: all async I/O lives here (a `tokio` runtime on background threads); the bridge exposes a synchronous C API. `oauth.rs` drives the RFC 8252 loopback-redirect flow on matrix-sdk's `local-server` feature; Tesseract runs no HTTP server of its own.
+- **`client/`**: `tesseract::Client` (Pimpl) wraps the FFI; UIs implement `tesseract::IEventHandler` to receive async callbacks; `SessionStore` persists the session JSON and the per-account matrix-sdk store. Account data lives under `data_dir()` (`%APPDATA%/Tesseract/`, `~/Library/Application Support/Tesseract/`, `~/.local/share/tesseract/`); only `app_settings.json` lives in `config_dir()` (`~/.config/tesseract/` on Linux; equal to `data_dir()` on Windows/macOS).
+- **`ui/shared/tk/`** (the `tesseract_tk` library, the bottom of the shared stack): owns drawing, layout, hit-test, focus and keyboard. `tk::Canvas` is the abstract 2D backend (D2D, QPainter, Cairo+Pango, CoreGraphics+CoreText); `tk::Host` is the per-platform integration surface (repaint, post-to-UI, native edit overlays). Text input stays backed by real native controls for IME/selection, but `tk::NativeTextField` / `NativeTextArea` render into the canvas via `rendered_image()` + `Canvas::draw_image()`. Per-platform backend impls live in each `ui/<platform>/tk/`.
+- **`ui/shared/platform/`**: non-UI OS services (video/screen capture, geolocation, single instance, GStreamer/portal/UnifiedPush helpers) with per-OS backends in `platform/{linux,win32,macos}/` picked by `TESSERACT_UI`. The `layering_check` ctest (`tests/check_layering.py`) enforces the include direction: tk includes none of platform/views/app, platform includes neither views/ nor app/, views does not include app/. The `tk::Host`-vended media interfaces (audio/video players, audio capture/playback, device listing) stay in `tk/` with their backends in the shells. Put new non-UI OS services here, not in `tk/` or a shell.
+- **`ui/shared/app/`**: `ShellBase` holds all platform-agnostic shell state as `protected` members with pure-virtual hooks and virtual no-ops each shell overrides. View callbacks whose logic is the same on every shell are wired once in `ShellBase_wiring.cpp` (`wire_main_app_widget_`, `wire_overlay_nav_`); a shell keeps a callback only for a platform effect, via a defaulted hook. `EventHandlerBase : IEventHandler` marshals every SDK callback to the UI thread via `post_to_ui_()` then calls a `handle_*_ui_()` virtual. Every shell's main window inherits `ShellBase`; on macOS that is `macos::MainWindow`, and the ObjC `MainWindowController` only forwards AppKit delegate/menu callbacks to it.
+  - `ShellBase.cpp` is split into `ShellBase_<subsystem>.cpp`: put a new `ShellBase::` member in the file for its subsystem. Standalone types and pure helpers live in `WorkerPool.h`, `AccountLifecycleTypes.h`, `MediaTypes.h`, `shell_helpers.h`.
+  - Cohesive subsystems are being split into collaborators (`AccountManager`, `RoomPane`, `SendPipeline`, …; remaining cuts are under *Code health* in ROADMAP.md). When extracting, keep shell-read fields (`client_`, `account_manager_`, `main_room_pane_`, `rooms_`) on `ShellBase`, add no pure virtuals (use `std::function` hooks), and keep the shells and `tests/cpp/shell_test_double.h` compiling untouched.
+- **Shells (`ui/{windows,macos,linux-qt,linux-gtk}/`)**: own the window/menu/AX surface and mount `tk::*::Surface`s hosting shared views. Rust callbacks arrive on worker threads and reach the UI thread through `tk::Host::post_to_ui` (`QueuedConnection`, `g_idle_add`, `PostMessage`, `dispatch_async`).
 
-**`sdk/` (Rust)** — All async I/O lives here. A `tokio` runtime runs in background threads. The `cxx` bridge (`sdk/src/bridge.rs`) exposes a synchronous C API. The `client/` module (`sdk/src/client/`, one file per concern: `sync.rs`, `send.rs`, `room_list.rs`, `timeline.rs`, …) wraps `matrix-sdk` for login, sync, and messaging; `oauth.rs` drives the RFC 8252 loopback-redirect OAuth flow on top of matrix-sdk's `local-server` feature (its own axum-based redirect listener — Tesseract runs no HTTP server of its own).
+Two non-obvious entry points: `ui/shared/views/shortcut_registry.h` is the one table of keyboard shortcuts (shells bind global accelerators from it, views match with `matches()`, the shortcuts overlay lists it): add a shortcut there, never as a hand-written binding in a shell. Settings: `binder.bind(control, &Settings::field, SettingKey::X)` in `SettingsView`; for a side effect beyond saving, put per-window effects in `ShellBase::apply_setting_to_window_` and process-global ones in `ShellBase::handle_setting_changed_`.
 
-**`client/` (C++)** — `tesseract::Client` (Pimpl) wraps the Rust FFI. `tesseract::IEventHandler` is the interface UIs implement to receive async callbacks (room updates, sync events, session saves). `tesseract::SessionStore` handles platform-specific persistence of the session JSON and the per-account matrix-sdk store. Account data lives under `data_dir()` (`%APPDATA%/Tesseract/` on Windows, `~/Library/Application Support/Tesseract/` on macOS, `~/.local/share/tesseract/` on Linux — XDG state, not config); only `app_settings.json` lives in `config_dir()` (`~/.config/tesseract/` on Linux). `data_dir()` equals `config_dir()` on Windows/macOS, which have no such split.
+## Roadmap and Changelog
 
-**`ui/shared/` (C++)** — `tesseract_tk` is the cross-platform UI toolkit. It owns drawing, layout, hit-test, focus, and keyboard. `tk::Canvas` is the abstract 2D backend (D2D on Win32, QPainter on Qt6, Cairo+Pango on GTK4, CoreGraphics+CoreText on macOS). `tk::Host` is the per-platform integration surface (repaint scheduling, post-to-UI, native edit overlays). Shared widget classes live under `tk/`; shared views live under `views/` (see architecture diagram above for the full list). Text input stays backed by real native controls for IME/selection correctness per-OS, but `tk::NativeTextField` / `tk::NativeTextArea` render into the canvas rather than floating on top of it: each control's native surface is captured via `rendered_image()` and composited with `Canvas::draw_image()`, so it participates in clipping, opacity, and paint order like any other canvas content.
+See [ROADMAP.md](ROADMAP.md) for pending work and open design decisions. Completed work is in [CHANGES.md](CHANGES.md).
 
-**`ui/shared/app/` (C++)** — `ShellBase` holds all platform-agnostic shell state (accounts, rooms, image caches, worker threads, sync state) as `protected` members with pure-virtual hooks (`post_to_ui_`, `on_rooms_updated_`, `on_media_bytes_ready_`, etc.) and a set of virtual no-ops that each shell overrides (`handle_timeline_reset_ui_`, `on_room_list_state_ui_`, …). `EventHandlerBase : IEventHandler` marshals every SDK callback to the UI thread via `shell->post_to_ui_()` then calls the corresponding `handle_*_ui_()` virtual. Qt6 / GTK4 / Win32 shells inherit `ShellBase` directly; the macOS shell uses composition (`MainWindowController` holds `std::unique_ptr<MacShell>` where `MacShell : public ShellBase`) and exposes protected members to ObjC++ code via C++ `using` declarations in a `public:` section of `MacShell`. `ShellBase.cpp` is split by subsystem into `ShellBase_<subsystem>.cpp` (accounts, calls, encryption, media_fetch, media_images, navigation, profile, rooms, search, settings, spaces, timeline, windows, wiring); put new `ShellBase::` members in the file for their subsystem. Standalone types and pure helpers live in `WorkerPool.h`, `AccountLifecycleTypes.h`, `MediaTypes.h` and `shell_helpers.h`; `ShellBase` re-exports them as nested aliases/forwarding statics. Image handling shared by every shell lives beside them: `jxl_decode` (JPEG XL via the Rust decoder; each shell's decode hooks delegate to it), `image_animation` (`is_animated_image`, header-only detection for GIF/WebP/APNG/AVIF/JXL) and `image_send` (`prepare_image_for_send`: animated images go out untouched and flagged; stills recompress only when enabled and smaller, but always when the SDK can't verifiably strip their metadata; anything that can't be stripped or recompressed is refused). Cohesive subsystems are also being split out of `ShellBase` into collaborators (`AccountManager`, `RoomPane`, `ThreadPanelController`, `EncryptionFlowController`, `SettingsController`, `HistoryExportController`, `SendPipeline`, `PowerPolicy`, `PresenceTracker`; the remaining planned cuts are listed under *Code health* in ROADMAP.md); when extracting, keep shell-read fields (e.g. `client_`, `account_manager_`, `main_room_pane_`, `rooms_`) on `ShellBase`, add no pure virtuals (use `std::function` hooks), and keep the shells and `tests/cpp/shell_test_double.h` compiling untouched.
+### CHANGES.md entries: ONE short sentence
 
-**`ui/*/` (C++)** — Each platform target is a thin native shell that owns the window/menu/AX surface and mounts one or more `tk::*::Surface`s hosting shared views. Each shell implements `IEventHandler`. Because Rust callbacks arrive on worker threads, the shells route through `tk::Host::post_to_ui`, which is backed by `QueuedConnection` (Qt6), `g_idle_add` (GTK4), `PostMessage` (Win32), and `dispatch_async(dispatch_get_main_queue())` (macOS).
+**Hard limit: a bullet is one sentence of at most ~150 characters, then the verification tag.** Long bullets have been written repeatedly; this rule is not optional.
 
-### Key API surface (`client/include/tesseract/`)
+Format: `- type(scope): what changed, in plain words. <verification tag>`
 
-- `Client::begin_oauth()` / `Client::await_oauth()` — two-phase OAuth: first call returns the auth URL (open in browser), second blocks until the loopback redirect completes.
-- `Client::start_sync()` / `Client::stop_sync()` — background sync loop.
-- `Client::send_message()` — core messaging. Rooms arrive via `IEventHandler::on_rooms_updated()`; history via `Client::subscribe_room()` + `Client::paginate_back_with_status()` / `paginate_back_async()`.
-- `IEventHandler::on_session_saved(json)` — called on token refresh; persist the JSON to resume sessions without re-login.
+- Say *what changed* for the user. Add a reason only if it is not obvious, in a few words.
+- NEVER list implementation details: no class, function or file names beyond one if essential, no "X is now Y, Z is gone" chains, no per-platform breakdowns, no "also".
+- No numbered "(1)/(2)" lists, no investigation narrative, no external issue links, no root-cause analysis. All of that belongs in the commit message, not here.
+- Several unrelated changes mean several bullets, never one long bullet.
+- Before saving, re-read the bullet: if it has a second clause joined by a semicolon, a colon-list, or more than one "and", cut it down.
 
-## Running Tests
-
-### Rust unit tests (standalone — no C++ required)
-
-```bash
-cargo test -p tesseract-sdk-ffi
+```text
+Bad:  - fix(ui): the space picker stops above the user-info strip, which now runs under it; with the sidebar collapsed or single-pane the picker hides and pinned spaces return to the room list. `UserInfo::measure` takes its line heights from the backend, the strip is as tall as it needs, and `user_strip_height()` is gone: ...
+Good: - fix(ui): the space picker no longer covers the user-info strip, and hides when the sidebar is collapsed or single-pane. Linux release build
 ```
-
-### C++ tests via CMake / ctest
-
-```bash
-cmake --preset linux-debug
-cmake --build build/linux-debug
-ctest --test-dir build/linux-debug --output-on-failure
-```
-
-Each Catch2 `TEST_CASE` is registered as a separate ctest test. See [docs/BUILD.md](docs/BUILD.md) for why these need no extra toolchain wiring and how the test executable links the full stack.
-
-## Key Files
-
-| File | Purpose |
-| ---- | ------- |
-| `CMakeLists.txt` | Root build: UI detection, Corrosion setup, WHOLE_ARCHIVE linking |
-| `CMakePresets.json` | Per-platform build presets |
-| `sdk/Cargo.toml` | Rust dependencies (`matrix-sdk`, `matrix-sdk-ui`, `cxx`, `tokio`, `livekit`) |
-| `sdk/src/bridge.rs` | `cxx::bridge` — the FFI boundary between Rust and C++ |
-| `sdk/src/client/` | Matrix SDK wrapper (sync, rooms, messaging), one module per concern; `ClientFfi` in `mod.rs` |
-| `sdk/src/oauth.rs` | RFC 8252 loopback OAuth flow (built on matrix-sdk's `local-server` feature) |
-| `client/include/tesseract/*.h` | C++ public API headers |
-| `ui/shared/tk/canvas.h` | Abstract 2D backend interface (Color/Rect/Point/Image/TextLayout) |
-| `ui/shared/tk/host.h` | Per-platform `Host` + `NativeTextField` / `NativeTextArea` canvas-rendered native controls |
-| `ui/shared/tk/widget.h` | Widget tree base: measure → arrange → paint + pointer dispatch |
-| `ui/shared/views/*.h` | Cross-platform views mounted by every native shell |
-| `ui/shared/views/shortcut_registry.h` | The one table of keyboard shortcuts: shells bind global accelerators from it, `MainAppWidget` and shared views match keys with `matches()`, and the Keyboard Shortcuts overlay lists it. Add a new shortcut here, never as a hand-written binding in a shell |
-| `ui/shared/app/ShellBase.h` | Platform-agnostic shell state + pure-virtual hooks shared by all four shells |
-| `ui/shared/app/EventHandlerBase.h` | `IEventHandler` adapter: marshals SDK callbacks → UI thread → `handle_*_ui_()` virtuals |
-| `ui/shared/app/RoomWindowBase.h` | Base for secondary (popout) room windows; each platform shell provides a concrete subclass |
-| `ui/{linux-qt,linux-gtk,windows}/src/MainWindow.h`, `ui/macos/src/MainWindowController.mm` | Per-platform shells (thin). Each implements `IEventHandler` and marshals to the UI thread via its native primitive — `QueuedConnection` (Qt6), `g_idle_add` (GTK4), `PostMessage` (Win32), `dispatch_async` (macOS, `MacShell : ShellBase` composition) |
-
-## Roadmap
-
-See [ROADMAP.md](ROADMAP.md) for pending work, known gaps, and open design decisions. Completed work is in [CHANGES.md](CHANGES.md).
-
-## Changelog
-
-CHANGES.md entries are terse: 1-2 sentences per bullet — what changed, the one-line reason if it's non-obvious, then the verification tag (build/platform status, test count). Do not write a postmortem: no numbered "(1)/(2)" breakdowns, no background investigation narrative, no external issue links, no restating the full root-cause analysis already covered by the commit message. If a fix needed real investigation, that detail belongs in the commit message, not the changelog bullet.
 
 Never mention public GitHub issues (this repo's or upstream's) in commit messages. If an issue reference is needed for context, put it in CHANGES.md's detailed section instead.
 
@@ -130,29 +63,29 @@ Never mention public GitHub issues (this repo's or upstream's) in commit message
 
 See [STYLE.md](STYLE.md) for formatting and naming conventions that apply across all C++ and Rust code in this repo.
 
+**Formatting is mechanical and enforced.** C/C++/ObjC follows `.clang-format` (clang-format at the major in `tests/clang-format-version`), Rust follows `cargo fmt`. A Claude Code hook (`.claude/hooks/format-edited-file.sh`) formats every file you Edit/Write; the `.githooks/pre-commit` hook, the `cxx_format_check`/`rust_fmt_check` ctests and the "Code style" CI workflow reject anything unformatted. Never commit with either check failing, and never hand-format against them. Every implementation prompt you give a subagent must say: format changed files with clang-format / cargo fmt before reporting.
+
 ## Workflow
 
 Model split: Opus does the planning (exploration, design, writing the implementation plan); Sonnet does the implementing (executing the plan, writing code and tests). When dispatching implementation subagents, pass `model: "sonnet"`.
 
-Never commit or push changes without explicit confirmation from the user that the change has been tested and works as expected. Exception: when a change targets a platform that cannot be built or tested on the current machine (e.g. Windows- or macOS-specific code written from a Linux session, with no cross-compile toolchain to rely on), testing genuinely cannot happen before the code exists somewhere the user can build it — commit is the enabling step, not something to gate on prior test results. In that case, explicit user confirmation to commit is still required (never commit unprompted), but don't withhold that confirmation request pending a test result that isn't obtainable yet; say plainly that the change is unverified and why, and let the user decide.
+**Submitting.** Never commit or push changes without explicit confirmation from the user that the change has been tested and works as expected. Never submit anything — commit, push, PR, or any outward-facing action — unless the user explicitly requests it; a request to *make* or *update* something (code, docs, config) is never authorization to submit it. When in doubt, present the changes and wait. Exception: when a change targets a platform that cannot be built or tested on the current machine (e.g. Windows- or macOS-specific code written from a Linux session, with no cross-compile toolchain to rely on), commit is the enabling step, not something to gate on prior test results. Explicit user confirmation to commit is still required; say plainly that the change is unverified and why, and let the user decide.
 
-Never submit anything — commit, push, PR, or any outward-facing action — unless the user explicitly requests it. A request to *make* or *update* something (code, docs, config) is never authorization to submit it. When in doubt, present the changes and wait.
+**Questions.** When presenting options or asking a question, there is no timeout. If the user does not answer, wait forever — do not pick an option, assume an answer, or proceed on a default.
 
-When presenting options or asking a question, there is no timeout. If the user does not answer, wait forever — do not pick an option, assume an answer, or proceed on a default. A question or choice is only resolved by the user's actual response.
+NEVER jump to implementation in the middle of a conversation with the user, or right after the user asks a question. If the user has not agreed with an idea, don't implement it.
 
-When the user reports a bug and a solution is found, always confirm the selected solution with the user first before starting ANY implementation. NEVER implement a fix without the user's input, because the user, who is a developer too, might have a better solution.
+**Bugs.** When the user reports a bug and a solution is found, always confirm the selected solution with the user first before starting ANY implementation. NEVER implement a fix without the user's input, because the user, who is a developer too, might have a better solution. If the first fix attempt fails, offer the user the chance to set breakpoints before proceeding: "Would you like to set any breakpoints before I continue?"
 
-When investigating a bug or unexpected behavior, if the first fix attempt fails, always offer the user the chance to set breakpoints before proceeding. Pause and ask: "Would you like to set any breakpoints before I continue?" — this lets the user inspect state at key points rather than relying solely on log output or re-runs.
+**Running and building.**
 
-NEVER run the app yourself (launching a built binary/bundle, driving it, etc.) unless the user explicitly requests it. Taking screen captures or using screen/window automation (e.g. `screencapture`, `osascript`/System Events, accessibility APIs) without the user's authorization is FORBIDDEN — the display is the user's real, live desktop, not an isolated sandbox. A clean build is sufficient confirmation on its own; only launch or drive the app when the user explicitly asks for a live/visual check.
-
-NEVER do a cross-platform compile check (e.g. the `windows-xwin-*` presets, or any build targeting a platform other than the host) unless the user explicitly requests it. Build and test only for the host platform.
-
-When `ctest` reports failing tests, do not immediately spend time stashing/reverting the change and rebuilding to prove whether the current change caused them. Report the failing test names to the user first and wait for instructions — the user may already know these are pre-existing/flaky, may want a different repro approach, or may want to investigate a specific one directly. Only do the revert-and-rebuild comparison if the user asks for it.
+- NEVER run the app yourself (launching a built binary/bundle, driving it, etc.) unless the user explicitly requests it. Taking screen captures or using screen/window automation (e.g. `screencapture`, `osascript`/System Events, accessibility APIs) without the user's authorization is FORBIDDEN — the display is the user's real, live desktop, not an isolated sandbox. A clean build is sufficient confirmation on its own.
+- NEVER do a cross-platform compile check (e.g. the `windows-xwin-*` presets, or any build targeting a platform other than the host) unless the user explicitly requests it. Build and test only for the host platform.
+- When `ctest` reports failing tests, do not immediately stash/revert the change and rebuild to prove whether it caused them. Report the failing test names to the user first and wait for instructions.
 
 ## Internationalisation
 
-Every user-visible string in C++ **must** be wrapped in `tk::tr()` (singular), `tk::trn()` (plural), or `tk::trf()` (interpolated). Never pass a raw string literal directly to a widget or label where it will be displayed to the user.
+Every user-visible string in C++ **must** be wrapped in `tk::tr()` (singular), `tk::trn()` (plural), or `tk::trf()` (interpolated). Never pass a raw string literal directly to a widget or label where it will be displayed to the user. Include `ui/shared/tk/i18n.h` for `tk::tr`, `trn`, `trf`, `N_`, `format_date` and `format_size`.
 
 ```cpp
 // Wrong
@@ -168,10 +101,8 @@ dev_group->add_widget(std::make_unique<tk::Label>(tk::tr("Microphone")));
 - **Dates and sizes:** use `tk::format_date(tm, tk::tr("%B %-d, %Y"))` and `tk::format_size(bytes)`, not hand-rolled month tables or `" KB"` suffixes.
 - **Native shells translate through `tk::tr` too.** A bare `tr()` in a Qt `QObject` is `QObject::tr` (no translator installed) and GTK's `_()` is unbound gettext; both always return English. On macOS use `TkTr("…")`; on Win32 convert the `tk::tr` result to UTF-16.
 
-After adding new strings, add the corresponding `msgid`/`msgstr` entries to every `.po` file under `i18n/` (currently `de.po`, `es.po`, `fr.po`, `nb.po`, and `pseudo.po`). Strings added without `.po` entries will silently fall back to English and will never be translated. The `i18n_catalogs_complete` ctest (`i18n/check_i18n.py`) fails and lists what's missing, and it also flags bare `tr()` / `_()` calls in the shells.
-
-Include `ui/shared/tk/i18n.h` to access `tk::tr`, `tk::trn`, `tk::trf`, `tk::N_`, `tk::format_date`, and `tk::format_size`.
+After adding new strings, add the corresponding `msgid`/`msgstr` entries to every `.po` file under `i18n/` (currently `de.po`, `es.po`, `fr.po`, `nb.po`, `uk.po`, and `pseudo.po`). Strings added without `.po` entries silently fall back to English. The `i18n_catalogs_complete` ctest (`i18n/check_i18n.py`) fails and lists what's missing, and it also flags bare `tr()` / `_()` calls in the shells.
 
 ## Shared vs Platform Code
 
-Always implement new functionality in `ui/shared/` (`tk/` or `views/`) rather than duplicating it across platform shells. Platform shells (`ui/windows/`, `ui/linux-qt/`, `ui/linux-gtk/`, `ui/macos/`) should contain only what is genuinely platform-specific: native window/menu management, OS API calls, and thin wiring to the shared layer. If you find yourself writing the same logic in two or more shells, that logic belongs in `ui/shared/`.
+Always implement new functionality in `ui/shared/` (`tk/` or `views/`) rather than duplicating it across platform shells. Platform shells should contain only what is genuinely platform-specific: native window/menu management, OS API calls, and thin wiring to the shared layer. If you find yourself writing the same logic in two or more shells, that logic belongs in `ui/shared/`.

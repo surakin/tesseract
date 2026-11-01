@@ -46,8 +46,7 @@ struct PickerImageCacheTestShell : tesseract::test::TestShellBase
     void on_rooms_updated_() override
     {
     }
-    void on_media_bytes_ready_(const tk::CacheKey&, MediaKind,
-                               std::vector<uint8_t>) override
+    void on_media_bytes_ready_(const tk::CacheKey&, MediaKind, std::vector<uint8_t>) override
     {
     }
     void on_tab_state_changed_ui_() override
@@ -64,8 +63,7 @@ struct PickerImageCacheTestShell : tesseract::test::TestShellBase
     void navigate_to_room_(const std::string&) override
     {
     }
-    void pick_image_file_(
-        std::function<void(std::vector<uint8_t>, std::string)>) override
+    void pick_image_file_(std::function<void(std::vector<uint8_t>, std::string)>) override
     {
     }
 
@@ -74,8 +72,14 @@ struct PickerImageCacheTestShell : tesseract::test::TestShellBase
 
     // Accessors so tests can inspect the caches without reaching through
     // account_manager_ each time.
-    tk::PixmapCache&    image_cache() { return am_.image_cache(); }
-    tk::AnimImageCache& anim_cache()  { return am_.anim_cache(); }
+    tk::PixmapCache& image_cache()
+    {
+        return am_.image_cache();
+    }
+    tk::AnimImageCache& anim_cache()
+    {
+        return am_.anim_cache();
+    }
 
     using ShellBase::finalize_picker_image_;
     // DecodedImage is protected in ShellBase; re-export so tests can name it.
@@ -130,23 +134,22 @@ TEST_CASE("finalize routes animated frames into anim_cache_", "[picker-cache]")
     CHECK(s.repaints == 1);
 }
 
-TEST_CASE("finalize does not overwrite an existing cache entry",
-          "[picker-cache]")
+TEST_CASE("finalize does not overwrite an existing cache entry", "[picker-cache]")
 {
     PickerImageCacheTestShell s;
-    s.image_cache().store(tk::CacheKey::media("mxc://e/2"), std::make_unique<PickerImageCacheFakeImage>());
+    s.image_cache().store(tk::CacheKey::media("mxc://e/2"),
+                          std::make_unique<PickerImageCacheFakeImage>());
     const tk::Image* original = s.image_cache().peek(tk::CacheKey::media("mxc://e/2"));
     s.emoji_fetches_in_flight_.insert("mxc://e/2");
 
     s.finalize_picker_image_("mxc://e/2", false, make_still());
 
-    CHECK(s.image_cache().peek(tk::CacheKey::media("mxc://e/2")) == original);       // unchanged
-    CHECK(s.emoji_fetches_in_flight_.count("mxc://e/2") == 0); // still cleared
+    CHECK(s.image_cache().peek(tk::CacheKey::media("mxc://e/2")) == original); // unchanged
+    CHECK(s.emoji_fetches_in_flight_.count("mxc://e/2") == 0);                 // still cleared
     CHECK(s.repaints == 0);
 }
 
-TEST_CASE("finalize with an empty decode result caches nothing",
-          "[picker-cache]")
+TEST_CASE("finalize with an empty decode result caches nothing", "[picker-cache]")
 {
     PickerImageCacheTestShell s;
     s.emoji_fetches_in_flight_.insert("mxc://e/3");

@@ -17,8 +17,6 @@ add_executable(tesseract_gtk
     src/main.cpp
     src/MainWindow.cpp
     src/RoomWindow.cpp
-    src/LoginView.cpp
-    src/SettingsWidget.cpp
     src/LinuxNotifier.cpp
     src/LinuxScreenLockGtk.cpp
     src/LinuxPowerMonitorGtk.cpp
@@ -28,9 +26,9 @@ add_executable(tesseract_gtk
     src/GtkMprisPlayer.cpp
     # tk:: backend implementation — GTK4/Cairo-specific, so it lives here
     # rather than in ui/shared (which holds only genuinely cross-platform
-    # code). GStreamer support (video_decode_gst.cpp, gst_hw_probe.cpp) is
+    # code). GStreamer support (platform/linux/video_decode_gst.cpp, gst_hw_probe.cpp) is
     # shared between this and ui/linux-qt, and stays linked into
-    # tesseract_tk — its PUBLIC link to GStreamer propagates here too.
+    # tesseract_platform — its PUBLIC link to GStreamer propagates here too.
     tk/canvas_cairo.h
     tk/canvas_cairo.cpp
     tk/host_gtk.h
@@ -53,7 +51,7 @@ target_sources(tesseract_gtk PRIVATE
 target_compile_features(tesseract_gtk PRIVATE cxx_std_20)
 
 # GTK/Cairo/pixbuf umbrella headers + std base. (GStreamer lives in
-# tesseract_tk, not the shell sources, so it's not in this PCH.)
+# tesseract_platform, not the shell sources, so it's not in this PCH.)
 tesseract_target_pch(tesseract_gtk
     <string>
     <vector>
@@ -100,7 +98,7 @@ target_link_libraries(tesseract_gtk PRIVATE
     # Link them as whole-archive so every symbol is unconditionally present,
     # removing all ordering constraints between them. Mirrors ui/linux-qt.
     $<LINK_LIBRARY:WHOLE_ARCHIVE,tesseract_sdk_bridge_cxx,tesseract_client,tesseract_sdk_ffi-static>
-    tesseract_tk
+    tesseract_app
     ${GTK4_LIBRARIES}
     ${GIO_LIBRARIES}
     ${GDKPIXBUF_LIBRARIES}

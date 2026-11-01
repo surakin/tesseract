@@ -10,20 +10,17 @@
 
 using tesseract::views::SettingsGroup;
 
-TEST_CASE("SettingsGroup is a named Group so its header is announced",
-         "[settings][accessibility]")
+TEST_CASE("SettingsGroup is a named Group so its header is announced", "[settings][accessibility]")
 {
     SettingsGroup group("Notifications");
     CHECK(group.access_role() == tk::Role::Group);
     CHECK(group.access_name() == "Notifications");
 }
 
-TEST_CASE("SettingsGroup's controls attach under its Group node",
-         "[settings][accessibility]")
+TEST_CASE("SettingsGroup's controls attach under its Group node", "[settings][accessibility]")
 {
     SettingsGroup group("Privacy");
-    group.add_widget(
-        tk::create_widget<tk::CheckButton>(&group, "Share presence", true));
+    group.add_widget(tk::create_widget<tk::CheckButton>(&group, "Share presence", true));
 
     tk::AccessNode tree = tk::build_access_tree(&group);
     CHECK(tree.role == tk::Role::Group);

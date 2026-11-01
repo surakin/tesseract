@@ -11,17 +11,20 @@ namespace tk
 
 void BadgeFlow::set_badges(std::vector<Badge> badges)
 {
-    const bool same =
-        badges.size() == badges_.size() &&
-        std::equal(badges.begin(), badges.end(), badges_.begin(),
-                   [](const Badge& a, const Badge& b)
-                   { return a.label == b.label && a.icon.data() == b.icon.data(); });
+    const bool same = badges.size() == badges_.size() &&
+                      std::equal(badges.begin(), badges.end(), badges_.begin(),
+                                 [](const Badge& a, const Badge& b)
+                                 {
+                                     return a.label == b.label && a.icon.data() == b.icon.data();
+                                 });
     if (same)
     {
         // Keep the new image callbacks (they may capture a new URL) but skip
         // the relayout: nothing measurable changed.
         for (std::size_t i = 0; i < badges.size(); ++i)
+        {
             badges_[i].image = std::move(badges[i].image);
+        }
         return;
     }
     badges_ = std::move(badges);
@@ -30,7 +33,9 @@ void BadgeFlow::set_badges(std::vector<Badge> badges)
     layouts_.clear();
     flow_width_ = -1.0f;
     if (host())
+    {
         host()->mark_needs_relayout();
+    }
 }
 
 std::string BadgeFlow::access_name() const
@@ -39,7 +44,9 @@ std::string BadgeFlow::access_name() const
     for (const auto& b : badges_)
     {
         if (!out.empty())
+        {
             out += ", ";
+        }
         out += b.label;
     }
     return out;
@@ -54,7 +61,9 @@ void BadgeFlow::on_fonts_changed()
 Size BadgeFlow::flow_(CanvasFactory& factory, float width)
 {
     if (flow_width_ == width && layouts_.size() == badges_.size())
+    {
         return flow_size_;
+    }
 
     const LineMetrics lm = role_line_metrics(factory, FontRole::Small);
     row_h_ = (lm.ascent + lm.descent) > 0.0f ? (lm.ascent + lm.descent) : 16.0f;
@@ -95,7 +104,9 @@ Size BadgeFlow::measure(LayoutCtx& ctx, Size constraints)
 void BadgeFlow::paint(PaintCtx& ctx)
 {
     if (badges_.empty())
+    {
         return;
+    }
     flow_(ctx.factory, bounds_.w);
     const Color muted = ctx.theme.palette.text_muted;
     for (std::size_t i = 0; i < badges_.size(); ++i)
@@ -104,13 +115,18 @@ void BadgeFlow::paint(PaintCtx& ctx)
         const float by = bounds_.y + placed_[i].y;
         const Image* img = badges_[i].image ? badges_[i].image() : nullptr;
         if (img)
-            ctx.canvas.draw_circle_image(*img, {bx + kIconPx * 0.5f, by + row_h_ * 0.5f},
-                                         kIconPx);
+        {
+            ctx.canvas.draw_circle_image(*img, {bx + kIconPx * 0.5f, by + row_h_ * 0.5f}, kIconPx);
+        }
         else if (!badges_[i].icon.empty())
-            icons_[i].draw(ctx.canvas, ctx.factory, badges_[i].icon,
-                           {bx, by, kIconPx, row_h_}, kIconPx, muted);
+        {
+            icons_[i].draw(ctx.canvas, ctx.factory, badges_[i].icon, {bx, by, kIconPx, row_h_},
+                           kIconPx, muted);
+        }
         if (layouts_[i])
+        {
             ctx.canvas.draw_text(*layouts_[i], {bx + kIconPx + kIconGap, by}, muted);
+        }
     }
 }
 

@@ -46,8 +46,7 @@ public:
     // ----- Personal pack passthrough ----------------------------------
     void set_user_pack_images(std::vector<tesseract::ImagePackImage> images);
     void set_user_pack_image_provider(ImagePackImageProvider p);
-    void set_user_pack_tile_preview(std::uint64_t local_id,
-                                    std::shared_ptr<tk::Image> image);
+    void set_user_pack_tile_preview(std::uint64_t local_id, std::shared_ptr<tk::Image> image);
     // Gates the editor + Save button while a save is in flight.
     void set_user_pack_saving(bool saving);
     // Re-checks the Save button's enabled state once a save completes. On
@@ -59,13 +58,15 @@ public:
     // for the user to retry.
     void set_user_pack_save_result(bool ok, std::string error);
 
-    std::function<void(std::uint64_t local_id,
-                       const std::vector<std::uint8_t>& bytes,
+    std::function<void(std::uint64_t local_id, const std::vector<std::uint8_t>& bytes,
                        const std::string& mime)>
         on_user_pack_pending_image_added;
     std::function<void()> on_user_pack_save_clicked;
 
-    UserPackEditor* user_pack_editor() const { return user_pack_; }
+    UserPackEditor* user_pack_editor() const
+    {
+        return user_pack_;
+    }
 
     // ----- Known packs passthrough --------------------------------------
     void set_known_packs(std::vector<tesseract::ImagePack> all_room_packs);

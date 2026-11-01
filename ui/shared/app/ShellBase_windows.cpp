@@ -4,20 +4,17 @@
 namespace tesseract
 {
 
-void ShellBase::dispatch_timeline_reset_secondary_(
-    const std::string& room_id,
-    const EventList& snapshot)
+void ShellBase::dispatch_timeline_reset_secondary_(const std::string& room_id,
+                                                   const EventList& snapshot)
 {
     dispatch_to_secondary_windows_(room_id,
                                    [&](RoomWindowBase* w)
                                    {
-                                       w->on_timeline_reset(
-                                           build_rows_(snapshot, room_id));
+                                       w->on_timeline_reset(build_rows_(snapshot, room_id));
                                    });
 }
 
-void ShellBase::dispatch_message_inserted_secondary_(const std::string& room_id,
-                                                     std::size_t index,
+void ShellBase::dispatch_message_inserted_secondary_(const std::string& room_id, std::size_t index,
                                                      const Event& ev)
 {
     dispatch_to_secondary_windows_(
@@ -30,16 +27,13 @@ void ShellBase::dispatch_message_inserted_secondary_(const std::string& room_id,
                 // See build_rows_'s doc comment: room_id here is w's own
                 // room, not necessarily current_room_id_, so this must go
                 // through the general (room_id-explicit) overload.
-                w->pane()->ensure_reply_details_(room_id, ev.event_id,
-                                                       std::string());
+                w->pane()->ensure_reply_details_(room_id, ev.event_id, std::string());
             }
-            w->on_message_inserted(index,
-                                   views::make_row_data(ev, w->owner_user_id()));
+            w->on_message_inserted(index, views::make_row_data(ev, w->owner_user_id()));
         });
 }
 
-void ShellBase::dispatch_message_prepended_secondary_(const std::string& room_id,
-                                                       const Event& ev)
+void ShellBase::dispatch_message_prepended_secondary_(const std::string& room_id, const Event& ev)
 {
     dispatch_to_secondary_windows_(
         room_id,
@@ -51,15 +45,13 @@ void ShellBase::dispatch_message_prepended_secondary_(const std::string& room_id
                 // See build_rows_'s doc comment: room_id here is w's own
                 // room, not necessarily current_room_id_, so this must go
                 // through the general (room_id-explicit) overload.
-                w->pane()->ensure_reply_details_(room_id, ev.event_id,
-                                                       std::string());
+                w->pane()->ensure_reply_details_(room_id, ev.event_id, std::string());
             }
             w->on_message_prepended(views::make_row_data(ev, w->owner_user_id()));
         });
 }
 
-void ShellBase::dispatch_message_appended_secondary_(const std::string& room_id,
-                                                      const Event& ev)
+void ShellBase::dispatch_message_appended_secondary_(const std::string& room_id, const Event& ev)
 {
     dispatch_to_secondary_windows_(
         room_id,
@@ -71,15 +63,13 @@ void ShellBase::dispatch_message_appended_secondary_(const std::string& room_id,
                 // See build_rows_'s doc comment: room_id here is w's own
                 // room, not necessarily current_room_id_, so this must go
                 // through the general (room_id-explicit) overload.
-                w->pane()->ensure_reply_details_(room_id, ev.event_id,
-                                                       std::string());
+                w->pane()->ensure_reply_details_(room_id, ev.event_id, std::string());
             }
             w->on_message_appended(views::make_row_data(ev, w->owner_user_id()));
         });
 }
 
-void ShellBase::dispatch_message_updated_secondary_(const std::string& room_id,
-                                                    std::size_t index,
+void ShellBase::dispatch_message_updated_secondary_(const std::string& room_id, std::size_t index,
                                                     const Event& ev)
 {
     dispatch_to_secondary_windows_(
@@ -92,15 +82,13 @@ void ShellBase::dispatch_message_updated_secondary_(const std::string& room_id,
                 // See build_rows_'s doc comment: room_id here is w's own
                 // room, not necessarily current_room_id_, so this must go
                 // through the general (room_id-explicit) overload.
-                w->pane()->ensure_reply_details_(room_id, ev.event_id,
-                                                       std::string());
+                w->pane()->ensure_reply_details_(room_id, ev.event_id, std::string());
             }
             w->on_message_updated(index, views::make_row_data(ev, w->owner_user_id()));
         });
 }
 
-void ShellBase::dispatch_message_removed_secondary_(const std::string& room_id,
-                                                    std::size_t index)
+void ShellBase::dispatch_message_removed_secondary_(const std::string& room_id, std::size_t index)
 {
     dispatch_to_secondary_windows_(room_id,
                                    [&](RoomWindowBase* w)
@@ -115,7 +103,9 @@ void ShellBase::update_secondary_room_infos_()
     for (const auto& [rid, w] : secondary_windows_)
     {
         if (!w)
+        {
             continue;
+        }
         for (const auto& r : rooms_for_(w->owner_user_id()))
         {
             if (r.id == rid)
@@ -142,11 +132,15 @@ void ShellBase::unregister_room_window_(RoomWindowBase* w)
     for (auto it = first; it != last; ++it)
     {
         if (it->second != w)
+        {
             continue;
+        }
         secondary_windows_.erase(it);
         // Another account's pop-out of the same room still needs the group.
         if (secondary_windows_.count(w->room_id()) == 0)
+        {
             active_popout_media_groups_.erase(media_group_for_room_(w->room_id()));
+        }
         break;
     }
 }
@@ -156,8 +150,12 @@ RoomWindowBase* ShellBase::find_secondary_(const std::string& room_id,
 {
     auto [first, last] = secondary_windows_.equal_range(room_id);
     for (auto it = first; it != last; ++it)
+    {
         if (it->second && it->second->owner_user_id() == user_id)
+        {
             return it->second;
+        }
+    }
     return nullptr;
 }
 
@@ -166,21 +164,26 @@ RoomWindowBase* ShellBase::find_event_secondary_(const std::string& room_id) con
     return find_secondary_(room_id, dispatch_account_());
 }
 
-std::vector<std::pair<std::string, RoomWindowBase*>>
-ShellBase::active_account_popouts_() const
+std::vector<std::pair<std::string, RoomWindowBase*>> ShellBase::active_account_popouts_() const
 {
     const std::string uid = active_account_ ? active_account_->user_id : std::string{};
     std::vector<std::pair<std::string, RoomWindowBase*>> out;
     for (const auto& [rid, w] : secondary_windows_)
+    {
         if (w && w->owner_user_id() == uid)
+        {
             out.emplace_back(rid, w);
+        }
+    }
     return out;
 }
 
 RoomPane* ShellBase::reply_pane_for_(const std::string& room_id) const
 {
     if (event_is_for_active_account_())
+    {
         return main_room_pane_.get();
+    }
     auto* w = find_event_secondary_(room_id);
     return w ? w->pane() : nullptr;
 }
@@ -198,10 +201,20 @@ bool ShellBase::focus_secondary_window_(const std::string& room_id)
 bool ShellBase::room_pinned_by_popout_(const std::string& room_id) const
 {
     if (!active_account_)
+    {
         return false;
-    auto it = room_subscription_refs_.find(
-        subscription_key_(active_account_->user_id, room_id));
+    }
+    auto it = room_subscription_refs_.find(subscription_key_(active_account_->user_id, room_id));
     return it != room_subscription_refs_.end() && it->second > 0;
+}
+
+bool ShellBase::has_popout_for_account_(const std::string& user_id) const
+{
+    return std::any_of(owned_secondary_windows_.begin(), owned_secondary_windows_.end(),
+                       [&](const auto& w)
+                       {
+                           return w && w->owner_user_id() == user_id;
+                       });
 }
 
 void ShellBase::close_popouts_for_account_(const std::string& user_id)
@@ -209,10 +222,16 @@ void ShellBase::close_popouts_for_account_(const std::string& user_id)
     // Collect first: each window's destructor unregisters itself.
     std::vector<RoomWindowBase*> doomed;
     for (const auto& w : owned_secondary_windows_)
+    {
         if (w && w->owner_user_id() == user_id)
+        {
             doomed.push_back(w.get());
+        }
+    }
     for (auto* w : doomed)
+    {
         release_owned_window_(w);
+    }
 }
 
 // Subscription ref-counting for secondary windows. acquire_() starts an
@@ -221,11 +240,13 @@ void ShellBase::close_popouts_for_account_(const std::string& user_id)
 // goes from 1→0 and the main window is not showing that room.
 // `sess` is the pop-out's own account: the subscription is made on its
 // client, whether or not that account is the active one.
-void ShellBase::acquire_room_subscription_(
-    const std::shared_ptr<AccountSession>& sess, const std::string& room_id)
+void ShellBase::acquire_room_subscription_(const std::shared_ptr<AccountSession>& sess,
+                                           const std::string& room_id)
 {
     if (!sess)
+    {
         return;
+    }
     int& refs = room_subscription_refs_[subscription_key_(sess->user_id, room_id)];
     if (++refs > 1)
     {
@@ -247,11 +268,13 @@ void ShellBase::acquire_room_subscription_(
         });
 }
 
-void ShellBase::release_room_subscription_(
-    const std::shared_ptr<AccountSession>& sess, const std::string& room_id)
+void ShellBase::release_room_subscription_(const std::shared_ptr<AccountSession>& sess,
+                                           const std::string& room_id)
 {
     if (!sess)
+    {
         return;
+    }
     auto it = room_subscription_refs_.find(subscription_key_(sess->user_id, room_id));
     if (it == room_subscription_refs_.end())
     {
@@ -268,7 +291,9 @@ void ShellBase::release_room_subscription_(
     {
         if (auto acct = other_account_pagination_.find(sess->user_id);
             acct != other_account_pagination_.end())
+        {
             acct->second.erase(room_id);
+        }
     }
     if (room_id == current_room_id_ && sess == active_account_)
     {
@@ -284,11 +309,13 @@ void ShellBase::release_room_subscription_(
         });
 }
 
-void ShellBase::dispatch_to_secondary_windows_(
-    const std::string& room_id, const std::function<void(RoomWindowBase*)>& fn)
+void ShellBase::dispatch_to_secondary_windows_(const std::string& room_id,
+                                               const std::function<void(RoomWindowBase*)>& fn)
 {
     if (auto* w = find_event_secondary_(room_id))
+    {
         fn(w);
+    }
 }
 
 bool ShellBase::popout_accepts_event_(const RoomWindowBase* w) const
@@ -296,8 +323,8 @@ bool ShellBase::popout_accepts_event_(const RoomWindowBase* w) const
     return w && w->owner_user_id() == dispatch_account_();
 }
 
-void ShellBase::open_room_in_new_window(
-    const std::string& room_id_in, const std::shared_ptr<AccountSession>& on_behalf_of)
+void ShellBase::open_room_in_new_window(const std::string& room_id_in,
+                                        const std::shared_ptr<AccountSession>& on_behalf_of)
 {
     if (room_id_in.empty())
     {
@@ -344,7 +371,9 @@ void ShellBase::open_room_in_new_window(
         if (call_session_)
         {
             if (w->room_view() && w->room_view()->header())
+            {
                 w->room_view()->header()->set_call_active(true);
+            }
         }
         refresh_call_banners_(); // the pop-out may show a room with a live call
 
@@ -358,12 +387,12 @@ void ShellBase::open_room_in_new_window(
         // claimed for this account rather than duplicated — otherwise
         // closing the window would remove only one of the two, and the
         // other would reopen it on the next launch.
-        auto pit = std::find_if(pops.begin(), pops.end(),
-                                [&room_id, &uid](const Settings::PopoutEntry& e)
-                                {
-                                    return e.room_id == room_id &&
-                                           (e.user_id.empty() || e.user_id == uid);
-                                });
+        auto pit =
+            std::find_if(pops.begin(), pops.end(),
+                         [&room_id, &uid](const Settings::PopoutEntry& e)
+                         {
+                             return e.room_id == room_id && (e.user_id.empty() || e.user_id == uid);
+                         });
         if (pit != pops.end() && pit->user_id.empty() && !uid.empty())
         {
             pit->user_id = uid;
@@ -382,8 +411,7 @@ void ShellBase::open_room_in_new_window(
 
 void ShellBase::release_owned_window_(RoomWindowBase* w)
 {
-    auto it = std::find_if(owned_secondary_windows_.begin(),
-                           owned_secondary_windows_.end(),
+    auto it = std::find_if(owned_secondary_windows_.begin(), owned_secondary_windows_.end(),
                            [w](const auto& up)
                            {
                                return up.get() == w;
@@ -394,8 +422,7 @@ void ShellBase::release_owned_window_(RoomWindowBase* w)
     }
 }
 
-void ShellBase::notify_secondary_media_ready_(const std::string& cache_key,
-                                              MediaKind kind)
+void ShellBase::notify_secondary_media_ready_(const std::string& cache_key, MediaKind kind)
 {
     // The sticker picker loads through the timeline's lazy sticker path, which
     // has no picker-specific completion step: repaint it here so a sticker
@@ -437,8 +464,8 @@ void ShellBase::notify_secondary_media_ready_(const std::string& cache_key,
     }
 }
 
-void ShellBase::dispatch_gif_to_secondary_windows_(
-    std::uint64_t request_id, const std::vector<GifResult>& results)
+void ShellBase::dispatch_gif_to_secondary_windows_(std::uint64_t request_id,
+                                                   const std::vector<GifResult>& results)
 {
     for (const auto& [rid, w] : secondary_windows_)
     {
@@ -446,8 +473,8 @@ void ShellBase::dispatch_gif_to_secondary_windows_(
     }
 }
 
-void ShellBase::dispatch_gif_failed_to_secondary_windows_(
-    std::uint64_t request_id, const std::string& message)
+void ShellBase::dispatch_gif_failed_to_secondary_windows_(std::uint64_t request_id,
+                                                          const std::string& message)
 {
     for (const auto& [rid, w] : secondary_windows_)
     {
@@ -455,17 +482,24 @@ void ShellBase::dispatch_gif_failed_to_secondary_windows_(
     }
 }
 
-std::vector<std::uint8_t>
-ShellBase::cached_gif_source_bytes_(const std::string& url) const
+std::vector<std::uint8_t> ShellBase::cached_gif_source_bytes_(const std::string& url) const
 {
     return load_media_bytes_(tk::CacheKey::gif_source(url));
 }
 
 bool ShellBase::any_window_visible_() const
 {
-    if (is_main_window_visible_()) return true;
+    if (is_main_window_visible_())
+    {
+        return true;
+    }
     for (const auto& w : owned_secondary_windows_)
-        if (w && w->is_visible()) return true;
+    {
+        if (w && w->is_visible())
+        {
+            return true;
+        }
+    }
     return false;
 }
 
@@ -491,14 +525,19 @@ void ShellBase::update_video_playback_suspension_()
     }
 }
 
-void ShellBase::for_each_room_view_(
-    const std::function<void(views::RoomView&)>& fn)
+void ShellBase::for_each_room_view_(const std::function<void(views::RoomView&)>& fn)
 {
     if (room_view_)
+    {
         fn(*room_view_);
+    }
     for (auto& w : owned_secondary_windows_)
+    {
         if (w && w->room_view())
+        {
             fn(*w->room_view());
+        }
+    }
 }
 
 void ShellBase::close_all_popouts_()
@@ -521,18 +560,97 @@ void ShellBase::close_all_popouts_()
     // Settings::popout_windows list is a global singleton.
     auto& pops = Settings::instance().popout_windows;
     const auto before = pops.size();
-    std::erase_if(pops, [this](const Settings::PopoutEntry& e)
-                  { return e.user_id == my_user_id_; });
+    std::erase_if(pops,
+                  [this](const Settings::PopoutEntry& e)
+                  {
+                      return e.user_id == my_user_id_;
+                  });
     if (pops.size() != before)
+    {
         save_settings_debounced_();
+    }
 }
-
 
 views::RoomView* ShellBase::room_view_for_room_(const std::string& room_id) const
 {
     if (main_window_shows_(room_id))
+    {
         return room_view_;
+    }
     auto* w = find_event_secondary_(room_id);
     return w ? w->room_view() : nullptr;
 }
+
+void ShellBase::create_compose_popups_(tk::Host& host)
+{
+    tk::TextArea* text_area = room_view_ ? room_view_->compose_bar()->text_area() : nullptr;
+    if (!text_area || !main_room_pane_)
+    {
+        return;
+    }
+    // Harmless no-op on every backend except Windows' BetterText control, see
+    // NativeTextArea::set_image_resolver.
+    text_area->set_image_resolver(make_static_image_provider_with_fetch_(28, 28));
+    text_area->set_on_edit_last(
+        [this]
+        {
+            return room_view_ && room_view_->edit_last_own();
+        });
+
+    ComposerPopups::Options options;
+    options.on_text_changed = [this](const std::string& text)
+    {
+        handle_compose_text_changed_(text);
+    };
+    options.extend_slash_hooks = [this](views::SlashCommandController::Hooks& hooks)
+    {
+        wire_selfie_hook_(hooks);
+    };
+    options.shortcode_image_provider = make_static_image_provider_with_fetch_(28, 28);
+    compose_popups_ = std::make_unique<ComposerPopups>(host, text_area, main_room_pane_.get(),
+                                                       room_view_, std::move(options));
+}
+
+void ShellBase::wire_selfie_hook_(views::SlashCommandController::Hooks& hooks)
+{
+    hooks.on_selfie = [this]
+    {
+        if (!main_app_)
+        {
+            return;
+        }
+        main_app_->is_call_active = [this]
+        {
+            return active_call() != nullptr;
+        };
+        main_app_->on_selfie_captured =
+            [this](std::vector<std::uint8_t> bgra, std::uint32_t w, std::uint32_t h)
+        {
+            auto jpeg = encode_selfie_jpeg_(bgra.data(), w, h);
+            if (!jpeg.empty() && main_app_ && main_app_->room_view()->compose_bar())
+            {
+                main_app_->room_view()->compose_bar()->add_pending_image(
+                    std::move(jpeg), "image/jpeg", "selfie.jpg");
+            }
+        };
+        main_app_->open_camera_overlay();
+    };
+}
+
+void ShellBase::handle_gif_results_ui_(std::uint64_t request_id, std::vector<GifResult> results)
+{
+    if (compose_popups_)
+    {
+        compose_popups_->on_gif_results(request_id, std::move(results));
+    }
+}
+
+void ShellBase::handle_gif_search_failed_ui_(std::uint64_t request_id, std::string message)
+{
+    if (compose_popups_)
+    {
+        compose_popups_->on_gif_search_failed(request_id, message);
+    }
+}
+
 } // namespace tesseract

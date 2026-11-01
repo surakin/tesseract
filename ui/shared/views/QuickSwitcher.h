@@ -51,8 +51,7 @@ protected:
     TK_WIDGET_FACTORY_FRIEND(QuickSwitcher)
 
 public:
-    using AvatarProvider =
-        std::function<const tk::Image*(const std::string& mxc_url)>;
+    using AvatarProvider = std::function<const tk::Image*(const std::string& mxc_url)>;
     // Returns the room list to show, already in the order the switcher should
     // display it (the shell sorts most-recent-first). Pulled fresh on open().
     using RoomsProvider = std::function<std::vector<tesseract::RoomInfo>()>;

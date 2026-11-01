@@ -49,7 +49,8 @@ inline constexpr std::uint32_t kMaxDecodeSide = 32768;
 inline constexpr std::uint64_t kMaxJpegStillDecodePixels = kMaxStillDecodePixels;
 inline constexpr std::uint32_t kMaxJpegDecodeSide = kMaxDecodeSide;
 #else
-inline constexpr std::uint64_t kMaxJpegStillDecodePixels = 1ull << 28; // 268 MP: scaled in the DCT domain
+inline constexpr std::uint64_t kMaxJpegStillDecodePixels =
+    1ull << 28; // 268 MP: scaled in the DCT domain
 inline constexpr std::uint32_t kMaxJpegDecodeSide = 65535;
 #endif
 inline constexpr std::uint64_t kMaxAnimatedDecodePixels = 4096ull * 4096ull;

@@ -23,8 +23,7 @@ constexpr UINT WM_TESSERACT_TRAY = WM_APP + 20;
 class Win32TrayIcon final : public tesseract::ITrayIcon
 {
 public:
-    Win32TrayIcon(HINSTANCE hInst, std::function<void()> on_show,
-                  std::function<void()> on_toggle,
+    Win32TrayIcon(HINSTANCE hInst, std::function<void()> on_show, std::function<void()> on_toggle,
                   std::function<void()> on_quit);
     ~Win32TrayIcon() override;
 
@@ -37,8 +36,7 @@ public:
 
     // Rebuild the per-window items shown before the Quit action.
     // `window_items` is a list of (UTF-8 label, callback) pairs.
-    void rebuild_menu(
-        std::vector<std::pair<std::string, std::function<void()>>> window_items);
+    void rebuild_menu(std::vector<std::pair<std::string, std::function<void()>>> window_items);
 
 private:
     // Adds the icon (or refreshes it when it is already there) with the current

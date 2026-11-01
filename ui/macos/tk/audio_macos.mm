@@ -67,8 +67,7 @@ static SInt64 probe_size(void* d)
 // a zero-check, producing EXC_ARITHMETIC for those files. The caller should
 // pre-decode them to PCM via transcode_to_wav before calling initWithData:.
 // ---------------------------------------------------------------------------
-static bool audio_file_probe(const std::uint8_t* data, std::size_t size,
-                              bool* out_variable_framing)
+static bool audio_file_probe(const std::uint8_t* data, std::size_t size, bool* out_variable_framing)
 {
     ProbeCtx ctx{data, size};
     AudioFileID fid = nullptr;
@@ -76,16 +75,15 @@ static bool audio_file_probe(const std::uint8_t* data, std::size_t size,
     bool vf = false;
     try
     {
-        const OSStatus err = AudioFileOpenWithCallbacks(
-            &ctx, probe_read, /*write=*/nullptr, probe_size, /*setSize=*/nullptr,
-            /*fileTypeHint=*/0, &fid);
+        const OSStatus err = AudioFileOpenWithCallbacks(&ctx, probe_read, /*write=*/nullptr,
+                                                        probe_size, /*setSize=*/nullptr,
+                                                        /*fileTypeHint=*/0, &fid);
         ok = (err == noErr);
         if (ok && fid)
         {
             AudioStreamBasicDescription asbd = {};
             UInt32 sz = sizeof(asbd);
-            if (AudioFileGetProperty(fid, kAudioFilePropertyDataFormat,
-                                     &sz, &asbd) == noErr)
+            if (AudioFileGetProperty(fid, kAudioFilePropertyDataFormat, &sz, &asbd) == noErr)
             {
                 vf = (asbd.mFramesPerPacket == 0);
             }
@@ -123,8 +121,8 @@ static NSData* transcode_to_wav(const std::uint8_t* data, std::size_t size)
     AudioFileID fid = nullptr;
     try
     {
-        const OSStatus err = AudioFileOpenWithCallbacks(
-            &ctx, probe_read, nullptr, probe_size, nullptr, 0, &fid);
+        const OSStatus err =
+            AudioFileOpenWithCallbacks(&ctx, probe_read, nullptr, probe_size, nullptr, 0, &fid);
         if (err != noErr || !fid)
         {
             return nil;
@@ -150,23 +148,21 @@ static NSData* transcode_to_wav(const std::uint8_t* data, std::size_t size)
         return nil;
     }
 
-    const UInt32  channels   = srcFmt.mChannelsPerFrame ? srcFmt.mChannelsPerFrame : 1;
-    const Float64 sampleRate = srcFmt.mSampleRate > 0   ? srcFmt.mSampleRate : 48000.0;
+    const UInt32 channels = srcFmt.mChannelsPerFrame ? srcFmt.mChannelsPerFrame : 1;
+    const Float64 sampleRate = srcFmt.mSampleRate > 0 ? srcFmt.mSampleRate : 48000.0;
 
     AudioStreamBasicDescription pcmFmt = {};
-    pcmFmt.mFormatID         = kAudioFormatLinearPCM;
-    pcmFmt.mFormatFlags      = kLinearPCMFormatFlagIsSignedInteger |
-                               kLinearPCMFormatFlagIsPacked;
-    pcmFmt.mSampleRate       = sampleRate;
+    pcmFmt.mFormatID = kAudioFormatLinearPCM;
+    pcmFmt.mFormatFlags = kLinearPCMFormatFlagIsSignedInteger | kLinearPCMFormatFlagIsPacked;
+    pcmFmt.mSampleRate = sampleRate;
     pcmFmt.mChannelsPerFrame = channels;
-    pcmFmt.mBitsPerChannel   = 16;
-    pcmFmt.mFramesPerPacket  = 1;
-    pcmFmt.mBytesPerFrame    = 2 * channels;
-    pcmFmt.mBytesPerPacket   = 2 * channels;
+    pcmFmt.mBitsPerChannel = 16;
+    pcmFmt.mFramesPerPacket = 1;
+    pcmFmt.mBytesPerFrame = 2 * channels;
+    pcmFmt.mBytesPerPacket = 2 * channels;
 
-    if (ExtAudioFileSetProperty(extFile,
-            kExtAudioFileProperty_ClientDataFormat,
-            sizeof(pcmFmt), &pcmFmt) != noErr)
+    if (ExtAudioFileSetProperty(extFile, kExtAudioFileProperty_ClientDataFormat, sizeof(pcmFmt),
+                                &pcmFmt) != noErr)
     {
         ExtAudioFileDispose(extFile);
         AudioFileClose(fid);
@@ -187,11 +183,10 @@ static NSData* transcode_to_wav(const std::uint8_t* data, std::size_t size)
             break;
         }
         AudioBufferList abl = {};
-        abl.mNumberBuffers                = 1;
-        abl.mBuffers[0].mNumberChannels   = channels;
-        abl.mBuffers[0].mDataByteSize     =
-            static_cast<UInt32>(chunk.size() * sizeof(int16_t));
-        abl.mBuffers[0].mData             = chunk.data();
+        abl.mNumberBuffers = 1;
+        abl.mBuffers[0].mNumberChannels = channels;
+        abl.mBuffers[0].mDataByteSize = static_cast<UInt32>(chunk.size() * sizeof(int16_t));
+        abl.mBuffers[0].mData = chunk.data();
 
         UInt32 frames = kChunkFrames;
         try
@@ -212,8 +207,7 @@ static NSData* transcode_to_wav(const std::uint8_t* data, std::size_t size)
         {
             break;
         }
-        [samples appendBytes:chunk.data()
-                      length:frames * channels * sizeof(int16_t)];
+        [samples appendBytes:chunk.data() length:frames * channels * sizeof(int16_t)];
     }
 
     ExtAudioFileDispose(extFile);
@@ -225,40 +219,40 @@ static NSData* transcode_to_wav(const std::uint8_t* data, std::size_t size)
     }
 
     // Build a minimal 44-byte WAV (PCM format 1) header.
-    const uint32_t dataBytes  = static_cast<uint32_t>(samples.length);
-    const uint32_t sr         = static_cast<uint32_t>(sampleRate);
-    const uint16_t ch         = static_cast<uint16_t>(channels);
-    const uint16_t bps        = 16;
-    const uint16_t blkAlign   = static_cast<uint16_t>(ch * (bps / 8));
-    const uint32_t byteRate   = sr * blkAlign;
+    const uint32_t dataBytes = static_cast<uint32_t>(samples.length);
+    const uint32_t sr = static_cast<uint32_t>(sampleRate);
+    const uint16_t ch = static_cast<uint16_t>(channels);
+    const uint16_t bps = 16;
+    const uint16_t blkAlign = static_cast<uint16_t>(ch * (bps / 8));
+    const uint32_t byteRate = sr * blkAlign;
 
 #pragma pack(push, 1)
     struct WavHdr
     {
-        char     riff[4]      = {'R', 'I', 'F', 'F'};
+        char riff[4] = {'R', 'I', 'F', 'F'};
         uint32_t chunkSize;
-        char     wave[4]      = {'W', 'A', 'V', 'E'};
-        char     fmt[4]       = {'f', 'm', 't', ' '};
-        uint32_t fmtSize      = 16;
-        uint16_t audioFmt     = 1; // PCM
+        char wave[4] = {'W', 'A', 'V', 'E'};
+        char fmt[4] = {'f', 'm', 't', ' '};
+        uint32_t fmtSize = 16;
+        uint16_t audioFmt = 1; // PCM
         uint16_t numCh;
         uint32_t sampleRate;
         uint32_t byteRate;
         uint16_t blockAlign;
         uint16_t bitsPerSample;
-        char     data_[4]     = {'d', 'a', 't', 'a'};
+        char data_[4] = {'d', 'a', 't', 'a'};
         uint32_t dataSize;
     };
 #pragma pack(pop)
 
     WavHdr hdr;
-    hdr.chunkSize    = 36 + dataBytes;
-    hdr.numCh        = ch;
-    hdr.sampleRate   = sr;
-    hdr.byteRate     = byteRate;
-    hdr.blockAlign   = blkAlign;
+    hdr.chunkSize = 36 + dataBytes;
+    hdr.numCh = ch;
+    hdr.sampleRate = sr;
+    hdr.byteRate = byteRate;
+    hdr.blockAlign = blkAlign;
     hdr.bitsPerSample = bps;
-    hdr.dataSize     = dataBytes;
+    hdr.dataSize = dataBytes;
 
     NSMutableData* wav = [NSMutableData dataWithCapacity:sizeof(hdr) + dataBytes];
     [wav appendBytes:&hdr length:sizeof(hdr)];
@@ -305,8 +299,7 @@ public:
         delegate_ = nil;
     }
 
-    void play(const std::uint8_t* data, std::size_t size,
-              std::string_view /*mime*/) override
+    void play(const std::uint8_t* data, std::size_t size, std::string_view /*mime*/) override
     {
         reached_end_ = false;
         if (player_)
@@ -554,8 +547,7 @@ std::unique_ptr<tk::AudioPlayer> make_audio_player_macos()
 } // namespace tk::macos
 
 @implementation TkAvDelegate
-- (void)audioPlayerDidFinishPlaying:(AVAudioPlayer*)__unused player
-                       successfully:(BOOL)__unused flag
+- (void)audioPlayerDidFinishPlaying:(AVAudioPlayer*)__unused player successfully:(BOOL)__unused flag
 {
     if (self.owner)
     {

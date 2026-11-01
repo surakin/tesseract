@@ -90,7 +90,10 @@ public:
     }
 
     // ── tk::WidgetRowAccessibility ──────────────────────────────────────
-    std::size_t access_row_count() const override { return items_.size(); }
+    std::size_t access_row_count() const override
+    {
+        return items_.size();
+    }
     Role access_role_for_widget_row(std::size_t) const override
     {
         return Role::Tab;
@@ -108,7 +111,9 @@ public:
     bool access_activate_widget_row(std::size_t index) override
     {
         if (index >= items_.size())
+        {
             return false;
+        }
         set_selected_index(static_cast<int>(index)); // fires on_selected
         return true;
     }

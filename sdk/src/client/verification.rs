@@ -185,12 +185,8 @@ pub(super) async fn watch_sas(
             SasState::KeysExchanged { emojis, decimals } => {
                 // A peer that only offers `decimal` (MSC4405) leaves `emojis`
                 // unset; the decimals are always there.
-                let pairs: Option<Vec<(&str, &str)>> = emojis.map(|e| {
-                    e.emojis
-                        .iter()
-                        .map(|e| (e.symbol, e.description))
-                        .collect()
-                });
+                let pairs: Option<Vec<(&str, &str)>> =
+                    emojis.map(|e| e.emojis.iter().map(|e| (e.symbol, e.description)).collect());
                 let payload = sas_payload(pairs.as_deref(), decimals);
                 lock_or_recover(&sas_cache).insert(flow_id.clone(), payload.clone());
                 {
@@ -310,12 +306,7 @@ impl ClientFfi {
 
             let tasks_for_register = Arc::clone(&tasks);
             let handle = tokio::spawn(watch_verification_request(
-                req,
-                flow_id,
-                handler,
-                flow_users,
-                sas_cache,
-                tasks,
+                req, flow_id, handler, flow_users, sas_cache, tasks,
             ));
             lock_or_recover(&tasks_for_register).push(handle.abort_handle());
             Ok::<String, anyhow::Error>(reported_flow_id)
@@ -588,20 +579,38 @@ mod in_room_request_tests {
     #[test]
     fn accepts_recent_request_addressed_to_us() {
         let me = user_id!("@me:x.org");
-        assert!(is_live_in_room_request_for(me, user_id!("@a:x.org"), me, 1_000, 1_060));
+        assert!(is_live_in_room_request_for(
+            me,
+            user_id!("@a:x.org"),
+            me,
+            1_000,
+            1_060
+        ));
     }
 
     #[test]
     fn rejects_request_for_someone_else_or_from_us() {
         let me = user_id!("@me:x.org");
         let other = user_id!("@a:x.org");
-        assert!(!is_live_in_room_request_for(me, other, user_id!("@b:x.org"), 1_000, 1_000));
+        assert!(!is_live_in_room_request_for(
+            me,
+            other,
+            user_id!("@b:x.org"),
+            1_000,
+            1_000
+        ));
         assert!(!is_live_in_room_request_for(me, me, me, 1_000, 1_000));
     }
 
     #[test]
     fn rejects_expired_request() {
         let me = user_id!("@me:x.org");
-        assert!(!is_live_in_room_request_for(me, user_id!("@a:x.org"), me, 0, 601));
+        assert!(!is_live_in_room_request_for(
+            me,
+            user_id!("@a:x.org"),
+            me,
+            0,
+            601
+        ));
     }
 }

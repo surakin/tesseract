@@ -42,8 +42,7 @@ public:
     // Update the index-stats lines under the checkbox. Shown only while
     // `enabled`; hidden otherwise. Called by the shell on settings-open and on
     // a slow poll while the history backfill runs.
-    void set_search_index_stats(const tesseract::SearchIndexStats& stats,
-                                bool enabled);
+    void set_search_index_stats(const tesseract::SearchIndexStats& stats, bool enabled);
 
     // Fired when the user clicks "Export room keys…".
     std::function<void()> on_export_keys;
@@ -61,6 +60,7 @@ private:
     tk::Label* previews_unavailable_label_ = nullptr;
     tk::CheckButton* search_index_cb_ = nullptr;
     tk::CheckButton* exclude_insecure_cb_ = nullptr;
+    tk::CheckButton* block_unverified_cb_ = nullptr;
     tk::Label* search_stats_label_ = nullptr; // counts + status
     tk::Label* search_date_label_ = nullptr;  // "covers messages since …"
 

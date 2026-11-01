@@ -50,7 +50,10 @@ protected:
 public:
     void set_options(std::vector<Option> options);
     void set_selected_value(const std::string& value);
-    const std::string& selected_value() const { return selected_value_; }
+    const std::string& selected_value() const
+    {
+        return selected_value_;
+    }
 
     void set_variant(Button::Variant v)
     {
@@ -62,7 +65,10 @@ public:
     // Collapses the dropdown if it happens to be open when disabled.
     void set_enabled(bool enabled) override;
 
-    bool is_expanded() const { return expanded_; }
+    bool is_expanded() const
+    {
+        return expanded_;
+    }
     void collapse();
 
     // Fires with selected_value() when the main zone is clicked (or
@@ -72,15 +78,15 @@ public:
     // (mouse or keyboard) — a pure mode change, not an activation.
     std::function<void(std::string value)> on_selection_changed;
 
-    Size     measure(LayoutCtx&, Size constraints) override;
-    void     arrange(LayoutCtx&, Rect bounds) override;
-    void     paint_before_children(PaintCtx&) override;
-    void     on_theme_changed(const Theme& t) override;
-    void     on_popup_dismiss() override;
-    bool     on_pointer_down(Point local) override;
-    void     on_pointer_up(Point local, bool inside_self) override;
-    bool     on_pointer_move(Point local) override;
-    void     on_pointer_leave() override;
+    Size measure(LayoutCtx&, Size constraints) override;
+    void arrange(LayoutCtx&, Rect bounds) override;
+    void paint_before_children(PaintCtx&) override;
+    void on_theme_changed(const Theme& t) override;
+    void on_popup_dismiss() override;
+    bool on_pointer_down(Point local) override;
+    void on_pointer_up(Point local, bool inside_self) override;
+    bool on_pointer_move(Point local) override;
+    void on_pointer_leave() override;
 
     // Keyboard-focusable whenever enabled. Enter/Space activates the main
     // (selected) action; Down opens the dropdown; once open, Up/Down moves
@@ -98,8 +104,12 @@ public:
     std::string access_name() const override
     {
         for (const auto& opt : options_)
+        {
             if (opt.value == selected_value_)
+            {
                 return opt.label;
+            }
+        }
         return {};
     }
     AccessState access_state() const override
@@ -111,7 +121,9 @@ public:
     bool access_default_action() override
     {
         if (!enabled_)
+        {
             return false;
+        }
         activate_();
         return true;
     }
@@ -135,8 +147,8 @@ private:
     bool in_chevron_zone_(Point w) const;
 
     std::vector<Option> options_;
-    std::string         selected_value_;
-    Button::Variant      variant_ = Button::Variant::Primary;
+    std::string selected_value_;
+    Button::Variant variant_ = Button::Variant::Primary;
 
     CachedTextLayout main_label_layout_;
 
@@ -144,15 +156,15 @@ private:
     DropdownList* dropdown_ = nullptr; // borrowed — owned by popup_ once set
 
     bool expanded_ = false;
-    int  hovered_option_ = -1;
+    int hovered_option_ = -1;
 
     bool main_hovered_ = false;
     bool main_pressed_ = false;
     bool chevron_hovered_ = false;
     bool chevron_pressed_ = false;
 
-    Rect  main_rect_{};
-    Rect  chevron_rect_{};
+    Rect main_rect_{};
+    Rect chevron_rect_{};
     float last_w_ = -1.0f;
 
     FloatTween main_hover_fade_;

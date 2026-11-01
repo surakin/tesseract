@@ -1,29 +1,29 @@
 ---
 name: msc-support
-description: Use when asked to update, refresh, or regenerate the README's list of supported MSCs (Matrix Spec Change proposals) or its Matrix-spec-compatibility statement — rebuilds that section from what's actually implemented in source today.
+description: Use when asked to update, refresh, or regenerate the list of supported MSCs (Matrix Spec Change proposals) in docs/MSCS.md or its Matrix-spec-compatibility statement — rebuilds that document from what's actually implemented in source today.
 ---
 
 # MSC Support
 
 ## Overview
 
-README has a `## Supported MSCs & spec compatibility` section listing which
-Matrix Spec Change proposals Tesseract currently implements, plus a plain
+`docs/MSCS.md` (linked from README's `## Supported MSCs & spec compatibility`
+section) lists which Matrix Spec Change proposals Tesseract currently implements, plus a plain
 statement of what a homeserver needs to support to work with it. The ground
 truth for "currently supported" is Tesseract's own source tree, not
 `FEATURES.md` or `CHANGES.md` — both drift: `FEATURES.md` is hand-maintained
 and goes stale (it can lag behind shipped features), and `CHANGES.md`
 accumulates MSC mentions for things later superseded or stabilized into the
-spec proper. This skill rebuilds the section from a fresh scoped scan every
+spec proper. This skill rebuilds that document from a fresh scoped scan every
 time, the same way `release-notes` rebuilds notes from `CHANGES.md` instead
 of trusting a hand-maintained summary.
 
 ## When to Use
 
-- Asked to update/refresh/regenerate the README's supported-MSC list or
+- Asked to update/refresh/regenerate the supported-MSC list or
   Matrix-spec-compatibility statement.
 - Asked "which MSCs does Tesseract support?" — the scan in step 1 answers
-  this directly even if you don't go on to edit the README.
+  this directly even if you don't go on to edit `docs/MSCS.md`.
 - NOT for adding a brand-new MSC-backed feature yourself — that's normal
   implementation work; this skill only documents what's already shipped.
 
@@ -93,7 +93,7 @@ feature, so a separate list bullet would be redundant with that paragraph.
 ## 4. Write the Spec-Compatibility Statement
 
 One short paragraph restating the practical server requirement, matching the
-wording already used in README's own `## Server requirements` section —
+wording already used in README's `## Server requirements` section —
 **not** a version-number claim (nothing in the codebase pins a single Matrix
 spec version; matrix-sdk/ruma versions in `sdk/Cargo.toml` don't map to one
 either). Cover: Sliding Sync is required (native, e.g. Synapse's built-in
@@ -104,20 +104,20 @@ username/password as a fallback for existing accounts on servers without MAS.
 
 ## 5. Assemble and Insert
 
-Build the full section:
+Build the full document:
 
 ```markdown
-## Supported MSCs & spec compatibility
+# Supported MSCs & spec compatibility
 
 <spec-compatibility paragraph from step 4>
 
 <MSC list from step 3>
 ```
 
-Insert it into `README.md` immediately after the existing
-`## Server requirements` section and before `## Minimum OS requirements`. If
-a `## Supported MSCs & spec compatibility` section already exists from a
-prior run, replace it in place — don't duplicate the heading.
+Write it to `docs/MSCS.md`, replacing the whole file. Link back to the
+README's server requirements as `../README.md#server-requirements`. Leave
+README's `## Supported MSCs & spec compatibility` section alone: it is only a
+pointer to `docs/MSCS.md`, so never put the list back into the README.
 
 ## 6. Sanity Check Before Finishing
 

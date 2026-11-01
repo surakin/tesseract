@@ -39,14 +39,12 @@ struct MessageRowData;
 
 // Given an OSM-style tile cache key, return the decoded tile image (or
 // nullptr on a cache miss, which the painter turns into a tile fetch).
-using TileImageProvider =
-    std::function<const tk::Image*(const std::string& cache_key)>;
+using TileImageProvider = std::function<const tk::Image*(const std::string& cache_key)>;
 
 class LocationMapPanner
 {
 public:
-    static constexpr std::size_t kNoRow =
-        std::numeric_limits<std::size_t>::max();
+    static constexpr std::size_t kNoRow = std::numeric_limits<std::size_t>::max();
 
     // --- wiring (forwarded from MessageListView) ---
     // Image lookup for tiles (mirrors MessageListView::image_provider_).
@@ -60,9 +58,8 @@ public:
         tile_request_ = std::move(cb);
     }
     // Tooltip show/hide for the location description on map hover.
-    void set_tooltip_callbacks(
-        std::function<void(std::string text, tk::Rect anchor)> show,
-        std::function<void()> hide)
+    void set_tooltip_callbacks(std::function<void(std::string text, tk::Rect anchor)> show,
+                               std::function<void()> hide)
     {
         tooltip_show_ = std::move(show);
         tooltip_hide_ = std::move(hide);
@@ -71,15 +68,20 @@ public:
     // --- pan FSM (dispatched from on_pointer_down / move / up) ---
     // Begin a pan on `row_index`, anchoring at pointer `local` and the row's
     // current viewport. `vp` is the row's MapViewport (read only here).
-    void begin_pan(std::size_t row_index, tk::Point local,
-                   const MapViewport& vp)
+    void begin_pan(std::size_t row_index, tk::Point local, const MapViewport& vp)
     {
         active_row_ = row_index;
         drag_start_pt_ = local;
         drag_start_vp_px_ = lat_lon_to_world_px(vp.lat, vp.lon, vp.zoom);
     }
-    bool panning() const { return active_row_ != kNoRow; }
-    std::size_t active_row() const { return active_row_; }
+    bool panning() const
+    {
+        return active_row_ != kNoRow;
+    }
+    std::size_t active_row() const
+    {
+        return active_row_;
+    }
     // Apply a drag delta to `vp` (mutated in place). `local` is the current
     // pointer position. Returns the new lat/lon already written into `vp`.
     void drag_pan(tk::Point local, MapViewport& vp) const
@@ -127,31 +129,45 @@ public:
     }
 
     // --- tooltip ---
-    bool tooltip_showing() const { return tooltip_showing_; }
+    bool tooltip_showing() const
+    {
+        return tooltip_showing_;
+    }
     // Show the tooltip if not already showing. No-op if already shown.
     void show_tooltip(const std::string& text, tk::Rect anchor)
     {
         if (tooltip_showing_)
+        {
             return;
+        }
         tooltip_showing_ = true;
         if (tooltip_show_)
+        {
             tooltip_show_(text, anchor);
+        }
     }
     // Hide the tooltip if currently showing. No-op otherwise.
     void hide_tooltip()
     {
         if (!tooltip_showing_)
+        {
             return;
+        }
         tooltip_showing_ = false;
         if (tooltip_hide_)
+        {
             tooltip_hide_();
+        }
     }
 
     // --- geometry: written by paint, read by the pointer hit-test ---
     // Cleared each paint pass from MessageListView::paint()'s geom-reset block
     // (same as the sibling hit-test maps). This is the fix for the previously
     // unbounded growth of the map rect geometry.
-    void clear_geometry() { rect_geom_.clear(); }
+    void clear_geometry()
+    {
+        rect_geom_.clear();
+    }
     void record_geom(const std::string& event_id, tk::Rect rect)
     {
         rect_geom_[event_id] = rect;
@@ -166,8 +182,7 @@ public:
     // Draws the slippy-map tile composite + pin + attribution for one
     // Kind::Location row into `map_rect` (pre-clipped). Records the rect for
     // hit-testing and requests any missing tiles via the tile-request cb.
-    void paint(const MessageRowData& m, tk::PaintCtx& ctx,
-               tk::Rect map_rect);
+    void paint(const MessageRowData& m, tk::PaintCtx& ctx, tk::Rect map_rect);
 
 private:
     TileImageProvider tile_image_provider_;

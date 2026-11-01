@@ -30,10 +30,10 @@ protected:
     std::string entry_display_(std::size_t index) const override;
 
 private:
-    static constexpr float kFieldH  = 28.0f;
-    static constexpr float kRowH    = 26.0f;
-    static constexpr float kWidth   = 200.0f;
-    static constexpr int   kMaxRows = 10; // visible rows; the list scrolls
+    static constexpr float kFieldH = 28.0f;
+    static constexpr float kRowH = 26.0f;
+    static constexpr float kWidth = 200.0f;
+    static constexpr int kMaxRows = 10; // visible rows; the list scrolls
 
     // Entry 0 is "System default" (empty family); the rest follow in order.
     std::vector<std::string> families_;

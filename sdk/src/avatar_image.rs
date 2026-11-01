@@ -126,7 +126,11 @@ fn animation(bytes: &[u8], fmt: ImageFormat, max_side: u32) -> Result<Option<Ani
     };
     // A one-frame GIF/WebP/APNG is just a still; let the still path pick the
     // output format (it re-decodes, which is cheap for a single frame).
-    Ok(if anim.frames.len() > 1 { Some(anim) } else { None })
+    Ok(if anim.frames.len() > 1 {
+        Some(anim)
+    } else {
+        None
+    })
 }
 
 fn encode_animated(anim: &Anim) -> Result<Vec<u8>, String> {
@@ -211,7 +215,10 @@ mod tests {
     }
 
     fn dims(bytes: &[u8]) -> (u32, u32) {
-        image::load_from_memory(bytes).unwrap().to_rgba8().dimensions()
+        image::load_from_memory(bytes)
+            .unwrap()
+            .to_rgba8()
+            .dimensions()
     }
 
     #[test]

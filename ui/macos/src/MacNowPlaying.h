@@ -11,7 +11,7 @@ class AccountManager;
 // controls, without any D-Bus dependency.
 //
 // Single instance per process, exactly like MacOSTrayIcon — constructed only
-// after claim_mpris_owner() succeeds (see MainWindowController.mm).
+// after claim_mpris_owner() succeeds (see MainWindow.mm).
 class MacNowPlaying final
 {
 public:

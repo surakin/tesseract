@@ -80,8 +80,7 @@ std::vector<const Entry*> filter(std::string_view query)
     std::vector<const Entry*> out;
     for (const auto& e : table())
     {
-        if (ascii_icontains(e.name, query) ||
-            ascii_icontains(e.keywords, query))
+        if (ascii_icontains(e.name, query) || ascii_icontains(e.keywords, query))
         {
             out.push_back(&e);
         }
@@ -120,8 +119,7 @@ const std::vector<AliasEntry>& alias_table()
 
 } // namespace
 
-std::vector<std::pair<const Entry*, std::string_view>>
-by_shortcode_prefix(std::string_view prefix)
+std::vector<std::pair<const Entry*, std::string_view>> by_shortcode_prefix(std::string_view prefix)
 {
     std::vector<std::pair<const Entry*, std::string_view>> out;
     std::unordered_set<const Entry*> seen;
@@ -132,8 +130,7 @@ by_shortcode_prefix(std::string_view prefix)
         while (!sc.empty())
         {
             auto sp = sc.find(' ');
-            std::string_view tok =
-                (sp == std::string_view::npos) ? sc : sc.substr(0, sp);
+            std::string_view tok = (sp == std::string_view::npos) ? sc : sc.substr(0, sp);
             if (ascii_icontains(tok, prefix))
             {
                 if (seen.insert(&e).second)
@@ -142,8 +139,7 @@ by_shortcode_prefix(std::string_view prefix)
                 }
                 break;
             }
-            sc = (sp == std::string_view::npos) ? std::string_view{}
-                                                : sc.substr(sp + 1);
+            sc = (sp == std::string_view::npos) ? std::string_view{} : sc.substr(sp + 1);
         }
     }
 
@@ -251,7 +247,9 @@ const std::unordered_map<std::string_view, const ToneRow*>& tone_index()
         {
             m.emplace(row.base, &row);
             for (const auto& v : row.variants)
+            {
                 m.emplace(v.glyph, &row);
+            }
         }
         return m;
     }();
@@ -286,9 +284,13 @@ std::string_view with_skin_tone(std::string_view glyph, SkinTone tone)
 {
     const ToneRow* row = find_tone_row(glyph);
     if (!row)
+    {
         return glyph;
+    }
     if (tone == SkinTone::None)
+    {
         return row->base;
+    }
     return row->variants[static_cast<std::size_t>(tone) - 1].glyph;
 }
 
@@ -298,10 +300,16 @@ std::uint16_t emoji_version(std::string_view glyph)
     {
         std::unordered_map<std::string_view, std::uint16_t> m;
         for (const auto& e : table())
+        {
             m.emplace(e.glyph, e.version);
+        }
         for (const auto& row : tone_table())
+        {
             for (const auto& v : row.variants)
+            {
                 m.emplace(v.glyph, v.version);
+            }
+        }
         return m;
     }();
     auto it = index.find(glyph);
@@ -314,10 +322,16 @@ const std::vector<std::uint16_t>& emoji_versions()
     {
         std::vector<std::uint16_t> out;
         for (const auto& e : table())
+        {
             out.push_back(e.version);
+        }
         for (const auto& row : tone_table())
+        {
             for (const auto& v : row.variants)
+            {
                 out.push_back(v.version);
+            }
+        }
         std::sort(out.begin(), out.end(), std::greater<>());
         out.erase(std::unique(out.begin(), out.end()), out.end());
         return out;
@@ -329,12 +343,22 @@ std::vector<std::string_view> glyphs_introduced_in(std::uint16_t version)
 {
     std::vector<std::string_view> out;
     for (const auto& e : table())
+    {
         if (e.version == version)
+        {
             out.push_back(e.glyph);
+        }
+    }
     for (const auto& row : tone_table())
+    {
         for (const auto& v : row.variants)
+        {
             if (v.version == version)
+            {
                 out.push_back(v.glyph);
+            }
+        }
+    }
     return out;
 }
 
@@ -348,7 +372,9 @@ SkinTone skin_tone_from_key(std::string_view key)
     for (SkinTone t : kSkinTones)
     {
         if (t != SkinTone::None && key == kSkinToneKeys[static_cast<std::size_t>(t)])
+        {
             return t;
+        }
     }
     return SkinTone::None;
 }

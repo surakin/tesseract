@@ -21,6 +21,7 @@
 #include <windows.h>
 
 #include <memory>
+#include <optional>
 #include <span>
 #include <vector>
 #include <cstdint>
@@ -177,21 +178,21 @@ std::unique_ptr<Canvas> make_canvas(Backend&, ID2D1RenderTarget*);
 // render target (e.g. tests using CreateWicBitmapRenderTarget).
 struct Factories
 {
-    ID2D1Factory1*    d2d;
-    IDWriteFactory2*  dwrite;
+    ID2D1Factory1* d2d;
+    IDWriteFactory2* dwrite;
     IWICImagingFactory* wic;
     IDWriteFontFallback* font_fallback;
     // Noto Color Emoji IDWriteFontFace for IProvideFontInfo injection.
     // Null when the embedded font resource is absent or loading failed.
-    IDWriteFontFace*  noto_emoji_face;
+    IDWriteFontFace* noto_emoji_face;
     // The IDWriteFontCollection backing noto_emoji_face — for callers (e.g.
     // BetterText's IBetterTextFontProvider) that need a collection rather
     // than a single face. Same null contract as noto_emoji_face.
     IDWriteFontCollection* noto_emoji_collection;
     // D2D/D3D devices for creating ID2D1DeviceContext-backed surfaces.
     // Null until the first window is created (device is lazy-initialised).
-    ID2D1Device*      d2d_device;
-    ID3D11Device*     d3d_device;
+    ID2D1Device* d2d_device;
+    ID3D11Device* d3d_device;
 };
 Factories factories(Backend&);
 
@@ -210,8 +211,7 @@ struct AnimatedFrame
 // Returns nullptr on failure / on a multi-frame image. `max_w`/`max_h`
 // (0/0 = unbounded, the historical default) downscale the decoded image
 // (aspect-ratio-preserving) to fit within that box.
-std::unique_ptr<Image> decode_image(Backend& backend,
-                                    std::span<const std::uint8_t> bytes,
+std::unique_ptr<Image> decode_image(Backend& backend, std::span<const std::uint8_t> bytes,
                                     int max_w = 0, int max_h = 0);
 
 // Create a tk::Image from a raw BGRA pixel buffer (4 bytes/pixel, row-major,
@@ -227,15 +227,13 @@ std::unique_ptr<Image> decode_image(Backend& backend,
 // PREMULTIPLIED — see BetterTextControl.cpp's CreateTargetBitmap) so the
 // resulting Image draws with correct alpha blending instead of an opaque
 // background.
-std::unique_ptr<Image> make_image_from_bgra(Backend& backend,
-                                            const std::uint8_t* pixels, int w,
+std::unique_ptr<Image> make_image_from_bgra(Backend& backend, const std::uint8_t* pixels, int w,
                                             int h, bool opaque = true);
 
 // Copy straight RGBA8 pixels (stride = w * 4) into a premultiplied-BGRA
 // Image. Worker-thread safe; used by the shared JPEG XL decode glue
 // (app/jxl_decode.h).
-std::unique_ptr<Image> make_image_from_rgba(Backend& backend,
-                                            const std::uint8_t* rgba, int w,
+std::unique_ptr<Image> make_image_from_rgba(Backend& backend, const std::uint8_t* rgba, int w,
                                             int h);
 
 // The reverse of make_image_from_bgra()/decode_image() — extract the
@@ -272,12 +270,10 @@ IWICBitmap* to_native_image(const Image& img);
 // via `on_first_frame`, not `on_extra_frame`) rather than being silently
 // paired with a first frame that was never delivered.
 std::vector<AnimatedFrame> decode_animation(
-    Backend&, std::span<const std::uint8_t> bytes, int max_w = 0,
-    int max_h = 0,
-    const std::function<void(std::unique_ptr<Image>, int delay_ms)>*
-        on_first_frame = nullptr,
-    const std::function<void(int frame_index, std::unique_ptr<Image>,
-                             int delay_ms)>* on_extra_frame = nullptr);
+    Backend&, std::span<const std::uint8_t> bytes, int max_w = 0, int max_h = 0,
+    const std::function<void(std::unique_ptr<Image>, int delay_ms)>* on_first_frame = nullptr,
+    const std::function<void(int frame_index, std::unique_ptr<Image>, int delay_ms)>*
+        on_extra_frame = nullptr);
 
 // Windowed variant of decode_animation's streaming mode: for animations
 // with at most `window_threshold_frames` frames, behaves exactly like
@@ -308,20 +304,24 @@ std::vector<AnimatedFrame> decode_animation(
 // Like decode_animation, APNG (WIC exposes it as multi-frame but
 // un-composited) is not treated as animated here either — decode_image()
 // picks up its default (IDAT) frame as a still.
-bool decode_animation_windowed(
-    Backend&, std::span<const std::uint8_t> bytes, int max_w, int max_h,
-    int window_threshold_frames,
-    const std::function<void(std::unique_ptr<Image>, int delay_ms,
-                             std::shared_ptr<tk::AnimDecodeSession>,
-                             std::size_t total_frames)>& on_first_frame,
-    const std::function<void(int frame_index, std::unique_ptr<Image>,
-                             int delay_ms)>& on_extra_frame);
+bool decode_animation_windowed(Backend&, std::span<const std::uint8_t> bytes, int max_w, int max_h,
+                               int window_threshold_frames,
+                               const std::function<void(std::unique_ptr<Image>, int delay_ms,
+                                                        std::shared_ptr<tk::AnimDecodeSession>,
+                                                        std::size_t total_frames)>& on_first_frame,
+                               const std::function<void(int frame_index, std::unique_ptr<Image>,
+                                                        int delay_ms)>& on_extra_frame);
 
 // Returns the Windows system body font size in pt, derived from
 // SPI_GETNONCLIENTMETRICS (reflects Accessibility → Text size changes).
 // Uses the real system DPI so HiDPI displays don't double-count the scale.
 // Cached on first call; the system font does not change at runtime.
 int win32_system_base_pt();
+
+// Draw hyperlink runs that carry no explicit colour in `c` (the theme's
+// palette.link). Pass nullopt to draw them in the surrounding text colour.
+// Applies to layouts built afterwards.
+void set_link_color(std::optional<Color> c);
 
 struct RealLineMetrics
 {

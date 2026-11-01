@@ -62,17 +62,22 @@ public:
     {
         tk::ListView::on_pointer_drag(local);
         if (!owner || !owner->can_manage_ || press_index_ < 0 || scrollbar_dragging())
+        {
             return;
+        }
         if (!drag_tracker_.crossed_threshold(local))
+        {
             return;
+        }
         const int idx = press_index_;
         press_index_ = -1;
         const auto* room = owner->room_at_(static_cast<std::size_t>(idx));
         if (!room || !host())
+        {
             return;
+        }
         tk::DragVisual visual = owner->build_drag_visual_(*room);
-        host()->begin_drag(tk::DragPayload("space_room_id", room->id),
-                           std::move(visual), local);
+        host()->begin_drag(tk::DragPayload("space_room_id", room->id), std::move(visual), local);
     }
 
     bool on_pointer_move(tk::Point local) override
@@ -85,13 +90,15 @@ public:
             {
                 last_tooltip_index_ = idx;
                 const auto* room =
-                    idx >= 0 ? owner->room_at_(static_cast<std::size_t>(idx))
-                             : nullptr;
+                    idx >= 0 ? owner->room_at_(static_cast<std::size_t>(idx)) : nullptr;
                 if (room)
-                    host()->show_tooltip(this, owner->tooltip_text_(*room),
-                                         row_world_rect(idx));
+                {
+                    host()->show_tooltip(this, owner->tooltip_text_(*room), row_world_rect(idx));
+                }
                 else
+                {
                     host()->hide_tooltip(this);
+                }
             }
         }
         return base;
@@ -103,7 +110,9 @@ public:
         press_index_ = -1;
         drag_tracker_.cancel();
         if (last_tooltip_index_ >= 0 && host())
+        {
             host()->hide_tooltip(this);
+        }
         last_tooltip_index_ = -1;
     }
 
@@ -131,7 +140,9 @@ private:
 class SpaceAddRoomList::Adapter : public tk::ListAdapter, public tk::ListAdapterAccessibility
 {
 public:
-    explicit Adapter(SpaceAddRoomList& owner) : owner_(owner) {}
+    explicit Adapter(SpaceAddRoomList& owner) : owner_(owner)
+    {
+    }
 
     // Each row is a button that adds that room to the space; disabled when
     // the user can't manage the space's children.
@@ -143,9 +154,10 @@ public:
     {
         const auto* room = owner_.room_at_(index);
         if (!room)
+        {
             return {};
-        return tk::trf(tk::tr("Add {0} to space"),
-                       {room->name.empty() ? room->id : room->name});
+        }
+        return tk::trf(tk::tr("Add {0} to space"), {room->name.empty() ? room->id : room->name});
     }
     tk::AccessState access_state_for_row(std::size_t) const override
     {
@@ -157,33 +169,44 @@ public:
     {
         const auto* room = owner_.room_at_(index);
         if (!owner_.can_manage_ || !room || !owner_.on_add_requested)
+        {
             return false;
+        }
         owner_.on_add_requested(room->id);
         return true;
     }
 
-    std::size_t count() const override { return owner_.filtered_.size(); }
+    std::size_t count() const override
+    {
+        return owner_.filtered_.size();
+    }
 
     float measure_row_height(std::size_t, tk::LayoutCtx&, float) override
     {
         return kRowH;
     }
 
-    void paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
-                   bool selected, bool hovered) override
+    void paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds, bool selected,
+                   bool hovered) override
     {
         const auto* room = owner_.room_at_(index);
         if (!room)
+        {
             return;
-        const auto& pal = ctx.theme.palette;
+        }
+        const auto pal = tk::row_palette(ctx.theme, selected);
 
         if (selected)
+        {
             ctx.canvas.fill_rect(bounds, pal.sidebar_selected);
+        }
         else if (hovered)
+        {
             ctx.canvas.fill_rect(bounds, pal.sidebar_hover);
+            tk::paint_hc_hover_outline(ctx.canvas, ctx.theme, bounds);
+        }
 
-        const float avatar_cx =
-            bounds.x + tesseract::visual::kSpaceSM + kListRowAvatarSize * 0.5f;
+        const float avatar_cx = bounds.x + tesseract::visual::kSpaceSM + kListRowAvatarSize * 0.5f;
         const float avatar_cy = bounds.y + bounds.h * 0.5f;
 
         const tk::Image* avatar = nullptr;
@@ -192,28 +215,28 @@ public:
         {
             avatar = owner_.avatar_provider_(av_mxc);
             if (!avatar && owner_.on_room_avatar_needed)
+            {
                 owner_.on_room_avatar_needed(*room);
+            }
         }
         draw_avatar(ctx.canvas, avatar, {avatar_cx, avatar_cy}, kListRowAvatarSize,
-                    room->name.empty() ? room->id : room->name,
-                    pal.avatar_initials_bg, pal.avatar_initials_text);
+                    room->name.empty() ? room->id : room->name, pal.avatar_initials_bg,
+                    pal.avatar_initials_text);
 
-        const float text_x = bounds.x + tesseract::visual::kSpaceSM +
-                             kListRowAvatarSize + tesseract::visual::kSpaceMD;
-        const float text_w = std::max(
-            0.0f, bounds.x + bounds.w - text_x - tesseract::visual::kSpaceSM);
+        const float text_x = bounds.x + tesseract::visual::kSpaceSM + kListRowAvatarSize +
+                             tesseract::visual::kSpaceMD;
+        const float text_w =
+            std::max(0.0f, bounds.x + bounds.w - text_x - tesseract::visual::kSpaceSM);
         tk::TextStyle ns{};
         ns.role = tk::FontRole::SidebarName;
         ns.trim = tk::TextTrim::Ellipsis;
         ns.max_width = text_w;
-        auto name_lo = ctx.factory.build_text(
-            room->name.empty() ? room->id : room->name, ns);
+        auto name_lo = ctx.factory.build_text(room->name.empty() ? room->id : room->name, ns);
         if (name_lo)
         {
             const tk::Size sz = name_lo->measure();
-            ctx.canvas.draw_text(
-                *name_lo, {text_x, bounds.y + (bounds.h - sz.h) * 0.5f},
-                owner_.can_manage_ ? pal.text_primary : pal.text_muted);
+            ctx.canvas.draw_text(*name_lo, {text_x, bounds.y + (bounds.h - sz.h) * 0.5f},
+                                 owner_.can_manage_ ? pal.text_primary : pal.text_muted);
         }
     }
 
@@ -229,7 +252,11 @@ SpaceAddRoomList::SpaceAddRoomList() : adapter_(std::make_unique<Adapter>(*this)
     {
         auto field = tk::create_widget<tk::TextField>(this, kFieldH);
         field->set_placeholder(tk::tr("Search your rooms\xe2\x80\xa6"));
-        field->set_on_changed([this](const std::string& q) { set_query(q); });
+        field->set_on_changed(
+            [this](const std::string& q)
+            {
+                set_query(q);
+            });
         search_field_ = add_child(std::move(field));
     }
 
@@ -240,10 +267,14 @@ SpaceAddRoomList::SpaceAddRoomList() : adapter_(std::make_unique<Adapter>(*this)
     list->on_row_clicked = [this](int idx)
     {
         if (!can_manage_ || idx < 0)
+        {
             return;
+        }
         const auto* room = room_at_(static_cast<std::size_t>(idx));
         if (room && on_add_requested)
+        {
             on_add_requested(room->id);
+        }
     };
     list_ = add_child(std::move(list));
 }
@@ -264,7 +295,9 @@ void SpaceAddRoomList::set_excluded_room_ids(std::vector<std::string> ids)
 {
     excluded_ids_.clear();
     for (auto& id : ids)
+    {
         excluded_ids_.insert(std::move(id));
+    }
 }
 
 void SpaceAddRoomList::refresh()
@@ -278,7 +311,9 @@ void SpaceAddRoomList::refresh()
             // candidates — nesting a space as a child is out of scope for
             // this management UI.
             if (!r.is_space && !excluded_ids_.count(r.id))
+            {
                 all_candidates_.push_back(std::move(r));
+            }
         }
     }
     refilter_();
@@ -294,8 +329,12 @@ void SpaceAddRoomList::refilter_()
 {
     filtered_.clear();
     for (const auto& r : all_candidates_)
+    {
         if (tesseract::text::name_matches(r.name, query_))
+        {
             filtered_.push_back(r);
+        }
+    }
     if (list_)
     {
         list_->invalidate_data();
@@ -311,7 +350,9 @@ void SpaceAddRoomList::refilter_()
 const tesseract::RoomInfo* SpaceAddRoomList::room_at_(std::size_t index) const
 {
     if (index >= filtered_.size())
+    {
         return nullptr;
+    }
     return &filtered_[index];
 }
 
@@ -329,15 +370,19 @@ void SpaceAddRoomList::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
 {
     bounds_ = bounds;
 
-    search_field_rect_ = {bounds.x + kPad, bounds.y + kPad,
-                          std::max(0.0f, bounds.w - 2.0f * kPad), kFieldH};
+    search_field_rect_ = {bounds.x + kPad, bounds.y + kPad, std::max(0.0f, bounds.w - 2.0f * kPad),
+                          kFieldH};
     if (search_field_)
+    {
         search_field_->arrange(ctx, search_field_rect_);
+    }
 
     const float list_y = bounds.y + kPad + kFieldH + kPad;
     if (list_)
-        list_->arrange(ctx, {bounds.x, list_y, bounds.w,
-                             std::max(0.0f, bounds.y + bounds.h - list_y)});
+    {
+        list_->arrange(ctx,
+                       {bounds.x, list_y, bounds.w, std::max(0.0f, bounds.y + bounds.h - list_y)});
+    }
 }
 
 void SpaceAddRoomList::paint(tk::PaintCtx& ctx)
@@ -347,19 +392,18 @@ void SpaceAddRoomList::paint(tk::PaintCtx& ctx)
     scale_factor_ = ctx.canvas.scale_factor();
 
     const auto& pal = ctx.theme.palette;
-    ctx.canvas.fill_rounded_rect(bounds_, tesseract::visual::kRadiusSM,
-                                 pal.compose_card_bg);
+    ctx.canvas.fill_rounded_rect(bounds_, tesseract::visual::kRadiusSM, pal.compose_card_bg);
     if (drag_hover_)
-        ctx.canvas.fill_rect(
-            bounds_, tk::Color::rgba(pal.accent.r, pal.accent.g, pal.accent.b, 40));
+    {
+        ctx.canvas.fill_rect(bounds_,
+                             tk::Color::rgba(pal.accent.r, pal.accent.g, pal.accent.b, 40));
+    }
 
     if (search_field_)
     {
-        ctx.canvas.fill_rounded_rect(search_field_rect_,
-                                     tesseract::visual::kRadiusSM, pal.bg);
-        ctx.canvas.stroke_rounded_rect(search_field_rect_,
-                                       tesseract::visual::kRadiusSM,
-                                       pal.border, 1.0f);
+        ctx.canvas.fill_rounded_rect(search_field_rect_, tesseract::visual::kRadiusSM, pal.bg);
+        ctx.canvas.stroke_rounded_rect(search_field_rect_, tesseract::visual::kRadiusSM, pal.border,
+                                       1.0f);
         search_field_->paint(ctx);
     }
 
@@ -369,14 +413,12 @@ void SpaceAddRoomList::paint(tk::PaintCtx& ctx)
         es.role = tk::FontRole::Body;
         es.halign = tk::TextHAlign::Center;
         es.max_width = std::max(0.0f, bounds_.w - 2.0f * kPad);
-        if (auto lo = ctx.factory.build_text(
-                tk::tr("No more rooms to add."), es))
+        if (auto lo = ctx.factory.build_text(tk::tr("No more rooms to add."), es))
         {
             const tk::Size sz = lo->measure();
             const float list_y = bounds_.y + kPad + kFieldH + kPad;
-            ctx.canvas.draw_text(
-                *lo, {bounds_.x + (bounds_.w - sz.w) * 0.5f, list_y + 16.0f},
-                pal.text_muted);
+            ctx.canvas.draw_text(*lo, {bounds_.x + (bounds_.w - sz.w) * 0.5f, list_y + 16.0f},
+                                 pal.text_muted);
         }
     }
     else if (list_)
@@ -391,14 +433,11 @@ void SpaceAddRoomList::paint(tk::PaintCtx& ctx)
         ns.wrap = true;
         ns.max_width = std::max(0.0f, bounds_.w - 2.0f * kPad);
         if (auto lo = ctx.factory.build_text(
-                tk::tr("You don't have permission to add rooms to this space."),
-                ns))
+                tk::tr("You don't have permission to add rooms to this space."), ns))
         {
-            ctx.canvas.draw_text(
-                *lo,
-                {bounds_.x + kPad,
-                 bounds_.y + bounds_.h - lo->measure().h - 4.0f},
-                pal.destructive);
+            ctx.canvas.draw_text(*lo,
+                                 {bounds_.x + kPad, bounds_.y + bounds_.h - lo->measure().h - 4.0f},
+                                 pal.destructive);
         }
     }
 }
@@ -406,7 +445,9 @@ void SpaceAddRoomList::paint(tk::PaintCtx& ctx)
 bool SpaceAddRoomList::on_drag_enter(tk::Point, const tk::DragPayload& payload)
 {
     if (!can_manage_ || payload.kind() != "space_room_id")
+    {
         return false;
+    }
     drag_hover_ = true;
     return true;
 }
@@ -425,9 +466,13 @@ bool SpaceAddRoomList::on_drop(tk::Point, tk::DragPayload payload)
     drag_hover_ = false;
     const auto* id = payload.get_if<std::string>("space_room_id");
     if (!id)
+    {
         return false;
+    }
     if (on_room_dropped_for_remove)
+    {
         on_room_dropped_for_remove(*id);
+    }
     return true;
 }
 
@@ -435,7 +480,9 @@ tk::DragVisual SpaceAddRoomList::build_drag_visual_(const tesseract::RoomInfo& r
 {
     tk::DragVisual visual;
     if (!factory_ || !theme_)
+    {
         return visual;
+    }
 
     constexpr float kW = 160.0f;
     constexpr float kH = 36.0f;
@@ -443,7 +490,9 @@ tk::DragVisual SpaceAddRoomList::build_drag_visual_(const tesseract::RoomInfo& r
 
     auto surface = factory_->create_offscreen({kW, kH}, scale_factor_);
     if (!surface)
+    {
         return visual;
+    }
 
     tk::Canvas& canvas = surface->canvas();
     canvas.clear(tk::Color::rgba(0, 0, 0, 0));
@@ -454,15 +503,17 @@ tk::DragVisual SpaceAddRoomList::build_drag_visual_(const tesseract::RoomInfo& r
                                   ? avatar_provider_(room.effective_avatar_url())
                                   : nullptr;
     draw_avatar(canvas, avatar, {kH * 0.5f, kH * 0.5f}, kInnerAvatar,
-                room.name.empty() ? room.id : room.name,
-                pal.avatar_initials_bg, pal.avatar_initials_text);
+                room.name.empty() ? room.id : room.name, pal.avatar_initials_bg,
+                pal.avatar_initials_text);
 
     tk::TextStyle ns{};
     ns.role = tk::FontRole::SidebarName;
     ns.trim = tk::TextTrim::Ellipsis;
     ns.max_width = kW - kH - 8.0f;
     if (auto lo = factory_->build_text(room.name.empty() ? room.id : room.name, ns))
+    {
         canvas.draw_text(*lo, {kH, (kH - lo->measure().h) * 0.5f}, pal.text_primary);
+    }
 
     visual.image = std::shared_ptr<tk::Image>(surface->finish());
     visual.hotspot = {kH * 0.5f, kH * 0.5f};

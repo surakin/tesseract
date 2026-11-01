@@ -22,16 +22,22 @@ struct ClickShell : tesseract::test::TestShellBase
     {
         am.register_window(this);
     }
-    ~ClickShell() override { account_manager_.unregister_window(this); }
+    ~ClickShell() override
+    {
+        account_manager_.unregister_window(this);
+    }
 
-    void apply_thread_messages_(
-        const std::string&,
-        std::vector<tesseract::views::MessageRowData>, bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
 
     void switch_active_account_(const std::string& uid) override
     {
@@ -46,7 +52,10 @@ struct ClickShell : tesseract::test::TestShellBase
         navigated.push_back(room);
     }
 
-    void show(const std::shared_ptr<AccountSession>& s) { active_account_ = s; }
+    void show(const std::shared_ptr<AccountSession>& s)
+    {
+        active_account_ = s;
+    }
 
     using ShellBase::on_notification_clicked_;
     using ShellBase::notification_target_window_;
@@ -56,15 +65,14 @@ struct ClickShell : tesseract::test::TestShellBase
 
 std::shared_ptr<AccountSession> session(const std::string& uid)
 {
-    auto s     = std::make_shared<AccountSession>();
+    auto s = std::make_shared<AccountSession>();
     s->user_id = uid;
     return s;
 }
 
 } // namespace
 
-TEST_CASE("notification click acts on the window owning the account",
-          "[shell][notification]")
+TEST_CASE("notification click acts on the window owning the account", "[shell][notification]")
 {
     AccountManager am;
     ClickShell a(am), b(am);
@@ -99,8 +107,7 @@ TEST_CASE("notification click falls back to a window already showing the account
     CHECK(a.notification_target_window_(y->user_id) == &b);
 }
 
-TEST_CASE("notification click with no owner switches the calling window",
-          "[shell][notification]")
+TEST_CASE("notification click with no owner switches the calling window", "[shell][notification]")
 {
     AccountManager am;
     ClickShell a(am), b(am);

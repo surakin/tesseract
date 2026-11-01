@@ -28,7 +28,7 @@ QString sanitize_track_id(const std::string& event_id)
     for (char c : event_id)
     {
         out += std::isalnum(static_cast<unsigned char>(c)) ? QChar(QLatin1Char(c))
-                                                             : QChar(QLatin1Char('_'));
+                                                           : QChar(QLatin1Char('_'));
     }
     return out;
 }
@@ -42,13 +42,11 @@ QVariantMap build_metadata(const tesseract::NowPlaying& np)
     }
     m[QStringLiteral("mpris:trackid")] =
         QVariant::fromValue(QDBusObjectPath(sanitize_track_id(np.event_id)));
-    m[QStringLiteral("mpris:length")] =
-        static_cast<qlonglong>(np.duration_ms) * 1000;
+    m[QStringLiteral("mpris:length")] = static_cast<qlonglong>(np.duration_ms) * 1000;
     m[QStringLiteral("xesam:title")] = QString::fromStdString(np.title);
     if (!np.artist.empty())
     {
-        m[QStringLiteral("xesam:artist")] =
-            QStringList{QString::fromStdString(np.artist)};
+        m[QStringLiteral("xesam:artist")] = QStringList{QString::fromStdString(np.artist)};
     }
     return m;
 }
@@ -224,8 +222,7 @@ public slots:
     }
     void Seek(qlonglong offsetUs)
     {
-        account_manager_->media_playback_hub().seek(
-            static_cast<std::int64_t>(offsetUs / 1000));
+        account_manager_->media_playback_hub().seek(static_cast<std::int64_t>(offsetUs / 1000));
     }
     void SetPosition(const QDBusObjectPath&, qlonglong)
     {
@@ -266,8 +263,7 @@ struct QtMprisPlayer::Impl
         changed[QStringLiteral("PlaybackStatus")] =
             np.kind == tesseract::NowPlaying::Kind::None
                 ? QStringLiteral("Stopped")
-                : (np.is_playing ? QStringLiteral("Playing")
-                                 : QStringLiteral("Paused"));
+                : (np.is_playing ? QStringLiteral("Playing") : QStringLiteral("Paused"));
         changed[QStringLiteral("Metadata")] = build_metadata(np);
         // CanPlay/CanPause/CanSeek flip false->true (and back) alongside
         // PlaybackStatus/Metadata — clients like Plasma's media widget cache
@@ -280,10 +276,8 @@ struct QtMprisPlayer::Impl
 
         QDBusMessage msg = QDBusMessage::createSignal(
             QStringLiteral("/org/mpris/MediaPlayer2"),
-            QStringLiteral("org.freedesktop.DBus.Properties"),
-            QStringLiteral("PropertiesChanged"));
-        msg << QStringLiteral("org.mpris.MediaPlayer2.Player") << changed
-            << QStringList{};
+            QStringLiteral("org.freedesktop.DBus.Properties"), QStringLiteral("PropertiesChanged"));
+        msg << QStringLiteral("org.mpris.MediaPlayer2.Player") << changed << QStringList{};
         QDBusConnection::sessionBus().send(msg);
     }
 
@@ -307,10 +301,8 @@ QtMprisPlayer::QtMprisPlayer(tesseract::AccountManager& account_manager)
 
     auto reg = QDBusConnection::sessionBus().interface()->registerService(
         QStringLiteral("org.mpris.MediaPlayer2.Tesseract"),
-        QDBusConnectionInterface::DontQueueService,
-        QDBusConnectionInterface::DontAllowReplacement);
-    if (!reg.isValid() ||
-        reg.value() != QDBusConnectionInterface::ServiceRegistered)
+        QDBusConnectionInterface::DontQueueService, QDBusConnectionInterface::DontAllowReplacement);
+    if (!reg.isValid() || reg.value() != QDBusConnectionInterface::ServiceRegistered)
     {
         return;
     }
@@ -318,9 +310,8 @@ QtMprisPlayer::QtMprisPlayer(tesseract::AccountManager& account_manager)
     impl_->host = new QObject();
     new MediaPlayer2Adaptor(impl_->host);
     new MediaPlayer2PlayerAdaptor(impl_->host, &account_manager);
-    if (!QDBusConnection::sessionBus().registerObject(
-            QStringLiteral("/org/mpris/MediaPlayer2"), impl_->host,
-            QDBusConnection::ExportAdaptors))
+    if (!QDBusConnection::sessionBus().registerObject(QStringLiteral("/org/mpris/MediaPlayer2"),
+                                                      impl_->host, QDBusConnection::ExportAdaptors))
     {
         delete impl_->host;
         impl_->host = nullptr;
@@ -330,7 +321,9 @@ QtMprisPlayer::QtMprisPlayer(tesseract::AccountManager& account_manager)
     }
 
     account_manager.media_playback_hub().on_changed = [impl = impl_.get()]
-    { impl->emit_properties_changed(); };
+    {
+        impl->emit_properties_changed();
+    };
 
     available_ = true;
 }

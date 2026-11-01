@@ -37,6 +37,7 @@ protected:
 
 public:
     void on_fonts_changed() override;
+    void on_theme_changed(const Theme& t) override;
     void set_text(std::string text);
     std::string text() const;
     void set_placeholder(std::string text);
@@ -171,9 +172,13 @@ public:
     std::string access_name() const override
     {
         if (!accessible_name_.empty())
+        {
             return accessible_name_;
+        }
         if (password_)
+        {
             return placeholder_;
+        }
         std::string t = text();
         return t.empty() ? placeholder_ : t;
     }
@@ -193,8 +198,14 @@ public:
     // just typed."
     void on_focus_gained() override
     {
-        if (field_ && !syncing_from_native_) field_->set_focused(true);
-        if (on_focus_changed_cb_) on_focus_changed_cb_(true);
+        if (field_ && !syncing_from_native_)
+        {
+            field_->set_focused(true);
+        }
+        if (on_focus_changed_cb_)
+        {
+            on_focus_changed_cb_(true);
+        }
     }
     // Only pushes set_focused(false) down to the native field when this
     // loss originated from the canvas side (e.g. Tab moving focus to
@@ -208,8 +219,14 @@ public:
     // glitch while typing at the end of the field's text).
     void on_focus_lost() override
     {
-        if (field_ && !syncing_from_native_) field_->set_focused(false);
-        if (on_focus_changed_cb_) on_focus_changed_cb_(false);
+        if (field_ && !syncing_from_native_)
+        {
+            field_->set_focused(false);
+        }
+        if (on_focus_changed_cb_)
+        {
+            on_focus_changed_cb_(false);
+        }
     }
 
 private:

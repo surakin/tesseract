@@ -175,7 +175,10 @@ impl ClientFfi {
             client
                 .notification_settings()
                 .await
-                .is_push_rule_enabled(RuleKind::Override, PredefinedOverrideRuleId::IsUserMention.as_str())
+                .is_push_rule_enabled(
+                    RuleKind::Override,
+                    PredefinedOverrideRuleId::IsUserMention.as_str(),
+                )
                 .await
                 .unwrap_or(true)
         })
@@ -191,7 +194,11 @@ impl ClientFfi {
             client
                 .notification_settings()
                 .await
-                .set_push_rule_enabled(RuleKind::Override, PredefinedOverrideRuleId::IsUserMention.as_str(), enabled)
+                .set_push_rule_enabled(
+                    RuleKind::Override,
+                    PredefinedOverrideRuleId::IsUserMention.as_str(),
+                    enabled,
+                )
                 .await
                 .is_ok()
         })
@@ -207,7 +214,10 @@ impl ClientFfi {
             client
                 .notification_settings()
                 .await
-                .is_push_rule_enabled(RuleKind::Override, PredefinedOverrideRuleId::IsRoomMention.as_str())
+                .is_push_rule_enabled(
+                    RuleKind::Override,
+                    PredefinedOverrideRuleId::IsRoomMention.as_str(),
+                )
                 .await
                 .unwrap_or(true)
         })
@@ -223,7 +233,11 @@ impl ClientFfi {
             client
                 .notification_settings()
                 .await
-                .set_push_rule_enabled(RuleKind::Override, PredefinedOverrideRuleId::IsRoomMention.as_str(), enabled)
+                .set_push_rule_enabled(
+                    RuleKind::Override,
+                    PredefinedOverrideRuleId::IsRoomMention.as_str(),
+                    enabled,
+                )
                 .await
                 .is_ok()
         })
@@ -278,7 +292,11 @@ impl ClientFfi {
             ];
             let mut all_ok = true;
             for (enc, dm) in combos {
-                if settings.set_default_room_notification_mode(enc, dm, mode).await.is_err() {
+                if settings
+                    .set_default_room_notification_mode(enc, dm, mode)
+                    .await
+                    .is_err()
+                {
                     all_ok = false;
                 }
             }
@@ -297,7 +315,11 @@ impl ClientFfi {
             return false;
         };
         self.rt.block_on(async move {
-            client.notification_settings().await.contains_keyword_rules().await
+            client
+                .notification_settings()
+                .await
+                .contains_keyword_rules()
+                .await
         })
     }
 
@@ -353,7 +375,12 @@ impl ClientFfi {
         };
         let keyword = keyword.to_owned();
         self.rt.block_on(async move {
-            client.notification_settings().await.add_keyword(keyword).await.is_ok()
+            client
+                .notification_settings()
+                .await
+                .add_keyword(keyword)
+                .await
+                .is_ok()
         })
     }
 
@@ -516,7 +543,10 @@ mod tests {
 
     #[test]
     fn default_notify_all_messages_false_maps_to_mentions_only() {
-        assert_eq!(mode_for(false), RoomNotificationMode::MentionsAndKeywordsOnly);
+        assert_eq!(
+            mode_for(false),
+            RoomNotificationMode::MentionsAndKeywordsOnly
+        );
     }
 
     /// Mirrors the string mapping used by `get_room_notification_mode`/

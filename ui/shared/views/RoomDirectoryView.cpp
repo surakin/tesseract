@@ -56,20 +56,26 @@ public:
     std::string access_name_for_row(std::size_t index) const override
     {
         if (index >= owner_.items_.size())
+        {
             return {};
+        }
         const auto& e = owner_.items_[index];
         return e.name.empty() ? e.room_id : e.name;
     }
     std::string access_description_for_row(std::size_t index) const override
     {
         if (index >= owner_.items_.size())
+        {
             return {};
+        }
         const auto& e = owner_.items_[index];
         const std::string members =
             tk::trf(tk::trn("{0} member", "{0} members", static_cast<long>(e.joined_members)),
                     {std::to_string(e.joined_members)});
         if (e.topic.empty())
+        {
             return tk::trf(tk::tr("{0}, {1}"), {join_rule_label(e.join_rule), members});
+        }
         return tk::trf(tk::tr("{0}, {1}, {2}"), {join_rule_label(e.join_rule), members, e.topic});
     }
     tk::AccessState access_state_for_row(std::size_t index) const override
@@ -81,7 +87,9 @@ public:
     bool access_activate_row(std::size_t index) override
     {
         if (index >= owner_.items_.size())
+        {
             return false;
+        }
         owner_.select_row_(static_cast<int>(index));
         return true;
     }
@@ -98,19 +106,18 @@ public:
 
     std::string row_key(std::size_t index) const override
     {
-        return index < owner_.items_.size() ? owner_.items_[index].room_id
-                                            : std::string{};
+        return index < owner_.items_.size() ? owner_.items_[index].room_id : std::string{};
     }
 
-    void paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds,
-                   bool selected, bool hovered) override
+    void paint_row(std::size_t index, tk::PaintCtx& ctx, tk::Rect bounds, bool selected,
+                   bool hovered) override
     {
         if (index >= owner_.items_.size())
         {
             return;
         }
         const auto& e = owner_.items_[index];
-        const auto& pal = ctx.theme.palette;
+        const auto pal = tk::row_palette(ctx.theme, selected);
 
         if (selected)
         {
@@ -119,6 +126,7 @@ public:
         else if (hovered)
         {
             ctx.canvas.fill_rect(bounds, pal.sidebar_hover);
+            tk::paint_hc_hover_outline(ctx.canvas, ctx.theme, bounds);
         }
 
         const tk::Point av_centre{bounds.x + kRowPad + kRowAvatarD * 0.5f,
@@ -132,10 +140,10 @@ public:
                 owner_.on_avatar_needed(e.avatar_url);
             }
         }
-        std::string_view disp =
-            e.name.empty() ? std::string_view("#") : std::string_view(e.name);
+        std::string_view disp = e.name.empty() ? std::string_view("#") : std::string_view(e.name);
         draw_avatar(ctx.canvas, img, av_centre, kRowAvatarD, disp, pal.accent,
-                    tk::Color{255, 255, 255, 255});
+                    ctx.theme.high_contrast ? pal.text_on_accent
+                                            : tk::accent_foreground(ctx.theme));
 
         const float text_x = bounds.x + kRowPad + kRowAvatarD + kRowPad;
         const float text_w = bounds.x + bounds.w - kRowPad - text_x;
@@ -148,8 +156,7 @@ public:
             ts.halign = tk::TextHAlign::Leading;
             ts.trim = tk::TextTrim::Ellipsis;
             ts.max_width = text_w;
-            auto lo = ctx.factory.build_text(
-                e.name.empty() ? e.room_id : e.name, ts);
+            auto lo = ctx.factory.build_text(e.name.empty() ? e.room_id : e.name, ts);
             if (lo)
             {
                 ctx.canvas.draw_text(*lo, {text_x, y}, pal.text_primary);
@@ -169,29 +176,30 @@ public:
             {
                 const float pw = plo->measure().w + kRowPillPadX * 2.0f;
                 const tk::Rect pill{text_x, y, pw, kRowPillH};
-                ctx.canvas.fill_rounded_rect(pill, kRowPillH * 0.5f, bg);
+                ctx.canvas.fill_rounded_rect(
+                    pill, kRowPillH * 0.5f,
+                    ctx.theme.high_contrast ? (selected ? pal.sidebar_selected : pal.bg) : bg);
+                if (ctx.theme.high_contrast)
+                {
+                    ctx.canvas.stroke_rounded_rect(pill, kRowPillH * 0.5f, pal.text_primary, 1.0f);
+                }
                 ctx.canvas.draw_text(
-                    *plo,
-                    {text_x + kRowPillPadX,
-                     y + (kRowPillH - plo->measure().h) * 0.5f},
-                    tk::Color{255, 255, 255, 255});
+                    *plo, {text_x + kRowPillPadX, y + (kRowPillH - plo->measure().h) * 0.5f},
+                    ctx.theme.high_contrast ? pal.text_primary : tk::Color{255, 255, 255, 255});
                 advance = pw + kDirSmallGap;
             }
-            const std::string members = tk::trf(
-                tk::trn("{0} member", "{0} members",
-                        static_cast<long>(e.joined_members)),
-                {std::to_string(e.joined_members)});
+            const std::string members =
+                tk::trf(tk::trn("{0} member", "{0} members", static_cast<long>(e.joined_members)),
+                        {std::to_string(e.joined_members)});
             tk::TextStyle mts;
             mts.role = tk::FontRole::Small;
             mts.halign = tk::TextHAlign::Leading;
             auto mlo = ctx.factory.build_text(members, mts);
             if (mlo)
             {
-                ctx.canvas.draw_text(
-                    *mlo,
-                    {text_x + advance,
-                     y + (kRowPillH - mlo->measure().h) * 0.5f},
-                    pal.text_secondary);
+                ctx.canvas.draw_text(*mlo,
+                                     {text_x + advance, y + (kRowPillH - mlo->measure().h) * 0.5f},
+                                     pal.text_secondary);
             }
             y += kRowPillH + 4.0f;
         }
@@ -234,15 +242,20 @@ RoomDirectoryView::RoomDirectoryView() : adapter_(std::make_unique<Adapter>(*thi
         server->on_submit_text = [this](std::string text)
         {
             const auto b = text.find_first_not_of(" \t");
-            if (b == std::string::npos) return;
+            if (b == std::string::npos)
+            {
+                return;
+            }
             text = text.substr(b, text.find_last_not_of(" \t") - b + 1);
             for (const auto& known : server_picker_->servers())
             {
                 if (known.size() == text.size() &&
                     std::equal(known.begin(), known.end(), text.begin(),
                                [](char a, char c)
-                               { return std::tolower((unsigned char)a) ==
-                                        std::tolower((unsigned char)c); }))
+                               {
+                                   return std::tolower((unsigned char)a) ==
+                                          std::tolower((unsigned char)c);
+                               }))
                 {
                     server_picker_->set_value(known);
                     pending_server_.clear();
@@ -261,31 +274,52 @@ RoomDirectoryView::RoomDirectoryView() : adapter_(std::make_unique<Adapter>(*thi
             [this](const std::string&)
             {
                 fields_dirty_ = true;
-                if (on_field_edited) on_field_edited();
+                if (on_field_edited)
+                {
+                    on_field_edited();
+                }
             });
-        search->set_on_submit([this] { search_now(); });
+        search->set_on_submit(
+            [this]
+            {
+                search_now();
+            });
         search->set_on_focus_changed(
-            [this](bool focused) { if (!focused && fields_dirty_) search_now(); });
+            [this](bool focused)
+            {
+                if (!focused && fields_dirty_)
+                {
+                    search_now();
+                }
+            });
         search_field_ = add_child(std::move(search));
     }
 
     // Explicit button — Enter-to-submit alone isn't discoverable; mirrors
     // JoinRoomView's "Look up" button for the same reason.
-    auto search_btn = tk::create_widget<tk::Button>(
-        this, tk::tr("Search"), std::function<void()>{},
-        tk::Button::Variant::Primary);
-    search_btn->set_on_click([this] { search_now(); });
+    auto search_btn = tk::create_widget<tk::Button>(this, tk::tr("Search"), std::function<void()>{},
+                                                    tk::Button::Variant::Primary);
+    search_btn->set_on_click(
+        [this]
+        {
+            search_now();
+        });
     search_btn_ = add_child(std::move(search_btn));
 
     auto list = tk::create_widget<tk::ListView>(this);
     list->set_adapter(adapter_.get());
-    list->on_row_clicked = [this](int idx) { select_row_(idx); };
-    list->on_near_bottom = [this] { request_next_page_(); };
+    list->on_row_clicked = [this](int idx)
+    {
+        select_row_(idx);
+    };
+    list->on_near_bottom = [this]
+    {
+        request_next_page_();
+    };
     list_view_ = add_child(std::move(list));
 
-    auto join = tk::create_widget<tk::Button>(
-        this, tk::tr("Join"), std::function<void()>{},
-        tk::Button::Variant::Primary);
+    auto join = tk::create_widget<tk::Button>(this, tk::tr("Join"), std::function<void()>{},
+                                              tk::Button::Variant::Primary);
     join->set_on_click(
         [this]
         {
@@ -295,7 +329,10 @@ RoomDirectoryView::RoomDirectoryView() : adapter_(std::make_unique<Adapter>(*thi
                 return;
             }
             joining_ = true;
-            if (join_btn_) join_btn_->set_enabled(false);
+            if (join_btn_)
+            {
+                join_btn_->set_enabled(false);
+            }
             if (status_lbl_)
             {
                 status_lbl_->set_text(tk::tr("Joining room\xe2\x80\xa6"));
@@ -303,18 +340,23 @@ RoomDirectoryView::RoomDirectoryView() : adapter_(std::make_unique<Adapter>(*thi
             }
             if (on_join_requested)
             {
-                on_join_requested(
-                    items_[static_cast<std::size_t>(selected_index_)].room_id,
-                    active_server_);
+                on_join_requested(items_[static_cast<std::size_t>(selected_index_)].room_id,
+                                  active_server_);
             }
         });
     join->set_enabled(false);
     join_btn_ = add_child(std::move(join));
 
-    auto cancel = tk::create_widget<tk::Button>(
-        this, tk::tr("Cancel"), std::function<void()>{},
-        tk::Button::Variant::Subtle);
-    cancel->set_on_click([this] { if (on_cancel) on_cancel(); });
+    auto cancel = tk::create_widget<tk::Button>(this, tk::tr("Cancel"), std::function<void()>{},
+                                                tk::Button::Variant::Subtle);
+    cancel->set_on_click(
+        [this]
+        {
+            if (on_cancel)
+            {
+                on_cancel();
+            }
+        });
     cancel_btn_ = add_child(std::move(cancel));
 
     auto status = tk::create_widget<tk::Label>(this, "", tk::FontRole::Body);
@@ -381,8 +423,14 @@ void RoomDirectoryView::set_visible(bool v)
     tk::Widget::set_visible(v);
     if (!v)
     {
-        if (server_picker_) server_picker_->set_visible(false);
-        if (search_field_) search_field_->set_visible(false);
+        if (server_picker_)
+        {
+            server_picker_->set_visible(false);
+        }
+        if (search_field_)
+        {
+            search_field_->set_visible(false);
+        }
     }
 }
 
@@ -391,27 +439,32 @@ void RoomDirectoryView::set_avatar_provider(AvatarProvider p)
     avatar_provider_ = std::move(p);
 }
 
-void RoomDirectoryView::set_is_room_joined(
-    std::function<bool(const std::string&)> p)
+void RoomDirectoryView::set_is_room_joined(std::function<bool(const std::string&)> p)
 {
     is_room_joined_ = std::move(p);
     update_join_button_label_();
 }
 
-void RoomDirectoryView::set_server_choices(std::vector<std::string> servers,
-                                           std::string homeserver)
+void RoomDirectoryView::set_server_choices(std::vector<std::string> servers, std::string homeserver)
 {
     homeserver_ = std::move(homeserver);
-    if (!server_picker_) return;
+    if (!server_picker_)
+    {
+        return;
+    }
     const std::string current = server_picker_->value();
     server_picker_->set_servers(std::move(servers));
     const auto& list = server_picker_->servers();
-    const bool kept = !current.empty() &&
-                      std::find(list.begin(), list.end(), current) != list.end();
+    const bool kept =
+        !current.empty() && std::find(list.begin(), list.end(), current) != list.end();
     if (kept)
+    {
         server_picker_->set_value(current);
+    }
     else
+    {
         server_picker_->set_value(homeserver_);
+    }
 }
 
 void RoomDirectoryView::search_now()
@@ -429,7 +482,10 @@ void RoomDirectoryView::search_now()
         list_view_->invalidate_data();
         list_view_->scroll_to_top();
     }
-    if (join_btn_) join_btn_->set_enabled(false);
+    if (join_btn_)
+    {
+        join_btn_->set_enabled(false);
+    }
     update_join_button_label_();
     if (status_lbl_)
     {
@@ -438,10 +494,9 @@ void RoomDirectoryView::search_now()
     }
     active_request_id_ = ++next_request_id_;
     {
-        const std::string server =
-            !pending_server_.empty() ? pending_server_
-            : server_picker_         ? server_picker_->value()
-                                     : std::string{};
+        const std::string server = !pending_server_.empty() ? pending_server_
+                                   : server_picker_         ? server_picker_->value()
+                                                            : std::string{};
         // The account's own homeserver is browsed without a `server` argument.
         active_server_ = server == homeserver_ ? std::string{} : server;
     }
@@ -478,8 +533,14 @@ void RoomDirectoryView::select_row_(int idx)
         return;
     }
     selected_index_ = idx;
-    if (list_view_) list_view_->set_selected_index(idx);
-    if (join_btn_) join_btn_->set_enabled(true);
+    if (list_view_)
+    {
+        list_view_->set_selected_index(idx);
+    }
+    if (join_btn_)
+    {
+        join_btn_->set_enabled(true);
+    }
     update_join_button_label_();
 }
 
@@ -501,12 +562,14 @@ void RoomDirectoryView::set_join_failed(std::string message)
 
 void RoomDirectoryView::update_join_button_label_()
 {
-    if (!join_btn_) return;
-    const bool joined =
-        selected_index_ >= 0 &&
-        static_cast<std::size_t>(selected_index_) < items_.size() &&
-        is_room_joined_ &&
-        is_room_joined_(items_[static_cast<std::size_t>(selected_index_)].room_id);
+    if (!join_btn_)
+    {
+        return;
+    }
+    const bool joined = selected_index_ >= 0 &&
+                        static_cast<std::size_t>(selected_index_) < items_.size() &&
+                        is_room_joined_ &&
+                        is_room_joined_(items_[static_cast<std::size_t>(selected_index_)].room_id);
     join_btn_->set_label(joined ? tk::tr("Go") : tk::tr("Join"));
 }
 
@@ -536,11 +599,17 @@ void RoomDirectoryView::set_results(std::uint64_t request_id,
             }
             server_picker_->set_value(accepted);
         }
-        if (on_server_validated) on_server_validated(accepted);
+        if (on_server_validated)
+        {
+            on_server_validated(accepted);
+        }
     }
     items_.insert(items_.end(), std::make_move_iterator(entries.begin()),
-                 std::make_move_iterator(entries.end()));
-    if (list_view_) list_view_->invalidate_data();
+                  std::make_move_iterator(entries.end()));
+    if (list_view_)
+    {
+        list_view_->invalidate_data();
+    }
     if (status_lbl_)
     {
         if (items_.empty())
@@ -555,8 +624,7 @@ void RoomDirectoryView::set_results(std::uint64_t request_id,
     }
 }
 
-void RoomDirectoryView::set_search_failed(std::uint64_t request_id,
-                                          std::string message)
+void RoomDirectoryView::set_search_failed(std::uint64_t request_id, std::string message)
 {
     if (request_id != active_request_id_)
     {
@@ -579,13 +647,22 @@ bool RoomDirectoryView::join_button_enabled() const
 
 void RoomDirectoryView::trigger_join_for_test()
 {
-    if (join_btn_) join_btn_->click();
+    if (join_btn_)
+    {
+        join_btn_->click();
+    }
 }
 
 void RoomDirectoryView::on_theme_changed(const tk::Theme& t)
 {
-    if (server_picker_) server_picker_->on_theme_changed(t);
-    if (search_field_) search_field_->set_text_color(t.palette.text_primary);
+    if (server_picker_)
+    {
+        server_picker_->on_theme_changed(t);
+    }
+    if (search_field_)
+    {
+        search_field_->set_text_color(t.palette.text_primary);
+    }
 }
 
 tk::Size RoomDirectoryView::measure(tk::LayoutCtx&, tk::Size constraints)
@@ -615,8 +692,7 @@ void RoomDirectoryView::arrange(tk::LayoutCtx& ctx, tk::Rect bounds)
     }
     if (search_btn_)
     {
-        search_btn_->arrange(
-            ctx, {x + field_w * 2.0f + kGap * 2.0f, y0, kSearchBtnW, kDirInputH});
+        search_btn_->arrange(ctx, {x + field_w * 2.0f + kGap * 2.0f, y0, kSearchBtnW, kDirInputH});
     }
 
     const float btn_row_y = bounds.y + bounds.h - kPadY - kBtnH;
@@ -662,8 +738,7 @@ void RoomDirectoryView::paint(tk::PaintCtx& ctx)
     if (search_field_ && search_field_->visible() && !search_field_->bounds().empty())
     {
         ctx.canvas.fill_rounded_rect(search_field_->bounds(), kRadius, pal.bg);
-        ctx.canvas.stroke_rounded_rect(search_field_->bounds(), kRadius,
-                                       pal.border, kBorderW);
+        ctx.canvas.stroke_rounded_rect(search_field_->bounds(), kRadius, pal.border, kBorderW);
         search_field_->paint(ctx);
     }
     if (search_btn_)
@@ -676,9 +751,8 @@ void RoomDirectoryView::paint(tk::PaintCtx& ctx)
     }
     if (status_lbl_ && status_lbl_->visible())
     {
-        status_lbl_->set_colour(!error_msg_.empty()
-                                    ? std::optional<tk::Color>(pal.destructive)
-                                    : std::nullopt);
+        status_lbl_->set_colour(!error_msg_.empty() ? std::optional<tk::Color>(pal.destructive)
+                                                    : std::nullopt);
         status_lbl_->paint(ctx);
     }
     if (join_btn_ && join_btn_->visible())

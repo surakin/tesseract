@@ -51,7 +51,10 @@ public:
     // Clear all state; widget becomes invisible.
     void clear();
 
-    bool has_invite() const { return invite_.has_value(); }
+    bool has_invite() const
+    {
+        return invite_.has_value();
+    }
 
     // Accept / Decline fire for both DM and group invitations.
     std::function<void()> on_accept;
@@ -61,8 +64,8 @@ public:
 
     // tk::Widget overrides
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
-    void     paint_before_children(tk::PaintCtx&) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void paint_before_children(tk::PaintCtx&) override;
 
     // Accessibility: a Group announcing who invited you and to what (all
     // canvas-painted); Accept / Decline / Block attach under it.
@@ -77,9 +80,9 @@ private:
     ImageProvider image_provider_;
 
     // Child widgets (borrowed — owned by widget tree via add_child).
-    tk::Button* accept_btn_  = nullptr;
+    tk::Button* accept_btn_ = nullptr;
     tk::Button* decline_btn_ = nullptr;
-    tk::Button* block_btn_   = nullptr; // only shown in DM variant
+    tk::Button* block_btn_ = nullptr; // only shown in DM variant
 
     // Cached text layouts (rebuilt lazily in paint when invite changes).
     mutable tk::CachedTextLayout name_layout_;
@@ -88,16 +91,16 @@ private:
     mutable tk::CachedTextLayout reason_layout_;     // shown when non-empty
 
     // Layout constants
-    static constexpr float kMinW       = 320.0f;
-    static constexpr float kMinH       = 280.0f;
+    static constexpr float kMinW = 320.0f;
+    static constexpr float kMinH = 280.0f;
     static constexpr float kAvatarD_DM = 80.0f;
     static constexpr float kAvatarD_GR = 64.0f;
-    static constexpr float kPadX       = 24.0f;
-    static constexpr float kPadY       = 20.0f;
-    static constexpr float kGap        = 8.0f;
-    static constexpr float kBtnH       = 36.0f;
-    static constexpr float kBtnGap     = 8.0f;
-    static constexpr float kContentW   = 280.0f;
+    static constexpr float kPadX = 24.0f;
+    static constexpr float kPadY = 20.0f;
+    static constexpr float kGap = 8.0f;
+    static constexpr float kBtnH = 36.0f;
+    static constexpr float kBtnGap = 8.0f;
+    static constexpr float kContentW = 280.0f;
 
     void reset_layouts();
 };

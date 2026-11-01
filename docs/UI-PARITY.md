@@ -39,7 +39,7 @@ Sidebar width: `kSidebarWidth` (260 px) by default. The sidebar is
 resizable: dragging its separator below `kSidebarMinExpandedWidth`
 (180 px) snaps it to the icon-only collapsed width
 (`kSidebarCollapsedWidth`, 68 px), which shows a hover flyout per room.
-User strip height: `kUserStripHeight` (64 px).
+User strip height: at least `kUserStripHeight` (64 px), growing with the user's fonts (`UserInfo::measure`). It spans the space-picker column when one is shown.
 Compose bar grows with content between `kComposeMinHeight` and
 `kComposeMaxHeight`.
 
@@ -96,7 +96,9 @@ via `WM_GETMINMAXINFO` (Win32), `NSWindow.minSize` (macOS),
   the shared row renderer for a subtle-bubble layout: the local user's
   messages align right in a faint rounded bubble (avatar and name shown in a
   right gutter unless "Show my name and avatar" is off), other
-  messages keep the left avatar column with a bubble behind the body. Both
+  messages keep the left avatar column with a bubble behind the body. While
+  the thread list, a thread, or the room info panel is open, own messages lay
+  out on the left like everyone else's (keeping their own bubble tint). Both
   renderers live in shared code (`MessageListView`), so the behaviour is
   identical across all four UIs.
 - **Inline media** — `m.image` and `m.sticker` thumbnails capped at
@@ -164,7 +166,9 @@ UI that doesn't already match.
    `gtk-application-prefer-dark-theme` setting (GTK),
    `win32::theme::current_mode()` (Win32), and
    `NSApp.effectiveAppearance` (macOS) — and feeds it into the same
-   shared selection.
+   shared selection. When the shell's `os_high_contrast_()` reports OS
+   high-contrast colours (Windows only so far),
+   `tk::make_high_contrast_theme()` replaces both the mode and the accent.
 
 ## Colour token table
 

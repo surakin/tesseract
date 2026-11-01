@@ -72,7 +72,11 @@ fn within_budget(w: u32, h: u32, frames: usize) -> bool {
         return false;
     }
     let px = w as u64 * h as u64;
-    px <= if frames > 1 { MAX_ANIM_PIXELS } else { MAX_STILL_PIXELS }
+    px <= if frames > 1 {
+        MAX_ANIM_PIXELS
+    } else {
+        MAX_STILL_PIXELS
+    }
 }
 
 /// Never fails outright; check `valid()` (cxx `Result` would throw into C++).
@@ -309,7 +313,9 @@ mod tests {
     fn header_only_animation_probe() {
         assert!(jxl_is_animated(ANIM));
         assert!(!jxl_is_animated(RGB));
-        assert!(!jxl_is_animated(include_bytes!("../tests/fixtures/jxl/still_container.jxl")));
+        assert!(!jxl_is_animated(include_bytes!(
+            "../tests/fixtures/jxl/still_container.jxl"
+        )));
         assert!(!jxl_is_animated(b"garbage"));
         assert!(!jxl_is_animated(&ANIM[..4]));
     }
@@ -377,7 +383,12 @@ mod tests {
     fn corrupted_bytes_never_panic() {
         // Flip every byte of valid files in turn; each must yield a decoder
         // (valid or not) and drain without panicking.
-        for src in [RGB, ANIM, ROT, include_bytes!("../tests/fixtures/jxl/still_container.jxl")] {
+        for src in [
+            RGB,
+            ANIM,
+            ROT,
+            include_bytes!("../tests/fixtures/jxl/still_container.jxl"),
+        ] {
             for i in 0..src.len() {
                 let mut b = src.to_vec();
                 b[i] ^= 0xFF;

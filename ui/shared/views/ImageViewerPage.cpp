@@ -36,7 +36,9 @@ void ImageViewerPage::on_fullscreen_changed(bool /*fullscreen*/)
 
 // ── public API ───────────────────────────────────────────────────────────
 
-ImageViewerPage::ImageViewerPage(MediaViewerPageHost& host) : host_(host) {}
+ImageViewerPage::ImageViewerPage(MediaViewerPageHost& host) : host_(host)
+{
+}
 
 ImageViewerPage::~ImageViewerPage() = default;
 
@@ -58,7 +60,7 @@ void ImageViewerPage::activate(const MediaViewerItem& item)
     // that already fit stay at 1:1 (fit_zoom_ is capped at 1.0). Resolved
     // on the first recompute_base_ once bounds — and thus fit_zoom_ — exist.
     open_at_fit_ = true;
-    is_loading_    = true;
+    is_loading_ = true;
     loading_start_ = std::chrono::steady_clock::now();
     // Geometry is recomputed in paint() using current bounds.
 }
@@ -106,9 +108,13 @@ void ImageViewerPage::recompute_base_(tk::Rect b)
         // Matrix m.room.member events carry no width/height info).
         const tk::Image* probe = nullptr;
         if (!media_url_.empty())
+        {
             probe = host_.host_image(media_url_);
+        }
         if (!probe && !display_key_.empty())
+        {
             probe = host_.host_image(display_key_);
+        }
         if (probe && probe->width() > 0 && probe->height() > 0)
         {
             nw = static_cast<float>(probe->width());
@@ -138,8 +144,8 @@ void ImageViewerPage::recompute_base_(tk::Rect b)
     else
     {
         // Nothing decoded yet at all — placeholder box, no aspect to honor.
-        base_ = dims_known_ ? tk::Size{avail_w, avail_h * 0.5f}
-                             : tk::Size{b.w * 0.75f, b.h * 0.75f};
+        base_ =
+            dims_known_ ? tk::Size{avail_w, avail_h * 0.5f} : tk::Size{b.w * 0.75f, b.h * 0.75f};
         fit_zoom_ = 1.0f;
     }
 
@@ -232,9 +238,10 @@ void ImageViewerPage::paint_content(tk::PaintCtx& ctx)
     if (img)
     {
         is_loading_ = false;
-        cv.push_clip_rounded_rect(image_rect_, 4.0f);
-        cv.draw_image(*img, image_rect_);
-        cv.pop_clip();
+        {
+            tk::ClipScope clip(cv, image_rect_, 4.0f);
+            cv.draw_image(*img, image_rect_);
+        }
         if (ctx.anim_damage)
         {
             ctx.anim_damage->note_image(tk::CacheKey::media(drawn_key), image_rect_);
@@ -243,16 +250,14 @@ void ImageViewerPage::paint_content(tk::PaintCtx& ctx)
     else
     {
         cv.fill_rounded_rect(image_rect_, 4.0f, ctx.theme.palette.chrome_bg);
-        cv.stroke_rounded_rect(image_rect_, 4.0f, ctx.theme.palette.border,
-                               1.0f);
+        cv.stroke_rounded_rect(image_rect_, 4.0f, ctx.theme.palette.border, 1.0f);
 
         // Spinning-dots loading indicator
         const float cx = image_rect_.x + image_rect_.w * 0.5f;
         const float cy = image_rect_.y + image_rect_.h * 0.5f;
-        const auto elapsed_ms =
-            std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now() - loading_start_)
-                .count();
+        const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    std::chrono::steady_clock::now() - loading_start_)
+                                    .count();
         const float phase = static_cast<float>(elapsed_ms % 1000) / 1000.0f;
         tk::draw_spinner_dots(cv, {cx, cy}, phase, /*radius=*/14.0f,
                               /*dot_r=*/3.0f, tk::Color{220, 220, 220, 255});
@@ -301,9 +306,8 @@ bool ImageViewerPage::on_content_pointer_down(tk::Point w, tk::Point local)
     return false;
 }
 
-bool ImageViewerPage::on_content_pointer_up(tk::Point /*w*/,
-                                                tk::Point /*local*/,
-                                                bool /*inside_self*/)
+bool ImageViewerPage::on_content_pointer_up(tk::Point /*w*/, tk::Point /*local*/,
+                                            bool /*inside_self*/)
 {
     if (press_drag_)
     {
@@ -345,8 +349,7 @@ bool ImageViewerPage::on_wheel(tk::Point local, float /*dx*/, float dy, bool /*i
     // fit_zoom_ can exceed kZoomMax for a small thumbnail upscaled to cover
     // 75% of the viewport (see recompute_base_) — widen the ceiling to
     // match rather than violate std::clamp's lo <= hi precondition.
-    float new_zoom =
-        std::clamp(zoom_ * factor, fit_zoom_, std::max(fit_zoom_, kZoomMax));
+    float new_zoom = std::clamp(zoom_ * factor, fit_zoom_, std::max(fit_zoom_, kZoomMax));
     if (new_zoom == zoom_)
     {
         return true;
@@ -357,10 +360,8 @@ bool ImageViewerPage::on_wheel(tk::Point local, float /*dx*/, float dy, bool /*i
     tk::Point w{local.x + b.x, local.y + b.y};
     float old_iw = base_.w * zoom_;
     float old_ih = base_.h * zoom_;
-    float frac_x =
-        (old_iw > 0.0f) ? (w.x - (b.x + b.w * 0.5f + pan_x_)) / old_iw : 0.0f;
-    float frac_y =
-        (old_ih > 0.0f) ? (w.y - (b.y + b.h * 0.5f + pan_y_)) / old_ih : 0.0f;
+    float frac_x = (old_iw > 0.0f) ? (w.x - (b.x + b.w * 0.5f + pan_x_)) / old_iw : 0.0f;
+    float frac_y = (old_ih > 0.0f) ? (w.y - (b.y + b.h * 0.5f + pan_y_)) / old_ih : 0.0f;
 
     zoom_ = new_zoom;
     pan_x_ = w.x - (b.x + b.w * 0.5f) - frac_x * base_.w * zoom_;
@@ -386,9 +387,13 @@ bool ImageViewerPage::on_key(const tk::KeyEvent& e)
     const tk::Rect b = host_.host_bounds();
     const tk::Point centre_local{b.w * 0.5f, b.h * 0.5f};
     if (matches(ShortcutId::ImageZoomIn, e))
+    {
         return on_wheel(centre_local, 0.0f, -1.0f, false);
+    }
     if (matches(ShortcutId::ImageZoomOut, e))
+    {
         return on_wheel(centre_local, 0.0f, 1.0f, false);
+    }
     if (matches(ShortcutId::ImageFit, e))
     {
         zoom_ = fit_zoom_;
@@ -397,19 +402,32 @@ bool ImageViewerPage::on_key(const tk::KeyEvent& e)
         return true;
     }
     if (e.alt || e.meta || e.ctrl)
+    {
         return false;
+    }
     constexpr float kPanStep = 48.0f;
     float dx = 0.0f, dy = 0.0f;
     switch (e.key)
     {
-    case tk::Key::Left: dx = kPanStep; break;
-    case tk::Key::Right: dx = -kPanStep; break;
-    case tk::Key::Up: dy = kPanStep; break;
-    case tk::Key::Down: dy = -kPanStep; break;
-    default: return false;
+    case tk::Key::Left:
+        dx = kPanStep;
+        break;
+    case tk::Key::Right:
+        dx = -kPanStep;
+        break;
+    case tk::Key::Up:
+        dy = kPanStep;
+        break;
+    case tk::Key::Down:
+        dy = -kPanStep;
+        break;
+    default:
+        return false;
     }
     if (base_.w * zoom_ <= b.w && base_.h * zoom_ <= b.h)
+    {
         return false; // whole image visible — nothing to pan
+    }
     pan_x_ += dx;
     pan_y_ += dy;
     clamp_pan();

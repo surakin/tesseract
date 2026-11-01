@@ -24,7 +24,9 @@ inline float sidebar_max_width(float window_w, float longest_row_w)
     const float floor_w = static_cast<float>(tesseract::visual::kSidebarWidth);
     const float window_term = std::max(window_w * 0.5f, floor_w);
     if (longest_row_w <= 0.0f)
+    {
         return window_term;
+    }
     return std::min(window_term, longest_row_w);
 }
 
@@ -33,14 +35,16 @@ inline float sidebar_max_width(float window_w, float longest_row_w)
 inline float sidebar_collapsed_width(float compact_avatar)
 {
     if (compact_avatar <= 0.0f)
+    {
         return static_cast<float>(tesseract::visual::kSidebarCollapsedWidth);
+    }
     return compact_avatar + 16.0f; // 8px of margin each side of the avatar
 }
 
 struct SidebarDragResult
 {
-    float width;      // expanded width to apply (meaningful only when !collapsed)
-    bool  collapsed;  // true → icon-only mode
+    float width;    // expanded width to apply (meaningful only when !collapsed)
+    bool collapsed; // true → icon-only mode
 };
 
 // Resolve a raw dragged width (drag-start width + pointer delta) to a snapped,
@@ -55,7 +59,9 @@ inline SidebarDragResult resolve_sidebar_drag(
     const float snap_threshold = (collapsed_w + min_expanded) * 0.5f;
 
     if (raw_w < snap_threshold)
+    {
         return {min_expanded, true};
+    }
 
     const float hi = std::max(min_expanded, max_w);
     return {std::clamp(raw_w, min_expanded, hi), false};

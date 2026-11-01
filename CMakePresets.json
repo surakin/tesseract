@@ -83,14 +83,6 @@
       }
     },
     {
-      "name": "macos-appkit-arm64-appstore",
-      "displayName": "macOS – AppKit arm64 (Mac App Store)",
-      "inherits": "macos-appkit-arm64-release",
-      "cacheVariables": {
-        "TESSERACT_MAC_APP_STORE": "ON"
-      }
-    },
-    {
       "name": "macos-appkit-x86_64-debug",
       "displayName": "macOS – AppKit x86_64 (Debug)",
       "inherits": "base",
@@ -108,6 +100,19 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
+    },
+    {
+      "name": "macos-appkit-appstore",
+      "displayName": "macOS – AppKit universal (Mac App Store)",
+      "inherits": "base",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" },
+      "cacheVariables": {
+        "TESSERACT_UI": "macos",
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_OSX_ARCHITECTURES": "arm64;x86_64",
+        "Rust_CARGO_TARGET": "aarch64-apple-darwin",
+        "TESSERACT_MAC_APP_STORE": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -119,8 +124,8 @@
     { "name": "linux-release",              "configurePreset": "linux-release"              },
     { "name": "macos-appkit-arm64-debug",   "configurePreset": "macos-appkit-arm64-debug"   },
     { "name": "macos-appkit-arm64-release", "configurePreset": "macos-appkit-arm64-release" },
-    { "name": "macos-appkit-arm64-appstore", "configurePreset": "macos-appkit-arm64-appstore" },
     { "name": "macos-appkit-x86_64-debug",  "configurePreset": "macos-appkit-x86_64-debug"  },
-    { "name": "macos-appkit-x86_64-release","configurePreset": "macos-appkit-x86_64-release"}
+    { "name": "macos-appkit-x86_64-release","configurePreset": "macos-appkit-x86_64-release"},
+    { "name": "macos-appkit-appstore",      "configurePreset": "macos-appkit-appstore"      }
   ]
 }

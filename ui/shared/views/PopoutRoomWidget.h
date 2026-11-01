@@ -56,10 +56,8 @@ public:
         return room_view_ ? room_view_->room_media_view() : nullptr;
     }
 
-    // Fires whenever the confirm dialog opens/closes, so the platform shell
-    // can re-query native-overlay visibility (hide the compose text area /
-    // search fields while the dialog covers them — native child controls
-    // always paint over canvas-drawn overlays otherwise).
+    // Fires whenever the confirm dialog opens/closes, so the host relayouts;
+    // arrange() then hides the compose text area while the dialog covers it.
     std::function<void()> on_layout_changed;
 
     void show_media_viewer(bool show);
@@ -78,10 +76,10 @@ private:
     // MainAppWidget::any_modal_open_().
     bool any_modal_open_() const;
 
-    RoomView*           room_view_       = nullptr; // owned via add_child
-    MediaViewerOverlay* media_viewer_    = nullptr;
-    ForwardRoomPicker*  forward_picker_  = nullptr;
-    ConfirmDialog*      confirm_dialog_  = nullptr;
+    RoomView* room_view_ = nullptr; // owned via add_child
+    MediaViewerOverlay* media_viewer_ = nullptr;
+    ForwardRoomPicker* forward_picker_ = nullptr;
+    ConfirmDialog* confirm_dialog_ = nullptr;
 
     bool modal_was_open_ = false;
 };

@@ -1,6 +1,81 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-10-18**. 3406 C++ + 1159 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-11-01**. 3825 C++ + 1572 Rust tests.
+
+> **Forwarded messages, MSC4553 (2026-10-30).**
+> A forward carries the original message, its author, room and event in
+> `org.matrix.msc4553.forwarded`, plus a "Forwarded from … - view original
+> message" text fallback for other clients, left out in bridged rooms so the
+> bridge relays the original message. Received forwards show a
+> "Forwarded from X" line (Classic, Bubbles and IRC) that jumps to the original,
+> render the original's content, credit a forwarded emote to its author, and
+> can't be edited (edits to them are ignored). Room-list previews,
+> notifications, reply quotes and thread previews show the forwarded text
+> (quotes and thread previews only when the forward is in the local event
+> cache). Polls are forwarded as plain copies. Linux build, ctest 3813/3813,
+> cargo 1564; user-verified Windows.
+
+> **Request log and tunable warm-up limits (2026-10-29).**
+> Build with `-DTESSERACT_ENABLE_REQUEST_LOG=ON` (off by default), then launch
+> with `TESSERACT_REQUEST_LOG=1` (or a file path) to log every
+> homeserver request (matrix-sdk's `send` spans: method, normalised endpoint,
+> status, duration, requests in flight, sizes) to `request_timings.log`, with a
+> per-endpoint summary (count, total/avg/max ms, requests per second, peak in
+> flight) every 10 s. Warm-up concurrency is much higher than before (warm
+> timelines 16, bridge checks 16, timestamp fetches 32, image packs 16,
+> presence 16). Warming starts after the first room-list sync response, since
+> waiting for the whole list cost minutes on a large account. The bridge check
+> now covers every room, visible first. Linux release build, ctest 3773/3773.
+
+> **Faster first sync after sign-in (2026-10-29).**
+> Background warming (bridge-status check, inactive-room backfill, unread and
+> favourite prefetch) starts once the room list reaches `Running` (its first
+> sync response) instead of competing with it, and runs at higher
+> concurrency. The bridge check covers every room, visible first, and a request
+> made mid-check is queued. The inactive-room backfill fetches each room's
+> newest message timestamp directly (one `/messages` limit 1 with a message-type
+> filter, 32 at a time; sync can't supply it for rooms whose newest event is
+> encrypted, a reaction or state) and retries failed rooms. Image-pack fetches
+> run 16 at a time. Linux release build, ctest 3773/3773.
+
+> **Provisioned username and sign-in hint (2026-10-29).**
+> A per-user `provisioning.json` in the config folder (`%APPDATA%\Tesseract\`
+> on Windows) can preset `default_homeserver` and `default_username`, overriding
+> the registry, macOS preference and `/etc` sources; the registry value and
+> preference `DefaultUsername` work too. The username prefills the password
+> form, and a Matrix ID provisioned or typed in the homeserver field is sent to
+> Matrix Authentication Service as an MSC4198 hint. Any provisioning hides
+> "Find a server". Linux release build, ctest 3762/3762.
+
+> **Profile timezone: auto-detect and timeline offset (2026-10-28).**
+> A "Detect automatically" checkbox next to the profile timezone picker keeps
+> the profile in sync with the computer's timezone (per-device setting; the
+> picker is disabled while on). Settings → Appearance → Timeline can show each
+> sender's timezone difference after their name (`+2h`, `-5:30`; Classic and
+> Bubbles layouts), fetched lazily per visible sender. Linux release build,
+> ctest 3757/3757.
+
+> **MatrixRTC, current MSCs (2026-10-21).**
+> Calls now understand the post-rewrite MatrixRTC: sticky `m.rtc.member`
+> events, the `m.call` slot, hashed LiveKit identities, `m.rtc.encryption_key`
+> in both shapes, and `m.rtc.invite` with a Decline button on the call banner.
+> Calls also publish a sticky `m.rtc.member` and ring DMs with `m.rtc.invite`
+> (matrix-sdk is pinned to an upstream commit with MSC4354 sticky events;
+> homeservers need MSC4354 enabled). Call keys are checked against the
+> sender's membership and cross-signing; a joiner is sent the key in use and
+> only leaves and a 30 minute timer rotate it (5 s activation delay). Call
+> members from newer Element clients, which ruma's typed model rejects, are read
+> from the raw event. The call lobby releases the camera before the call
+> opens it. A withdrawn call invite removes the Decline button. Qt6 build, ctest 3504/3504, cargo 1309/1310.
+
+> **Timeline content column (2026-10-21, v0.9.5).**
+> Room timelines lay their rows out in a column that is a percentage of the
+> window (100% by default, so nothing changes until you narrow it; the column
+> then sits beside the room list), so join/leave lines, room events and
+> messages stay together in wide windows. Settings → Appearance sets
+> the width with a new slider and whether the column is left or centered; thread
+> panels and the IRC layout keep the full width. The media scrub bar uses the
+> same slider. Qt6 + GTK4 build, ctest 3482/3482.
 
 > **Thread follow (MSC4306) (2026-10-18, v0.9.4).**
 > Replying in or being mentioned in a thread follows it; unfollowed threads no
@@ -2602,11 +2677,13 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **Space children hidden from the root room list** — they appear only when navigating into the parent.
 - **Unjoined space children** — a collapsible "Not joined" section below the joined-rooms list shows every child room the user hasn't joined. Clicking opens `RoomPreviewView` (name, avatar, topic, member count, Join button) without leaving the current room. Summaries fetched concurrently via MSC3266 with generation-based cancellation.
 
-## Shared UI toolkit (`tesseract_tk`)
+## Shared UI toolkit (`ui/shared/`)
+
+The shared UI code builds as four static libraries, each linking the previous: `tesseract_tk` (`tk/`), `tesseract_platform` (`platform/`, non-UI OS services), `tesseract_views` (`views/`) and `tesseract_app` (`app/`); the `layering_check` ctest enforces the include direction. The bullets below describe the toolkit and views.
 
 - **`tk::Canvas`** — abstract 2D backend with four concrete impls (`canvas_d2d`, `canvas_qpainter`, `canvas_cairo`, `canvas_cg`). Color / Rect / Point / Image / TextLayout primitives; rounded-rect, stroke, push/pop clip; circle-cropped image draw; initials disc helper.
 - **`tk::Widget`** — measure / arrange / paint + pointer / wheel dispatch with `dispatch_pointer_down` + `world_to_local` capture semantics. Every subclass is constructed exclusively through `tk::create_widget()`/`create_root_widget()` (a Host-aware factory backed by a thread-local pending-`Host*` stack), never directly — constructors are `protected` and friend the factory via `TK_WIDGET_FACTORY_FRIEND`, so `host()` is valid from the first line of any constructor with no manual parameter plumbing.
-- **`tk::Host`** — per-platform integration surface (repaint scheduling, post-to-UI, canvas-composited native text controls). `request_repaint`, `post_to_ui`, `make_text_field`, `make_text_area`, `make_audio_player`, `make_audio_capture`, `encode_for_send`.
+- **`tk::Host`** — per-platform integration surface (repaint scheduling, post-to-UI, canvas-composited native text controls). `request_repaint`, `post_to_ui`, `theme`, `make_text_field`, `make_text_area`, `make_audio_player`, `make_audio_capture`, `encode_for_send`.
 - **Keyboard focus** — real Tab/Shift-Tab traversal (`Host::advance_focus`/`request_focus`/`clear_focus`) with a `:focus-visible`-style ring shown only after keyboard navigation, not a mouse click. Traversal order follows each widget's own `bounds()` in reading order (top-to-bottom rows, left-to-right within a row via a row-overlap comparator), not `add_child()` insertion order, so `Stack`/rect-positioned widgets (grids, pickers) traverse sensibly too. `Host::set_focus_scope()`/`clear_focus_scope()` lets an open modal (Room Settings, an overlay, ...) scope Tab traversal to its own subtree. The compose box is focused by default whenever nothing else needs attention. Native text fields (`tk::TextField`/`tk::TextArea`) participate directly as self-positioning widgets in the tree rather than shell-polled overlays.
 - **Canvas-composited native text controls** — `NativeTextField` (`QLineEdit` / `GtkEntry` / `BetterTextField` / `NSTextField`) and `NativeTextArea` (`QTextEdit` / `GtkTextView` / `BetterTextArea` / `NSTextView`) back text input for IME/selection correctness, but render *into* the canvas rather than floating on top of it: each control's native surface is captured via `rendered_image()` and composited with `Canvas::draw_image()`, so it participates in clipping, opacity, and paint order like any other canvas content. Windows uses the bundled BetterText control (`third_party/bettertext`) rather than a plain Win32 EDIT. `set_placeholder` is implemented on all four platforms (GTK4 uses a `dim-label` `GtkLabel` overlay child since `GtkTextView` has no native placeholder API).
 - **Shared views** — `LoginView`, `RoomListView`, `MessageListView`, `EmojiPicker`, `StickerPicker`, `RecoveryBanner`, `ComposeBar` mounted identically on every platform.
@@ -2644,7 +2721,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **Inline images** — thumbnail to max 320 × 200, MSC2530 caption rule applied, rounded-rect chrome. Bytes are decoded off the UI thread on all four shells (`QImageReader` on Qt6, WIC on Win32, `CGImageSource` on macOS, `GdkPixbuf` on GTK4) and posted back via `post_to_ui_` so large images never stall paint or input.
 - **Media-preview gating (MSC4278)** — a global `media_previews` setting (`Off` / `Private` / `On`, default `On`) backed by the `m.media_preview_config` account-data event controls whether inline image/sticker/video thumbnails auto-load. Suppressed media renders a BlurHash (MSC2448) placeholder behind a click-to-load pill and is not fetched until revealed; `Private` mode suppresses only in public rooms (resolved against each room's cached `join_rule`, with the per-room `m.media_preview_config` override applied on top). The decision is a single pure function (`app/media_preview_policy.h::media_allowed`) consulted at both the receive-time fetch gate and the paint-time placeholder predicate, so a revealed/allowed item is fetched exactly when it is shown. **The user's own media is exempt from public-room suppression in `Private` mode** (you already have it locally and it is never a privacy/safety concern to you), but `Off` still suppresses everything including your own uploads. Wired once in `ShellBase`, so all four shells share it.
 - **File cards** — fixed 56-px-tall rounded card with filename (ellipsis-trimmed) + human-readable size.
-- **Inline stickers** — borderless 256 × 256 thumbnail; right-click context menu offers "Add to Saved Stickers" (Qt6 / GTK4 / macOS).
+- **Inline stickers** — borderless 256 × 256 thumbnail; the message action menu offers "Add to Saved Stickers".
 - **Animated images** — GIF / APNG / animated WebP frame-by-frame decoding on Qt6 (`QImageReader`), GTK4 (`GdkPixbufAnimationIter`), Win32 (`IWICBitmapDecoder` + per-frame metadata), macOS (`CGImageSource`). 60 Hz frame tick repaints when any frame advances; delays clamped ≥ 20 ms.
 - **Homeserver upload limit** — `media_upload_limit()` cached per session.
 - **Clipboard image paste + drag-drop** in the compose bar; image data re-encoded to JPEG ≤ 1600 × 1200 when sent via `encode_for_send(compress=true)`.
@@ -2667,7 +2744,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - **Sticker picker** — Favorites tab + per-pack tabs; search; virtualised grid. Floating panel on every platform (Qt6 `QFrame`, GTK4 `GtkPopover`, macOS `NSPanel`, Win32 `WS_POPUP` HWND). Same `:shortcode:` hover tooltip as emoji picker.
 - **GridView hover tracking** — `GridView::on_pointer_move` / `on_pointer_leave` update `hovered_index_` and expose `hovered_index()` + `rect_at()` accessors; cell highlight on hover now works correctly (was silently broken).
 - **Recent emoji (MSC4356)** — `m.recent_emoji` + `io.github.johennes.msc4356.recent_emoji` account-data, dual-written on every bump; reads stable → unstable → legacy `io.element.recent_emoji` so existing Element users keep their picker rank. 100-entry cap, move-to-front-and-increment semantics, count-desc top-N for the Frequents tab.
-- **Add to Saved Stickers** — right-click on an inline sticker offers `save_sticker_to_user_pack` (all four platforms: Qt6 / GTK4 / macOS / Win32 via `WM_RBUTTONUP` + `TrackPopupMenu`). All platforms now pass the real `ImageInfo` JSON instead of `"{}"`, so width/height/mimetype/size are preserved in the saved pack entry.
+- **Add to Saved Stickers** — the message action menu (shared `SaveSticker` action, no per-shell menu) offers `save_sticker_to_user_pack` on stickers not yet saved. All platforms now pass the real `ImageInfo` JSON instead of `"{}"`, so width/height/mimetype/size are preserved in the saved pack entry.
 - **Toggle favourite** — `toggle_favorite_sticker` flips the `im.tesseract.favorite` flag on user-pack entries.
 - **Async sticker image fetch** — Win32 + Qt6 + macOS + GTK4 all run a worker thread + decode + post-to-UI + cache + repaint per pending sticker. GTK4 also wires the same async path for `EmojiPicker` custom emoticon tabs (`ensure_emoji_image_async`, deduped via `emoji_fetches_in_flight_`).
 - **Unified async picker image cache** — `EmojiPicker` and `StickerPicker` now share the message list's `tk_images_` / `anim_cache_` on all four shells (Qt6 dropped its private per-picker caches), so picker artwork and inline-message artwork are decoded once and reused. Images route through `media_disk_cache_`, so custom emoticons and stickers survive an app restart, and decode runs off the UI thread (Qt6 `QImageReader`, GTK4 `GdkPixbuf` + cairo, macOS `CGImageSource`, Win32 WIC) so the first paint of a large pack no longer stalls the UI.
@@ -2737,7 +2814,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 - Push-rule evaluation via `evaluate_push_rules` in `sdk/src/client.rs`; fires on `VectorDiff::PushBack` (live events only); `is_mention` from `Action::is_highlight()`.
 - **Win32** — WinRT `Windows.UI.Notifications.ToastNotificationManager`; `ToastGeneric` XML with sender, optional room name (omitted for DMs), 120-char body preview; `WM_TESSERACT_NOTIFY_CLICK` navigates to the room. AUMID registered in `HKCU\Software\Classes\AppUserModelId\` at startup (required for non-packaged apps); `notify()` wrapped in `try`/`catch(winrt::hresult_error)` for robustness.
 - **Qt6** — `QDBusInterface` against `org.freedesktop.Notifications` (legacy D-Bus, used everywhere except Flatpak); always a fresh popup (`replaces_id=0`, never updates a prior one in place); click navigates + raises window.
-- **GTK4** — `GDBusConnection` (session bus); same legacy-D-Bus/Flatpak-portal split and always-fresh-popup behavior as Qt6, via a shared `tesseract::linux_notify::NotificationCorrelation` helper (`ui/shared/linux_notification_reply.h`) for the id↔room/event bookkeeping both notifiers need.
+- **GTK4** — `GDBusConnection` (session bus); same legacy-D-Bus/Flatpak-portal split and always-fresh-popup behavior as Qt6, via a shared `tesseract::linux_notify::NotificationCorrelation` helper (`ui/shared/platform/linux/linux_notification_reply.h`) for the id↔room/event bookkeeping both notifiers need.
 - **macOS** — `UNUserNotificationCenter`; `UNUserNotificationCenterDelegate` on `MainWindowController`; in-foreground suppression when the source room is active; click navigates to the room.
 - **Image & sticker previews** — `m.image` / `m.sticker` notifications embed the message picture (SDK fetch, 2 MiB cap, E2EE-transparent; a dedicated `m.sticker` push handler — stickers are a distinct event type). Win32 large inline `<image>` + circular avatar `appLogoOverride`; macOS `UNNotificationAttachment`; Linux single image slot. Gated by the `notification_image_previews` setting.
 - **Lock-screen privacy gate** — cross-platform `tesseract::IScreenLock` (Win32 WTS, macOS `com.apple.screenIsLocked`, Linux logind `LockedHint`); `ShellBase::notification_image_allowed_()` strips the picture whenever the screen is locked (avatars are not gated).
@@ -2748,7 +2825,7 @@ For build instructions, architectural overview, and the open-roadmap items, see 
 
 ## matrix-sdk & ruma feature flags
 
-Cargo features enabled on the Rust SDK crates (`sdk/Cargo.toml`), stable and unstable. The MSCs these unstable flags unlock are described in context elsewhere in this file and in README.md's "Supported MSCs" section; this list tracks the crate-level flags themselves.
+Cargo features enabled on the Rust SDK crates (`sdk/Cargo.toml`), stable and unstable. The MSCs these unstable flags unlock are described in context elsewhere in this file and in docs/MSCS.md; this list tracks the crate-level flags themselves.
 
 - **matrix-sdk** `e2e-encryption` (stable) — end-to-end encryption, cross-signing, key backup.
 - **matrix-sdk** `bundled-sqlite` (stable) — vendors SQLite so the app has no system SQLite dependency; see Build & packaging below.

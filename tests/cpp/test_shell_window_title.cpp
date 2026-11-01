@@ -14,14 +14,17 @@ namespace
 struct ShellWindowTitleTestShell : tesseract::test::TestShellBase
 {
 
-    void apply_thread_messages_(
-        const std::string&,
-        std::vector<tesseract::views::MessageRowData>, bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
 
     void apply_window_title_ui_(const std::string& title) override
     {
@@ -51,15 +54,13 @@ struct ShellWindowTitleTestShell : tesseract::test::TestShellBase
 
 } // namespace
 
-TEST_CASE("window title is bare product name with no active room",
-          "[shell][window_title]")
+TEST_CASE("window title is bare product name with no active room", "[shell][window_title]")
 {
     ShellWindowTitleTestShell s;
     CHECK(s.compose_window_title_() == "Tesseract");
 }
 
-TEST_CASE("window title reflects the active room name",
-          "[shell][window_title]")
+TEST_CASE("window title reflects the active room name", "[shell][window_title]")
 {
     ShellWindowTitleTestShell s;
     s.set_room("!r:x", "General");
@@ -67,8 +68,7 @@ TEST_CASE("window title reflects the active room name",
     CHECK(s.last_title == "Tesseract - General");
 }
 
-TEST_CASE("opening app settings drops the room name, closing restores it",
-          "[shell][window_title]")
+TEST_CASE("opening app settings drops the room name, closing restores it", "[shell][window_title]")
 {
     ShellWindowTitleTestShell s;
     s.set_room("!r:x", "General");
@@ -82,8 +82,7 @@ TEST_CASE("opening app settings drops the room name, closing restores it",
     CHECK(s.last_title == "Tesseract - General");
 }
 
-TEST_CASE("title stays bare while settings is open even if rooms refresh",
-          "[shell][window_title]")
+TEST_CASE("title stays bare while settings is open even if rooms refresh", "[shell][window_title]")
 {
     ShellWindowTitleTestShell s;
     s.set_room("!r:x", "General");

@@ -15,6 +15,7 @@ use parking_lot::Mutex as PLMutex;
 use tracing::{info, warn};
 
 use super::{
+    e2ee::SecretBytes,
     livekit_room::{LiveKitRoom, MemberTransports, RemoteSfuRoom, SharedKeys},
     session::get_openid_token,
     transport::fetch_livekit_jwt,
@@ -126,13 +127,23 @@ impl SfuSet {
     }
 
     /// Store a peer's frame key and apply it to every connection.
-    pub fn apply_key(&self, sender_user_id: &str, sender_device_id: &str, index: i32, raw_key: Vec<u8>) {
-        self.keys.store(sender_user_id, sender_device_id, index, raw_key.clone());
+    pub fn apply_key(
+        &self,
+        sender_user_id: &str,
+        sender_device_id: &str,
+        index: i32,
+        raw_key: SecretBytes,
+    ) {
+        self.keys
+            .store(sender_user_id, sender_device_id, index, raw_key.clone());
         let mut applied =
-            self.primary.apply_peer_key(sender_user_id, sender_device_id, index, &raw_key);
+            self.primary
+                .apply_peer_key(sender_user_id, sender_device_id, index, &raw_key);
         for remote in self.remotes.lock().values() {
             applied +=
-                remote.room.apply_peer_key(sender_user_id, sender_device_id, index, &raw_key);
+                remote
+                    .room
+                    .apply_peer_key(sender_user_id, sender_device_id, index, &raw_key);
         }
         if applied == 0 {
             info!(
@@ -140,6 +151,11 @@ impl SfuSet {
                  (participant not yet connected)"
             );
         }
+    }
+
+    /// Forget the stored keys of devices that left the call.
+    pub fn forget_departed_keys(&self, live: &std::collections::HashSet<(String, String)>) {
+        self.keys.retain_members(live);
     }
 
     /// Apply every stored key to the participants of every connection.
@@ -168,7 +184,9 @@ impl SfuSet {
         {
             let mut remotes = self.remotes.lock();
             for url in to_drop {
-                let Some(remote) = remotes.get_mut(&url) else { continue };
+                let Some(remote) = remotes.get_mut(&url) else {
+                    continue;
+                };
                 let since = *remote.unused_since.get_or_insert_with(Instant::now);
                 if since.elapsed() >= DROP_GRACE {
                     if let Some(r) = remotes.remove(&url) {
@@ -190,7 +208,10 @@ impl SfuSet {
     async fn connect_remote(&self, service_url: &str) {
         {
             let retries = self.retries.lock();
-            if retries.get(service_url).is_some_and(|r| Instant::now() < r.next_attempt) {
+            if retries
+                .get(service_url)
+                .is_some_and(|r| Instant::now() < r.next_attempt)
+            {
                 return;
             }
             // Bound the bookkeeping a member can force with distinct URLs.
@@ -209,7 +230,10 @@ impl SfuSet {
                 room.apply_all_peer_keys();
                 self.remotes.lock().insert(
                     service_url.to_owned(),
-                    Remote { room: Arc::new(room), unused_since: None },
+                    Remote {
+                        room: Arc::new(room),
+                        unused_since: None,
+                    },
                 );
             }
             Err(e) => {
@@ -222,7 +246,10 @@ impl SfuSet {
                 );
                 retries.insert(
                     service_url.to_owned(),
-                    Retry { failures, next_attempt: Instant::now() + wait },
+                    Retry {
+                        failures,
+                        next_attempt: Instant::now() + wait,
+                    },
                 );
             }
         }
@@ -271,15 +298,25 @@ impl SfuSet {
         .await
     }
 
+    /// The call is over: nothing any connection still receives reaches the UI.
+    pub fn end_events(&self) {
+        self.ctx.members.end();
+    }
+
+    /// Stop sending anything of ours (mic, camera, screen share) and receiving
+    /// into the UI, at once and without waiting for the network. Needs a tokio
+    /// runtime context.
+    pub fn stop_media(&self) {
+        self.end_events();
+        self.primary.stop_local_media();
+    }
+
     /// Leave every SFU, concurrently, without waiting longer than a few
-    /// seconds (this runs on the UI thread's hang-up call).
+    /// seconds (this runs on the runtime, in a hang-up's teardown or when the
+    /// connection to our SFU is lost).
     pub async fn disconnect_all(&self) {
-        let remotes: Vec<Arc<RemoteSfuRoom>> = self
-            .remotes
-            .lock()
-            .drain()
-            .map(|(_, r)| r.room)
-            .collect();
+        let remotes: Vec<Arc<RemoteSfuRoom>> =
+            self.remotes.lock().drain().map(|(_, r)| r.room).collect();
         let primary = Arc::clone(&self.primary);
         let all = async move {
             let mut tasks = vec![tokio::spawn(async move { primary.disconnect().await })];
@@ -290,7 +327,10 @@ impl SfuSet {
                 let _ = t.await;
             }
         };
-        if tokio::time::timeout(Duration::from_secs(3), all).await.is_err() {
+        if tokio::time::timeout(Duration::from_secs(3), all)
+            .await
+            .is_err()
+        {
             warn!("rtc: timed out disconnecting from SFUs");
         }
     }
@@ -307,7 +347,9 @@ mod tests {
     #[test]
     fn remote_service_urls_must_be_public_https() {
         assert!(remote_service_url_ok("https://lk-jwt.example.org"));
-        assert!(remote_service_url_ok("https://lk-jwt.example.org:8443/path"));
+        assert!(remote_service_url_ok(
+            "https://lk-jwt.example.org:8443/path"
+        ));
         for bad in [
             "http://lk-jwt.example.org",
             "https://127.0.0.1/",

@@ -83,9 +83,9 @@ struct RoomSettingsChanges
     // Only ever true (turning encryption on) — there is no disable
     // operation anywhere in matrix-sdk, so a "turn off" change is never
     // emitted even if a stale staged=false/original=true state occurs.
-    std::optional<bool>        is_encrypted;
+    std::optional<bool> is_encrypted;
     std::optional<std::string> join_rule;
-    std::optional<bool>        guest_access;
+    std::optional<bool> guest_access;
     std::optional<std::string> history_visibility;
     std::optional<RoomMediaOverrideChange> media_override;
     std::optional<tesseract::RoomPermissions> permissions;
@@ -106,19 +106,18 @@ struct RoomSettingsFieldValues
     std::string name;
     std::string topic;
     std::string avatar_mxc;
-    bool        is_encrypted = false;
+    bool is_encrypted = false;
     std::string join_rule;
-    bool        guest_access = false;
+    bool guest_access = false;
     std::string history_visibility;
-    bool        has_media_override = false;
+    bool has_media_override = false;
     tesseract::MediaPreviewConfig::Mode media_override_mode =
         tesseract::MediaPreviewConfig::Mode::On;
     tesseract::RoomPermissions permissions;
 };
 
-RoomSettingsChanges compute_room_settings_changes(
-    const RoomSettingsFieldValues& original,
-    const RoomSettingsFieldValues& staged);
+RoomSettingsChanges compute_room_settings_changes(const RoomSettingsFieldValues& original,
+                                                  const RoomSettingsFieldValues& staged);
 
 // True iff `staged` would leave the current user unable to ever send
 // m.room.power_levels again. `own` is the user's own power level as of when
@@ -153,11 +152,16 @@ public:
     // value. The server's value becomes the baseline Accept diffs against.
     void refresh_room_info(const tesseract::RoomInfo& info);
     void close();
-    bool is_open() const { return open_; }
-    const std::string& room_id() const { return room_id_; }
+    bool is_open() const
+    {
+        return open_;
+    }
+    const std::string& room_id() const
+    {
+        return room_id_;
+    }
 
-    using ImageProvider =
-        std::function<const tk::Image*(const std::string& mxc)>;
+    using ImageProvider = std::function<const tk::Image*(const std::string& mxc)>;
     void set_avatar_provider(ImageProvider p);
 
     // Independent per-field permission gating (General tab).
@@ -165,8 +169,7 @@ public:
 
     // Independent per-field permission gating (Security & Privacy tab).
     void set_security_field_permissions(bool can_encryption, bool can_join_rule,
-                                        bool can_guest_access,
-                                        bool can_history_visibility);
+                                        bool can_guest_access, bool can_history_visibility);
 
     // Re-seeds BOTH original_*_ and staged_*_ for encryption/join_rule/
     // guest_access/history_visibility together, establishing the baseline
@@ -177,8 +180,8 @@ public:
     // sliding sync at all, and the other three are subject to a separate
     // staleness issue), so open() only seeds a placeholder and this
     // corrects it moments later. Mirrors set_media_override's shape.
-    void set_security_state(bool is_encrypted, std::string join_rule,
-                            bool guest_access, std::string history_visibility);
+    void set_security_state(bool is_encrypted, std::string join_rule, bool guest_access,
+                            std::string history_visibility);
 
     // Single all-or-nothing gate for the Permissions tab (Matrix has no
     // finer granularity than "can this user send m.room.power_levels at
@@ -221,12 +224,18 @@ public:
     // Borrowed — owned via RoomGeneralSection's add_child(). Null when
     // constructed without a Host. Positions/shows itself; the shell no
     // longer needs to poll a rect or forward keystrokes for it.
-    tk::TextField* name_field() const { return general_->name_field(); }
+    tk::TextField* name_field() const
+    {
+        return general_->name_field();
+    }
 
     // Borrowed — owned via RoomGeneralSection's add_child(). Null when
     // constructed without a Host. Positions/shows itself; auto-grows via
     // RoomGeneralSection's TopicAreaCell (see RoomGeneralSection.cpp).
-    tk::TextArea* topic_field() const { return general_->topic_field(); }
+    tk::TextArea* topic_field() const
+    {
+        return general_->topic_field();
+    }
 
     // Shadows tk::Widget::set_visible (not virtual — same idiom as
     // tk::TextField's own shadow) so hiding this view also hides the name
@@ -246,8 +255,7 @@ public:
     // avatar_upload_). Stores the raw bytes/mime purely locally; no upload
     // happens until Accept (see PendingAvatarUpload / RoomSettingsChanges::
     // avatar_upload). Never touches server room state.
-    void set_staged_avatar_pending(std::vector<std::uint8_t> bytes,
-                                   std::string mime,
+    void set_staged_avatar_pending(std::vector<std::uint8_t> bytes, std::string mime,
                                    std::shared_ptr<tk::Image> preview);
     void set_avatar_busy(bool busy);
     void set_avatar_error(std::string error);
@@ -256,7 +264,10 @@ public:
     // preview) in ShellBase detect they belong to a since-superseded open()
     // session for the same room, since is_open()/room_id() alone can't tell
     // that apart from a fresh reopen of the same room.
-    std::uint64_t open_generation() const { return open_generation_; }
+    std::uint64_t open_generation() const
+    {
+        return open_generation_;
+    }
 
     // Called by the shell once the Accept commit resolves. ok=false keeps
     // the view open with `error` shown inline and the buttons re-enabled
@@ -283,18 +294,15 @@ public:
     // granularity than "can this user send the room's image-pack state
     // event at all").
     void set_image_pack_field_permissions(bool can_edit);
-    void set_image_pack_images(std::string pack_id,
-                               std::vector<tesseract::ImagePackImage> images);
+    void set_image_pack_images(std::string pack_id, std::vector<tesseract::ImagePackImage> images);
     void set_image_pack_provider(ImagePackImageProvider p);
-    void set_image_pack_tile_preview(std::uint64_t local_id,
-                                     std::shared_ptr<tk::Image> image);
+    void set_image_pack_tile_preview(std::uint64_t local_id, std::shared_ptr<tk::Image> image);
 
     // Fired once per pack after set_image_pack_available_packs, not just for
     // one "selected" pack — every listed pack needs its images fetched now
     // that they're all shown at once.
     std::function<void(std::string pack_id)> on_image_pack_images_needed;
-    std::function<void(std::uint64_t local_id,
-                       const std::vector<std::uint8_t>& bytes,
+    std::function<void(std::uint64_t local_id, const std::vector<std::uint8_t>& bytes,
                        const std::string& mime)>
         on_image_pack_pending_image_added;
 
@@ -309,8 +317,7 @@ public:
     // — unlike every other field here, this is a local-only account-data
     // preference (see RoomBridgeSection's own doc comment), so the shell
     // persists it right away instead of waiting for Accept.
-    std::function<void(std::string room_id, bool not_bridged)>
-        on_bridge_override_changed;
+    std::function<void(std::string room_id, bool not_bridged)> on_bridge_override_changed;
 
     // Moderation tab. open() puts the banned list in its loading state; the
     // shell fetches (Client::get_banned_members) and pushes the result via
@@ -322,9 +329,11 @@ public:
     void set_banned_members(std::vector<tesseract::BannedMember> members, bool complete = true);
     void set_unban_pending(const std::string& user_id, bool pending);
     void remove_banned_member(const std::string& user_id);
-    RoomModerationSection* moderation_section() const { return moderation_; }
-    std::function<void(std::string room_id, std::string user_id,
-                       std::string display_name)>
+    RoomModerationSection* moderation_section() const
+    {
+        return moderation_;
+    }
+    std::function<void(std::string room_id, std::string user_id, std::string display_name)>
         on_unban_requested;
 
     // Fired when the view's own layout-affecting state changes (open/close,
@@ -336,8 +345,7 @@ public:
     std::function<void()> on_cancel;
     // Only the fields that actually changed are populated (see
     // compute_room_settings_changes); avatar_mxc == "" means clear.
-    std::function<void(std::string room_id, RoomSettingsChanges changes)>
-        on_accept;
+    std::function<void(std::string room_id, RoomSettingsChanges changes)> on_accept;
     // Fired when the Leave button is clicked. This view never confirms or
     // touches server state itself (no Host/dialog dependency, same as every
     // other on_* callback here) — the shell is expected to confirm before
@@ -345,7 +353,7 @@ public:
     std::function<void(std::string room_id)> on_leave_room;
 
     tk::Size measure(tk::LayoutCtx&, tk::Size constraints) override;
-    void     arrange(tk::LayoutCtx&, tk::Rect bounds) override;
+    void arrange(tk::LayoutCtx&, tk::Rect bounds) override;
     // Thin gate around the base class's automatic paint_before_children() +
     // paint_children() + paint_after_children() traversal — this view is
     // simply not painted at all while closed. See paint_before_children()/
@@ -356,23 +364,35 @@ public:
 
     // Accessor used by tests to inspect Accept's enabled state (e.g. a
     // staged Permissions change that would lock the user out disables it).
-    tk::Button* accept_button() const { return accept_btn_; }
+    tk::Button* accept_button() const
+    {
+        return accept_btn_;
+    }
 
     // Accessor used by tests to drive/inspect the Leave button (label
     // toggles between "Leave room"/"Leave Space" per is_space_, disabled
     // while committing_).
-    tk::Button* leave_button() const { return leave_btn_; }
+    tk::Button* leave_button() const
+    {
+        return leave_btn_;
+    }
 
     // Accessor used by tests to drive the Permissions tab's combos directly
     // (mirrors the section's own combo accessors).
-    RoomPermissionsSection* permissions_section() const { return permissions_; }
+    RoomPermissionsSection* permissions_section() const
+    {
+        return permissions_;
+    }
 
     // Accessor for the "Emojis & Stickers" tab (see ImagePackEditorView.h).
     // Commits through this view's own shared Accept/Cancel footer like
     // every other tab — image_pack_editor()->build_result() is read into
     // RoomSettingsChanges::image_packs at Accept time, guarded by
     // has_changes() same as every other field here.
-    ImagePackEditorView* image_pack_editor() const { return image_packs_; }
+    ImagePackEditorView* image_pack_editor() const
+    {
+        return image_packs_;
+    }
 
     // Passthrough NativeTextField overlay rect for the image-pack tab's
     // "new pack name" row — empty whenever this tab isn't the selected one.
@@ -401,14 +421,14 @@ private:
     // change disables it too, everything else leaves it enabled.
     void refresh_accept_enabled_();
 
-    bool open_       = false;
+    bool open_ = false;
     bool committing_ = false;
     // Set from info.is_space in open(). Space-root mode hides the Media tab
     // and the encryption field (neither applies to a space: it has no
     // browsable message timeline, and encrypting it is discouraged since it
     // carries no message content of its own) and swaps the title bar to
     // "Space Settings".
-    bool is_space_   = false;
+    bool is_space_ = false;
 
     std::string room_id_;
     std::string original_name_;
@@ -421,12 +441,12 @@ private:
     std::string staged_avatar_pending_mime_;
     std::uint64_t open_generation_ = 0;
 
-    bool        original_is_encrypted_ = false;
-    bool        staged_is_encrypted_   = false;
+    bool original_is_encrypted_ = false;
+    bool staged_is_encrypted_ = false;
     std::string original_join_rule_;
     std::string staged_join_rule_;
-    bool        original_guest_access_ = false;
-    bool        staged_guest_access_   = false;
+    bool original_guest_access_ = false;
+    bool staged_guest_access_ = false;
     std::string original_history_visibility_;
     std::string staged_history_visibility_;
 
@@ -455,18 +475,18 @@ private:
     // comment for why).
     bool would_strip_other_admins_ = false;
 
-    tk::SideTabView*        tabs_        = nullptr;
-    RoomGeneralSection*     general_     = nullptr;
-    RoomMediaSection*       media_       = nullptr;
-    RoomSecuritySection*    security_    = nullptr;
+    tk::SideTabView* tabs_ = nullptr;
+    RoomGeneralSection* general_ = nullptr;
+    RoomMediaSection* media_ = nullptr;
+    RoomSecuritySection* security_ = nullptr;
     RoomPermissionsSection* permissions_ = nullptr;
-    RoomModerationSection*  moderation_  = nullptr;
-    ImagePackEditorView*    image_packs_ = nullptr;
-    RoomBridgeSection*      bridge_      = nullptr;
+    RoomModerationSection* moderation_ = nullptr;
+    ImagePackEditorView* image_packs_ = nullptr;
+    RoomBridgeSection* bridge_ = nullptr;
 
     tk::Button* accept_btn_ = nullptr;
     tk::Button* cancel_btn_ = nullptr;
-    tk::Button* leave_btn_  = nullptr;
+    tk::Button* leave_btn_ = nullptr;
 
     // Footer separator/background + commit-error text, promoted to a real
     // child widget (instead of being hand-painted between tabs_ and the
@@ -491,11 +511,11 @@ private:
     // as bridged — see open()'s tabs_->set_tab_visible call.
     static constexpr int kBridgeTabIdx = 6;
 
-    static constexpr float kPadX      = 24.0f;
+    static constexpr float kPadX = 24.0f;
     static constexpr float kBarHeight = 48.0f; // top title bar, matches SettingsView's back-bar
-    static constexpr float kFooterH   = 64.0f; // bottom Accept/Cancel bar
-    static constexpr float kBtnH      = 36.0f;
-    static constexpr float kBtnGap    = 8.0f;
+    static constexpr float kFooterH = 64.0f;   // bottom Accept/Cancel bar
+    static constexpr float kBtnH = 36.0f;
+    static constexpr float kBtnGap = 8.0f;
 };
 
 } // namespace tesseract::views

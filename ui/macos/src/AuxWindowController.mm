@@ -19,39 +19,40 @@ class MacAuxWindow;
 class MacAuxWindow : public tesseract::AuxWindowBase
 {
 public:
-    MacAuxWindow(const std::string& title, std::unique_ptr<tk::Widget> root,
-                 int width, int height, const tk::Theme& theme);
+    MacAuxWindow(const std::string& title, std::unique_ptr<tk::Widget> root, int width, int height,
+                 const tk::Theme& theme);
     ~MacAuxWindow() override;
 
-    void bring_to_front()                override;
-    void close_window()                  override;
-    void apply_theme(const tk::Theme&)   override;
+    void bring_to_front() override;
+    void close_window() override;
+    void apply_theme(const tk::Theme&) override;
     void apply_scale_change(float scale) override;
-    void request_relayout()              override;
-    void request_repaint()               override;
+    void request_relayout() override;
+    void request_repaint() override;
 
     // Called by -windowWillClose: delegate method.
     void on_window_will_close()
     {
         window_closed_ = true;
         if (on_window_closed)
+        {
             on_window_closed();
+        }
     }
 
 private:
-    __strong NSWindow*         window_   = nil;
+    __strong NSWindow* window_ = nil;
     __strong AuxWindowDelegate* delegate_ = nil;
     std::unique_ptr<tk::macos::Surface> surface_;
     bool window_closed_ = false;
 };
 
-MacAuxWindow::MacAuxWindow(const std::string& title, std::unique_ptr<tk::Widget> root,
-                           int width, int height, const tk::Theme& theme)
+MacAuxWindow::MacAuxWindow(const std::string& title, std::unique_ptr<tk::Widget> root, int width,
+                           int height, const tk::Theme& theme)
 {
     NSRect frame = NSMakeRect(0, 0, width, height);
-    NSWindowStyleMask style =
-        NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
-        NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable;
+    NSWindowStyleMask style = NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
+                              NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable;
     window_ = [[NSWindow alloc] initWithContentRect:frame
                                           styleMask:style
                                             backing:NSBackingStoreBuffered
@@ -91,7 +92,9 @@ MacAuxWindow::~MacAuxWindow()
 void MacAuxWindow::bring_to_front()
 {
     if (window_)
+    {
         [window_ makeKeyAndOrderFront:nil];
+    }
 }
 
 void MacAuxWindow::close_window()
@@ -115,19 +118,25 @@ void MacAuxWindow::apply_theme(const tk::Theme& t)
 void MacAuxWindow::apply_scale_change(float scale)
 {
     if (surface_)
+    {
         surface_->apply_scale_change(scale);
+    }
 }
 
 void MacAuxWindow::request_relayout()
 {
     if (surface_)
+    {
         surface_->relayout();
+    }
 }
 
 void MacAuxWindow::request_repaint()
 {
     if (surface_)
+    {
         surface_->host().request_repaint();
+    }
 }
 
 @implementation AuxWindowDelegate
@@ -136,7 +145,9 @@ void MacAuxWindow::request_repaint()
 {
     (void)notification;
     if (self.cppWindow)
+    {
         self.cppWindow->on_window_will_close();
+    }
 }
 
 - (void)_auxWindowDidChangeBackingProperties:(NSNotification*)note
@@ -159,8 +170,7 @@ void MacAuxWindow::request_repaint()
 namespace tesseract
 {
 
-AuxWindowBase* make_mac_aux_window(const std::string& title,
-                                   std::unique_ptr<tk::Widget> root,
+AuxWindowBase* make_mac_aux_window(const std::string& title, std::unique_ptr<tk::Widget> root,
                                    int width, int height, const tk::Theme& theme)
 {
     return new MacAuxWindow(title, std::move(root), width, height, theme);

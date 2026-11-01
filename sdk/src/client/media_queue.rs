@@ -114,9 +114,10 @@ impl<T> MediaQueue<T> {
                 continue;
             };
             for key in keys {
-                let raisable = self.order.get(&key).is_some_and(|e| {
-                    e.priority != PRIO_BACKOFF && e.priority < new_priority
-                });
+                let raisable = self
+                    .order
+                    .get(&key)
+                    .is_some_and(|e| e.priority != PRIO_BACKOFF && e.priority < new_priority);
                 if !raisable {
                     continue;
                 }

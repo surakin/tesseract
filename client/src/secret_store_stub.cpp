@@ -5,7 +5,10 @@ namespace tesseract
 
 std::optional<std::string> SecretStore::load_entry_(const std::string&, bool* failed)
 {
-    if (failed) *failed = true; // no secure storage to read
+    if (failed)
+    {
+        *failed = true; // no secure storage to read
+    }
     return std::nullopt;
 }
 

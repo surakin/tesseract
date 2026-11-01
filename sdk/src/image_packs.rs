@@ -409,9 +409,7 @@ pub fn add_room_pack_subscription(mut content: Value, room_id: &str, state_key: 
         *rooms_entry = empty_object();
     }
     let rooms = rooms_entry.as_object_mut().expect("just ensured object");
-    let room_entry = rooms
-        .entry(room_id.to_owned())
-        .or_insert_with(empty_object);
+    let room_entry = rooms.entry(room_id.to_owned()).or_insert_with(empty_object);
     if !room_entry.is_object() {
         *room_entry = empty_object();
     }
@@ -486,7 +484,9 @@ pub fn rename_image_in_user_pack(
     if images.contains_key(&applied) {
         applied = loop_suffixed_shortcode(images, new_shortcode);
     }
-    let entry = images.remove(old_shortcode).expect("just checked contains_key");
+    let entry = images
+        .remove(old_shortcode)
+        .expect("just checked contains_key");
     images.insert(applied.clone(), entry);
     (content, applied)
 }
@@ -1050,11 +1050,23 @@ mod tests {
         let images = merged.get("images").unwrap().as_object().unwrap();
         assert_eq!(images.len(), 2);
         assert_eq!(
-            images.get("a").unwrap().get("url").unwrap().as_str().unwrap(),
+            images
+                .get("a")
+                .unwrap()
+                .get("url")
+                .unwrap()
+                .as_str()
+                .unwrap(),
             "mxc://h/a"
         );
         assert_eq!(
-            images.get("b").unwrap().get("url").unwrap().as_str().unwrap(),
+            images
+                .get("b")
+                .unwrap()
+                .get("url")
+                .unwrap()
+                .as_str()
+                .unwrap(),
             "mxc://h/b"
         );
     }
@@ -1067,7 +1079,13 @@ mod tests {
         let images = merged.get("images").unwrap().as_object().unwrap();
         assert_eq!(images.len(), 1);
         assert_eq!(
-            images.get("a").unwrap().get("url").unwrap().as_str().unwrap(),
+            images
+                .get("a")
+                .unwrap()
+                .get("url")
+                .unwrap()
+                .as_str()
+                .unwrap(),
             "mxc://h/primary"
         );
     }

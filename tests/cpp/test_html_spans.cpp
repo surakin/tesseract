@@ -5,6 +5,7 @@
 #include <tesseract/client.h>
 
 using tesseract::views::autolink_plain_to_spans;
+using tesseract::views::first_preview_url;
 using tesseract::views::BodyBlock;
 using tesseract::views::html_to_blocks;
 using tesseract::views::html_to_spans;
@@ -19,8 +20,12 @@ namespace
 const tk::TextSpan* mention_span(const std::vector<tk::TextSpan>& spans)
 {
     for (const auto& s : spans)
+    {
         if (s.is_mention)
+        {
             return &s;
+        }
+    }
     return nullptr;
 }
 
@@ -29,7 +34,9 @@ std::string joined_text(const std::vector<tk::TextSpan>& spans)
 {
     std::string out;
     for (const auto& s : spans)
+    {
         out += s.text;
+    }
     return out;
 }
 
@@ -37,8 +44,12 @@ std::string joined_text(const std::vector<tk::TextSpan>& spans)
 bool any_link(const std::vector<tk::TextSpan>& spans)
 {
     for (const auto& s : spans)
+    {
         if (!s.url.empty())
+        {
             return true;
+        }
+    }
     return false;
 }
 
@@ -48,7 +59,9 @@ std::string joined_block_text(const std::vector<BodyBlock>& blocks)
 {
     std::string out;
     for (const auto& b : blocks)
+    {
         out += joined_text(b.spans);
+    }
     return out;
 }
 
@@ -60,16 +73,14 @@ constexpr const char* kReplacement = "\xEF\xBF\xBD";
 // into hyperlink spans (url set) so MessageListView can hit-test and fire
 // on_link_clicked. Returning {} signals "no link — use the cheap path".
 
-TEST_CASE("autolink: no URL returns empty (cheap-path signal)",
-          "[html_spans][autolink]")
+TEST_CASE("autolink: no URL returns empty (cheap-path signal)", "[html_spans][autolink]")
 {
     CHECK(autolink_plain_to_spans("just some text, no link").empty());
     CHECK(autolink_plain_to_spans("").empty());
     CHECK(autolink_plain_to_spans("ftp://example.org not http").empty());
 }
 
-TEST_CASE("autolink: a bare URL becomes a single hyperlink span",
-          "[html_spans][autolink]")
+TEST_CASE("autolink: a bare URL becomes a single hyperlink span", "[html_spans][autolink]")
 {
     auto s = autolink_plain_to_spans("https://example.org/path");
     REQUIRE(s.size() == 1);
@@ -77,8 +88,7 @@ TEST_CASE("autolink: a bare URL becomes a single hyperlink span",
     CHECK(s[0].url == "https://example.org/path");
 }
 
-TEST_CASE("autolink: text around a URL splits into plain + link + plain",
-          "[html_spans][autolink]")
+TEST_CASE("autolink: text around a URL splits into plain + link + plain", "[html_spans][autolink]")
 {
     auto s = autolink_plain_to_spans("see https://example.org now");
     REQUIRE(s.size() == 3);
@@ -90,8 +100,7 @@ TEST_CASE("autolink: text around a URL splits into plain + link + plain",
     CHECK(s[2].url.empty());
 }
 
-TEST_CASE("autolink: trailing prose punctuation stays out of the link",
-          "[html_spans][autolink]")
+TEST_CASE("autolink: trailing prose punctuation stays out of the link", "[html_spans][autolink]")
 {
     // The stripped '.' must remain as visible (non-link) trailing text.
     auto s = autolink_plain_to_spans("look at https://example.org/x.");
@@ -111,16 +120,14 @@ TEST_CASE("autolink: trailing prose punctuation stays out of the link",
     CHECK(s2[2].text == ")");
 }
 
-TEST_CASE("autolink: word-boundary guard rejects mid-token schemes",
-          "[html_spans][autolink]")
+TEST_CASE("autolink: word-boundary guard rejects mid-token schemes", "[html_spans][autolink]")
 {
     // "https://" embedded inside a larger token must not be linked.
     CHECK(autolink_plain_to_spans("ahttps://example.org").empty());
     CHECK(autolink_plain_to_spans("x123https://example.org").empty());
 }
 
-TEST_CASE("autolink: http:// works and a scheme with no host does not",
-          "[html_spans][autolink]")
+TEST_CASE("autolink: http:// works and a scheme with no host does not", "[html_spans][autolink]")
 {
     auto s = autolink_plain_to_spans("http://example.org");
     REQUIRE(s.size() == 1);
@@ -130,8 +137,7 @@ TEST_CASE("autolink: http:// works and a scheme with no host does not",
     CHECK(autolink_plain_to_spans("https:// not a link").empty());
 }
 
-TEST_CASE("autolink: multiple URLs each become their own span",
-          "[html_spans][autolink]")
+TEST_CASE("autolink: multiple URLs each become their own span", "[html_spans][autolink]")
 {
     auto s = autolink_plain_to_spans("https://a.org and https://b.org");
     REQUIRE(s.size() == 3);
@@ -147,8 +153,8 @@ TEST_CASE("autolink: bare matrix:u/ URI is linkified", "[html_spans][autolink]")
 {
     auto s = autolink_plain_to_spans("join matrix:u/alice:example.org today");
     REQUIRE(s.size() == 3);
-    CHECK(s[1].url   == "matrix:u/alice:example.org");
-    CHECK(s[1].text  == "matrix:u/alice:example.org");
+    CHECK(s[1].url == "matrix:u/alice:example.org");
+    CHECK(s[1].text == "matrix:u/alice:example.org");
 }
 
 TEST_CASE("autolink: matrix:r/ room alias is linkified", "[html_spans][autolink]")
@@ -193,17 +199,21 @@ TEST_CASE("autolink: unknown matrix: segment not linked", "[html_spans][autolink
     CHECK(autolink_plain_to_spans("matrix:bogus/whatever").empty());
 }
 
-TEST_CASE("autolink: mixed http and matrix: URIs each become spans",
-          "[html_spans][autolink]")
+TEST_CASE("autolink: mixed http and matrix: URIs each become spans", "[html_spans][autolink]")
 {
-    auto s = autolink_plain_to_spans(
-        "see https://example.org and matrix:u/alice:example.org");
+    auto s = autolink_plain_to_spans("see https://example.org and matrix:u/alice:example.org");
     REQUIRE(s.size() >= 2);
     bool has_http = false, has_matrix = false;
     for (const auto& span : s)
     {
-        if (span.url == "https://example.org")  has_http   = true;
-        if (span.url == "matrix:u/alice:example.org") has_matrix = true;
+        if (span.url == "https://example.org")
+        {
+            has_http = true;
+        }
+        if (span.url == "matrix:u/alice:example.org")
+        {
+            has_matrix = true;
+        }
     }
     CHECK(has_http);
     CHECK(has_matrix);
@@ -211,12 +221,10 @@ TEST_CASE("autolink: mixed http and matrix: URIs each become spans",
 
 // --- mention pills ------------------------------------------------------
 
-TEST_CASE("mention: matrix.to user link is flagged as a mention pill",
-          "[html_spans][mention]")
+TEST_CASE("mention: matrix.to user link is flagged as a mention pill", "[html_spans][mention]")
 {
-    auto s = html_to_spans(
-        "hi <a href=\"https://matrix.to/#/@alice:example.org\">Alice</a>",
-        false);
+    auto s =
+        html_to_spans("hi <a href=\"https://matrix.to/#/@alice:example.org\">Alice</a>", false);
     const tk::TextSpan* m = mention_span(s);
     REQUIRE(m != nullptr);
     // Mentions are is_image leaves (empty text; the sender's original anchor
@@ -233,11 +241,9 @@ TEST_CASE("mention: matrix.to user link is flagged as a mention pill",
     CHECK(m->url == "https://matrix.to/#/@alice:example.org");
 }
 
-TEST_CASE("mention: @room sentinel link is a mention pill",
-          "[html_spans][mention]")
+TEST_CASE("mention: @room sentinel link is a mention pill", "[html_spans][mention]")
 {
-    auto s = html_to_spans(
-        "<a href=\"https://matrix.to/#/@room\">@room</a>", false);
+    auto s = html_to_spans("<a href=\"https://matrix.to/#/@room\">@room</a>", false);
     const tk::TextSpan* m = mention_span(s);
     REQUIRE(m != nullptr);
     CHECK(m->is_mention);
@@ -249,30 +255,26 @@ TEST_CASE("mention: @room sentinel link is a mention pill",
     CHECK(m->url.empty());
 }
 
-TEST_CASE("mention: room/event/alias permalinks render as pills too",
-          "[html_spans][mention]")
+TEST_CASE("mention: room/event/alias permalinks render as pills too", "[html_spans][mention]")
 {
     // Room id (!), alias (#) and event ($) links now render as pills too,
     // tagged with the matching PillKind, alongside the existing user-mention
     // support — matching what ShellBase::open_matrix_link already does for
     // click dispatch (switch room / offer to join / jump to event).
-    auto room = html_to_spans(
-        "<a href=\"https://matrix.to/#/!abc:example.org\">room</a>", false);
+    auto room = html_to_spans("<a href=\"https://matrix.to/#/!abc:example.org\">room</a>", false);
     const tk::TextSpan* rm = mention_span(room);
     REQUIRE(rm != nullptr);
     CHECK(rm->has_background);
     CHECK(rm->pill_kind == tk::PillKind::Room);
     CHECK(rm->url == "https://matrix.to/#/!abc:example.org");
 
-    auto alias = html_to_spans(
-        "<a href=\"https://matrix.to/#/#general:example.org\">#general</a>",
-        false);
+    auto alias =
+        html_to_spans("<a href=\"https://matrix.to/#/#general:example.org\">#general</a>", false);
     const tk::TextSpan* am = mention_span(alias);
     REQUIRE(am != nullptr);
     CHECK(am->pill_kind == tk::PillKind::Room);
 
-    auto ev = html_to_spans(
-        "<a href=\"https://matrix.to/#/!r:e.org/$evt\">link</a>", false);
+    auto ev = html_to_spans("<a href=\"https://matrix.to/#/!r:e.org/$evt\">link</a>", false);
     const tk::TextSpan* em = mention_span(ev);
     REQUIRE(em != nullptr);
     CHECK(em->pill_kind == tk::PillKind::Event);
@@ -285,9 +287,8 @@ TEST_CASE("mention: a fully percent-encoded matrix.to user link still "
     // Some senders percent-encode the whole mxid, colon included
     // ("%40alice%3Aexample.org" instead of "@alice:example.org"). Pill
     // classification must key off the decoded id, not the raw href.
-    auto s = html_to_spans(
-        "hi <a href=\"https://matrix.to/#/%40alice%3Aexample.org\">Alice</a>",
-        false);
+    auto s =
+        html_to_spans("hi <a href=\"https://matrix.to/#/%40alice%3Aexample.org\">Alice</a>", false);
     const tk::TextSpan* m = mention_span(s);
     REQUIRE(m != nullptr);
     CHECK(m->pill_kind == tk::PillKind::User);
@@ -303,25 +304,26 @@ TEST_CASE("Client::parse_matrix_link decodes a percent-encoded colon in the "
     // only special-cased a leading "%40". It now delegates to this parser,
     // which decodes the full target before validating it.
     using Kind = tesseract::Client::MatrixLink::Kind;
-    auto link = tesseract::Client::parse_matrix_link(
-        "https://matrix.to/#/%40alice%3Aexample.org");
+    auto link = tesseract::Client::parse_matrix_link("https://matrix.to/#/%40alice%3Aexample.org");
     REQUIRE(link.kind == Kind::User);
     CHECK(link.primary == "@alice:example.org");
     CHECK(link.primary.find("%3A") == std::string::npos);
 }
 
-TEST_CASE("mention: ordinary http links are NOT mentions",
-          "[html_spans][mention]")
+TEST_CASE("mention: ordinary http links are NOT mentions", "[html_spans][mention]")
 {
-    auto s = html_to_spans(
-        "see <a href=\"https://example.org/x\">this</a>", false);
+    auto s = html_to_spans("see <a href=\"https://example.org/x\">this</a>", false);
     const tk::TextSpan* m = mention_span(s);
     CHECK(m == nullptr);
     // But it's still a link span.
     bool has_link = false;
     for (const auto& sp : s)
+    {
         if (sp.url == "https://example.org/x")
+        {
             has_link = true;
+        }
+    }
     CHECK(has_link);
 }
 
@@ -342,8 +344,12 @@ TEST_CASE("mention: literal @room becomes a mention pill", "[html_spans][mention
     // Surrounding text is preserved as separate, non-mention spans.
     std::string joined;
     for (const auto& sp : s)
+    {
         if (!sp.is_image)
+        {
             joined += sp.text;
+        }
+    }
     CHECK(joined == "heads up  please");
 }
 
@@ -359,8 +365,7 @@ TEST_CASE("mention: @room inside a word is NOT a pill", "[html_spans][mention]")
 // html_to_spans()/html_to_blocks(). See MessageListView.cpp's
 // body_layout_for()/assemble_emote_spans_() plain-text branches, which now
 // call this directly.
-TEST_CASE("mention: split_room_mentions pill-ifies a bare plain span",
-          "[html_spans][mention]")
+TEST_CASE("mention: split_room_mentions pill-ifies a bare plain span", "[html_spans][mention]")
 {
     tk::TextSpan s;
     s.text = "heads up @room please";
@@ -382,19 +387,16 @@ TEST_CASE("mention: @room next to a bare URL still becomes a pill once "
     CHECK(m->pill_kind == tk::PillKind::Room);
 }
 
-TEST_CASE("mention: dark theme uses different pill colours than light",
-          "[html_spans][mention]")
+TEST_CASE("mention: dark theme uses different pill colours than light", "[html_spans][mention]")
 {
-    const char* html =
-        "<a href=\"https://matrix.to/#/@a:b.org\">A</a>";
+    const char* html = "<a href=\"https://matrix.to/#/@a:b.org\">A</a>";
     auto light = html_to_spans(html, false);
     auto dark = html_to_spans(html, true);
     const tk::TextSpan* lm = mention_span(light);
     const tk::TextSpan* dm = mention_span(dark);
     REQUIRE(lm != nullptr);
     REQUIRE(dm != nullptr);
-    bool differ = lm->background.r != dm->background.r ||
-                  lm->background.g != dm->background.g ||
+    bool differ = lm->background.r != dm->background.r || lm->background.g != dm->background.g ||
                   lm->background.b != dm->background.b;
     CHECK(differ);
 }
@@ -423,8 +425,7 @@ TEST_CASE("entity: NUL decodes to U+FFFD", "[html_spans][entity]")
     CHECK(t.find('\0') == std::string::npos);
 }
 
-TEST_CASE("entity: out-of-range codepoint decodes to U+FFFD",
-          "[html_spans][entity]")
+TEST_CASE("entity: out-of-range codepoint decodes to U+FFFD", "[html_spans][entity]")
 {
     // &#x110000; is one past the highest Unicode scalar (U+10FFFF).
     CHECK(joined_text(html_to_spans("&#x110000;", false)) == kReplacement);
@@ -432,8 +433,7 @@ TEST_CASE("entity: out-of-range codepoint decodes to U+FFFD",
     CHECK(joined_text(html_to_spans("&#x7FFFFFFF;", false)) == kReplacement);
 }
 
-TEST_CASE("entity: disallowed C0 control decodes to U+FFFD",
-          "[html_spans][entity]")
+TEST_CASE("entity: disallowed C0 control decodes to U+FFFD", "[html_spans][entity]")
 {
     // &#7; is BEL — a disallowed C0 control.
     CHECK(joined_text(html_to_spans("&#7;", false)) == kReplacement);
@@ -441,8 +441,7 @@ TEST_CASE("entity: disallowed C0 control decodes to U+FFFD",
     CHECK(joined_text(html_to_spans("&#x1B;", false)) == kReplacement);
 }
 
-TEST_CASE("entity: allowed whitespace controls survive intact",
-          "[html_spans][entity]")
+TEST_CASE("entity: allowed whitespace controls survive intact", "[html_spans][entity]")
 {
     // Tab, newline and carriage return are legal and must pass through.
     // (A non-letter sentinel keeps the LF/CR off the trailing edge, where
@@ -453,12 +452,10 @@ TEST_CASE("entity: allowed whitespace controls survive intact",
     // A normal ASCII character is unaffected.
     CHECK(joined_text(html_to_spans("&#65;", false)) == "A");
     // A valid astral codepoint (U+1F600 GRINNING FACE) is unaffected.
-    CHECK(joined_text(html_to_spans("&#x1F600;", false)) ==
-          "\xF0\x9F\x98\x80");
+    CHECK(joined_text(html_to_spans("&#x1F600;", false)) == "\xF0\x9F\x98\x80");
 }
 
-TEST_CASE("whitespace: raw newlines and spaces in text nodes collapse",
-          "[html_spans][whitespace]")
+TEST_CASE("whitespace: raw newlines and spaces in text nodes collapse", "[html_spans][whitespace]")
 {
     // Literal \n between words collapses to a single space.
     CHECK(joined_text(html_to_spans("a\nb", false)) == "a b");
@@ -473,8 +470,7 @@ TEST_CASE("whitespace: raw newlines and spaces in text nodes collapse",
     CHECK(joined_text(html_to_spans("hello ", false)) == "hello ");
 }
 
-TEST_CASE("br: self-closed and bare forms both produce a line break",
-          "[html_spans][br]")
+TEST_CASE("br: self-closed and bare forms both produce a line break", "[html_spans][br]")
 {
     // Real formatted_body is round-tripped through an HTML5 sanitizer
     // (matrix-sdk-ui's Timeline sanitizer, or sdk/src/html_sanitize.rs) by
@@ -518,8 +514,7 @@ TEST_CASE("br: self-closed and bare forms both produce a line break",
 // styling of text that follows the over-deep section. The over-deep input
 // must yield the same trailing styling as a shallow baseline.
 
-TEST_CASE("depth-cap: dropped opens do not pop legitimate outer frames",
-          "[html_spans][depth]")
+TEST_CASE("depth-cap: dropped opens do not pop legitimate outer frames", "[html_spans][depth]")
 {
     // Outer <b> wraps a deeply nested run of <i> opens that overflow the
     // depth cap, then all the <i> close. Text after the nested section,
@@ -527,10 +522,14 @@ TEST_CASE("depth-cap: dropped opens do not pop legitimate outer frames",
     std::string html = "<b>start ";
     constexpr int kOverflow = 200; // well past kMaxTagDepth (64)
     for (int i = 0; i < kOverflow; ++i)
+    {
         html += "<i>";
+    }
     html += "deep";
     for (int i = 0; i < kOverflow; ++i)
+    {
         html += "</i>";
+    }
     html += " tail</b>";
 
     auto spans = html_to_spans(html, false);
@@ -549,12 +548,15 @@ TEST_CASE("depth-cap: dropped opens do not pop legitimate outer frames",
 
     // And "start" (before the overflow) is bold too — sanity baseline.
     for (const auto& s : spans)
+    {
         if (s.text.find("start") != std::string::npos)
+        {
             CHECK(s.bold);
+        }
+    }
 }
 
-TEST_CASE("depth-cap: pathological nesting stays bounded and never crashes",
-          "[html_spans][depth]")
+TEST_CASE("depth-cap: pathological nesting stays bounded and never crashes", "[html_spans][depth]")
 {
     // The parser is iterative (no recursion) and the formatting stack is
     // hard-capped at kMaxTagDepth, so even a hostile body of tens of
@@ -568,7 +570,9 @@ TEST_CASE("depth-cap: pathological nesting stays bounded and never crashes",
         std::string html;
         html.reserve(static_cast<std::size_t>(kHuge) * 3 + 4);
         for (int i = 0; i < kHuge; ++i)
+        {
             html += "<b>";
+        }
         html += "deep";
         CHECK_NOTHROW(html_to_spans(html, false));
     }
@@ -579,10 +583,14 @@ TEST_CASE("depth-cap: pathological nesting stays bounded and never crashes",
         std::string html;
         html.reserve(static_cast<std::size_t>(kHuge) * 7 + 8);
         for (int i = 0; i < kHuge; ++i)
+        {
             html += "<i>";
+        }
         html += "x";
         for (int i = 0; i < kHuge; ++i)
+        {
             html += "</i>";
+        }
         html += "tail";
         auto spans = html_to_spans(html, false);
         // The body is still rendered (text survives the over-deep section).
@@ -594,7 +602,9 @@ TEST_CASE("depth-cap: pathological nesting stays bounded and never crashes",
     {
         std::string html = "<b>x</b>";
         for (int i = 0; i < kHuge; ++i)
+        {
             html += "</b>";
+        }
         html += "after";
         CHECK_NOTHROW(html_to_spans(html, false));
     }
@@ -609,12 +619,11 @@ TEST_CASE("depth-cap: pathological nesting stays bounded and never crashes",
 // plain, unclickable text. A regression here would let a crafted message ship
 // a `javascript:` / `data:` link straight to on_link_clicked.
 
-TEST_CASE("hostile: javascript: href is not turned into a link",
-          "[html_spans][hostile]")
+TEST_CASE("hostile: javascript: href is not turned into a link", "[html_spans][hostile]")
 {
     auto s = html_to_spans("<a href=\"javascript:alert(1)\">click</a>", false);
-    CHECK_FALSE(any_link(s));          // no clickable url survives
-    CHECK(joined_text(s) == "click");  // the visible text is preserved, inert
+    CHECK_FALSE(any_link(s));         // no clickable url survives
+    CHECK(joined_text(s) == "click"); // the visible text is preserved, inert
 }
 
 TEST_CASE("hostile: data:, vbscript:, file: and relative hrefs are dropped",
@@ -646,9 +655,12 @@ TEST_CASE("hostile: a legitimate https link still works (fail-open is narrow)",
     REQUIRE(any_link(s));
     bool found = false;
     for (const auto& sp : s)
-        if (sp.url == "https://example.org/x" && sp.text.find("ok") !=
-                                                      std::string::npos)
+    {
+        if (sp.url == "https://example.org/x" && sp.text.find("ok") != std::string::npos)
+        {
             found = true;
+        }
+    }
     CHECK(found);
 }
 
@@ -658,8 +670,7 @@ TEST_CASE("hostile: entity-encoded scheme stays inert (attrs are not decoded)",
     // extract_attr returns the raw attribute bytes; it does NOT run HTML
     // entity decoding, so an encoded "javascript:" never resolves to the
     // real scheme and can't be linkified.
-    auto s = html_to_spans(
-        "<a href=\"&#106;avascript:alert(1)\">x</a>", false);
+    auto s = html_to_spans("<a href=\"&#106;avascript:alert(1)\">x</a>", false);
     CHECK_FALSE(any_link(s));
 }
 
@@ -670,8 +681,7 @@ TEST_CASE("hostile: entity-encoded scheme stays inert (attrs are not decoded)",
 // text — crucially WITHOUT any url, color, or other actionable attribute. The
 // payload becomes visible inert text, never something the UI acts on.
 
-TEST_CASE("hostile: <script> body is preserved as inert plain text",
-          "[html_spans][hostile]")
+TEST_CASE("hostile: <script> body is preserved as inert plain text", "[html_spans][hostile]")
 {
     auto s = html_to_spans("<script>alert(1)</script>", false);
     CHECK_FALSE(any_link(s));
@@ -679,35 +689,28 @@ TEST_CASE("hostile: <script> body is preserved as inert plain text",
     CHECK(joined_text(s) == "alert(1)");
 }
 
-TEST_CASE("hostile: <img onerror> / <iframe> carry nothing actionable",
-          "[html_spans][hostile]")
+TEST_CASE("hostile: <img onerror> / <iframe> carry nothing actionable", "[html_spans][hostile]")
 {
-    auto img = html_to_spans(
-        "<img src=\"x\" onerror=\"alert(1)\">caption", false);
+    auto img = html_to_spans("<img src=\"x\" onerror=\"alert(1)\">caption", false);
     CHECK_FALSE(any_link(img));
     CHECK(joined_text(img) == "caption");
 
-    auto frame = html_to_spans(
-        "<iframe src=\"javascript:alert(1)\">fallback</iframe>", false);
+    auto frame = html_to_spans("<iframe src=\"javascript:alert(1)\">fallback</iframe>", false);
     CHECK_FALSE(any_link(frame));
     CHECK(joined_text(frame) == "fallback");
 }
 
-TEST_CASE("hostile: <style> content is not linkified",
-          "[html_spans][hostile]")
+TEST_CASE("hostile: <style> content is not linkified", "[html_spans][hostile]")
 {
-    auto s = html_to_spans(
-        "<style>a{background:url(javascript:alert(1))}</style>body", false);
+    auto s = html_to_spans("<style>a{background:url(javascript:alert(1))}</style>body", false);
     CHECK_FALSE(any_link(s));
     // The trailing real body text survives.
     CHECK(joined_text(s).find("body") != std::string::npos);
 }
 
-TEST_CASE("hostile: HTML comments and DOCTYPE are skipped without leaking",
-          "[html_spans][hostile]")
+TEST_CASE("hostile: HTML comments and DOCTYPE are skipped without leaking", "[html_spans][hostile]")
 {
-    auto s = html_to_spans(
-        "<!-- <a href=\"javascript:alert(1)\">x</a> -->visible", false);
+    auto s = html_to_spans("<!-- <a href=\"javascript:alert(1)\">x</a> -->visible", false);
     CHECK_FALSE(any_link(s));
     CHECK(joined_text(s) == "visible");
 
@@ -723,8 +726,7 @@ TEST_CASE("hostile: HTML comments and DOCTYPE are skipped without leaking",
 // end of each CHECK (no crash / hang) IS the assertion; we also assert the
 // safety invariant that no hostile href slipped through.
 
-TEST_CASE("malformed: unterminated tags and stray '<' do not crash",
-          "[html_spans][malformed]")
+TEST_CASE("malformed: unterminated tags and stray '<' do not crash", "[html_spans][malformed]")
 {
     // No closing '>' on the tag — parse_tag must stop at end, not overrun.
     CHECK_NOTHROW(html_to_spans("<a href=\"http://x", false));
@@ -745,8 +747,7 @@ TEST_CASE("malformed: an unterminated http href is not exposed as a link",
     CHECK_FALSE(any_link(s));
 }
 
-TEST_CASE("malformed: truncated and empty entities do not crash",
-          "[html_spans][malformed]")
+TEST_CASE("malformed: truncated and empty entities do not crash", "[html_spans][malformed]")
 {
     CHECK_NOTHROW(html_to_spans("&", false));
     CHECK_NOTHROW(html_to_spans("&#", false));
@@ -760,8 +761,7 @@ TEST_CASE("malformed: truncated and empty entities do not crash",
     CHECK(joined_text(html_to_spans("AT&T", false)) == "AT&T");
 }
 
-TEST_CASE("malformed: unterminated <pre> code block is still emitted",
-          "[html_spans][malformed]")
+TEST_CASE("malformed: unterminated <pre> code block is still emitted", "[html_spans][malformed]")
 {
     // A <pre> with no closing </pre> must flush its buffer at end-of-input
     // rather than silently dropping the captured text.
@@ -781,23 +781,27 @@ std::string joined_block_text(const BodyBlock& b)
 {
     std::string out;
     for (const auto& sp : b.spans)
+    {
         out += sp.text;
+    }
     return out;
 }
 
 // Find the first block of the given kind, or nullptr.
-const BodyBlock* find_block(const std::vector<BodyBlock>& blocks,
-                            BodyBlock::Kind                kind)
+const BodyBlock* find_block(const std::vector<BodyBlock>& blocks, BodyBlock::Kind kind)
 {
     for (const auto& b : blocks)
+    {
         if (b.kind == kind)
+        {
             return &b;
+        }
+    }
     return nullptr;
 }
 } // namespace
 
-TEST_CASE("blocks: plain paragraph produces one Paragraph block",
-          "[html_spans][blocks]")
+TEST_CASE("blocks: plain paragraph produces one Paragraph block", "[html_spans][blocks]")
 {
     auto blocks = html_to_blocks("hello world", false);
     REQUIRE(blocks.size() == 1);
@@ -810,8 +814,7 @@ TEST_CASE("blocks: empty HTML produces no blocks", "[html_spans][blocks]")
     CHECK(html_to_blocks("", false).empty());
 }
 
-TEST_CASE("blocks: h1 produces a Heading block with level 1",
-          "[html_spans][blocks]")
+TEST_CASE("blocks: h1 produces a Heading block with level 1", "[html_spans][blocks]")
 {
     auto blocks = html_to_blocks("<h1>Title</h1>", false);
     const BodyBlock* h = find_block(blocks, BodyBlock::Kind::Heading);
@@ -820,13 +823,11 @@ TEST_CASE("blocks: h1 produces a Heading block with level 1",
     CHECK(joined_block_text(*h) == "Title");
 }
 
-TEST_CASE("blocks: h1 through h6 produce correct levels",
-          "[html_spans][blocks]")
+TEST_CASE("blocks: h1 through h6 produce correct levels", "[html_spans][blocks]")
 {
     for (int lv = 1; lv <= 6; ++lv)
     {
-        std::string html =
-            "<h" + std::to_string(lv) + ">H</h" + std::to_string(lv) + ">";
+        std::string html = "<h" + std::to_string(lv) + ">H</h" + std::to_string(lv) + ">";
         auto blocks = html_to_blocks(html, false);
         const BodyBlock* h = find_block(blocks, BodyBlock::Kind::Heading);
         REQUIRE(h != nullptr);
@@ -841,41 +842,62 @@ TEST_CASE("blocks: heading spans are semibold", "[html_spans][blocks]")
     REQUIRE(h != nullptr);
     REQUIRE_FALSE(h->spans.empty());
     for (const auto& sp : h->spans)
+    {
         if (!sp.text.empty())
+        {
             CHECK(sp.semibold);
+        }
+    }
 }
 
-TEST_CASE("blocks: heading followed by paragraph produces two blocks",
-          "[html_spans][blocks]")
+TEST_CASE("blocks: heading followed by paragraph produces two blocks", "[html_spans][blocks]")
 {
     auto blocks = html_to_blocks("<h1>Title</h1><p>body</p>", false);
     bool has_heading = false, has_para = false;
     for (const auto& b : blocks)
     {
-        if (b.kind == BodyBlock::Kind::Heading)   has_heading = true;
-        if (b.kind == BodyBlock::Kind::Paragraph) has_para    = true;
+        if (b.kind == BodyBlock::Kind::Heading)
+        {
+            has_heading = true;
+        }
+        if (b.kind == BodyBlock::Kind::Paragraph)
+        {
+            has_para = true;
+        }
     }
     CHECK(has_heading);
     CHECK(has_para);
 }
 
-TEST_CASE("blocks: unordered list produces UnorderedItem blocks",
-          "[html_spans][blocks]")
+TEST_CASE("blocks: unordered list produces UnorderedItem blocks", "[html_spans][blocks]")
 {
     auto blocks = html_to_blocks("<ul><li>one</li><li>two</li></ul>", false);
     int count = 0;
     for (const auto& b : blocks)
+    {
         if (b.kind == BodyBlock::Kind::UnorderedItem)
+        {
             ++count;
+        }
+    }
     REQUIRE(count == 2);
     // Text of each item is preserved.
     bool saw_one = false, saw_two = false;
     for (const auto& b : blocks)
     {
-        if (b.kind != BodyBlock::Kind::UnorderedItem) continue;
+        if (b.kind != BodyBlock::Kind::UnorderedItem)
+        {
+            continue;
+        }
         std::string t = joined_block_text(b);
-        if (t.find("one") != std::string::npos) saw_one = true;
-        if (t.find("two") != std::string::npos) saw_two = true;
+        if (t.find("one") != std::string::npos)
+        {
+            saw_one = true;
+        }
+        if (t.find("two") != std::string::npos)
+        {
+            saw_two = true;
+        }
     }
     CHECK(saw_one);
     CHECK(saw_two);
@@ -884,36 +906,127 @@ TEST_CASE("blocks: unordered list produces UnorderedItem blocks",
 TEST_CASE("blocks: ordered list produces OrderedItem blocks with 1-based indices",
           "[html_spans][blocks]")
 {
-    auto blocks =
-        html_to_blocks("<ol><li>first</li><li>second</li><li>third</li></ol>",
-                       false);
+    auto blocks = html_to_blocks("<ol><li>first</li><li>second</li><li>third</li></ol>", false);
     int idx = 1;
     for (const auto& b : blocks)
     {
-        if (b.kind != BodyBlock::Kind::OrderedItem) continue;
+        if (b.kind != BodyBlock::Kind::OrderedItem)
+        {
+            continue;
+        }
         CHECK(b.index == idx++);
     }
     CHECK(idx == 4); // consumed all 3 items
 }
 
+namespace
+{
+std::vector<int> ordered_indices(const std::string& html)
+{
+    std::vector<int> out;
+    for (const auto& b : html_to_blocks(html, false))
+    {
+        if (b.kind == BodyBlock::Kind::OrderedItem)
+        {
+            out.push_back(b.index);
+        }
+    }
+    return out;
+}
+} // namespace
+
+TEST_CASE("blocks: <ol start> sets the first item number (MSC4313)", "[html_spans][blocks]")
+{
+    const std::string items = "<li>a</li><li>b</li><li>c</li></ol>";
+    CHECK(ordered_indices("<ol start=\"5\">" + items) == std::vector<int>{5, 6, 7});
+    CHECK(ordered_indices("<ol start=\"0\">" + items) == std::vector<int>{0, 1, 2});
+    CHECK(ordered_indices("<ol start=\"-2\">" + items) == std::vector<int>{-2, -1, 0});
+    CHECK(ordered_indices("<ol start=\"abc\">" + items) == std::vector<int>{1, 2, 3});
+    CHECK(ordered_indices("<ol start=\" 3 \">" + items) == std::vector<int>{3, 4, 5});
+    CHECK(ordered_indices("<ol start=\"4x\">" + items) == std::vector<int>{4, 5, 6});
+    CHECK(ordered_indices("<ol start=\"99999999999999999999\">" + items).front() == 1'000'000'000);
+}
+
+TEST_CASE("blocks: nested <ol start> numbers independently", "[html_spans][blocks]")
+{
+    auto blocks =
+        html_to_blocks("<ol start=\"2\"><li>a<ol start=\"10\"><li>b</li><li>c</li></ol></li>"
+                       "<li>d</li></ol>",
+                       false);
+    std::vector<int> idx;
+    for (const auto& b : blocks)
+    {
+        if (b.kind == BodyBlock::Kind::OrderedItem)
+        {
+            idx.push_back(b.index);
+        }
+    }
+    CHECK(idx == std::vector<int>{2, 10, 11, 3});
+}
+
+TEST_CASE("blocks: an empty list item yields one empty item (MSC4313)", "[html_spans][blocks]")
+{
+    auto blocks = html_to_blocks("<ol start=\"2\"><li></li></ol>", false);
+    REQUIRE(blocks.size() == 1);
+    CHECK(blocks[0].kind == BodyBlock::Kind::OrderedItem);
+    CHECK(blocks[0].index == 2);
+    CHECK(blocks[0].spans.empty());
+
+    auto ul = html_to_blocks("<ul><li></li></ul>", false);
+    REQUIRE(ul.size() == 1);
+    CHECK(ul[0].kind == BodyBlock::Kind::UnorderedItem);
+    CHECK(ul[0].spans.empty());
+}
+
+TEST_CASE("blocks: list items produce no spurious empty blocks", "[html_spans][blocks]")
+{
+    auto count_items = [](const std::string& html)
+    {
+        int n = 0;
+        for (const auto& b : html_to_blocks(html, false))
+        {
+            if (b.kind == BodyBlock::Kind::OrderedItem || b.kind == BodyBlock::Kind::UnorderedItem)
+            {
+                ++n;
+            }
+        }
+        return n;
+    };
+    CHECK(count_items("<ol><li>a</li><li>b</li></ol>") == 2);
+    CHECK(count_items("<ol>\n<li>a</li>\n<li>b</li>\n</ol>") == 2);
+    CHECK(count_items("<ol><li>a<ol><li>b</li></ol></li></ol>") == 2);
+    CHECK(count_items("<ul><li>a<ul><li>b</li></ul>tail</li></ul>") == 2);
+    for (const auto& b : html_to_blocks("<ol>\n<li>a</li>\n</ol>", false))
+    {
+        CHECK_FALSE(b.spans.empty());
+    }
+}
+
 TEST_CASE("blocks: list items carry the nesting level", "[html_spans][blocks]")
 {
     // Top-level items are level 1; nested items are level 2.
-    auto blocks = html_to_blocks(
-        "<ul><li>outer<ul><li>inner</li></ul></li></ul>", false);
+    auto blocks = html_to_blocks("<ul><li>outer<ul><li>inner</li></ul></li></ul>", false);
     int depth1 = 0, depth2 = 0;
     for (const auto& b : blocks)
     {
-        if (b.kind != BodyBlock::Kind::UnorderedItem) continue;
-        if (b.level == 1) ++depth1;
-        if (b.level == 2) ++depth2;
+        if (b.kind != BodyBlock::Kind::UnorderedItem)
+        {
+            continue;
+        }
+        if (b.level == 1)
+        {
+            ++depth1;
+        }
+        if (b.level == 2)
+        {
+            ++depth2;
+        }
     }
     CHECK(depth1 >= 1);
     CHECK(depth2 >= 1);
 }
 
-TEST_CASE("blocks: blockquote produces a Blockquote block",
-          "[html_spans][blocks]")
+TEST_CASE("blocks: blockquote produces a Blockquote block", "[html_spans][blocks]")
 {
     auto blocks = html_to_blocks("<blockquote>quoted text</blockquote>", false);
     const BodyBlock* bq = find_block(blocks, BodyBlock::Kind::Blockquote);
@@ -921,8 +1034,7 @@ TEST_CASE("blocks: blockquote produces a Blockquote block",
     CHECK(joined_block_text(*bq).find("quoted") != std::string::npos);
 }
 
-TEST_CASE("blocks: blockquote level is 1 for a top-level quote",
-          "[html_spans][blocks]")
+TEST_CASE("blocks: blockquote level is 1 for a top-level quote", "[html_spans][blocks]")
 {
     auto blocks = html_to_blocks("<blockquote>q</blockquote>", false);
     const BodyBlock* bq = find_block(blocks, BodyBlock::Kind::Blockquote);
@@ -930,15 +1042,18 @@ TEST_CASE("blocks: blockquote level is 1 for a top-level quote",
     CHECK(bq->level == 1);
 }
 
-TEST_CASE("blocks: nested blockquote produces level-2 block",
-          "[html_spans][blocks]")
+TEST_CASE("blocks: nested blockquote produces level-2 block", "[html_spans][blocks]")
 {
-    auto blocks = html_to_blocks(
-        "<blockquote>outer<blockquote>inner</blockquote></blockquote>", false);
+    auto blocks =
+        html_to_blocks("<blockquote>outer<blockquote>inner</blockquote></blockquote>", false);
     const BodyBlock* inner = nullptr;
     for (const auto& b : blocks)
+    {
         if (b.kind == BodyBlock::Kind::Blockquote && b.level == 2)
+        {
             inner = &b;
+        }
+    }
     REQUIRE(inner != nullptr);
     CHECK(joined_block_text(*inner).find("inner") != std::string::npos);
 }
@@ -948,60 +1063,76 @@ TEST_CASE("blocks: deep blockquote nesting is capped, and its closes balance",
 {
     std::string html;
     for (int i = 0; i < 40; ++i)
+    {
         html += "<blockquote>";
+    }
     html += "deep";
     for (int i = 0; i < 40; ++i)
+    {
         html += "</blockquote>";
+    }
     html += "tail";
     auto blocks = html_to_blocks(html, false);
 
     for (const auto& b : blocks)
+    {
         if (b.kind == BodyBlock::Kind::Blockquote)
+        {
             CHECK(b.level <= 16);
+        }
+    }
     // Text past the nest is back at top level: the flattened opens were closed.
     const BodyBlock* tail = nullptr;
     for (const auto& b : blocks)
+    {
         if (joined_block_text(b).find("tail") != std::string::npos)
+        {
             tail = &b;
+        }
+    }
     REQUIRE(tail != nullptr);
     CHECK(tail->kind == BodyBlock::Kind::Paragraph);
     CHECK(tail->level == 0);
 }
 
-TEST_CASE("blocks: blockquote with inner <p> (pulldown-cmark output) works",
-          "[html_spans][blocks]")
+TEST_CASE("blocks: blockquote with inner <p> (pulldown-cmark output) works", "[html_spans][blocks]")
 {
     // pulldown-cmark wraps blockquote body in <p>…</p>.
-    auto blocks =
-        html_to_blocks("<blockquote>\n<p>quoted</p>\n</blockquote>", false);
+    auto blocks = html_to_blocks("<blockquote>\n<p>quoted</p>\n</blockquote>", false);
     const BodyBlock* bq = find_block(blocks, BodyBlock::Kind::Blockquote);
     REQUIRE(bq != nullptr);
     CHECK(joined_block_text(*bq).find("quoted") != std::string::npos);
 }
 
-TEST_CASE("blocks: inline formatting within list items is preserved",
-          "[html_spans][blocks]")
+TEST_CASE("blocks: inline formatting within list items is preserved", "[html_spans][blocks]")
 {
-    auto blocks =
-        html_to_blocks("<ul><li><b>bold</b> text</li></ul>", false);
+    auto blocks = html_to_blocks("<ul><li><b>bold</b> text</li></ul>", false);
     const BodyBlock* item = find_block(blocks, BodyBlock::Kind::UnorderedItem);
     REQUIRE(item != nullptr);
     bool has_bold = false;
     for (const auto& sp : item->spans)
-        if (sp.bold) has_bold = true;
+    {
+        if (sp.bold)
+        {
+            has_bold = true;
+        }
+    }
     CHECK(has_bold);
 }
 
-TEST_CASE("blocks: inline formatting within blockquote is preserved",
-          "[html_spans][blocks]")
+TEST_CASE("blocks: inline formatting within blockquote is preserved", "[html_spans][blocks]")
 {
-    auto blocks =
-        html_to_blocks("<blockquote><em>italic</em></blockquote>", false);
+    auto blocks = html_to_blocks("<blockquote><em>italic</em></blockquote>", false);
     const BodyBlock* bq = find_block(blocks, BodyBlock::Kind::Blockquote);
     REQUIRE(bq != nullptr);
     bool has_italic = false;
     for (const auto& sp : bq->spans)
-        if (sp.italic) has_italic = true;
+    {
+        if (sp.italic)
+        {
+            has_italic = true;
+        }
+    }
     CHECK(has_italic);
 }
 
@@ -1012,16 +1143,16 @@ std::string cell_text(const TableCell& c)
 {
     std::string out;
     for (const auto& sp : c.spans)
+    {
         out += sp.text;
+    }
     return out;
 }
 } // namespace
 
-TEST_CASE("blocks: a table produces one Table block with a cell grid",
-          "[html_spans][blocks]")
+TEST_CASE("blocks: a table produces one Table block with a cell grid", "[html_spans][blocks]")
 {
-    auto blocks = html_to_blocks(
-        "<table><tr><td>A</td><td>B</td></tr></table>", false);
+    auto blocks = html_to_blocks("<table><tr><td>A</td><td>B</td></tr></table>", false);
     const BodyBlock* t = find_block(blocks, BodyBlock::Kind::Table);
     REQUIRE(t != nullptr);
     CHECK(t->spans.empty());
@@ -1031,37 +1162,40 @@ TEST_CASE("blocks: a table produces one Table block with a cell grid",
     CHECK(cell_text(t->table.rows[0][1]) == "B");
     CHECK(t->table.col_align.size() == 2);
     // No separator spans in the new model.
-    CHECK(cell_text(t->table.rows[0][0]).find("\xe2\x94\x82") ==
-          std::string::npos);
+    CHECK(cell_text(t->table.rows[0][0]).find("\xe2\x94\x82") == std::string::npos);
 }
 
-TEST_CASE("blocks: table <thead> rows are counted and bolded",
-          "[html_spans][blocks]")
+TEST_CASE("blocks: table <thead> rows are counted and bolded", "[html_spans][blocks]")
 {
-    auto blocks = html_to_blocks(
-        "<table><thead><tr><th>Name</th><th>Age</th></tr></thead>"
-        "<tbody><tr><td>Bob</td><td>42</td></tr></tbody></table>",
-        false);
+    auto blocks = html_to_blocks("<table><thead><tr><th>Name</th><th>Age</th></tr></thead>"
+                                 "<tbody><tr><td>Bob</td><td>42</td></tr></tbody></table>",
+                                 false);
     const BodyBlock* t = find_block(blocks, BodyBlock::Kind::Table);
     REQUIRE(t != nullptr);
     REQUIRE(t->table.rows.size() == 2);
     CHECK(t->table.header_rows == 1);
     bool has_bold = false;
     for (const auto& sp : t->table.rows[0][0].spans)
-        if (sp.bold) has_bold = true;
+    {
+        if (sp.bold)
+        {
+            has_bold = true;
+        }
+    }
     CHECK(has_bold);
     // Body cells are not bold.
     for (const auto& sp : t->table.rows[1][0].spans)
+    {
         CHECK_FALSE(sp.bold);
+    }
 }
 
 TEST_CASE("blocks: multi-row body table keeps every row", "[html_spans][blocks]")
 {
-    auto blocks = html_to_blocks(
-        "<table><tr><td>1</td><td>2</td></tr>"
-        "<tr><td>3</td><td>4</td></tr>"
-        "<tr><td>5</td><td>6</td></tr></table>",
-        false);
+    auto blocks = html_to_blocks("<table><tr><td>1</td><td>2</td></tr>"
+                                 "<tr><td>3</td><td>4</td></tr>"
+                                 "<tr><td>5</td><td>6</td></tr></table>",
+                                 false);
     const BodyBlock* t = find_block(blocks, BodyBlock::Kind::Table);
     REQUIRE(t != nullptr);
     REQUIRE(t->table.rows.size() == 3);
@@ -1069,13 +1203,11 @@ TEST_CASE("blocks: multi-row body table keeps every row", "[html_spans][blocks]"
     CHECK(cell_text(t->table.rows[2][1]) == "6");
 }
 
-TEST_CASE("blocks: ragged table rows are padded to the widest row",
-          "[html_spans][blocks]")
+TEST_CASE("blocks: ragged table rows are padded to the widest row", "[html_spans][blocks]")
 {
-    auto blocks = html_to_blocks(
-        "<table><tr><td>a</td><td>b</td><td>c</td></tr>"
-        "<tr><td>d</td></tr></table>",
-        false);
+    auto blocks = html_to_blocks("<table><tr><td>a</td><td>b</td><td>c</td></tr>"
+                                 "<tr><td>d</td></tr></table>",
+                                 false);
     const BodyBlock* t = find_block(blocks, BodyBlock::Kind::Table);
     REQUIRE(t != nullptr);
     REQUIRE(t->table.rows.size() == 2);
@@ -1086,23 +1218,21 @@ TEST_CASE("blocks: ragged table rows are padded to the widest row",
     CHECK(t->table.col_align.size() == 3);
 }
 
-TEST_CASE("blocks: table column alignment comes from cell text-align",
-          "[html_spans][blocks]")
+TEST_CASE("blocks: table column alignment comes from cell text-align", "[html_spans][blocks]")
 {
-    auto blocks = html_to_blocks(
-        "<table><thead><tr>"
-        "<th style=\"text-align:left\">l</th>"
-        "<th style=\"text-align:center\">c</th>"
-        "<th style=\"text-align:right\">r</th>"
-        "<th>d</th>"
-        "</tr></thead>"
-        "<tbody><tr>"
-        "<td style=\"text-align:left\">1</td>"
-        "<td style=\"text-align:center\">2</td>"
-        "<td style=\"text-align:right\">3</td>"
-        "<td>4</td>"
-        "</tr></tbody></table>",
-        false);
+    auto blocks = html_to_blocks("<table><thead><tr>"
+                                 "<th style=\"text-align:left\">l</th>"
+                                 "<th style=\"text-align:center\">c</th>"
+                                 "<th style=\"text-align:right\">r</th>"
+                                 "<th>d</th>"
+                                 "</tr></thead>"
+                                 "<tbody><tr>"
+                                 "<td style=\"text-align:left\">1</td>"
+                                 "<td style=\"text-align:center\">2</td>"
+                                 "<td style=\"text-align:right\">3</td>"
+                                 "<td>4</td>"
+                                 "</tr></tbody></table>",
+                                 false);
     const BodyBlock* t = find_block(blocks, BodyBlock::Kind::Table);
     REQUIRE(t != nullptr);
     REQUIRE(t->table.col_align.size() == 4);
@@ -1112,26 +1242,23 @@ TEST_CASE("blocks: table column alignment comes from cell text-align",
     CHECK(t->table.col_align[3] == TableAlign::Default);
 }
 
-TEST_CASE("blocks: legacy align attribute and justify handling",
-          "[html_spans][blocks]")
+TEST_CASE("blocks: legacy align attribute and justify handling", "[html_spans][blocks]")
 {
-    auto blocks = html_to_blocks(
-        "<table><tr>"
-        "<td align=\"right\">1</td>"
-        "<td style=\"text-align:justify\">2</td>"
-        "</tr></table>",
-        false);
+    auto blocks = html_to_blocks("<table><tr>"
+                                 "<td align=\"right\">1</td>"
+                                 "<td style=\"text-align:justify\">2</td>"
+                                 "</tr></table>",
+                                 false);
     const BodyBlock* t = find_block(blocks, BodyBlock::Kind::Table);
     REQUIRE(t != nullptr);
     CHECK(t->table.col_align[0] == TableAlign::Right);
     CHECK(t->table.col_align[1] == TableAlign::Default); // justify → Default
 }
 
-TEST_CASE("blocks: a table between two paragraphs keeps block order",
-          "[html_spans][blocks]")
+TEST_CASE("blocks: a table between two paragraphs keeps block order", "[html_spans][blocks]")
 {
-    auto blocks = html_to_blocks(
-        "<p>before</p><table><tr><td>x</td></tr></table><p>after</p>", false);
+    auto blocks =
+        html_to_blocks("<p>before</p><table><tr><td>x</td></tr></table><p>after</p>", false);
     REQUIRE(blocks.size() == 3);
     CHECK(blocks[0].kind == BodyBlock::Kind::Paragraph);
     CHECK(joined_block_text(blocks[0]) == "before");
@@ -1140,15 +1267,13 @@ TEST_CASE("blocks: a table between two paragraphs keeps block order",
     CHECK(joined_block_text(blocks[2]) == "after");
 }
 
-TEST_CASE("blocks: inline formatting and links survive inside table cells",
-          "[html_spans][blocks]")
+TEST_CASE("blocks: inline formatting and links survive inside table cells", "[html_spans][blocks]")
 {
-    auto blocks = html_to_blocks(
-        "<table><tr>"
-        "<td>plain <b>bold</b> <code>x</code></td>"
-        "<td><a href=\"https://example.com\">link</a></td>"
-        "</tr></table>",
-        false);
+    auto blocks = html_to_blocks("<table><tr>"
+                                 "<td>plain <b>bold</b> <code>x</code></td>"
+                                 "<td><a href=\"https://example.com\">link</a></td>"
+                                 "</tr></table>",
+                                 false);
     const BodyBlock* t = find_block(blocks, BodyBlock::Kind::Table);
     REQUIRE(t != nullptr);
     REQUIRE(t->table.rows.size() == 1);
@@ -1156,8 +1281,14 @@ TEST_CASE("blocks: inline formatting and links survive inside table cells",
     bool has_bold = false, has_code = false;
     for (const auto& sp : c0)
     {
-        if (sp.bold) has_bold = true;
-        if (sp.code) has_code = true;
+        if (sp.bold)
+        {
+            has_bold = true;
+        }
+        if (sp.code)
+        {
+            has_code = true;
+        }
     }
     CHECK(has_bold);
     CHECK(has_code);
@@ -1166,14 +1297,12 @@ TEST_CASE("blocks: inline formatting and links survive inside table cells",
     CHECK(c1[0].url == "https://example.com");
 }
 
-TEST_CASE("blocks: cell text is leading-trimmed like a block",
-          "[html_spans][blocks]")
+TEST_CASE("blocks: cell text is leading-trimmed like a block", "[html_spans][blocks]")
 {
     // Leading CSS-collapsible whitespace inside a cell must be trimmed so the
     // four text backends agree on byte offsets (Qt strips block-start spaces;
     // Pango/CoreText/D2D do not). This mirrors commit_block().
-    auto blocks = html_to_blocks(
-        "<table><tr><td>   hi</td><td>x</td></tr></table>", false);
+    auto blocks = html_to_blocks("<table><tr><td>   hi</td><td>x</td></tr></table>", false);
     const BodyBlock* t = find_block(blocks, BodyBlock::Kind::Table);
     REQUIRE(t != nullptr);
     REQUIRE_FALSE(t->table.rows[0][0].spans.empty());
@@ -1182,26 +1311,28 @@ TEST_CASE("blocks: cell text is leading-trimmed like a block",
 
 TEST_CASE("blocks: cell trailing newlines are trimmed", "[html_spans][blocks]")
 {
-    auto blocks = html_to_blocks(
-        "<table><tr><td>hi<br></td><td>x</td></tr></table>", false);
+    auto blocks = html_to_blocks("<table><tr><td>hi<br></td><td>x</td></tr></table>", false);
     const BodyBlock* t = find_block(blocks, BodyBlock::Kind::Table);
     REQUIRE(t != nullptr);
     REQUIRE_FALSE(t->table.rows[0][0].spans.empty());
     CHECK(t->table.rows[0][0].spans.back().text == "hi");
 }
 
-TEST_CASE("blocks: nested tables are flattened into the containing cell",
-          "[html_spans][blocks]")
+TEST_CASE("blocks: nested tables are flattened into the containing cell", "[html_spans][blocks]")
 {
-    auto blocks = html_to_blocks(
-        "<table><tr><td>outer "
-        "<table><tr><td>inner</td></tr></table>"
-        "</td></tr></table>",
-        false);
+    auto blocks = html_to_blocks("<table><tr><td>outer "
+                                 "<table><tr><td>inner</td></tr></table>"
+                                 "</td></tr></table>",
+                                 false);
     // Exactly one Table block; the inner text is absorbed into the outer cell.
     int n_tables = 0;
     for (const auto& b : blocks)
-        if (b.kind == BodyBlock::Kind::Table) ++n_tables;
+    {
+        if (b.kind == BodyBlock::Kind::Table)
+        {
+            ++n_tables;
+        }
+    }
     CHECK(n_tables == 1);
     const BodyBlock* t = find_block(blocks, BodyBlock::Kind::Table);
     REQUIRE(t != nullptr);
@@ -1215,20 +1346,18 @@ TEST_CASE("blocks: an empty table emits no block", "[html_spans][blocks]")
     CHECK(find_block(blocks, BodyBlock::Kind::Table) == nullptr);
 }
 
-TEST_CASE("blocks: block content inside a cell stays in the cell",
-          "[html_spans][blocks]")
+TEST_CASE("blocks: block content inside a cell stays in the cell", "[html_spans][blocks]")
 {
     // The Matrix HTML subset permits <ul>/<p>/<blockquote> inside a <td>
     // (GFM never produces it). Their handlers must not commit_block()
     // mid-table and emit stray blocks before the Table.
-    auto blocks = html_to_blocks(
-        "<p>before</p>"
-        "<table><tr>"
-        "<td><ul><li>a</li><li>b</li></ul></td>"
-        "<td><p>one</p><p>two</p></td>"
-        "</tr></table>"
-        "<p>after</p>",
-        false);
+    auto blocks = html_to_blocks("<p>before</p>"
+                                 "<table><tr>"
+                                 "<td><ul><li>a</li><li>b</li></ul></td>"
+                                 "<td><p>one</p><p>two</p></td>"
+                                 "</tr></table>"
+                                 "<p>after</p>",
+                                 false);
 
     REQUIRE(blocks.size() == 3);
     CHECK(blocks[0].kind == BodyBlock::Kind::Paragraph);
@@ -1247,29 +1376,32 @@ TEST_CASE("blocks: block content inside a cell stays in the cell",
     CHECK(c1.find("two") != std::string::npos);
 }
 
-TEST_CASE("blocks: link within a list item survives as a hyperlink span",
-          "[html_spans][blocks]")
+TEST_CASE("blocks: link within a list item survives as a hyperlink span", "[html_spans][blocks]")
 {
-    auto blocks = html_to_blocks(
-        "<ul><li><a href=\"https://example.org\">link</a></li></ul>", false);
+    auto blocks =
+        html_to_blocks("<ul><li><a href=\"https://example.org\">link</a></li></ul>", false);
     const BodyBlock* item = find_block(blocks, BodyBlock::Kind::UnorderedItem);
     REQUIRE(item != nullptr);
     bool has_url = false;
     for (const auto& sp : item->spans)
-        if (!sp.url.empty()) has_url = true;
+    {
+        if (!sp.url.empty())
+        {
+            has_url = true;
+        }
+    }
     CHECK(has_url);
 }
 
-TEST_CASE("blocks: indented list-item content has no leading space span",
-          "[html_spans][blocks]")
+TEST_CASE("blocks: indented list-item content has no leading space span", "[html_spans][blocks]")
 {
     // Indented HTML whitespace (\n + spaces) between <li> and the first
     // inline element must be stripped so that all canvas backends share
     // the same byte offsets when painting span backgrounds.
-    auto blocks = html_to_blocks(
-        "<ul><li>\n    <a href=\"https://example.org\"><code>abc</code></a>"
-        "\n</li></ul>",
-        false);
+    auto blocks =
+        html_to_blocks("<ul><li>\n    <a href=\"https://example.org\"><code>abc</code></a>"
+                       "\n</li></ul>",
+                       false);
     const BodyBlock* item = find_block(blocks, BodyBlock::Kind::UnorderedItem);
     REQUIRE(item != nullptr);
     REQUIRE(!item->spans.empty());
@@ -1278,13 +1410,11 @@ TEST_CASE("blocks: indented list-item content has no leading space span",
 
 // ── <img data-mx-emoticon> (MSC2545 inline custom emoticon) ─────────────────
 
-TEST_CASE("img: self-closed MSC2545 emoticon becomes an image span",
-          "[html_spans][img]")
+TEST_CASE("img: self-closed MSC2545 emoticon becomes an image span", "[html_spans][img]")
 {
-    auto s = html_to_spans(
-        "hi <img data-mx-emoticon src=\"mxc://x.org/abc\" alt=\":wave:\" "
-        "title=\":wave:\" height=\"32\"/> there",
-        false);
+    auto s = html_to_spans("hi <img data-mx-emoticon src=\"mxc://x.org/abc\" alt=\":wave:\" "
+                           "title=\":wave:\" height=\"32\"/> there",
+                           false);
     bool found = false;
     for (const auto& sp : s)
     {
@@ -1306,10 +1436,9 @@ TEST_CASE("img: bare (non-self-closed) MSC2545 emoticon is also recognised "
     // A bare <img> (no trailing slash) must not be pushed onto the
     // formatting stack expecting a </img> that never arrives — confirmed by
     // checking that <b> after it still toggles bold correctly.
-    auto s = html_to_spans(
-        "<img data-mx-emoticon src=\"mxc://x.org/abc\" alt=\":wave:\"> "
-        "<b>bold</b> plain",
-        false);
+    auto s = html_to_spans("<img data-mx-emoticon src=\"mxc://x.org/abc\" alt=\":wave:\"> "
+                           "<b>bold</b> plain",
+                           false);
     bool found_image = false;
     bool found_bold = false;
     bool found_plain = false;
@@ -1334,13 +1463,13 @@ TEST_CASE("img: bare (non-self-closed) MSC2545 emoticon is also recognised "
     CHECK(found_plain);
 }
 
-TEST_CASE("img: without data-mx-emoticon falls back to alt text",
-          "[html_spans][img]")
+TEST_CASE("img: without data-mx-emoticon falls back to alt text", "[html_spans][img]")
 {
-    auto s = html_to_spans(
-        "<img src=\"mxc://x.org/abc\" alt=\"a plain image\"/>", false);
+    auto s = html_to_spans("<img src=\"mxc://x.org/abc\" alt=\"a plain image\"/>", false);
     for (const auto& sp : s)
+    {
         CHECK_FALSE(sp.is_image);
+    }
     CHECK(joined_text(s).find("a plain image") != std::string::npos);
 }
 
@@ -1355,38 +1484,42 @@ TEST_CASE("img: a block-leading emoticon (no preceding text, no <p> "
     // satisfies vacuously, so an image span (legitimately empty text) with
     // nothing before it was being erased outright before ever reaching
     // paint.
-    auto blocks = html_to_blocks(
-        "<img data-mx-emoticon "
-        "src=\"mxc://gnomos.org/7237e619d21c4054078c8bf4c915574705d69081\" "
-        "alt=\":cacodemon:\" title=\":cacodemon:\" height=\"32\"/> oh",
-        false);
+    auto blocks =
+        html_to_blocks("<img data-mx-emoticon "
+                       "src=\"mxc://gnomos.org/7237e619d21c4054078c8bf4c915574705d69081\" "
+                       "alt=\":cacodemon:\" title=\":cacodemon:\" height=\"32\"/> oh",
+                       false);
     REQUIRE(!blocks.empty());
     bool found_image = false;
     for (auto& b : blocks)
+    {
         for (auto& sp : b.spans)
+        {
             if (sp.is_image)
+            {
                 found_image = true;
+            }
+        }
+    }
     CHECK(found_image);
 }
 
-TEST_CASE("img: non-mxc src is rejected even with data-mx-emoticon",
-          "[html_spans][img]")
+TEST_CASE("img: non-mxc src is rejected even with data-mx-emoticon", "[html_spans][img]")
 {
-    auto s = html_to_spans(
-        "<img data-mx-emoticon src=\"https://evil.example/x.png\" "
-        "alt=\":wave:\"/>",
-        false);
+    auto s = html_to_spans("<img data-mx-emoticon src=\"https://evil.example/x.png\" "
+                           "alt=\":wave:\"/>",
+                           false);
     for (const auto& sp : s)
+    {
         CHECK_FALSE(sp.is_image);
+    }
     CHECK(joined_text(s).find(":wave:") != std::string::npos);
 }
 
-TEST_CASE("img: alt falls back to title when alt is absent",
-          "[html_spans][img]")
+TEST_CASE("img: alt falls back to title when alt is absent", "[html_spans][img]")
 {
-    auto s = html_to_spans(
-        "<img data-mx-emoticon src=\"mxc://x.org/abc\" title=\":smile:\"/>",
-        false);
+    auto s =
+        html_to_spans("<img data-mx-emoticon src=\"mxc://x.org/abc\" title=\":smile:\"/>", false);
     bool found = false;
     for (const auto& sp : s)
     {
@@ -1399,19 +1532,21 @@ TEST_CASE("img: alt falls back to title when alt is absent",
     CHECK(found);
 }
 
-TEST_CASE("img: recognised inside html_to_blocks paragraphs too",
-          "[html_spans][img][blocks]")
+TEST_CASE("img: recognised inside html_to_blocks paragraphs too", "[html_spans][img][blocks]")
 {
-    auto blocks = html_to_blocks(
-        "<p>hi <img data-mx-emoticon src=\"mxc://x.org/abc\" "
-        "alt=\":wave:\"/></p>",
-        false);
+    auto blocks = html_to_blocks("<p>hi <img data-mx-emoticon src=\"mxc://x.org/abc\" "
+                                 "alt=\":wave:\"/></p>",
+                                 false);
     const BodyBlock* p = find_block(blocks, BodyBlock::Kind::Paragraph);
     REQUIRE(p != nullptr);
     bool found = false;
     for (const auto& sp : p->spans)
+    {
         if (sp.is_image)
+        {
             found = true;
+        }
+    }
     CHECK(found);
 }
 
@@ -1427,22 +1562,19 @@ TEST_CASE("is_emoji_only: single emoji is emoji-only", "[html_spans][emoji]")
     CHECK(is_emoji_only("\xF0\x9F\x98\x80")); // 😀
 }
 
-TEST_CASE("is_emoji_only: ZWJ family sequence is emoji-only",
-          "[html_spans][emoji]")
+TEST_CASE("is_emoji_only: ZWJ family sequence is emoji-only", "[html_spans][emoji]")
 {
     // 👨‍👩‍👧‍👦
     CHECK(is_emoji_only("\xF0\x9F\x91\xA8\xE2\x80\x8D\xF0\x9F\x91\xA9\xE2\x80"
                         "\x8D\xF0\x9F\x91\xA7\xE2\x80\x8D\xF0\x9F\x91\xA6"));
 }
 
-TEST_CASE("is_emoji_only: skin-tone modifier is emoji-only",
-          "[html_spans][emoji]")
+TEST_CASE("is_emoji_only: skin-tone modifier is emoji-only", "[html_spans][emoji]")
 {
     CHECK(is_emoji_only("\xF0\x9F\x91\x8D\xF0\x9F\x8F\xBD")); // 👍🏽
 }
 
-TEST_CASE("is_emoji_only: keycap sequence is emoji-only",
-          "[html_spans][emoji]")
+TEST_CASE("is_emoji_only: keycap sequence is emoji-only", "[html_spans][emoji]")
 {
     CHECK(is_emoji_only("1\xEF\xB8\x8F\xE2\x83\xA3")); // 1️⃣
 }
@@ -1453,14 +1585,12 @@ TEST_CASE("is_emoji_only: emoji with surrounding whitespace still emoji-only",
     CHECK(is_emoji_only("  \xF0\x9F\x98\x80  \t\n"));
 }
 
-TEST_CASE("is_emoji_only: mixed text and emoji is not emoji-only",
-          "[html_spans][emoji]")
+TEST_CASE("is_emoji_only: mixed text and emoji is not emoji-only", "[html_spans][emoji]")
 {
     CHECK_FALSE(is_emoji_only("hi \xF0\x9F\x98\x80"));
 }
 
-TEST_CASE("is_emoji_only: text dingbats are not emoji, emoji dingbats are",
-          "[html_spans][emoji]")
+TEST_CASE("is_emoji_only: text dingbats are not emoji, emoji dingbats are", "[html_spans][emoji]")
 {
     CHECK_FALSE(is_emoji_only("\xE2\x9C\xBF")); // ✿ U+273F
     CHECK_FALSE(is_emoji_only("\xE2\x97\x86")); // ◆ U+25C6
@@ -1473,38 +1603,34 @@ TEST_CASE("is_emoji_only: bare digit is not emoji-only", "[html_spans][emoji]")
     CHECK_FALSE(is_emoji_only("1"));
 }
 
-TEST_CASE("is_emoji_only: plain text is not emoji-only",
-          "[html_spans][emoji]")
+TEST_CASE("is_emoji_only: plain text is not emoji-only", "[html_spans][emoji]")
 {
     CHECK_FALSE(is_emoji_only("hello"));
 }
 
-TEST_CASE("is_emoji_only: empty string is not emoji-only",
-          "[html_spans][emoji]")
+TEST_CASE("is_emoji_only: empty string is not emoji-only", "[html_spans][emoji]")
 {
     CHECK_FALSE(is_emoji_only(""));
 }
 
-TEST_CASE("is_emoji_only: whitespace-only string is not emoji-only",
-          "[html_spans][emoji]")
+TEST_CASE("is_emoji_only: whitespace-only string is not emoji-only", "[html_spans][emoji]")
 {
     CHECK_FALSE(is_emoji_only("   \t\n"));
 }
 
-TEST_CASE("is_emoji_cluster: toned, VS16, ZWJ and keycap clusters are emoji",
-          "[html_spans][emoji]")
+TEST_CASE("is_emoji_cluster: toned, VS16, ZWJ and keycap clusters are emoji", "[html_spans][emoji]")
 {
-    CHECK(tk::is_emoji_cluster("\xF0\x9F\x91\x8D\xF0\x9F\x8F\xBD")); // 👍🏽
-    CHECK(tk::is_emoji_cluster("\xE2\x9D\xA4\xEF\xB8\x8F"));         // ❤️
+    CHECK(tk::is_emoji_cluster("\xF0\x9F\x91\x8D\xF0\x9F\x8F\xBD"));             // 👍🏽
+    CHECK(tk::is_emoji_cluster("\xE2\x9D\xA4\xEF\xB8\x8F"));                     // ❤️
     CHECK(tk::is_emoji_cluster("\xF0\x9F\x91\xA9\xE2\x80\x8D\xF0\x9F\x92\xBB")); // 👩‍💻
-    CHECK(tk::is_emoji_cluster("1\xEF\xB8\x8F\xE2\x83\xA3"));        // 1️⃣
+    CHECK(tk::is_emoji_cluster("1\xEF\xB8\x8F\xE2\x83\xA3"));                    // 1️⃣
 }
 
 TEST_CASE("is_emoji_cluster: letters, combining marks and lone modifiers "
           "are not emoji",
           "[html_spans][emoji]")
 {
-    CHECK_FALSE(tk::is_emoji_cluster("e\xCC\x81"));       // e + U+0301
+    CHECK_FALSE(tk::is_emoji_cluster("e\xCC\x81")); // e + U+0301
     CHECK_FALSE(tk::is_emoji_cluster("1"));
     CHECK_FALSE(tk::is_emoji_cluster("\xF0\x9F\x8F\xBD")); // lone 🏽
     CHECK_FALSE(tk::is_emoji_cluster("\n"));
@@ -1554,8 +1680,7 @@ TEST_CASE("is_emoji_only_spans: custom emoji alongside real text is not "
     CHECK_FALSE(is_emoji_only_spans({img, text}));
 }
 
-TEST_CASE("is_emoji_only_spans: a mention pill is not emoji-only",
-          "[html_spans][emoji]")
+TEST_CASE("is_emoji_only_spans: a mention pill is not emoji-only", "[html_spans][emoji]")
 {
     tk::TextSpan img;
     img.is_image = true;
@@ -1565,14 +1690,12 @@ TEST_CASE("is_emoji_only_spans: a mention pill is not emoji-only",
     CHECK_FALSE(is_emoji_only_spans({img, pill}));
 }
 
-TEST_CASE("is_emoji_only_spans: empty span list is not emoji-only",
-          "[html_spans][emoji]")
+TEST_CASE("is_emoji_only_spans: empty span list is not emoji-only", "[html_spans][emoji]")
 {
     CHECK_FALSE(is_emoji_only_spans({}));
 }
 
-TEST_CASE("segment_emoji_runs: plain text stays a single unsplit span",
-          "[html_spans][emoji]")
+TEST_CASE("segment_emoji_runs: plain text stays a single unsplit span", "[html_spans][emoji]")
 {
     tk::TextSpan src;
     src.text = "hello";
@@ -1582,8 +1705,7 @@ TEST_CASE("segment_emoji_runs: plain text stays a single unsplit span",
     CHECK_FALSE(out[0].is_emoji_run);
 }
 
-TEST_CASE("segment_emoji_runs: emoji-only text is a single tagged span",
-          "[html_spans][emoji]")
+TEST_CASE("segment_emoji_runs: emoji-only text is a single tagged span", "[html_spans][emoji]")
 {
     tk::TextSpan src;
     src.text = "\xF0\x9F\x98\x80"; // 😀
@@ -1593,8 +1715,7 @@ TEST_CASE("segment_emoji_runs: emoji-only text is a single tagged span",
     CHECK(out[0].is_emoji_run);
 }
 
-TEST_CASE("segment_emoji_runs: mixed text splits into text/emoji sub-spans",
-          "[html_spans][emoji]")
+TEST_CASE("segment_emoji_runs: mixed text splits into text/emoji sub-spans", "[html_spans][emoji]")
 {
     tk::TextSpan src;
     src.text = "hi \xF0\x9F\x98\x80 there"; // "hi 😀 there"
@@ -1608,8 +1729,7 @@ TEST_CASE("segment_emoji_runs: mixed text splits into text/emoji sub-spans",
     CHECK_FALSE(out[2].is_emoji_run);
 }
 
-TEST_CASE("segment_emoji_runs: multiple emoji runs are each tagged",
-          "[html_spans][emoji]")
+TEST_CASE("segment_emoji_runs: multiple emoji runs are each tagged", "[html_spans][emoji]")
 {
     tk::TextSpan src;
     src.text = "\xF0\x9F\x98\x80 hi \xF0\x9F\x8E\x89"; // "😀 hi 🎉"
@@ -1620,8 +1740,7 @@ TEST_CASE("segment_emoji_runs: multiple emoji runs are each tagged",
     CHECK(out[2].is_emoji_run);
 }
 
-TEST_CASE("segment_emoji_runs: code spans are never split",
-          "[html_spans][emoji]")
+TEST_CASE("segment_emoji_runs: code spans are never split", "[html_spans][emoji]")
 {
     tk::TextSpan src;
     src.text = "x \xF0\x9F\x98\x80 y";
@@ -1632,8 +1751,7 @@ TEST_CASE("segment_emoji_runs: code spans are never split",
     CHECK_FALSE(out[0].is_emoji_run);
 }
 
-TEST_CASE("segment_emoji_runs: code_block spans are never split",
-          "[html_spans][emoji]")
+TEST_CASE("segment_emoji_runs: code_block spans are never split", "[html_spans][emoji]")
 {
     tk::TextSpan src;
     src.text = "x \xF0\x9F\x98\x80 y";
@@ -1650,7 +1768,7 @@ TEST_CASE("segment_emoji_runs: non-emoji formatting is inherited by sub-spans",
     tk::TextSpan src;
     src.text = "hi \xF0\x9F\x98\x80";
     src.bold = true;
-    src.url  = "https://example.org";
+    src.url = "https://example.org";
     auto out = segment_emoji_runs(src);
     REQUIRE(out.size() == 2);
     for (const auto& sp : out)
@@ -1660,14 +1778,12 @@ TEST_CASE("segment_emoji_runs: non-emoji formatting is inherited by sub-spans",
     }
 }
 
-TEST_CASE("find_emoji_byte_ranges: empty string yields no ranges",
-          "[html_spans][emoji]")
+TEST_CASE("find_emoji_byte_ranges: empty string yields no ranges", "[html_spans][emoji]")
 {
     CHECK(find_emoji_byte_ranges("").empty());
 }
 
-TEST_CASE("find_emoji_byte_ranges: plain text yields no ranges",
-          "[html_spans][emoji]")
+TEST_CASE("find_emoji_byte_ranges: plain text yields no ranges", "[html_spans][emoji]")
 {
     CHECK(find_emoji_byte_ranges("hello").empty());
 }
@@ -1682,36 +1798,33 @@ TEST_CASE("find_emoji_byte_ranges: single emoji yields one full-string range",
     CHECK(ranges[0].end_byte == s.size());
 }
 
-TEST_CASE("find_emoji_byte_ranges: mixed text yields byte-accurate ranges",
-          "[html_spans][emoji]")
+TEST_CASE("find_emoji_byte_ranges: mixed text yields byte-accurate ranges", "[html_spans][emoji]")
 {
     const std::string s = "hi \xF0\x9F\x98\x80 there"; // "hi 😀 there"
     auto ranges = find_emoji_byte_ranges(s);
     REQUIRE(ranges.size() == 1);
     CHECK(ranges[0].start_byte == 3);
     CHECK(ranges[0].end_byte == 7); // "hi " is 3 bytes, emoji is 4 bytes
-    CHECK(s.substr(ranges[0].start_byte,
-                   ranges[0].end_byte - ranges[0].start_byte) ==
-         "\xF0\x9F\x98\x80");
+    CHECK(s.substr(ranges[0].start_byte, ranges[0].end_byte - ranges[0].start_byte) ==
+          "\xF0\x9F\x98\x80");
 }
 
 TEST_CASE("utf16_indices_for_byte_offsets: maps ASCII, BMP and astral text in one pass",
           "[html_spans][emoji]")
 {
     // "a" (1 byte, 1 unit), "é" (2 bytes, 1 unit), "😀" (4 bytes, 2 units), "b".
-    const std::string s = "a\xC3\xA9\xF0\x9F\x98\x80" "b";
+    const std::string s = "a\xC3\xA9\xF0\x9F\x98\x80"
+                          "b";
     using tk::utf16_indices_for_byte_offsets;
     // Out of order, with one past the end: results follow the request order.
     CHECK(utf16_indices_for_byte_offsets(s, {7, 0, 3, 1, 8, 99}) ==
           std::vector<std::size_t>{4, 0, 2, 1, 5, 5});
     // Inside the emoji's code point: maps to the index just after it.
     CHECK(utf16_indices_for_byte_offsets(s, {5}) == std::vector<std::size_t>{4});
-    CHECK(utf16_indices_for_byte_offsets("", {0, 3}) ==
-          std::vector<std::size_t>{0, 0});
+    CHECK(utf16_indices_for_byte_offsets("", {0, 3}) == std::vector<std::size_t>{0, 0});
 }
 
-TEST_CASE("find_emoji_byte_ranges: multiple runs are returned in order",
-          "[html_spans][emoji]")
+TEST_CASE("find_emoji_byte_ranges: multiple runs are returned in order", "[html_spans][emoji]")
 {
     const std::string s = "\xF0\x9F\x98\x80 hi \xF0\x9F\x8E\x89"; // "😀 hi 🎉"
     auto ranges = find_emoji_byte_ranges(s);
@@ -1720,19 +1833,98 @@ TEST_CASE("find_emoji_byte_ranges: multiple runs are returned in order",
     CHECK(ranges[0].end_byte <= ranges[1].start_byte);
 }
 
-TEST_CASE("neutralize_literal_carriers turns a literal U+FFFC in text into U+FFFD",
-          "[html_spans]")
+TEST_CASE("neutralize_literal_carriers turns a literal U+FFFC in text into U+FFFD", "[html_spans]")
 {
     using tesseract::views::neutralize_literal_carriers;
     tk::TextSpan text;
-    text.text = "a\xEF\xBF\xBC" "b\xEF\xBF\xBC";
+    text.text = "a\xEF\xBF\xBC"
+                "b\xEF\xBF\xBC";
     tk::TextSpan pill;
     pill.is_image = true; // an image span's carrier is filled in later
     std::vector<tk::TextSpan> spans{text, pill};
 
     neutralize_literal_carriers(spans);
 
-    CHECK(spans[0].text == "a\xEF\xBF\xBD" "b\xEF\xBF\xBD");
+    CHECK(spans[0].text == "a\xEF\xBF\xBD"
+                           "b\xEF\xBF\xBD");
     CHECK(spans[1].is_image);
     CHECK(spans[1].text.empty());
+}
+
+TEST_CASE("autolink: a bare URL in formatted_body becomes a link", "[html_spans][autolink]")
+{
+    auto s = html_to_spans("see https://example.org/p/1 now", false);
+    REQUIRE(s.size() == 3);
+    CHECK(s[0].text == "see ");
+    CHECK(s[1].text == "https://example.org/p/1");
+    CHECK(s[1].url == "https://example.org/p/1");
+    CHECK(s[2].url.empty());
+}
+
+TEST_CASE("autolink: a bare URL in a block body becomes a link", "[html_spans][autolink]")
+{
+    auto b = html_to_blocks("<ul><li>go to https://example.org</li></ul>", false);
+    bool found = false;
+    for (const auto& blk : b)
+    {
+        found = found || any_link(blk.spans);
+    }
+    CHECK(found);
+}
+
+TEST_CASE("autolink: URLs in <a> and <code> keep their existing treatment",
+          "[html_spans][autolink]")
+{
+    auto a = html_to_spans("<a href=\"https://a.example\">https://b.example</a>", false);
+    REQUIRE(a.size() == 1);
+    CHECK(a[0].url == "https://a.example");
+
+    auto c = html_to_spans("<code>https://example.org</code>", false);
+    CHECK_FALSE(any_link(c));
+}
+
+TEST_CASE("first_preview_url: an autolinked bare URL is previewed", "[html_spans][url_preview]")
+{
+    CHECK(first_preview_url("see <a href=\"https://example.org/\">example.org</a>",
+                            "see example.org") == "https://example.org/");
+    CHECK(first_preview_url("<a href=\"https://e.org/?a=1&amp;b=2\">"
+                            "https://e.org/?a=1&amp;b=2</a>",
+                            "https://e.org/?a=1&b=2") == "https://e.org/?a=1&b=2");
+    CHECK(first_preview_url("", "go to https://example.org now") == "https://example.org");
+}
+
+TEST_CASE("first_preview_url: an embedded link is not previewed", "[html_spans][url_preview]")
+{
+    CHECK(first_preview_url("read <a href=\"https://example.org\">the docs</a>",
+                            "read [the docs](https://example.org)")
+              .empty());
+    // Another client's plain fallback that spells the URL out.
+    CHECK(first_preview_url("read <a href=\"https://example.org\">the docs</a>",
+                            "read the docs (https://example.org)")
+              .empty());
+}
+
+TEST_CASE("first_preview_url: a bare URL next to an embedded link wins",
+          "[html_spans][url_preview]")
+{
+    CHECK(first_preview_url("<a href=\"https://a.example\">docs</a> and "
+                            "<a href=\"https://b.example\">https://b.example</a>",
+                            "[docs](https://a.example) and https://b.example") ==
+          "https://b.example");
+    // A formatted_body that left the bare URL unlinked falls back to the body.
+    CHECK(first_preview_url("<a href=\"https://a.example\">docs</a> and https://b.example",
+                            "[docs](https://a.example) and https://b.example") ==
+          "https://b.example");
+}
+
+TEST_CASE("first_preview_url: code and matrix.to links are not previewed",
+          "[html_spans][url_preview]")
+{
+    CHECK(first_preview_url("<code><a href=\"https://e.org\">https://e.org</a></code>",
+                            "`https://e.org`")
+              .empty());
+    CHECK(first_preview_url("<a href=\"https://matrix.to/#/!r:s\">"
+                            "https://matrix.to/#/!r:s</a>",
+                            "https://matrix.to/#/!r:s")
+              .empty());
 }

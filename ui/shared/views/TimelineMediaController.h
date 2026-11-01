@@ -36,8 +36,7 @@ struct MessageRowData;
 // Same shape as MessageListView's historical nested alias: given the opaque
 // audio source token (JSON), return the decoded clip bytes (empty on cache
 // miss, which kicks off a background fetch in the provider).
-using VoiceBytesProvider =
-    std::function<std::vector<std::uint8_t>(const std::string& source_json)>;
+using VoiceBytesProvider = std::function<std::vector<std::uint8_t>(const std::string& source_json)>;
 
 class TimelineMediaController
 {
@@ -48,18 +47,18 @@ public:
     struct VoiceCardGeom
     {
         std::string event_id;
-        tk::Rect    play_button{};    // play/pause hit rect
-        tk::Rect    waveform_strip{}; // scrub hit rect
-        tk::Rect    speed_pill{};     // playback-rate cycle hit rect
-        tk::Rect    card_bounds{};
+        tk::Rect play_button{};    // play/pause hit rect
+        tk::Rect waveform_strip{}; // scrub hit rect
+        tk::Rect speed_pill{};     // playback-rate cycle hit rect
+        tk::Rect card_bounds{};
     };
 
     struct AudioCardGeom
     {
         std::string event_id;
-        tk::Rect    play_button{};    // play/pause hit rect
-        tk::Rect    progress_track{}; // linear scrub hit rect
-        tk::Rect    card_bounds{};
+        tk::Rect play_button{};    // play/pause hit rect
+        tk::Rect progress_track{}; // linear scrub hit rect
+        tk::Rect card_bounds{};
     };
 
     // Given the event_id of a voice clip that just finished playing on its
@@ -68,8 +67,8 @@ public:
     // Injected by MessageListView, the only place with cheap access to
     // messages_. The returned pointer is only used synchronously within
     // on_audio_progress().
-    using NextVoiceLookup = std::function<const MessageRowData*(
-        const std::string& finished_event_id)>;
+    using NextVoiceLookup =
+        std::function<const MessageRowData*(const std::string& finished_event_id)>;
 
     // --- wiring (forwarded from MessageListView's public API) ---
     void set_player(std::unique_ptr<tk::AudioPlayer> player);
@@ -80,7 +79,10 @@ public:
         next_voice_lookup_ = std::move(lookup);
     }
 
-    bool has_player() const { return static_cast<bool>(audio_player_); }
+    bool has_player() const
+    {
+        return static_cast<bool>(audio_player_);
+    }
     bool has_bytes_provider() const
     {
         return static_cast<bool>(voice_bytes_provider_);
@@ -93,8 +95,7 @@ public:
     // bypass the "is this row still visible?" abandonment check — that check
     // exists to abandon a stale *manual* click after the user scrolls away,
     // which doesn't apply here since the user never looked at this row.
-    void handle_voice_play_click(const MessageRowData& row,
-                                 bool                   is_auto_advance = false);
+    void handle_voice_play_click(const MessageRowData& row, bool is_auto_advance = false);
     void handle_voice_scrub_at(const MessageRowData& row, float world_x);
     void handle_voice_speed_click();
     void handle_audio_play_click(const MessageRowData& row);
@@ -117,9 +118,15 @@ public:
     void stop_active_playback();
     // True while a pending play is armed (used by the view to abandon it if the
     // armed clip scrolls off-screen before its bytes warm).
-    bool has_pending_play() const { return !pending_play_event_id_.empty(); }
+    bool has_pending_play() const
+    {
+        return !pending_play_event_id_.empty();
+    }
     // The event id of the armed pending play (empty when none).
-    const std::string& pending_play_event_id() const { return pending_play_event_id_; }
+    const std::string& pending_play_event_id() const
+    {
+        return pending_play_event_id_;
+    }
     // True when the armed pending play came from auto-advance rather than a
     // manual click, so MessageListView's retry should bypass the
     // still-visible check that exists only to abandon a stale manual click.
@@ -154,13 +161,16 @@ public:
     }
 
     // --- card paint (Adapter delegates here; icon cache stays Adapter-local) ---
-    void paint_voice_card(const MessageRowData& m, tk::PaintCtx& ctx,
-                          tk::Rect dst, tk::IconCache& play_icon);
-    void paint_audio_card(const MessageRowData& m, tk::PaintCtx& ctx,
-                          tk::Rect dst, tk::IconCache& play_icon);
+    void paint_voice_card(const MessageRowData& m, tk::PaintCtx& ctx, tk::Rect dst,
+                          tk::IconCache& play_icon);
+    void paint_audio_card(const MessageRowData& m, tk::PaintCtx& ctx, tk::Rect dst,
+                          tk::IconCache& play_icon);
 
     // --- accessors used by the hit-test / debugging ---
-    const std::string& playing_event_id() const { return playing_event_id_; }
+    const std::string& playing_event_id() const
+    {
+        return playing_event_id_;
+    }
 
     // --- MPRIS-facing controls: operate on whatever clip is already loaded,
     // unlike handle_*_play_click (which derive play-vs-pause from whether the
@@ -180,8 +190,8 @@ public:
     // when nothing is loaded.
     struct PlaybackSnapshot
     {
-        std::string   event_id;
-        bool          is_playing  = false;
+        std::string event_id;
+        bool is_playing = false;
         std::uint64_t position_ms = 0;
         std::uint64_t duration_ms = 0;
     };
@@ -201,9 +211,9 @@ private:
 
     PlaybackObserver playback_observer_;
     std::unique_ptr<tk::AudioPlayer> audio_player_;
-    VoiceBytesProvider               voice_bytes_provider_;
-    std::function<void()>            request_repaint_;
-    NextVoiceLookup                  next_voice_lookup_;
+    VoiceBytesProvider voice_bytes_provider_;
+    std::function<void()> request_repaint_;
+    NextVoiceLookup next_voice_lookup_;
 
     // True while stop() is being called as part of an explicit row switch
     // (handle_*_play_click / handle_*_scrub_at). Suppresses auto-advance
@@ -218,7 +228,7 @@ private:
     // AudioPlayer's on_progress callback so paint doesn't have to call
     // back into the player.
     std::uint64_t playing_position_ms_ = 0;
-    bool          playing_is_active_   = false;
+    bool playing_is_active_ = false;
     // Set to true once on_audio_progress() first observes is_playing()==true
     // for the current clip. Guards against clearing playing_event_id_ during
     // the async-load window when Qt reports is_playing()==false at position 0.
@@ -234,8 +244,8 @@ private:
     std::string pending_play_event_id_;
     std::string pending_play_token_;
     std::string pending_play_mime_;
-    bool        pending_play_is_voice_ = false; // voice → playback_rate_; audio → 1.0f
-    bool        pending_play_skip_visibility_gate_ = false;
+    bool pending_play_is_voice_ = false; // voice → playback_rate_; audio → 1.0f
+    bool pending_play_skip_visibility_gate_ = false;
 
     mutable std::unordered_map<std::string, VoiceCardGeom> voice_card_geom_;
     mutable std::unordered_map<std::string, AudioCardGeom> audio_card_geom_;

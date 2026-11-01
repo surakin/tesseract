@@ -45,8 +45,7 @@ struct MvOverlayStage
 
 // ── factories ─────────────────────────────────────────────────────────────
 
-TEST_CASE("item_from_image_hit copies tokens, caption and dimensions",
-          "[mediaviewer][items]")
+TEST_CASE("item_from_image_hit copies tokens, caption and dimensions", "[mediaviewer][items]")
 {
     MessageListView::ImageHit hit;
     hit.event_id = "$i";
@@ -67,8 +66,7 @@ TEST_CASE("item_from_image_hit copies tokens, caption and dimensions",
     CHECK(item.height == 300);
 }
 
-TEST_CASE("item_from_image_hit tolerates a missing thumbnail",
-          "[mediaviewer][items]")
+TEST_CASE("item_from_image_hit tolerates a missing thumbnail", "[mediaviewer][items]")
 {
     MessageListView::ImageHit hit;
     hit.source = tesseract::MediaSource::plain("mxc://hs/full");
@@ -119,8 +117,7 @@ TEST_CASE("item_from_avatar uses the URL as source and thumbnail with unknown si
 
 // ── media_save_spec ───────────────────────────────────────────────────────
 
-TEST_CASE("media_save_spec names images, falling back to 'image'",
-          "[mediaviewer][items]")
+TEST_CASE("media_save_spec names images, falling back to 'image'", "[mediaviewer][items]")
 {
     auto spec = tesseract::views::media_save_spec(image_item("mxc://x", "", "cat.png"));
     CHECK(spec.suggested_name == "cat.png");
@@ -143,18 +140,15 @@ TEST_CASE("media_save_spec names images, falling back to 'image'",
     CHECK(tesseract::views::media_save_spec(jpeg).suggested_name == "cat");
 }
 
-TEST_CASE("media_save_spec derives a video name from the mime subtype",
-          "[mediaviewer][items]")
+TEST_CASE("media_save_spec derives a video name from the mime subtype", "[mediaviewer][items]")
 {
-    auto spec = tesseract::views::media_save_spec(
-        video_item("{}", "", "video/webm"));
+    auto spec = tesseract::views::media_save_spec(video_item("{}", "", "video/webm"));
     CHECK(spec.suggested_name == "video.webm");
 
     spec = tesseract::views::media_save_spec(video_item("{}", "", "video/quicktime"));
     CHECK(spec.suggested_name == "video.mov");
 
-    spec = tesseract::views::media_save_spec(
-        video_item("{}", "", "video/mp4; codecs=avc1.42E01E"));
+    spec = tesseract::views::media_save_spec(video_item("{}", "", "video/mp4; codecs=avc1.42E01E"));
     CHECK(spec.suggested_name == "video.mp4");
 
     spec = tesseract::views::media_save_spec(video_item("{}", "", "video/x-matroska"));
@@ -244,15 +238,17 @@ TEST_CASE("on_save and on_copy receive the current item", "[mediaviewer][callbac
     MediaViewerOverlay overlay;
     overlay.open(image_item("mxc://example.org/img", "", "cat.png", 100, 100));
     MediaViewerItem saved;
-    overlay.on_save = [&](const MediaViewerItem& item) { saved = item; };
+    overlay.on_save = [&](const MediaViewerItem& item)
+    {
+        saved = item;
+    };
 
     overlay.save_btn_for_test()->click();
     CHECK(saved.source == "mxc://example.org/img");
     CHECK(saved.filename == "cat.png");
 }
 
-TEST_CASE("on_item_shown fires on open with the current load token",
-          "[mediaviewer][callbacks]")
+TEST_CASE("on_item_shown fires on open with the current load token", "[mediaviewer][callbacks]")
 {
     MediaViewerOverlay overlay;
     int shown = 0;
@@ -272,8 +268,7 @@ TEST_CASE("on_item_shown fires on open with the current load token",
 
 // ── load token ────────────────────────────────────────────────────────────
 
-TEST_CASE("a stale load token is ignored, the current one plays",
-          "[mediaviewer][token]")
+TEST_CASE("a stale load token is ignored, the current one plays", "[mediaviewer][token]")
 {
     MediaViewerOverlay overlay;
     auto player = std::make_unique<FakeVideoPlayer>();
@@ -293,8 +288,7 @@ TEST_CASE("a stale load token is ignored, the current one plays",
     CHECK(fake->play_count == 1);
 }
 
-TEST_CASE("closing the viewer invalidates in-flight deliveries",
-          "[mediaviewer][token]")
+TEST_CASE("closing the viewer invalidates in-flight deliveries", "[mediaviewer][token]")
 {
     MediaViewerOverlay overlay;
     auto player = std::make_unique<FakeVideoPlayer>();
@@ -359,8 +353,7 @@ TEST_CASE("images are unaffected by video deliveries", "[mediaviewer][token]")
 
 // ── memory accounting ─────────────────────────────────────────────────────
 
-TEST_CASE("memory_bytes sums the player and the stream pre-roll buffer",
-          "[mediaviewer][memory]")
+TEST_CASE("memory_bytes sums the player and the stream pre-roll buffer", "[mediaviewer][memory]")
 {
     MediaViewerOverlay overlay;
     CHECK(overlay.memory_bytes() == 0);

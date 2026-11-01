@@ -35,7 +35,9 @@ impl MediaStore for UpsertMediaStore {
         key: &str,
         holder: &str,
     ) -> Result<Option<CrossProcessLockGeneration>, Self::Error> {
-        self.0.try_take_leased_lock(lease_duration_ms, key, holder).await
+        self.0
+            .try_take_leased_lock(lease_duration_ms, key, holder)
+            .await
     }
 
     async fn add_media_content(
@@ -44,7 +46,9 @@ impl MediaStore for UpsertMediaStore {
         content: Vec<u8>,
         ignore_policy: IgnoreMediaRetentionPolicy,
     ) -> Result<(), Self::Error> {
-        self.0.add_media_content(request, content, ignore_policy).await
+        self.0
+            .add_media_content(request, content, ignore_policy)
+            .await
     }
 
     async fn replace_media_key(
@@ -94,7 +98,9 @@ impl MediaStore for UpsertMediaStore {
         request: &MediaRequestParameters,
         ignore_policy: IgnoreMediaRetentionPolicy,
     ) -> Result<(), Self::Error> {
-        self.0.set_ignore_media_retention_policy(request, ignore_policy).await
+        self.0
+            .set_ignore_media_retention_policy(request, ignore_policy)
+            .await
     }
 
     async fn clean(&self) -> Result<(), Self::Error> {
@@ -125,12 +131,26 @@ pub(crate) async fn build_store_config(
     cross_process: CrossProcessLockConfig,
 ) -> anyhow::Result<StoreConfig> {
     let (state, event_cache, media, crypto) = futures_util::try_join!(
-        async { SqliteStateStore::open_with_config(&config).await.map_err(anyhow::Error::from) },
         async {
-            SqliteEventCacheStore::open_with_config(&config).await.map_err(anyhow::Error::from)
+            SqliteStateStore::open_with_config(&config)
+                .await
+                .map_err(anyhow::Error::from)
         },
-        async { SqliteMediaStore::open_with_config(&config).await.map_err(anyhow::Error::from) },
-        async { SqliteCryptoStore::open_with_config(&config).await.map_err(anyhow::Error::from) },
+        async {
+            SqliteEventCacheStore::open_with_config(&config)
+                .await
+                .map_err(anyhow::Error::from)
+        },
+        async {
+            SqliteMediaStore::open_with_config(&config)
+                .await
+                .map_err(anyhow::Error::from)
+        },
+        async {
+            SqliteCryptoStore::open_with_config(&config)
+                .await
+                .map_err(anyhow::Error::from)
+        },
     )?;
     Ok(StoreConfig::new(cross_process)
         .state_store(state)
@@ -162,7 +182,9 @@ mod tests {
                 .as_nanos()
         ));
         std::fs::create_dir_all(&dir).unwrap();
-        SqliteMediaStore::open_with_config(&SqliteStoreConfig::new(&dir)).await.unwrap()
+        SqliteMediaStore::open_with_config(&SqliteStoreConfig::new(&dir))
+            .await
+            .unwrap()
     }
 
     async fn rename_twice(store: &impl MediaStore) -> Result<(), String> {
@@ -173,7 +195,10 @@ mod tests {
                 .add_media_content(&from, b"bytes".to_vec(), IgnoreMediaRetentionPolicy::Yes)
                 .await
                 .map_err(|e| format!("{e:?}"))?;
-            store.replace_media_key(&from, &remote).await.map_err(|e| format!("{e:?}"))?;
+            store
+                .replace_media_key(&from, &remote)
+                .await
+                .map_err(|e| format!("{e:?}"))?;
         }
         Ok(())
     }
@@ -188,8 +213,15 @@ mod tests {
     async fn wrapper_allows_duplicate_destination() {
         let store = UpsertMediaStore(open("wrapped").await);
         rename_twice(&store).await.unwrap();
-        let got = store.get_media_content(&req("mxc://x.org/same")).await.unwrap();
+        let got = store
+            .get_media_content(&req("mxc://x.org/same"))
+            .await
+            .unwrap();
         assert_eq!(got.as_deref(), Some(&b"bytes"[..]));
-        assert!(store.get_media_content(&req("mxc://local/2")).await.unwrap().is_none());
+        assert!(store
+            .get_media_content(&req("mxc://local/2"))
+            .await
+            .unwrap()
+            .is_none());
     }
 }

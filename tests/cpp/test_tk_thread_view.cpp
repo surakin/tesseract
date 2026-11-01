@@ -18,10 +18,10 @@ namespace
 MessageRowData make_reply(const std::string& id)
 {
     MessageRowData r;
-    r.kind           = MessageRowData::Kind::Text;
-    r.event_id       = id;
+    r.kind = MessageRowData::Kind::Text;
+    r.event_id = id;
     r.thread_root_id = "$root";
-    r.body           = "reply";
+    r.body = "reply";
     return r;
 }
 
@@ -50,8 +50,7 @@ TEST_CASE("ThreadView::set_messages forwards an empty list", "[thread_view]")
     CHECK(v.message_list()->messages().empty());
 }
 
-TEST_CASE("ThreadView keeps reply rows even though they have thread_root_id",
-          "[thread_view]")
+TEST_CASE("ThreadView keeps reply rows even though they have thread_root_id", "[thread_view]")
 {
     ThreadView v;
     std::vector<MessageRowData> rows;
@@ -65,19 +64,20 @@ TEST_CASE("ThreadView keeps reply rows even though they have thread_root_id",
     CHECK(v.message_list()->messages()[1].thread_root_id.empty());
 }
 
-TEST_CASE("ThreadView::on_close fires when floating close button clicked",
-          "[thread_view]")
+TEST_CASE("ThreadView::on_close fires when floating close button clicked", "[thread_view]")
 {
     TkThreadViewStage st;
     ThreadView v;
     st.arrange(v, {0, 0, 400, 600});
 
     bool closed = false;
-    v.on_close = [&] { closed = true; };
+    v.on_close = [&]
+    {
+        closed = true;
+    };
 
     // Close button sits in the right side of the empty header strip.
-    const float cx = 400.0f - ThreadView::kCloseInset
-                     - ThreadView::kCloseSz * 0.5f;
+    const float cx = 400.0f - ThreadView::kCloseInset - ThreadView::kCloseSz * 0.5f;
     const float cy = ThreadView::kHeaderH * 0.5f;
     tk::Widget* claimer = v.dispatch_pointer_down({cx, cy});
     REQUIRE(claimer != nullptr);
@@ -94,18 +94,23 @@ TEST_CASE("ThreadView follow toggle is hidden until supported and reports the wa
     st.arrange(v, {0, 0, 400, 600});
 
     std::vector<bool> toggles;
-    v.on_follow_toggled = [&](bool follow) { toggles.push_back(follow); };
+    v.on_follow_toggled = [&](bool follow)
+    {
+        toggles.push_back(follow);
+    };
 
     // Left of the close button, same vertical centre.
-    const float fx = 400.0f - 2.0f * ThreadView::kCloseSz - ThreadView::kCloseInset
-                     - ThreadView::kHeaderGap + ThreadView::kCloseSz * 0.5f;
+    const float fx = 400.0f - 2.0f * ThreadView::kCloseSz - ThreadView::kCloseInset -
+                     ThreadView::kHeaderGap + ThreadView::kCloseSz * 0.5f;
     const tk::Point p{fx, ThreadView::kHeaderH * 0.5f};
 
     auto click = [&]
     {
         tk::Widget* claimer = v.dispatch_pointer_down(p);
         if (!claimer)
+        {
             return;
+        }
         const tk::Rect cb = claimer->bounds();
         claimer->on_pointer_up({p.x - cb.x, p.y - cb.y}, /*inside_self=*/true);
     };
@@ -151,8 +156,8 @@ TEST_CASE("ThreadView's header row is the embedded search bar, exactly kHeaderH 
     const tk::Rect bar_bounds = v.search_bar()->bounds();
     CHECK(bar_bounds.y == 0.0f);
     CHECK(bar_bounds.h == ThreadView::kHeaderH);
-    CHECK(bar_bounds.w == 400.0f - ThreadView::kCloseSz -
-                              ThreadView::kCloseInset - ThreadView::kHeaderGap);
+    CHECK(bar_bounds.w ==
+          400.0f - ThreadView::kCloseSz - ThreadView::kCloseInset - ThreadView::kHeaderGap);
 }
 
 TEST_CASE("ThreadView's message list fires on_near_top on open when content "
@@ -173,7 +178,10 @@ TEST_CASE("ThreadView's message list fires on_near_top on open when content "
 
     int fires = 0;
     REQUIRE(v.message_list() != nullptr);
-    v.message_list()->on_near_top = [&] { ++fires; };
+    v.message_list()->on_near_top = [&]
+    {
+        ++fires;
+    };
 
     // A 600px-tall panel with only 2 short rows is far from full — the very
     // first arrange() pass (no scroll gesture at all) must ask for more.
@@ -181,8 +189,7 @@ TEST_CASE("ThreadView's message list fires on_near_top on open when content "
     CHECK(fires >= 1);
 }
 
-TEST_CASE("ThreadView::reset_search clears the query without closing the bar",
-          "[thread_view]")
+TEST_CASE("ThreadView::reset_search clears the query without closing the bar", "[thread_view]")
 {
     ThreadView v;
     REQUIRE(v.search_bar() != nullptr);
@@ -193,7 +200,10 @@ TEST_CASE("ThreadView::reset_search clears the query without closing the bar",
     // matches/highlights (see ShellBase::handle_thread_search_query_) —
     // reset_search() itself only owns the bar's own query/text state.
     std::string last_query = "unset";
-    v.search_bar()->on_query_changed = [&](const std::string& q) { last_query = q; };
+    v.search_bar()->on_query_changed = [&](const std::string& q)
+    {
+        last_query = q;
+    };
 
     v.reset_search();
 

@@ -6,12 +6,12 @@
 #include <span>
 #include <vector>
 
-namespace tk {
+namespace tk
+{
 
 // Rasterize an SVG document into a square image of target_px × target_px
 // device pixels. Returns nullptr on malformed input or allocation failure.
-std::unique_ptr<Image> rasterize_svg(CanvasFactory& factory,
-                                     std::span<const std::uint8_t> bytes,
+std::unique_ptr<Image> rasterize_svg(CanvasFactory& factory, std::span<const std::uint8_t> bytes,
                                      int target_px);
 
 // As the tinted rasterize_svg() overload below, but returns the raw
@@ -21,15 +21,14 @@ std::unique_ptr<Image> rasterize_svg(CanvasFactory& factory,
 // (e.g. Win32's custom title bar, painted with plain GDI/GDI+ since it
 // lives outside any tk::Canvas surface). Returns an empty vector on
 // malformed input / allocation failure.
-std::vector<std::uint8_t> rasterize_svg_rgba(std::span<const std::uint8_t> bytes,
-                                             int target_px, Color tint);
+std::vector<std::uint8_t> rasterize_svg_rgba(std::span<const std::uint8_t> bytes, int target_px,
+                                             Color tint);
 
 // As above, but recolor every pixel to `tint` after rasterizing:
 // RGB = tint.rgb, alpha = src_alpha * tint.a / 255. Use for monochrome line
 // icons (e.g. Lucide `currentColor`) so they adopt the surrounding theme /
 // context color instead of nanosvg's flat default gray.
-std::unique_ptr<Image> rasterize_svg(CanvasFactory& factory,
-                                     std::span<const std::uint8_t> bytes,
+std::unique_ptr<Image> rasterize_svg(CanvasFactory& factory, std::span<const std::uint8_t> bytes,
                                      int target_px, Color tint);
 
 // A lazily-rasterized, tinted SVG icon, cached until the DPI scale, tint, or
@@ -40,9 +39,8 @@ std::unique_ptr<Image> rasterize_svg(CanvasFactory& factory,
 class IconCache
 {
 public:
-    void draw(Canvas& canvas, CanvasFactory& factory,
-              std::span<const std::uint8_t> svg, Rect box, float logical_px,
-              Color tint);
+    void draw(Canvas& canvas, CanvasFactory& factory, std::span<const std::uint8_t> svg, Rect box,
+              float logical_px, Color tint);
 
 private:
     std::unique_ptr<Image> img_;
@@ -51,7 +49,7 @@ private:
     const std::uint8_t* svg_data_ = nullptr;
     std::size_t svg_size_ = 0;
     float scale_ = -1.0f;
-    float px_    = -1.0f;
+    float px_ = -1.0f;
     Color tint_{0, 0, 0, 0};
 };
 

@@ -40,10 +40,11 @@ struct WorkerPool
         // Waits on idle_cv_, not cv_: a notify_one on cv_ meant for a worker
         // must never be spent on a waiter here, or the queued task stalls.
         std::unique_lock<std::mutex> lk(mu_);
-        return idle_cv_.wait_for(lk, timeout, [this]
-        {
-            return in_flight_.load(std::memory_order_relaxed) == 0;
-        });
+        return idle_cv_.wait_for(lk, timeout,
+                                 [this]
+                                 {
+                                     return in_flight_.load(std::memory_order_relaxed) == 0;
+                                 });
     }
 
     // True when nothing is queued or executing. Unlike pending_count() (queue
@@ -62,21 +63,21 @@ struct WorkerPool
     }
 
     std::deque<std::function<void()>> queue_;
-    std::mutex                        mu_;
-    std::condition_variable           cv_;      // workers wait for queued tasks
-    std::condition_variable           idle_cv_; // wait_idle() waits for in_flight_ == 0
-    bool                              stop_ = false;
-    std::vector<std::thread>          threads_;
+    std::mutex mu_;
+    std::condition_variable cv_;      // workers wait for queued tasks
+    std::condition_variable idle_cv_; // wait_idle() waits for in_flight_ == 0
+    bool stop_ = false;
+    std::vector<std::thread> threads_;
     // Tracks tasks waiting in queue_. Mutated under mu_; readable lock-free.
-    std::atomic<std::size_t>               pending_{0};
+    std::atomic<std::size_t> pending_{0};
     // Tracks tasks that are queued OR currently executing — unlike
     // pending_, only reaches 0 once a task has actually finished running
     // (see the worker loop), which is what wait_idle() needs: a task can
     // hold a stray shared_ptr<AccountSession> for as long as it's
     // executing, well after it left the queue.
-    std::atomic<std::size_t>               in_flight_{0};
+    std::atomic<std::size_t> in_flight_{0};
     // Posted outside mu_ whenever pending_ changes. Cleared in drain().
-    std::function<void()>             on_change_;
+    std::function<void()> on_change_;
 };
 
 } // namespace tesseract

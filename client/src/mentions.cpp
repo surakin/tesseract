@@ -130,15 +130,12 @@ MarkdownResult build_mention_message(const std::vector<MentionSeg>& segments)
         else
         {
             md += sentinel(anchors.size());
-            anchors.push_back(s.kind == MentionSeg::Kind::Mention
-                                  ? anchor_for(s)
-                                  : img_for(s));
+            anchors.push_back(s.kind == MentionSeg::Kind::Mention ? anchor_for(s) : img_for(s));
         }
     }
 
     MarkdownResult res = markdown_to_html(md);
-    std::string html =
-        res.formatted_body.empty() ? plain_to_html(md) : res.formatted_body;
+    std::string html = res.formatted_body.empty() ? plain_to_html(md) : res.formatted_body;
 
     for (std::size_t i = 0; i < anchors.size(); ++i)
     {

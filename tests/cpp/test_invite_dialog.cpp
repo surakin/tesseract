@@ -32,8 +32,8 @@ MentionSeg text_seg(std::string t)
 MentionSeg mention_seg(std::string uid, std::string name)
 {
     MentionSeg s;
-    s.kind         = MentionSeg::Kind::Mention;
-    s.user_id      = std::move(uid);
+    s.kind = MentionSeg::Kind::Mention;
+    s.user_id = std::move(uid);
     s.display_name = std::move(name);
     return s;
 }
@@ -63,7 +63,9 @@ struct PillStubArea : StubTextArea
                 i += 3;
             }
             else
+            {
                 ++i;
+            }
         }
         return n;
     }
@@ -77,7 +79,7 @@ struct PillStubArea : StubTextArea
     void edit_(int start, int end, const std::string& with)
     {
         const int first = placeholders_before(start);
-        const int last  = placeholders_before(end);
+        const int last = placeholders_before(end);
         pills.erase(pills.begin() + first, pills.begin() + last);
         text_ = text_.substr(0, start) + with + text_.substr(end);
         cursor = start + static_cast<int>(with.size());
@@ -86,11 +88,12 @@ struct PillStubArea : StubTextArea
     {
         edit_(start, end, with);
         if (on_changed)
+        {
             on_changed(text_);
+        }
     }
     void insert_mention(int start, int end, const std::string& user_id,
-                        const std::string& display_name, bool,
-                        const tk::Image*) override
+                        const std::string& display_name, bool, const tk::Image*) override
     {
         edit_(start, end, "");
         const int idx = placeholders_before(start);
@@ -98,7 +101,9 @@ struct PillStubArea : StubTextArea
         text_.insert(static_cast<std::size_t>(start), kPill + " ");
         cursor = start + 4;
         if (on_changed)
+        {
             on_changed(text_);
+        }
     }
     std::vector<MentionSeg> composer_draft() const override
     {
@@ -110,7 +115,9 @@ struct PillStubArea : StubTextArea
             if (text_.compare(i, 3, kPill) == 0)
             {
                 if (!pending.empty())
+                {
                     segs.push_back(text_seg(std::exchange(pending, {})));
+                }
                 segs.push_back(mention_seg(pills[p].user_id, pills[p].name));
                 ++p;
                 i += 3;
@@ -119,11 +126,19 @@ struct PillStubArea : StubTextArea
             pending += text_[i++];
         }
         if (!pending.empty())
+        {
             segs.push_back(text_seg(pending));
+        }
         return segs;
     }
-    int cursor_byte_pos() const override { return cursor; }
-    void set_cursor_byte_pos(int pos) override { cursor = pos; }
+    int cursor_byte_pos() const override
+    {
+        return cursor;
+    }
+    void set_cursor_byte_pos(int pos) override
+    {
+        cursor = pos;
+    }
 
     // Simulate the user typing/pasting at the caret.
     void type(const std::string& s)
@@ -131,7 +146,9 @@ struct PillStubArea : StubTextArea
         text_.insert(static_cast<std::size_t>(cursor), s);
         cursor += static_cast<int>(s.size());
         if (on_changed)
+        {
             on_changed(text_);
+        }
     }
 };
 
@@ -166,25 +183,38 @@ struct Fixture
             {
                 std::vector<InviteDialog::UserEntry> out;
                 for (const auto& e : roster)
+                {
                     if (needle.empty() || e.user_id.find(needle) != std::string::npos ||
                         e.display_name.find(needle) != std::string::npos)
+                    {
                         out.push_back(e);
+                    }
+                }
                 return out;
             });
         dlg->set_user_lookup(
             [this](const std::string& id) -> std::optional<InviteDialog::UserEntry>
             {
                 for (const auto& e : roster)
+                {
                     if (e.user_id == id)
+                    {
                         return e;
+                    }
+                }
                 return std::nullopt;
             });
         dlg->on_resolve_user = [this](const std::string& id, bool debounce)
-        { resolves.emplace_back(id, debounce); };
+        {
+            resolves.emplace_back(id, debounce);
+        };
         dlg->open("!room:example.org", "Room");
         REQUIRE(host.area != nullptr);
     }
-    PillStubArea& area() { return *host.area; }
+    PillStubArea& area()
+    {
+        return *host.area;
+    }
 };
 
 } // namespace
@@ -216,12 +246,11 @@ TEST_CASE("parse_invite_field: token under the caret is the query, others commit
     CHECK(p.query.end == static_cast<int>(t.size()));
 }
 
-TEST_CASE("parse_invite_field: pills map to mention segments with byte offsets",
-          "[invite_dialog]")
+TEST_CASE("parse_invite_field: pills map to mention segments with byte offsets", "[invite_dialog]")
 {
     const std::string t = kPill + " ali";
-    auto p = parse_invite_field(
-        t, {mention_seg("@alice:x", "Alice"), text_seg(" ali")}, static_cast<int>(t.size()));
+    auto p = parse_invite_field(t, {mention_seg("@alice:x", "Alice"), text_seg(" ali")},
+                                static_cast<int>(t.size()));
     REQUIRE(p.pills.size() == 1);
     CHECK(p.pills[0].user_id == "@alice:x");
     CHECK(p.pills[0].start == 0);
@@ -230,8 +259,7 @@ TEST_CASE("parse_invite_field: pills map to mention segments with byte offsets",
     CHECK(p.committed.empty());
 }
 
-TEST_CASE("parse_invite_field: non-mxid text and partial mxids never commit",
-          "[invite_dialog]")
+TEST_CASE("parse_invite_field: non-mxid text and partial mxids never commit", "[invite_dialog]")
 {
     const std::string t = "hello @bob world";
     auto p = parse_invite_field(t, {text_seg(t)}, static_cast<int>(t.size()));
@@ -248,8 +276,7 @@ TEST_CASE("parse_invite_field: non-mxid text and partial mxids never commit",
 
 // ── Dialog ────────────────────────────────────────────────────────────────
 
-TEST_CASE("InviteDialog: a known mxid followed by a space becomes a pill",
-          "[invite_dialog]")
+TEST_CASE("InviteDialog: a known mxid followed by a space becomes a pill", "[invite_dialog]")
 {
     Fixture f;
     f.area().type("@alice:example.org ");
@@ -271,14 +298,12 @@ TEST_CASE("InviteDialog: pasting several mxids pills all but the one being typed
     CHECK(f.dlg->parse().query.text == "@carol:example.org");
     // The known mxid still being typed is invited too.
     CHECK(f.dlg->selected_user_ids() ==
-          std::vector<std::string>{"@alice:example.org", "@bob:example.org",
-                                   "@carol:example.org"});
+          std::vector<std::string>{"@alice:example.org", "@bob:example.org", "@carol:example.org"});
     // Caret stays at the end, after the query.
     CHECK(f.area().cursor == static_cast<int>(f.area().text().size()));
 }
 
-TEST_CASE("InviteDialog: unknown mxids are resolved, then pilled or flagged",
-          "[invite_dialog]")
+TEST_CASE("InviteDialog: unknown mxids are resolved, then pilled or flagged", "[invite_dialog]")
 {
     Fixture f;
     f.area().type("@dave:other.org @eve:other.org ");
@@ -294,14 +319,17 @@ TEST_CASE("InviteDialog: unknown mxids are resolved, then pilled or flagged",
 
     bool not_found = false;
     for (const auto& r : f.dlg->rows())
+    {
         if (r.user.user_id == "@eve:other.org")
+        {
             not_found = r.state == InviteDialog::RowState::NotFound;
+        }
+    }
     CHECK(not_found);
     CHECK(f.dlg->selected_user_ids() == std::vector<std::string>{"@dave:other.org"});
 }
 
-TEST_CASE("InviteDialog: the mxid being typed is looked up with debounce",
-          "[invite_dialog]")
+TEST_CASE("InviteDialog: the mxid being typed is looked up with debounce", "[invite_dialog]")
 {
     Fixture f;
     f.area().type("@dave:other.org");
@@ -332,8 +360,7 @@ TEST_CASE("InviteDialog: toggling rows inserts and removes pills", "[invite_dial
     CHECK(f.area().text().empty());
 }
 
-TEST_CASE("InviteDialog: deleting a pill in the field unchecks its row",
-          "[invite_dialog]")
+TEST_CASE("InviteDialog: deleting a pill in the field unchecks its row", "[invite_dialog]")
 {
     Fixture f;
     f.area().type("@bob:example.org ");
@@ -341,12 +368,13 @@ TEST_CASE("InviteDialog: deleting a pill in the field unchecks its row",
     f.area().replace_range(0, 3, ""); // Backspace over the pill
     CHECK(f.area().pills.empty());
     for (const auto& r : f.dlg->rows())
+    {
         CHECK(r.state != InviteDialog::RowState::Selected);
+    }
     CHECK(f.dlg->selected_user_ids().empty());
 }
 
-TEST_CASE("InviteDialog: existing members are listed but not selectable",
-          "[invite_dialog]")
+TEST_CASE("InviteDialog: existing members are listed but not selectable", "[invite_dialog]")
 {
     Fixture f;
     f.dlg->set_existing_members({"@bob:example.org"});
@@ -355,17 +383,23 @@ TEST_CASE("InviteDialog: existing members are listed but not selectable",
     CHECK(f.dlg->selected_user_ids().empty());
     bool member = false;
     for (const auto& r : f.dlg->rows())
+    {
         if (r.user.user_id == "@bob:example.org")
+        {
             member = r.state == InviteDialog::RowState::AlreadyMember;
+        }
+    }
     CHECK(member);
 }
 
-TEST_CASE("InviteDialog: confirm reports the selection and tracks completion",
-          "[invite_dialog]")
+TEST_CASE("InviteDialog: confirm reports the selection and tracks completion", "[invite_dialog]")
 {
     Fixture f;
     std::vector<std::string> sent;
-    f.dlg->on_invite_confirmed = [&](std::vector<std::string> ids) { sent = ids; };
+    f.dlg->on_invite_confirmed = [&](std::vector<std::string> ids)
+    {
+        sent = ids;
+    };
     f.area().type("@alice:example.org @bob:example.org ");
     f.dlg->confirm();
     CHECK(sent == std::vector<std::string>{"@alice:example.org", "@bob:example.org"});
@@ -386,7 +420,10 @@ TEST_CASE("InviteDialog: confirm waits for pending lookups", "[invite_dialog]")
 {
     Fixture f;
     int fired = 0;
-    f.dlg->on_invite_confirmed = [&](std::vector<std::string>) { ++fired; };
+    f.dlg->on_invite_confirmed = [&](std::vector<std::string>)
+    {
+        ++fired;
+    };
     f.area().type("@alice:example.org @dave:other.org ");
     f.dlg->confirm();
     CHECK(fired == 0);
@@ -403,17 +440,23 @@ namespace
 const tk::AccessNode* find_access_named(const tk::AccessNode& node, const std::string& name)
 {
     if (node.name == name)
+    {
         return &node;
+    }
     for (const auto& ch : node.children)
+    {
         if (const tk::AccessNode* f = find_access_named(ch, name))
+        {
             return f;
+        }
+    }
     return nullptr;
 }
 
 } // namespace
 
 TEST_CASE("InviteDialog is a modal dialog whose rows are checkboxes",
-         "[invite_dialog][accessibility]")
+          "[invite_dialog][accessibility]")
 {
     Fixture f;
     f.dlg->set_existing_members({"@carol:example.org"});
@@ -443,11 +486,14 @@ TEST_CASE("InviteDialog is a modal dialog whose rows are checkboxes",
 }
 
 TEST_CASE("InviteDialog's Cancel button closes and the error body is readable",
-         "[invite_dialog][accessibility]")
+          "[invite_dialog][accessibility]")
 {
     Fixture f;
     bool closed = false;
-    f.dlg->on_close = [&] { closed = true; };
+    f.dlg->on_close = [&]
+    {
+        closed = true;
+    };
 
     f.dlg->set_inviting(2);
     tk::AccessNode tree = tk::build_access_tree(f.dlg.get());
@@ -466,13 +512,16 @@ TEST_CASE("InviteDialog's Cancel button closes and the error body is readable",
     const tk::AccessNode* cancel = find_access_named(tree, "Cancel");
     REQUIRE(cancel != nullptr);
     bool closed_g = false;
-    g.dlg->on_close = [&] { closed_g = true; };
+    g.dlg->on_close = [&]
+    {
+        closed_g = true;
+    };
     CHECK(tk::invoke_default_action(*cancel));
     CHECK(closed_g);
 }
 
 TEST_CASE("InviteDialog ignores Escape while invites are in flight",
-         "[invite_dialog][accessibility]")
+          "[invite_dialog][accessibility]")
 {
     Fixture f;
     f.dlg->set_inviting(1);

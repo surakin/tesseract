@@ -48,7 +48,7 @@ public:
     void reset(float value)
     {
         current_ = value;
-        target_  = value;
+        target_ = value;
         last_step_.reset();
     }
 
@@ -85,8 +85,7 @@ public:
             last_step_ = now;
             return current_;
         }
-        const float dt_ms =
-            std::chrono::duration<float, std::milli>(now - *last_step_).count();
+        const float dt_ms = std::chrono::duration<float, std::milli>(now - *last_step_).count();
         last_step_ = now;
         if (current_ == target_ || duration_ms <= 0.0f)
         {
@@ -97,7 +96,7 @@ public:
         // repainted for a while) can't produce one huge jump.
         const float delta = std::clamp(dt_ms, 0.0f, 48.0f) / duration_ms;
         current_ = current_ < target_ ? std::min(target_, current_ + delta)
-                                       : std::max(target_, current_ - delta);
+                                      : std::max(target_, current_ - delta);
         return current_;
     }
 

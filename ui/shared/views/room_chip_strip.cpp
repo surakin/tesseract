@@ -19,8 +19,7 @@ constexpr float kLabelH = 14.0f;
 void paint_room_chips(tk::PaintCtx& ctx, tk::Rect strip,
                       const std::vector<tesseract::RoomInfo>& rooms,
                       const ChipAvatarProvider& avatar_provider,
-                      const ChipAvatarNeeded& on_avatar_needed,
-                      const RoomChipStripStyle& style,
+                      const ChipAvatarNeeded& on_avatar_needed, const RoomChipStripStyle& style,
                       std::vector<std::pair<tk::Rect, std::string>>& out_chips)
 {
     const auto& pal = ctx.theme.palette;
@@ -33,8 +32,7 @@ void paint_room_chips(tk::PaintCtx& ctx, tk::Rect strip,
         auto cap = ctx.factory.build_text(style.caption, cs);
         if (cap)
         {
-            ctx.canvas.draw_text(*cap, {strip.x + style.pad_x, chip_y},
-                                 pal.text_muted);
+            ctx.canvas.draw_text(*cap, {strip.x + style.pad_x, chip_y}, pal.text_muted);
         }
         chip_y += kCaptionH;
     }
@@ -42,8 +40,7 @@ void paint_room_chips(tk::PaintCtx& ctx, tk::Rect strip,
     const float chip_h = style.avatar_size + kLabelGap + kLabelH;
     const float avail = strip.w - 2 * style.pad_x;
     const int max_fit =
-        avail > 0.0f ? static_cast<int>((avail + style.chip_gap) /
-                                        (style.chip_w + style.chip_gap))
+        avail > 0.0f ? static_cast<int>((avail + style.chip_gap) / (style.chip_w + style.chip_gap))
                      : 0;
     const int count = std::min(static_cast<int>(rooms.size()), std::max(0, max_fit));
 
@@ -59,8 +56,7 @@ void paint_room_chips(tk::PaintCtx& ctx, tk::Rect strip,
             ctx.canvas.fill_rounded_rect(chip, 8.0f, style.highlight_fill);
             if (style.highlight_border)
             {
-                ctx.canvas.stroke_rounded_rect(chip, 8.0f,
-                                               style.highlight_border_color, 1.5f);
+                ctx.canvas.stroke_rounded_rect(chip, 8.0f, style.highlight_border_color, 1.5f);
             }
         }
 
@@ -72,7 +68,9 @@ void paint_room_chips(tk::PaintCtx& ctx, tk::Rect strip,
         {
             avatar = avatar_provider(mxc);
             if (!avatar && on_avatar_needed)
+            {
                 on_avatar_needed(room);
+            }
         }
         draw_avatar(ctx.canvas, avatar, {acx, acy}, style.avatar_size, room.name,
                     pal.avatar_initials_bg, pal.avatar_initials_text);
@@ -82,13 +80,12 @@ void paint_room_chips(tk::PaintCtx& ctx, tk::Rect strip,
         ls.halign = tk::TextHAlign::Center;
         ls.trim = tk::TextTrim::Ellipsis;
         ls.max_width = chip.w;
-        auto lo = ctx.factory.build_text(
-            room.name.empty() ? tk::tr("Unnamed") : room.name, ls);
+        auto lo = ctx.factory.build_text(room.name.empty() ? tk::tr("Unnamed") : room.name, ls);
         if (lo)
         {
-            ctx.canvas.draw_text(*lo,
-                                 {chip.x, chip_y + style.avatar_size + kLabelGap},
-                                 pal.text_primary);
+            ctx.canvas.draw_text(*lo, {chip.x, chip_y + style.avatar_size + kLabelGap},
+                                 highlighted ? tk::on_selected(ctx.theme, pal.text_primary)
+                                             : pal.text_primary);
         }
 
         out_chips.push_back({chip, room.id});
@@ -99,37 +96,46 @@ void paint_room_chips(tk::PaintCtx& ctx, tk::Rect strip,
 void RoomChipAreas::paint(tk::PaintCtx& ctx)
 {
     for (tk::HoverArea* a : areas_)
+    {
         if (a->bounds().w > 0.0f)
+        {
             a->paint(ctx);
+        }
+    }
 }
 
 void RoomChipAreas::park()
 {
     for (tk::HoverArea* a : areas_)
+    {
         a->set_rect({});
+    }
 }
 
 void RoomChipAreas::sync(tk::Widget& owner,
-                         const std::vector<std::pair<tk::Rect, std::string>>& chips,
-                         OnChip on_chip)
+                         const std::vector<std::pair<tk::Rect, std::string>>& chips, OnChip on_chip)
 {
     on_chip_ = std::move(on_chip);
     room_ids_.clear();
     for (const auto& c : chips)
+    {
         room_ids_.push_back(c.second);
+    }
 
     while (areas_.size() < chips.size())
     {
         const std::size_t idx = areas_.size();
-        auto* a = owner.add_child(
-            tk::create_widget<tk::HoverArea>(&owner, tk::HoverStyle::Fill, 8.0f));
+        auto* a =
+            owner.add_child(tk::create_widget<tk::HoverArea>(&owner, tk::HoverStyle::Fill, 8.0f));
         a->set_on_click(
             [this, idx]
             {
                 // Copy first: the handler closes the overlay, which may
                 // rebuild this strip.
                 if (idx >= room_ids_.size() || !on_chip_)
+                {
                     return;
+                }
                 const std::string id = room_ids_[idx];
                 auto cb = on_chip_;
                 cb(idx, id);
@@ -137,7 +143,9 @@ void RoomChipAreas::sync(tk::Widget& owner,
         areas_.push_back(a);
     }
     for (std::size_t i = 0; i < areas_.size(); ++i)
+    {
         areas_[i]->set_rect(i < chips.size() ? chips[i].first : tk::Rect{});
+    }
 }
 
 } // namespace tesseract::views

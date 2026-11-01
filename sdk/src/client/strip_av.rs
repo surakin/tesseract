@@ -15,8 +15,14 @@ use std::borrow::Cow;
 /// The stripped bytes (borrowed when there was nothing to remove), or None
 /// when the file cannot be confidently stripped. A parser panic is None too.
 pub(super) fn strip_av_for_upload(bytes: &[u8]) -> Option<Cow<'_, [u8]>> {
-    let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| strip_inner(bytes))).ok().flatten()?;
-    Some(if out == bytes { Cow::Borrowed(bytes) } else { Cow::Owned(out) })
+    let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| strip_inner(bytes)))
+        .ok()
+        .flatten()?;
+    Some(if out == bytes {
+        Cow::Borrowed(bytes)
+    } else {
+        Cow::Owned(out)
+    })
 }
 
 fn strip_inner(b: &[u8]) -> Option<Vec<u8>> {
@@ -52,7 +58,10 @@ fn blank_box(out: &mut [u8], bx: &IsoBox) {
 /// `udta` (©xyz location, tags), `meta` (iTunes/Apple keys), `uuid` (XMP and
 /// vendor data), `XMP_`, and the slack in `free`/`skip` boxes.
 fn is_iso_metadata(ty: &[u8; 4]) -> bool {
-    matches!(ty, b"udta" | b"meta" | b"uuid" | b"XMP_" | b"free" | b"skip")
+    matches!(
+        ty,
+        b"udta" | b"meta" | b"uuid" | b"XMP_" | b"free" | b"skip"
+    )
 }
 
 fn strip_iso(b: &[u8]) -> Option<Vec<u8>> {
@@ -361,7 +370,11 @@ fn ogg_crc(data: &[u8]) -> u32 {
     for &byte in data {
         crc ^= (byte as u32) << 24;
         for _ in 0..8 {
-            crc = if crc & 0x8000_0000 != 0 { (crc << 1) ^ 0x04C1_1DB7 } else { crc << 1 };
+            crc = if crc & 0x8000_0000 != 0 {
+                (crc << 1) ^ 0x04C1_1DB7
+            } else {
+                crc << 1
+            };
         }
     }
     crc
@@ -486,7 +499,10 @@ mod tests {
     #[test]
     fn mp4_location_atoms_are_blanked_without_moving_anything() {
         let udta = iso_box(b"udta", &iso_box(b"\xA9xyz", b"+48.8584+002.2945/"));
-        let trak = iso_box(b"trak", &[iso_box(b"tkhd", &[1; 8]), iso_box(b"udta", b"SECRET")].concat());
+        let trak = iso_box(
+            b"trak",
+            &[iso_box(b"tkhd", &[1; 8]), iso_box(b"udta", b"SECRET")].concat(),
+        );
         let moov = iso_box(b"moov", &[iso_box(b"mvhd", &[2; 20]), udta, trak].concat());
         let mdat = iso_box(b"mdat", b"MEDIAMEDIA");
         let file = [iso_box(b"ftyp", b"isom\0\0\0\0isom"), moov, mdat].concat();
@@ -500,13 +516,21 @@ mod tests {
 
     #[test]
     fn mp4_without_moov_is_refused() {
-        let file = [iso_box(b"ftyp", b"isom\0\0\0\0isom"), iso_box(b"mdat", b"x")].concat();
+        let file = [
+            iso_box(b"ftyp", b"isom\0\0\0\0isom"),
+            iso_box(b"mdat", b"x"),
+        ]
+        .concat();
         assert!(strip_av_for_upload(&file).is_none());
     }
 
     #[test]
     fn truncated_mp4_is_refused() {
-        let mut file = [iso_box(b"ftyp", b"isom\0\0\0\0isom"), iso_box(b"moov", &[0; 16])].concat();
+        let mut file = [
+            iso_box(b"ftyp", b"isom\0\0\0\0isom"),
+            iso_box(b"moov", &[0; 16]),
+        ]
+        .concat();
         file.truncate(file.len() - 3);
         assert!(strip_av_for_upload(&file).is_none());
     }
@@ -520,7 +544,10 @@ mod tests {
 
     #[test]
     fn webm_tags_and_title_are_voided() {
-        let info = ebml_elem(&[0x15, 0x49, 0xA9, 0x66], &ebml_elem(&[0x7B, 0xA9], b"MyTitle"));
+        let info = ebml_elem(
+            &[0x15, 0x49, 0xA9, 0x66],
+            &ebml_elem(&[0x7B, 0xA9], b"MyTitle"),
+        );
         let tags = ebml_elem(&[0x12, 0x54, 0xC3, 0x67], b"GPSTAG");
         let cluster = ebml_elem(&[0x1F, 0x43, 0xB6, 0x75], b"FRAMES");
         let segment = ebml_elem(&[0x18, 0x53, 0x80, 0x67], &[info, tags, cluster].concat());
@@ -543,7 +570,13 @@ mod tests {
             }
             v
         };
-        let body = [b"WAVE".to_vec(), chunk(b"fmt ", &[1; 16]), chunk(b"LIST", b"INFOIART\x04\0\0\0Bob\0"), chunk(b"data", b"PCMPCM")].concat();
+        let body = [
+            b"WAVE".to_vec(),
+            chunk(b"fmt ", &[1; 16]),
+            chunk(b"LIST", b"INFOIART\x04\0\0\0Bob\0"),
+            chunk(b"data", b"PCMPCM"),
+        ]
+        .concat();
         let mut file = b"RIFF".to_vec();
         file.extend_from_slice(&(body.len() as u32).to_le_bytes());
         file.extend_from_slice(&body);
@@ -639,7 +672,10 @@ mod tests {
         let mut pos = 0;
         while pos < out.len() {
             let nseg = out[pos + 26] as usize;
-            let len: usize = out[pos + 27..pos + 27 + nseg].iter().map(|v| *v as usize).sum();
+            let len: usize = out[pos + 27..pos + 27 + nseg]
+                .iter()
+                .map(|v| *v as usize)
+                .sum();
             let end = pos + 27 + nseg + len;
             let mut page = out[pos..end].to_vec();
             let stored = u32::from_le_bytes(page[22..26].try_into().unwrap());

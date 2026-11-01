@@ -59,8 +59,8 @@ struct UpSharedBusGtk
     }
 
     std::string find_distributor(GDBusConnection* bus);
-    void distributor_call(GDBusConnection* bus, const char* method,
-                          const char* svc, const std::string& token);
+    void distributor_call(GDBusConnection* bus, const char* method, const char* svc,
+                          const std::string& token);
 
     void dispatch_new_endpoint(const char* token, const char* endpoint)
     {
@@ -100,11 +100,10 @@ private:
 // GDBus vtable — dispatches incoming method calls to UpSharedBusGtk.
 // ---------------------------------------------------------------------------
 
-static void
-handle_method_call(GDBusConnection* /*conn*/, const gchar* /*sender*/,
-                   const gchar* /*object_path*/, const gchar* /*iface*/,
-                   const gchar* method_name, GVariant* params,
-                   GDBusMethodInvocation* invocation, gpointer /*user_data*/)
+static void handle_method_call(GDBusConnection* /*conn*/, const gchar* /*sender*/,
+                               const gchar* /*object_path*/, const gchar* /*iface*/,
+                               const gchar* method_name, GVariant* params,
+                               GDBusMethodInvocation* invocation, gpointer /*user_data*/)
 {
     UpSharedBusGtk& bus = UpSharedBusGtk::get();
 
@@ -130,8 +129,7 @@ handle_method_call(GDBusConnection* /*conn*/, const gchar* /*sender*/,
         {
             gsize len = 0;
             const guint8* data =
-                static_cast<const guint8*>(
-                    g_variant_get_fixed_array(msg_v, &len, 1));
+                static_cast<const guint8*>(g_variant_get_fixed_array(msg_v, &len, 1));
             bus.dispatch_message(token, data, len);
             g_variant_unref(msg_v);
         }
@@ -139,8 +137,7 @@ handle_method_call(GDBusConnection* /*conn*/, const gchar* /*sender*/,
     g_dbus_method_invocation_return_value(invocation, nullptr);
 }
 
-static const GDBusInterfaceVTable kConnector1Vtable = {handle_method_call,
-                                                       nullptr, nullptr};
+static const GDBusInterfaceVTable kConnector1Vtable = {handle_method_call, nullptr, nullptr};
 
 // ---------------------------------------------------------------------------
 // UpSharedBusGtk method bodies
@@ -155,10 +152,9 @@ bool UpSharedBusGtk::acquire(GDBusConnection* bus)
 
     // RequestName with DBUS_NAME_FLAG_DO_NOT_QUEUE — synchronous, returns fast.
     GVariant* result = g_dbus_connection_call_sync(
-        bus, "org.freedesktop.DBus", "/org/freedesktop/DBus",
-        "org.freedesktop.DBus", "RequestName",
-        g_variant_new("(su)", "im.gnomos.Tesseract", kFlagDoNotQueue),
-        G_VARIANT_TYPE("(u)"), G_DBUS_CALL_FLAGS_NONE, -1, nullptr, nullptr);
+        bus, "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "RequestName",
+        g_variant_new("(su)", "im.gnomos.Tesseract", kFlagDoNotQueue), G_VARIANT_TYPE("(u)"),
+        G_DBUS_CALL_FLAGS_NONE, -1, nullptr, nullptr);
 
     if (!result)
     {
@@ -182,9 +178,9 @@ bool UpSharedBusGtk::acquire(GDBusConnection* bus)
         return false;
     }
 
-    reg_id_ = g_dbus_connection_register_object(
-        bus, "/org/unifiedpush/Connector", info->interfaces[0],
-        &kConnector1Vtable, nullptr, nullptr, &err);
+    reg_id_ =
+        g_dbus_connection_register_object(bus, "/org/unifiedpush/Connector", info->interfaces[0],
+                                          &kConnector1Vtable, nullptr, nullptr, &err);
     g_dbus_node_info_unref(info);
 
     if (!reg_id_)
@@ -209,11 +205,9 @@ void UpSharedBusGtk::release(GDBusConnection* bus)
             reg_id_ = 0;
             active_ = false;
             GVariant* rel = g_dbus_connection_call_sync(
-                bus, "org.freedesktop.DBus", "/org/freedesktop/DBus",
-                "org.freedesktop.DBus", "ReleaseName",
-                g_variant_new("(s)", "im.gnomos.Tesseract"),
-                G_VARIANT_TYPE("(u)"), G_DBUS_CALL_FLAGS_NONE, -1, nullptr,
-                nullptr);
+                bus, "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
+                "ReleaseName", g_variant_new("(s)", "im.gnomos.Tesseract"), G_VARIANT_TYPE("(u)"),
+                G_DBUS_CALL_FLAGS_NONE, -1, nullptr, nullptr);
             if (rel)
             {
                 g_variant_unref(rel);
@@ -225,9 +219,8 @@ void UpSharedBusGtk::release(GDBusConnection* bus)
 std::string UpSharedBusGtk::find_distributor(GDBusConnection* bus)
 {
     GVariant* result = g_dbus_connection_call_sync(
-        bus, "org.freedesktop.DBus", "/org/freedesktop/DBus",
-        "org.freedesktop.DBus", "ListNames", nullptr, G_VARIANT_TYPE("(as)"),
-        G_DBUS_CALL_FLAGS_NONE, -1, nullptr, nullptr);
+        bus, "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "ListNames",
+        nullptr, G_VARIANT_TYPE("(as)"), G_DBUS_CALL_FLAGS_NONE, -1, nullptr, nullptr);
     if (!result)
     {
         return {};
@@ -248,9 +241,8 @@ std::string UpSharedBusGtk::find_distributor(GDBusConnection* bus)
 
         // Check for Distributor1 interface at the standard path.
         GVariant* xml_v = g_dbus_connection_call_sync(
-            bus, svc, "/org/unifiedpush/Distributor",
-            "org.freedesktop.DBus.Introspectable", "Introspect", nullptr,
-            G_VARIANT_TYPE("(s)"), G_DBUS_CALL_FLAGS_NONE, 200 /* ms */,
+            bus, svc, "/org/unifiedpush/Distributor", "org.freedesktop.DBus.Introspectable",
+            "Introspect", nullptr, G_VARIANT_TYPE("(s)"), G_DBUS_CALL_FLAGS_NONE, 200 /* ms */,
             nullptr, nullptr);
         if (xml_v)
         {
@@ -269,15 +261,13 @@ std::string UpSharedBusGtk::find_distributor(GDBusConnection* bus)
     return found;
 }
 
-void UpSharedBusGtk::distributor_call(GDBusConnection* bus, const char* method,
-                                      const char* svc, const std::string& token)
+void UpSharedBusGtk::distributor_call(GDBusConnection* bus, const char* method, const char* svc,
+                                      const std::string& token)
 {
-    g_dbus_connection_call(bus, svc, "/org/unifiedpush/Distributor",
-                           "org.unifiedpush.Distributor1", method,
-                           g_variant_new("(sss)", "im.gnomos.Tesseract",
-                                         token.c_str(), "Tesseract"),
-                           nullptr, G_DBUS_CALL_FLAGS_NONE, -1, nullptr,
-                           nullptr, nullptr);
+    g_dbus_connection_call(
+        bus, svc, "/org/unifiedpush/Distributor", "org.unifiedpush.Distributor1", method,
+        g_variant_new("(sss)", "im.gnomos.Tesseract", token.c_str(), "Tesseract"), nullptr,
+        G_DBUS_CALL_FLAGS_NONE, -1, nullptr, nullptr, nullptr);
 }
 
 // ---------------------------------------------------------------------------
@@ -291,8 +281,7 @@ LinuxUpConnectorGtk::~LinuxUpConnectorGtk()
     stop();
 }
 
-void LinuxUpConnectorGtk::start(tesseract::Client* client,
-                                const std::string& user_id)
+void LinuxUpConnectorGtk::start(tesseract::Client* client, const std::string& user_id)
 {
     if (!core_.begin(client, user_id))
     {
@@ -351,15 +340,13 @@ void LinuxUpConnectorGtk::logout()
     }
     if (!distributor_service_.empty())
     {
-        GDBusConnection* bus =
-            g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, nullptr);
+        GDBusConnection* bus = g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, nullptr);
         if (bus)
         {
-            g_dbus_connection_call(
-                bus, distributor_service_.c_str(),
-                "/org/unifiedpush/Distributor", "org.unifiedpush.Distributor1",
-                "Unregister", g_variant_new("(s)", core_.token().c_str()),
-                nullptr, G_DBUS_CALL_FLAGS_NONE, -1, nullptr, nullptr, nullptr);
+            g_dbus_connection_call(bus, distributor_service_.c_str(),
+                                   "/org/unifiedpush/Distributor", "org.unifiedpush.Distributor1",
+                                   "Unregister", g_variant_new("(s)", core_.token().c_str()),
+                                   nullptr, G_DBUS_CALL_FLAGS_NONE, -1, nullptr, nullptr, nullptr);
             g_object_unref(bus);
         }
     }
@@ -386,12 +373,11 @@ void LinuxUpConnectorGtk::on_unregistered()
     core_.remove_pusher();
     if (!distributor_service_.empty())
     {
-        GDBusConnection* bus =
-            g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, nullptr);
+        GDBusConnection* bus = g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, nullptr);
         if (bus)
         {
-            UpSharedBusGtk::get().distributor_call(
-                bus, "Register", distributor_service_.c_str(), core_.token());
+            UpSharedBusGtk::get().distributor_call(bus, "Register", distributor_service_.c_str(),
+                                                   core_.token());
             g_object_unref(bus);
         }
     }
@@ -399,6 +385,5 @@ void LinuxUpConnectorGtk::on_unregistered()
 
 void LinuxUpConnectorGtk::on_message(const guint8* data, gsize len)
 {
-    core_.on_message(
-        std::string_view(reinterpret_cast<const char*>(data), len));
+    core_.on_message(std::string_view(reinterpret_cast<const char*>(data), len));
 }

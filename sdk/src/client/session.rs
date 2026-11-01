@@ -10,6 +10,7 @@ use matrix_sdk::{
 };
 use serde::{Deserialize, Serialize};
 
+use super::mutual_rooms::{mutual_rooms_mode_for, MUTUAL_ROOMS_NONE};
 use super::{err, oauth_err, ok, ClientFfi};
 use crate::ffi::{OAuthBegin, OAuthWaitStep, OpResult, ServerInfoFfi, SpecVersionFfi};
 use crate::oauth;
@@ -163,6 +164,7 @@ fn server_info_unavailable() -> ServerInfoFfi {
         default_room_version: String::new(),
         profile_fields_stable: false,
         supports_invite_reason: false,
+        supports_mutual_rooms: false,
         server_name: String::new(),
         server_version: String::new(),
         upload_size_limit: 0,
@@ -184,15 +186,24 @@ fn parse_federation_version(body: &serde_json::Value) -> (String, String) {
 
 /// `m.upload.size` from a media `/config` response; 0 when absent.
 fn parse_upload_limit(body: &serde_json::Value) -> u64 {
-    body.get("m.upload.size").and_then(|v| v.as_u64()).unwrap_or(0)
+    body.get("m.upload.size")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0)
 }
 
 /// Flow types from a `GET /login` response with the `m.login.` prefix
 /// stripped, in server order and without duplicates.
 fn parse_login_flows(body: &serde_json::Value) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
-    for flow in body.get("flows").and_then(|v| v.as_array()).into_iter().flatten() {
-        let Some(ty) = flow.get("type").and_then(|v| v.as_str()) else { continue };
+    for flow in body
+        .get("flows")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+    {
+        let Some(ty) = flow.get("type").and_then(|v| v.as_str()) else {
+            continue;
+        };
         let ty = ty.strip_prefix("m.login.").unwrap_or(ty).to_owned();
         if !out.contains(&ty) {
             out.push(ty);
@@ -227,6 +238,7 @@ async fn build_server_info(
     http: reqwest::Client,
     prefix_slot: std::sync::Arc<std::sync::RwLock<Option<String>>>,
     invite_reason_slot: std::sync::Arc<std::sync::RwLock<bool>>,
+    mutual_rooms_slot: std::sync::Arc<std::sync::atomic::AtomicU8>,
     preview_url_slot: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> ServerInfoFfi {
     let base = {
@@ -288,7 +300,10 @@ async fn build_server_info(
         .iter()
         .filter_map(|v| {
             let (major, minor) = v.as_str()?.strip_prefix('v')?.split_once('.')?;
-            Some(SpecVersionFfi { major: major.parse().ok()?, minor: minor.parse().ok()? })
+            Some(SpecVersionFfi {
+                major: major.parse().ok()?,
+                minor: minor.parse().ok()?,
+            })
         })
         .collect();
     let has_feature = |name: &str| supported.features.contains(&name.into());
@@ -314,6 +329,9 @@ async fn build_server_info(
         None
     };
     *invite_reason_slot.write().unwrap() = supports_invite_reason;
+
+    let mutual_rooms_mode = mutual_rooms_mode_for(has_feature, &spec_versions);
+    mutual_rooms_slot.store(mutual_rooms_mode, Ordering::Relaxed);
 
     let caps: serde_json::Value = match caps_resp {
         Ok(r) => r.json().await.unwrap_or(serde_json::Value::Null),
@@ -359,6 +377,7 @@ async fn build_server_info(
         default_room_version: default_room_ver,
         profile_fields_stable: supports_msc4133_stable,
         supports_invite_reason,
+        supports_mutual_rooms: mutual_rooms_mode != MUTUAL_ROOMS_NONE,
         server_name,
         server_version,
         upload_size_limit,
@@ -371,7 +390,12 @@ impl ClientFfi {
     // OAuth login
     // -----------------------------------------------------------------------
 
-    pub fn oauth_begin(&mut self, homeserver: &str, register_account: bool) -> OAuthBegin {
+    pub fn oauth_begin(
+        &mut self,
+        homeserver: &str,
+        register_account: bool,
+        user_id_hint: &str,
+    ) -> OAuthBegin {
         if let Some(prev) = self.oauth_flow.take() {
             oauth::cancel(&prev);
         }
@@ -396,7 +420,13 @@ impl ClientFfi {
         // never retroactively given one.
         let key = *self.store_key.get_or_insert_with(oauth::generate_store_key);
 
-        match self.rt.block_on(oauth::begin(&hs, &path, register_account, &key)) {
+        match self.rt.block_on(oauth::begin(
+            &hs,
+            &path,
+            register_account,
+            user_id_hint,
+            &key,
+        )) {
             Ok(begin) => {
                 let auth_url = begin.auth_url;
                 let redirect_uri = begin.redirect_uri;
@@ -579,12 +609,9 @@ impl ClientFfi {
                     homeserver_url,
                     session,
                 } => {
-                    let client = oauth::build_configured_client(
-                        &homeserver_url,
-                        &path,
-                        store_key.as_ref(),
-                    )
-                    .await?;
+                    let client =
+                        oauth::build_configured_client(&homeserver_url, &path, store_key.as_ref())
+                            .await?;
                     client
                         .matrix_auth()
                         .restore_session(session, RoomLoadSettings::default())
@@ -662,13 +689,17 @@ impl ClientFfi {
         let http = self.http_client.clone();
         let prefix_slot = self.profile_fields_prefix.clone();
         let invite_reason_slot = self.supports_invite_reason.clone();
+        let mutual_rooms_slot = self.mutual_rooms_mode.clone();
         let preview_url_slot = self.homeserver_preview_url_enabled.clone();
 
+        #[cfg(not(test))]
+        let _in_flight = self.in_flight_guard("server-info");
         self.rt.block_on(build_server_info(
             client,
             http,
             prefix_slot,
             invite_reason_slot,
+            mutual_rooms_slot,
             preview_url_slot,
         ))
     }
@@ -689,14 +720,18 @@ impl ClientFfi {
         let http = self.http_client.clone();
         let prefix_slot = self.profile_fields_prefix.clone();
         let invite_reason_slot = self.supports_invite_reason.clone();
+        let mutual_rooms_slot = self.mutual_rooms_mode.clone();
         let preview_url_slot = self.homeserver_preview_url_enabled.clone();
+        let in_flight = self.in_flight_ctx();
 
         self.rt.spawn(async move {
+            let _in_flight = in_flight.guard("server-info");
             let info = build_server_info(
                 client,
                 http,
                 prefix_slot,
                 invite_reason_slot,
+                mutual_rooms_slot,
                 preview_url_slot,
             )
             .await;
@@ -838,11 +873,8 @@ impl ClientFfi {
         #[cfg(not(test))]
         if let Some(svc) = self.sync_service.take() {
             let _ = self.rt.block_on(async {
-                tokio::time::timeout(
-                    std::time::Duration::from_secs(30),
-                    svc.expire_sessions(),
-                )
-                .await
+                tokio::time::timeout(std::time::Duration::from_secs(30), svc.expire_sessions())
+                    .await
             });
         }
 
@@ -875,6 +907,32 @@ impl ClientFfi {
         ok(String::new())
     }
 
+    /// Tear the client down in place so the caller's `restore_session` +
+    /// `start_sync` rebuild it, re-reading the process-wide build-time
+    /// settings (MSC4153 / block-sends). Unlike [`clear_caches`](Self::clear_caches)
+    /// nothing on disk is touched and sliding sync is not expired, so the
+    /// persisted `pos` stays consistent with the kept stores.
+    pub fn reload_client(&mut self) -> crate::ffi::OpResult {
+        if self.client.is_none() {
+            return err("not logged in");
+        }
+
+        self.stop_sync();
+
+        #[cfg(not(test))]
+        self.drain_and_reset_session_state();
+        self.pause_and_drop_client();
+
+        // The search DB handle was dropped above; reset the gate so the
+        // shell's re-apply of the indexing preference reopens live indexing
+        // (the persisted backfill marker keeps a finished crawl from rerunning).
+        #[cfg(not(test))]
+        self.search_indexing_enabled
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+
+        ok(String::new())
+    }
+
     // -----------------------------------------------------------------------
     // Logout
     // -----------------------------------------------------------------------
@@ -895,7 +953,10 @@ impl ClientFfi {
         };
 
         // The account is going away: stop routing its call events to its handler.
-        if self.rtc_sink_registered.swap(false, std::sync::atomic::Ordering::Relaxed) {
+        if self
+            .rtc_sink_registered
+            .swap(false, std::sync::atomic::Ordering::Relaxed)
+        {
             if let Some(uid) = client.user_id() {
                 super::rtc::unregister_sink(uid.as_str());
             }
@@ -1074,7 +1135,11 @@ mod wipe_local_stores_tests {
 
         for name in ALL {
             let kept = *name == "session.json" || *name == "thread_read_state.db";
-            assert_eq!(dir.join(name).exists(), kept, "{name}: expected kept={kept}");
+            assert_eq!(
+                dir.join(name).exists(),
+                kept,
+                "{name}: expected kept={kept}"
+            );
         }
         let _ = fs::remove_dir_all(&dir);
     }
@@ -1174,7 +1239,10 @@ mod envelope_tests {
     fn unknown_auth_tag_fails_cleanly_rather_than_panicking() {
         let json = r#"{"auth":"carrier_pigeon"}"#;
         let result: Result<SessionEnvelope, _> = serde_json::from_str(json);
-        assert!(result.is_err(), "unknown auth tag must be rejected, not silently accepted");
+        assert!(
+            result.is_err(),
+            "unknown auth tag must be rejected, not silently accepted"
+        );
     }
 
     /// Every `session.json` persisted before the SessionEnvelope migration has
@@ -1221,7 +1289,10 @@ mod envelope_tests {
         let SessionEnvelope::OAuth { user, .. } = serde_json::from_str(&json).unwrap() else {
             panic!("expected OAuth variant");
         };
-        assert_eq!(user.tokens.refresh_token.as_deref(), Some("oauth-refresh-token"));
+        assert_eq!(
+            user.tokens.refresh_token.as_deref(),
+            Some("oauth-refresh-token")
+        );
         assert_eq!(user.meta.device_id.as_str(), "DEVICEID");
     }
 
@@ -1280,18 +1351,27 @@ mod envelope_tests {
     #[test]
     fn non_object_json_is_rejected() {
         for json in ["null", "[]", "\"oauth\"", "42"] {
-            assert!(serde_json::from_str::<SessionEnvelope>(json).is_err(), "{json}");
+            assert!(
+                serde_json::from_str::<SessionEnvelope>(json).is_err(),
+                "{json}"
+            );
         }
     }
 
     #[test]
     fn native_envelope_with_refresh_token_roundtrips() {
-        let SessionEnvelope::Native { homeserver_url, mut session } = sample_native_envelope()
+        let SessionEnvelope::Native {
+            homeserver_url,
+            mut session,
+        } = sample_native_envelope()
         else {
             unreachable!()
         };
         session.tokens.refresh_token = Some("rt".to_owned());
-        let env = SessionEnvelope::Native { homeserver_url, session };
+        let env = SessionEnvelope::Native {
+            homeserver_url,
+            session,
+        };
         let json = serde_json::to_string(&env).unwrap();
         let SessionEnvelope::Native { session, .. } = serde_json::from_str(&json).unwrap() else {
             panic!("expected Native variant");
@@ -1338,7 +1418,11 @@ mod ffi_state_tests {
         let mut c = ClientFfi::new();
         let r = c.restore_session(r#"{"auth":"carrier_pigeon"}"#);
         assert!(!r.ok);
-        assert!(r.message.starts_with("parse session JSON:"), "{}", r.message);
+        assert!(
+            r.message.starts_with("parse session JSON:"),
+            "{}",
+            r.message
+        );
         assert!(r.message.contains("carrier_pigeon"), "{}", r.message);
         assert!(c.client.is_none());
     }
@@ -1348,7 +1432,11 @@ mod ffi_state_tests {
         let mut c = ClientFfi::new();
         let r = c.restore_session("");
         assert!(!r.ok);
-        assert!(r.message.starts_with("parse session JSON:"), "{}", r.message);
+        assert!(
+            r.message.starts_with("parse session JSON:"),
+            "{}",
+            r.message
+        );
     }
 
     #[test]
@@ -1360,6 +1448,14 @@ mod ffi_state_tests {
     fn clear_caches_requires_a_logged_in_client() {
         let mut c = ClientFfi::new();
         let r = c.clear_caches();
+        assert!(!r.ok);
+        assert_eq!(r.message, "not logged in");
+    }
+
+    #[test]
+    fn reload_client_requires_a_logged_in_client() {
+        let mut c = ClientFfi::new();
+        let r = c.reload_client();
         assert!(!r.ok);
         assert_eq!(r.message, "not logged in");
     }
@@ -1389,7 +1485,9 @@ mod ffi_state_tests {
 
 #[cfg(test)]
 mod capability_tests {
-    use super::{parse_federation_version, parse_login_flows, parse_upload_limit, preview_url_enabled};
+    use super::{
+        parse_federation_version, parse_login_flows, parse_upload_limit, preview_url_enabled,
+    };
     use serde_json::json;
 
     #[test]
@@ -1407,7 +1505,10 @@ mod capability_tests {
 
     #[test]
     fn upload_limit_defaults_to_zero() {
-        assert_eq!(parse_upload_limit(&json!({ "m.upload.size": 52428800 })), 52_428_800);
+        assert_eq!(
+            parse_upload_limit(&json!({ "m.upload.size": 52428800 })),
+            52_428_800
+        );
         assert_eq!(parse_upload_limit(&json!({})), 0);
         assert_eq!(parse_upload_limit(&serde_json::Value::Null), 0);
     }

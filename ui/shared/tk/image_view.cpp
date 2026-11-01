@@ -12,12 +12,10 @@ namespace tk
 namespace
 {
 
-Rect fit_rect(Size container, Size content, ImageView::ContentMode mode,
-              Point origin)
+Rect fit_rect(Size container, Size content, ImageView::ContentMode mode, Point origin)
 {
     using Mode = ImageView::ContentMode;
-    if (container.w <= 0 || container.h <= 0 || content.w <= 0 ||
-        content.h <= 0)
+    if (container.w <= 0 || container.h <= 0 || content.w <= 0 || content.h <= 0)
     {
         return {origin.x, origin.y, 0, 0};
     }
@@ -65,8 +63,7 @@ Size ImageView::measure(LayoutCtx&, Size constraints)
     }
     if (image_)
     {
-        Size natural{static_cast<float>(image_->width()),
-                     static_cast<float>(image_->height())};
+        Size natural{static_cast<float>(image_->width()), static_cast<float>(image_->height())};
         // Clamp to constraints if any.
         if (constraints.w > 0 && natural.w > constraints.w)
         {
@@ -92,14 +89,12 @@ void ImageView::paint_before_children(PaintCtx& ctx)
         return;
     }
     Size container{bounds_.w, bounds_.h};
-    Size content{static_cast<float>(image_->width()),
-                 static_cast<float>(image_->height())};
+    Size content{static_cast<float>(image_->width()), static_cast<float>(image_->height())};
     Rect dst = fit_rect(container, content, mode_, {bounds_.x, bounds_.y});
     if (mode_ == ContentMode::Cover)
     {
-        ctx.canvas.push_clip_rect(bounds_);
+        ClipScope clip(ctx.canvas, bounds_);
         ctx.canvas.draw_image(*image_, dst);
-        ctx.canvas.pop_clip();
     }
     else
     {

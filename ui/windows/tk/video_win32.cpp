@@ -63,39 +63,40 @@ namespace
 {
 // Rotate a tightly-packed BGRA pixel buffer in place, updating w and h.
 // deg must be 90, 180, or 270; any other value is a no-op.
-static void rotate_pixels_inplace(std::vector<uint8_t>& pixels,
-                                  UINT32& w, UINT32& h, UINT32 deg)
+static void rotate_pixels_inplace(std::vector<uint8_t>& pixels, UINT32& w, UINT32& h, UINT32 deg)
 {
     if (deg == 0 || w == 0 || h == 0)
+    {
         return;
+    }
     const UINT32 sw = w, sh = h;
     if (deg == 180)
     {
         std::vector<uint8_t> out(pixels.size());
         for (UINT32 y = 0; y < sh; ++y)
+        {
             for (UINT32 x = 0; x < sw; ++x)
             {
-                const uint8_t* s =
-                    pixels.data() +
-                    (static_cast<size_t>(y) * sw + x) * 4;
-                uint8_t* d =
-                    out.data() +
-                    (static_cast<size_t>(sh - 1 - y) * sw +
-                     (sw - 1 - x)) * 4;
-                d[0] = s[0]; d[1] = s[1]; d[2] = s[2]; d[3] = s[3];
+                const uint8_t* s = pixels.data() + (static_cast<size_t>(y) * sw + x) * 4;
+                uint8_t* d = out.data() + (static_cast<size_t>(sh - 1 - y) * sw + (sw - 1 - x)) * 4;
+                d[0] = s[0];
+                d[1] = s[1];
+                d[2] = s[2];
+                d[3] = s[3];
             }
+        }
         pixels = std::move(out);
     }
     else // 90 or 270
     {
-        w = sh; h = sw; // dimensions swap
+        w = sh;
+        h = sw; // dimensions swap
         std::vector<uint8_t> out(static_cast<size_t>(w) * h * 4);
         for (UINT32 sy = 0; sy < sh; ++sy)
+        {
             for (UINT32 sx = 0; sx < sw; ++sx)
             {
-                const uint8_t* s =
-                    pixels.data() +
-                    (static_cast<size_t>(sy) * sw + sx) * 4;
+                const uint8_t* s = pixels.data() + (static_cast<size_t>(sy) * sw + sx) * 4;
                 UINT32 dx, dy;
                 if (deg == 90)
                 {
@@ -107,11 +108,13 @@ static void rotate_pixels_inplace(std::vector<uint8_t>& pixels,
                     dx = sy;
                     dy = sw - 1 - sx;
                 }
-                uint8_t* d =
-                    out.data() +
-                    (static_cast<size_t>(dy) * w + dx) * 4;
-                d[0] = s[0]; d[1] = s[1]; d[2] = s[2]; d[3] = s[3];
+                uint8_t* d = out.data() + (static_cast<size_t>(dy) * w + dx) * 4;
+                d[0] = s[0];
+                d[1] = s[1];
+                d[2] = s[2];
+                d[3] = s[3];
             }
+        }
         pixels = std::move(out);
     }
 }
@@ -122,9 +125,8 @@ std::wstring mime_to_url(std::string_view mime)
     if (!mime.empty())
     {
         auto slash = mime.rfind('/');
-        ext = (slash != std::string_view::npos)
-                  ? std::string(mime.substr(slash + 1))
-                  : std::string(mime);
+        ext = (slash != std::string_view::npos) ? std::string(mime.substr(slash + 1))
+                                                : std::string(mime);
         auto semi = ext.find(';');
         if (semi != std::string::npos)
         {
@@ -194,11 +196,9 @@ public:
         return E_NOINTERFACE;
     }
 
-    HRESULT STDMETHODCALLTYPE EventNotify(DWORD event, DWORD_PTR,
-                                          DWORD) override
+    HRESULT STDMETHODCALLTYPE EventNotify(DWORD event, DWORD_PTR, DWORD) override
     {
-        if (event != MF_MEDIA_ENGINE_EVENT_ENDED &&
-            event != MF_MEDIA_ENGINE_EVENT_ERROR &&
+        if (event != MF_MEDIA_ENGINE_EVENT_ENDED && event != MF_MEDIA_ENGINE_EVENT_ERROR &&
             event != MF_MEDIA_ENGINE_EVENT_DURATIONCHANGE)
         {
             return S_OK;
@@ -361,9 +361,9 @@ public:
         // over the current partial buffer size — reporting a growing
         // partial size here is what makes MF's reader conclude it has
         // caught up to EOF and stop asking for more (see set_total_length).
-        *pqwLength = ended_          ? final_length_
-                    : known_total_ > 0 ? known_total_
-                                       : static_cast<QWORD>(buf_.size());
+        *pqwLength = ended_             ? final_length_
+                     : known_total_ > 0 ? known_total_
+                                        : static_cast<QWORD>(buf_.size());
         return S_OK;
     }
     // Called once the fetch layer learns the real total size (e.g. an HTTP
@@ -420,11 +420,11 @@ public:
         // timeout should fire first in practice; this is defense in depth
         // against a request the caller forgot to terminate.
         const bool woke = cv_.wait_for(lk, std::chrono::seconds(30),
-            [&]
-            {
-                return cancelled_ || failed_ || pos_ < buf_.size() ||
-                      (ended_ && pos_ >= buf_.size());
-            });
+                                       [&]
+                                       {
+                                           return cancelled_ || failed_ || pos_ < buf_.size() ||
+                                                  (ended_ && pos_ >= buf_.size());
+                                       });
         if (cancelled_)
         {
             *pcbRead = 0;
@@ -441,16 +441,15 @@ public:
             return S_OK;
         }
         const std::uint64_t avail = buf_.size() - pos_;
-        const ULONG n = static_cast<ULONG>(
-            std::min<std::uint64_t>(avail, static_cast<std::uint64_t>(cb)));
+        const ULONG n =
+            static_cast<ULONG>(std::min<std::uint64_t>(avail, static_cast<std::uint64_t>(cb)));
         std::memcpy(pb, buf_.data() + pos_, n);
         pos_ += n;
         *pcbRead = n;
         return S_OK;
     }
 
-    HRESULT STDMETHODCALLTYPE BeginRead(BYTE* pb, ULONG cb,
-                                        IMFAsyncCallback* pCallback,
+    HRESULT STDMETHODCALLTYPE BeginRead(BYTE* pb, ULONG cb, IMFAsyncCallback* pCallback,
                                         IUnknown* punkState) override
     {
         if (!pb || !pCallback)
@@ -458,8 +457,7 @@ public:
             return E_POINTER;
         }
         Microsoft::WRL::ComPtr<IMFAsyncResult> result;
-        HRESULT hr = MFCreateAsyncResult(nullptr, pCallback, punkState,
-                                         result.GetAddressOf());
+        HRESULT hr = MFCreateAsyncResult(nullptr, pCallback, punkState, result.GetAddressOf());
         if (FAILED(hr))
         {
             return hr;
@@ -480,8 +478,7 @@ public:
             .detach();
         return S_OK;
     }
-    HRESULT STDMETHODCALLTYPE EndRead(IMFAsyncResult* pResult,
-                                      ULONG* pcbRead) override
+    HRESULT STDMETHODCALLTYPE EndRead(IMFAsyncResult* pResult, ULONG* pcbRead) override
     {
         if (!pResult || !pcbRead)
         {
@@ -495,8 +492,7 @@ public:
     {
         return E_NOTIMPL;
     }
-    HRESULT STDMETHODCALLTYPE BeginWrite(const BYTE*, ULONG,
-                                         IMFAsyncCallback*, IUnknown*) override
+    HRESULT STDMETHODCALLTYPE BeginWrite(const BYTE*, ULONG, IMFAsyncCallback*, IUnknown*) override
     {
         return E_NOTIMPL;
     }
@@ -505,13 +501,11 @@ public:
         return E_NOTIMPL;
     }
 
-    HRESULT STDMETHODCALLTYPE Seek(MFBYTESTREAM_SEEK_ORIGIN eSeekOrigin,
-                                   LONGLONG llSeekOffset, DWORD,
-                                   QWORD* pqwCurrentPosition) override
+    HRESULT STDMETHODCALLTYPE Seek(MFBYTESTREAM_SEEK_ORIGIN eSeekOrigin, LONGLONG llSeekOffset,
+                                   DWORD, QWORD* pqwCurrentPosition) override
     {
         std::lock_guard<std::mutex> lk(mu_);
-        const std::int64_t base =
-            (eSeekOrigin == msoBegin) ? 0 : static_cast<std::int64_t>(pos_);
+        const std::int64_t base = (eSeekOrigin == msoBegin) ? 0 : static_cast<std::int64_t>(pos_);
         const std::int64_t newpos = base + llSeekOffset;
         if (newpos < 0)
         {
@@ -615,8 +609,7 @@ public:
         }
     }
 
-    void play(const std::uint8_t* data, std::size_t size,
-              std::string_view mime) override
+    void play(const std::uint8_t* data, std::size_t size, std::string_view mime) override
     {
         if (!data || size == 0)
         {
@@ -652,18 +645,16 @@ public:
         {
             engine_->Pause();
             Microsoft::WRL::ComPtr<IStream> stream;
-            stream.Attach(
-                SHCreateMemStream(reinterpret_cast<const BYTE*>(bytes_.data()),
-                                  static_cast<UINT>(bytes_.size())));
+            stream.Attach(SHCreateMemStream(reinterpret_cast<const BYTE*>(bytes_.data()),
+                                            static_cast<UINT>(bytes_.size())));
             Microsoft::WRL::ComPtr<IMFByteStream> mf_stream;
-            if (stream && SUCCEEDED(MFCreateMFByteStreamOnStream(
-                              stream.Get(), mf_stream.GetAddressOf())))
+            if (stream &&
+                SUCCEEDED(MFCreateMFByteStreamOnStream(stream.Get(), mf_stream.GetAddressOf())))
             {
                 std::wstring url = mime_to_url(mime);
                 BSTR burl = SysAllocString(url.c_str());
                 Microsoft::WRL::ComPtr<IMFMediaEngineEx> engine_ex;
-                if (burl && SUCCEEDED(engine_->QueryInterface(
-                                engine_ex.GetAddressOf())))
+                if (burl && SUCCEEDED(engine_->QueryInterface(engine_ex.GetAddressOf())))
                 {
                     engine_ex->SetSourceFromByteStream(mf_stream.Get(), burl);
                 }
@@ -704,7 +695,7 @@ public:
             {
                 engine_->SetCurrentTime(0.0);
                 decode_position_.store(0);
-        pending_seek_100ns_.store(-1);
+                pending_seek_100ns_.store(-1);
             }
             engine_->SetPlaybackRate(static_cast<double>(rate_));
             engine_->Play();
@@ -854,12 +845,18 @@ public:
         // bytes_ plus the media engine's own SHCreateMemStream copy of it.
         std::size_t total = bytes_.size() * 2;
         if (stream_source_)
+        {
             total += stream_source_->buffered_bytes();
+        }
         std::lock_guard lk(frame_mutex_);
         if (current_frame_)
+        {
             total += current_frame_->memory_bytes();
+        }
         if (display_frame_)
+        {
             total += display_frame_->memory_bytes();
+        }
         return total;
     }
 
@@ -870,8 +867,7 @@ public:
             return 0u;
         }
         double d = engine_->GetDuration();
-        return (d > 0.0 && d < 1.0e10) ? static_cast<std::uint64_t>(d * 1000.0)
-                                       : 0u;
+        return (d > 0.0 && d < 1.0e10) ? static_cast<std::uint64_t>(d * 1000.0) : 0u;
     }
     bool is_playing() const override
     {
@@ -888,13 +884,14 @@ public:
         {
             std::lock_guard lk(frame_mutex_);
             if (current_frame_)
+            {
                 display_frame_ = std::move(current_frame_);
+            }
         }
         return display_frame_.get();
     }
 
-    bool begin_stream(std::string_view mime,
-                      std::uint64_t /*total_size_hint*/) override
+    bool begin_stream(std::string_view mime, std::uint64_t /*total_size_hint*/) override
     {
         stop_decode_thread();
         stop_timer();
@@ -1008,16 +1005,15 @@ private:
         attrs->SetUINT64(MF_MEDIA_ENGINE_PLAYBACK_HWND, 0);
 
         Microsoft::WRL::ComPtr<IMFMediaEngineClassFactory> factory;
-        if (FAILED(CoCreateInstance(CLSID_MFMediaEngineClassFactory, nullptr,
-                                    CLSCTX_ALL,
+        if (FAILED(CoCreateInstance(CLSID_MFMediaEngineClassFactory, nullptr, CLSCTX_ALL,
                                     IID_PPV_ARGS(factory.GetAddressOf()))))
         {
             return;
         }
 
         Microsoft::WRL::ComPtr<IMFMediaEngine> engine;
-        if (FAILED(factory->CreateInstance(MF_MEDIA_ENGINE_AUDIOONLY,
-                                           attrs.Get(), engine.GetAddressOf())))
+        if (FAILED(factory->CreateInstance(MF_MEDIA_ENGINE_AUDIOONLY, attrs.Get(),
+                                           engine.GetAddressOf())))
         {
             return;
         }
@@ -1052,7 +1048,7 @@ private:
         auto fire_error = [this]()
         {
             auto alive = alive_;
-            auto err   = on_error;
+            auto err = on_error;
             post_(
                 [alive = std::move(alive), err = std::move(err)]()
                 {
@@ -1076,17 +1072,15 @@ private:
         else
         {
             Microsoft::WRL::ComPtr<IStream> stream;
-            stream.Attach(
-                SHCreateMemStream(reinterpret_cast<const BYTE*>(bytes_.data()),
-                                  static_cast<UINT>(bytes_.size())));
+            stream.Attach(SHCreateMemStream(reinterpret_cast<const BYTE*>(bytes_.data()),
+                                            static_cast<UINT>(bytes_.size())));
             if (!stream)
             {
                 fire_error();
                 CoUninitialize();
                 return;
             }
-            if (FAILED(MFCreateMFByteStreamOnStream(stream.Get(),
-                                                    mf_stream.GetAddressOf())))
+            if (FAILED(MFCreateMFByteStreamOnStream(stream.Get(), mf_stream.GetAddressOf())))
             {
                 fire_error();
                 CoUninitialize();
@@ -1106,8 +1100,8 @@ private:
         // to identify its format — see GrowableMfByteStream::Read()'s
         // safety timeout for the bound on that.
         Microsoft::WRL::ComPtr<IMFSourceReader> reader;
-        HRESULT reader_hr = MFCreateSourceReaderFromByteStream(
-            mf_stream.Get(), attrs.Get(), reader.GetAddressOf());
+        HRESULT reader_hr =
+            MFCreateSourceReaderFromByteStream(mf_stream.Get(), attrs.Get(), reader.GetAddressOf());
         if (FAILED(reader_hr))
         {
             fire_error();
@@ -1122,24 +1116,22 @@ private:
         {
             video_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
             video_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_RGB32);
-            reader->SetCurrentMediaType(
-                static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM),
-                nullptr, video_type.Get());
+            reader->SetCurrentMediaType(static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM),
+                                        nullptr, video_type.Get());
         }
 
         // Get actual frame size.
         Microsoft::WRL::ComPtr<IMFMediaType> actual_type;
-        if (FAILED(reader->GetCurrentMediaType(
-                static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM),
-                actual_type.GetAddressOf())))
+        if (FAILED(
+                reader->GetCurrentMediaType(static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM),
+                                            actual_type.GetAddressOf())))
         {
             fire_error();
             CoUninitialize();
             return;
         }
         UINT32 frame_w = 0, frame_h = 0;
-        MFGetAttributeSize(actual_type.Get(), MF_MT_FRAME_SIZE, &frame_w,
-                           &frame_h);
+        MFGetAttributeSize(actual_type.Get(), MF_MT_FRAME_SIZE, &frame_w, &frame_h);
         if (frame_w == 0 || frame_h == 0)
         {
             fire_error();
@@ -1153,13 +1145,15 @@ private:
         {
             Microsoft::WRL::ComPtr<IMFMediaType> native_type;
             if (SUCCEEDED(reader->GetNativeMediaType(
-                    static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM),
-                    0, native_type.GetAddressOf())))
+                    static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), 0,
+                    native_type.GetAddressOf())))
             {
                 native_type->GetUINT32(MF_MT_VIDEO_ROTATION, &rotation_deg);
             }
             if (rotation_deg == 0)
+            {
                 actual_type->GetUINT32(MF_MT_VIDEO_ROTATION, &rotation_deg);
+            }
             rotation_deg %= 360;
         }
 
@@ -1173,8 +1167,7 @@ private:
         LONG src_stride = 0;
         {
             UINT32 s32 = 0;
-            if (SUCCEEDED(
-                    actual_type->GetUINT32(MF_MT_DEFAULT_STRIDE, &s32)))
+            if (SUCCEEDED(actual_type->GetUINT32(MF_MT_DEFAULT_STRIDE, &s32)))
             {
                 src_stride = static_cast<LONG>(static_cast<INT32>(s32));
             }
@@ -1185,15 +1178,15 @@ private:
         DWORD frame_sleep_ms = 16; // 60 fps fallback
         {
             UINT32 fps_num = 0, fps_den = 0;
-            if (SUCCEEDED(MFGetAttributeRatio(actual_type.Get(),
-                                              MF_MT_FRAME_RATE,
-                                              &fps_num, &fps_den)) &&
+            if (SUCCEEDED(
+                    MFGetAttributeRatio(actual_type.Get(), MF_MT_FRAME_RATE, &fps_num, &fps_den)) &&
                 fps_num > 0 && fps_den > 0)
             {
-                const DWORD ms = static_cast<DWORD>(
-                    static_cast<UINT64>(fps_den) * 1000u / fps_num);
+                const DWORD ms = static_cast<DWORD>(static_cast<UINT64>(fps_den) * 1000u / fps_num);
                 if (ms >= 1u && ms <= 500u)
+                {
                     frame_sleep_ms = ms;
+                }
             }
         }
 
@@ -1244,9 +1237,8 @@ private:
             DWORD stream_idx = 0, flags = 0;
             LONGLONG ts = 0;
             Microsoft::WRL::ComPtr<IMFSample> sample;
-            HRESULT hr = reader->ReadSample(
-                static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), 0,
-                &stream_idx, &flags, &ts, sample.GetAddressOf());
+            HRESULT hr = reader->ReadSample(static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM),
+                                            0, &stream_idx, &flags, &ts, sample.GetAddressOf());
 
             if (FAILED(hr))
             {
@@ -1263,8 +1255,7 @@ private:
                     PropVariantInit(&pos);
                     pos.vt = VT_I8;
                     pos.hVal.QuadPart = 0;
-                    HRESULT seek_hr =
-                        reader->SetCurrentPosition(GUID_NULL, pos);
+                    HRESULT seek_hr = reader->SetCurrentPosition(GUID_NULL, pos);
                     PropVariantClear(&pos);
                     if (SUCCEEDED(seek_hr))
                     {
@@ -1295,11 +1286,11 @@ private:
             // carry correct stride metadata (e.g. 1024 for a 250-px-wide video
             // whose GPU rows are padded to the next 64-byte boundary).
 
-            BYTE* src_ptr   = nullptr;
-            LONG  src_pitch = 0; // signed: negative → bottom-up buffer
-            bool  locked_2d = false;
+            BYTE* src_ptr = nullptr;
+            LONG src_pitch = 0; // signed: negative → bottom-up buffer
+            bool locked_2d = false;
             Microsoft::WRL::ComPtr<IMFMediaBuffer> buf;
-            Microsoft::WRL::ComPtr<IMF2DBuffer>    buf2d;
+            Microsoft::WRL::ComPtr<IMF2DBuffer> buf2d;
 
             {
                 Microsoft::WRL::ComPtr<IMFMediaBuffer> direct;
@@ -1311,8 +1302,8 @@ private:
                         LONG pitch = 0;
                         if (SUCCEEDED(d2d->Lock2D(&src_ptr, &pitch)))
                         {
-                            buf       = std::move(direct);
-                            buf2d     = std::move(d2d);
+                            buf = std::move(direct);
+                            buf2d = std::move(d2d);
                             src_pitch = pitch;
                             locked_2d = true;
                         }
@@ -1326,8 +1317,7 @@ private:
                 // GetBufferByIndex + Lock2D failed (common when the video
                 // processor outputs a flat MFCreateMemoryBuffer).  Fall back
                 // to ConvertToContiguousBuffer + flat lock.
-                if (FAILED(sample->ConvertToContiguousBuffer(
-                        buf.ReleaseAndGetAddressOf())))
+                if (FAILED(sample->ConvertToContiguousBuffer(buf.ReleaseAndGetAddressOf())))
                 {
                     continue;
                 }
@@ -1356,13 +1346,11 @@ private:
                     // Probe common GPU row-alignment values to find the true
                     // stride: the smallest s >= frame_w*4 such that
                     //   flat_len % s == 0  AND  flat_len / s >= frame_h
-                    static const UINT kAligns[] = {
-                        64u, 128u, 256u, 512u, 1024u, 2048u, 4096u};
+                    static const UINT kAligns[] = {64u, 128u, 256u, 512u, 1024u, 2048u, 4096u};
                     for (UINT al : kAligns)
                     {
                         const UINT s = (target + al - 1u) / al * al;
-                        if (flat_len % s == 0 &&
-                            flat_len / s >= frame_h)
+                        if (flat_len % s == 0 && flat_len / s >= frame_h)
                         {
                             abs_p = s;
                             break;
@@ -1373,48 +1361,52 @@ private:
                         abs_p = target; // last resort
                     }
                 }
-                src_pitch = (src_stride < 0) ? -static_cast<LONG>(abs_p)
-                                             : static_cast<LONG>(abs_p);
+                src_pitch = (src_stride < 0) ? -static_cast<LONG>(abs_p) : static_cast<LONG>(abs_p);
             }
 
             const UINT dst_stride = frame_w * 4u;
-            const UINT abs_pitch  = src_pitch < 0
-                                        ? static_cast<UINT>(-src_pitch)
-                                        : static_cast<UINT>(src_pitch);
+            const UINT abs_pitch =
+                src_pitch < 0 ? static_cast<UINT>(-src_pitch) : static_cast<UINT>(src_pitch);
 
             // Guard: pitch must cover a full output row; for flat-lock also
             // verify the total read stays within the locked buffer.
-            const bool pitch_ok =
-                abs_pitch >= dst_stride &&
-                (locked_2d ||
-                 static_cast<uint64_t>(abs_pitch) * frame_h <=
-                     static_cast<uint64_t>(flat_len));
+            const bool pitch_ok = abs_pitch >= dst_stride &&
+                                  (locked_2d || static_cast<uint64_t>(abs_pitch) * frame_h <=
+                                                    static_cast<uint64_t>(flat_len));
             if (!pitch_ok)
             {
-                if (locked_2d) buf2d->Unlock2D();
-                else           buf->Unlock();
+                if (locked_2d)
+                {
+                    buf2d->Unlock2D();
+                }
+                else
+                {
+                    buf->Unlock();
+                }
                 continue;
             }
 
-            std::vector<uint8_t> pixels(static_cast<size_t>(dst_stride) *
-                                        frame_h);
+            std::vector<uint8_t> pixels(static_cast<size_t>(dst_stride) * frame_h);
             // Negative pitch → bottom-up buffer: the first byte in memory is
             // the last row of the image, so start at the end and walk back up.
-            const BYTE* src_base =
-                (src_pitch < 0)
-                    ? src_ptr + static_cast<size_t>(abs_pitch) * (frame_h - 1)
-                    : src_ptr;
+            const BYTE* src_base = (src_pitch < 0)
+                                       ? src_ptr + static_cast<size_t>(abs_pitch) * (frame_h - 1)
+                                       : src_ptr;
             for (UINT y = 0; y < frame_h; ++y)
             {
-                const BYTE* src_row =
-                    src_base + static_cast<ptrdiff_t>(y) * src_pitch;
-                std::memcpy(pixels.data() +
-                                static_cast<size_t>(y) * dst_stride,
-                            src_row, dst_stride);
+                const BYTE* src_row = src_base + static_cast<ptrdiff_t>(y) * src_pitch;
+                std::memcpy(pixels.data() + static_cast<size_t>(y) * dst_stride, src_row,
+                            dst_stride);
             }
 
-            if (locked_2d) buf2d->Unlock2D();
-            else           buf->Unlock();
+            if (locked_2d)
+            {
+                buf2d->Unlock2D();
+            }
+            else
+            {
+                buf->Unlock();
+            }
 
             if (backend_)
             {
@@ -1423,11 +1415,12 @@ private:
                 // buffer allocation.
                 UINT32 disp_w = frame_w, disp_h = frame_h;
                 if (rotation_deg != 0)
+                {
                     rotate_pixels_inplace(pixels, disp_w, disp_h, rotation_deg);
+                }
 
                 auto img = tk::d2d::make_image_from_bgra(
-                    *backend_, pixels.data(), static_cast<int>(disp_w),
-                    static_cast<int>(disp_h));
+                    *backend_, pixels.data(), static_cast<int>(disp_w), static_cast<int>(disp_h));
                 if (img)
                 {
                     {
@@ -1458,13 +1451,14 @@ private:
                 // Per-sample duration is more accurate than the static rate
                 // (handles variable frame-rate content).
                 LONGLONG sample_dur = 0;
-                if (SUCCEEDED(sample->GetSampleDuration(&sample_dur)) &&
-                    sample_dur > 0)
+                if (SUCCEEDED(sample->GetSampleDuration(&sample_dur)) && sample_dur > 0)
                 {
-                    const DWORD dur_ms = static_cast<DWORD>(
-                        std::min<LONGLONG>(sample_dur / 10000LL, 500LL));
+                    const DWORD dur_ms =
+                        static_cast<DWORD>(std::min<LONGLONG>(sample_dur / 10000LL, 500LL));
                     if (dur_ms >= 1u)
+                    {
                         sleep_ms = dur_ms;
+                    }
                 }
 
                 // A/V sync: for non-looping videos with a running audio
@@ -1475,24 +1469,28 @@ private:
                 // against 0, producing an ever-growing sleep that makes the
                 // video appear to play in slow motion and stalls the progress
                 // bar (which also reads GetCurrentTime()).
-                if (!loop_.load() && engine_ &&
-                    !engine_->IsPaused() && !engine_->IsEnded())
+                if (!loop_.load() && engine_ && !engine_->IsPaused() && !engine_->IsEnded())
                 {
-                    const double pts   = static_cast<double>(ts) / 1.0e7;
+                    const double pts = static_cast<double>(ts) / 1.0e7;
                     const double audio = engine_->GetCurrentTime();
                     if (audio > 0.0)
                     {
-                        const long wait =
-                            static_cast<long>((pts - audio) * 1000.0);
+                        const long wait = static_cast<long>((pts - audio) * 1000.0);
                         if (wait > 0 && wait < 2000)
+                        {
                             sleep_ms = static_cast<DWORD>(wait);
+                        }
                         else if (wait <= 0)
+                        {
                             sleep_ms = 0; // video behind audio — display now
+                        }
                     }
                 }
 
                 if (sleep_ms > 0)
+                {
                     Sleep(sleep_ms);
+                }
             }
         }
 
@@ -1505,8 +1503,7 @@ private:
         {
             return;
         }
-        CreateTimerQueueTimer(&timer_, nullptr, timer_cb_, this, 60, 60,
-                              WT_EXECUTEDEFAULT);
+        CreateTimerQueueTimer(&timer_, nullptr, timer_cb_, this, 60, 60, WT_EXECUTEDEFAULT);
     }
     void stop_timer()
     {
@@ -1570,14 +1567,14 @@ private:
 
     mutable std::mutex frame_mutex_;
     mutable std::unique_ptr<tk::Image> current_frame_; // decode thread → UI thread handoff
-    mutable std::unique_ptr<tk::Image> display_frame_; // UI thread only — never touched by decode thread
+    mutable std::unique_ptr<tk::Image>
+        display_frame_; // UI thread only — never touched by decode thread
 };
 
 // ─────────────────────────────────────────────────────────────────────────
 //  Factory
 // ─────────────────────────────────────────────────────────────────────────
-std::unique_ptr<tk::VideoPlayer>
-make_video_player_win32(PostFn post, tk::d2d::Backend* backend)
+std::unique_ptr<tk::VideoPlayer> make_video_player_win32(PostFn post, tk::d2d::Backend* backend)
 {
     return std::make_unique<Win32VideoPlayer>(std::move(post), backend);
 }

@@ -16,17 +16,19 @@ namespace tesseract::views::msgbubble
 // The first five mirror the anon-namespace values in MessageListView.cpp
 // (kMsgListPadX / kMsgListAvatarSize / …); both are derived from the same
 // tesseract::visual constants, so they cannot drift.
-inline constexpr float kEdgePadX     = static_cast<float>(tesseract::visual::kSpaceMD);       // 12
-inline constexpr float kAvatarSize   = static_cast<float>(tesseract::visual::kMsgAvatarSize); // 32
-inline constexpr float kAvatarGap    = static_cast<float>(tesseract::visual::kMsgAvatarGap);  // 8
-inline constexpr float kMaxBubbleW   = static_cast<float>(tesseract::visual::kMsgMaxWidth);   // 520
-inline constexpr float kBubbleRadius = tesseract::visual::kRadiusMD;                          // 8
+inline constexpr float kEdgePadX = static_cast<float>(tesseract::visual::kSpaceMD);         // 12
+inline constexpr float kAvatarSize = static_cast<float>(tesseract::visual::kMsgAvatarSize); // 32
+inline constexpr float kAvatarGap = static_cast<float>(tesseract::visual::kMsgAvatarGap);   // 8
+inline constexpr float kMaxBubbleW = static_cast<float>(tesseract::visual::kMsgMaxWidth);   // 520
+inline constexpr float kBubbleRadius = tesseract::visual::kRadiusMD;                        // 8
 
-inline constexpr float kBubblePadX   = 10.0f; // bubble inner horizontal padding
-inline constexpr float kBubblePadY   = 6.0f;  // bubble inner vertical padding
-inline constexpr float kFurnitureGap = 6.0f;  // gap between an own bubble and its left-side furniture
-inline constexpr float kBubbleMinW   = 48.0f; // floor for the *available* body width on an absurdly narrow row (shaping_width only — a bubble otherwise hugs its content with no minimum)
-inline constexpr float kQuoteMinW    = 220.0f; // reply-quote card readability floor
+inline constexpr float kBubblePadX = 10.0f; // bubble inner horizontal padding
+inline constexpr float kBubblePadY = 6.0f;  // bubble inner vertical padding
+inline constexpr float kFurnitureGap =
+    6.0f; // gap between an own bubble and its left-side furniture
+inline constexpr float kBubbleMinW =
+    48.0f; // floor for the *available* body width on an absurdly narrow row (shaping_width only — a bubble otherwise hugs its content with no minimum)
+inline constexpr float kQuoteMinW = 220.0f; // reply-quote card readability floor
 
 // Width the message body is shaped/measured at for a given row width. Does
 // not depend on the body's actual content width (only known post-measure).
@@ -40,9 +42,9 @@ inline constexpr float kQuoteMinW    = 220.0f; // reply-quote card readability f
 inline float shaping_width(float row_w, bool is_own, float receipt_reserve = 0.0f,
                            bool own_avatar = false)
 {
-    const float avail = row_w - 2.0f * kEdgePadX
-                        - (is_own ? (own_avatar ? kAvatarSize + kAvatarGap : 0.0f)
-                                  : (kAvatarSize + kAvatarGap + receipt_reserve));
+    const float avail = row_w - 2.0f * kEdgePadX -
+                        (is_own ? (own_avatar ? kAvatarSize + kAvatarGap : 0.0f)
+                                : (kAvatarSize + kAvatarGap + receipt_reserve));
     const float outer = std::clamp(avail, kBubbleMinW, kMaxBubbleW);
     return std::max(kBubbleMinW, outer - 2.0f * kBubblePadX);
 }
@@ -60,14 +62,13 @@ struct Box
     float chip_x = 0.0f;            // left edge of the reaction strip + thread chip
     bool draw_avatar = false;
     bool draw_sender = false;
-    bool reserve_receipt_width = false;   // subtract the receipt cluster width from the body
+    bool reserve_receipt_width = false; // subtract the receipt cluster width from the body
 };
 
 // `natural_w` is the body's measured intrinsic width (longest wrapped line
 // or media width). Pass <= 0 when it is not yet known — the bubble then
 // simply fills the available width.
-inline Box layout(float row_w, bool is_own, bool is_cont, float natural_w,
-                  bool own_avatar = false)
+inline Box layout(float row_w, bool is_own, bool is_cont, float natural_w, bool own_avatar = false)
 {
     Box b;
     const float gutter = (is_own && own_avatar) ? kAvatarSize + kAvatarGap : 0.0f;

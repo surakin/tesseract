@@ -48,14 +48,17 @@ struct RwShell : tesseract::test::TestShellBase
         mut_pool_.drain();
         media_prefetch_pool_.drain();
     }
-    void apply_thread_messages_(
-        const std::string&, std::vector<tesseract::views::MessageRowData>,
-        bool) override {}
-    void apply_thread_message_insert_(
-        const std::string&, std::size_t,
-        tesseract::views::MessageRowData) override {}
-    void apply_thread_message_remove_(const std::string&,
-                                      std::size_t) override {}
+    void apply_thread_messages_(const std::string&, std::vector<tesseract::views::MessageRowData>,
+                                bool) override
+    {
+    }
+    void apply_thread_message_insert_(const std::string&, std::size_t,
+                                      tesseract::views::MessageRowData) override
+    {
+    }
+    void apply_thread_message_remove_(const std::string&, std::size_t) override
+    {
+    }
     void post_to_ui_(std::function<void()> fn) override
     {
         std::lock_guard<std::mutex> lk(mu);
@@ -83,9 +86,13 @@ struct RwShell : tesseract::test::TestShellBase
                 queue.clear();
             }
             if (q.empty())
+            {
                 break;
+            }
             for (auto& f : q)
+            {
                 f();
+            }
         }
     }
     std::mutex mu;
@@ -141,16 +148,28 @@ struct RwFx
         w.media_viewer = viewer.get();
         w.forward_picker = fwd.get();
         w.room_media_view = gallery.get();
-        w.focus_forward_picker_field = [this] { ++field_focus; };
-        w.hide_forward_picker_field = [this] { ++field_hide; };
-        s.main_room_pane_ = std::make_unique<RoomPane>(
-            RoomPane::Deps{.shell = &s,
-                           .repaint = [] {},
-                           .relayout = [this] { ++relayouts; }},
-            "!r:x");
+        w.focus_forward_picker_field = [this]
+        {
+            ++field_focus;
+        };
+        w.hide_forward_picker_field = [this]
+        {
+            ++field_hide;
+        };
+        s.main_room_pane_ = std::make_unique<RoomPane>(RoomPane::Deps{.shell = &s,
+                                                                      .repaint = [] {},
+                                                                      .relayout =
+                                                                          [this]
+                                                                      {
+                                                                          ++relayouts;
+                                                                      }},
+                                                       "!r:x");
         s.main_room_pane_->attach(std::move(w));
     }
-    RoomPane& pane() { return *s.main_room_pane_; }
+    RoomPane& pane()
+    {
+        return *s.main_room_pane_;
+    }
 };
 
 } // namespace
@@ -181,8 +200,7 @@ TEST_CASE("clicking an image opens the lightbox and Escape-style close hides it"
 namespace
 {
 tesseract::views::MessageRowData::GalleryItemRow
-rp_gallery_item(tesseract::views::MessageRowData::GalleryItemRow::Kind kind,
-                const char* mxc)
+rp_gallery_item(tesseract::views::MessageRowData::GalleryItemRow::Kind kind, const char* mxc)
 {
     tesseract::views::MessageRowData::GalleryItemRow r;
     r.kind = kind;
@@ -216,8 +234,7 @@ TEST_CASE("clicking a gallery cell opens the viewer at that cell, audio and file
     REQUIRE(f.viewer->is_open());
     CHECK(f.viewer->count() == 5);
     CHECK(f.viewer->index() == 0);
-    CHECK(f.viewer->current_item().kind ==
-          tesseract::views::MediaViewerItem::Kind::File);
+    CHECK(f.viewer->current_item().kind == tesseract::views::MediaViewerItem::Kind::File);
     f.viewer->on_close();
 
     hit.index = 3; // the video
@@ -225,8 +242,7 @@ TEST_CASE("clicking a gallery cell opens the viewer at that cell, audio and file
     REQUIRE(f.viewer->is_open());
     CHECK(f.viewer->count() == 5);
     CHECK(f.viewer->index() == 3);
-    CHECK(f.viewer->current_item().kind ==
-          tesseract::views::MediaViewerItem::Kind::Video);
+    CHECK(f.viewer->current_item().kind == tesseract::views::MediaViewerItem::Kind::Video);
     CHECK(f.viewer->current_item().caption == "trip");
     CHECK(f.relayouts >= 1);
 
@@ -240,8 +256,7 @@ TEST_CASE("clicking a gallery cell opens the viewer at that cell, audio and file
     REQUIRE_FALSE(before.empty()); // at least the video's prefix request
     f.viewer->on_key_down(tk::KeyEvent{tk::Key::PageDown});
     CHECK(f.viewer->index() == 4);
-    CHECK(f.viewer->current_item().kind ==
-          tesseract::views::MediaViewerItem::Kind::Image);
+    CHECK(f.viewer->current_item().kind == tesseract::views::MediaViewerItem::Kind::Image);
     std::size_t still_pending = 0;
     for (std::uint64_t id : before)
     {
@@ -252,8 +267,7 @@ TEST_CASE("clicking a gallery cell opens the viewer at that cell, audio and file
     f.viewer->on_close();
 }
 
-TEST_CASE("viewer playback stops the timeline's active audio clip",
-          "[roompane][widgets][audio]")
+TEST_CASE("viewer playback stops the timeline's active audio clip", "[roompane][widgets][audio]")
 {
     using tesseract::views::MediaViewerItem;
     using tesseract::views::MessageRowData;
@@ -265,7 +279,11 @@ TEST_CASE("viewer playback stops the timeline's active audio clip",
     auto* timeline_fake = timeline_player.get();
     auto& ctrl = mlv->playback_controller();
     ctrl.set_player(std::move(timeline_player));
-    ctrl.set_bytes_provider([](const std::string&) { return std::vector<std::uint8_t>{1, 2, 3}; });
+    ctrl.set_bytes_provider(
+        [](const std::string&)
+        {
+            return std::vector<std::uint8_t>{1, 2, 3};
+        });
 
     MessageRowData voice;
     voice.kind = MessageRowData::Kind::Voice;
@@ -367,8 +385,7 @@ TEST_CASE("install_media_viewer_save_ asks the shell for a path and saves the it
     std::string asked_name;
     std::function<void(std::string)> deferred;
     f.pane().install_media_viewer_save_(
-        [&](const tesseract::views::MediaSaveSpec& spec,
-            std::function<void(std::string)> done)
+        [&](const tesseract::views::MediaSaveSpec& spec, std::function<void(std::string)> done)
         {
             asked_name = spec.suggested_name;
             deferred = std::move(done);
@@ -392,7 +409,7 @@ TEST_CASE("install_media_viewer_save_ asks the shell for a path and saves the it
     f.viewer->on_close();
 }
 
-TEST_CASE("a saved attachment is written through a temp file and the outcome is reported",
+TEST_CASE("a saved attachment is written to the chosen file and the outcome is reported",
           "[roompane][widgets][save]")
 {
     using tesseract::views::MediaViewerItem;
@@ -405,8 +422,7 @@ TEST_CASE("a saved attachment is written through a temp file and the outcome is 
     RwFx f;
     std::function<void(std::string)> deferred;
     f.pane().install_media_viewer_save_(
-        [&](const tesseract::views::MediaSaveSpec&,
-            std::function<void(std::string)> done)
+        [&](const tesseract::views::MediaSaveSpec&, std::function<void(std::string)> done)
         {
             deferred = std::move(done);
         });
@@ -433,6 +449,7 @@ TEST_CASE("a saved attachment is written through a temp file and the outcome is 
     std::ifstream in(good, std::ios::binary);
     std::string written((std::istreambuf_iterator<char>(in)), {});
     CHECK(written == "%PDF");
+    // Only the chosen path is written: a sandboxed build may not create siblings.
     CHECK_FALSE(fs::exists(good + ".part"));
 
     // A write that cannot be made (missing folder) is reported, and no file appears.
@@ -444,6 +461,18 @@ TEST_CASE("a saved attachment is written through a temp file and the outcome is 
     // An empty download is reported too, rather than writing an empty file.
     save(good, {});
     CHECK(f.s.statuses.back() == "Couldn't save the file.");
+
+    // A file that can't be opened for writing is reported and left untouched.
+    const auto writable = fs::status(good).permissions();
+    fs::permissions(good, fs::perms::owner_write | fs::perms::group_write | fs::perms::others_write,
+                    fs::perm_options::remove);
+    save(good, {'n', 'e', 'w'});
+    CHECK(f.s.statuses.back() == "Couldn't save the file.");
+    std::ifstream again(good, std::ios::binary);
+    std::string kept((std::istreambuf_iterator<char>(again)), {});
+    CHECK(kept == "%PDF");
+    again.close();
+    fs::permissions(good, writable, ec);
 
     f.viewer->on_close();
     fs::remove_all(dir, ec);
@@ -487,8 +516,7 @@ TEST_CASE("forwarding without a client does nothing", "[roompane][widgets][forwa
     CHECK(f.s.next_request_id_ == before);
 }
 
-TEST_CASE("the media gallery opens for the room and closes cleanly",
-          "[roompane][widgets][gallery]")
+TEST_CASE("the media gallery opens for the room and closes cleanly", "[roompane][widgets][gallery]")
 {
     RwFx f;
     f.view->on_media_view_requested("!r:x");
@@ -499,8 +527,7 @@ TEST_CASE("the media gallery opens for the room and closes cleanly",
     f.s.pump();
 }
 
-TEST_CASE("gallery feeds only apply to the room the gallery shows",
-          "[roompane][widgets][gallery]")
+TEST_CASE("gallery feeds only apply to the room the gallery shows", "[roompane][widgets][gallery]")
 {
     RwFx f;
     tesseract::views::MessageRowData img;

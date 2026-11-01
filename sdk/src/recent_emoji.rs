@@ -474,6 +474,9 @@ mod tests {
                 total: 1,
             })
             .collect();
-        assert_eq!(element_content_from(&entries).recent_emoji.len(), MAX_ENTRIES);
+        assert_eq!(
+            element_content_from(&entries).recent_emoji.len(),
+            MAX_ENTRIES
+        );
     }
 }

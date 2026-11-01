@@ -21,7 +21,7 @@ constexpr Palette light_palette()
     p.sidebar_hover = Color::rgb(0xE7E9EE);
     // Section headers sit distinctly darker than the room list (sidebar_bg
     // 0xF0F2F5); the hover state steps darker again for clear feedback.
-    p.section_header_bg    = Color::rgb(0xDADDE5);
+    p.section_header_bg = Color::rgb(0xDADDE5);
     p.section_header_hover = Color::rgb(0xC6CAD4);
     p.chrome_bg = Color::rgb(0xF8F9FA);
     // Matches sidebar_bg — a clearly distinct "input well" tone against
@@ -53,11 +53,11 @@ constexpr Palette light_palette()
 
     // Message bubbles — a faint step off the white chat area (bg 0xFFFFFF);
     // the "me" tint stays well below chip_bg_me (0xCFE3FF).
-    p.bubble_bg    = Color::rgb(0xF0F2F5);
+    p.bubble_bg = Color::rgb(0xF0F2F5);
     p.bubble_bg_me = Color::rgb(0xE4F0FF);
 
-    p.destructive         = Color::rgb(0xD93636);
-    p.destructive_hover   = Color::rgb(0xE04848);
+    p.destructive = Color::rgb(0xD93636);
+    p.destructive_hover = Color::rgb(0xE04848);
     p.destructive_pressed = Color::rgb(0xB52A2A);
 
     p.success = Color::rgb(0x008A00);
@@ -86,9 +86,21 @@ constexpr Palette light_palette()
     p.code_bg = Color::rgb(0xD9DCE3);
 
     // Presence dots
-    p.presence_online      = Color::rgb(0x0EAC20); // green
+    p.presence_online = Color::rgb(0x0EAC20);      // green
     p.presence_unavailable = Color::rgb(0xEB7107); // amber
-    p.presence_offline     = Color::rgb(0xB0B3BA); // muted grey
+    p.presence_offline = Color::rgb(0xB0B3BA);     // muted grey
+
+    // Same as the colour each role used before it had its own field.
+    p.link = p.accent;
+    p.text_disabled = p.text_muted;
+    p.selection_text = p.text_primary;
+    p.selected_text = p.text_primary;
+    p.text_error = Color::rgb(0xCC3333);
+    p.notice_bg = Color::rgb(0xFFF4D6);
+    p.notice_border = Color::rgb(0xE0C97A);
+    p.notice_text = Color::rgb(0x5C4500);
+    p.warning_bg = Color::rgb(0xFFB300);
+    p.warning_text = Color::rgb(0x332600);
     return p;
 }
 
@@ -102,7 +114,7 @@ constexpr Palette dark_palette()
     p.sidebar_hover = Color::rgb(0x23262B);
     // Section headers sit distinctly lighter than the dark room list
     // (sidebar_bg 0x16181C); the hover state steps lighter again.
-    p.section_header_bg    = Color::rgb(0x2D3138);
+    p.section_header_bg = Color::rgb(0x2D3138);
     p.section_header_hover = Color::rgb(0x3C414A);
     p.chrome_bg = Color::rgb(0x202327);
     // Was 0x202327 — identical to chrome_bg, so the compose input card had
@@ -130,11 +142,11 @@ constexpr Palette dark_palette()
 
     // Message bubbles — a faint step off the dark chat area (bg 0x1B1D21);
     // the "me" tint is a muted navy, far less saturated than chip_bg_me.
-    p.bubble_bg    = Color::rgb(0x24272C);
+    p.bubble_bg = Color::rgb(0x24272C);
     p.bubble_bg_me = Color::rgb(0x1E2A3D);
 
-    p.destructive         = Color::rgb(0xE45656);
-    p.destructive_hover   = Color::rgb(0xEC6868);
+    p.destructive = Color::rgb(0xE45656);
+    p.destructive_hover = Color::rgb(0xEC6868);
     p.destructive_pressed = Color::rgb(0xC44343);
 
     p.success = Color::rgb(0x23B064);
@@ -158,19 +170,31 @@ constexpr Palette dark_palette()
     p.code_bg = Color::rgb(0x2E3138);
 
     // Presence dots
-    p.presence_online      = Color::rgb(0x23B064); // green
+    p.presence_online = Color::rgb(0x23B064);      // green
     p.presence_unavailable = Color::rgb(0xE08C1A); // amber
-    p.presence_offline     = Color::rgb(0x606470); // muted grey
+    p.presence_offline = Color::rgb(0x606470);     // muted grey
+
+    // Same as the colour each role used before it had its own field.
+    p.link = p.accent;
+    p.text_disabled = p.text_muted;
+    p.selection_text = p.text_primary;
+    p.selected_text = p.text_primary;
+    p.text_error = Color::rgb(0xCC3333);
+    p.notice_bg = Color::rgb(0xFFF4D6);
+    p.notice_border = Color::rgb(0xE0C97A);
+    p.notice_text = Color::rgb(0x5C4500);
+    p.warning_bg = Color::rgb(0xFFB300);
+    p.warning_text = Color::rgb(0x332600);
     return p;
 }
 
 constexpr std::array<AccentThemeInfo, 5> kAccentInfos{{
     // Names are msgids; the Appearance settings translate them for display.
-    {AccentTheme::Blue,   N_("Blue"),   211.0f},
+    {AccentTheme::Blue, N_("Blue"), 211.0f},
     {AccentTheme::Forest, N_("Forest"), 146.0f},
-    {AccentTheme::Sunset, N_("Sunset"),  18.0f},
+    {AccentTheme::Sunset, N_("Sunset"), 18.0f},
     {AccentTheme::Violet, N_("Violet"), 268.0f},
-    {AccentTheme::System, N_("System"),   0.0f}, // hue unused; see make_variant
+    {AccentTheme::System, N_("System"), 0.0f}, // hue unused; see make_variant
 }};
 
 // Per-accent, per-mode lightness constants for the ~11 accent-dependent
@@ -212,7 +236,7 @@ struct AccentSpec
 
 constexpr std::array<AccentSpec, 3> kAccentSpecs{{
     {AccentTheme::Forest, 146.0f, 0.2618f, 0.8582f, 0.1873f, 0.9230f, 0.3010f, 0.1704f, 0.4245f},
-    {AccentTheme::Sunset,  18.0f, 0.4127f, 0.8882f, 0.2951f, 0.9398f, 0.4716f, 0.2314f, 0.7521f},
+    {AccentTheme::Sunset, 18.0f, 0.4127f, 0.8882f, 0.2951f, 0.9398f, 0.4716f, 0.2314f, 0.7521f},
     {AccentTheme::Violet, 268.0f, 0.6206f, 0.9056f, 0.4422f, 0.9483f, 0.6814f, 0.3110f, 0.8382f},
 }};
 
@@ -232,32 +256,33 @@ constexpr Palette apply_accent(Palette p, ThemeMode mode, const AccentSpec& spec
     const float hue = spec.hue;
     if (mode == ThemeMode::Light)
     {
-        p.accent         = Color::from_hsl(hue, 1.00f, spec.light_accent_l);
-        p.accent_hover   = Color::from_hsl(hue, 1.00f, spec.light_accent_l + 0.085f);
+        p.accent = Color::from_hsl(hue, 1.00f, spec.light_accent_l);
+        p.accent_hover = Color::from_hsl(hue, 1.00f, spec.light_accent_l + 0.085f);
         p.accent_pressed = Color::from_hsl(hue, 1.00f, spec.light_accent_l - 0.055f);
-        p.chip_bg_me     = Color::from_hsl(hue, kWashSaturationLight, spec.light_chip_bg_l);
+        p.chip_bg_me = Color::from_hsl(hue, kWashSaturationLight, spec.light_chip_bg_l);
         p.chip_border_me = Color::from_hsl(hue, kWashSaturationLight, spec.light_chip_bg_l - 0.12f);
-        p.chip_text_me   = Color::from_hsl(hue, 1.00f, spec.light_chip_text_l);
-        p.bubble_bg_me   = Color::from_hsl(hue, kWashSaturationLight, spec.light_bubble_bg_l);
-        p.unread_bg            = p.accent;
-        p.avatar_initials_bg   = p.chip_bg_me;
+        p.chip_text_me = Color::from_hsl(hue, 1.00f, spec.light_chip_text_l);
+        p.bubble_bg_me = Color::from_hsl(hue, kWashSaturationLight, spec.light_bubble_bg_l);
+        p.unread_bg = p.accent;
+        p.avatar_initials_bg = p.chip_bg_me;
         p.avatar_initials_text = p.chip_text_me;
         p.selection = Color::from_hsl(hue, 1.00f, 0.50f).with_alpha(0x50);
     }
     else // Dark
     {
-        p.accent         = Color::from_hsl(hue, 1.00f, spec.dark_accent_l);
-        p.accent_hover   = Color::from_hsl(hue, 1.00f, spec.dark_accent_l + 0.049f);
+        p.accent = Color::from_hsl(hue, 1.00f, spec.dark_accent_l);
+        p.accent_hover = Color::from_hsl(hue, 1.00f, spec.dark_accent_l + 0.049f);
         p.accent_pressed = Color::from_hsl(hue, 1.00f, spec.dark_accent_l - 0.081f);
-        p.chip_bg_me     = Color::from_hsl(hue, 0.53f, spec.dark_chip_bg_l);
+        p.chip_bg_me = Color::from_hsl(hue, 0.53f, spec.dark_chip_bg_l);
         p.chip_border_me = Color::from_hsl(hue, 0.56f, spec.dark_chip_bg_l + 0.141f);
-        p.chip_text_me   = Color::from_hsl(hue, 1.00f, spec.dark_chip_text_l);
-        p.bubble_bg_me   = Color::from_hsl(hue, 0.34f, spec.dark_chip_bg_l - 0.083f);
-        p.unread_bg            = p.accent;
-        p.avatar_initials_bg   = p.chip_bg_me;
+        p.chip_text_me = Color::from_hsl(hue, 1.00f, spec.dark_chip_text_l);
+        p.bubble_bg_me = Color::from_hsl(hue, 0.34f, spec.dark_chip_bg_l - 0.083f);
+        p.unread_bg = p.accent;
+        p.avatar_initials_bg = p.chip_bg_me;
         p.avatar_initials_text = p.chip_text_me;
         p.selection = p.accent.with_alpha(0x50);
     }
+    p.link = p.accent;
     return p;
 }
 
@@ -312,18 +337,18 @@ constexpr float kBlueHueDeg = 211.0f;
 // (see kWashSaturationLight above and the 0.53f/0.56f/0.34f dark literals in
 // apply_accent()) — reused verbatim here so System's wash follows the exact
 // same "pastel, not neon" shape.
-constexpr float kWashSaturationDarkChipBg     = 0.53f;
+constexpr float kWashSaturationDarkChipBg = 0.53f;
 constexpr float kWashSaturationDarkChipBorder = 0.56f;
-constexpr float kWashSaturationDarkBubble     = 0.34f;
+constexpr float kWashSaturationDarkBubble = 0.34f;
 
 // Lightness anchors extracted (by hand, via standard RGB->HSL) from Blue's
 // own literals in light_palette()/dark_palette() above — see the constants'
 // source hex in the comment beside each.
-constexpr float kSystemWashLightChipBgL   = 0.9059f; // chip_bg_me light 0xCFE3FF
+constexpr float kSystemWashLightChipBgL = 0.9059f;   // chip_bg_me light 0xCFE3FF
 constexpr float kSystemWashLightChipTextL = 0.3098f; // chip_text_me light 0x004A9E
-constexpr float kSystemWashLightBubbleL   = 0.9471f; // bubble_bg_me light 0xE4F0FF
-constexpr float kSystemWashDarkChipBgL    = 0.2608f; // chip_bg_me dark 0x1F3A66
-constexpr float kSystemWashDarkChipTextL  = 0.8745f; // chip_text_me dark 0xBFD8FF
+constexpr float kSystemWashLightBubbleL = 0.9471f;   // bubble_bg_me light 0xE4F0FF
+constexpr float kSystemWashDarkChipBgL = 0.2608f;    // chip_bg_me dark 0x1F3A66
+constexpr float kSystemWashDarkChipTextL = 0.8745f;  // chip_text_me dark 0xBFD8FF
 // No dark bubble anchor: dark bubble_bg_me is derived as
 // (kSystemWashDarkChipBgL - 0.083f), the same offset apply_accent() already
 // uses for the named accents' dark bubble — it reproduces Blue's own dark
@@ -342,12 +367,27 @@ constexpr float extract_hue_or(Color c, float fallback_hue)
     const float mx = (r > g) ? ((r > b) ? r : b) : ((g > b) ? g : b);
     const float mn = (r < g) ? ((r < b) ? r : b) : ((g < b) ? g : b);
     const float delta = mx - mn;
-    if (delta < (2.0f / 255.0f)) return fallback_hue; // achromatic
+    if (delta < (2.0f / 255.0f))
+    {
+        return fallback_hue; // achromatic
+    }
     float h;
-    if (mx == r)      h = 60.0f * ((g - b) / delta);
-    else if (mx == g) h = 60.0f * ((b - r) / delta + 2.0f);
-    else              h = 60.0f * ((r - g) / delta + 4.0f);
-    if (h < 0.0f) h += 360.0f;
+    if (mx == r)
+    {
+        h = 60.0f * ((g - b) / delta);
+    }
+    else if (mx == g)
+    {
+        h = 60.0f * ((b - r) / delta + 2.0f);
+    }
+    else
+    {
+        h = 60.0f * ((r - g) / delta + 4.0f);
+    }
+    if (h < 0.0f)
+    {
+        h += 360.0f;
+    }
     return h;
 }
 
@@ -361,31 +401,104 @@ void apply_system_accent(Theme& theme, Color raw_accent)
     // 7 fields — behavior-preserving port of the deleted Win32 inline math.
     const Color a = (theme.mode == ThemeMode::Dark) ? shift_rgb(raw_accent, 0x30) : raw_accent;
     p.accent = a;
-    p.accent_hover   = shift_rgb(a, (theme.mode == ThemeMode::Dark) ? 0x18 : -0x1A);
+    p.accent_hover = shift_rgb(a, (theme.mode == ThemeMode::Dark) ? 0x18 : -0x1A);
     p.accent_pressed = shift_rgb(a, (theme.mode == ThemeMode::Dark) ? -0x18 : -0x30);
     p.text_on_accent = (perceived_luma(a) > 0.45f) ? Color::rgb(0x1B1B1B) : Color::rgb(0xFFFFFF);
     p.unread_bg = a;
     p.unread_text = p.text_on_accent;
     p.selection = a.with_alpha(0x50);
+    p.link = a;
 
     // Wash fields — Blue's own anchor lightness, OS accent's hue.
     const float hue = extract_hue_or(raw_accent, kBlueHueDeg);
     if (theme.mode == ThemeMode::Light)
     {
-        p.chip_bg_me     = Color::from_hsl(hue, kWashSaturationLight, kSystemWashLightChipBgL);
-        p.chip_border_me = Color::from_hsl(hue, kWashSaturationLight, kSystemWashLightChipBgL - 0.12f);
-        p.chip_text_me   = Color::from_hsl(hue, 1.00f, kSystemWashLightChipTextL);
-        p.bubble_bg_me   = Color::from_hsl(hue, kWashSaturationLight, kSystemWashLightBubbleL);
+        p.chip_bg_me = Color::from_hsl(hue, kWashSaturationLight, kSystemWashLightChipBgL);
+        p.chip_border_me =
+            Color::from_hsl(hue, kWashSaturationLight, kSystemWashLightChipBgL - 0.12f);
+        p.chip_text_me = Color::from_hsl(hue, 1.00f, kSystemWashLightChipTextL);
+        p.bubble_bg_me = Color::from_hsl(hue, kWashSaturationLight, kSystemWashLightBubbleL);
     }
     else
     {
-        p.chip_bg_me     = Color::from_hsl(hue, kWashSaturationDarkChipBg, kSystemWashDarkChipBgL);
-        p.chip_border_me = Color::from_hsl(hue, kWashSaturationDarkChipBorder, kSystemWashDarkChipBgL + 0.141f);
-        p.chip_text_me   = Color::from_hsl(hue, 1.00f, kSystemWashDarkChipTextL);
-        p.bubble_bg_me   = Color::from_hsl(hue, kWashSaturationDarkBubble, kSystemWashDarkChipBgL - 0.083f);
+        p.chip_bg_me = Color::from_hsl(hue, kWashSaturationDarkChipBg, kSystemWashDarkChipBgL);
+        p.chip_border_me =
+            Color::from_hsl(hue, kWashSaturationDarkChipBorder, kSystemWashDarkChipBgL + 0.141f);
+        p.chip_text_me = Color::from_hsl(hue, 1.00f, kSystemWashDarkChipTextL);
+        p.bubble_bg_me =
+            Color::from_hsl(hue, kWashSaturationDarkBubble, kSystemWashDarkChipBgL - 0.083f);
     }
-    p.avatar_initials_bg   = p.chip_bg_me;
+    p.avatar_initials_bg = p.chip_bg_me;
     p.avatar_initials_text = p.chip_text_me;
+}
+
+Theme make_high_contrast_theme(const HighContrastColors& in)
+{
+    auto opaque = [](Color c)
+    {
+        return c.with_alpha(255);
+    };
+    const Color window = opaque(in.window);
+    const Color text = opaque(in.window_text);
+    const Color hl = opaque(in.highlight);
+    const Color hl_text = opaque(in.highlight_text);
+    const Color hotlight = opaque(in.hotlight);
+    const Color gray = opaque(in.gray_text);
+
+    Palette p{};
+    // Surfaces are one flat colour; shape comes from solid borders.
+    p.bg = p.sidebar_bg = p.chrome_bg = p.compose_card_bg = window;
+    p.section_header_bg = p.code_bg = p.bubble_bg = p.bubble_bg_me = window;
+    // Hover and pressed fills stay on the surface colour because text_primary
+    // is drawn over them; selection is the native Highlight/HighlightText pair.
+    p.sidebar_hover = p.section_header_hover = window;
+    p.sidebar_selected = hl;
+    p.selected_text = hl_text;
+    p.subtle_hover = p.subtle_pressed = window;
+
+    p.border = p.separator = p.border_strong = p.popup_border = text;
+
+    p.text_primary = p.text_secondary = p.text_muted = text;
+    p.text_on_accent = hl_text;
+    p.text_disabled = gray;
+    p.link = hotlight;
+    p.text_error = text;
+    p.selection = hl;
+    p.selection_text = hl_text;
+
+    p.accent = p.accent_hover = p.accent_pressed = hl;
+    p.destructive = p.destructive_hover = p.destructive_pressed = hl;
+    p.success = text;
+
+    p.chip_bg = window;
+    p.chip_border = text;
+    p.chip_text = text;
+    p.chip_bg_me = hl;
+    p.chip_border_me = text;
+    p.chip_text_me = hl_text;
+
+    p.unread_bg = hl;
+    p.unread_text = hl_text;
+
+    p.presence_online = hl;
+    p.presence_unavailable = text;
+    p.presence_offline = gray;
+
+    p.avatar_initials_bg = hl;
+    p.avatar_initials_text = hl_text;
+
+    p.notice_bg = window;
+    p.notice_border = text;
+    p.notice_text = text;
+    p.warning_bg = window;
+    p.warning_text = text;
+
+    Theme t{};
+    t.mode = perceived_luma(window) < 0.5f ? ThemeMode::Dark : ThemeMode::Light;
+    t.palette = p;
+    t.accent = AccentTheme::Blue;
+    t.high_contrast = true;
+    return t;
 }
 
 namespace
@@ -400,15 +513,21 @@ constexpr Theme make_variant(ThemeMode mode, AccentTheme accent)
     // AccentTheme::System — this shared layer has no platform access, so it
     // can't do that overlay itself.
     if (accent == AccentTheme::Blue || accent == AccentTheme::System)
+    {
         return Theme{mode, base, accent}; // unchanged original literals
+    }
     for (const auto& spec : kAccentSpecs)
+    {
         if (spec.id == accent)
+        {
             return Theme{mode, apply_accent(base, mode, spec), accent};
+        }
+    }
     return Theme{mode, base, accent}; // unreachable
 }
 
 const Theme g_light = make_variant(ThemeMode::Light, AccentTheme::Blue);
-const Theme g_dark  = make_variant(ThemeMode::Dark, AccentTheme::Blue);
+const Theme g_dark = make_variant(ThemeMode::Dark, AccentTheme::Blue);
 
 const std::array<Theme, 10> g_variants{{
     make_variant(ThemeMode::Light, AccentTheme::Blue),
@@ -437,7 +556,12 @@ const Theme& Theme::dark()
 const Theme& Theme::variant(ThemeMode mode, AccentTheme accent)
 {
     for (const auto& t : g_variants)
-        if (t.mode == mode && t.accent == accent) return t;
+    {
+        if (t.mode == mode && t.accent == accent)
+        {
+            return t;
+        }
+    }
     return (mode == ThemeMode::Dark) ? g_dark : g_light; // unreachable
 }
 

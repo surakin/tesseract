@@ -27,6 +27,9 @@ struct PrefsData
     /// Room-directory servers the user has browsed, most recent first, at
     /// most `kMaxDirectoryServers`. Only servers whose directory answered.
     std::vector<std::string> directory_servers;
+    /// Space room IDs the user pinned to the space picker sidebar, in the
+    /// order the tabs are shown. Pinned spaces are hidden from the room list.
+    std::vector<std::string> pinned_spaces;
 };
 
 /// Cap on the saved `directory_servers` list.
@@ -51,14 +54,18 @@ std::string serialize(const PrefsData& p, const std::string& base_json = {});
 /// order. When no tabs are open the active room is used as the sole open room
 /// (so the layout always round-trips). PrefsData carries only these two fields,
 /// so this fully reconstructs what to persist — no prior load is needed.
-PrefsData room_layout(const std::string&              last_room,
-                      const std::vector<std::string>& open_room_ids);
+PrefsData room_layout(const std::string& last_room, const std::vector<std::string>& open_room_ids);
+
+/// `p` with the room-layout fields forgotten (active room, open tabs, recent
+/// rooms); every other field is kept. Used when the layout is reset but the
+/// account's other synced preferences must survive (Clear Cache).
+PrefsData without_layout(PrefsData p);
 
 /// Returns `saved` with `server` moved (or added) to the front, matched
 /// case-insensitively, trimmed to `kMaxDirectoryServers`. An empty `server`
 /// leaves the list unchanged.
 std::vector<std::string> add_directory_server(std::vector<std::string> saved,
-                                              const std::string&       server);
+                                              const std::string& server);
 
 /// The servers the room browser offers: `saved` first, then `homeserver` and
 /// the built-in defaults (activematrixrooms.com, matrixrooms.info) that are
@@ -66,7 +73,7 @@ std::vector<std::string> add_directory_server(std::vector<std::string> saved,
 /// Defaults drop off the end once enough servers have been saved. An empty
 /// `homeserver` is skipped.
 std::vector<std::string> directory_server_choices(const std::vector<std::string>& saved,
-                                                  const std::string&              homeserver);
+                                                  const std::string& homeserver);
 
 } // namespace Prefs
 

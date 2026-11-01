@@ -36,16 +36,17 @@ struct CtrlArea : StubTextArea
     {
         return static_cast<int>(text_.size());
     }
-    void set_cursor_byte_pos(int) override {}
+    void set_cursor_byte_pos(int) override
+    {
+    }
     void insert_mention(int start, int end, const std::string& user_id,
-                        const std::string& display_name, bool is_room,
-                        const tk::Image*) override
+                        const std::string& display_name, bool is_room, const tk::Image*) override
     {
         mentions.push_back(is_room ? std::string("@room") : user_id);
         replace_range(start, end, "[" + display_name + "]");
     }
-    void insert_emoticon(int start, int end, const std::string& shortcode,
-                         const std::string& mxc, const tk::Image*) override
+    void insert_emoticon(int start, int end, const std::string& shortcode, const std::string& mxc,
+                         const tk::Image*) override
     {
         emoticons.push_back(mxc);
         replace_range(start, end, "<" + shortcode + ">");
@@ -84,8 +85,7 @@ struct MentionRig
     }
     std::unique_ptr<TestSurface> surface = TestSurface::create(320, 200);
     CtrlHost host;
-    std::unique_ptr<tk::TextArea> area =
-        tk::create_root_widget<tk::TextArea>(&host, 40.0f);
+    std::unique_ptr<tk::TextArea> area = tk::create_root_widget<tk::TextArea>(&host, 40.0f);
     MentionPopup popup;
     tesseract::Client client; // session-less: get_room_members() -> {}
     int shown = 0, hidden = 0, sel_repaints = 0, async_runs = 0;
@@ -93,6 +93,7 @@ struct MentionRig
     std::string room = "!r:x";
     bool with_client = true;
     bool async_inline = true;
+    std::shared_ptr<void> owner;
     std::vector<std::function<void()>> deferred;
     std::unique_ptr<MentionController> ctl;
 
@@ -104,12 +105,27 @@ struct MentionRig
             ++shown;
             last_rows = rows;
         };
-        h.hide = [this] { ++hidden; };
+        h.hide = [this]
+        {
+            ++hidden;
+        };
         h.repaint = [] {};
-        h.repaint_selection = [this] { ++sel_repaints; };
-        h.room_id = [this] { return room; };
+        h.repaint_selection = [this]
+        {
+            ++sel_repaints;
+        };
+        h.room_id = [this]
+        {
+            return room;
+        };
         h.client = [this]() -> tesseract::Client*
-        { return with_client ? &client : nullptr; };
+        {
+            return with_client ? &client : nullptr;
+        };
+        h.client_owner = [this]
+        {
+            return owner;
+        };
         h.run_async = [this](std::function<void()> fn)
         {
             ++async_runs;
@@ -122,9 +138,11 @@ struct MentionRig
                 deferred.push_back(std::move(fn));
             }
         };
-        h.post_to_ui = [](std::function<void()> fn) { fn(); };
-        ctl = std::make_unique<MentionController>(area.get(), nullptr, &popup,
-                                                  std::move(h));
+        h.post_to_ui = [](std::function<void()> fn)
+        {
+            fn();
+        };
+        ctl = std::make_unique<MentionController>(area.get(), nullptr, &popup, std::move(h));
     }
 
     bool type(const std::string& t)
@@ -186,8 +204,22 @@ TEST_CASE("MentionController: an expired member cache is refetched",
     CHECK(r.async_runs == 2);
 }
 
-TEST_CASE("MentionController: a pending fetch is not duplicated",
+TEST_CASE("MentionController: a pending fetch keeps the client's owner alive",
           "[composer_controllers][mention]")
+{
+    MentionRig r;
+    r.async_inline = false;
+    auto owner = std::make_shared<int>(0);
+    r.owner = owner;
+    r.build();
+    r.type("@");
+    REQUIRE(r.deferred.size() == 1);
+    CHECK(owner.use_count() > 2); // test + rig + the queued fetch
+    r.deferred.clear();
+    CHECK(owner.use_count() == 2);
+}
+
+TEST_CASE("MentionController: a pending fetch is not duplicated", "[composer_controllers][mention]")
 {
     MentionRig r;
     r.async_inline = false;
@@ -228,8 +260,7 @@ TEST_CASE("MentionController: no matching candidate hides the popup",
     CHECK(r.hidden == 1);
 }
 
-TEST_CASE("MentionController: switching rooms refetches members",
-          "[composer_controllers][mention]")
+TEST_CASE("MentionController: switching rooms refetches members", "[composer_controllers][mention]")
 {
     MentionRig r;
     r.build();
@@ -315,8 +346,7 @@ struct ShortcodeRig
     }
     std::unique_ptr<TestSurface> surface = TestSurface::create(320, 200);
     CtrlHost host;
-    std::unique_ptr<tk::TextArea> area =
-        tk::create_root_widget<tk::TextArea>(&host, 40.0f);
+    std::unique_ptr<tk::TextArea> area = tk::create_root_widget<tk::TextArea>(&host, 40.0f);
     ShortcodePopup popup;
     int shown = 0, hidden = 0, sel_repaints = 0;
     std::vector<tesseract::ImagePackImage> packs;
@@ -326,14 +356,28 @@ struct ShortcodeRig
     void build()
     {
         ShortcodeController::Hooks h;
-        h.show = [this](tk::Rect, int) { ++shown; };
-        h.hide = [this] { ++hidden; };
+        h.show = [this](tk::Rect, int)
+        {
+            ++shown;
+        };
+        h.hide = [this]
+        {
+            ++hidden;
+        };
         h.repaint = [] {};
-        h.repaint_selection = [this] { ++sel_repaints; };
-        h.emoticons = [this] { return packs; };
-        h.fetch_image = [this](const std::string& u) { fetched.push_back(u); };
-        ctl = std::make_unique<ShortcodeController>(area.get(), &popup,
-                                                    std::move(h));
+        h.repaint_selection = [this]
+        {
+            ++sel_repaints;
+        };
+        h.emoticons = [this]
+        {
+            return packs;
+        };
+        h.fetch_image = [this](const std::string& u)
+        {
+            fetched.push_back(u);
+        };
+        ctl = std::make_unique<ShortcodeController>(area.get(), &popup, std::move(h));
     }
 
     bool type(const std::string& t)
@@ -469,8 +513,7 @@ struct GifRig
     }
     std::unique_ptr<TestSurface> surface = TestSurface::create(320, 200);
     CtrlHost host;
-    std::unique_ptr<tk::TextArea> area =
-        tk::create_root_widget<tk::TextArea>(&host, 40.0f);
+    std::unique_ptr<tk::TextArea> area = tk::create_root_widget<tk::TextArea>(&host, 40.0f);
     GifPopup popup;
     tesseract::Client client;
     int shown = 0, hidden = 0, cleared = 0, sel_repaints = 0;
@@ -483,18 +526,43 @@ struct GifRig
     void build()
     {
         GifController::Hooks h;
-        h.show = [this] { ++shown; };
-        h.hide = [this] { ++hidden; };
+        h.show = [this]
+        {
+            ++shown;
+        };
+        h.hide = [this]
+        {
+            ++hidden;
+        };
         h.repaint = [] {};
-        h.repaint_selection = [this] { ++sel_repaints; };
-        h.room_id = [this] { return room; };
+        h.repaint_selection = [this]
+        {
+            ++sel_repaints;
+        };
+        h.room_id = [this]
+        {
+            return room;
+        };
         h.client = [this]() -> tesseract::Client*
-        { return with_client ? &client : nullptr; };
+        {
+            return with_client ? &client : nullptr;
+        };
         h.post_delayed = [this](int ms, std::function<void()> fn)
-        { delayed.emplace_back(ms, std::move(fn)); };
-        h.api_key = [this] { return api_key; };
-        h.client_key = [] { return std::string("ck"); };
-        h.clear_composer = [this] { ++cleared; };
+        {
+            delayed.emplace_back(ms, std::move(fn));
+        };
+        h.api_key = [this]
+        {
+            return api_key;
+        };
+        h.client_key = []
+        {
+            return std::string("ck");
+        };
+        h.clear_composer = [this]
+        {
+            ++cleared;
+        };
         ctl = std::make_unique<GifController>(area.get(), &popup, std::move(h));
     }
 
@@ -534,8 +602,7 @@ tesseract::GifResult cc_gif(const char* id)
 
 } // namespace
 
-TEST_CASE("GifController: only a /gif <query> command is handled",
-          "[composer_controllers][gif]")
+TEST_CASE("GifController: only a /gif <query> command is handled", "[composer_controllers][gif]")
 {
     GifRig r;
     r.build();
@@ -547,8 +614,7 @@ TEST_CASE("GifController: only a /gif <query> command is handled",
     CHECK(r.delayed[0].first == 300);
 }
 
-TEST_CASE("GifController: a superseded debounce does not search",
-          "[composer_controllers][gif]")
+TEST_CASE("GifController: a superseded debounce does not search", "[composer_controllers][gif]")
 {
     GifRig r;
     r.api_key.clear(); // a search would surface the missing-key status
@@ -562,8 +628,7 @@ TEST_CASE("GifController: a superseded debounce does not search",
     CHECK(r.ctl->visible());
 }
 
-TEST_CASE("GifController: a missing API key is reported, not silent",
-          "[composer_controllers][gif]")
+TEST_CASE("GifController: a missing API key is reported, not silent", "[composer_controllers][gif]")
 {
     GifRig r;
     r.api_key.clear();
@@ -574,8 +639,7 @@ TEST_CASE("GifController: a missing API key is reported, not silent",
     CHECK(r.shown == 1);
 }
 
-TEST_CASE("GifController: no client means no search and no popup",
-          "[composer_controllers][gif]")
+TEST_CASE("GifController: no client means no search and no popup", "[composer_controllers][gif]")
 {
     GifRig r;
     r.with_client = false;
@@ -598,8 +662,7 @@ TEST_CASE("GifController: results for the issued search open the strip",
     CHECK(r.popup.visible_count() == 2);
 }
 
-TEST_CASE("GifController: stale or unknown request ids are dropped",
-          "[composer_controllers][gif]")
+TEST_CASE("GifController: stale or unknown request ids are dropped", "[composer_controllers][gif]")
 {
     GifRig r;
     r.build();
@@ -689,8 +752,7 @@ TEST_CASE("GifController: a failed search for the current request shows a status
     CHECK(shown);
 }
 
-TEST_CASE("GifController: debounce firing after destruction is safe",
-          "[composer_controllers][gif]")
+TEST_CASE("GifController: debounce firing after destruction is safe", "[composer_controllers][gif]")
 {
     GifRig r;
     r.build();

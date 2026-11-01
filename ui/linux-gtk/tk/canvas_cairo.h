@@ -34,6 +34,11 @@ std::unique_ptr<Canvas> make_canvas(cairo_t* cr);
 // decode goes through GdkPixbufLoader.
 std::unique_ptr<CanvasFactory> make_factory();
 
+// Colour for plain hyperlink runs in rich text (links are also underlined).
+// Baked into a layout when it is built, so call before the views rebuild
+// their text on a theme change.
+void set_link_color(Color c);
+
 // Wrap an already-decoded ARGB32 image surface as a tk::Image. The
 // wrapper takes ownership of the surface (a refcounted cairo_surface_t)
 // and releases it on destruction. Use this when integration code has

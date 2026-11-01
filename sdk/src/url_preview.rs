@@ -57,7 +57,11 @@ pub(crate) fn is_html_content_type(content_type: &str) -> bool {
 pub(crate) fn decode_html(bytes: &[u8], content_type: Option<&str>) -> String {
     let encoding = encoding_rs::Encoding::for_bom(bytes)
         .map(|(enc, _)| enc)
-        .or_else(|| content_type.and_then(charset_param).and_then(label_to_encoding))
+        .or_else(|| {
+            content_type
+                .and_then(charset_param)
+                .and_then(label_to_encoding)
+        })
         .or_else(|| prescan_meta_charset(bytes).and_then(label_to_encoding))
         .unwrap_or(encoding_rs::UTF_8);
     // `decode` re-checks the BOM itself and strips it.
@@ -106,7 +110,9 @@ fn prescan_meta_charset(bytes: &[u8]) -> Option<&str> {
             continue;
         }
         i += 1;
-        while i < head.len() && (head[i].is_ascii_whitespace() || head[i] == b'"' || head[i] == b'\'') {
+        while i < head.len()
+            && (head[i].is_ascii_whitespace() || head[i] == b'"' || head[i] == b'\'')
+        {
             i += 1;
         }
         let start = i;
@@ -134,7 +140,10 @@ pub(crate) fn clean_text(raw: &str, max_chars: usize) -> Option<String> {
     if collapsed.chars().count() <= max_chars {
         return Some(collapsed);
     }
-    let mut out: String = collapsed.chars().take(max_chars.saturating_sub(1)).collect();
+    let mut out: String = collapsed
+        .chars()
+        .take(max_chars.saturating_sub(1))
+        .collect();
     out.push('…');
     Some(out)
 }
@@ -209,8 +218,13 @@ pub(crate) fn extract(html: &str, page_url: &Url) -> Option<PageMeta> {
         .and_then(|s| resolve_http_url(&base, s))
         .filter(|u| u.scheme() == "https")
         .or_else(|| {
-            tag(&["og:image", "og:image:url", "twitter:image", "twitter:image:src"])
-                .and_then(|s| resolve_http_url(&base, s))
+            tag(&[
+                "og:image",
+                "og:image:url",
+                "twitter:image",
+                "twitter:image:src",
+            ])
+            .and_then(|s| resolve_http_url(&base, s))
         });
     let dim = |key: &str| {
         tag(&[key])
@@ -256,9 +270,18 @@ mod tests {
             </head><body></body></html>"#;
         let m = extract(html, &page()).unwrap();
         assert_eq!(m.title.as_deref(), Some("OG Title"));
-        assert_eq!(m.description.as_deref(), Some("OG description spanning lines"));
-        assert_eq!(m.canonical_url.as_deref(), Some("https://example.com/canonical"));
-        assert_eq!(m.image_url.unwrap().as_str(), "https://cdn.example.com/a.png");
+        assert_eq!(
+            m.description.as_deref(),
+            Some("OG description spanning lines")
+        );
+        assert_eq!(
+            m.canonical_url.as_deref(),
+            Some("https://example.com/canonical")
+        );
+        assert_eq!(
+            m.image_url.unwrap().as_str(),
+            "https://cdn.example.com/a.png"
+        );
         assert_eq!((m.image_width, m.image_height), (Some(800), Some(400)));
     }
 
@@ -272,7 +295,10 @@ mod tests {
         let m = extract(html, &page()).unwrap();
         assert_eq!(m.title.as_deref(), Some("TW Title"));
         assert_eq!(m.description.as_deref(), Some("Plain description"));
-        assert_eq!(m.image_url.unwrap().as_str(), "https://example.com/img/t.jpg");
+        assert_eq!(
+            m.image_url.unwrap().as_str(),
+            "https://example.com/img/t.jpg"
+        );
 
         let only_title = "<html><head><title>  Just a   title </title></head></html>";
         let m = extract(only_title, &page()).unwrap();
@@ -283,14 +309,20 @@ mod tests {
     #[test]
     fn site_name_is_last_resort_title() {
         let html = r#"<meta property="og:site_name" content="Example Site">"#;
-        assert_eq!(extract(html, &page()).unwrap().title.as_deref(), Some("Example Site"));
+        assert_eq!(
+            extract(html, &page()).unwrap().title.as_deref(),
+            Some("Example Site")
+        );
     }
 
     #[test]
     fn resolves_relative_image_against_page_url() {
         let html = r#"<meta property="og:image" content="../images/x.png">"#;
         let m = extract(html, &page()).unwrap();
-        assert_eq!(m.image_url.unwrap().as_str(), "https://example.com/images/x.png");
+        assert_eq!(
+            m.image_url.unwrap().as_str(),
+            "https://example.com/images/x.png"
+        );
     }
 
     #[test]
@@ -298,14 +330,20 @@ mod tests {
         let html = r#"<head><base href="https://static.example.org/assets/">
             <meta property="og:image" content="x.png"></head>"#;
         let m = extract(html, &page()).unwrap();
-        assert_eq!(m.image_url.unwrap().as_str(), "https://static.example.org/assets/x.png");
+        assert_eq!(
+            m.image_url.unwrap().as_str(),
+            "https://static.example.org/assets/x.png"
+        );
     }
 
     #[test]
     fn prefers_https_secure_url_and_drops_non_http_images() {
         let html = r#"<meta property="og:image" content="http://e.com/p.png">
             <meta property="og:image:secure_url" content="https://e.com/s.png">"#;
-        assert_eq!(extract(html, &page()).unwrap().image_url.unwrap().as_str(), "https://e.com/s.png");
+        assert_eq!(
+            extract(html, &page()).unwrap().image_url.unwrap().as_str(),
+            "https://e.com/s.png"
+        );
 
         let html = r#"<meta property="og:title" content="T">
             <meta property="og:image" content="javascript:alert(1)">
@@ -333,18 +371,29 @@ mod tests {
     #[test]
     fn caps_long_text() {
         let long = "a".repeat(5000);
-        let html = format!(r#"<meta property="og:title" content="{long}">
-            <meta property="og:description" content="{long}">"#);
+        let html = format!(
+            r#"<meta property="og:title" content="{long}">
+            <meta property="og:description" content="{long}">"#
+        );
         let m = extract(&html, &page()).unwrap();
         assert_eq!(m.title.unwrap().chars().count(), MAX_TITLE_CHARS);
-        assert_eq!(m.description.unwrap().chars().count(), MAX_DESCRIPTION_CHARS);
+        assert_eq!(
+            m.description.unwrap().chars().count(),
+            MAX_DESCRIPTION_CHARS
+        );
     }
 
     #[test]
     fn empty_or_contentless_page_yields_none() {
         assert_eq!(extract("", &page()), None);
-        assert_eq!(extract("<html><body><p>hi</p></body></html>", &page()), None);
-        assert_eq!(extract(r#"<meta property="og:title" content="   ">"#, &page()), None);
+        assert_eq!(
+            extract("<html><body><p>hi</p></body></html>", &page()),
+            None
+        );
+        assert_eq!(
+            extract(r#"<meta property="og:title" content="   ">"#, &page()),
+            None
+        );
     }
 
     #[test]
@@ -368,7 +417,10 @@ mod tests {
     fn decodes_using_header_charset() {
         // "café" in ISO-8859-1.
         let bytes = b"<title>caf\xe9</title>";
-        assert_eq!(decode_html(bytes, Some("text/html; charset=ISO-8859-1")), "<title>café</title>");
+        assert_eq!(
+            decode_html(bytes, Some("text/html; charset=ISO-8859-1")),
+            "<title>café</title>"
+        );
     }
 
     #[test]
@@ -376,14 +428,18 @@ mod tests {
         let bytes = b"<html><head><meta charset=\"windows-1252\"><title>caf\xe9 \x80</title>";
         assert!(decode_html(bytes, Some("text/html")).contains("café €"));
 
-        let bytes = b"<meta http-equiv=\"Content-Type\" content=\"text/html; charset=iso-8859-1\">\xe9";
+        let bytes =
+            b"<meta http-equiv=\"Content-Type\" content=\"text/html; charset=iso-8859-1\">\xe9";
         assert!(decode_html(bytes, None).ends_with('é'));
     }
 
     #[test]
     fn bom_beats_header_and_defaults_to_utf8() {
         let bytes = b"\xef\xbb\xbfcaf\xc3\xa9";
-        assert_eq!(decode_html(bytes, Some("text/html; charset=iso-8859-1")), "café");
+        assert_eq!(
+            decode_html(bytes, Some("text/html; charset=iso-8859-1")),
+            "café"
+        );
         assert_eq!(decode_html("naïve".as_bytes(), None), "naïve");
         // Meta-declared UTF-16 without a BOM is read as UTF-8.
         let bytes = "<meta charset=\"utf-16\">é".as_bytes();

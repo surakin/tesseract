@@ -7,19 +7,19 @@
 namespace gtk4
 {
 
-CallWindow::CallWindow(MainWindow* parent_shell)
-    : tesseract::CallWindowBase(parent_shell)
+CallWindow::CallWindow(MainWindow* parent_shell) : tesseract::CallWindowBase(parent_shell)
 {
     window_ = GTK_WINDOW(gtk_window_new());
-    gtk_widget_set_size_request(
-        GTK_WIDGET(window_),
-        static_cast<int>(tesseract::visual::kMinCallWindowWidth),
-        static_cast<int>(tesseract::visual::kMinCallWindowHeight));
+    gtk_widget_set_size_request(GTK_WIDGET(window_),
+                                static_cast<int>(tesseract::visual::kMinCallWindowWidth),
+                                static_cast<int>(tesseract::visual::kMinCallWindowHeight));
 
     // Associate with the GtkApplication so this is a proper application window,
     // matching the approach used by RoomWindow to avoid keyboard-grab issues.
     if (parent_shell && parent_shell->application())
+    {
         gtk_window_set_application(window_, parent_shell->application());
+    }
 
     gtk_window_set_title(window_, tk::tr("Call").c_str());
     gtk_window_set_default_size(window_, 640, 480);
@@ -39,7 +39,9 @@ CallWindow::CallWindow(MainWindow* parent_shell)
 CallWindow::~CallWindow()
 {
     if (window_)
+    {
         gtk_window_destroy(window_);
+    }
 }
 
 // static
@@ -48,7 +50,9 @@ void CallWindow::on_destroy_(GtkWidget* /*widget*/, gpointer self)
     auto* w = static_cast<CallWindow*>(self);
     w->window_ = nullptr; // already destroyed; prevent double-destroy in dtor
     if (w->on_window_closed)
+    {
         w->on_window_closed();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -56,13 +60,17 @@ void CallWindow::on_destroy_(GtkWidget* /*widget*/, gpointer self)
 void CallWindow::bring_to_front()
 {
     if (window_)
+    {
         gtk_window_present(window_);
+    }
 }
 
 void CallWindow::close_window()
 {
     if (window_)
+    {
         gtk_window_destroy(window_);
+    }
 }
 
 void CallWindow::apply_theme(const tk::Theme& t)
@@ -77,19 +85,25 @@ void CallWindow::apply_theme(const tk::Theme& t)
 void CallWindow::apply_scale_change(float scale)
 {
     if (surface_)
+    {
         surface_->apply_scale_change(scale);
+    }
 }
 
 void CallWindow::request_relayout()
 {
     if (surface_)
+    {
         surface_->relayout();
+    }
 }
 
 void CallWindow::request_repaint()
 {
     if (surface_)
+    {
         surface_->host().request_repaint();
+    }
 }
 
 } // namespace gtk4

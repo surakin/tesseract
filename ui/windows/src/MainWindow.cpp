@@ -4,7 +4,6 @@
 #include "AuxWindow.h"
 #include "CallWindow.h"
 #include "views/BrandView.h"
-#include "views/media_drop.h"
 #include "views/media_viewer_items.h"
 #include "views/shortcut_registry.h"
 #include "Win32Notifier.h"
@@ -13,35 +12,24 @@
 #include "Win32ScreenLock.h"
 #include "Win32TrayIcon.h"
 #include "Win32Taskbar.h"
-#include "LoginView.h"
 #include "Theme.h"
 #include "resource.h"
-#include "app/DeferredTeardown.h"
-#include "app/SlashCommands.h"
 #include "app/status_links.h"
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
 #include "app/ScreenshotFixture.h"
 #endif
 #include "tk/audio_playback.h"
+#include "tk/canvas_d2d.h"
 #include "tk/i18n.h"
 #include "app/jxl_decode.h"
 #include "tk/image_sniff.h"
 #include "tk/status_icons.h"
 #include "tk/svg.h" // Gdiplus comes in via Theme.h above (NOMINMAX-safe)
-#include "tk/video_decode.h"
-
-#include <thread>
+#include "platform/video_decode.h"
 
 #include <tesseract/account_session.h>
-#include <tesseract/emoji.h>
-#include <tesseract/mentions.h>
-#include <tesseract/session_store.h>
-#include <tesseract/prefs.h>
 #include <tesseract/paths.h>
 #include <tesseract/settings.h>
-
-#include "views/AccountPicker.h"
-#include "views/text_util.h"
 
 #include <commdlg.h>
 #include <cmath>
@@ -64,7 +52,6 @@
 #include <ctime>
 #include <cwchar>
 #include <filesystem>
-#include <fstream>
 #include <string>
 
 namespace
@@ -92,8 +79,7 @@ std::string wstr_to_utf8(const wchar_t* w)
     {
         return {};
     }
-    int n =
-        WideCharToMultiByte(CP_UTF8, 0, w, -1, nullptr, 0, nullptr, nullptr);
+    int n = WideCharToMultiByte(CP_UTF8, 0, w, -1, nullptr, 0, nullptr, nullptr);
     if (n <= 0)
     {
         return {};
@@ -105,12 +91,15 @@ std::string wstr_to_utf8(const wchar_t* w)
 
 // Builds an in-memory DLGTEMPLATE and shows a modal password-entry dialog.
 // Returns the entered passphrase, or an empty string if cancelled.
-struct PassphraseCtx_ { HWND edit = nullptr; std::wstring result; };
+struct PassphraseCtx_
+{
+    HWND edit = nullptr;
+    std::wstring result;
+};
 
 INT_PTR CALLBACK PassphraseDlgProc_(HWND dlg, UINT msg, WPARAM wp, LPARAM lp)
 {
-    auto* ctx = reinterpret_cast<PassphraseCtx_*>(
-        GetWindowLongPtrW(dlg, GWLP_USERDATA));
+    auto* ctx = reinterpret_cast<PassphraseCtx_*>(GetWindowLongPtrW(dlg, GWLP_USERDATA));
     switch (msg)
     {
     case WM_INITDIALOG:
@@ -142,7 +131,11 @@ std::wstring prompt_passphrase_w32(HWND parent, const wchar_t* title)
     alignas(DWORD) uint8_t tmpl[1024]{};
     uint8_t* p = tmpl;
 
-    auto w16  = [&](WORD v)         { memcpy(p, &v, 2); p += 2; };
+    auto w16 = [&](WORD v)
+    {
+        memcpy(p, &v, 2);
+        p += 2;
+    };
     auto wstr = [&](const wchar_t* s)
     {
         size_t n = (wcslen(s) + 1) * 2;
@@ -152,7 +145,10 @@ std::wstring prompt_passphrase_w32(HWND parent, const wchar_t* title)
     auto align4 = [&]()
     {
         auto off = static_cast<uintptr_t>(p - tmpl);
-        if (off & 2) { w16(0); }
+        if (off & 2)
+        {
+            w16(0);
+        }
     };
 
     // DLGTEMPLATE header (18 bytes).
@@ -160,41 +156,48 @@ std::wstring prompt_passphrase_w32(HWND parent, const wchar_t* title)
     dt->style = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME | DS_CENTER | DS_SETFONT;
     dt->dwExtendedStyle = 0;
     dt->cdit = 3;
-    dt->x = 0; dt->y = 0; dt->cx = 200; dt->cy = 58;
+    dt->x = 0;
+    dt->y = 0;
+    dt->cx = 200;
+    dt->cy = 58;
     p += sizeof(DLGTEMPLATE);
 
-    w16(0);          // no menu
-    w16(0);          // predefined window class
-    wstr(title);     // dialog title
-    w16(9);          // DS_SETFONT: 9pt
+    w16(0);      // no menu
+    w16(0);      // predefined window class
+    wstr(title); // dialog title
+    w16(9);      // DS_SETFONT: 9pt
     wstr(L"Segoe UI");
     align4();
 
-    auto item = [&](DWORD style, WORD id, short x, short y, short cx, short cy,
-                    WORD cls_atom, const wchar_t* text)
+    auto item = [&](DWORD style, WORD id, short x, short y, short cx, short cy, WORD cls_atom,
+                    const wchar_t* text)
     {
         auto* di = reinterpret_cast<DLGITEMTEMPLATE*>(p);
         di->style = style;
         di->dwExtendedStyle = 0;
         di->id = id;
-        di->x = x; di->y = y; di->cx = cx; di->cy = cy;
+        di->x = x;
+        di->y = y;
+        di->cx = cx;
+        di->cy = cy;
         p += sizeof(DLGITEMTEMPLATE);
-        w16(0xFFFF); w16(cls_atom);
+        w16(0xFFFF);
+        w16(cls_atom);
         wstr(text);
-        w16(0);      // no creation data
+        w16(0); // no creation data
         align4();
     };
 
-    item(WS_CHILD | WS_VISIBLE | WS_BORDER | ES_PASSWORD | ES_AUTOHSCROLL,
-         100, 4, 4, 192, 14, 0x0081, L"");
-    item(WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON, IDOK, 96, 40, 46, 14, 0x0080, utf8_to_wstr(tk::tr("OK")).c_str());
-    item(WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, IDCANCEL, 146, 40, 50, 14, 0x0080, utf8_to_wstr(tk::tr("Cancel")).c_str());
+    item(WS_CHILD | WS_VISIBLE | WS_BORDER | ES_PASSWORD | ES_AUTOHSCROLL, 100, 4, 4, 192, 14,
+         0x0081, L"");
+    item(WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON, IDOK, 96, 40, 46, 14, 0x0080,
+         utf8_to_wstr(tk::tr("OK")).c_str());
+    item(WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, IDCANCEL, 146, 40, 50, 14, 0x0080,
+         utf8_to_wstr(tk::tr("Cancel")).c_str());
 
     PassphraseCtx_ ctx;
-    DialogBoxIndirectParamW(GetModuleHandleW(nullptr),
-                            reinterpret_cast<LPCDLGTEMPLATEW>(tmpl),
-                            parent, PassphraseDlgProc_,
-                            reinterpret_cast<LPARAM>(&ctx));
+    DialogBoxIndirectParamW(GetModuleHandleW(nullptr), reinterpret_cast<LPCDLGTEMPLATEW>(tmpl),
+                            parent, PassphraseDlgProc_, reinterpret_cast<LPARAM>(&ctx));
     return ctx.result;
 }
 
@@ -208,20 +211,6 @@ namespace win32
 // Lives near the top of the TU so wnd_proc's WM_* cases can reinterpret_cast
 // from LPARAM without forward declarations.
 // ---------------------------------------------------------------------------
-
-namespace
-{
-// MediaBytesPayload is no longer posted by this shell — media fetches now flow
-// through ShellBase::ensure_*_() → post_to_ui_ → on_media_bytes_ready_().
-// The struct is kept as a forward stub so any stale queued messages can be
-// safely drained in the WM_TESSERACT_MEDIA_BYTES handler.
-struct MediaBytesPayload
-{
-    int kind; // unused in drain handler
-    std::string cache_key;
-    std::vector<std::uint8_t> bytes;
-};
-} // namespace
 
 // ---------------------------------------------------------------------------
 // Status-bar WndProc — flat custom-painted strip replacing the comctl32
@@ -261,7 +250,9 @@ void draw_low_power_glyph(HDC hdc, RECT box, COLORREF color)
 {
     const int px = std::min<LONG>(box.right - box.left, box.bottom - box.top);
     if (px <= 0)
+    {
         return;
+    }
 
     struct Slot
     {
@@ -274,24 +265,28 @@ void draw_low_power_glyph(HDC hdc, RECT box, COLORREF color)
 
     if (!slot.bmp || slot.px != px || slot.color != color)
     {
-        const tk::Color tint{GetRValue(color), GetGValue(color),
-                             GetBValue(color), 255};
-        std::vector<std::uint8_t> rgba =
-            tk::rasterize_svg_rgba(tk::low_power_icon_svg(), px, tint);
+        const tk::Color tint{GetRValue(color), GetGValue(color), GetBValue(color), 255};
+        std::vector<std::uint8_t> rgba = tk::rasterize_svg_rgba(tk::low_power_icon_svg(), px, tint);
         if (rgba.empty())
+        {
             return;
+        }
         // nanosvg gives straight-alpha R,G,B,A; GDI+ PixelFormat32bppARGB wants
         // straight alpha in B,G,R,A order.
         for (std::size_t i = 0; i + 2 < rgba.size(); i += 4)
+        {
             std::swap(rgba[i], rgba[i + 2]);
+        }
         slot.pixels = std::move(rgba);
-        slot.bmp = std::make_unique<Gdiplus::Bitmap>(
-            px, px, px * 4, PixelFormat32bppARGB, slot.pixels.data());
+        slot.bmp = std::make_unique<Gdiplus::Bitmap>(px, px, px * 4, PixelFormat32bppARGB,
+                                                     slot.pixels.data());
         slot.px = px;
         slot.color = color;
     }
     if (!slot.bmp)
+    {
         return;
+    }
     Gdiplus::Graphics gfx(hdc);
     gfx.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
     const int x = box.left + (box.right - box.left - px) / 2;
@@ -301,14 +296,25 @@ void draw_low_power_glyph(HDC hdc, RECT box, COLORREF color)
 
 void status_bar_update_links(HWND hwnd, const std::wstring& text)
 {
-    auto* st =
-        static_cast<StatusBarLinkState*>(GetPropW(hwnd, L"TesseractStatusLinks"));
+    auto* st = static_cast<StatusBarLinkState*>(GetPropW(hwnd, L"TesseractStatusLinks"));
     if (!st)
     {
         st = new StatusBarLinkState;
         SetPropW(hwnd, L"TesseractStatusLinks", st);
     }
-    st->segs = tesseract::parse_status_links(wstr_to_utf8(text.c_str()));
+    // The owning window decides whether this message may carry links: only a
+    // message that opted in does (ShellBase::show_status_message_ allow_links),
+    // so server or error text can never become a clickable link. Without an
+    // owner the text stays plain.
+    const std::string utf8 = wstr_to_utf8(text.c_str());
+    if (auto* owner = static_cast<MainWindow*>(GetPropW(hwnd, L"TesseractStatusOwner")))
+    {
+        st->segs = owner->status_segments(utf8);
+    }
+    else
+    {
+        st->segs = {{utf8, std::string{}}};
+    }
     st->has_links = tesseract::status_has_links(st->segs);
     st->wide.clear();
     st->hits.clear();
@@ -324,8 +330,7 @@ void status_bar_update_links(HWND hwnd, const std::wstring& text)
 
 } // namespace
 
-LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
-                                     LPARAM lParam)
+LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     switch (msg)
     {
@@ -336,11 +341,9 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         return DefWindowProcW(hwnd, msg, wParam, lParam);
     case WM_NCDESTROY:
     {
-        auto* p =
-            static_cast<std::wstring*>(GetPropW(hwnd, L"TesseractStatusText"));
+        auto* p = static_cast<std::wstring*>(GetPropW(hwnd, L"TesseractStatusText"));
         delete p;
-        auto* st = static_cast<StatusBarLinkState*>(
-            GetPropW(hwnd, L"TesseractStatusLinks"));
+        auto* st = static_cast<StatusBarLinkState*>(GetPropW(hwnd, L"TesseractStatusLinks"));
         delete st;
         RemovePropW(hwnd, L"TesseractStatusText");
         RemovePropW(hwnd, L"TesseractStatusLinks");
@@ -360,8 +363,7 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         if (msg == WM_LBUTTONUP)
         {
             // Hyperlink click — consume before the tooltip relay.
-            auto* st = static_cast<StatusBarLinkState*>(
-                GetPropW(hwnd, L"TesseractStatusLinks"));
+            auto* st = static_cast<StatusBarLinkState*>(GetPropW(hwnd, L"TesseractStatusLinks"));
             if (st && st->has_links)
             {
                 POINT pt{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
@@ -379,7 +381,9 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             // (today: jumping back to an in-progress history export).
             // No-op when nothing has claimed the persistent-status slot.
             if (auto* owner = static_cast<MainWindow*>(GetPropW(hwnd, L"TesseractStatusOwner")))
+            {
                 owner->trigger_persistent_status_click_();
+            }
         }
         if (HWND tip = static_cast<HWND>(GetPropW(hwnd, L"StatusTip")))
         {
@@ -390,8 +394,7 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
     }
     case WM_SETCURSOR:
     {
-        auto* st = static_cast<StatusBarLinkState*>(
-            GetPropW(hwnd, L"TesseractStatusLinks"));
+        auto* st = static_cast<StatusBarLinkState*>(GetPropW(hwnd, L"TesseractStatusLinks"));
         if (st && st->has_links)
         {
             const DWORD mp = GetMessagePos();
@@ -411,8 +414,7 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
     case SB_SET_INFLIGHT_COLOR:
     {
         SetPropW(hwnd, L"TesseractStatusDot",
-                 reinterpret_cast<HANDLE>(static_cast<ULONG_PTR>(
-                     static_cast<COLORREF>(wParam))));
+                 reinterpret_cast<HANDLE>(static_cast<ULONG_PTR>(static_cast<COLORREF>(wParam))));
         InvalidateRect(hwnd, nullptr, FALSE);
         return 0;
     }
@@ -420,8 +422,7 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
     case SB_SETTEXTW:
     {
         const wchar_t* txt = reinterpret_cast<const wchar_t*>(lParam);
-        auto* p =
-            static_cast<std::wstring*>(GetPropW(hwnd, L"TesseractStatusText"));
+        auto* p = static_cast<std::wstring*>(GetPropW(hwnd, L"TesseractStatusText"));
         if (!p)
         {
             p = new std::wstring;
@@ -435,8 +436,7 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
     case SB_SETTEXTA:
     {
         const char* txt = reinterpret_cast<const char*>(lParam);
-        auto* p =
-            static_cast<std::wstring*>(GetPropW(hwnd, L"TesseractStatusText"));
+        auto* p = static_cast<std::wstring*>(GetPropW(hwnd, L"TesseractStatusText"));
         if (!p)
         {
             p = new std::wstring;
@@ -485,22 +485,17 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         FillRect(hdc, &top, theme::brush(pal.separator));
 
         const UINT sb_dpi = GetDpiForWindow(hwnd);
-        const bool low_power_glyph_on =
-            GetPropW(hwnd, L"TesseractLowPower") != nullptr;
-        auto* p =
-            static_cast<std::wstring*>(GetPropW(hwnd, L"TesseractStatusText"));
+        const bool low_power_glyph_on = GetPropW(hwnd, L"TesseractLowPower") != nullptr;
+        auto* p = static_cast<std::wstring*>(GetPropW(hwnd, L"TesseractStatusText"));
         if (p && !p->empty())
         {
             SetBkMode(hdc, TRANSPARENT);
             HFONT small_font = theme::font(theme::FontRole::Small);
             // Reserve space on the right for the inflight dot (DPI-scaled), plus
             // a little more for the low-power glyph when it is showing.
-            RECT text_rc = {
-                rc.left + MulDiv(10, sb_dpi, 96), rc.top,
-                rc.right - MulDiv(low_power_glyph_on ? 40 : 24, sb_dpi, 96),
-                rc.bottom};
-            auto* st = static_cast<StatusBarLinkState*>(
-                GetPropW(hwnd, L"TesseractStatusLinks"));
+            RECT text_rc = {rc.left + MulDiv(10, sb_dpi, 96), rc.top,
+                            rc.right - MulDiv(low_power_glyph_on ? 40 : 24, sb_dpi, 96), rc.bottom};
+            auto* st = static_cast<StatusBarLinkState*>(GetPropW(hwnd, L"TesseractStatusLinks"));
             if (st && st->has_links)
             {
                 // Segmented paint: plain runs in text_secondary, link runs in
@@ -513,8 +508,7 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
                 HFONT link_font = CreateFontIndirectW(&lf);
                 HFONT old = (HFONT)SelectObject(hdc, small_font);
                 int x = text_rc.left;
-                for (std::size_t i = 0;
-                     i < st->segs.size() && x < text_rc.right; ++i)
+                for (std::size_t i = 0; i < st->segs.size() && x < text_rc.right; ++i)
                 {
                     const std::wstring& run = st->wide[i];
                     if (run.empty())
@@ -522,24 +516,20 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
                         continue;
                     }
                     const bool is_link = !st->segs[i].url.empty();
-                    SelectObject(hdc, is_link && link_font ? link_font
-                                                           : small_font);
-                    SetTextColor(hdc,
-                                 is_link ? pal.accent : pal.text_secondary);
+                    SelectObject(hdc, is_link && link_font ? link_font : small_font);
+                    SetTextColor(hdc, !is_link                 ? pal.text_secondary
+                                      : theme::high_contrast() ? GetSysColor(COLOR_HOTLIGHT)
+                                                               : pal.accent);
                     SIZE sz{};
-                    GetTextExtentPoint32W(hdc, run.c_str(),
-                                          static_cast<int>(run.size()), &sz);
+                    GetTextExtentPoint32W(hdc, run.c_str(), static_cast<int>(run.size()), &sz);
                     const bool overflow = x + sz.cx > text_rc.right;
-                    RECT run_rc = {x, text_rc.top, text_rc.right,
-                                   text_rc.bottom};
-                    DrawTextW(hdc, run.c_str(), static_cast<int>(run.size()),
-                              &run_rc,
+                    RECT run_rc = {x, text_rc.top, text_rc.right, text_rc.bottom};
+                    DrawTextW(hdc, run.c_str(), static_cast<int>(run.size()), &run_rc,
                               DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX |
                                   (overflow ? DT_END_ELLIPSIS : 0));
                     if (is_link)
                     {
-                        RECT hit = {x, text_rc.top,
-                                    std::min<LONG>(x + sz.cx, text_rc.right),
+                        RECT hit = {x, text_rc.top, std::min<LONG>(x + sz.cx, text_rc.right),
                                     text_rc.bottom};
                         st->hits.push_back({hit, st->segs[i].url});
                     }
@@ -560,24 +550,25 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
                 SetTextColor(hdc, pal.text_secondary);
                 HFONT old = (HFONT)SelectObject(hdc, small_font);
                 DrawTextW(hdc, p->c_str(), -1, &text_rc,
-                          DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS |
-                              DT_NOPREFIX);
+                          DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS | DT_NOPREFIX);
                 SelectObject(hdc, old);
             }
         }
         // Draw the inflight dot and optional spinning ring.
         {
-            const COLORREF dot_cr = static_cast<COLORREF>(reinterpret_cast<ULONG_PTR>(
-                GetPropW(hwnd, L"TesseractStatusDot")));
-            const int   DOT_R = static_cast<int>(std::lround(tk::kInflightDotR * sb_dpi / 96.0f));
-            const int   cx    = rc.right - static_cast<int>((tk::kInflightOrbitR + tk::kInflightRingDotR + 4.0f) * sb_dpi / 96.0f);
-            const int   cy    = (rc.top + rc.bottom) / 2;
+            const COLORREF dot_cr = static_cast<COLORREF>(
+                reinterpret_cast<ULONG_PTR>(GetPropW(hwnd, L"TesseractStatusDot")));
+            const int DOT_R = static_cast<int>(std::lround(tk::kInflightDotR * sb_dpi / 96.0f));
+            const int cx =
+                rc.right - static_cast<int>((tk::kInflightOrbitR + tk::kInflightRingDotR + 4.0f) *
+                                            sb_dpi / 96.0f);
+            const int cy = (rc.top + rc.bottom) / 2;
             const float orbit = tk::kInflightOrbitR * sb_dpi / 96.0f;
-            const float rdot  = tk::kInflightRingDotR * sb_dpi / 96.0f;
+            const float rdot = tk::kInflightRingDotR * sb_dpi / 96.0f;
 
             // Spinning ring — drawn first so the center dot paints on top.
-            const auto phase_enc = static_cast<uint32_t>(reinterpret_cast<ULONG_PTR>(
-                GetPropW(hwnd, L"TesseractStatusPhase")));
+            const auto phase_enc = static_cast<uint32_t>(
+                reinterpret_cast<ULONG_PTR>(GetPropW(hwnd, L"TesseractStatusPhase")));
             if (phase_enc > 0u)
             {
                 const float phase = static_cast<float>(phase_enc - 1u) / 65535.0f;
@@ -586,12 +577,11 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
                 HPEN old_pen = static_cast<HPEN>(SelectObject(hdc, null_pen));
                 for (int i = 0; i < kN; ++i)
                 {
-                    const float angle =
-                        (i / static_cast<float>(kN) + phase) * 2.0f * 3.14159265f;
+                    const float angle = (i / static_cast<float>(kN) + phase) * 2.0f * 3.14159265f;
                     const float dx = std::cos(angle) * orbit;
                     const float dy = std::sin(angle) * orbit;
-                    const float t  = static_cast<float>(i) / kN;
-                    const BYTE  a  = static_cast<BYTE>(40 + 215 * t);
+                    const float t = static_cast<float>(i) / kN;
+                    const BYTE a = static_cast<BYTE>(40 + 215 * t);
                     // Ring color 0xA0A0A6 blended with per-dot alpha.
                     const BYTE r = static_cast<BYTE>(0xA0u * a / 255u);
                     const BYTE g = static_cast<BYTE>(0xA0u * a / 255u);
@@ -610,10 +600,10 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             }
 
             // Center dot — on top of the ring.
-            HBRUSH dot_br  = CreateSolidBrush(dot_cr);
-            HPEN   null_pen = CreatePen(PS_NULL, 0, 0);
-            HBRUSH old_br  = static_cast<HBRUSH>(SelectObject(hdc, dot_br));
-            HPEN   old_pen = static_cast<HPEN>(SelectObject(hdc, null_pen));
+            HBRUSH dot_br = CreateSolidBrush(dot_cr);
+            HPEN null_pen = CreatePen(PS_NULL, 0, 0);
+            HBRUSH old_br = static_cast<HBRUSH>(SelectObject(hdc, dot_br));
+            HPEN old_pen = static_cast<HPEN>(SelectObject(hdc, null_pen));
             Ellipse(hdc, cx - DOT_R, cy - DOT_R, cx + DOT_R, cy + DOT_R);
             SelectObject(hdc, old_br);
             SelectObject(hdc, old_pen);
@@ -627,8 +617,7 @@ LRESULT CALLBACK status_bar_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             const int gpx = MulDiv(14, sb_dpi, 96);
             const int cy = (rc.top + rc.bottom) / 2;
             RECT glyph_rc = {rc.right - MulDiv(38, sb_dpi, 96), cy - gpx / 2,
-                             rc.right - MulDiv(38, sb_dpi, 96) + gpx,
-                             cy - gpx / 2 + gpx};
+                             rc.right - MulDiv(38, sb_dpi, 96) + gpx, cy - gpx / 2 + gpx};
             draw_low_power_glyph(hdc, glyph_rc, pal.text_secondary);
         }
         EndPaint(hwnd, &ps);
@@ -659,8 +648,7 @@ void MainWindow::apply_default_font(HWND h)
 {
     if (h)
     {
-        SendMessageW(h, WM_SETFONT,
-                     reinterpret_cast<WPARAM>(theme::font(theme::FontRole::Ui)),
+        SendMessageW(h, WM_SETFONT, reinterpret_cast<WPARAM>(theme::font(theme::FontRole::Ui)),
                      TRUE);
     }
 }
@@ -668,9 +656,8 @@ void MainWindow::apply_default_font(HWND h)
 tk::ThemeMode MainWindow::os_color_scheme_() const
 {
     win32::theme::refresh_from_system();
-    return win32::theme::current_mode() == win32::theme::Mode::Dark
-               ? tk::ThemeMode::Dark
-               : tk::ThemeMode::Light;
+    return win32::theme::current_mode() == win32::theme::Mode::Dark ? tk::ThemeMode::Dark
+                                                                    : tk::ThemeMode::Light;
 }
 
 namespace
@@ -687,6 +674,19 @@ std::optional<tk::Color> MainWindow::os_accent_color_() const
     return cr_to_tk(win32::theme::accent_colorref());
 }
 
+std::optional<tk::HighContrastColors> MainWindow::os_high_contrast_() const
+{
+    if (!win32::theme::high_contrast())
+    {
+        return std::nullopt;
+    }
+    return tk::HighContrastColors{
+        cr_to_tk(GetSysColor(COLOR_WINDOW)),    cr_to_tk(GetSysColor(COLOR_WINDOWTEXT)),
+        cr_to_tk(GetSysColor(COLOR_HIGHLIGHT)), cr_to_tk(GetSysColor(COLOR_HIGHLIGHTTEXT)),
+        cr_to_tk(GetSysColor(COLOR_HOTLIGHT)),  cr_to_tk(GetSysColor(COLOR_GRAYTEXT)),
+        cr_to_tk(GetSysColor(COLOR_BTNFACE)),   cr_to_tk(GetSysColor(COLOR_BTNTEXT))};
+}
+
 void MainWindow::apply_fonts_ui_()
 {
     // Drop the GDI fonts built from the old config, then hand the rebuilt ones
@@ -695,72 +695,75 @@ void MainWindow::apply_fonts_ui_()
     apply_default_font(hStatus_);
     InvalidateRect(hwnd_, nullptr, TRUE);
     if (hStatus_)
+    {
         InvalidateRect(hStatus_, nullptr, TRUE);
+    }
 }
 
-void MainWindow::apply_theme_ui_(const tk::Theme& t)
+void MainWindow::apply_native_theme_(const tk::Theme& t)
 {
-    // Sync the Win32-native palette and title bar to match the chosen mode.
-    win32::theme::set_mode(t.mode == tk::ThemeMode::Dark
-                               ? win32::theme::Mode::Dark
-                               : win32::theme::Mode::Light);
+    win32::theme::set_mode(t.mode == tk::ThemeMode::Dark ? win32::theme::Mode::Dark
+                                                         : win32::theme::Mode::Light);
+    auto cref = [](const tk::Color& c)
+    {
+        return RGB(c.r, c.g, c.b);
+    };
+    win32::theme::set_accent({cref(t.palette.accent), cref(t.palette.accent_hover),
+                              cref(t.palette.accent_pressed), cref(t.palette.text_on_accent)});
+    if (t.high_contrast)
+    {
+        const auto& p = t.palette;
+        const win32::theme::Palette pal{cref(p.bg),
+                                        cref(p.sidebar_bg),
+                                        cref(p.sidebar_selected),
+                                        cref(p.sidebar_hover),
+                                        cref(p.chrome_bg),
+                                        cref(p.compose_card_bg),
+                                        cref(p.border),
+                                        cref(p.separator),
+                                        cref(p.text_primary),
+                                        cref(p.text_secondary),
+                                        cref(p.text_muted),
+                                        cref(p.text_on_accent),
+                                        cref(p.accent),
+                                        cref(p.accent_hover),
+                                        cref(p.accent_pressed),
+                                        cref(p.subtle_hover),
+                                        cref(p.subtle_pressed),
+                                        cref(p.chip_bg),
+                                        cref(p.chip_bg_me),
+                                        cref(p.chip_border),
+                                        cref(p.chip_border_me),
+                                        cref(p.chip_text),
+                                        cref(p.chip_text_me),
+                                        cref(p.unread_bg),
+                                        cref(p.unread_text)};
+        win32::theme::set_palette_override(&pal);
+    }
+    else
+    {
+        win32::theme::set_palette_override(nullptr);
+    }
+    tk::d2d::set_link_color(t.palette.link);
     win32::theme::apply_window_attributes(hwnd_);
     InvalidateRect(hwnd_, nullptr, TRUE);
     if (hStatus_)
     {
         InvalidateRect(hStatus_, nullptr, TRUE);
+        on_inflight_ui_(); // the dot colours follow the theme in High Contrast
     }
+}
 
-    // Patch accent into current_theme_ (the stable ShellBase member whose address
-    // surfaces hold via set_theme's theme_ = &t pointer store). The System
-    // accent overlay (when active) was already applied by
-    // ShellBase::apply_current_theme_() before this override was called, via
-    // os_accent_color_() above + tk::apply_system_accent().
-    current_theme_ = t;
-
-    // Update all tk surfaces with current_theme_ so they hold &current_theme_,
-    // a pointer that stays valid for the shell's lifetime.
+void MainWindow::for_each_shell_surface_(const std::function<void(tk::SurfaceBase&)>& fn)
+{
     if (branding_surface_)
     {
-        branding_surface_->set_theme(current_theme_);
-        branding_surface_->root()->apply_theme(current_theme_);
+        fn(*branding_surface_);
     }
     if (main_app_surface_)
     {
-        main_app_surface_->set_theme(current_theme_);
-        main_app_surface_->root()->apply_theme(current_theme_);
+        fn(*main_app_surface_);
     }
-    if (slash_popup_)
-    {
-        slash_popup_->set_theme(current_theme_);
-    }
-    if (shortcode_popup_)
-    {
-        shortcode_popup_->set_theme(current_theme_);
-    }
-    if (mention_popup_)
-    {
-        mention_popup_->set_theme(current_theme_);
-    }
-    if (account_picker_surface_)
-    {
-        account_picker_surface_->set_theme(current_theme_);
-        account_picker_surface_->root()->apply_theme(current_theme_);
-    }
-    if (settings_surface_)
-    {
-        settings_surface_->set_theme(current_theme_);
-        settings_surface_->root()->apply_theme(current_theme_);
-    }
-    if (login_view_)
-    {
-        login_view_->set_theme(current_theme_);
-    }
-
-    // Pop-out room windows track the theme too.
-    apply_theme_to_secondary_windows_(current_theme_);
-    if (call_window_)
-        call_window_->apply_theme(current_theme_);
 }
 
 void MainWindow::on_system_theme_changed()
@@ -769,8 +772,7 @@ void MainWindow::on_system_theme_changed()
     {
         return;
     }
-    if (tesseract::Settings::instance().theme_pref ==
-        tesseract::Settings::ThemePreference::System)
+    if (tesseract::Settings::instance().theme_pref == tesseract::Settings::ThemePreference::System)
     {
         apply_current_theme_();
     }
@@ -794,107 +796,19 @@ void MainWindow::paint_main_background(HDC hdc, const RECT& rc)
 // to secondary windows). See MainWindow.h for the rationale.
 
 void MainWindow::handle_sync_error_ui_(std::string context, std::string user_id,
-                                       std::string description,
-                                       bool soft_logout)
+                                       std::string description, bool soft_logout)
 {
     // Agnostic state machine lives in ShellBase; this shell only supplies the
     // native restart timer (post_to_ui_after_), status bar, user strip
-    // (refresh_user_strip_) and relogin (request_relogin_).
-    handle_sync_error_impl_(std::move(context), std::move(user_id),
-                            std::move(description), soft_logout);
-}
-
-void MainWindow::refresh_user_strip_()
-{
-    populate_user_strip();
-}
-
-void MainWindow::request_relogin_(const std::string& user_id)
-{
-    const bool is_active =
-        active_account_ && active_account_->user_id == user_id;
-    if (is_active)
-    {
-        // ShellBase already showed "Session expired…" and cleared/stopped the
-        // account; drop to the login flow. Not the user's sign-out, so no
-        // offer to save an unsaved recovery key first (it's kept).
-        skip_unsaved_key_check_for_next_sign_out_();
-        logout_active_account();
-        return;
-    }
-    // A non-active account expired: forget it and drop it from the persisted
-    // index so it doesn't reappear on next launch. (ShellBase already cleared
-    // its stored session and stopped its sync.)
-    account_manager_.remove_account(user_id);
-    auto index = tesseract::SessionStore::load_index();
-    index.user_ids.erase(
-        std::remove(index.user_ids.begin(), index.user_ids.end(), user_id),
-        index.user_ids.end());
-    if (index.active_user_id == user_id && active_account_)
-    {
-        index.active_user_id = active_account_->user_id;
-    }
-    tesseract::SessionStore::save_index(index);
-}
-
-void MainWindow::handle_backup_progress_ui_(tesseract::BackupProgress progress)
-{
-    on_backup_progress(&progress);
-}
-
-void MainWindow::refresh_pickers_packs_()
-{
-    if (!room_view_)
-        return;
-    room_view_->set_current_room_parent_spaces(
-        parent_spaces_for_room_(current_room_id_));
-    room_view_->refresh_stickers();
-    room_view_->refresh_emoticon_packs();
-    // Win32's pre-migration refresh_sticker_picker()/refresh_emoji_picker()
-    // additionally invalidated each picker's image cache here (Qt6/GTK4's
-    // equivalents did not) — preserved for behavior parity with this
-    // platform's prior implementation.
-    if (auto* ep = room_view_->emoji_picker())
-        ep->invalidate_image_cache();
-    if (auto* sp = room_view_->sticker_picker())
-        sp->invalidate_image_cache();
-}
-
-void MainWindow::handle_notification_ui_(
-    std::string user_id, std::string room_id, std::string room_name,
-    std::string sender, std::string body, bool is_mention,
-    std::vector<uint8_t> avatar_bytes, std::vector<uint8_t> image_bytes,
-    std::string event_id)
-{
-    if (!tesseract::Settings::instance().notifications_enabled)
-    {
-        return;
-    }
-
-    apply_notification_redaction_(sender, room_name, body, avatar_bytes,
-                                  image_bytes);
-    NotificationPayload p{std::move(room_id),
-                          std::move(room_name),
-                          std::move(sender),
-                          std::move(body),
-                          std::move(user_id),
-                          is_mention,
-                          std::move(avatar_bytes),
-                          std::move(image_bytes),
-                          std::move(event_id)};
-    on_tesseract_notify(&p);
+    // (refresh_user_strip_).
+    handle_sync_error_impl_(std::move(context), std::move(user_id), std::move(description),
+                            soft_logout);
 }
 
 void MainWindow::on_room_list_state_ui_()
 {
-    refresh_sync_status();
+    refresh_sync_status_();
     on_inflight_ui_();
-}
-
-void MainWindow::on_launch_at_login_pref_ui_(bool enabled)
-{
-    if (settings_view_)
-        settings_view_->set_launch_at_login_pref(enabled);
 }
 
 bool MainWindow::tray_available_() const
@@ -902,64 +816,34 @@ bool MainWindow::tray_available_() const
     return tray_ && tray_->is_available();
 }
 
-void MainWindow::on_tray_available_ui_(bool available)
-{
-    if (settings_view_)
-        settings_view_->set_tray_available(available);
-}
-
 void MainWindow::on_inflight_ui_()
 {
     if (!hStatus_)
+    {
         return;
-    const auto   c  = inflight_dot_color_();
-    const auto   n  = inflight_total_();
-    const size_t fp = pool_pending_count_();
-    const size_t sp = mut_pool_pending_count_();
-    const size_t mp = pending_media_count_();
-    SendMessageW(hStatus_, SB_SET_INFLIGHT_COLOR,
-                 static_cast<WPARAM>(RGB(c.r, c.g, c.b)), 0);
+    }
+    const auto c = inflight_dot_color_();
+    SendMessageW(hStatus_, SB_SET_INFLIGHT_COLOR, static_cast<WPARAM>(RGB(c.r, c.g, c.b)), 0);
     // Update ring phase property; 0 = no ring, 1..65536 = ring + encoded phase.
-    const uint32_t phase_enc = inflight_needs_anim_()
-        ? static_cast<uint32_t>(inflight_spin_phase_() * 65535.0f) + 1u
-        : 0u;
+    const uint32_t phase_enc =
+        inflight_needs_anim_() ? static_cast<uint32_t>(inflight_spin_phase_() * 65535.0f) + 1u : 0u;
     SetPropW(hStatus_, L"TesseractStatusPhase",
              reinterpret_cast<HANDLE>(static_cast<ULONG_PTR>(phase_enc)));
     if (hStatusTip_)
     {
-        inflight_tip_text_ = utf8_to_wstr(
-            tk::trf(tk::trn("{0} request in flight", "{0} requests in flight",
-                            static_cast<long>(n)),
-                    {std::to_string(n)}) +
-            "\n" +
-            tk::trf(tk::tr("media: {0} loading \xC2\xB7 fetch: {1} queued \xC2\xB7 send: {2} queued"),
-                    {std::to_string(mp), std::to_string(fp), std::to_string(sp)}));
-#ifndef NDEBUG
-        if (!last_inflight_urls_.empty()) {
-            inflight_tip_text_ += L"\n── requests ──\n";
-            inflight_tip_text_ += utf8_to_wstr(last_inflight_urls_);
-        }
-#endif
+        inflight_tip_text_ = utf8_to_wstr(inflight_tooltip_text_());
         if (low_power_active_win_)
         {
             inflight_tip_text_.insert(
-                0, utf8_to_wstr(tk::tr(
-                       "Low power mode — background sync paused")) +
-                       L"\n");
+                0, utf8_to_wstr(tk::tr("Low power mode — background sync paused")) + L"\n");
         }
         TOOLINFOW ti{};
         ti.cbSize = TTTOOLINFOW_V1_SIZE;
         ti.hwnd = hStatus_;
         ti.uId = reinterpret_cast<UINT_PTR>(hStatus_);
         ti.lpszText = inflight_tip_text_.data();
-        SendMessageW(hStatusTip_, TTM_UPDATETIPTEXTW, 0,
-                     reinterpret_cast<LPARAM>(&ti));
+        SendMessageW(hStatusTip_, TTM_UPDATETIPTEXTW, 0, reinterpret_cast<LPARAM>(&ti));
     }
-}
-
-std::uint64_t MainWindow::shell_extra_memory_bytes_() const
-{
-    return sum_image_map_bytes_(gif_previews_);
 }
 
 void MainWindow::on_low_power_mode_ui_(bool active)
@@ -967,64 +851,11 @@ void MainWindow::on_low_power_mode_ui_(bool active)
     low_power_active_win_ = active;
     if (hStatus_)
     {
-        SetPropW(hStatus_, L"TesseractLowPower",
-                 active ? reinterpret_cast<HANDLE>(1) : nullptr);
+        SetPropW(hStatus_, L"TesseractLowPower", active ? reinterpret_cast<HANDLE>(1) : nullptr);
         InvalidateRect(hStatus_, nullptr, TRUE);
     }
     // Refresh the shared status-bar tooltip text (prepends / drops the note).
     on_inflight_ui_();
-}
-
-void MainWindow::on_server_info_ready_ui_()
-{
-    if (settings_view_)
-        settings_view_->set_server_info(server_info_);
-    if (main_app_ && main_app_->room_view())
-        main_app_->room_view()->header()->set_jump_to_date_enabled(
-            server_info_.supports_msc3030);
-    if (main_app_surface_)
-        main_app_surface_->relayout();
-}
-
-void MainWindow::on_own_extended_profile_ready_ui_()
-{
-    if (settings_view_)
-        settings_view_->set_extended_profile(own_extended_profile_);
-    if (settings_surface_)
-        settings_surface_->relayout();
-}
-
-void MainWindow::on_profile_field_result_ui_(const std::string& key,
-                                              bool ok,
-                                              const std::string& error)
-{
-    if (!settings_view_) return;
-    settings_view_->set_profile_field_busy(key, false);
-    if (!ok)
-        settings_view_->set_profile_field_error(key, error);
-    if (settings_surface_)
-        settings_surface_->relayout();
-}
-
-void MainWindow::update_typing_bar_(const std::string& text, bool /*visible*/)
-{
-    if (room_view_)
-    {
-        room_view_->set_typing_text(text);
-    }
-}
-
-void MainWindow::on_active_room_bot_commands_changed_ui_()
-{
-    // Only meaningful while the popup is actually showing an active-room
-    // autocomplete/hint — re-run the same text-changed path it already
-    // drives on every keystroke, so a bot posting/editing/retracting a
-    // command description mid-typing (or mid-argument-entry) is reflected
-    // without the user needing to type another character.
-    if (!slash_controller_ || !slash_controller_->visible() || !room_text_area_)
-        return;
-    slash_controller_->on_text_changed(room_text_area_->text(),
-                                       room_text_area_->cursor_byte_pos());
 }
 
 void MainWindow::on_show_status_message_ui_(const std::string& msg)
@@ -1038,7 +869,7 @@ void MainWindow::on_show_status_message_ui_(const std::string& msg)
 
 void MainWindow::on_restore_status_ui_()
 {
-    refresh_sync_status();
+    refresh_sync_status_();
 }
 
 void MainWindow::on_startup_restore_progress_ui_(const std::string& status)
@@ -1053,8 +884,7 @@ void MainWindow::on_startup_restore_progress_ui_(const std::string& status)
 // wnd_proc
 // ---------------------------------------------------------------------------
 
-LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
-                                      LPARAM lParam)
+LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     if (msg == WM_GETMINMAXINFO)
     {
@@ -1064,10 +894,10 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         auto* mmi = reinterpret_cast<MINMAXINFO*>(lParam);
         const UINT dpi = GetDpiForWindow(hwnd);
         const float scale = dpi > 0 ? static_cast<float>(dpi) / 96.f : 1.f;
-        mmi->ptMinTrackSize.x = static_cast<LONG>(
-            std::round(tesseract::visual::kMinWindowWidth * scale));
-        mmi->ptMinTrackSize.y = static_cast<LONG>(
-            std::round(tesseract::visual::kMinWindowHeight * scale));
+        mmi->ptMinTrackSize.x =
+            static_cast<LONG>(std::round(tesseract::visual::kMinWindowWidth * scale));
+        mmi->ptMinTrackSize.y =
+            static_cast<LONG>(std::round(tesseract::visual::kMinWindowHeight * scale));
         return 0;
     }
 
@@ -1076,14 +906,12 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
     {
         auto* cs = reinterpret_cast<CREATESTRUCTW*>(lParam);
         self = static_cast<MainWindow*>(cs->lpCreateParams);
-        SetWindowLongPtrW(hwnd, GWLP_USERDATA,
-                          reinterpret_cast<LONG_PTR>(self));
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
         self->hwnd_ = hwnd;
     }
     else
     {
-        self = reinterpret_cast<MainWindow*>(
-            GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+        self = reinterpret_cast<MainWindow*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
     }
 
     if (!self)
@@ -1114,12 +942,15 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
 
     case WM_NCHITTEST:
     {
-        if (auto dwm = win32::CustomTitleBar::dwm_hittest_hook(hwnd, msg,
-                                                                wParam, lParam))
+        if (auto dwm = win32::CustomTitleBar::dwm_hittest_hook(hwnd, msg, wParam, lParam))
+        {
             return *dwm;
+        }
         const LRESULT ht = self->title_bar_.handle_nchittest(hwnd, lParam);
         if (ht != HTNOWHERE)
+        {
             return ht;
+        }
         return DefWindowProcW(hwnd, msg, wParam, lParam);
     }
 
@@ -1133,37 +964,47 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
 
     case WM_NCLBUTTONDOWN:
     {
-        if (auto dwm = win32::CustomTitleBar::dwm_hittest_hook(hwnd, msg,
-                                                                wParam, lParam))
+        if (auto dwm = win32::CustomTitleBar::dwm_hittest_hook(hwnd, msg, wParam, lParam))
+        {
             return *dwm;
+        }
         if (self->title_bar_.handle_nclbuttondown(hwnd, wParam))
+        {
             return 0;
+        }
         return DefWindowProcW(hwnd, msg, wParam, lParam);
     }
 
     case WM_NCLBUTTONUP:
     {
-        if (auto dwm = win32::CustomTitleBar::dwm_hittest_hook(hwnd, msg,
-                                                                wParam, lParam))
+        if (auto dwm = win32::CustomTitleBar::dwm_hittest_hook(hwnd, msg, wParam, lParam))
+        {
             return *dwm;
+        }
         if (self->title_bar_.handle_nclbuttonup(hwnd, wParam))
+        {
             return 0;
+        }
         return DefWindowProcW(hwnd, msg, wParam, lParam);
     }
 
     case WM_NCRBUTTONDOWN:
-        if (auto dwm = win32::CustomTitleBar::dwm_hittest_hook(hwnd, msg,
-                                                                wParam, lParam))
+        if (auto dwm = win32::CustomTitleBar::dwm_hittest_hook(hwnd, msg, wParam, lParam))
+        {
             return *dwm;
+        }
         return DefWindowProcW(hwnd, msg, wParam, lParam);
 
     case WM_NCRBUTTONUP:
     {
-        if (auto dwm = win32::CustomTitleBar::dwm_hittest_hook(hwnd, msg,
-                                                                wParam, lParam))
+        if (auto dwm = win32::CustomTitleBar::dwm_hittest_hook(hwnd, msg, wParam, lParam))
+        {
             return *dwm;
+        }
         if (self->title_bar_.show_system_menu(hwnd, wParam, lParam))
+        {
             return 0;
+        }
         return DefWindowProcW(hwnd, msg, wParam, lParam);
     }
 
@@ -1197,7 +1038,9 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         self->on_window_closing_();
         self->account_manager_.unregister_window(self);
         if (self->account_manager_.window_count() == 0)
+        {
             PostQuitMessage(0);
+        }
         return 0;
 
     case WM_ACTIVATE:
@@ -1221,7 +1064,14 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             title_rc.bottom = self->title_bar_.height_px();
             InvalidateRect(hwnd, &title_rc, TRUE);
         }
-        self->notify_window_active_(active);
+        theme::apply_border_color(hwnd, active);
+        // Clicking the app's own popup (the account picker) activates it; the
+        // window is not being left, and closing the popup now would drop the
+        // click before it lands.
+        if (active || !tk::win32::is_popup_surface_hwnd(reinterpret_cast<HWND>(lParam)))
+        {
+            self->notify_window_active_(active);
+        }
         DefWindowProcW(hwnd, msg, wParam, lParam);
         // DefWindowProc restores focus to whatever GetFocus() returned at
         // WM_ACTIVATE(WA_INACTIVE) time. If no focused child was recorded
@@ -1230,16 +1080,15 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         // the main window rather than the compose bar. Detect this case and
         // redirect explicitly: any HWND that is not a native input overlay
         // (text field / area) means the restore fell through to a canvas.
-        if (active && self->room_text_area_ &&
-            self->room_text_area_->visible() &&
+        if (active && self->room_text_area_ && self->room_text_area_->visible() &&
             !self->current_room_id_.empty())
         {
             HWND focused = GetFocus();
-            HWND surface = self->main_app_surface_
-                               ? self->main_app_surface_->hwnd()
-                               : nullptr;
+            HWND surface = self->main_app_surface_ ? self->main_app_surface_->hwnd() : nullptr;
             if (focused == nullptr || focused == hwnd || focused == surface)
+            {
                 self->room_text_area_->set_focused(true);
+            }
         }
         return 0;
     }
@@ -1251,19 +1100,23 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             RECT wrc{};
             GetWindowRect(hwnd, &wrc);
             auto& g = tesseract::Settings::instance().main_window_geometry;
-            g.x = wrc.left; g.y = wrc.top;
-            g.w = wrc.right - wrc.left; g.h = wrc.bottom - wrc.top;
+            g.x = wrc.left;
+            g.y = wrc.top;
+            g.w = wrc.right - wrc.left;
+            g.h = wrc.bottom - wrc.top;
             g.dpi = static_cast<int>(GetDpiForWindow(hwnd));
             g.valid = true;
             self->save_settings_debounced_();
-            self->start_anim_tick_();   // restart after restore from minimized
+            self->start_anim_tick_(); // restart after restore from minimized
         }
         self->update_video_playback_suspension_();
         return 0;
 
     case WM_SHOWWINDOW:
-        if (wParam)   // window being shown (e.g. restored from tray)
+        if (wParam) // window being shown (e.g. restored from tray)
+        {
             self->start_anim_tick_();
+        }
         self->update_video_playback_suspension_();
         return DefWindowProcW(hwnd, msg, wParam, lParam);
 
@@ -1274,8 +1127,10 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             RECT wrc{};
             GetWindowRect(hwnd, &wrc);
             auto& g = tesseract::Settings::instance().main_window_geometry;
-            g.x = wrc.left; g.y = wrc.top;
-            g.w = wrc.right - wrc.left; g.h = wrc.bottom - wrc.top;
+            g.x = wrc.left;
+            g.y = wrc.top;
+            g.w = wrc.right - wrc.left;
+            g.h = wrc.bottom - wrc.top;
             g.dpi = static_cast<int>(GetDpiForWindow(hwnd));
             g.valid = true;
             self->save_settings_debounced_();
@@ -1285,7 +1140,9 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
 
     case WM_COMMAND:
         if (self->taskbar_.handle_thumbnail_command(hwnd, wParam))
+        {
             return 0;
+        }
         // Compose bar Send / Emoji clicks go through the shared widgets'
         // callbacks now — no WM_COMMAND wiring. The emoji-picker search
         // field is a NativeTextField overlay handled by its set_on_changed
@@ -1297,8 +1154,10 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             idx >= 0 && idx < static_cast<int>(self->accel_events_.size()))
         {
             if (self->main_app_)
+            {
                 self->main_app_->dispatch_key_down(
                     self->accel_events_[static_cast<std::size_t>(idx)]);
+            }
         }
         return 0;
 
@@ -1321,14 +1180,14 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         GetClientRect(hwnd, &rc);
         HDC hdc = reinterpret_cast<HDC>(wParam);
         HDC mem_dc = CreateCompatibleDC(hdc);
-        HBITMAP mem_bmp =
-            CreateCompatibleBitmap(hdc, rc.right - rc.left, rc.bottom - rc.top);
+        HBITMAP mem_bmp = CreateCompatibleBitmap(hdc, rc.right - rc.left, rc.bottom - rc.top);
         HGDIOBJ old_bmp = SelectObject(mem_dc, mem_bmp);
         self->paint_main_background(mem_dc, rc);
         if (!self->fs_active_)
+        {
             self->title_bar_.paint(mem_dc, hwnd, rc, self->is_active_);
-        BitBlt(hdc, rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top,
-              mem_dc, 0, 0, SRCCOPY);
+        }
+        BitBlt(hdc, rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top, mem_dc, 0, 0, SRCCOPY);
         SelectObject(mem_dc, old_bmp);
         DeleteObject(mem_bmp);
         DeleteDC(mem_dc);
@@ -1359,8 +1218,31 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         return reinterpret_cast<LRESULT>(theme::brush(pal.window_bg));
     }
 
+    case WM_SYSCOLORCHANGE:
+        // High Contrast scheme edits change the system colors the title bar
+        // paints with.
+        theme::refresh_high_contrast();
+        theme::apply_window_attributes(hwnd);
+        self->title_bar_.invalidate_strip(hwnd);
+        self->apply_current_theme_();
+        return 0;
+
     case WM_SETTINGCHANGE:
     {
+        if (wParam == SPI_SETHIGHCONTRAST)
+        {
+            theme::refresh_high_contrast();
+            theme::apply_window_attributes(hwnd);
+            self->title_bar_.invalidate_strip(hwnd);
+            self->apply_current_theme_();
+            return 0;
+        }
+        if (wParam == SPI_SETNONCLIENTMETRICS)
+        {
+            self->title_bar_.on_system_metrics_changed();
+            self->title_bar_.invalidate_strip(hwnd);
+            return 0;
+        }
         // Watch for OS dark/light flip. lParam carries the changed area name
         // as a wide string when it originated in Personalize. The accent
         // color picker in the same Personalize page also broadcasts
@@ -1373,8 +1255,13 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             auto* name = reinterpret_cast<const wchar_t*>(lParam);
             if (name && wcscmp(name, L"ImmersiveColorSet") == 0)
             {
+                const bool bars_changed = theme::refresh_accent_on_title_bars();
                 self->on_system_theme_changed();
                 self->on_system_accent_changed_();
+                if (bars_changed)
+                {
+                    self->apply_theme_ui_(self->current_theme_);
+                }
             }
         }
         return 0;
@@ -1385,7 +1272,14 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         // Settings > Personalization > Colors. Ignore wParam (the new
         // colorization color) and re-read AccentColorMenu via
         // accent_colorref(), the source it prefers.
-        self->on_system_accent_changed_();
+        {
+            const bool bars_changed = theme::refresh_accent_on_title_bars();
+            self->on_system_accent_changed_();
+            if (bars_changed)
+            {
+                self->apply_theme_ui_(self->current_theme_);
+            }
+        }
         return 0;
 
     case WM_DPICHANGED:
@@ -1394,10 +1288,10 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         self->title_bar_.on_dpi_changed(LOWORD(wParam));
         // Move+resize to the rect Windows calculated for the new DPI.
         const RECT* rc = reinterpret_cast<const RECT*>(lParam);
-        SetWindowPos(hwnd, nullptr, rc->left, rc->top, rc->right - rc->left,
-                     rc->bottom - rc->top, SWP_NOZORDER | SWP_NOACTIVATE);
+        SetWindowPos(hwnd, nullptr, rc->left, rc->top, rc->right - rc->left, rc->bottom - rc->top,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
         // Push the new scale into every surface anchored to *this* window
-        // (branding/main-app/account-picker/settings — all child HWNDs of
+        // (branding/main-app/settings/login — all child HWNDs of
         // hwnd_, so they share its monitor/DPI) so native-control image
         // captures (tk::NativeTextField/NativeTextArea) don't stay
         // stale/blurry. Deliberately NOT propagated to call_window_ or
@@ -1408,23 +1302,21 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         // gets its own WM_DPICHANGED for that.
         const float scale = static_cast<float>(LOWORD(wParam)) / 96.0f;
         if (self->branding_surface_)
+        {
             self->branding_surface_->apply_scale_change(scale);
+        }
         if (self->main_app_surface_)
+        {
             self->main_app_surface_->apply_scale_change(scale);
-        if (self->account_picker_surface_)
-            self->account_picker_surface_->apply_scale_change(scale);
+        }
         if (self->settings_surface_)
+        {
             self->settings_surface_->apply_scale_change(scale);
+        }
+        self->apply_scale_to_login_surface_(scale);
         return 0;
     }
 
-    case WM_TESSERACT_PAGINATE_DONE:
-    {
-        auto* p = reinterpret_cast<std::string*>(lParam);
-        self->on_tesseract_paginate_done(p, wParam != 0);
-        delete p;
-        return 0;
-    }
     case WM_TESSERACT_NOTIFY_CLICK:
     {
         auto* payload = reinterpret_cast<win32::NotifyClickPayload*>(lParam);
@@ -1434,14 +1326,12 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             // activation, so the app is brought forward regardless — there
             // is no way to send a reply without also foregrounding here,
             // unlike macOS/KDE.
-            self->send_notification_reply_(payload->user_id, payload->room_id,
-                                           payload->event_id,
+            self->send_notification_reply_(payload->user_id, payload->room_id, payload->event_id,
                                            payload->reply_text);
         }
         // Routes to the window that owns the account (may not be `self`),
         // which restores/raises itself via activate_for_notification_.
-        self->on_notification_clicked_(payload->user_id, payload->room_id,
-                                       payload->event_id, {});
+        self->on_notification_clicked_(payload->user_id, payload->room_id, payload->event_id, {});
         delete payload;
         return 0;
     }
@@ -1454,40 +1344,10 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         delete fn;
         return 0;
     }
-    case WM_TESSERACT_MEDIA_BYTES:
-    {
-        // No longer posted by this shell — media now flows through
-        // ShellBase::ensure_*_() → post_to_ui_ → on_media_bytes_ready_().
-        // Keep the case to safely drain any stale messages during shutdown.
-        auto* p = reinterpret_cast<MediaBytesPayload*>(lParam);
-        delete p;
-        return 0;
-    }
     case WM_KEYDOWN:
-        if (wParam == VK_ESCAPE)
+        if (wParam == VK_ESCAPE && self->handle_escape_key_())
         {
-            const bool had_quick_switch = self->main_app_ &&
-                self->main_app_->quick_switcher() &&
-                self->main_app_->quick_switcher()->is_open();
-            const bool had_message_search = self->main_app_ &&
-                self->main_app_->message_search() &&
-                self->main_app_->message_search()->is_open();
-            const bool had_room_search = self->main_app_ &&
-                self->main_app_->room_view() &&
-                self->main_app_->room_view()->room_search_open();
-            if (self->main_app_ &&
-                self->main_app_->dispatch_key_down({tk::Key::Escape}))
-            {
-                if (had_quick_switch)
-                    self->close_quick_switch_();
-                else if (had_message_search)
-                    self->close_message_search_();
-                else if (had_room_search)
-                    self->close_find_in_room_();
-                else if (self->main_app_surface_)
-                    self->main_app_surface_->relayout();
-                return 0;
-            }
+            return 0;
         }
         if (wParam == 'K' && (GetKeyState(VK_CONTROL) & 0x8000))
         {
@@ -1514,58 +1374,13 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
             self->inflight_tick_();
             return 0;
         }
-        if (wParam == kScrollDebounceTimerId)
-        {
-            KillTimer(hwnd, kScrollDebounceTimerId);
-            if (self->room_list_view_ && self->active_account_)
-            {
-                auto ids  = self->room_list_view_->visible_room_ids();
-                auto sess = self->active_account_;
-                self->run_async_mut_([sess, ids = std::move(ids)]() mutable
-                {
-                    if (sess && sess->client)
-                    {
-                        sess->client->stop_background_backfill();
-                        sess->client->start_background_backfill(ids);
-                    }
-                });
-            }
-            return 0;
-        }
-        if (wParam == kMarkReadTimerId)
-        {
-            KillTimer(hwnd, kMarkReadTimerId);
-            self->mark_room_read_(self->current_room_id_);
-            return 0;
-        }
         if (wParam == kPresenceTickTimerId)
         {
             // Periodic (30 s); auto-reschedules — do not kill.
             // Skip the sweep while the window is not visible (e.g. minimized).
             if (IsWindowVisible(hwnd) && !IsIconic(hwnd))
+            {
                 self->notify_presence_tick_();
-            return 0;
-        }
-        if (wParam == kSyncStatusDebounceTimerId)
-        {
-            KillTimer(hwnd, kSyncStatusDebounceTimerId);
-            self->sync_status_debounce_timer_id_ = 0;
-            using RLS = tesseract::RoomListState;
-            if (self->hStatus_ &&
-                (self->last_room_list_state_ == RLS::Init ||
-                 self->last_room_list_state_ == RLS::SettingUp))
-            {
-                self->sync_progress_shown_ = true;
-                SetWindowTextW(self->hStatus_, utf8_to_wstr(tk::tr("Syncing rooms…")).c_str());
-            }
-            return 0;
-        }
-        if (wParam == kStatusClearTimerId)
-        {
-            KillTimer(hwnd, kStatusClearTimerId);
-            if (self->hStatus_)
-            {
-                SetWindowTextW(self->hStatus_, L"");
             }
             return 0;
         }
@@ -1574,37 +1389,55 @@ LRESULT CALLBACK MainWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wParam,
         {
             KillTimer(hwnd, kScreenshotStepTimerId);
             if (auto step = std::exchange(self->screenshot_step_, nullptr))
+            {
                 step();
+            }
             return 0;
         }
 #endif
         return DefWindowProcW(hwnd, msg, wParam, lParam);
 
-    case WM_COPYDATA: {
+    case WM_COPYDATA:
+    {
         const auto* cds = reinterpret_cast<const COPYDATASTRUCT*>(lParam);
         if (cds && cds->dwData == 1 /* matrix URI */ && cds->cbData > 0)
         {
-            std::string uri(static_cast<const char*>(cds->lpData),
-                            cds->cbData - 1);
+            std::string uri(static_cast<const char*>(cds->lpData), cds->cbData - 1);
             self->open_matrix_link(uri);
         }
-        else if (cds && cds->dwData == 2 &&
-                 cds->cbData == sizeof(tesseract::LaunchAction) && cds->lpData)
+        else if (cds && cds->dwData == 2 && cds->cbData == sizeof(tesseract::LaunchAction) &&
+                 cds->lpData)
         {
             const auto action = *static_cast<const tesseract::LaunchAction*>(cds->lpData);
             // Room needs its ID and arrives as dwData == 3 instead.
-            if (action > tesseract::LaunchAction::None &&
-                action < tesseract::LaunchAction::Room)
+            if (action > tesseract::LaunchAction::None && action < tesseract::LaunchAction::Room)
+            {
                 self->dispatch_launch_action_(action);
+            }
         }
         else if (cds && cds->dwData == 3 && cds->cbData > 1 && cds->lpData)
         {
             self->dispatch_launch_action_(
                 tesseract::LaunchAction::Room,
-                std::string(static_cast<const char*>(cds->lpData),
-                            cds->cbData - 1));
+                std::string(static_cast<const char*>(cds->lpData), cds->cbData - 1));
         }
         return TRUE;
+    }
+
+    case WM_NCDESTROY:
+    {
+        // Last message this window receives. A window spawned by
+        // spawn_main_window_ owns itself; the primary lives on main()'s stack.
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+        const LRESULT r = DefWindowProcW(hwnd, msg, wParam, lParam);
+        // The last window has no heir to take its account bridges, and SDK
+        // callbacks would then dereference a freed window: keep it until the
+        // process exits (the window count is 0 and the loop is quitting).
+        if (self->delete_on_destroy_ && !self->is_account_bridge_target_())
+        {
+            delete self;
+        }
+        return r;
     }
 
     default:
@@ -1626,7 +1459,9 @@ const wchar_t* MainWindow::class_name()
     {
         std::wstring n = L"TesseractMainWnd";
         for (char c : tesseract::profile_suffix())
+        {
             n.push_back(static_cast<wchar_t>(c));
+        }
         return n;
     }();
     return name.c_str();
@@ -1648,13 +1483,11 @@ bool MainWindow::register_class(HINSTANCE hInst)
     // Big icon: Alt+Tab, taskbar. Small icon: titlebar, system menu.
     // LoadImage picks the best-matching frame from the multi-resolution .ico.
     wc.hIcon = static_cast<HICON>(
-        LoadImageW(hInst, MAKEINTRESOURCEW(IDI_TESSERACT), IMAGE_ICON,
-                   GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON),
-                   LR_DEFAULTCOLOR | LR_SHARED));
-    wc.hIconSm = static_cast<HICON>(
-        LoadImageW(hInst, MAKEINTRESOURCEW(IDI_TESSERACT), IMAGE_ICON,
-                   GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON),
-                   LR_DEFAULTCOLOR | LR_SHARED));
+        LoadImageW(hInst, MAKEINTRESOURCEW(IDI_TESSERACT), IMAGE_ICON, GetSystemMetrics(SM_CXICON),
+                   GetSystemMetrics(SM_CYICON), LR_DEFAULTCOLOR | LR_SHARED));
+    wc.hIconSm = static_cast<HICON>(LoadImageW(
+        hInst, MAKEINTRESOURCEW(IDI_TESSERACT), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON),
+        GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR | LR_SHARED));
     if (!wc.hIcon)
     {
         wc.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
@@ -1668,25 +1501,23 @@ bool MainWindow::register_class(HINSTANCE hInst)
 
 MainWindow::MainWindow(tesseract::AccountManager& account_manager, HINSTANCE hInst,
                        Win32Taskbar& taskbar, bool start_hidden,
-                       tesseract::LaunchAction launch_action,
-                       std::string launch_room_id
+                       tesseract::LaunchAction launch_action, std::string launch_room_id
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
-                       , std::filesystem::path screenshot_dir
+                       ,
+                       std::filesystem::path screenshot_dir
 #endif
                        )
-    : ShellBase(account_manager)
-    , hInst_(hInst)
-    , taskbar_(taskbar)
-    , start_hidden_(start_hidden)
+    : ShellBase(account_manager), hInst_(hInst), taskbar_(taskbar), start_hidden_(start_hidden)
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
-    , screenshot_dir_(std::move(screenshot_dir))
+      ,
+      screenshot_dir_(std::move(screenshot_dir))
 #endif
 {
     set_screen_lock_(std::make_unique<win32::Win32ScreenLock>(hInst));
     set_power_monitor_(std::make_unique<win32::Win32PowerMonitor>(hInst));
     set_autostart_(std::make_unique<win32::Win32Autostart>());
 
-    // Held until show_main_content() calls mark_main_content_ready_().
+    // Held until show_main_content_() calls mark_main_content_ready_().
     dispatch_launch_action_(launch_action, std::move(launch_room_id));
 
     account_manager_.register_window(this);
@@ -1695,10 +1526,14 @@ MainWindow::MainWindow(tesseract::AccountManager& account_manager, HINSTANCE hIn
 
 MainWindow::~MainWindow()
 {
+    release_settings_surface_();
     // unregister_window is called in WM_DESTROY (before PostQuitMessage) so
     // it is not repeated here.  broadcast_rebuild_tray_ is still needed to
     // refresh any remaining windows after this C++ shell is freed.
     broadcast_rebuild_tray_();
+
+    // Popup windows anchor to main_app_surface_: they go first.
+    release_popups_();
 
     // Multi-window: only the primary (non-pinned) window tears down the SHARED
     // accounts' background sync (its destruction == app shutdown). A secondary
@@ -1717,24 +1552,31 @@ MainWindow::~MainWindow()
     {
         pending_login_client_->stop_sync();
     }
-    // login_view_ calls cancel_oauth() + joins its worker on destruction.
-    // Tear it down while the client pointers are still alive.
-    login_view_.reset();
+    // Release the login page while the client pointers it is bound to are
+    // still alive.
+    release_login_surface_();
     destroy_accelerators_();
-    theme::shutdown();
+    // Theme fonts and the icon cache are process-wide: a closing secondary
+    // window must leave them to the windows that stay.
+    if (!is_pinned_window_)
+    {
+        theme::shutdown();
+    }
     if (gdiplus_token_)
     {
-        CustomTitleBar::shutdown_icon_cache();
+        if (!is_pinned_window_)
+        {
+            CustomTitleBar::shutdown_icon_cache();
+        }
         Gdiplus::GdiplusShutdown(gdiplus_token_);
     }
 }
 
 bool MainWindow::create(int nCmdShow)
 {
-    hwnd_ = CreateWindowExW(0, class_name(), L"Tesseract",
-                            WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
-                            CW_USEDEFAULT, CW_USEDEFAULT, 1024, 768, nullptr,
-                            nullptr, hInst_, this);
+    hwnd_ =
+        CreateWindowExW(0, class_name(), L"Tesseract", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
+                        CW_USEDEFAULT, CW_USEDEFAULT, 1024, 768, nullptr, nullptr, hInst_, this);
     if (!hwnd_)
     {
         return false;
@@ -1766,8 +1608,7 @@ bool MainWindow::create(int nCmdShow)
         }
         else
         {
-            SetWindowPos(hwnd_, nullptr, 0, 0, dip_to_phys(1024.f),
-                         dip_to_phys(768.f),
+            SetWindowPos(hwnd_, nullptr, 0, 0, dip_to_phys(1024.f), dip_to_phys(768.f),
                          SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
         }
     }
@@ -1780,8 +1621,7 @@ bool MainWindow::create(int nCmdShow)
     // the native caption stays visible alongside the custom one until the
     // window is resized.
     SetWindowPos(hwnd_, nullptr, 0, 0, 0, 0,
-                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE |
-                     SWP_FRAMECHANGED);
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
     ShowWindow(hwnd_, nCmdShow);
     UpdateWindow(hwnd_);
     return true;
@@ -1789,7 +1629,11 @@ bool MainWindow::create(int nCmdShow)
 
 void MainWindow::on_create(HWND hwnd)
 {
-    taskbar_.register_main_window(hwnd, [this] { navigate_tray_unread_(); });
+    taskbar_.register_main_window(hwnd,
+                                  [this]
+                                  {
+                                      navigate_tray_unread_();
+                                  });
     // Global-shortcut accelerator tables (see rebuild_accelerators_).
     rebuild_accelerators_();
 
@@ -1805,7 +1649,10 @@ void MainWindow::on_create(HWND hwnd)
     // Initialise theme + DWM attributes for the caption + Mica backdrop
     // before any child controls are created so the first paint already
     // reflects dark / light mode.
-    theme::register_main_window(hwnd);
+    if (!is_pinned_window_)
+    {
+        theme::register_main_window(hwnd);
+    }
     theme::apply_window_attributes(hwnd);
     title_bar_.on_dpi_changed(dpi);
     title_bar_.attach(hwnd);
@@ -1814,16 +1661,11 @@ void MainWindow::on_create(HWND hwnd)
     // banners + lightbox overlays). The first Surface creation initialises the
     // D2D backend singleton which builds the Twemoji-first font fallback.
     {
-        main_app_surface_ = std::make_unique<tk::win32::Surface>(
-            hInst_, hwnd, tk::Theme::light());
+        main_app_surface_ = std::make_unique<tk::win32::Surface>(hInst_, hwnd, tk::Theme::light());
 
-        auto mainAppRoot = tk::create_root_widget<tesseract::views::MainAppWidget>(
-            &main_app_surface_->host());
-        main_app_ = mainAppRoot.get();
+        main_app_surface_->set_root(create_main_app_());
 
-        main_app_surface_->set_root(std::move(mainAppRoot));
-
-        // Stay hidden until show_main_content() reveals it (after startup
+        // Stay hidden until show_main_content_() reveals it (after startup
         // restore completes) — mirrors settings_surface_'s identical hide
         // right after its own creation, below. Without this, main_app_surface_
         // sits fully WS_VISIBLE (its default at HWND creation) for the entire
@@ -1836,108 +1678,14 @@ void MainWindow::on_create(HWND hwnd)
             ShowWindow(main_app_surface_->hwnd(), SW_HIDE);
         }
 
-        // Feed input into the PresenceTracker.
-        main_app_surface_->host().set_on_user_activity(
-            [this] { notify_user_activity_(); });
-
-        // Warm the decoded-image caches from the local disk cache only
-        // (never the SDK/network) for whatever media the visible views are
-        // about to paint, immediately before every paint pass — see
-        // ShellBase::run_media_prefetch_'s doc comment.
-        main_app_surface_->host().set_pre_paint_hook(
-            [this] { run_media_prefetch_(); });
-
-        // Track the display's current scale so thumbnail/avatar requests
-        // can be sized for it — see ShellBase::set_current_scale_()'s doc
-        // comment. WM_DPICHANGED below corrects it on any live change.
-        main_app_surface_->set_on_scale_changed(
-            [this](float s) { set_current_scale_(s); });
-        set_current_scale_(static_cast<float>(GetDpiForWindow(hwnd)) / 96.0f);
+        wire_main_surface_(static_cast<float>(GetDpiForWindow(hwnd)) / 96.0f);
 
         // 30 s periodic tick — paired with WM_TIMER below.
         SetTimer(hwnd, kPresenceTickTimerId, 30000, nullptr);
 
-        // Wire borrowed sub-view pointers.
-        room_list_view_ = main_app_->room_list_view();
-        room_view_ = main_app_->room_view();
-        media_viewer_ = main_app_->media_viewer();
-        room_media_view_ = main_app_->room_media_view();
-
-        // Space nav callback.
-        main_app_->on_space_back = [this]
-        {
-            on_space_back();
-        };
-        main_app_->on_quick_switch_shortcut = [this] { open_quick_switch_(); };
-        main_app_->on_message_search_shortcut =
-            [this] { open_message_search_(); };
-        main_app_->on_find_in_room_shortcut = [this] { open_find_in_room_(); };
-        main_app_->on_history_back_shortcut = [this] { navigate_history_back(); };
-        main_app_->on_history_forward_shortcut =
-            [this] { navigate_history_forward(); };
-
         tesseract::Settings::instance().load_from_disk(tesseract::config_dir());
 
-        // TabBar callbacks.
-        main_app_->tab_bar()->on_tab_selected =
-            [this](const std::string& room_id)
-        {
-            // Ctrl+click pops the room out into its own window (and closes the
-            // tab); a plain click just switches to it.
-            if (GetKeyState(VK_CONTROL) & 0x8000)
-            {
-                tab_popout_room(room_id);
-            }
-            else
-            {
-                tab_select_room(room_id);
-            }
-        };
-        main_app_->tab_bar()->on_tab_closed = [this](const std::string& room_id)
-        {
-            tab_close(room_id);
-        };
-
-        // ---- Shared per-room pane (the sole source of truth for
-        // room_view_'s image/video viewer callbacks — see
-        // ShellBase::main_room_pane_'s doc comment) ----
-        main_room_pane_ = std::make_unique<tesseract::RoomPane>(
-            tesseract::RoomPane::Deps{
-                .shell = this,
-                .host = &main_app_surface_->host(),
-                .repaint = [this] { request_repaint_(); },
-                .relayout = [this] { request_relayout_(); },
-                .grab_surface_focus = [this]
-                {
-                    if (hwnd_)
-                        SetFocus(hwnd_);
-                },
-                .update_window_title = [this](const std::string&)
-                { refresh_window_title_(); },
-                .on_left_room = [this](const std::string& room_id)
-                {
-                    if (current_room_id_ != room_id)
-                        return;
-                    current_room_id_.clear();
-                    clear_messages();
-                    if (room_list_view_)
-                        room_list_view_->set_selected_room("");
-                    if (main_app_surface_)
-                        main_app_surface_->relayout();
-                    refresh_window_title_();
-                },
-                .set_window_fullscreen = [this](bool on)
-                { set_window_fullscreen_(on); },
-            },
-            current_room_id_);
-        main_room_pane_->attach({
-            .room_view = main_app_->room_view(),
-            .media_viewer = main_app_->media_viewer(),
-            .forward_picker = main_app_->forward_picker(),
-            .room_media_view = main_app_->room_media_view(),
-            .focus_forward_picker_field = [this] { focus_forward_picker_field_(); },
-            .hide_forward_picker_field = [this] { hide_forward_picker_field_(); },
-        });
+        create_main_room_pane_();
 
         // Provider wiring (avatar/image/sticker/preview/user-info).
         wire_main_app_widget_(main_app_);
@@ -1945,7 +1693,7 @@ void MainWindow::on_create(HWND hwnd)
         // UserInfo callbacks.
         main_app_->user_info()->on_primary = [this](tk::Point /*p*/)
         {
-            open_account_picker();
+            open_account_picker_();
         };
         main_app_->user_info()->on_secondary = [this](tk::Point p)
         {
@@ -1957,115 +1705,12 @@ void MainWindow::on_create(HWND hwnd)
             show_user_context_menu_(sp.x, sp.y);
         };
 
-        room_list_view_->on_room_selected = [this](const std::string& room_id)
-        {
-            // A space is not a room: clicking one drills into it rather than
-            // opening it as the active room/tab (which would put the space
-            // title in the room header).
-            for (const auto& r : rooms_)
-            {
-                if (r.id == room_id && r.is_space)
-                {
-                    space_nav_frames_.push_back(SpaceNavFrame::capture(room_list_view_));
-                    space_stack_.push_back(room_id);
-                    refresh_room_list();
-                    SpaceNavFrame::enter(room_list_view_);
-                    return;
-                }
-            }
-            if (GetKeyState(VK_CONTROL) & 0x8000)
-            {
-                tab_open_room(room_id);
-            }
-            else
-            {
-                tab_select_room(room_id);
-            }
-        };
-        room_list_view_->set_room_open_in_tab_provider(
-            [this](const std::string& rid) { return room_open_in_tab(rid); });
-        room_list_view_->set_room_open_in_window_provider(
-            [this](const std::string& rid) { return room_open_in_window(rid); });
-        room_list_view_->on_open_in_tab_requested =
-            [this](const std::string& rid) { tab_open_room(rid); };
-        room_list_view_->on_open_in_window_requested =
-            [this](const std::string& rid) { open_room_in_new_window(rid); };
-        room_list_view_->on_leave_room_requested =
-            [this](const std::string& rid) { confirm_leave_room_(rid); };
-        room_list_view_->on_mark_read_requested =
-            [this](const std::string& rid) { mark_room_read_(rid); };
-        room_list_view_->on_scroll = [this]
-        {
-            KillTimer(hwnd_, kScrollDebounceTimerId);
-            SetTimer(hwnd_, kScrollDebounceTimerId, 300, nullptr);
-        };
-        room_list_view_->on_unjoined_room_selected =
-            [this](const tesseract::RoomSummary& s)
-        {
-            if (!s.avatar_url.empty())
-                ensure_media_thumbnail_(s.avatar_url, 64, 64, false);
-            if (main_app_)
-            {
-                main_app_->show_room_preview(s, make_avatar_image_provider_());
-                request_relayout_();
-            }
-        };
-        if (auto* rp = main_app_->room_preview())
-        {
-            rp->on_avatar_needed = [this](const std::string& mxc)
-            {
-                ensure_media_thumbnail_(mxc, 64, 64, false);
-            };
-            rp->on_join = [this, rp](const std::string& room_id)
-            {
-                rp->set_state(tesseract::views::RoomPreviewView::State::Joining);
-                join_room_command_(room_id);
-            };
-            rp->on_dismiss = [this]
-            {
-                if (main_app_)
-                    main_app_->hide_room_preview();
-            };
-        }
-
-        // ── RoomView shortcode wiring (avatar/image/preview via helper) ────
-        room_view_->set_shortcode_provider(
-            [this](const std::string& mxc) -> std::string
-            {
-                return shortcode_for_mxc_(mxc);
-            });
         // Mention-pill avatar provider + on_fetch_room_members (which
         // populates the cache it reads) already provided by
         // main_room_pane_->attach() above (RoomPane::wire_room_view_), using
         // RoomPane's own cached_room_members_/cached_members_room_ instead
         // of this window's now-removed copy of those fields.
-        if (auto player = main_app_surface_->host().make_audio_player())
-        {
-            room_view_->set_audio_player(std::move(player));
-        }
-        capture_ = main_app_surface_->host().make_audio_capture();
-        wire_voice_capture_(
-            room_view_,
-            [this]()
-            {
-                if (main_app_surface_ && main_app_surface_->hwnd())
-                    InvalidateRect(main_app_surface_->hwnd(), nullptr, FALSE);
-            },
-            [this]() { return current_room_id_; },
-            [this]()
-            {
-                if (room_text_area_)
-                    room_text_area_->set_text("");
-                room_view_->set_current_text({});
-            });
-        room_view_->set_voice_bytes_provider(
-            [this](const std::string& source_json) -> std::vector<std::uint8_t>
-            {
-                // Non-blocking: warmed bytes or empty + async fetch (repaint on
-                // arrival) so playback never freezes the UI thread.
-                return voice_bytes_or_fetch_(source_json,
-                                             [this] { request_relayout_(); });
-            });
+        wire_room_view_services_();
 
         // on_send / on_send_reply / on_send_edit / on_send_image /
         // on_send_video / on_send_audio / on_send_file / on_send_gallery
@@ -2094,21 +1739,6 @@ void MainWindow::on_create(HWND hwnd)
         // of which window/pane started it, routed through the same
         // on_show_status_message_ui_ -> hStatus_ this block used to update
         // inline.
-        room_view_->on_edit_cancelled = [this]
-        {
-            if (room_text_area_)
-            {
-                room_text_area_->set_text("");
-            }
-            room_view_->set_current_text({});
-        };
-        room_view_->on_edit_prefill = [this](const std::string& body)
-        {
-            if (room_text_area_)
-            {
-                room_text_area_->set_text(body);
-            }
-        };
         // on_delete_requested / on_copy_event_source_requested /
         // on_reaction_toggled already provided by main_room_pane_->attach()
         // above (RoomPane::wire_room_view_) — equivalent bodies, so the
@@ -2119,65 +1749,60 @@ void MainWindow::on_create(HWND hwnd)
         // inline).
         // on_receipt_needed / on_member_pronoun_needed already provided by
         // main_room_pane_->attach() above (RoomPane::wire_room_view_).
-        room_view_->message_list()->on_tile_needed = [this](int z, int x, int y)
-        {
-            ensure_tile_async(z, x, y);
-        };
         setup_link_clicked_(room_view_);
-        room_view_->on_set_clipboard = [this](std::string_view t)
-        {
-            if (main_app_surface_)
-                main_app_surface_->host().set_clipboard_text(t);
-        };
-        room_view_->on_selection_started = [this]()
-        {
-            if (main_app_surface_)
-                main_app_surface_->host().release_focus_to_canvas();
-        };
         room_view_->on_show_copy_menu = [this]()
         {
             if (!room_view_)
+            {
                 return;
+            }
             HMENU menu = CreatePopupMenu();
             AppendMenuW(menu, MF_STRING, 1, utf8_to_wstr(room_view_->copy_menu_label()).c_str());
             POINT pt{};
             GetCursorPos(&pt);
             int cmd = static_cast<int>(TrackPopupMenuEx(
-                menu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY,
-                pt.x, pt.y, hwnd_, nullptr));
+                menu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY, pt.x, pt.y, hwnd_, nullptr));
             DestroyMenu(menu);
             if (cmd == 1)
+            {
                 room_view_->copy_context_menu_target();
+            }
         };
         // Switch the surface cursor to the link/pointer shape while the
         // mouse is over a URL / map tile / file card. Empty URL clears.
         room_view_->on_link_hovered = [this](const std::string& url)
         {
-            if (!main_app_surface_) return;
+            if (!main_app_surface_)
+            {
+                return;
+            }
             using HC = tesseract::views::MessageListView::HoverCursor;
             const HC hc = tesseract::views::MessageListView::hover_cursor_for(url);
-            main_app_surface_->set_cursor(
-                hc == HC::Text      ? tk::win32::Cursor::IBeam
-                : hc == HC::Pointer ? tk::win32::Cursor::Pointer
-                                    : tk::win32::Cursor::Default);
+            main_app_surface_->set_cursor(hc == HC::Text      ? tk::win32::Cursor::IBeam
+                                          : hc == HC::Pointer ? tk::win32::Cursor::Pointer
+                                                              : tk::win32::Cursor::Default);
         };
         main_app_->space_root()->on_link_hovered = [this](const std::string& url)
         {
-            if (!main_app_surface_) return;
+            if (!main_app_surface_)
+            {
+                return;
+            }
             main_app_surface_->set_cursor(url.empty() ? tk::win32::Cursor::Default
                                                       : tk::win32::Cursor::Pointer);
         };
         // Cursor over the draggable room-list separator: ↔ on the band, hand
         // on the collapse grip.
-        main_app_->on_sidebar_cursor =
-            [this](tesseract::views::MainAppWidget::SidebarCursor c)
+        main_app_->on_sidebar_cursor = [this](tesseract::views::MainAppWidget::SidebarCursor c)
         {
-            if (!main_app_surface_) return;
+            if (!main_app_surface_)
+            {
+                return;
+            }
             using SC = tesseract::views::MainAppWidget::SidebarCursor;
-            main_app_surface_->set_cursor(
-                c == SC::Resize   ? tk::win32::Cursor::SizeWE
-                : c == SC::Toggle ? tk::win32::Cursor::Pointer
-                                  : tk::win32::Cursor::Default);
+            main_app_surface_->set_cursor(c == SC::Resize   ? tk::win32::Cursor::SizeWE
+                                          : c == SC::Toggle ? tk::win32::Cursor::Pointer
+                                                            : tk::win32::Cursor::Default);
         };
         // on_near_top / on_near_bottom / on_return_to_live /
         // on_scroll_to_original already provided by main_room_pane_->attach()
@@ -2214,133 +1839,9 @@ void MainWindow::on_create(HWND hwnd)
         // successful leave, even for a room other than the one being viewed
         // — Deps.on_left_room fixes that pre-existing bug by checking
         // current_room_id_ == room_id first, matching Qt6/GTK4.
-        room_view_->room_settings_view()->set_image_pack_provider(
-            make_static_image_provider_with_fetch_(96, 96));
-        room_view_->room_settings_view()->on_image_pack_images_needed =
-            [this](std::string pack_id)
-        { handle_image_pack_images_needed_(pack_id, room_view_->room_settings_view()); };
-        room_view_->room_settings_view()->on_image_pack_pending_image_added =
-            [this](std::uint64_t local_id, const std::vector<std::uint8_t>& bytes,
-                  const std::string& mime)
-        { handle_image_pack_pending_image_added_(local_id, bytes, mime, room_view_->room_settings_view()); };
-        // Space-root settings (wrench icon on SpaceRootView): the same
-        // per-room-id permission gating / accept / avatar-upload plumbing
-        // above works unchanged for a space's room id — including image
-        // packs, which are ordinary room state so a space can host its own
-        // (only the Media tab is skipped, since it has no meaning for a
-        // space).
-        main_app_->space_root()->on_settings_opened = [this](std::string room_id)
-        {
-            auto* v = main_app_->space_root()->settings_view();
-            if (!v) return;
-            if (!client_)
-            {
-                v->set_field_permissions(false, false, false);
-                v->set_security_field_permissions(false, false, false, false);
-                v->set_permissions_field_permissions(false);
-                v->set_image_pack_field_permissions(false);
-                v->set_own_power_level({});
-                seed_image_pack_tab_(room_id, v);
-                return;
-            }
-            v->set_field_permissions(client_->can_set_room_name(room_id),
-                                     client_->can_set_room_topic(room_id),
-                                     client_->can_set_room_avatar(room_id));
-            v->set_security_field_permissions(
-                client_->can_set_room_encryption(room_id),
-                client_->can_set_room_join_rules(room_id),
-                client_->can_set_room_guest_access(room_id),
-                client_->can_set_room_history_visibility(room_id));
-            v->set_permissions_field_permissions(
-                client_->can_set_room_power_levels(room_id));
-            v->set_permissions_state(client_->room_power_levels(room_id));
-            v->set_own_power_level(client_->room_own_power_level(room_id));
-            fetch_room_security_state_(room_id);
-            seed_image_pack_tab_(room_id, v);
-        };
-        main_app_->space_root()->on_settings_avatar_upload_requested =
-            [this](std::string room_id)
-        {
-            stage_room_settings_avatar_upload_(
-                room_id, main_app_->space_root()->settings_view());
-        };
-        main_app_->space_root()->settings_view()->on_accept =
-            [this](std::string room_id, tesseract::views::RoomSettingsChanges changes)
-        {
-            if (!client_) return;
-            auto* c = client_;
-            run_async_mut_(
-                [this, c, room_id = std::move(room_id),
-                 changes = std::move(changes)]() mutable
-                {
-                    auto outcome = ShellBase::apply_room_settings_(c, room_id, changes);
-                    post_to_ui_([this, outcome, room_id,
-                                 media_override = changes.media_override]() mutable
-                    {
-                        if (!main_app_) return;
-                        if (auto* v = main_app_->space_root()->settings_view())
-                            v->set_commit_result(outcome.ok, outcome.error);
-                        if (outcome.ok && media_override)
-                            commit_room_media_preview_override_(
-                                room_id, media_override->has_override,
-                                media_override->mode);
-                    });
-                });
-        };
-        main_app_->space_root()->settings_view()->set_image_pack_provider(
-            make_static_image_provider_with_fetch_(96, 96));
-        main_app_->space_root()->settings_view()->on_image_pack_images_needed =
-            [this](std::string pack_id)
-        {
-            handle_image_pack_images_needed_(
-                pack_id, main_app_->space_root()->settings_view());
-        };
-        main_app_->space_root()->settings_view()->on_image_pack_pending_image_added =
-            [this](std::uint64_t local_id, const std::vector<std::uint8_t>& bytes,
-                  const std::string& mime)
-        {
-            handle_image_pack_pending_image_added_(
-                local_id, bytes, mime, main_app_->space_root()->settings_view());
-        };
-        main_app_->space_root()->on_copy_to_clipboard = [this](std::string t)
-        {
-            if (main_app_surface_)
-                main_app_surface_->host().set_clipboard_text(t);
-        };
-        main_app_->space_root()->on_leave_space =
-            [this](std::string rid) { confirm_leave_room_(rid); };
-        main_app_->space_root()->on_layout_changed = [this]
-        {
-            if (main_app_surface_)
-                main_app_surface_->relayout();
-        };
 
-        setup_dm_callbacks();
         // on_ignore_user already provided by main_room_pane_->attach() above
         // (RoomPane::wire_room_view_).
-        room_view_->set_repaint_requester(
-            [this]
-            {
-                if (main_app_surface_)
-                {
-                    InvalidateRect(main_app_surface_->hwnd(), nullptr, FALSE);
-                }
-            });
-        room_view_->set_post_delayed(
-            [this](int ms, std::function<void()> fn)
-            {
-                if (main_app_surface_)
-                {
-                    main_app_surface_->host().post_delayed(ms, std::move(fn));
-                }
-            });
-        room_view_->on_layout_changed = [this]
-        {
-            if (main_app_surface_)
-            {
-                main_app_surface_->relayout();
-            }
-        };
 
         // ── Sticker right-click on main surface ─────────────────────────────
         main_app_surface_->set_on_right_click(
@@ -2349,8 +1850,7 @@ void MainWindow::on_create(HWND hwnd)
                 if (main_app_ && main_app_->user_info())
                 {
                     const auto& r = main_app_->user_info()->bounds();
-                    if (p.x >= r.x && p.x < r.right() && p.y >= r.y &&
-                        p.y < r.bottom())
+                    if (p.x >= r.x && p.x < r.right() && p.y >= r.y && p.y < r.bottom())
                     {
                         if (main_app_->user_info()->on_secondary)
                         {
@@ -2359,752 +1859,17 @@ void MainWindow::on_create(HWND hwnd)
                         return;
                     }
                 }
-                if (!room_view_ || !client_ || room_view_->is_overlay_open())
-                {
-                    return;
-                }
-                auto hit = room_view_->message_list()->sticker_hit_at(p);
-                if (!hit)
-                {
-                    return;
-                }
-                const std::string mxc = hit->source ? hit->source->mxc_url() : std::string{};
-                const std::string body = hit->body;
-                const std::string info = hit->info_json;
-                const bool already_saved =
-                    client_->user_pack_has_sticker(mxc, info);
-                HMENU menu = CreatePopupMenu();
-                AppendMenuW(menu, MF_STRING | (already_saved ? MF_GRAYED : 0),
-                            1,
-                            utf8_to_wstr(already_saved
-                                             ? tk::tr("Already in Saved Stickers")
-                                             : tk::tr("Add to Saved Stickers"))
-                                .c_str());
-                POINT sp{dip_to_phys(p.x), dip_to_phys(p.y)};
-                ClientToScreen(main_app_surface_->hwnd(), &sp);
-                int cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON,
-                                         sp.x, sp.y, 0, hwnd_, nullptr);
-                DestroyMenu(menu);
-                if (cmd == 1)
-                {
-                    auto res = client_->save_sticker_to_user_pack(body, body,
-                                                                  mxc, info);
-                    if (!res.ok && hStatus_)
-                    {
-                        SetWindowTextW(hStatus_,
-                                       utf8_to_wstr(res.message).c_str());
-                        SetTimer(hwnd_, kStatusClearTimerId, 6000, nullptr);
-                    }
-                }
-            });
-
-        // ── File drop ───────────────────────────────────────────────────────
-        // Drop routing is now tree-dispatched automatically (see
-        // DropTarget::Drop -> Host::fire_file_drop -> Host::dispatch_file_drop);
-        // RoomView::on_file_drop (the catch-all reached when a drop doesn't
-        // land on anything more specific, e.g. the room's image-pack grid)
-        // is driven by these provider fields instead of a per-surface lambda.
-        room_view_->media_upload_limit_provider = [this]() -> std::uint64_t
-        {
-            return client_ ? client_->media_upload_limit() : 0;
-        };
-        room_view_->media_info_extractor =
-            [this](std::uint32_t gen, std::vector<std::uint8_t> b, std::string m)
-        {
-            extract_drop_media_(gen, std::move(b), std::move(m));
-        };
-        room_view_->on_file_drop_outcome =
-            [this](tesseract::views::FileDropOutcome outcome)
-        {
-            if (outcome == tesseract::views::FileDropOutcome::TooLarge)
-                show_status_message_(tk::tr("File exceeds the upload limit"));
-        };
-        main_app_surface_->set_on_file_drop_error(
-            [this](std::string reason)
-            {
-                show_status_message_(std::move(reason));
             });
 
         // ── Native overlays ──────────────────────────────────────────────────
         // The room-list search field is wired in
         // ShellBase::wire_main_app_widget_() (shared across all four shells).
 
-        // Quick switcher (Ctrl+K) — search field is self-owned; only the
-        // shell-level Up/Down/Escape nav and on_close need wiring here.
-        if (auto* qsf = main_app_->quick_switcher()->search_field())
-        {
-            qsf->push_popup_nav(
-                [this](tk::NavKey nk) -> bool
-                {
-                    auto* qs = main_app_->quick_switcher();
-                    if (!qs || !qs->is_open())
-                    {
-                        return false;
-                    }
-                    switch (nk)
-                    {
-                    case tk::NavKey::Up:
-                        qs->move_selection(-1);
-                        main_app_surface_->relayout();
-                        return true;
-                    case tk::NavKey::Down:
-                        qs->move_selection(+1);
-                        main_app_surface_->relayout();
-                        return true;
-                    case tk::NavKey::Escape:
-                        close_quick_switch_();
-                        return true;
-                    default:
-                        return false;
-                    }
-                });
-        }
-        if (auto* qs = main_app_->quick_switcher())
-        {
-            qs->on_close = [this] { close_quick_switch_(); };
-        }
-
-        // Message search (Ctrl+Shift+F) — search field is self-owned; only
-        // the shell-level Up/Down/Escape nav and on_close need wiring here.
-        if (auto* msf = main_app_->message_search()->search_field())
-        {
-            msf->push_popup_nav(
-                [this](tk::NavKey nk) -> bool
-                {
-                    auto* ms = main_app_->message_search();
-                    if (!ms || !ms->is_open())
-                    {
-                        return false;
-                    }
-                    switch (nk)
-                    {
-                    case tk::NavKey::Up:
-                        ms->move_selection(-1);
-                        main_app_surface_->relayout();
-                        return true;
-                    case tk::NavKey::Down:
-                        ms->move_selection(+1);
-                        main_app_surface_->relayout();
-                        return true;
-                    case tk::NavKey::Escape:
-                        close_message_search_();
-                        return true;
-                    default:
-                        return false;
-                    }
-                });
-        }
-        if (auto* ms = main_app_->message_search())
-        {
-            ms->on_close = [this] { close_message_search_(); };
-        }
-
-        // Forward room picker — search field is self-owned; only the
-        // shell-level Up/Down/Escape nav and on_close need wiring here.
-        if (auto* fpf = main_app_->forward_picker()->search_field())
-        {
-            fpf->push_popup_nav(
-                [this](tk::NavKey nk) -> bool
-                {
-                    auto* fp = main_app_ ? main_app_->forward_picker() : nullptr;
-                    if (!fp || !fp->is_open())
-                        return false;
-                    switch (nk)
-                    {
-                    case tk::NavKey::Up:
-                        fp->move_selection(-1);
-                        main_app_surface_->relayout();
-                        return true;
-                    case tk::NavKey::Down:
-                        fp->move_selection(+1);
-                        main_app_surface_->relayout();
-                        return true;
-                    case tk::NavKey::Escape:
-                        close_forward_picker_();
-                        return true;
-                    default:
-                        return false;
-                    }
-                });
-        }
-        if (main_app_ && main_app_->forward_picker())
-            main_app_->forward_picker()->on_close = [this] { close_forward_picker_(); };
-        // Per-room "find in conversation" (Ctrl+F) — search field is
-        // self-owned; only the shell-level Up/Down/Escape nav and on_close
-        // need wiring here.
-        if (auto* rv = main_app_->room_view())
-        {
-            if (auto* bar = rv->room_search_bar())
-            {
-                if (auto* rif = bar->search_field())
-                {
-                    rif->push_popup_nav(
-                        [this](tk::NavKey nk) -> bool
-                        {
-                            auto* rv2 = main_app_ ? main_app_->room_view() : nullptr;
-                            if (!rv2 || !rv2->room_search_open())
-                            {
-                                return false;
-                            }
-                            switch (nk)
-                            {
-                            case tk::NavKey::Up:
-                                if (rv2->on_room_search_navigate)
-                                    rv2->on_room_search_navigate(-1);
-                                return true;
-                            case tk::NavKey::Down:
-                                if (rv2->on_room_search_navigate)
-                                    rv2->on_room_search_navigate(+1);
-                                return true;
-                            case tk::NavKey::Escape:
-                                close_find_in_room_();
-                                return true;
-                            default:
-                                return false;
-                            }
-                        });
-                }
-                bar->on_close = [this] { close_find_in_room_(); };
-            }
-        }
-
         room_text_area_ = main_app_->room_view()->compose_bar()->text_area();
-        room_text_area_->set_image_resolver(make_static_image_provider_with_fetch_(28, 28));
-        // All four composer popups (gif > slash > shortcode > mention) are
-        // driven through the shared ComposePopups dispatch; the controllers are
-        // created just below (mention, then slash/shortcode) and in the GIF
-        // block.
-        room_text_area_->set_on_changed(
-            [this](const std::string& s)
-            {
-                handle_compose_text_changed_(s);
-                if (room_view_)
-                {
-                    room_view_->set_current_text(s);
-                }
-                tesseract::views::dispatch_compose_text_changed(
-                    s, room_text_area_->cursor_byte_pos(),
-                    gif_controller_.get(), slash_controller_.get(),
-                    shortcode_controller_.get(), mention_controller_.get());
-            });
-        room_text_area_->set_on_submit(
-            [this]
-            {
-                if (tesseract::views::dispatch_compose_submit(
-                        gif_controller_.get(), slash_controller_.get(),
-                        shortcode_controller_.get(),
-                        mention_controller_.get()))
-                {
-                    return;
-                }
-                on_send_clicked();
-            });
-        room_text_area_->push_popup_nav(
-            [this](tk::NavKey nk) -> bool
-            {
-                return tesseract::views::dispatch_compose_nav(
-                    nk, gif_controller_.get(), slash_controller_.get(),
-                    shortcode_controller_.get(), mention_controller_.get());
-            });
-
-        // ── GIF picker (/gif <query>) ────────────────────────────────────────
-        // Eager popup host so the on_changed/on_submit lambdas can drive it.
-        if (main_app_surface_)
-            gif_popup_ = main_app_surface_->host().make_popup_surface();
-        {
-            auto w = std::make_unique<tesseract::views::GifPopup>();
-            gif_popup_widget_ = w.get();
-            if (gif_popup_)
-            {
-                gif_popup_->set_root(std::move(w));
-                gif_popup_->set_anim_cache(&account_manager_.anim_cache());
-            }
-        }
-        // Two-stage GIF strip cell provider, parameterised on a `repaint`
-        // callback so the identical body serves the main window's strip and
-        // every pop-out's (each passes a repaint targeting its own popup
-        // surface, self-guarded by that window's liveness token). Stored as a
-        // member; pop-outs reach it via the gif_strip_image_() override.
-        gif_strip_provider_ =
-            [this](const tesseract::GifResult& result,
-                   const std::function<void()>& repaint) -> const tk::Image*
-            {
-                // The strip animates strip_url (WebP/GIF, native decode), keyed
-                // in anim_cache_. Serving a cached frame means animated content
-                // is on screen, so ensure the tick timer runs: re-shown searches
-                // take this path without re-fetching.
-                const tk::CacheKey strip_key = tk::CacheKey::media(result.strip_url);
-                if (const tk::Image* f = account_manager_.anim_cache().current_frame(strip_key))
-                {
-                    start_anim_tick_();
-                    return f;
-                }
-                // NOTE: the static-preview fallback is returned at the *end* of
-                // this lambda, AFTER the animated re-fetch is kicked below.
-                // Returning it here would short-circuit re-animation on a
-                // re-shown search whose anim_cache_ entry was evicted while its
-                // static thumbnail lingers in gif_previews_.
-                // Kick off static preview fetch only when not already cached.
-                if (!gif_previews_.count(tk::CacheKey::gif_preview(result.preview_url)) &&
-                    gif_preview_inflight_.insert(result.preview_url).second)
-                {
-                    auto alive = gif_alive_;
-                    auto url = result.preview_url;
-                    {
-                        const tk::CacheKey disk_key = tk::CacheKey::gif_source(url);
-                        auto req_id = begin_media_req_(0,
-                            [this, url, disk_key, alive, repaint](
-                                std::vector<std::uint8_t> bytes) mutable
-                            {
-                                gif_preview_inflight_.erase(url);
-                                if (bytes.empty()) return;
-                                // Decode off the UI thread; WIC work must not
-                                // run on the message pump.
-                                run_async_(
-                                    [this, url, disk_key, alive, repaint,
-                                     bytes = std::move(bytes)]() mutable
-                                    {
-                                        account_manager_.media_disk_cache().store(
-                                            disk_key, bytes);
-                                        using CW = tesseract::views::GifPopup;
-                                        auto d = std::make_shared<DecodedImage>(
-                                            decode_image_(bytes,
-                                                          int(CW::kCellW) * 2,
-                                                          int(CW::kCellH) * 2));
-                                        post_to_ui_(
-                                            [this, url, d, alive, repaint]() mutable
-                                            {
-                                                if (!*alive) return;
-                                                if (d->still)
-                                                    gif_previews_[tk::CacheKey::gif_preview(url)] =
-                                                        std::move(d->still);
-                                                repaint();
-                                            });
-                                    });
-                            });
-                        // Snapshot client_ on the UI thread to avoid a data
-                        // race with the account-removal path.
-                        auto* client_snap = client_;
-                        if (!client_snap)
-                        {
-                            handle_media_ready_ui_(req_id, {});
-                        }
-                        else
-                        {
-                            run_async_(
-                                [this, req_id, url, disk_key, client_snap]()
-                                {
-                                    auto bytes =
-                                        account_manager_.media_disk_cache().load(disk_key);
-                                    if (!bytes.empty())
-                                    {
-                                        post_to_ui_(
-                                            [this, req_id,
-                                             bytes = std::move(bytes)]() mutable
-                                            {
-                                                handle_media_ready_ui_(
-                                                    req_id, std::move(bytes));
-                                            });
-                                        return;
-                                    }
-                                    client_snap->fetch_url_async(req_id, 0, url);
-                                });
-                        }
-                    }
-                }
-                // Kick off the strip-display fetch (strip_url: WebP/GIF) — decode
-                // on the worker thread. The MP4 send form is fetched at send time.
-                if (gif_anim_inflight_.insert(result.strip_url).second)
-                {
-                    auto alive = gif_alive_;
-                    auto anim_url = result.strip_url;
-                    auto anim_mime = result.strip_mime;
-                    {
-                        const tk::CacheKey disk_key = tk::CacheKey::gif_source(anim_url);
-                        auto req_id = begin_media_req_(0,
-                            [this, anim_url, anim_mime, disk_key, alive, repaint](
-                                std::vector<std::uint8_t> bytes) mutable
-                            {
-                                gif_anim_inflight_.erase(anim_url);
-                                if (bytes.empty()) return;
-                                run_async_(
-                                    [this, anim_url, anim_mime, disk_key, alive,
-                                     repaint, bytes = std::move(bytes)]() mutable
-                                    {
-                                        account_manager_.media_disk_cache().store(
-                                            disk_key, bytes);
-                                        using CW = tesseract::views::GifPopup;
-                                        if (anim_mime == "video/mp4")
-                                        {
-                                            tk::DecodedVideoFrames dvf =
-                                                tk::decode_video_frames(
-                                                    bytes.data(), bytes.size(),
-                                                    int(CW::kCellW) * 2,
-                                                    int(CW::kCellH) * 2);
-                                            post_to_ui_(
-                                                [this, anim_url,
-                                                 dvf = std::move(dvf),
-                                                 alive, repaint]() mutable
-                                                {
-                                                    if (!*alive)
-                                                        return;
-                                                    auto& backend =
-                                                        tk::win32::backend_singleton();
-                                                    std::vector<
-                                                        std::unique_ptr<tk::Image>>
-                                                        imgs;
-                                                    std::vector<int> delays;
-                                                    for (auto& f : dvf.frames)
-                                                    {
-                                                        auto img =
-                                                            tk::d2d::make_image_from_bgra(
-                                                                backend, f.bgra.data(),
-                                                                f.w, f.h);
-                                                        if (img)
-                                                        {
-                                                            imgs.push_back(std::move(img));
-                                                            delays.push_back(f.delay_ms);
-                                                        }
-                                                    }
-                                                    if (!imgs.empty())
-                                                    {
-                                                        account_manager_.anim_cache().store(
-                                                            tk::CacheKey::media(anim_url),
-                                                            std::move(imgs),
-                                                            std::move(delays),
-                                                            static_cast<std::int64_t>(
-                                                                GetTickCount64()));
-                                                        start_anim_tick_();
-                                                    }
-                                                    repaint();
-                                                });
-                                        }
-                                        else
-                                        {
-                                            auto d = std::make_shared<DecodedImage>(
-                                                decode_image_(bytes,
-                                                              int(CW::kCellW) * 2,
-                                                              int(CW::kCellH) * 2));
-                                            post_to_ui_(
-                                                [this, anim_url, d, alive,
-                                                 repaint]() mutable
-                                                {
-                                                    if (!*alive)
-                                                        return;
-                                                    if (!d->frames.empty())
-                                                    {
-                                                        account_manager_.anim_cache().store(
-                                                            tk::CacheKey::media(anim_url),
-                                                            std::move(d->frames),
-                                                            std::move(d->delays_ms),
-                                                            static_cast<std::int64_t>(
-                                                                GetTickCount64()));
-                                                        start_anim_tick_();
-                                                    }
-                                                    else if (d->still)
-                                                    {
-                                                        gif_previews_[tk::CacheKey::gif_preview(anim_url)] =
-                                                            std::move(d->still);
-                                                    }
-                                                    repaint();
-                                                });
-                                        }
-                                    });
-                            });
-                        auto* client_snap = client_;
-                        if (!client_snap)
-                        {
-                            handle_media_ready_ui_(req_id, {});
-                        }
-                        else
-                        {
-                            run_async_(
-                                [this, req_id, anim_url, disk_key, client_snap]()
-                                {
-                                    auto bytes =
-                                        account_manager_.media_disk_cache().load(disk_key);
-                                    if (!bytes.empty())
-                                    {
-                                        post_to_ui_(
-                                            [this, req_id,
-                                             bytes = std::move(bytes)]() mutable
-                                            {
-                                                handle_media_ready_ui_(
-                                                    req_id, std::move(bytes));
-                                            });
-                                        return;
-                                    }
-                                    client_snap->fetch_url_async(req_id, 0, anim_url);
-                                });
-                        }
-                    }
-                }
-                // Static JPEG preview shown while the animation decodes (or as
-                // the permanent fallback for a non-animated result).
-                if (auto it = gif_previews_.find(tk::CacheKey::gif_preview(result.preview_url));
-                    it != gif_previews_.end())
-                    return it->second.get();
-                return nullptr;
-            };
-        // The main window's own strip repaints its own surface.
-        gif_popup_widget_->set_image_provider(
-            [this](const tesseract::GifResult& result) -> const tk::Image*
-            {
-                return gif_strip_provider_(result,
-                                           [this]
-                                           {
-                                               if (gif_popup_)
-                                                   gif_popup_->request_relayout();
-                                           });
-            });
-        {
-            tesseract::views::GifController::Hooks gh;
-            gh.show = [this] { show_gif_popup_(); };
-            gh.hide = [this] { hide_gif_popup_(); };
-            gh.repaint = [this]
-            {
-                if (gif_popup_)
-                    gif_popup_->request_relayout();
-            };
-            gh.room_id = [this] { return current_room_id_; };
-            gh.client = [this]() -> tesseract::Client* { return client_; };
-            gh.run_async = [this](std::function<void()> fn)
-            { run_async_(std::move(fn)); };
-            gh.post_to_ui = [this](std::function<void()> fn)
-            { post_to_ui_(std::move(fn)); };
-            gh.post_delayed = [this](int ms, std::function<void()> fn)
-            {
-                if (main_app_surface_)
-                    main_app_surface_->host().post_delayed(ms, std::move(fn));
-            };
-            gh.api_key = []() -> std::string
-            { return tesseract::Settings::instance().gif_api_key; };
-            gh.client_key = []() -> std::string { return "tesseract"; };
-            gh.clear_composer = [this]
-            {
-                if (room_text_area_)
-                    room_text_area_->set_text("");
-                if (room_view_)
-                    room_view_->set_current_text({});
-            };
-            gh.get_cached_gif_bytes =
-                [this](const std::string& url) -> std::vector<std::uint8_t>
-            {
-                // Reuse the source bytes the strip persisted to disk on fetch.
-                return account_manager_.media_disk_cache().load(
-                    tk::CacheKey::gif_source(url));
-            };
-            gif_controller_ = std::make_unique<tesseract::views::GifController>(
-                room_text_area_, gif_popup_widget_, std::move(gh));
-        }
-
-        room_text_area_->set_on_edit_last(
-            [this]
-            {
-                return room_view_ && room_view_->edit_last_own();
-            });
-        // Auto-grow (set_on_height_changed) and image-paste
-        // (set_on_image_paste) are wired internally by ComposeBar's own
-        // constructor now — see ComposeBar::ComposeBar()'s text_area_ setup.
-
-        // ── @mention autocomplete popup + controller ─────────────────────
-        {
-            if (main_app_surface_)
-                mention_popup_ = main_app_surface_->host().make_popup_surface();
-            auto pw = std::make_unique<tesseract::views::MentionPopup>();
-            mention_popup_widget_ = pw.get();
-            // Resolve candidate avatars from the shared avatar cache; the
-            // controller prefetches them via hooks.fetch_avatar below and they
-            // land here on a later repaint.
-            mention_popup_widget_->set_image_provider(
-                make_avatar_image_provider_());
-            if (mention_popup_)
-                mention_popup_->set_root(std::move(pw));
-
-            tesseract::views::MentionController::Hooks hooks;
-            hooks.show = [this](tk::Rect cursor, int rows)
-            { show_mention_popup_(cursor, rows); };
-            hooks.hide = [this] { hide_mention_popup_(); };
-            hooks.repaint = [this]
-            {
-                if (mention_popup_)
-                    mention_popup_->request_repaint();
-            };
-            // room_id/client/fetch_avatar/resolve_avatar/resolve_room_avatar/
-            // run_async/post_to_ui all come from main_room_pane_ (already
-            // constructed by this point — see main_room_pane_'s own
-            // construction earlier in on_create) — same call every pop-out
-            // RoomWindow already makes, so this composer's mention pills
-            // (including @room's avatar) never drift from theirs.
-            // Previously duplicated inline here without resolve_room_avatar,
-            // which was the actual bug: @room pills never got an avatar
-            // because this exact hook was never wired for this window.
-            main_room_pane_->wire_mention_hooks_(mention_popup_widget_, hooks);
-            mention_controller_ =
-                std::make_unique<tesseract::views::MentionController>(
-                    room_text_area_, client_, mention_popup_widget_,
-                    std::move(hooks));
-        }
-
-        // ── /command autocomplete popup + controller ──────────────────────
-        {
-            if (main_app_surface_)
-                slash_popup_ = main_app_surface_->host().make_popup_surface();
-            {
-                auto pw =
-                    std::make_unique<tesseract::views::SlashCommandPopup>();
-                slash_popup_widget_ = pw.get();
-                if (slash_popup_)
-                    slash_popup_->set_root(std::move(pw));
-            }
-            tesseract::views::SlashCommandController::Hooks sh;
-            sh.show = [this](tk::Rect cursor, int rows)
-            { show_slash_popup_(cursor, rows); };
-            sh.hide = [this] { hide_slash_popup_(); };
-            sh.repaint = [this]
-            {
-                if (slash_popup_)
-                    slash_popup_->request_repaint();
-            };
-            sh.room_id = [this] { return current_room_id_; };
-            sh.client = [this] { return client_; };
-            sh.clear_composer = [this]
-            {
-                if (room_view_)
-                    room_view_->clear_compose_text();
-            };
-            sh.on_selfie = [this]
-            {
-                if (!main_app_)
-                    return;
-                main_app_->is_call_active = [this] { return active_call() != nullptr; };
-                main_app_->on_selfie_captured =
-                    [this](std::vector<std::uint8_t> bgra,
-                           std::uint32_t w, std::uint32_t h)
-                    {
-                        IWICImagingFactory* wic = nullptr;
-                        if (FAILED(CoCreateInstance(CLSID_WICImagingFactory,
-                                                    nullptr,
-                                                    CLSCTX_INPROC_SERVER,
-                                                    IID_PPV_ARGS(&wic))))
-                            return;
-                        IStream* out = nullptr;
-                        CreateStreamOnHGlobal(nullptr, TRUE, &out);
-                        IWICBitmapEncoder* enc = nullptr;
-                        if (SUCCEEDED(wic->CreateEncoder(GUID_ContainerFormatJpeg,
-                                                         nullptr, &enc)) && out)
-                        {
-                            enc->Initialize(out, WICBitmapEncoderNoCache);
-                            IWICBitmapFrameEncode* frame = nullptr;
-                            if (SUCCEEDED(enc->CreateNewFrame(&frame, nullptr)))
-                            {
-                                frame->Initialize(nullptr);
-                                frame->SetSize(w, h);
-                                // Wrap BGRA data in a WIC bitmap and let
-                                // IWICFormatConverter strip the alpha channel
-                                // to 24bppBGR — no manual pixel loop needed.
-                                IWICBitmap* src_bmp = nullptr;
-                                wic->CreateBitmapFromMemory(
-                                    w, h, GUID_WICPixelFormat32bppBGRA,
-                                    w * 4u, w * h * 4u,
-                                    bgra.data(), &src_bmp);
-                                if (src_bmp)
-                                {
-                                    IWICFormatConverter* conv = nullptr;
-                                    if (SUCCEEDED(
-                                            wic->CreateFormatConverter(&conv)))
-                                    {
-                                        conv->Initialize(
-                                            src_bmp,
-                                            GUID_WICPixelFormat24bppBGR,
-                                            WICBitmapDitherTypeNone,
-                                            nullptr, 0.0,
-                                            WICBitmapPaletteTypeCustom);
-                                        WICPixelFormatGUID fmt =
-                                            GUID_WICPixelFormat24bppBGR;
-                                        frame->SetPixelFormat(&fmt);
-                                        frame->WriteSource(conv, nullptr);
-                                        conv->Release();
-                                    }
-                                    src_bmp->Release();
-                                }
-                                frame->Commit();
-                                frame->Release();
-                            }
-                            enc->Commit();
-                            enc->Release();
-                            LARGE_INTEGER seek{};
-                            out->Seek(seek, STREAM_SEEK_SET, nullptr);
-                            STATSTG stat{};
-                            out->Stat(&stat, STATFLAG_NONAME);
-                            std::vector<std::uint8_t> jpeg(
-                                static_cast<std::size_t>(stat.cbSize.QuadPart));
-                            ULONG nread = 0;
-                            out->Read(jpeg.data(),
-                                      static_cast<ULONG>(jpeg.size()), &nread);
-                            if (jpeg.size() > 0 && main_app_ &&
-                                main_app_->room_view()->compose_bar())
-                            {
-                                main_app_->room_view()->compose_bar()
-                                    ->add_pending_image(std::move(jpeg),
-                                                        "image/jpeg",
-                                                        "selfie.jpg");
-                            }
-                        }
-                        if (out) out->Release();
-                        wic->Release();
-                    };
-                main_app_->open_camera_overlay();
-            };
-            sh.on_location = [this] { send_current_location_(current_room_id_); };
-            sh.send_command = [this](const std::string& body) -> tesseract::Result
-            {
-                const auto out = dispatch_room_send_(current_room_id_, body, std::string{});
-                return out.handled_as_command ? tesseract::Result{true, ""}
-                                              : out.send_result;
-            };
-            sh.bot_commands = [this]() -> std::vector<tesseract::CommandDescription>
-            {
-                return client_ ? client_->list_room_bot_commands(current_room_id_)
-                               : std::vector<tesseract::CommandDescription>{};
-            };
-            slash_controller_ =
-                std::make_unique<tesseract::views::SlashCommandController>(
-                    room_text_area_, slash_popup_widget_, std::move(sh));
-        }
-
-        // ── :shortcode: emoji/emoticon autocomplete popup + controller ────
-        {
-            if (main_app_surface_)
-                shortcode_popup_ = main_app_surface_->host().make_popup_surface();
-            {
-                auto pw = std::make_unique<tesseract::views::ShortcodePopup>();
-                shortcode_popup_widget_ = pw.get();
-                shortcode_popup_widget_->set_image_provider(
-                    make_static_image_provider_with_fetch_(28, 28));
-                if (shortcode_popup_)
-                    shortcode_popup_->set_root(std::move(pw));
-            }
-            tesseract::views::ShortcodeController::Hooks sch;
-            sch.show = [this](tk::Rect cursor, int rows)
-            { show_shortcode_popup_(cursor, rows); };
-            sch.hide = [this] { hide_shortcode_popup_(); };
-            sch.repaint = [this]
-            {
-                if (shortcode_popup_)
-                    shortcode_popup_->request_repaint();
-            };
-            sch.emoticons =
-                [this]() { return emoticons_for_room_(current_room_id_); };
-            sch.fetch_image = [this](const std::string& url)
-            { ensure_media_image_(url, 28, 28); };
-            sch.resolve_image = make_static_image_provider_with_fetch_(28, 28);
-            sch.skin_tone = [this] { return emoji_skin_tone_(); };
-            shortcode_controller_ =
-                std::make_unique<tesseract::views::ShortcodeController>(
-                    room_text_area_, shortcode_popup_widget_,
-                    std::move(sch));
-        }
+        // The composer's popups (@mention, /command, :shortcode:, /gif) and the
+        // text area's change/submit/navigation wiring are the shared
+        // ComposerPopups.
+        create_compose_popups_(main_app_surface_->host());
 
         // The topic field, the new-pack-name/shortcode/rename fields, and the
         // paste-catcher are all self-owned by each RoomSettingsView instance
@@ -3113,28 +1878,6 @@ void MainWindow::on_create(HWND hwnd)
         // ImagePackEditorView::new_pack_name_field()/shortcode_field()/
         // pack_name_field()/paste_catcher() — so no shell-side wiring is
         // needed for any of them.
-
-        // ── Image + video viewers ──────────────────────────────────────────
-        // Providers / repaint / on_close come from RoomPane::wire_room_view_
-        // via main_room_pane_->attach() above; only the video player is
-        // shell-specific (needs this window's Host), same as every pop-out
-        // wires it directly in its own constructor.
-        main_app_->media_viewer()->set_video_player(main_app_surface_->host().make_video_player());
-
-        // One save handler for every viewer kind: RoomPane builds the spec and
-        // writes the file; this window only shows the dialog.
-        main_room_pane_->install_media_viewer_save_(
-            [this](const tesseract::views::MediaSaveSpec& spec,
-                   std::function<void(std::string)> done)
-            {
-                const std::wstring filter = save_filter_for(spec);
-                std::wstring path = show_save_dialog_(utf8_to_wstr(spec.suggested_name),
-                                                      filter.c_str());
-                if (!path.empty())
-                {
-                    done(wstr_to_utf8(path.c_str()));
-                }
-            });
 
         // on_image_clicked / on_avatar_clicked already provided by
         // main_room_pane_->attach() above (RoomPane::wire_room_view_), which
@@ -3146,126 +1889,12 @@ void MainWindow::on_create(HWND hwnd)
         // above (RoomPane::wire_room_view_, which aliases
         // room_media_view()->on_image_clicked/on_video_clicked to the same
         // handlers it installs on room_view()).
-
-        room_view_->set_video_player_factory(
-            [this]()
-            {
-                return main_app_surface_->host().make_video_player();
-            });
-        room_view_->set_video_fetch_provider(
-            [this](const std::string& src,
-                   std::function<void(std::vector<std::uint8_t>)> on_ready)
-            {
-                if (client_)
-                {
-                    auto req_id = begin_media_req_(0,
-                        [on_ready = std::move(on_ready)](
-                            std::vector<std::uint8_t> bytes) mutable
-                        {
-                            on_ready(std::move(bytes));
-                        });
-                    client_->fetch_source_bytes_async(req_id, src);
-                }
-            });
-
-        // ── set_on_layout: keep native overlays aligned ──────────────────────
-        main_app_surface_->set_on_layout(
-            [this]
-            {
-                if (!main_app_)
-                {
-                    return;
-                }
-
-                // Native overlays must be hidden while an image/video viewer is open —
-                // Win32 child HWNDs always paint over canvas-drawn overlays.
-                const bool hide = (media_viewer_ && media_viewer_->is_open()) ||
-                                  (main_app_ && main_app_->camera_overlay_open())
-                                  || (main_app_ && main_app_->screen_picker_open())
-                    ;
-
-                // room_text_area_ already self-positioned/showed itself via
-                // ComposeBar::arrange(), reached from the relayout that led
-                // to this callback — only a `hide` force-off is needed here.
-                if (room_text_area_)
-                {
-                    if (hide)
-                        room_text_area_->set_visible(false);
-                    const bool now_visible = room_text_area_->visible();
-                    if (now_visible && !room_text_area_was_visible_ &&
-                        focus_compose_on_show_)
-                    {
-                        room_text_area_->set_focused(true);
-                        focus_compose_on_show_ = false;
-                    }
-                    room_text_area_was_visible_ = now_visible;
-                }
-
-                // Every RoomSettingsView/ImagePackEditorView field (name,
-                // topic, new-pack-name, shortcode, pack-rename, paste-
-                // catcher) is self-owned and hides itself via its own
-                // arrange()-driven visibility — but Win32 child HWNDs always
-                // paint over canvas-drawn overlays, so they still need
-                // forcing off during an image/video viewer (see the
-                // room-search/encryption fields' identical `hide` gating
-                // above). Checked on both possible RoomSettingsView
-                // instances (room_view_'s and the space-root's) — each
-                // self-owns its own fields independently, so hiding both
-                // unconditionally is a harmless no-op for whichever one
-                // isn't currently open.
-                if (hide)
-                {
-                    tesseract::views::RoomSettingsView* rsvs[] = {
-                        main_app_ ? main_app_->room_view()->room_settings_view()
-                                  : nullptr,
-                        main_app_ ? main_app_->space_root()->settings_view()
-                                  : nullptr,
-                    };
-                    for (auto* rsv : rsvs)
-                    {
-                        if (!rsv)
-                            continue;
-                        if (auto* nf = rsv->name_field())
-                            nf->set_visible(false);
-                        if (auto* tf = rsv->topic_field())
-                            tf->set_visible(false);
-                        auto* editor = rsv->image_pack_editor();
-                        if (auto* f = editor->new_pack_name_field())
-                            f->set_visible(false);
-                        if (auto* f = editor->shortcode_field())
-                            f->set_visible(false);
-                        if (auto* f = editor->pack_name_field())
-                            f->set_visible(false);
-                        if (auto* f = editor->paste_catcher())
-                            f->set_visible(false);
-                    }
-                }
-
-                // Native overlays must be hidden while an image/video viewer
-                // is open — Win32 child HWNDs always paint over canvas-drawn
-                // overlays. The room-list search field is also covered by
-                // MainAppWidget::arrange()'s own any_modal_open_() gating
-                // (which now includes camera/screen-picker too) and so
-                // re-hiding it here is a harmless no-op; the encryption/topic
-                // fields below have no such in-pass gating and still need
-                // forcing off here explicitly.
-                if (hide)
-                {
-                    if (auto* sf = main_app_->room_list_view()->search_field())
-                        sf->set_visible(false);
-                    if (auto* ov = main_app_->encryption_setup())
-                        ov->hide_native_fields();
-                    if (auto* tf = main_app_->room_view()->room_info_panel()->topic_field())
-                        tf->set_visible(false);
-                }
-            });
     }
 
     // Size the main app surface to fill the content area initially.
     if (HWND ms = main_app_surface_->hwnd())
     {
-        SetWindowPos(ms, nullptr, 0, 0, 1024, 744,
-                     SWP_NOZORDER | SWP_NOACTIVATE);
+        SetWindowPos(ms, nullptr, 0, 0, 1024, 744, SWP_NOZORDER | SWP_NOACTIVATE);
     }
 
     // Emoji picker creation is deferred until first toggle so the cold-
@@ -3275,20 +1904,18 @@ void MainWindow::on_create(HWND hwnd)
     // Custom flat status strip. Replaces STATUSCLASSNAMEW which carries a 9x
     // size-grip and chunky inset borders.
     register_status_bar_class(hInst_);
-    hStatus_ = CreateWindowExW(0, L"TesseractStatusBar", utf8_to_wstr(tk::tr("Not logged in")).c_str(),
-                               WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, hwnd, nullptr,
-                               hInst_, nullptr);
+    hStatus_ = CreateWindowExW(0, L"TesseractStatusBar", L"", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+                               hwnd, nullptr, hInst_, nullptr);
     // Lets status_bar_wnd_proc (a free function, no `this`) reach back into
     // this shell for the persistent-status click hook — see the
     // WM_LBUTTONUP "not a link" branch below.
     SetPropW(hStatus_, L"TesseractStatusOwner", reinterpret_cast<HANDLE>(this));
     // Owner must be a top-level window — using hStatus_ (WS_CHILD) as owner
     // causes the tooltip to be invisible on some Windows 11 builds.
-    hStatusTip_ = CreateWindowExW(
-        WS_EX_TOPMOST, TOOLTIPS_CLASS, nullptr,
-        WS_POPUP | TTS_NOPREFIX | TTS_ALWAYSTIP,
-        CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
-        hwnd_, nullptr, hInst_, nullptr);
+    hStatusTip_ =
+        CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASS, nullptr,
+                        WS_POPUP | TTS_NOPREFIX | TTS_ALWAYSTIP, CW_USEDEFAULT, CW_USEDEFAULT,
+                        CW_USEDEFAULT, CW_USEDEFAULT, hwnd_, nullptr, hInst_, nullptr);
     {
         TOOLINFOW ti{};
         ti.cbSize = TTTOOLINFOW_V1_SIZE;
@@ -3299,22 +1926,22 @@ void MainWindow::on_create(HWND hwnd)
         ti.hwnd = hStatus_;
         ti.uId = reinterpret_cast<UINT_PTR>(hStatus_);
         ti.lpszText = const_cast<LPWSTR>(L"");
-        SendMessageW(hStatusTip_, TTM_ADDTOOLW, 0,
-                     reinterpret_cast<LPARAM>(&ti));
+        SendMessageW(hStatusTip_, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&ti));
     }
     SendMessageW(hStatusTip_, TTM_SETMAXTIPWIDTH, 0, 500);
     // Store the tooltip HWND as a property so status_bar_wnd_proc can relay.
     if (hStatus_ && hStatusTip_)
+    {
         SetPropW(hStatus_, L"StatusTip", hStatusTip_);
+    }
     init_pool_callbacks_();
     on_inflight_ui_();
+    refresh_sync_status_(); // "Not logged in" until a session restores
 
-    // login_view_ and settings_view_/settings_surface_ are now constructed
-    // lazily — see ensure_login_view_()/ensure_settings_view_(), called from
-    // show_login_view()/open_settings_() respectively.
+    // The login and settings views are constructed lazily by ShellBase
+    // (ensure_login_view_()/ensure_settings_view_()).
 
-    branding_surface_ = std::make_unique<tk::win32::Surface>(
-        hInst_, hwnd, tk::Theme::light());
+    branding_surface_ = std::make_unique<tk::win32::Surface>(hInst_, hwnd, tk::Theme::light());
     // create_root_widget (not plain make_unique) so BrandView::host() is
     // valid from construction — Surface::set_root()/RootWidget::add_child()
     // adopt an already-built widget without ever fixing up its host_, so a
@@ -3332,16 +1959,27 @@ void MainWindow::on_create(HWND hwnd)
 
     // Defer login (or the isolated screenshot fixture) to the message loop.
     // on_create() runs synchronously inside
-    // CreateWindowExW (i.e. inside the constructor), before spawn_main_window_()
-    // can call set_initial_account() on a spawned window. Posting start_login()
-    // lets that pin land first, so a secondary window takes the bind path in
-    // start_login() instead of re-restoring every account from disk.
+    // CreateWindowExW (i.e. inside create()). A spawned window is created after
+    // set_initial_account() and the account hand-off, but posting start_login()
+    // still defers it past the rest of spawn_main_window_(), so a secondary
+    // window takes the bind path in start_login() instead of re-restoring every
+    // account from disk.
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
     if (!screenshot_dir_.empty())
-        post_to_ui_([this] { start_screenshot_mode_(); });
+    {
+        post_to_ui_(
+            [this]
+            {
+                start_screenshot_mode_();
+            });
+    }
     else
 #endif
-        post_to_ui_([this] { start_login(); });
+        post_to_ui_(
+            [this]
+            {
+                start_login();
+            });
 }
 
 void MainWindow::on_destroy()
@@ -3375,15 +2013,19 @@ void MainWindow::on_destroy()
         // Hang up an active call while the SDK can still send the leave. Once the
         // sync stops, the call would only end with the session, and others would
         // still see us in it.
-        end_call();
+        end_call(true);
         for (auto& s : account_manager_.accounts())
         {
             if (s && s->client)
+            {
                 s->client->stop_sync();
+            }
         }
     }
     if (pending_login_client_)
+    {
         pending_login_client_->stop_sync();
+    }
 
     // Stop queued work and join all pool threads. decode_image now creates a
     // per-call WIC factory in the worker's own MTA apartment, so there is no
@@ -3395,7 +2037,7 @@ void MainWindow::on_destroy()
     {
         {
             std::lock_guard<std::mutex> lk(wp.mu_);
-            wp.stop_      = true;
+            wp.stop_ = true;
             wp.on_change_ = nullptr;
             wp.queue_.clear();
             wp.pending_.store(0, std::memory_order_relaxed);
@@ -3404,7 +2046,9 @@ void MainWindow::on_destroy()
         for (auto& t : wp.threads_)
         {
             if (t.joinable())
+            {
                 t.join();
+            }
         }
     };
     com_drain(pool_);
@@ -3429,13 +2073,20 @@ void MainWindow::on_size(int w, int h)
     // A popup's screen position is captured once when it opens and never
     // recomputed — leaving one open across a resize would strand it away
     // from whatever control anchored it. Close everything instead.
-    if (main_app_surface_) main_app_surface_->host().dismiss_active_popup();
-    if (settings_surface_) settings_surface_->host().dismiss_active_popup();
-    if (room_view_) room_view_->dismiss_popups();
-    tesseract::views::hide_all_compose_popups(
-        gif_controller_.get(), slash_controller_.get(),
-        shortcode_controller_.get(), mention_controller_.get());
-    if (hAccountPicker_) ShowWindow(hAccountPicker_, SW_HIDE);
+    if (main_app_surface_)
+    {
+        main_app_surface_->host().dismiss_active_popup();
+    }
+    if (settings_surface_)
+    {
+        settings_surface_->host().dismiss_active_popup();
+    }
+    if (room_view_)
+    {
+        room_view_->dismiss_popups();
+    }
+    hide_compose_popups_();
+    close_account_picker_();
 
     // In media-viewer full-screen the custom caption strip and the status bar
     // are both suppressed, so the child surfaces fill the whole client area.
@@ -3445,8 +2096,7 @@ void MainWindow::on_size(int w, int h)
     if (hStatus_)
     {
         ShowWindow(hStatus_, fs_active_ ? SW_HIDE : SW_SHOW);
-        SetWindowPos(hStatus_, nullptr, 0, h - STATUS_H, w, STATUS_H,
-                     SWP_NOZORDER);
+        SetWindowPos(hStatus_, nullptr, 0, h - STATUS_H, w, STATUS_H, SWP_NOZORDER);
         SendMessageW(hStatus_, WM_SIZE, 0, 0);
     }
 
@@ -3478,8 +2128,7 @@ void MainWindow::on_size(int w, int h)
     // matches what the surface already has — meaning SetWindowPos won't
     // fire WM_SIZE at all (e.g. a view switch where the overall client
     // size didn't change), so nobody else will relayout it.
-    auto reposition_needs_relayout = [](HWND hwnd, int target_w,
-                                        int target_h)
+    auto reposition_needs_relayout = [](HWND hwnd, int target_w, int target_h)
     {
         RECT rc{};
         GetClientRect(hwnd, &rc);
@@ -3490,33 +2139,41 @@ void MainWindow::on_size(int w, int h)
 
     if (branding_visible_ && branding_surface_ && branding_surface_->hwnd())
     {
-        const bool needs_relayout = reposition_needs_relayout(
-            branding_surface_->hwnd(), w, content_h);
-        SetWindowPos(branding_surface_->hwnd(), nullptr, 0, TITLEBAR_H, w,
-                     content_h, SWP_NOZORDER | SWP_NOACTIVATE);
-        if (needs_relayout) branding_surface_->relayout();
+        const bool needs_relayout =
+            reposition_needs_relayout(branding_surface_->hwnd(), w, content_h);
+        SetWindowPos(branding_surface_->hwnd(), nullptr, 0, TITLEBAR_H, w, content_h,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+        if (needs_relayout)
+        {
+            branding_surface_->relayout();
+        }
         flush_chrome();
         return;
     }
 
-    if (login_visible_ && login_view_ && login_view_->hwnd())
+    if (login_visible_ && login_view_ && login_native_()->hwnd())
     {
         const bool needs_relayout =
-            reposition_needs_relayout(login_view_->hwnd(), w, content_h);
-        SetWindowPos(login_view_->hwnd(), nullptr, 0, TITLEBAR_H, w,
-                     content_h, SWP_NOZORDER);
-        if (needs_relayout) login_view_->layout(w, content_h);
+            reposition_needs_relayout(login_native_()->hwnd(), w, content_h);
+        SetWindowPos(login_native_()->hwnd(), nullptr, 0, TITLEBAR_H, w, content_h, SWP_NOZORDER);
+        if (needs_relayout)
+        {
+            login_surface_->relayout();
+        }
         flush_chrome();
         return;
     }
 
-    if (app_settings_open_ && settings_surface_ && settings_surface_->hwnd())
+    if (app_settings_open_ && settings_surface_ && settings_native_()->hwnd())
     {
-        const bool needs_relayout = reposition_needs_relayout(
-            settings_surface_->hwnd(), w, content_h);
-        SetWindowPos(settings_surface_->hwnd(), nullptr, 0, TITLEBAR_H, w,
-                     content_h, SWP_NOZORDER | SWP_NOACTIVATE);
-        if (needs_relayout) settings_surface_->relayout();
+        const bool needs_relayout =
+            reposition_needs_relayout(settings_native_()->hwnd(), w, content_h);
+        SetWindowPos(settings_native_()->hwnd(), nullptr, 0, TITLEBAR_H, w, content_h,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+        if (needs_relayout)
+        {
+            settings_surface_->relayout();
+        }
         flush_chrome();
         return;
     }
@@ -3525,11 +2182,14 @@ void MainWindow::on_size(int w, int h)
     // Just resize the single surface to fill the content area and relayout.
     if (main_app_surface_ && main_app_surface_->hwnd())
     {
-        const bool needs_relayout = reposition_needs_relayout(
-            main_app_surface_->hwnd(), w, content_h);
-        SetWindowPos(main_app_surface_->hwnd(), nullptr, 0, TITLEBAR_H, w,
-                     content_h, SWP_NOZORDER | SWP_NOACTIVATE);
-        if (needs_relayout) main_app_surface_->relayout();
+        const bool needs_relayout =
+            reposition_needs_relayout(main_app_surface_->hwnd(), w, content_h);
+        SetWindowPos(main_app_surface_->hwnd(), nullptr, 0, TITLEBAR_H, w, content_h,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+        if (needs_relayout)
+        {
+            main_app_surface_->relayout();
+        }
     }
     flush_chrome();
 }
@@ -3548,9 +2208,6 @@ void MainWindow::start_login()
         finish_login_ui_(active_account_->user_id);
         return;
     }
-
-    SendMessageW(hStatus_, SB_SETTEXTW, 0,
-                 reinterpret_cast<LPARAM>(utf8_to_wstr(tk::tr("Restoring session…")).c_str()));
 
     // Pre-flight OS-level connectivity check — see tk::Host::
     // is_network_available()'s doc comment. Computed here, on the UI
@@ -3574,24 +2231,11 @@ void MainWindow::start_login()
                     start_hidden_ = false;
                     ShowWindow(hwnd_, SW_SHOW);
                 }
-                pending_login_temp_dir_.clear();
-                ensure_login_view_();
-                pending_login_client_ = std::make_unique<tesseract::Client>();
-                login_view_->set_client(pending_login_client_.get());
-                login_view_->set_on_begin_oauth([this] { arm_pending_login_(); });
-                login_view_->set_mode(tesseract::views::LoginView::Mode::Initial);
-                login_view_->reset();
-                if (restore.any_restore_failed)
-                {
-                    if (restore.network_unavailable)
-                        login_view_->show_offline_error([this] { start_login(); });
-                    else
-                        login_view_->show_restore_error(restore.restore_error,
-                                                        [this] { start_login(); });
-                }
-                show_login_view();
-                SendMessageW(hStatus_, SB_SETTEXTW, 0,
-                             reinterpret_cast<LPARAM>(utf8_to_wstr(tk::tr("Not logged in")).c_str()));
+                show_login_after_restore_(restore,
+                                          [this]
+                                          {
+                                              start_login();
+                                          });
                 return;
             }
 
@@ -3601,50 +2245,56 @@ void MainWindow::start_login()
 }
 
 #ifdef TESSERACT_SCREENSHOT_MODE_ENABLED
-class MainWindow::Win32ScreenshotHost final
-    : public tesseract::screenshot::ScreenshotHost
+class MainWindow::Win32ScreenshotHost final : public tesseract::screenshot::ScreenshotHost
 {
 public:
-    explicit Win32ScreenshotHost(MainWindow& window) : window_(window) {}
+    explicit Win32ScreenshotHost(MainWindow& window) : window_(window)
+    {
+    }
 
     void apply_theme(tesseract::screenshot::ScreenshotTheme theme) override
     {
-        window_.apply_theme_ui_(
-            theme == tesseract::screenshot::ScreenshotTheme::Dark
-                ? tk::Theme::dark()
-                : tk::Theme::light());
+        window_.apply_theme_ui_(theme == tesseract::screenshot::ScreenshotTheme::Dark
+                                    ? tk::Theme::dark()
+                                    : tk::Theme::light());
     }
     void refresh() override
     {
         // Relayout the surfaces directly: on_size() would also dismiss open
         // popups (the emoji-picker scene's picker is one).
         if (window_.main_app_surface_)
+        {
             window_.main_app_surface_->relayout();
+        }
         if (window_.settings_surface_)
+        {
             window_.settings_surface_->relayout();
+        }
         RedrawWindow(window_.hwnd_, nullptr, nullptr,
-                     RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN |
-                         RDW_UPDATENOW);
+                     RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
     }
     bool save_png(const std::string& filename) override
     {
         if (window_.save_screenshot_(utf8_to_wstr(filename).c_str()))
+        {
             return true;
+        }
         OutputDebugStringW(L"Tesseract screenshot: failed to save image\n");
         return false;
     }
     void run_after(int ms, std::function<void()> fn) override
     {
         window_.screenshot_step_ = std::move(fn);
-        SetTimer(window_.hwnd_, kScreenshotStepTimerId,
-                 static_cast<UINT>(ms), nullptr);
+        SetTimer(window_.hwnd_, kScreenshotStepTimerId, static_cast<UINT>(ms), nullptr);
     }
     void finish(bool ok) override
     {
         // The message loop's exit code isn't reachable from here; a failed
         // capture must still fail the CI step.
         if (!ok)
+        {
             std::exit(EXIT_FAILURE);
+        }
         DestroyWindow(window_.hwnd_);
     }
 
@@ -3659,15 +2309,12 @@ void MainWindow::start_screenshot_mode_()
         OutputDebugStringW(L"Tesseract screenshot: could not load assets\n");
         std::exit(EXIT_FAILURE);
     }
-    populate_user_strip();
-    show_main_content();
-    SendMessageW(hStatus_, SB_SETTEXTW, 0,
-                 reinterpret_cast<LPARAM>(utf8_to_wstr(tk::tr("Connected")).c_str()));
+    refresh_user_strip_();
+    show_main_content_();
 
     // A fixed physical window size makes output stable on the 96-DPI hosted
     // runner while remaining large enough to exercise the desktop layout.
-    SetWindowPos(hwnd_, nullptr, 0, 0, 1100, 768,
-                 SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowPos(hwnd_, nullptr, 0, 0, 1100, 768, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
 
     std::error_code ec;
     std::filesystem::create_directories(screenshot_dir_, ec);
@@ -3685,30 +2332,42 @@ bool MainWindow::save_screenshot_(const wchar_t* filename)
 {
     RECT rect{};
     if (!GetWindowRect(hwnd_, &rect))
+    {
         return false;
-    const int width  = rect.right - rect.left;
+    }
+    const int width = rect.right - rect.left;
     const int height = rect.bottom - rect.top;
     if (width <= 0 || height <= 0)
+    {
         return false;
+    }
 
     HDC window_dc = GetWindowDC(hwnd_);
     HDC memory_dc = window_dc ? CreateCompatibleDC(window_dc) : nullptr;
-    HBITMAP bitmap = memory_dc
-        ? CreateCompatibleBitmap(window_dc, width, height)
-        : nullptr;
+    HBITMAP bitmap = memory_dc ? CreateCompatibleBitmap(window_dc, width, height) : nullptr;
     if (!window_dc || !memory_dc || !bitmap)
     {
-        if (bitmap) DeleteObject(bitmap);
-        if (memory_dc) DeleteDC(memory_dc);
-        if (window_dc) ReleaseDC(hwnd_, window_dc);
+        if (bitmap)
+        {
+            DeleteObject(bitmap);
+        }
+        if (memory_dc)
+        {
+            DeleteDC(memory_dc);
+        }
+        if (window_dc)
+        {
+            ReleaseDC(hwnd_, window_dc);
+        }
         return false;
     }
 
     HGDIOBJ previous = SelectObject(memory_dc, bitmap);
     BOOL painted = PrintWindow(hwnd_, memory_dc, PW_RENDERFULLCONTENT);
     if (!painted)
-        painted = BitBlt(memory_dc, 0, 0, width, height, window_dc, 0, 0,
-                         SRCCOPY | CAPTUREBLT);
+    {
+        painted = BitBlt(memory_dc, 0, 0, width, height, window_dc, 0, 0, SRCCOPY | CAPTUREBLT);
+    }
     SelectObject(memory_dc, previous);
 
     bool saved = false;
@@ -3716,22 +2375,21 @@ bool MainWindow::save_screenshot_(const wchar_t* filename)
     {
         UINT count = 0;
         UINT bytes = 0;
-        if (Gdiplus::GetImageEncodersSize(&count, &bytes) == Gdiplus::Ok &&
-            count > 0 && bytes > 0)
+        if (Gdiplus::GetImageEncodersSize(&count, &bytes) == Gdiplus::Ok && count > 0 && bytes > 0)
         {
             std::vector<BYTE> storage(bytes);
-            auto* codecs = reinterpret_cast<Gdiplus::ImageCodecInfo*>(
-                storage.data());
+            auto* codecs = reinterpret_cast<Gdiplus::ImageCodecInfo*>(storage.data());
             if (Gdiplus::GetImageEncoders(count, bytes, codecs) == Gdiplus::Ok)
             {
                 for (UINT i = 0; i < count; ++i)
                 {
                     if (wcscmp(codecs[i].MimeType, L"image/png") != 0)
+                    {
                         continue;
+                    }
                     Gdiplus::Bitmap image(bitmap, nullptr);
                     const auto path = screenshot_dir_ / filename;
-                    saved = image.Save(path.c_str(), &codecs[i].Clsid,
-                                       nullptr) == Gdiplus::Ok;
+                    saved = image.Save(path.c_str(), &codecs[i].Clsid, nullptr) == Gdiplus::Ok;
                     break;
                 }
             }
@@ -3745,8 +2403,7 @@ bool MainWindow::save_screenshot_(const wchar_t* filename)
 }
 #endif
 
-std::unique_ptr<tesseract::IEventHandler>
-MainWindow::make_account_bridge_(const std::string& uid)
+std::unique_ptr<tesseract::IEventHandler> MainWindow::make_account_bridge_(const std::string& uid)
 {
     auto bridge = std::make_unique<tesseract::EventHandlerBase>(this);
     bridge->set_user_id(uid);
@@ -3757,8 +2414,7 @@ void MainWindow::install_account_notifier_(tesseract::AccountSession& session)
 {
     // Per-account notifier: the Win32Notifier routes balloon clicks back
     // through the message pump, switching account + navigating to the room.
-    session.notifier =
-        std::make_unique<win32::Win32Notifier>(hwnd_, session.user_id);
+    session.notifier = std::make_unique<win32::Win32Notifier>(hwnd_, session.user_id);
 }
 
 std::unique_ptr<tk::AudioPlayback> MainWindow::make_call_audio_output_()
@@ -3778,285 +2434,87 @@ tesseract::AuxWindowBase* MainWindow::create_aux_window_(std::string title,
     return new win32::AuxWindow(this, title, std::move(root), width, height, current_theme_);
 }
 
-void MainWindow::finish_login_ui_(const std::string& uid)
+std::unique_ptr<tk::SurfaceBase> MainWindow::create_login_surface_ui_()
 {
-    switch_active_account(uid);
-    ensure_settings_controller_();
-    ensure_history_export_controller_();
-    wire_history_export_dialog_callbacks_();
+    auto surface = std::make_unique<tk::win32::Surface>(hInst_, hwnd_, tk::Theme::light());
+    if (surface->hwnd())
+    {
+        ShowWindow(surface->hwnd(), SW_HIDE);
+    }
+    return surface;
 }
 
-void MainWindow::bind_settings_controller_()
+std::unique_ptr<tk::SurfaceBase> MainWindow::create_settings_surface_ui_()
 {
-    // settings_controller_ is freshly constructed by
-    // ShellBase::ensure_settings_controller_(); install the native key/file
-    // dialog hooks and bind it to the native settings view + name field.
-    wire_key_dialog_callbacks_();
-
-    if (settings_view_)
+    auto surface = std::make_unique<tk::win32::Surface>(hInst_, hwnd_, tk::Theme::light());
+    if (surface->hwnd())
     {
-        settings_view_->set_request_repaint([this]
-        {
-            if (settings_surface_) settings_surface_->relayout();
-        });
-        wire_settings_controller_common_(
-            settings_view_, settings_controller_.get(),
-            [this] { if (settings_surface_) settings_surface_->relayout(); });
-        settings_view_->set_user_pack_image_provider(
-            make_static_image_provider_with_fetch_(96, 96));
-        settings_view_->on_user_pack_pending_image_added =
-            [this](std::uint64_t local_id, const std::vector<std::uint8_t>& bytes,
-                  const std::string& mime)
-        {
-            handle_user_pack_pending_image_added_(
-                local_id, bytes, mime, settings_view_->user_pack_editor());
-        };
+        ShowWindow(surface->hwnd(), SW_HIDE);
     }
+    return surface;
 }
 
-void MainWindow::on_login_succeeded()
+void MainWindow::on_pre_paint_()
 {
-    // The pending client ran OAuth into a temp directory.
-    // finalize_login_async_ drops it (releases SQLite handles), renames the
-    // temp dir to its final per-account location, reopens a fresh client at
-    // the final path, and adds the account — off the UI thread; we do only
-    // the native finish here, in the completion callback.
-    if (!pending_login_client_)
+    // WM_TIMER is only delivered when no input or WM_PAINT is pending, so
+    // continuous repaints (pointer motion, scrolling) can starve the animation
+    // clock. If a tick is overdue, queue one: posted messages are dispatched
+    // before WM_PAINT and WM_TIMER. Never tick inside the paint itself, as it
+    // invalidates and would sustain a paint loop.
+    if (anim_timer_running_ && !anim_catchup_posted_ &&
+        monotonic_ms_() - last_anim_tick_ms_ >= static_cast<std::int64_t>(kAnimTimerMs))
     {
-        return;
-    }
-
-    // login_view_ holds a raw alias to pending_login_client_; clear it before
-    // finalize_login_async_ moves the client out from under us.
-    if (login_view_)
-    {
-        login_view_->set_client(nullptr);
-    }
-
-    finalize_login_async_(
-        [this](FinalizeLoginResult fin)
-        {
-            // Reject if this account is already signed in.
-            if (fin.rejected_duplicate)
+        anim_catchup_posted_ = true;
+        post_to_ui_(
+            [this]
             {
-                if (login_view_)
+                anim_catchup_posted_ = false;
+                if (anim_timer_running_)
                 {
-                    login_view_->set_status_message(
-                        utf8_to_wstr(tk::trf(tk::tr("Already signed in as {0}"),
-                                             {fin.user_id})));
+                    on_anim_tick();
                 }
-                pending_login_is_add_account_ = false;
-                if (add_account_return_idx_ >= 0 &&
-                    add_account_return_idx_ <
-                        static_cast<int>(account_manager_.accounts().size()))
-                {
-                    switch_active_account(
-                        account_manager_.accounts()[add_account_return_idx_]
-                            ->user_id);
-                }
-                add_account_return_idx_ = -1;
-                return;
-            }
-
-            if (!fin.ok)
-            {
-                // Persist failed (e.g. cross-device rename + copy, or restore
-                // error); re-arm the login view so the user can retry.
-                if (login_view_)
-                {
-                    pending_login_client_ = std::make_unique<tesseract::Client>();
-                    login_view_->set_client(pending_login_client_.get());
-                    // reset() clears the status text (among other form state),
-                    // so it must run before set_status_message() or the error
-                    // is wiped before it's ever painted.
-                    login_view_->reset();
-                    login_view_->set_status_message(
-                        utf8_to_wstr(tk::trf(tk::tr("Sign-in failed: {0}"),
-                                             {fin.error})));
-                }
-                return;
-            }
-
-            switch_active_account(fin.user_id);
-            ensure_settings_controller_();
-            ensure_history_export_controller_();
-            wire_history_export_dialog_callbacks_();
-            begin_gated_encryption_setup_if_needed_(fin);
-            pending_login_is_add_account_ = false;
-            add_account_return_idx_ = -1;
-        });
-}
-
-void MainWindow::ensure_login_view_()
-{
-    if (login_view_)
-        return;
-    login_view_ = std::make_unique<LoginView>(hInst_, hwnd_);
-    // Route the homeserver-discovery debounce through the shell's worker
-    // drain so a blocked discover_homeserver call can't outlive ~LoginView
-    // and corrupt the heap (mirrors the SettingsController wiring below).
-    login_view_->set_run_async(
-        [this](std::function<void()> fn) { run_async_(std::move(fn)); });
-    login_view_->set_on_success(
-        [this]()
-        {
-            on_login_succeeded();
-        });
-    login_view_->set_on_cancel(
-        [this]()
-        {
-            on_login_cancelled();
-        });
-    login_view_->set_on_open_settings([this] { open_settings_from_login_(); });
-    ShowWindow(login_view_->hwnd(), SW_HIDE);
-}
-
-void MainWindow::teardown_login_view_()
-{
-    if (!login_view_)
-        return;
-    login_view_->set_client(nullptr);
-    auto* to_destroy = login_view_.get();
-    tesseract::schedule_deferred_teardown(
-        main_app_surface_->host(),
-        [this, to_destroy] { return login_view_.get() == to_destroy; },
-        [this] { login_view_.reset(); });
-}
-
-void MainWindow::ensure_settings_view_()
-{
-    if (settings_view_)
-        return;
-
-    settings_surface_ = std::make_unique<tk::win32::Surface>(
-        hInst_, hwnd_, tk::Theme::light());
-    auto view = tk::create_root_widget<tesseract::views::SettingsView>(
-        &settings_surface_->host());
-    settings_view_ = view.get();
-    stats_settings_view_ = settings_view_;
-    settings_view_->set_low_power_available(low_power_available());
-    wire_settings_view_(settings_view_);
-    settings_view_->on_close = [this]
-    {
-        close_settings_();
-    };
-    settings_view_->on_logout = [this]
-    {
-        close_settings_();
-        logout_active_account();
-    };
-    settings_view_->on_reset_identity = [this]
-    {
-        // The reset overlay lives on the main window — leave settings
-        // first, then start the reset flow.
-        close_settings_();
-        begin_crypto_identity_reset_();
-    };
-    settings_view_->on_tab_changed = [this] { settings_surface_->relayout(); };
-    settings_surface_->set_root(std::move(view));
-    settings_surface_->set_theme(current_theme_);
-    if (settings_surface_->hwnd())
-    {
-        ShowWindow(settings_surface_->hwnd(), SW_HIDE);
+            });
     }
-
-    // Populate capture-device combos in the Media section.
-    {
-        auto& host = settings_surface_->host();
-        settings_view_->set_audio_input_devices(
-            host.enumerate_audio_inputs());
-        settings_view_->set_audio_output_devices(
-            host.enumerate_audio_outputs());
-        settings_view_->set_camera_devices(host.enumerate_cameras());
-        settings_view_->set_selected_audio_input(
-            tesseract::Settings::instance().audio_input_device_id);
-        settings_view_->set_selected_audio_output(
-            tesseract::Settings::instance().audio_output_device_id);
-        settings_view_->set_selected_camera(
-            tesseract::Settings::instance().camera_device_id);
-    }
-
-    // ensure_settings_controller_() already ran at login time, before this
-    // view existed — its wiring into settings_view_ was a silent no-op
-    // (guarded on settings_view_ being non-null). Redo it now that the view
-    // is real, or the Account section opens unwired the first time. Skipped
-    // when Settings is opened from the login view: no controller exists yet.
-    if (settings_controller_)
-        bind_settings_controller_();
-
-    // server_info_ may have already arrived before this lazy view was
-    // created — apply it now so capability gating (e.g. the Server tab) is
-    // correct on first open.
-    settings_view_->set_server_info(server_info_);
 }
 
-void MainWindow::teardown_settings_view_()
+void MainWindow::grab_main_surface_focus_()
 {
-    if (!settings_view_)
-        return;
-    stats_settings_view_ = nullptr;
-    settings_view_ = nullptr;
-    auto* surface_to_destroy = settings_surface_.get();
-    tesseract::schedule_deferred_teardown(
-        main_app_surface_->host(),
-        [this, surface_to_destroy] { return settings_surface_.get() == surface_to_destroy; },
-        [this] { settings_surface_.reset(); });
+    if (hwnd_)
+    {
+        SetFocus(hwnd_);
+    }
+}
+
+tk::SurfaceBase* MainWindow::main_surface_()
+{
+    return main_app_surface_.get();
 }
 
 void MainWindow::open_settings_()
 {
-    ensure_settings_view_();
-    settings_view_->set_account_info(my_display_name_, my_user_id_,
-                                     my_avatar_url_);
-    settings_view_->set_image_provider(make_avatar_image_provider_());
-    settings_view_->load_persisted_settings();
-    settings_view_->set_signed_out_mode(settings_from_login_());
+    if (!prepare_settings_view_())
+    {
+        return;
+    }
     if (settings_from_login_())
     {
         // Settings replaces the login view for now; close_settings_()
         // brings it back.
         login_visible_ = false;
-        if (login_view_ && login_view_->hwnd())
-            ShowWindow(login_view_->hwnd(), SW_HIDE);
+        if (login_view_ && login_native_()->hwnd())
+        {
+            ShowWindow(login_native_()->hwnd(), SW_HIDE);
+        }
     }
-    // load_persisted_settings() seeded the checkbox from the cached
-    // Settings::launch_at_login; refresh_launch_at_login_pref_() re-queries the
-    // real OS state off the UI thread and pushes it in when it returns, so the
-    // registry query never stalls the Settings-view open.
-    refresh_launch_at_login_pref_();
-    // Tray availability is local state, so it can be pushed synchronously.
-    // Needed before the user can pick "hide to tray" — without a tray icon
-    // that option would hide the window with no way to bring it back.
-    push_tray_available_ui_();
-    settings_surface_->relayout();
-
-    // own_extended_profile_ may have been fetched (or changed) while
-    // settings_view_ didn't exist yet, or since the last time this view was
-    // open — re-apply it on every open, not just construction.
-    if (!own_extended_profile_.pronouns.empty() ||
-        !own_extended_profile_.tz.empty() ||
-        !own_extended_profile_.biography.empty() ||
-        !own_extended_profile_.status_emoji.empty() ||
-        !own_extended_profile_.status_text.empty())
-        settings_view_->set_extended_profile(own_extended_profile_);
-
-    compute_cache_sizes_([this](uint64_t local, uint64_t sdk, uint64_t memory,
-                                uint64_t mh, uint64_t mm,
-                                uint64_t dh, uint64_t dm)
-    {
-        if (settings_view_)
-            settings_view_->set_cache_sizes(local, sdk, memory, mh, mm, dh,
-                                            dm);
-    });
 
     set_app_settings_open_(true);
     if (main_app_surface_ && main_app_surface_->hwnd())
     {
         ShowWindow(main_app_surface_->hwnd(), SW_HIDE);
     }
-    if (settings_surface_ && settings_surface_->hwnd())
+    if (settings_surface_ && settings_native_()->hwnd())
     {
-        ShowWindow(settings_surface_->hwnd(), SW_SHOW);
+        ShowWindow(settings_native_()->hwnd(), SW_SHOW);
     }
     start_search_index_stats_poll_();
 
@@ -4068,7 +2526,9 @@ void MainWindow::open_settings_()
 void MainWindow::rebind_login_client_ui_()
 {
     if (!login_view_)
+    {
         return;
+    }
     login_view_->set_client(reset_pending_login_client_());
     // Swap only. Settings is open on top of the login view, and reset() would
     // refocus its homeserver field mid-typing; the homeserver check is re-run
@@ -4081,9 +2541,9 @@ void MainWindow::close_settings_()
     const bool to_login = take_settings_from_login_() && login_view_;
     set_app_settings_open_(false);
     stop_search_index_stats_poll_();
-    if (settings_surface_ && settings_surface_->hwnd())
+    if (settings_surface_ && settings_native_()->hwnd())
     {
-        ShowWindow(settings_surface_->hwnd(), SW_HIDE);
+        ShowWindow(settings_native_()->hwnd(), SW_HIDE);
     }
     if (!to_login && main_app_surface_ && main_app_surface_->hwnd())
     {
@@ -4093,11 +2553,13 @@ void MainWindow::close_settings_()
 
     if (to_login)
     {
-        show_login_view();
+        show_login_page_ui_();
         // A proxy change made in Settings replaced the client: re-run the
         // homeserver check against it.
         if (take_login_recheck_() && login_view_)
+        {
             login_view_->reset();
+        }
         return;
     }
 
@@ -4106,26 +2568,25 @@ void MainWindow::close_settings_()
     on_size(rc.right, rc.bottom);
 }
 
-void MainWindow::show_login_view()
+void MainWindow::show_login_page_ui_()
 {
-    ensure_login_view_();
     if (branding_visible_ && branding_surface_ && branding_surface_->hwnd())
     {
         branding_visible_ = false;
         ShowWindow(branding_surface_->hwnd(), SW_HIDE);
     }
     login_visible_ = true;
-    if (login_view_ && login_view_->hwnd())
+    if (login_view_ && login_native_()->hwnd())
     {
-        ShowWindow(login_view_->hwnd(), SW_SHOW);
+        ShowWindow(login_native_()->hwnd(), SW_SHOW);
     }
     if (main_app_surface_ && main_app_surface_->hwnd())
     {
         ShowWindow(main_app_surface_->hwnd(), SW_HIDE);
     }
-    if (settings_surface_ && settings_surface_->hwnd())
+    if (settings_surface_ && settings_native_()->hwnd())
     {
-        ShowWindow(settings_surface_->hwnd(), SW_HIDE);
+        ShowWindow(settings_native_()->hwnd(), SW_HIDE);
     }
     set_app_settings_open_(false);
 
@@ -4134,7 +2595,7 @@ void MainWindow::show_login_view()
     on_size(rc.right, rc.bottom);
 }
 
-void MainWindow::show_main_content()
+void MainWindow::show_main_content_()
 {
     if (branding_visible_ && branding_surface_ && branding_surface_->hwnd())
     {
@@ -4143,14 +2604,14 @@ void MainWindow::show_main_content()
     }
     login_visible_ = false;
     set_app_settings_open_(false);
-    if (login_view_ && login_view_->hwnd())
+    if (login_view_ && login_native_()->hwnd())
     {
-        ShowWindow(login_view_->hwnd(), SW_HIDE);
+        ShowWindow(login_native_()->hwnd(), SW_HIDE);
     }
     teardown_login_view_();
-    if (settings_surface_ && settings_surface_->hwnd())
+    if (settings_surface_ && settings_native_()->hwnd())
     {
-        ShowWindow(settings_surface_->hwnd(), SW_HIDE);
+        ShowWindow(settings_native_()->hwnd(), SW_HIDE);
     }
     if (main_app_surface_ && main_app_surface_->hwnd())
     {
@@ -4164,76 +2625,59 @@ void MainWindow::show_main_content()
     mark_main_content_ready_();
 }
 
-void MainWindow::raise_main_window_ui_()
+void MainWindow::bring_main_window_forward_for_overlay_()
 {
-    if (IsIconic(hwnd_)) ShowWindow(hwnd_, SW_RESTORE);
-    else ShowWindow(hwnd_, SW_SHOW);
+    if (IsIconic(hwnd_))
+    {
+        ShowWindow(hwnd_, SW_RESTORE);
+    }
     SetForegroundWindow(hwnd_);
 }
 
-// ---------------------------------------------------------------------------
-// Send
-// ---------------------------------------------------------------------------
-
-void MainWindow::on_send_clicked()
+void MainWindow::restore_focus_after_overlay_()
 {
-    if (room_view_)
+    // Prefer the compose bar when a room is open, otherwise fall back to the
+    // main window so Esc / nav keys reach wnd_proc.
+    if (room_text_area_ && room_text_area_->visible())
     {
-        room_view_->compose_bar()->trigger_send();
+        room_text_area_->set_focused(true);
     }
+    else
+    {
+        SetFocus(hwnd_);
+    }
+}
+
+void MainWindow::raise_main_window_ui_()
+{
+    if (IsIconic(hwnd_))
+    {
+        ShowWindow(hwnd_, SW_RESTORE);
+    }
+    else
+    {
+        ShowWindow(hwnd_, SW_SHOW);
+    }
+    SetForegroundWindow(hwnd_);
 }
 
 // ---------------------------------------------------------------------------
 // Notifications
 // ---------------------------------------------------------------------------
 
-void MainWindow::on_tesseract_notify(const NotificationPayload* p)
+bool MainWindow::is_main_window_focused_() const
 {
-    bool win_visible = IsWindowVisible(hwnd_) && !IsIconic(hwnd_);
-    bool win_focused = (GetForegroundWindow() == hwnd_);
-
-    for (auto& sess : account_manager_.accounts())
-    {
-        if (sess->user_id != p->user_id)
-        {
-            continue;
-        }
-        // Already watching this exact room — suppress silently.
-        if (win_focused && active_account_ &&
-            active_account_->user_id == p->user_id &&
-            current_room_id_ == p->room_id)
-        {
-            return;
-        }
-        // Window on screen: no popup. Flash if not focused.
-        if (win_visible)
-        {
-            if (!win_focused)
-            {
-                request_attention_();
-            }
-            return;
-        }
-        // Window minimised / hidden: send system notification.
-        if (sess->notifier)
-        {
-            tesseract::Notification n;
-            n.room_id = p->room_id;
-            n.room_name = p->room_name;
-            n.sender = p->sender;
-            n.body = p->body;
-            n.is_mention = p->is_mention;
-            n.avatar_bytes = p->avatar_bytes;
-            n.image_bytes = p->image_bytes;
-            n.event_id = p->event_id;
-            sess->notifier->notify(n);
-        }
-        return;
-    }
+    return hwnd_ && GetForegroundWindow() == hwnd_;
 }
 
-void MainWindow::request_attention_()
+void MainWindow::request_notification_attention_()
 {
+    // Only a window that is on screen has a taskbar button worth flashing; a
+    // minimised or hidden one gets the notification itself.
+    if (!is_main_window_visible_())
+    {
+        return;
+    }
     FLASHWINFO fwi{};
     fwi.cbSize = sizeof(fwi);
     fwi.hwnd = hwnd_;
@@ -4246,20 +2690,30 @@ bool MainWindow::accel_from_chord_(const tk::KeyChord& chord, ACCEL& out)
 {
     BYTE virt = FVIRTKEY;
     if (chord.mods & (tk::ModPrimary | tk::ModCtrl))
+    {
         virt |= FCONTROL;
+    }
     if (chord.mods & tk::ModShift)
+    {
         virt |= FSHIFT;
+    }
     if (chord.mods & tk::ModAlt)
+    {
         virt |= FALT;
+    }
     if (chord.mods & tk::ModMeta)
+    {
         return false; // the Windows key isn't an accelerator modifier
+    }
     WORD key = 0;
     switch (chord.key)
     {
     case tk::Key::Character:
     {
         if (chord.text.size() != 1)
+        {
             return false;
+        }
         const char c = chord.text.front();
         if (c >= 'a' && c <= 'z')
         {
@@ -4270,24 +2724,39 @@ bool MainWindow::accel_from_chord_(const tk::KeyChord& chord, ACCEL& out)
         // VK_OEM_2 on US, Shift+7 on German).
         const SHORT scan = VkKeyScanW(static_cast<WCHAR>(c));
         if (scan == -1)
+        {
             return false;
+        }
         const BYTE layout_shift = HIBYTE(scan);
         if (layout_shift & (2 | 4))
+        {
             return false; // needs Ctrl/Alt (AltGr) — no clean accelerator
+        }
         if (layout_shift & 1)
         {
             if (!((chord.mods | chord.optional) & tk::ModShift))
+            {
                 return false;
+            }
             virt |= FSHIFT;
         }
         key = LOBYTE(scan);
         break;
     }
-    case tk::Key::Tab: key = VK_TAB; break;
-    case tk::Key::Left: key = VK_LEFT; break;
-    case tk::Key::Right: key = VK_RIGHT; break;
-    case tk::Key::F1: key = VK_F1; break;
-    default: return false;
+    case tk::Key::Tab:
+        key = VK_TAB;
+        break;
+    case tk::Key::Left:
+        key = VK_LEFT;
+        break;
+    case tk::Key::Right:
+        key = VK_RIGHT;
+        break;
+    case tk::Key::F1:
+        key = VK_F1;
+        break;
+    default:
+        return false;
     }
     out.fVirt = virt;
     out.key = key;
@@ -4314,8 +2783,8 @@ void MainWindow::destroy_accelerators_()
 // handler only fires when the canvas has focus. TranslateAccelerator
 // re-fires WM_COMMAND for every OS key-repeat while held, which is what lets
 // repeated Tab presses advance the Ctrl+Tab cycle; committing on
-// Ctrl-release is handled in wnd_proc's own WM_KEYUP/WM_SYSKEYUP —
-// accelerators only fire on key-down.
+// Ctrl-release is handled by the tk host's keyboard hook — accelerators only
+// fire on key-down.
 //
 // accel_ holds every global shortcut, for keys pressed in this window;
 // accel_app_ only the Application-scoped ones, for keys pressed in a pop-out
@@ -4331,129 +2800,53 @@ void MainWindow::rebuild_accelerators_()
     for (const auto& def : tesseract::views::shortcuts())
     {
         if (def.scope == tesseract::views::ShortcutScope::Contextual)
+        {
             continue;
+        }
         for (const auto& chord : def.chords)
         {
             ACCEL a{};
             if (!accel_from_chord_(chord, a) || accel_events_.size() >= kMaxShortcuts)
+            {
                 continue;
+            }
             a.cmd = static_cast<WORD>(IDC_SHORTCUT_BASE + accel_events_.size());
             all.push_back(a);
             if (def.scope == tesseract::views::ShortcutScope::Application)
+            {
                 app.push_back(a);
+            }
             accel_events_.push_back(tk::to_key_event(chord));
         }
     }
     accel_ = CreateAcceleratorTableW(all.data(), static_cast<int>(all.size()));
     if (!app.empty())
+    {
         accel_app_ = CreateAcceleratorTableW(app.data(), static_cast<int>(app.size()));
+    }
 }
 
 bool MainWindow::pre_translate_message(MSG* msg)
 {
     if (!hwnd_ || msg->message < WM_KEYFIRST || msg->message > WM_KEYLAST)
+    {
         return false;
+    }
     if (GetKeyboardLayout(0) != accel_layout_)
+    {
         rebuild_accelerators_();
+    }
     const bool in_main_window = msg->hwnd && GetAncestor(msg->hwnd, GA_ROOT) == hwnd_;
     HACCEL table = in_main_window ? accel_ : accel_app_;
     return table && TranslateAcceleratorW(hwnd_, table, msg);
 }
 
-void MainWindow::open_quick_switch_()
-{
-    if (!main_app_ || !main_app_->quick_switcher())
-    {
-        return;
-    }
-    // The Ctrl+K accelerator is application-wide (translated in the message
-    // loop against this window), so it fires even while a pop-out room window
-    // holds focus. Bring the main window forward (the switcher lives here) so
-    // it is visible. Harmless no-op when this window is already foreground.
-    if (IsIconic(hwnd_))
-    {
-        ShowWindow(hwnd_, SW_RESTORE);
-    }
-    SetForegroundWindow(hwnd_);
-    main_app_->show_quick_switch(true);
-    if (main_app_surface_)
-    {
-        main_app_surface_->relayout();
-    }
-}
-
-void MainWindow::close_quick_switch_()
-{
-    if (main_app_)
-    {
-        main_app_->show_quick_switch(false);
-    }
-    if (main_app_surface_)
-    {
-        main_app_surface_->relayout();
-    }
-    // Restore focus: prefer the compose bar when a room is open, otherwise
-    // fall back to the main window so Esc / nav keys reach wnd_proc.
-    if (room_text_area_ && room_text_area_->visible())
-    {
-        room_text_area_->set_focused(true);
-    }
-    else
-    {
-        SetFocus(hwnd_);
-    }
-}
-
-void MainWindow::open_message_search_()
-{
-    if (!main_app_ || !main_app_->message_search())
-    {
-        return;
-    }
-    // Application-wide accelerator: may fire while a pop-out holds focus. Bring
-    // the main window forward (search lives here) so its field can focus.
-    if (IsIconic(hwnd_))
-    {
-        ShowWindow(hwnd_, SW_RESTORE);
-    }
-    SetForegroundWindow(hwnd_);
-    main_app_->show_message_search(true);
-    if (main_app_surface_)
-    {
-        main_app_surface_->relayout();
-    }
-}
-
-void MainWindow::close_message_search_()
-{
-    if (main_app_)
-    {
-        main_app_->show_message_search(false);
-    }
-    if (main_app_surface_)
-    {
-        main_app_surface_->relayout();
-    }
-    if (room_text_area_ && room_text_area_->visible())
-    {
-        room_text_area_->set_focused(true);
-    }
-    else
-    {
-        SetFocus(hwnd_);
-    }
-}
-
-void MainWindow::close_forward_picker_()
-{
-    if (main_app_ && main_app_->forward_picker())
-        main_app_->forward_picker()->close();
-}
-
 void MainWindow::focus_forward_picker_field_()
 {
     if (!main_app_ || !main_app_->forward_picker())
+    {
         return;
+    }
     if (auto* f = main_app_->forward_picker()->search_field())
     {
         f->set_text("");
@@ -4464,49 +2857,13 @@ void MainWindow::focus_forward_picker_field_()
 void MainWindow::hide_forward_picker_field_()
 {
     if (main_app_ && main_app_->forward_picker())
+    {
         if (auto* f = main_app_->forward_picker()->search_field())
+        {
             f->set_visible(false);
+        }
+    }
     SetFocus(hwnd_);
-}
-
-void MainWindow::open_find_in_room_()
-{
-    auto* rv = main_app_ ? main_app_->room_view() : nullptr;
-    if (!rv || !rv->has_room())
-    {
-        return;
-    }
-    if (IsIconic(hwnd_))
-    {
-        ShowWindow(hwnd_, SW_RESTORE);
-    }
-    SetForegroundWindow(hwnd_);
-    rv->open_room_search();
-    if (main_app_surface_)
-    {
-        main_app_surface_->relayout();
-    }
-}
-
-void MainWindow::close_find_in_room_()
-{
-    auto* rv = main_app_ ? main_app_->room_view() : nullptr;
-    if (rv)
-    {
-        rv->close_room_search();
-    }
-    if (main_app_surface_)
-    {
-        main_app_surface_->relayout();
-    }
-    if (room_text_area_ && room_text_area_->visible())
-    {
-        room_text_area_->set_focused(true);
-    }
-    else
-    {
-        SetFocus(hwnd_);
-    }
 }
 
 void MainWindow::navigate_to_room(const std::string& room_id)
@@ -4515,198 +2872,77 @@ void MainWindow::navigate_to_room(const std::string& room_id)
     {
         return;
     }
-    if (room_list_view_)
+    if (main_app_)
     {
-        room_list_view_->set_selected_room(room_id);
+        main_app_->room_list_view()->set_selected_room(room_id);
     }
     tab_navigate_room(room_id);
 }
 
 // ---------------------------------------------------------------------------
-// Room selection
+// Window title
 // ---------------------------------------------------------------------------
 
 void MainWindow::apply_window_title_ui_(const std::string& title)
 {
     if (!hwnd_)
+    {
         return;
+    }
     SetWindowTextW(hwnd_, utf8_to_wstr(title).c_str());
     title_bar_.invalidate_strip(hwnd_);
-}
-
-void MainWindow::hide_compose_popups_()
-{
-    if (slash_controller_)
-        slash_controller_->hide();
-    if (shortcode_controller_)
-        shortcode_controller_->hide();
-    if (mention_controller_)
-        mention_controller_->hide();
-}
-
-void MainWindow::restart_mark_read_timer_(int delay_ms)
-{
-    KillTimer(hwnd_, kMarkReadTimerId);
-    SetTimer(hwnd_, kMarkReadTimerId, static_cast<UINT>(delay_ms), nullptr);
-}
-
-void MainWindow::before_room_set_()
-{
-    if (room_text_area_)
-    {
-        // Deliberately NOT redundant with RoomView::set_room()'s own
-        // default-focus policy (which this call precedes): that policy
-        // calls the exact same set_focused(true) path, so on a hidden HWND
-        // (first room load) it would silently no-op too. This block's real
-        // job is the deferred-retry below — always request focus, set it
-        // immediately if the HWND is already visible (room switch), and if
-        // it's hidden (first load), record the intent and apply it in the
-        // layout callback once the text area transitions to visible.
-        focus_compose_on_show_ = true;
-        if (room_text_area_->visible())
-            room_text_area_->set_focused(true);
-    }
-}
-
-void MainWindow::request_more_history(const std::string& room_id)
-{
-    if (room_id.empty())
-    {
-        return;
-    }
-    auto& state = pagination_[room_id];
-    if (state.in_flight || state.reached_start)
-    {
-        return;
-    }
-    state.in_flight = true;
-    if (room_view_)
-        room_view_->set_paginating(true);
-    start_anim_tick_();
-
-    HWND hwnd = hwnd_;
-    tesseract::Client* cl = client_;
-    run_async_(
-        [this, room_id, hwnd, cl]
-        {
-            auto pr = cl->paginate_back_with_status(room_id, kPaginationBatch);
-            auto* p = new std::string(room_id);
-            PostMessageW(hwnd, WM_TESSERACT_PAGINATE_DONE,
-                         static_cast<WPARAM>(pr.ok && pr.reached_start),
-                         reinterpret_cast<LPARAM>(p));
-        });
-}
-
-void MainWindow::on_tesseract_paginate_done(std::string* room_id,
-                                            bool reached_start)
-{
-    if (!room_id)
-    {
-        return;
-    }
-    push_paginate_result_(*room_id, reached_start);
-    if (*room_id == current_room_id_ && room_view_)
-    {
-        room_view_->message_list()->reset_near_top_latch();
-    }
 }
 
 // ---------------------------------------------------------------------------
 // Event callbacks
 // ---------------------------------------------------------------------------
 
-void MainWindow::on_tesseract_rooms(RoomsPayload* payload)
+void MainWindow::after_rooms_updated_ui_()
 {
-    // push_rooms_ updates per_account_rooms_, rooms_, and calls on_rooms_updated_().
-    push_rooms_(std::move(payload->user_id), std::move(payload->rooms));
-}
-
-void MainWindow::on_rooms_updated_()
-{
-    refresh_room_list();
-    if (!current_room_id_.empty())
-    {
-        for (const auto& r : rooms_)
-        {
-            if (r.id == current_room_id_)
-            {
-                if (room_view_)
-                {
-                    room_view_->set_room(r);
-                }
-                break;
-            }
-        }
-    }
-    else if (!pending_restore_rooms_.empty())
-    {
-        if (try_restore_tab_session_(pending_restore_rooms_,
-                                     pending_restore_rooms_[0]))
-            pending_restore_rooms_.clear();
-    }
-    refresh_window_title_();
-
-    update_secondary_room_infos_();
     taskbar_.set_next_unread_available(hwnd_, best_unread_room_() != nullptr);
 }
 
 void MainWindow::on_recent_room_visited_(const tesseract::RoomInfo& room)
 {
-    const std::string title = !room.name.empty()
-        ? room.name
-        : (!room.canonical_alias.empty() ? room.canonical_alias : room.id);
+    const std::string title =
+        !room.name.empty() ? room.name
+                           : (!room.canonical_alias.empty() ? room.canonical_alias : room.id);
     taskbar_.record_recent_room(utf8_to_wstr(room.id), utf8_to_wstr(title));
 
     const std::string avatar = room.effective_avatar_url();
-    if (avatar.empty()) return;
+    if (avatar.empty())
+    {
+        return;
+    }
     recent_taskbar_avatar_rooms_[avatar] = room.id;
     ensure_room_avatar_(room);
-    const auto disk_key = tk::CacheKey::thumbnail(
-        avatar, tesseract::visual::kAvatarCacheSize, tesseract::visual::kAvatarCacheSize);
-    run_async_([this, room_id = room.id, disk_key]
-    {
-        auto bytes = account_manager_.media_disk_cache().load(disk_key);
-        if (bytes.empty()) return;
-        post_to_ui_([this, room_id, bytes = std::move(bytes)]
+    const auto disk_key = tk::CacheKey::thumbnail(avatar, tesseract::visual::kAvatarCacheSize,
+                                                  tesseract::visual::kAvatarCacheSize);
+    run_async_(
+        [this, room_id = room.id, disk_key]
         {
-            taskbar_.record_recent_room_avatar(utf8_to_wstr(room_id), bytes);
+            auto bytes = account_manager_.media_disk_cache().load(disk_key);
+            if (bytes.empty())
+            {
+                return;
+            }
+            post_to_ui_(
+                [this, room_id, bytes = std::move(bytes)]
+                {
+                    taskbar_.record_recent_room_avatar(utf8_to_wstr(room_id), bytes);
+                });
         });
-    });
-}
-
-void MainWindow::on_invites_updated_()
-{
-    if (room_list_view_)
-    {
-        room_list_view_->set_invites(&invites_);
-    }
-    if (main_app_surface_)
-    {
-        main_app_surface_->relayout();
-    }
-}
-
-void MainWindow::on_my_knocks_updated_()
-{
-    if (room_list_view_)
-    {
-        room_list_view_->set_my_knocks(&my_knocks_);
-    }
-    if (main_app_surface_)
-    {
-        main_app_surface_->relayout();
-    }
 }
 
 void MainWindow::on_space_children_cache_ready_ui_()
 {
-    refresh_room_list();
+    refresh_room_list_();
     refresh_pickers_packs_();
 }
 
 void MainWindow::on_space_unjoined_summaries_ready_ui_(const std::string&)
 {
-    refresh_room_list();
+    refresh_room_list_();
 }
 
 void MainWindow::on_tray_unread_changed_(bool has_unread, bool has_highlight)
@@ -4719,20 +2955,8 @@ void MainWindow::on_tray_unread_changed_(bool has_unread, bool has_highlight)
     taskbar_.set_next_unread_available(hwnd_, best_unread_room_() != nullptr);
 }
 
-void MainWindow::on_account_badges_changed_(bool other_accounts_unread)
-{
-    if (main_app_)
-    {
-        if (auto* ui = main_app_->user_info())
-        {
-            ui->set_notification_dot(other_accounts_unread);
-        }
-    }
-}
-
-void MainWindow::on_upload_progress_ui_(std::uint64_t request_id,
-                                         std::uint64_t current,
-                                         std::uint64_t total)
+void MainWindow::on_upload_progress_ui_(std::uint64_t request_id, std::uint64_t current,
+                                        std::uint64_t total)
 {
     taskbar_.upload_progress(request_id, current, total);
 }
@@ -4742,26 +2966,10 @@ void MainWindow::on_upload_finished_ui_(std::uint64_t request_id, bool ok)
     taskbar_.upload_finished(request_id, ok);
 }
 
-void MainWindow::refresh_room_list()
-{
-    refresh_room_list_();
-}
-
-void MainWindow::on_space_back()
-{
-    space_back_command_();
-}
-
 // ---------------------------------------------------------------------------
 //  Avatar / inline-media decode into tk::Image
 // ---------------------------------------------------------------------------
 
-// These helpers used to call the synchronous Rust FFI directly on
-// the UI thread, which froze the message pump for minutes on first sync
-// (one network round-trip per room avatar, serialised on the UI thread).
-// Decode + cache + repaint now happens via WM_TESSERACT_MEDIA_BYTES;
-// the call sites return immediately and the next paint shows an
-// initials placeholder until the bytes land.
 // ensure_room_avatar_, ensure_user_avatar_, and ensure_media_image_ are
 // implemented in tesseract::ShellBase. ensure_reply_details_ now lives on
 // RoomPane (main_room_pane_).
@@ -4772,6 +2980,7 @@ void MainWindow::on_space_back()
 
 void MainWindow::on_anim_tick()
 {
+    last_anim_tick_ms_ = monotonic_ms_();
     tick_anim_();
 }
 
@@ -4784,28 +2993,11 @@ void MainWindow::stop_anim_tick_()
     }
 }
 
-void MainWindow::repaint_anim_frame_()
+void MainWindow::update_main_anim_regions_()
 {
-    if (main_app_surface_ && main_app_surface_->hwnd())
+    if (main_app_surface_)
     {
-        InvalidateRect(main_app_surface_->hwnd(), nullptr, FALSE);
-    }
-    if (room_view_)
-    {
-        if (room_view_->sticker_picker_visible() && room_view_->sticker_picker())
-            room_view_->sticker_picker()->invalidate_image_cache();
-        if (room_view_->emoji_picker_visible() && room_view_->emoji_picker())
-            room_view_->emoji_picker()->invalidate_image_cache();
-    }
-    if (gif_popup_ && gif_popup_visible_())
-        gif_popup_->update_anim_regions();
-    if (app_settings_open_ && settings_surface_ && settings_surface_->hwnd())
-    {
-        // Settings' "Emojis & Stickers" tab (UserPackEditor/KnownPacksList)
-        // can show animated stickers too — it has its own top-level surface,
-        // separate from main_app_surface_, so it needs its own invalidate
-        // here or animated frames only advance on mouse-move-driven repaints.
-        InvalidateRect(settings_surface_->hwnd(), nullptr, FALSE);
+        main_app_surface_->update_anim_regions();
     }
 }
 
@@ -4832,8 +3024,7 @@ void MainWindow::request_repaint_()
 void MainWindow::post_to_ui_(std::function<void()> fn)
 {
     auto* p = new std::function<void()>(std::move(fn));
-    if (!PostMessageW(hwnd_, WM_TESSERACT_POST_TO_UI, 0,
-                      reinterpret_cast<LPARAM>(p)))
+    if (!PostMessageW(hwnd_, WM_TESSERACT_POST_TO_UI, 0, reinterpret_cast<LPARAM>(p)))
     {
         delete p; // window already gone; drop the closure
     }
@@ -4847,21 +3038,21 @@ void MainWindow::post_to_ui_after_(int ms, std::function<void()> fn)
     // MainWindow::wnd_proc (same failure as the original kSearchDebounceTimer=3
     // approach fixed in e09105d).
     if (main_app_surface_)
-        main_app_surface_->host().post_delayed(ms, std::move(fn));
-}
-
-void MainWindow::on_media_bytes_ready_(const tk::CacheKey& cache_key,
-                                       MediaKind kind,
-                                       std::vector<uint8_t> bytes)
-{
-    // Called on the UI thread (via post_to_ui_ → WM_TESSERACT_POST_TO_UI).
-    // Decode the bytes, store in the appropriate tk::Image cache, and repaint
-    // the relevant surface.
-    if (bytes.empty())
     {
+        main_app_surface_->host().post_delayed(ms, std::move(fn));
         return;
     }
+    // Nowhere to post: the post is dropped, so no debounce slot may stay armed
+    // waiting for it.
+    for (auto& [key, st] : debounce_state_)
+    {
+        st.armed = false;
+    }
+}
 
+bool MainWindow::accept_media_bytes_(const tk::CacheKey& cache_key, MediaKind kind,
+                                     const std::vector<std::uint8_t>& bytes)
+{
     if (kind == MediaKind::RoomAvatar)
     {
         if (const auto it = recent_taskbar_avatar_rooms_.find(cache_key.id);
@@ -4870,270 +3061,95 @@ void MainWindow::on_media_bytes_ready_(const tk::CacheKey& cache_key,
             taskbar_.record_recent_room_avatar(utf8_to_wstr(it->second), bytes);
         }
     }
+    return main_app_surface_ != nullptr;
+}
 
-    if (!main_app_surface_)
+void MainWindow::ingest_tile_media_(const tk::CacheKey& cache_key, std::vector<std::uint8_t> bytes)
+{
+    if (auto img = main_app_surface_->factory().decode_image(bytes))
     {
-        return;
+        account_manager_.image_cache().store(cache_key, std::move(img));
+        // A map tile fills a fixed-size map card and isn't a tracked row media
+        // source, so it needs only a repaint (LocationMapPanner::paint re-reads
+        // the tile from the cache).
     }
-    HWND invalidate_hwnd = main_app_surface_->hwnd();
-    switch (kind)
+    notify_secondary_media_ready_(cache_key.id, MediaKind::Tile);
+    if (HWND h = main_app_surface_->hwnd())
     {
-    case MediaKind::RoomAvatar:
-    case MediaKind::UserAvatar:
-    {
-        if (account_manager_.thumbnail_cache().contains(cache_key))
-        {
-            return;
-        }
-        // Decode off the UI thread (WIC factory is free-threaded — same basis
-        // as the MediaImage path below). A burst of avatar fetches (e.g. after
-        // a room switch) would otherwise decode synchronously here and stall
-        // the UI event queue that a just-sent message's local echo waits in.
-        // Store + relayout hop back to the UI thread.
-        run_async_(
-            [this, cache_key, kind, invalidate_hwnd,
-             bytes = std::move(bytes)]() mutable
-            {
-                auto d = std::make_shared<DecodedImage>(decode_image_(
-                    bytes, tesseract::visual::kAvatarCacheSize,
-                    tesseract::visual::kAvatarCacheSize));
-                post_to_ui_(
-                    [this, cache_key, kind, invalidate_hwnd, d]() mutable
-                    {
-                        if (account_manager_.thumbnail_cache().contains(
-                                cache_key))
-                            return;
-                        // Avatars render static: use the still, or the first
-                        // frame of an animated source (matches the old
-                        // factory().decode_image, which returned one frame).
-                        std::unique_ptr<tk::Image> img;
-                        if (d->still)
-                            img = std::move(d->still);
-                        else if (!d->frames.empty())
-                            img = std::move(d->frames.front());
-                        if (!img)
-                            return;
-                        account_manager_.thumbnail_cache().store(
-                            cache_key, std::move(img));
-                        // Clears a room-switch-gate pending entry waiting on
-                        // this avatar (see RoomSwitchGateKeeper); avatars are
-                        // fixed-size so no re-measure is triggered by this.
-                        if (room_view_)
-                        {
-                            room_view_->notify_image_ready(cache_key.id);
-                        }
-                        // Patch any composer mention pill still waiting on
-                        // this avatar — event-driven (fires exactly when the
-                        // decode actually lands), not a poll loop. See
-                        // RoomPane::notify_avatar_media_ready_'s doc comment.
-                        if (main_room_pane_)
-                        {
-                            main_room_pane_->notify_avatar_media_ready_(kind);
-                        }
-                        if (kind == MediaKind::RoomAvatar)
-                        {
-                            // Coalescing — see the MediaThumbnail/MediaImage
-                            // case below for why a direct, uncoalesced
-                            // relayout() per completion is a problem for any
-                            // burst (e.g. many room avatars after login).
-                            schedule_relayout_();
-                        }
-                        else // UserAvatar
-                        {
-                            if (hAccountPicker_ &&
-                                IsWindowVisible(hAccountPicker_) &&
-                                account_picker_surface_)
-                                account_picker_surface_->relayout();
-                            if (mention_popup_visible_() && mention_popup_)
-                                mention_popup_->request_relayout();
-                        }
-                        notify_secondary_media_ready_(cache_key.id, kind);
-                        if (invalidate_hwnd)
-                            InvalidateRect(invalidate_hwnd, nullptr, FALSE);
-                    });
-            });
-        return;
-    }
-    case MediaKind::MediaImage:
-    case MediaKind::MediaThumbnail:
-    case MediaKind::Sticker:
-    case MediaKind::Reaction:
-    {
-        // Decode off the UI thread — WIC factory is free-threaded (see
-        // host_win32.h). decode_image_ handles both animated and still images.
-        const bool is_thumb = (kind == MediaKind::MediaThumbnail);
-        if ((is_thumb ? account_manager_.thumbnail_cache() : account_manager_.image_cache()).contains(cache_key) ||
-            account_manager_.anim_cache().has(cache_key))
-            return;
-        const auto [max_w, max_h] = media_decode_clamp_(kind, cache_key);
-        // finish_first_frame runs once something (frame 0, or a decoded
-        // still image) has just landed in a cache — repaint/relayout/notify
-        // hooks that only need to fire once per asset, not once per frame.
-        auto finish_first_frame = [this, cache_key, kind, invalidate_hwnd]()
-        {
-            if (room_view_)
-                room_view_->notify_image_ready(cache_key.id);
-            // Coalescing, not main_app_surface_->relayout() directly: a
-            // dense grid (the room media gallery) can land dozens of these
-            // completions in a tight burst, and an uncoalesced call here
-            // does a full app-wide arrange() per completion — including a
-            // full re-measure of the main chat timeline's rows (DirectWrite
-            // text-layout rebuilds on any LinkLayoutCache miss), which has
-            // nothing to do with a thumbnail arriving. schedule_relayout_()
-            // folds a burst of these into one deferred pass.
-            schedule_relayout_();
-            if (shortcode_popup_visible_() && shortcode_popup_)
-                shortcode_popup_->request_relayout();
-            if (app_settings_open_ && settings_surface_ &&
-                settings_surface_->hwnd())
-                InvalidateRect(settings_surface_->hwnd(), nullptr, FALSE);
-            notify_secondary_media_ready_(cache_key.id, kind);
-            if (invalidate_hwnd)
-                InvalidateRect(invalidate_hwnd, nullptr, FALSE);
-        };
-        // Read on the UI thread — PowerPolicy has no internal synchronization,
-        // so low_power_active() must not be read from the worker lambda below.
-        const bool low_power_now = low_power_active();
-        run_async_(
-            [this, cache_key, kind, is_thumb, invalidate_hwnd, max_w, max_h,
-             finish_first_frame, low_power_now,
-             bytes = std::move(bytes)]() mutable
-            {
-                // Low power mode: skip the windowed/streaming decode session
-                // (which does small recurring top-up decodes for as long as
-                // the sticker plays) and fall straight to the whole-batch
-                // decode below, which already handles the animated case.
-                // Only gates a freshly-decoded sticker — an already-resident
-                // AnimImageCache entry/session is untouched by this.
-                if (!low_power_now)
-                {
-                    auto cb = make_streamed_decode_callbacks_windowed_(
-                        cache_key, is_thumb, finish_first_frame,
-                        /*evict_image_cache_on_first=*/true);
-                    if (decode_image_streamed_windowed_(bytes, max_w, max_h,
-                                                        cb.on_first, cb.on_extra))
-                    {
-                        return;
-                    }
-                }
-
-                // Not a (successfully) streamed multi-frame image — fall
-                // back to the whole-batch decode, which also handles the
-                // still-image case decode_image_streamed_ doesn't.
-                auto d = std::make_shared<DecodedImage>(
-                    decode_image_(bytes, max_w, max_h));
-                post_to_ui_(
-                    [this, cache_key, is_thumb, d,
-                     finish_first_frame]() mutable
-                    {
-                        auto& still_cache =
-                            is_thumb ? account_manager_.thumbnail_cache() : account_manager_.image_cache();
-                        if (still_cache.contains(cache_key) ||
-                            account_manager_.anim_cache().has(cache_key))
-                            return;
-                        if (!d->frames.empty())
-                        {
-                            account_manager_.anim_cache().store(
-                                cache_key, std::move(d->frames),
-                                std::move(d->delays_ms),
-                                static_cast<std::int64_t>(GetTickCount64()));
-                            start_anim_tick_();
-                            account_manager_.image_cache().evict(cache_key);
-                        }
-                        else if (d->still)
-                        {
-                            still_cache.store(cache_key,
-                                              std::move(d->still));
-                        }
-                        else
-                        {
-                            if (!is_thumb)
-                                account_manager_.media_disk_cache().evict(cache_key);
-                            return;
-                        }
-                        finish_first_frame();
-                    });
-            });
-        return;
-    }
-    case MediaKind::Tile:
-        if (account_manager_.image_cache().contains(cache_key))
-        {
-            return;
-        }
-        if (auto img = main_app_surface_->factory().decode_image(bytes))
-        {
-            account_manager_.image_cache().store(cache_key, std::move(img));
-            // A map tile fills a fixed-size map card and isn't a tracked row
-            // media source, so it needs only a repaint — the shared
-            // InvalidateRect below re-draws it (LocationMapPanner::paint re-reads
-            // the tile from the cache). The old invalidate_data() + relayout()
-            // did a full O(timeline) re-measure just to repaint a fixed card.
-        }
-        break;
-    }
-    notify_secondary_media_ready_(cache_key.id, kind);
-    if (invalidate_hwnd)
-    {
-        InvalidateRect(invalidate_hwnd, nullptr, FALSE);
+        InvalidateRect(h, nullptr, FALSE);
     }
 }
 
-void MainWindow::pick_image_file_(
-    std::function<void(std::vector<uint8_t>, std::string)> cb)
+void MainWindow::pick_image_file_(std::function<void(std::vector<uint8_t>, std::string)> cb)
 {
     wchar_t buf[MAX_PATH]{};
     OPENFILENAMEW ofn{};
     ofn.lStructSize = sizeof(ofn);
-    ofn.hwndOwner   = hwnd_;
-    ofn.lpstrFile   = buf;
-    ofn.nMaxFile    = MAX_PATH;
+    ofn.hwndOwner = hwnd_;
+    ofn.lpstrFile = buf;
+    ofn.nMaxFile = MAX_PATH;
     const std::wstring filter =
         file_filter({{tk::tr("Images"), L"*.png;*.jpg;*.jpeg;*.gif;*.webp"}});
     ofn.lpstrFilter = filter.c_str();
-    ofn.Flags       = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
     if (!GetOpenFileNameW(&ofn))
+    {
         return;
+    }
 
-    HANDLE hf = CreateFileW(buf, GENERIC_READ, FILE_SHARE_READ, nullptr,
-                            OPEN_EXISTING, 0, nullptr);
+    HANDLE hf = CreateFileW(buf, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, 0, nullptr);
     if (hf == INVALID_HANDLE_VALUE)
+    {
         return;
+    }
 
     LARGE_INTEGER sz{};
     GetFileSizeEx(hf, &sz);
     std::vector<uint8_t> bytes(static_cast<size_t>(sz.QuadPart));
     DWORD read_bytes = 0;
-    ReadFile(hf, bytes.data(), static_cast<DWORD>(bytes.size()),
-             &read_bytes, nullptr);
+    ReadFile(hf, bytes.data(), static_cast<DWORD>(bytes.size()), &read_bytes, nullptr);
     CloseHandle(hf);
 
     std::wstring wp(buf);
     std::string mime = "image/jpeg";
-    if (wp.ends_with(L".png"))       mime = "image/png";
-    else if (wp.ends_with(L".gif"))  mime = "image/gif";
-    else if (wp.ends_with(L".webp")) mime = "image/webp";
-
-    post_to_ui_([cb = std::move(cb), bytes = std::move(bytes), mime]() mutable
+    if (wp.ends_with(L".png"))
     {
-        cb(std::move(bytes), mime);
-    });
+        mime = "image/png";
+    }
+    else if (wp.ends_with(L".gif"))
+    {
+        mime = "image/gif";
+    }
+    else if (wp.ends_with(L".webp"))
+    {
+        mime = "image/webp";
+    }
+
+    post_to_ui_(
+        [cb = std::move(cb), bytes = std::move(bytes), mime]() mutable
+        {
+            cb(std::move(bytes), mime);
+        });
 }
 
-MainWindow::DecodedImage
-MainWindow::decode_image_(const std::vector<uint8_t>& bytes, int max_w,
-                          int max_h)
+MainWindow::DecodedImage MainWindow::decode_image_(const std::vector<uint8_t>& bytes, int max_w,
+                                                   int max_h)
 {
     if (tesseract::is_jxl_data(bytes))
     {
         auto& jxl_backend = tk::win32::backend_singleton();
         return tesseract::jxl::decode_image(bytes, max_w, max_h,
-                                  [&jxl_backend](const std::uint8_t* px, int w, int h)
-                                  { return tk::d2d::make_image_from_rgba(jxl_backend, px, w, h); });
+                                            [&jxl_backend](const std::uint8_t* px, int w, int h)
+                                            {
+                                                return tk::d2d::make_image_from_rgba(jxl_backend,
+                                                                                     px, w, h);
+                                            });
     }
     // Untrusted bytes: refuse over-budget images before any codec allocates (tk/image_sniff.h).
     if (!tk::decode_size_allowed(bytes, tk::bytes_may_be_animated(bytes)))
+    {
         return DecodedImage{};
+    }
     DecodedImage d;
     if (bytes.empty())
     {
@@ -5165,13 +3181,18 @@ bool MainWindow::decode_image_streamed_(
     if (tesseract::is_jxl_data(bytes))
     {
         auto& jxl_backend = tk::win32::backend_singleton();
-        return tesseract::jxl::decode_streamed(bytes, max_w, max_h,
-                                  [&jxl_backend](const std::uint8_t* px, int w, int h)
-                                  { return tk::d2d::make_image_from_rgba(jxl_backend, px, w, h); },
-                                  on_first_frame, on_frame);
+        return tesseract::jxl::decode_streamed(
+            bytes, max_w, max_h,
+            [&jxl_backend](const std::uint8_t* px, int w, int h)
+            {
+                return tk::d2d::make_image_from_rgba(jxl_backend, px, w, h);
+            },
+            on_first_frame, on_frame);
     }
     if (!tk::decode_size_allowed(bytes, /*animated=*/true))
+    {
         return false;
+    }
     if (bytes.empty())
     {
         return false;
@@ -5185,28 +3206,31 @@ bool MainWindow::decode_image_streamed_(
         got_first = true;
         on_first_frame(std::move(img), delay_ms);
     };
-    tk::d2d::decode_animation(backend, span, max_w, max_h, &first_cb,
-                              &on_frame);
+    tk::d2d::decode_animation(backend, span, max_w, max_h, &first_cb, &on_frame);
     return got_first;
 }
 
 bool MainWindow::decode_image_streamed_windowed_(
     const std::vector<uint8_t>& bytes, int max_w, int max_h,
     const std::function<void(std::unique_ptr<tk::Image>, int,
-                             std::shared_ptr<tk::AnimDecodeSession>,
-                             std::size_t)>& on_first_frame,
+                             std::shared_ptr<tk::AnimDecodeSession>, std::size_t)>& on_first_frame,
     const std::function<void(int, std::unique_ptr<tk::Image>, int)>& on_frame)
 {
     if (tesseract::is_jxl_data(bytes))
     {
         auto& jxl_backend = tk::win32::backend_singleton();
-        return tesseract::jxl::decode_streamed_windowed(bytes, max_w, max_h,
-                                  [&jxl_backend](const std::uint8_t* px, int w, int h)
-                                  { return tk::d2d::make_image_from_rgba(jxl_backend, px, w, h); },
-                                  on_first_frame, on_frame);
+        return tesseract::jxl::decode_streamed_windowed(
+            bytes, max_w, max_h,
+            [&jxl_backend](const std::uint8_t* px, int w, int h)
+            {
+                return tk::d2d::make_image_from_rgba(jxl_backend, px, w, h);
+            },
+            on_first_frame, on_frame);
     }
     if (!tk::decode_size_allowed(bytes, /*animated=*/true))
+    {
         return false;
+    }
     if (bytes.empty())
     {
         return false;
@@ -5218,9 +3242,9 @@ bool MainWindow::decode_image_streamed_windowed_(
     // worth the complexity". See anim_image_cache.h's
     // kLookaheadFrames/kTopupBatchFrames/kKeepBehindFrames for the
     // resident-window size once windowing kicks in above this.
-    return tk::d2d::decode_animation_windowed(
-        backend, span, max_w, max_h, tk::kAnimDecodeWindowThresholdFrames,
-        on_first_frame, on_frame);
+    return tk::d2d::decode_animation_windowed(backend, span, max_w, max_h,
+                                              tk::kAnimDecodeWindowThresholdFrames, on_first_frame,
+                                              on_frame);
 }
 
 std::int64_t MainWindow::monotonic_ms_()
@@ -5232,7 +3256,7 @@ void MainWindow::start_anim_tick_()
 {
     if (!anim_timer_running_ && hwnd_)
     {
-        SetTimer(hwnd_, kAnimTimerId, kAnimTimerHz, nullptr);
+        SetTimer(hwnd_, kAnimTimerId, kAnimTimerMs, nullptr);
         anim_timer_running_ = true;
     }
 }
@@ -5241,7 +3265,7 @@ void MainWindow::start_inflight_tick_()
 {
     if (!inflight_timer_running_ && hwnd_)
     {
-        SetTimer(hwnd_, kInflightTimerId, kAnimTimerHz, nullptr);
+        SetTimer(hwnd_, kInflightTimerId, kAnimTimerMs, nullptr);
         inflight_timer_running_ = true;
     }
 }
@@ -5259,97 +3283,41 @@ void MainWindow::repaint_inflight_spinner_()
 {
     if (hStatus_)
     {
-        const uint32_t phase_enc =
-            static_cast<uint32_t>(inflight_spin_phase_() * 65535.0f) + 1u;
+        const uint32_t phase_enc = static_cast<uint32_t>(inflight_spin_phase_() * 65535.0f) + 1u;
         SetPropW(hStatus_, L"TesseractStatusPhase",
                  reinterpret_cast<HANDLE>(static_cast<ULONG_PTR>(phase_enc)));
         InvalidateRect(hStatus_, nullptr, FALSE);
     }
 }
 
-void MainWindow::repaint_pickers_()
+void MainWindow::probe_drop_video_(std::uint32_t pending_gen, std::vector<std::uint8_t> bytes,
+                                   tesseract::views::ComposeBar* target,
+                                   std::shared_ptr<bool> target_alive)
 {
-    if (main_app_surface_)
-    {
-        main_app_surface_->relayout();
-        if (HWND h = main_app_surface_->hwnd())
+    run_async_(
+        [this, pending_gen, target, target_alive = std::move(target_alive),
+         bytes = std::move(bytes)]() mutable
         {
-            InvalidateRect(h, nullptr, FALSE);
-        }
-    }
-    if (room_view_)
-    {
-        if (room_view_->emoji_picker())
-            room_view_->emoji_picker()->invalidate_image_cache();
-        if (room_view_->sticker_picker())
-            room_view_->sticker_picker()->invalidate_image_cache();
-    }
-}
-
-void MainWindow::extract_drop_media_(std::uint32_t pending_gen,
-                                     std::vector<std::uint8_t> bytes,
-                                     std::string mime,
-                                     tesseract::views::ComposeBar* target,
-                                     std::shared_ptr<bool> target_alive)
-{
-    run_async_([this, pending_gen, target, target_alive = std::move(target_alive),
-                bytes = std::move(bytes), mime = std::move(mime)]() mutable
-    {
-        tesseract::views::MediaInfo info;
-        info.pending_gen = pending_gen;
-
-        // COM must be initialized on each background thread.
-        CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-
-        // ── Animated image detection (gif / webp) ──────────────────────────
-        if (mime == "image/gif" || mime == "image/webp")
-        {
-            IWICImagingFactory* factory = nullptr;
-            if (SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory, nullptr,
-                                           CLSCTX_INPROC_SERVER,
-                                           IID_PPV_ARGS(&factory))))
-            {
-                IStream* stream = SHCreateMemStream(
-                    reinterpret_cast<const BYTE*>(bytes.data()),
-                    static_cast<UINT>(bytes.size()));
-                if (stream)
-                {
-                    IWICBitmapDecoder* decoder = nullptr;
-                    if (SUCCEEDED(factory->CreateDecoderFromStream(
-                            stream, nullptr, WICDecodeMetadataCacheOnDemand,
-                            &decoder)))
-                    {
-                        UINT count = 0;
-                        decoder->GetFrameCount(&count);
-                        info.is_animated = count > 1;
-                        decoder->Release();
-                    }
-                    stream->Release();
-                }
-                factory->Release();
-            }
-        }
-        // ── Video: first-frame thumbnail + duration via Media Foundation ───
-        else if (mime.rfind("video/", 0) == 0)
-        {
-            IStream* com_stream = SHCreateMemStream(
-                reinterpret_cast<const BYTE*>(bytes.data()),
-                static_cast<UINT>(bytes.size()));
+            tesseract::views::MediaInfo info;
+            info.pending_gen = pending_gen;
+            // COM must be initialized on each background thread.
+            CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+            IStream* com_stream = SHCreateMemStream(reinterpret_cast<const BYTE*>(bytes.data()),
+                                                    static_cast<UINT>(bytes.size()));
             if (com_stream)
             {
                 IMFByteStream* mf_stream = nullptr;
                 if (SUCCEEDED(MFCreateMFByteStreamOnStream(com_stream, &mf_stream)))
                 {
                     IMFSourceReader* reader = nullptr;
-                    if (SUCCEEDED(MFCreateSourceReaderFromByteStream(
-                            mf_stream, nullptr, &reader)))
+                    if (SUCCEEDED(MFCreateSourceReaderFromByteStream(mf_stream, nullptr, &reader)))
                     {
                         // Duration (in 100-nanosecond units)
                         PROPVARIANT pv;
                         PropVariantInit(&pv);
                         if (SUCCEEDED(reader->GetPresentationAttribute(
-                                static_cast<DWORD>(MF_SOURCE_READER_MEDIASOURCE),
-                                MF_PD_DURATION, &pv)) &&
+                                static_cast<DWORD>(MF_SOURCE_READER_MEDIASOURCE), MF_PD_DURATION,
+                                &pv)) &&
                             pv.vt == VT_UI8)
                         {
                             info.duration_ms = pv.uhVal.QuadPart / 10000ULL;
@@ -5363,19 +3331,16 @@ void MainWindow::extract_drop_media_(std::uint32_t pending_gen,
                             out_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
                             out_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_RGB32);
                             reader->SetCurrentMediaType(
-                                static_cast<DWORD>(
-                                    MF_SOURCE_READER_FIRST_VIDEO_STREAM),
-                                nullptr, out_type);
+                                static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), nullptr,
+                                out_type);
                             out_type->Release();
                         }
 
                         DWORD stream_index = 0, flags = 0;
                         LONGLONG timestamp = 0;
                         IMFSample* sample = nullptr;
-                        reader->ReadSample(
-                            static_cast<DWORD>(
-                                MF_SOURCE_READER_FIRST_VIDEO_STREAM),
-                            0, &stream_index, &flags, &timestamp, &sample);
+                        reader->ReadSample(static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM),
+                                           0, &stream_index, &flags, &timestamp, &sample);
 
                         if (sample)
                         {
@@ -5386,12 +3351,10 @@ void MainWindow::extract_drop_media_(std::uint32_t pending_gen,
                                 IMFMediaType* cur_type = nullptr;
                                 UINT32 vw = 0, vh = 0;
                                 if (SUCCEEDED(reader->GetCurrentMediaType(
-                                        static_cast<DWORD>(
-                                            MF_SOURCE_READER_FIRST_VIDEO_STREAM),
+                                        static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM),
                                         &cur_type)))
                                 {
-                                    MFGetAttributeSize(cur_type,
-                                                       MF_MT_FRAME_SIZE, &vw, &vh);
+                                    MFGetAttributeSize(cur_type, MF_MT_FRAME_SIZE, &vw, &vh);
                                 }
                                 info.video_w = vw;
                                 info.video_h = vh;
@@ -5404,54 +3367,51 @@ void MainWindow::extract_drop_media_(std::uint32_t pending_gen,
                                 {
                                     // MF may produce bottom-up (negative stride) RGB32;
                                     // flip rows to top-down before handing to WIC.
-                                    LONG stride_val =
-                                        static_cast<LONG>(vw * 4);
+                                    LONG stride_val = static_cast<LONG>(vw * 4);
                                     if (cur_type)
-                                        cur_type->GetUINT32(
-                                            MF_MT_DEFAULT_STRIDE,
-                                            reinterpret_cast<UINT32*>(&stride_val));
+                                    {
+                                        cur_type->GetUINT32(MF_MT_DEFAULT_STRIDE,
+                                                            reinterpret_cast<UINT32*>(&stride_val));
+                                    }
                                     UINT abs_stride = stride_val < 0
-                                        ? static_cast<UINT>(-stride_val)
-                                        : static_cast<UINT>(stride_val);
+                                                          ? static_cast<UINT>(-stride_val)
+                                                          : static_cast<UINT>(stride_val);
                                     std::vector<BYTE> flipped;
                                     BYTE* pixel_data = data;
                                     if (stride_val < 0)
                                     {
                                         flipped.resize(vh * abs_stride);
                                         for (UINT row = 0; row < vh; ++row)
+                                        {
                                             memcpy(flipped.data() + row * abs_stride,
-                                                   data + (vh - 1 - row) * abs_stride,
-                                                   abs_stride);
+                                                   data + (vh - 1 - row) * abs_stride, abs_stride);
+                                        }
                                         pixel_data = flipped.data();
                                     }
 
                                     IWICImagingFactory* wic = nullptr;
-                                    if (SUCCEEDED(CoCreateInstance(
-                                            CLSID_WICImagingFactory, nullptr,
-                                            CLSCTX_INPROC_SERVER,
-                                            IID_PPV_ARGS(&wic))))
+                                    if (SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory, nullptr,
+                                                                   CLSCTX_INPROC_SERVER,
+                                                                   IID_PPV_ARGS(&wic))))
                                     {
                                         IStream* out = nullptr;
                                         CreateStreamOnHGlobal(nullptr, TRUE, &out);
                                         IWICBitmapEncoder* enc = nullptr;
-                                        if (SUCCEEDED(wic->CreateEncoder(
-                                                GUID_ContainerFormatJpeg, nullptr,
-                                                &enc)) && out)
+                                        if (SUCCEEDED(wic->CreateEncoder(GUID_ContainerFormatJpeg,
+                                                                         nullptr, &enc)) &&
+                                            out)
                                         {
-                                            enc->Initialize(out,
-                                                            WICBitmapEncoderNoCache);
+                                            enc->Initialize(out, WICBitmapEncoderNoCache);
                                             IWICBitmapFrameEncode* frame = nullptr;
-                                            if (SUCCEEDED(
-                                                    enc->CreateNewFrame(&frame, nullptr)))
+                                            if (SUCCEEDED(enc->CreateNewFrame(&frame, nullptr)))
                                             {
                                                 frame->Initialize(nullptr);
                                                 frame->SetSize(vw, vh);
                                                 WICPixelFormatGUID fmt =
                                                     GUID_WICPixelFormat32bppBGR;
                                                 frame->SetPixelFormat(&fmt);
-                                                frame->WritePixels(
-                                                    vh, abs_stride,
-                                                    vh * abs_stride, pixel_data);
+                                                frame->WritePixels(vh, abs_stride, vh * abs_stride,
+                                                                   pixel_data);
                                                 frame->Commit();
                                                 frame->Release();
                                             }
@@ -5463,21 +3423,25 @@ void MainWindow::extract_drop_media_(std::uint32_t pending_gen,
                                             STATSTG stat{};
                                             out->Stat(&stat, STATFLAG_NONAME);
                                             std::vector<std::uint8_t> jpeg(
-                                                static_cast<std::size_t>(
-                                                    stat.cbSize.QuadPart));
+                                                static_cast<std::size_t>(stat.cbSize.QuadPart));
                                             ULONG nread = 0;
-                                            out->Read(jpeg.data(),
-                                                      static_cast<ULONG>(jpeg.size()),
+                                            out->Read(jpeg.data(), static_cast<ULONG>(jpeg.size()),
                                                       &nread);
                                             info.thumb_bytes = std::move(jpeg);
                                             info.thumb_w = vw;
                                             info.thumb_h = vh;
                                         }
-                                        if (out) out->Release();
+                                        if (out)
+                                        {
+                                            out->Release();
+                                        }
                                         wic->Release();
                                     }
                                 }
-                                if (cur_type) cur_type->Release();
+                                if (cur_type)
+                                {
+                                    cur_type->Release();
+                                }
                                 buf->Unlock();
                                 buf->Release();
                             }
@@ -5489,27 +3453,40 @@ void MainWindow::extract_drop_media_(std::uint32_t pending_gen,
                 }
                 com_stream->Release();
             }
-        }
-        // ── Audio: duration only via Media Foundation ──────────────────────
-        else if (mime.rfind("audio/", 0) == 0)
+
+            CoUninitialize();
+
+            post_pending_attachment_(std::move(info), target, std::move(target_alive));
+        });
+}
+
+void MainWindow::probe_drop_audio_(std::uint32_t pending_gen, std::vector<std::uint8_t> bytes,
+                                   tesseract::views::ComposeBar* target,
+                                   std::shared_ptr<bool> target_alive)
+{
+    run_async_(
+        [this, pending_gen, target, target_alive = std::move(target_alive),
+         bytes = std::move(bytes)]() mutable
         {
-            IStream* com_stream = SHCreateMemStream(
-                reinterpret_cast<const BYTE*>(bytes.data()),
-                static_cast<UINT>(bytes.size()));
+            tesseract::views::MediaInfo info;
+            info.pending_gen = pending_gen;
+            // COM must be initialized on each background thread.
+            CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+            IStream* com_stream = SHCreateMemStream(reinterpret_cast<const BYTE*>(bytes.data()),
+                                                    static_cast<UINT>(bytes.size()));
             if (com_stream)
             {
                 IMFByteStream* mf_stream = nullptr;
                 if (SUCCEEDED(MFCreateMFByteStreamOnStream(com_stream, &mf_stream)))
                 {
                     IMFSourceReader* reader = nullptr;
-                    if (SUCCEEDED(MFCreateSourceReaderFromByteStream(
-                            mf_stream, nullptr, &reader)))
+                    if (SUCCEEDED(MFCreateSourceReaderFromByteStream(mf_stream, nullptr, &reader)))
                     {
                         PROPVARIANT pv;
                         PropVariantInit(&pv);
                         if (SUCCEEDED(reader->GetPresentationAttribute(
-                                static_cast<DWORD>(MF_SOURCE_READER_MEDIASOURCE),
-                                MF_PD_DURATION, &pv)) &&
+                                static_cast<DWORD>(MF_SOURCE_READER_MEDIASOURCE), MF_PD_DURATION,
+                                &pv)) &&
                             pv.vt == VT_UI8)
                         {
                             info.duration_ms = pv.uhVal.QuadPart / 10000ULL;
@@ -5521,19 +3498,15 @@ void MainWindow::extract_drop_media_(std::uint32_t pending_gen,
                 }
                 com_stream->Release();
             }
-        }
 
-        CoUninitialize();
+            CoUninitialize();
 
-        // Marshal to the UI thread (see ShellBase::post_pending_attachment_).
-        post_pending_attachment_(std::move(info), target,
-                                 std::move(target_alive));
-    });
+            post_pending_attachment_(std::move(info), target, std::move(target_alive));
+        });
 }
 
-void MainWindow::decode_video_first_frame_(
-    std::vector<std::uint8_t> bytes,
-    std::function<void(std::vector<std::uint8_t>)> done)
+void MainWindow::decode_video_first_frame_(std::vector<std::uint8_t> bytes,
+                                           std::function<void(std::vector<std::uint8_t>)> done)
 {
     // Runs tk::decode_video_frames + a WIC JPEG-encode against `bytes`
     // off-thread and invokes `done(jpeg)` from that worker (empty jpeg on any
@@ -5542,8 +3515,7 @@ void MainWindow::decode_video_first_frame_(
         [done = std::move(done), bytes = std::move(bytes)]() mutable
         {
             tk::DecodedVideoFrames dvf = tk::decode_video_frames(
-                bytes.data(), bytes.size(),
-                tesseract::visual::kMaxInlineImageWidth,
+                bytes.data(), bytes.size(), tesseract::visual::kMaxInlineImageWidth,
                 tesseract::visual::kMaxInlineImageHeight,
                 /*max_frames=*/1);
             if (dvf.frames.empty())
@@ -5556,56 +3528,49 @@ void MainWindow::decode_video_first_frame_(
             // selfie-capture path). This runs on a worker thread, so —
             // as with tk::d2d::decode_image — create a per-call COM
             // apartment here rather than assuming the UI thread's.
-            const HRESULT coinit_hr =
-                CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+            const HRESULT coinit_hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
             struct ComGuard
             {
                 bool owned;
-                ~ComGuard() { if (owned) CoUninitialize(); }
+                ~ComGuard()
+                {
+                    if (owned)
+                    {
+                        CoUninitialize();
+                    }
+                }
             } com_guard{coinit_hr == S_OK};
             std::vector<std::uint8_t> jpeg;
             IWICImagingFactory* wic = nullptr;
-            if (SUCCEEDED(CoCreateInstance(
-                    CLSID_WICImagingFactory, nullptr,
-                    CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&wic))))
+            if (SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
+                                           IID_PPV_ARGS(&wic))))
             {
                 IStream* out = nullptr;
                 CreateStreamOnHGlobal(nullptr, TRUE, &out);
                 IWICBitmapEncoder* enc = nullptr;
-                if (SUCCEEDED(wic->CreateEncoder(
-                        GUID_ContainerFormatJpeg, nullptr, &enc)) &&
-                    out)
+                if (SUCCEEDED(wic->CreateEncoder(GUID_ContainerFormatJpeg, nullptr, &enc)) && out)
                 {
                     enc->Initialize(out, WICBitmapEncoderNoCache);
                     IWICBitmapFrameEncode* wf = nullptr;
                     if (SUCCEEDED(enc->CreateNewFrame(&wf, nullptr)))
                     {
                         wf->Initialize(nullptr);
-                        wf->SetSize(static_cast<UINT>(frame.w),
-                                   static_cast<UINT>(frame.h));
+                        wf->SetSize(static_cast<UINT>(frame.w), static_cast<UINT>(frame.h));
                         IWICBitmap* src_bmp = nullptr;
                         wic->CreateBitmapFromMemory(
-                            static_cast<UINT>(frame.w),
-                            static_cast<UINT>(frame.h),
-                            GUID_WICPixelFormat32bppBGRA,
-                            static_cast<UINT>(frame.w) * 4u,
+                            static_cast<UINT>(frame.w), static_cast<UINT>(frame.h),
+                            GUID_WICPixelFormat32bppBGRA, static_cast<UINT>(frame.w) * 4u,
                             static_cast<UINT>(frame.bgra.size()),
-                            const_cast<std::uint8_t*>(
-                                frame.bgra.data()),
-                            &src_bmp);
+                            const_cast<std::uint8_t*>(frame.bgra.data()), &src_bmp);
                         if (src_bmp)
                         {
                             IWICFormatConverter* conv = nullptr;
-                            if (SUCCEEDED(wic->CreateFormatConverter(
-                                    &conv)))
+                            if (SUCCEEDED(wic->CreateFormatConverter(&conv)))
                             {
-                                conv->Initialize(
-                                    src_bmp,
-                                    GUID_WICPixelFormat24bppBGR,
-                                    WICBitmapDitherTypeNone, nullptr,
-                                    0.0, WICBitmapPaletteTypeCustom);
-                                WICPixelFormatGUID fmt =
-                                    GUID_WICPixelFormat24bppBGR;
+                                conv->Initialize(src_bmp, GUID_WICPixelFormat24bppBGR,
+                                                 WICBitmapDitherTypeNone, nullptr, 0.0,
+                                                 WICBitmapPaletteTypeCustom);
+                                WICPixelFormatGUID fmt = GUID_WICPixelFormat24bppBGR;
                                 wf->SetPixelFormat(&fmt);
                                 wf->WriteSource(conv, nullptr);
                                 conv->Release();
@@ -5621,28 +3586,27 @@ void MainWindow::decode_video_first_frame_(
                     out->Seek(seek, STREAM_SEEK_SET, nullptr);
                     STATSTG stat{};
                     out->Stat(&stat, STATFLAG_NONAME);
-                    jpeg.resize(
-                        static_cast<std::size_t>(stat.cbSize.QuadPart));
+                    jpeg.resize(static_cast<std::size_t>(stat.cbSize.QuadPart));
                     ULONG nread = 0;
-                    out->Read(jpeg.data(),
-                             static_cast<ULONG>(jpeg.size()), &nread);
+                    out->Read(jpeg.data(), static_cast<ULONG>(jpeg.size()), &nread);
                 }
-                if (out) out->Release();
+                if (out)
+                {
+                    out->Release();
+                }
                 wic->Release();
             }
             done(std::move(jpeg));
         });
 }
 
-void MainWindow::cache_rgba_image_(const tk::CacheKey& key, int w, int h,
-                                   std::vector<uint8_t> rgba)
+void MainWindow::cache_rgba_image_(const tk::CacheKey& key, int w, int h, std::vector<uint8_t> rgba)
 {
     if (account_manager_.image_cache().contains(key) || !main_app_surface_)
     {
         return;
     }
-    auto img =
-        main_app_surface_->factory().create_image_rgba(rgba.data(), w, h);
+    auto img = main_app_surface_->factory().create_image_rgba(rgba.data(), w, h);
     if (!img)
     {
         return;
@@ -5654,160 +3618,117 @@ void MainWindow::cache_rgba_image_(const tk::CacheKey& key, int w, int h,
     }
 }
 
-tesseract::RoomWindowBase*
-MainWindow::create_secondary_room_window_(const std::string& room_id)
+tesseract::RoomWindowBase* MainWindow::create_secondary_room_window_(const std::string& room_id)
 {
     return new RoomWindow(this, room_id);
 }
 
+void MainWindow::show_sync_status_text_(const std::string& text)
+{
+    if (hStatus_)
+    {
+        SetWindowTextW(hStatus_, utf8_to_wstr(text).c_str());
+    }
+}
+
 // ---------------------------------------------------------------------------
-//  Event → MessageRowData + append into the shared MessageListView
+// Avatar decode
 // ---------------------------------------------------------------------------
 
-void MainWindow::ensure_row_media(const tesseract::Event& ev)
+std::unique_ptr<tk::Image> MainWindow::decode_avatar_(const std::vector<std::uint8_t>& bytes)
 {
-    // Delegate to the ShellBase implementation which calls ensure_user_avatar_,
-    // ensure_media_image_, generate_video_thumbnail_, etc.
-    ensure_row_media_(ev);
+    // The first frame only: the generic decode_image_ would decode (and then
+    // discard) every frame of an animated avatar.
+    if (tesseract::is_jxl_data(bytes) ||
+        !tk::decode_size_allowed(bytes, tk::bytes_may_be_animated(bytes)))
+    {
+        return ShellBase::decode_avatar_(bytes);
+    }
+    auto& backend = tk::win32::backend_singleton();
+    std::span<const std::uint8_t> span(bytes.data(), bytes.size());
+    return tk::d2d::decode_image(backend, span, tesseract::visual::kAvatarCacheSize,
+                                 tesseract::visual::kAvatarCacheSize);
 }
 
-void MainWindow::clear_messages()
+std::vector<std::uint8_t> MainWindow::encode_selfie_jpeg_(const std::uint8_t* bgra, std::uint32_t w,
+                                                          std::uint32_t h)
 {
-    if (!room_view_)
+    std::vector<std::uint8_t> jpeg;
+    IWICImagingFactory* wic = nullptr;
+    if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
+                                IID_PPV_ARGS(&wic))))
     {
-        return;
+        return jpeg;
     }
-    room_view_->clear_room();
-    room_view_->set_messages({});
-    if (main_app_surface_)
+    IStream* out = nullptr;
+    CreateStreamOnHGlobal(nullptr, TRUE, &out);
+    IWICBitmapEncoder* enc = nullptr;
+    if (SUCCEEDED(wic->CreateEncoder(GUID_ContainerFormatJpeg, nullptr, &enc)) && out)
     {
-        main_app_surface_->relayout();
-    }
-}
-
-void MainWindow::on_backup_progress(tesseract::BackupProgress* progress)
-{
-    if (!client_)
-    {
-        return;
-    }
-
-    last_backup_state_ = progress->state;
-    last_imported_keys_ = progress->imported_keys;
-    refresh_sync_status();
-}
-
-void MainWindow::on_room_list_state(tesseract::RoomListState state)
-{
-    push_room_list_state_(state);
-    refresh_sync_status();
-}
-
-void MainWindow::refresh_sync_status()
-{
-    if (!hStatus_)
-    {
-        return;
-    }
-    using RLS = tesseract::RoomListState;
-    using BS = tesseract::BackupState;
-
-    const bool room_busy = (last_room_list_state_ == RLS::Init ||
-                            last_room_list_state_ == RLS::SettingUp);
-    const bool reconnecting = (last_room_list_state_ == RLS::Recovering);
-    const bool keys_busy = (last_backup_state_ == BS::Downloading);
-
-    if (room_busy)
-    {
-        // Debounce 300 ms so already-warm sessions that flash through
-        // Init→Running don't churn the status bar.
-        if (!sync_progress_shown_ && sync_status_debounce_timer_id_ == 0)
+        enc->Initialize(out, WICBitmapEncoderNoCache);
+        IWICBitmapFrameEncode* frame = nullptr;
+        if (SUCCEEDED(enc->CreateNewFrame(&frame, nullptr)))
         {
-            sync_status_debounce_timer_id_ =
-                SetTimer(hwnd_, kSyncStatusDebounceTimerId, 300, nullptr);
+            frame->Initialize(nullptr);
+            frame->SetSize(w, h);
+            // Wrap BGRA data in a WIC bitmap and let IWICFormatConverter strip
+            // the alpha channel to 24bppBGR — no manual pixel loop needed.
+            IWICBitmap* src_bmp = nullptr;
+            wic->CreateBitmapFromMemory(w, h, GUID_WICPixelFormat32bppBGRA, w * 4u, w * h * 4u,
+                                        const_cast<BYTE*>(bgra), &src_bmp);
+            if (src_bmp)
+            {
+                IWICFormatConverter* conv = nullptr;
+                if (SUCCEEDED(wic->CreateFormatConverter(&conv)))
+                {
+                    conv->Initialize(src_bmp, GUID_WICPixelFormat24bppBGR, WICBitmapDitherTypeNone,
+                                     nullptr, 0.0, WICBitmapPaletteTypeCustom);
+                    WICPixelFormatGUID fmt = GUID_WICPixelFormat24bppBGR;
+                    frame->SetPixelFormat(&fmt);
+                    frame->WriteSource(conv, nullptr);
+                    conv->Release();
+                }
+                src_bmp->Release();
+            }
+            frame->Commit();
+            frame->Release();
         }
-        else if (sync_progress_shown_)
-        {
-            SetWindowTextW(hStatus_, utf8_to_wstr(tk::tr("Syncing rooms…")).c_str());
-        }
-        return;
+        enc->Commit();
+        enc->Release();
+        LARGE_INTEGER seek{};
+        out->Seek(seek, STREAM_SEEK_SET, nullptr);
+        STATSTG stat{};
+        out->Stat(&stat, STATFLAG_NONAME);
+        jpeg.resize(static_cast<std::size_t>(stat.cbSize.QuadPart));
+        ULONG nread = 0;
+        out->Read(jpeg.data(), static_cast<ULONG>(jpeg.size()), &nread);
     }
-
-    if (sync_status_debounce_timer_id_ != 0)
+    if (out)
     {
-        KillTimer(hwnd_, kSyncStatusDebounceTimerId);
-        sync_status_debounce_timer_id_ = 0;
+        out->Release();
     }
-
-    if (reconnecting)
-    {
-        sync_progress_shown_ = true;
-        SetWindowTextW(hStatus_, utf8_to_wstr(tk::tr("Reconnecting…")).c_str());
-        return;
-    }
-    if (keys_busy)
-    {
-        sync_progress_shown_ = true;
-        SetWindowTextW(hStatus_,
-                       utf8_to_wstr(tk::trf(tk::tr("Downloading message keys ({0})…"),
-                                            {std::to_string(last_imported_keys_)}))
-                           .c_str());
-        return;
-    }
-    // Steady state: settle to "Connected" unless a persistent status override
-    // (e.g., "Fetching older messages…" from in-room search) is still active.
-    if (has_status_override_())
-        return;
-    sync_progress_shown_ = false;
-    SetWindowTextW(hStatus_, utf8_to_wstr(tk::tr("Connected")).c_str());
+    wic->Release();
+    return jpeg;
 }
 
-// ---------------------------------------------------------------------------
-// User identity strip + logout
-// ---------------------------------------------------------------------------
-
-void MainWindow::populate_user_strip()
+bool MainWindow::main_window_foreground_for_tray_() const
 {
-    if (!main_app_)
-    {
-        return;
-    }
-    auto* ui = main_app_->user_info();
-    if (!ui)
-    {
-        return;
-    }
-    ui->set_display_name(my_display_name_);
-    ui->set_user_id(my_user_id_);
-    ui->set_avatar_url(my_avatar_url_);
-    // Kick off async avatar fetch so the UserInfo disc fills in.
-    if (!my_avatar_url_.empty())
-    {
-        ensure_user_avatar_(my_avatar_url_);
-    }
-    if (main_app_surface_)
-    {
-        main_app_surface_->relayout();
-    }
+    return IsWindowVisible(hwnd_) && is_tray_owner_effectively_active_();
 }
 
-// ---------------------------------------------------------------------------
-// Multi-account: switch / add / logout / cancel / picker
-// ---------------------------------------------------------------------------
-
-void MainWindow::switch_active_account(const std::string& user_id)
+void MainWindow::hide_main_window_for_tray_()
 {
-    // Platform-agnostic bookkeeping (unsubscribe previous room — folded in here
-    // so Windows no longer leaks the old account's room subscription — clear
-    // per-account state, swap active_account_ / aliases / identity, compute
-    // pending restores, swap rooms_/invites_ snapshots, persist the index)
-    // lives in ShellBase. Returns false (no-op) when the account isn't found
-    // or is already active with a bound client.
-    if (!switch_active_account_impl_(user_id))
+    ShowWindow(hwnd_, SW_HIDE);
+}
+
+void MainWindow::show_main_window_for_tray_(const std::string& /*token*/)
+{
+    ShowWindow(hwnd_, SW_SHOW);
+    if (IsIconic(hwnd_))
     {
-        return;
+        ShowWindow(hwnd_, SW_RESTORE);
     }
-    refresh_account_ui_after_switch_();
+    SetForegroundWindow(hwnd_);
 }
 
 bool MainWindow::is_tray_owner_effectively_active_() const
@@ -5845,77 +3766,19 @@ bool MainWindow::is_explorer_foreground_(HWND fg)
     return is_explorer;
 }
 
-void MainWindow::refresh_account_ui_after_switch_()
+void MainWindow::start_platform_services_ui_()
 {
-    if (main_app_)
-        main_app_->show_room();
-
-    if (room_list_view_)
-    {
-        room_list_view_->set_rooms({});
-    }
-    if (room_view_)
-    {
-        room_view_->clear_room();
-        room_view_->set_messages({});
-        room_view_->set_client(client_);
-    }
-
-    if (main_app_)
-    {
-        main_app_->show_encryption_reminder(false);
-    }
-    if (main_app_surface_)
-    {
-        main_app_surface_->relayout();
-    }
-
-    populate_user_strip();
-    refresh_room_list();
-
-    show_main_content();
-    SendMessageW(hStatus_, SB_SETTEXTW, 0,
-                 reinterpret_cast<LPARAM>(utf8_to_wstr(tk::tr("Connected")).c_str()));
-    handle_verification_state_ui_(active_account_ && !active_account_->unverified);
-
-    // Exactly one window owns the single app-wide tray icon (multi-window).
     if (!tray_ && account_manager_.claim_tray_owner(this))
     {
         tray_ = std::make_unique<Win32TrayIcon>(
             hInst_,
             [this]
             {
-                // If the unread room is popped out, raise that window instead.
-                if (focus_tray_unread_popout_())
-                    return;
-                ShowWindow(hwnd_, SW_SHOW);
-                if (IsIconic(hwnd_))
-                {
-                    ShowWindow(hwnd_, SW_RESTORE);
-                }
-                SetForegroundWindow(hwnd_);
-                navigate_tray_unread_();
+                tray_activate_();
             },
             [this]
             {
-                // If the unread room is popped out, raise that window instead.
-                if (focus_tray_unread_popout_())
-                    return;
-                if (IsWindowVisible(hwnd_) &&
-                    is_tray_owner_effectively_active_() && !last_tray_unread_)
-                {
-                    ShowWindow(hwnd_, SW_HIDE);
-                }
-                else
-                {
-                    ShowWindow(hwnd_, SW_SHOW);
-                    if (IsIconic(hwnd_))
-                    {
-                        ShowWindow(hwnd_, SW_RESTORE);
-                    }
-                    SetForegroundWindow(hwnd_);
-                    navigate_tray_unread_();
-                }
+                tray_toggle_();
             },
             [this]
             {
@@ -5936,273 +3799,30 @@ void MainWindow::refresh_account_ui_after_switch_()
     }
 }
 
-void MainWindow::begin_add_account()
-{
-    // Record the current active account's position in the accounts list so
-    // Cancel can return to it. -1 means no active account.
-    const auto& accs = account_manager_.accounts();
-    add_account_return_idx_ = -1;
-    if (active_account_)
-    {
-        for (int i = 0; i < static_cast<int>(accs.size()); ++i)
-        {
-            if (accs[i]->user_id == active_account_->user_id)
-            {
-                add_account_return_idx_ = i;
-                break;
-            }
-        }
-    }
-    pending_login_is_add_account_ = true;
-    pending_login_temp_dir_.clear();
-    ensure_login_view_();
-    pending_login_client_ = std::make_unique<tesseract::Client>();
-    login_view_->set_client(pending_login_client_.get());
-    login_view_->set_on_begin_oauth([this] { arm_pending_login_(); });
-    login_view_->set_mode(tesseract::views::LoginView::Mode::AddAccount);
-    login_view_->reset();
-    show_login_view();
-}
-
-void MainWindow::on_login_cancelled()
-{
-    if (login_view_)
-    {
-        login_view_->set_client(nullptr);
-    }
-    pending_login_client_.reset();
-    if (!pending_login_temp_dir_.empty())
-    {
-        std::error_code ec;
-        std::filesystem::remove_all(pending_login_temp_dir_, ec);
-        pending_login_temp_dir_.clear();
-    }
-    pending_login_is_add_account_ = false;
-
-    const auto& accs = account_manager_.accounts();
-    if (add_account_return_idx_ >= 0 &&
-        add_account_return_idx_ < static_cast<int>(accs.size()))
-    {
-        switch_active_account(accs[add_account_return_idx_]->user_id);
-        // The account may already be active (cancelled before completing OAuth),
-        // so switch_active_account_impl_ returns false and skips the UI refresh.
-        // Always navigate away from the login view explicitly.
-        show_main_content();
-    }
-    else
-    {
-        // No account to return to — this was the very first (Initial-mode)
-        // login, not an add-account attempt. Rearm a fresh pending client so
-        // Sign In works again; mirrors the one-time setup in
-        // restore_all_accounts_async_'s no-accounts branch. Without this,
-        // login_view_ is left clientless (set_client(nullptr) above) and Sign
-        // In silently does nothing.
-        ensure_login_view_();
-        pending_login_client_ = std::make_unique<tesseract::Client>();
-        login_view_->set_client(pending_login_client_.get());
-        login_view_->set_on_begin_oauth([this] { arm_pending_login_(); });
-        login_view_->set_mode(tesseract::views::LoginView::Mode::Initial);
-        login_view_->reset();
-        show_login_view();
-    }
-    add_account_return_idx_ = -1;
-}
-
-void MainWindow::logout_active_account()
-{
-    // Shared sequence lives in ShellBase (unsaved-key intercept, teardown,
-    // last-account main-UI clear); the lambda holds the native follow-up.
-    sign_out_active_account_([this] { logout_active_account(); },
-                             [this](const LogoutResult& result)
-    {
-        if (!result.has_remaining)
-        {
-            if (room_list_view_)
-            {
-                room_list_view_->set_rooms({});
-            }
-            if (main_app_surface_)
-            {
-                main_app_surface_->relayout();
-            }
-
-            ensure_login_view_();
-            login_view_->set_client(reset_pending_login_client_());
-            login_view_->set_on_begin_oauth([this] { arm_pending_login_(); });
-            login_view_->set_mode(tesseract::views::LoginView::Mode::Initial);
-            login_view_->reset();
-            RECT rc;
-            GetClientRect(hwnd_, &rc);
-            on_size(rc.right, rc.bottom);
-            show_login_view();
-        }
-
-        SendMessageW(hStatus_, SB_SETTEXTW, 0,
-                     reinterpret_cast<LPARAM>(utf8_to_wstr(tk::tr("Signed out")).c_str()));
-    });
-}
-
-void MainWindow::rebuild_account_picker()
-{
-    if (!hAccountPicker_)
-    {
-        static bool registered = false;
-        if (!registered)
-        {
-            WNDCLASSEXW wc{};
-            wc.cbSize = sizeof(wc);
-            wc.lpfnWndProc = DefWindowProcW;
-            wc.hInstance = hInst_;
-            wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-            wc.hbrBackground = nullptr;
-            wc.lpszClassName = L"TesseractAccountPicker";
-            RegisterClassExW(&wc);
-            registered = true;
-        }
-        // Provisional size — open_account_picker() re-sizes both this window
-        // and the child surface from AccountPicker::measure() every open, and
-        // rounds the window (no WS_BORDER: the shared widget draws the frame).
-        const int kPickerW = dip_to_phys(260.f);
-        const int kPickerH = dip_to_phys(
-            60.f * static_cast<float>(account_manager_.accounts().size()));
-        hAccountPicker_ = CreateWindowExW(
-            WS_EX_TOOLWINDOW | WS_EX_TOPMOST, L"TesseractAccountPicker", L"",
-            WS_POPUP, 0, 0, kPickerW, kPickerH, hwnd_, nullptr,
-            hInst_, nullptr);
-        if (!hAccountPicker_)
-        {
-            return;
-        }
-
-        account_picker_surface_ = std::make_unique<tk::win32::Surface>(
-            hInst_, hAccountPicker_, current_theme_);
-        auto picker = std::make_unique<tesseract::views::AccountPicker>();
-        account_picker_ = picker.get();
-        account_picker_->set_image_provider(make_avatar_image_provider_());
-        account_picker_->on_select = [this](const std::string& uid)
-        {
-            if (hAccountPicker_)
-            {
-                ShowWindow(hAccountPicker_, SW_HIDE);
-            }
-            on_account_picker_select_(uid);
-        };
-        account_picker_->on_avatar_needed =
-            [this](const std::string& mxc) { ensure_user_avatar_(mxc); };
-        account_picker_surface_->set_root(std::move(picker));
-        if (HWND s = account_picker_surface_->hwnd())
-        {
-            SetWindowPos(s, nullptr, 0, 0, kPickerW, kPickerH,
-                         SWP_NOZORDER | SWP_NOACTIVATE);
-        }
-    }
-
-    // Rebuild entries.
-    std::vector<tesseract::views::AccountEntry> entries;
-    for (const auto& s : account_manager_.accounts())
-    {
-        entries.push_back({s->user_id, s->display_name, s->avatar_url,
-                           s->user_id == my_user_id_,
-                           account_has_unread_for(s->user_id)});
-        if (!s->avatar_url.empty())
-        {
-            ensure_user_avatar_(s->avatar_url);
-        }
-    }
-    if (account_picker_)
-    {
-        account_picker_->set_entries(std::move(entries));
-        if (account_picker_surface_)
-        {
-            account_picker_surface_->relayout();
-        }
-    }
-}
-
-void MainWindow::open_account_picker()
-{
-    if (account_manager_.accounts().size() < 2)
-    {
-        return;
-    }
-    rebuild_account_picker();
-    if (!hAccountPicker_ || !account_picker_)
-    {
-        return;
-    }
-
-    // Size from the shared widget's own measure() so the popup always fits its
-    // rows exactly (they follow UserInfo::measure(), not a magic constant).
-    // measure() works in logical (DIP) units — the Surface applies DPI at
-    // paint — so scale the result to physical for the HWNDs.
-    constexpr float kPickerWidthDip = 260.f;
-    const int kPickerW = dip_to_phys(kPickerWidthDip);
-    float pickerHeightDip =
-        60.f * static_cast<float>(account_manager_.accounts().size());
-    if (account_picker_surface_)
-    {
-        tk::LayoutCtx lc{account_picker_surface_->factory(),
-                         account_picker_surface_->theme()};
-        pickerHeightDip =
-            account_picker_->measure(lc, {kPickerWidthDip, 0.f}).h;
-    }
-    const int kPickerH = dip_to_phys(std::ceil(pickerHeightDip));
-
-    // Chrome-free host: the shared AccountPicker paints its own rounded card,
-    // so round the top-level window itself (no WS_BORDER — see
-    // rebuild_account_picker) and resize the child surface HWND too
-    // (DefWindowProcW doesn't forward WM_SIZE).
-    const int r = dip_to_phys(8.f);
-    SetWindowRgn(hAccountPicker_,
-                 CreateRoundRectRgn(0, 0, kPickerW + 1, kPickerH + 1, 2 * r,
-                                    2 * r),
-                 TRUE);
-    if (account_picker_surface_ && account_picker_surface_->hwnd())
-    {
-        SetWindowPos(account_picker_surface_->hwnd(), nullptr, 0, 0, kPickerW,
-                     kPickerH, SWP_NOZORDER | SWP_NOACTIVATE);
-    }
-
-    // Anchor to the bottom-left of the main app surface (where the user strip lives).
-    RECT sr{};
-    if (main_app_surface_ && main_app_surface_->hwnd())
-    {
-        GetWindowRect(main_app_surface_->hwnd(), &sr);
-    }
-    else if (hwnd_)
-    {
-        GetWindowRect(hwnd_, &sr);
-    }
-    int x = sr.left;
-    int y = sr.bottom - kPickerH - 4;
-
-    HMONITOR mon = MonitorFromWindow(hwnd_, MONITOR_DEFAULTTONEAREST);
-    MONITORINFO mi{};
-    mi.cbSize = sizeof(mi);
-    if (GetMonitorInfo(mon, &mi))
-    {
-        if (x + kPickerW > mi.rcWork.right)
-        {
-            x = mi.rcWork.right - kPickerW - 4;
-        }
-        if (y < mi.rcWork.top)
-        {
-            y = sr.bottom + 4;
-        }
-    }
-    SetWindowPos(hAccountPicker_, HWND_TOPMOST, x, y, kPickerW, kPickerH,
-                 SWP_NOACTIVATE);
-    ShowWindow(hAccountPicker_, SW_SHOWNOACTIVATE);
-}
-
 void MainWindow::show_user_context_menu_(int screen_x, int screen_y)
 {
     const auto items = build_user_menu_items_(
-        [this] { open_settings_(); },
-        [this] { begin_add_account(); },
-        [this] { start_qr_grant_overlay(); },
-        [this] { logout_active_account(); },
-        [this] { quitting_ = true; DestroyWindow(hwnd_); },
+        [this]
+        {
+            open_settings_();
+        },
+        [this]
+        {
+            begin_add_account();
+        },
+        [this]
+        {
+            start_qr_grant_overlay();
+        },
+        [this]
+        {
+            logout_active_account_ui_();
+        },
+        [this]
+        {
+            quitting_ = true;
+            DestroyWindow(hwnd_);
+        },
         verify_session_menu_callback_());
 
     HMENU menu = CreatePopupMenu();
@@ -6210,20 +3830,28 @@ void MainWindow::show_user_context_menu_(int screen_x, int screen_y)
     for (const auto& item : items)
     {
         if (item.label.empty())
+        {
             AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+        }
         else
+        {
             AppendMenuW(menu, MF_STRING, id++, utf8_to_wstr(item.label).c_str());
+        }
     }
-    UINT pick = TrackPopupMenu(menu, TPM_RIGHTBUTTON | TPM_RETURNCMD,
-                               screen_x, screen_y, 0, hwnd_, nullptr);
+    UINT pick = TrackPopupMenu(menu, TPM_RIGHTBUTTON | TPM_RETURNCMD, screen_x, screen_y, 0, hwnd_,
+                               nullptr);
     DestroyMenu(menu);
     if (!pick)
+    {
         return;
+    }
     UINT non_sep = 0;
     for (const auto& item : items)
     {
         if (item.label.empty())
+        {
             continue;
+        }
         if (++non_sep == pick && item.callback)
         {
             item.callback();
@@ -6232,137 +3860,9 @@ void MainWindow::show_user_context_menu_(int screen_x, int screen_y)
     }
 }
 
-// ---------------------------------------------------------------------------
-// Slash-command popup — WS_POPUP HWND hosting a tk::win32::Surface that
-// paints the shared tesseract::views::SlashCommandPopup suggestion list.
-// ---------------------------------------------------------------------------
-
-void MainWindow::show_slash_popup_(tk::Rect cursor_local, int rows)
+std::unique_ptr<tk::Image> MainWindow::make_image_from_bgra_(int w, int h, const std::uint8_t* bgra)
 {
-    // Widget + controller created eagerly in on_create; this positions the
-    // already-populated popup at the caret, clamped to the work area.
-    if (!slash_popup_)
-    {
-        return;
-    }
-    // cursor_local and the popup's content size are both DIP; set_rect()
-    // converts to physical pixels for us.
-    const float w = tesseract::views::SlashCommandPopup::kWidth;
-    const float h = rows * tesseract::views::SlashCommandPopup::kRowHeight;
-    slash_popup_->set_rect(cursor_local, {w, h}, tk::PopupPlacement::PreferAbove);
-    slash_popup_->set_visible(true);
-}
-
-void MainWindow::hide_slash_popup_()
-{
-    if (slash_popup_)
-    {
-        slash_popup_->set_visible(false);
-    }
-}
-
-void MainWindow::show_gif_popup_()
-{
-    if (!gif_popup_ || !gif_popup_widget_ || !room_text_area_ || !main_app_surface_)
-    {
-        return;
-    }
-    // Full-width strip spanning the compose bar, floating just above it (like
-    // the attachment preview band). content_size() drives only the height and
-    // the empty/status check; the width comes from the compose bar.
-    // compose_bar_rect() and content_size() are both DIP; set_rect() converts
-    // to physical pixels for us.
-    const tk::Rect cb = room_view_ ? room_view_->compose_bar_rect() : tk::Rect{};
-    const tk::Size sz = gif_popup_widget_->content_size(cb.w);
-    if (cb.w <= 0.0f || sz.h <= 0.0f)
-    {
-        hide_gif_popup_();
-        return;
-    }
-    gif_popup_->set_rect(cb, {cb.w, sz.h}, tk::PopupPlacement::PreferAbove);
-    gif_popup_->set_visible(true);
-}
-
-void MainWindow::hide_gif_popup_()
-{
-    if (gif_popup_)
-    {
-        gif_popup_->set_visible(false);
-    }
-}
-
-const tk::Image*
-MainWindow::gif_strip_image_(const tesseract::GifResult& result,
-                             const std::function<void()>& repaint)
-{
-    // Shared with every pop-out's GIF strip (RoomWindowBase::shell_gif_strip_image_
-    // → here). The pop-out passes a repaint that refreshes its own popup surface.
-    return gif_strip_provider_ ? gif_strip_provider_(result, repaint) : nullptr;
-}
-
-void MainWindow::handle_gif_results_ui_(std::uint64_t request_id,
-                                        std::vector<tesseract::GifResult> results)
-{
-    if (gif_controller_)
-    {
-        gif_controller_->on_results(request_id, std::move(results));
-    }
-}
-
-void MainWindow::handle_gif_search_failed_ui_(std::uint64_t request_id,
-                                              std::string message)
-{
-    if (gif_controller_)
-    {
-        gif_controller_->on_search_failed(request_id, std::move(message));
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Shortcode popup — WS_POPUP HWND hosting a tk::win32::Surface that paints
-// the shared tesseract::views::ShortcodePopup suggestion list.
-// ---------------------------------------------------------------------------
-
-void MainWindow::show_shortcode_popup_(tk::Rect cursor_local, int rows)
-{
-    if (!shortcode_popup_)
-    {
-        return;
-    }
-    const float w = tesseract::views::ShortcodePopup::kWidth;
-    const float h = rows * tesseract::views::ShortcodePopup::kRowHeight;
-    shortcode_popup_->set_rect(cursor_local, {w, h}, tk::PopupPlacement::PreferAbove);
-    shortcode_popup_->set_visible(true);
-}
-
-void MainWindow::hide_shortcode_popup_()
-{
-    if (shortcode_popup_)
-    {
-        shortcode_popup_->set_visible(false);
-    }
-}
-
-// ── @mention popup ─────────────────────────────────────────────────────────
-
-void MainWindow::show_mention_popup_(tk::Rect cursor_local, int rows)
-{
-    if (!mention_popup_ || !main_app_surface_)
-    {
-        return;
-    }
-    const float w = tesseract::views::MentionPopup::kWidth;
-    const float h = rows * tesseract::views::MentionPopup::kRowHeight;
-    mention_popup_->set_rect(cursor_local, {w, h}, tk::PopupPlacement::PreferAbove);
-    mention_popup_->set_visible(true);
-}
-
-void MainWindow::hide_mention_popup_()
-{
-    if (mention_popup_)
-    {
-        mention_popup_->set_visible(false);
-    }
+    return tk::d2d::make_image_from_bgra(tk::win32::backend_singleton(), bgra, w, h);
 }
 
 // ── Tab management (ShellBase virtual hooks) ──────────────────────────────────
@@ -6377,121 +3877,95 @@ void MainWindow::on_tab_state_changed_ui_()
     }
 }
 
-float MainWindow::get_message_scroll_fraction_()
+// ─────────────────────────────────────────────────────────────────────────────
+
+bool MainWindow::has_save_file_dialog_() const
 {
-    if (!room_view_ || !room_view_->message_list())
-    {
-        return 0.f;
-    }
-    return room_view_->message_list()->scroll_fraction();
+    return true;
 }
 
-void MainWindow::set_message_scroll_fraction_(float t)
+void MainWindow::prompt_passphrase_(std::string title, std::function<void(std::string)> cb)
 {
-    if (!room_view_ || !room_view_->message_list())
+    std::wstring pass = prompt_passphrase_w32(hwnd_, utf8_to_wstr(title).c_str());
+    if (!pass.empty())
+    {
+        cb(wstr_to_utf8(pass.c_str()));
+    }
+}
+
+void MainWindow::pick_save_file_(std::string /*title*/, std::string suggested_name,
+                                 std::function<void(std::string)> cb)
+{
+    std::wstring path = show_save_dialog_(
+        utf8_to_wstr(suggested_name),
+        file_filter({{tk::tr("Key files"), L"*.txt"}, {tk::tr("All files"), L"*.*"}}).c_str());
+    if (!path.empty())
+    {
+        cb(wstr_to_utf8(path.c_str()));
+    }
+}
+
+void MainWindow::pick_media_save_path_(const tesseract::views::MediaSaveSpec& spec,
+                                       std::function<void(std::string)> cb)
+{
+    const std::wstring filter = save_filter_for(spec);
+    std::wstring path = show_save_dialog_(utf8_to_wstr(spec.suggested_name), filter.c_str());
+    if (!path.empty())
+    {
+        cb(wstr_to_utf8(path.c_str()));
+    }
+}
+
+void MainWindow::pick_open_file_(std::string /*title*/, std::function<void(std::string)> cb)
+{
+    wchar_t buf[MAX_PATH]{};
+    OPENFILENAMEW ofn{};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = hwnd_;
+    ofn.lpstrFile = buf;
+    ofn.nMaxFile = MAX_PATH;
+    const std::wstring filter =
+        file_filter({{tk::tr("Key files"), L"*.txt"}, {tk::tr("All files"), L"*.*"}});
+    ofn.lpstrFilter = filter.c_str();
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+    if (GetOpenFileNameW(&ofn))
+    {
+        cb(wstr_to_utf8(buf));
+    }
+}
+
+void MainWindow::pick_folder_(std::string title, std::function<void(std::string)> cb)
+{
+    wchar_t path_buf[MAX_PATH]{};
+    BROWSEINFOW bi{};
+    bi.hwndOwner = hwnd_;
+    bi.pszDisplayName = path_buf;
+    const std::wstring wtitle = utf8_to_wstr(title);
+    bi.lpszTitle = wtitle.c_str();
+    bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+    LPITEMIDLIST pidl = SHBrowseForFolderW(&bi);
+    if (!pidl)
     {
         return;
     }
-    room_view_->message_list()->scroll_to_offset(t);
+    wchar_t folder_buf[MAX_PATH]{};
+    if (SHGetPathFromIDListW(pidl, folder_buf))
+    {
+        cb(wstr_to_utf8(folder_buf));
+    }
+    CoTaskMemFree(pidl);
+}
+
+void MainWindow::show_message_dialog_(std::string title, std::string text, bool is_error)
+{
+    MessageBoxW(hwnd_, utf8_to_wstr(text).c_str(), utf8_to_wstr(title).c_str(),
+                MB_OK | (is_error ? MB_ICONWARNING : MB_ICONINFORMATION));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-void MainWindow::wire_key_dialog_callbacks_()
-{
-    settings_controller_->show_passphrase_prompt =
-        [this](std::string title, std::function<void(std::string)> cb)
-    {
-        std::wstring pass =
-            prompt_passphrase_w32(hwnd_, utf8_to_wstr(title).c_str());
-        if (!pass.empty())
-            cb(wstr_to_utf8(pass.c_str()));
-    };
-
-    settings_controller_->show_save_file_dialog =
-        [this](std::string suggested_name, std::function<void(std::string)> cb)
-    {
-        std::wstring path = show_save_dialog_(
-            utf8_to_wstr(suggested_name),
-            file_filter({{tk::tr("Key files"), L"*.txt"}, {tk::tr("All files"), L"*.*"}}).c_str());
-        if (!path.empty())
-            cb(wstr_to_utf8(path.c_str()));
-    };
-
-    settings_controller_->show_open_file_dialog =
-        [this](std::function<void(std::string)> cb)
-    {
-        wchar_t buf[MAX_PATH]{};
-        OPENFILENAMEW ofn{};
-        ofn.lStructSize = sizeof(ofn);
-        ofn.hwndOwner   = hwnd_;
-        ofn.lpstrFile   = buf;
-        ofn.nMaxFile    = MAX_PATH;
-        const std::wstring filter = file_filter(
-            {{tk::tr("Key files"), L"*.txt"}, {tk::tr("All files"), L"*.*"}});
-        ofn.lpstrFilter = filter.c_str();
-        ofn.Flags       = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
-        if (GetOpenFileNameW(&ofn))
-            cb(wstr_to_utf8(buf));
-    };
-
-    settings_controller_->on_export_keys_result =
-        [this](bool ok, std::string error)
-    {
-        if (ok)
-            MessageBoxW(hwnd_, utf8_to_wstr(tk::tr("Message keys exported successfully.")).c_str(),
-                        utf8_to_wstr(tk::tr("Export complete")).c_str(), MB_OK | MB_ICONINFORMATION);
-        else
-            MessageBoxW(hwnd_, utf8_to_wstr(error).c_str(),
-                        utf8_to_wstr(tk::tr("Export failed")).c_str(), MB_OK | MB_ICONWARNING);
-    };
-
-    settings_controller_->on_import_keys_result =
-        [this](bool ok, std::string error)
-    {
-        if (ok)
-            MessageBoxW(hwnd_, utf8_to_wstr(tk::tr("Message keys imported successfully.")).c_str(),
-                        utf8_to_wstr(tk::tr("Import complete")).c_str(), MB_OK | MB_ICONINFORMATION);
-        else
-            MessageBoxW(hwnd_, utf8_to_wstr(error).c_str(),
-                        utf8_to_wstr(tk::tr("Import failed")).c_str(), MB_OK | MB_ICONWARNING);
-    };
-}
-
-void MainWindow::wire_history_export_dialog_callbacks_()
-{
-    if (!history_export_controller_)
-        return;
-    history_export_controller_->show_save_folder_dialog =
-        [this](std::string /*suggested_name*/, std::function<void(std::string)> cb)
-    {
-        wchar_t path_buf[MAX_PATH]{};
-        BROWSEINFOW bi{};
-        bi.hwndOwner = hwnd_;
-        bi.pszDisplayName = path_buf;
-        const std::wstring title =
-            utf8_to_wstr(tk::tr("Choose a folder for the exported history"));
-        bi.lpszTitle = title.c_str();
-        bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
-        LPITEMIDLIST pidl = SHBrowseForFolderW(&bi);
-        if (!pidl)
-        {
-            cb(std::string());
-            return;
-        }
-        wchar_t folder_buf[MAX_PATH]{};
-        if (SHGetPathFromIDListW(pidl, folder_buf))
-            cb(wstr_to_utf8(folder_buf));
-        else
-            cb(std::string());
-        CoTaskMemFree(pidl);
-    };
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-
-std::wstring MainWindow::file_filter(
-    std::initializer_list<std::pair<std::string, const wchar_t*>> entries)
+std::wstring
+MainWindow::file_filter(std::initializer_list<std::pair<std::string, const wchar_t*>> entries)
 {
     std::wstring f;
     for (const auto& [label, pattern] : entries)
@@ -6508,33 +3982,39 @@ std::wstring MainWindow::file_filter(
 std::wstring MainWindow::save_filter_for(const tesseract::views::MediaSaveSpec& spec)
 {
     if (spec.filter_name.empty() || spec.patterns.empty())
+    {
         return file_filter({{tk::tr("All files"), L"*.*"}});
+    }
     std::wstring patterns;
     for (const auto& pat : spec.patterns)
     {
         if (!patterns.empty())
+        {
             patterns += L';';
+        }
         patterns += utf8_to_wstr(pat);
     }
-    return file_filter({{spec.filter_name, patterns.c_str()},
-                        {tk::tr("All files"), L"*.*"}});
+    return file_filter({{spec.filter_name, patterns.c_str()}, {tk::tr("All files"), L"*.*"}});
 }
 
-std::wstring MainWindow::show_save_dialog_(const std::wstring& suggested,
-                                           const wchar_t* filter)
+std::wstring MainWindow::show_save_dialog_(const std::wstring& suggested, const wchar_t* filter)
 {
     wchar_t buf[MAX_PATH]{};
     if (!suggested.empty())
+    {
         wcsncpy_s(buf, suggested.c_str(), MAX_PATH - 1);
+    }
     OPENFILENAMEW ofn{};
     ofn.lStructSize = sizeof(ofn);
-    ofn.hwndOwner   = hwnd_;
-    ofn.lpstrFile   = buf;
-    ofn.nMaxFile    = MAX_PATH;
+    ofn.hwndOwner = hwnd_;
+    ofn.lpstrFile = buf;
+    ofn.nMaxFile = MAX_PATH;
     ofn.lpstrFilter = filter;
-    ofn.Flags       = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
+    ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
     if (GetSaveFileNameW(&ofn))
+    {
         return buf;
+    }
     return {};
 }
 
@@ -6543,17 +4023,17 @@ std::vector<tk::Rect> MainWindow::get_screen_work_areas_() const
     std::vector<tk::Rect> result;
     EnumDisplayMonitors(
         nullptr, nullptr,
-        [](HMONITOR hmon, HDC, LPRECT, LPARAM data) -> BOOL {
+        [](HMONITOR hmon, HDC, LPRECT, LPARAM data) -> BOOL
+        {
             auto* r = reinterpret_cast<std::vector<tk::Rect>*>(data);
             MONITORINFO mi{};
             mi.cbSize = sizeof(mi);
             if (GetMonitorInfoW(hmon, &mi))
             {
-                r->push_back(tk::Rect{
-                    static_cast<float>(mi.rcWork.left),
-                    static_cast<float>(mi.rcWork.top),
-                    static_cast<float>(mi.rcWork.right  - mi.rcWork.left),
-                    static_cast<float>(mi.rcWork.bottom - mi.rcWork.top)});
+                r->push_back(tk::Rect{static_cast<float>(mi.rcWork.left),
+                                      static_cast<float>(mi.rcWork.top),
+                                      static_cast<float>(mi.rcWork.right - mi.rcWork.left),
+                                      static_cast<float>(mi.rcWork.bottom - mi.rcWork.top)});
             }
             return TRUE;
         },
@@ -6564,22 +4044,30 @@ std::vector<tk::Rect> MainWindow::get_screen_work_areas_() const
 void MainWindow::raise_and_activate_()
 {
     if (hwnd_)
+    {
         SetForegroundWindow(hwnd_);
+    }
 }
 
 void MainWindow::activate_for_notification_(const std::string&)
 {
     if (!hwnd_)
+    {
         return;
+    }
     if (IsIconic(hwnd_) || !IsWindowVisible(hwnd_))
+    {
         ShowWindow(hwnd_, SW_RESTORE);
+    }
     SetForegroundWindow(hwnd_);
 }
 
 void MainWindow::set_window_fullscreen_(bool on)
 {
     if (!hwnd_ || on == fs_active_)
+    {
         return;
+    }
     fs_active_ = on;
 
     const LONG_PTR style = GetWindowLongPtrW(hwnd_, GWL_STYLE);
@@ -6588,8 +4076,7 @@ void MainWindow::set_window_fullscreen_(bool on)
         fs_saved_placement_.length = sizeof(fs_saved_placement_);
         GetWindowPlacement(hwnd_, &fs_saved_placement_);
         MONITORINFO mi{sizeof(mi)};
-        if (GetMonitorInfoW(
-                MonitorFromWindow(hwnd_, MONITOR_DEFAULTTOPRIMARY), &mi))
+        if (GetMonitorInfoW(MonitorFromWindow(hwnd_, MONITOR_DEFAULTTOPRIMARY), &mi))
         {
             SetWindowLongPtrW(hwnd_, GWL_STYLE, style & ~WS_OVERLAPPEDWINDOW);
             SetWindowPos(hwnd_, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top,
@@ -6603,8 +4090,7 @@ void MainWindow::set_window_fullscreen_(bool on)
         SetWindowLongPtrW(hwnd_, GWL_STYLE, style | WS_OVERLAPPEDWINDOW);
         SetWindowPlacement(hwnd_, &fs_saved_placement_);
         SetWindowPos(hwnd_, nullptr, 0, 0, 0, 0,
-                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER |
-                         SWP_FRAMECHANGED);
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
     }
     title_bar_.invalidate_strip(hwnd_);
     InvalidateRect(hwnd_, nullptr, TRUE);
@@ -6620,7 +4106,9 @@ bool MainWindow::spawn_relaunch_(const std::vector<std::string>& args)
 {
     wchar_t exe_path[MAX_PATH]{};
     if (GetModuleFileNameW(nullptr, exe_path, MAX_PATH) == 0)
+    {
         return false;
+    }
 
     // relaunch_args() are ASCII without spaces (profile names are
     // [A-Za-z0-9_-]), so only the exe path needs quoting.
@@ -6629,14 +4117,16 @@ bool MainWindow::spawn_relaunch_(const std::vector<std::string>& args)
     {
         cmd += L" ";
         for (char c : arg)
+        {
             cmd.push_back(static_cast<wchar_t>(c));
+        }
     }
 
     STARTUPINFOW si{};
     si.cb = sizeof(si);
     PROCESS_INFORMATION pi{};
-    if (!CreateProcessW(exe_path, cmd.data(), nullptr, nullptr, FALSE, 0,
-                        nullptr, nullptr, &si, &pi))
+    if (!CreateProcessW(exe_path, cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si,
+                        &pi))
     {
         return false;
     }
@@ -6661,14 +4151,20 @@ void MainWindow::quit_app_()
             {
                 other = dynamic_cast<MainWindow*>(w);
                 if (other)
+                {
                     break;
+                }
             }
         }
         if (!other)
+        {
             break;
+        }
         other->quitting_ = true;
         if (!DestroyWindow(other->hwnd_))
+        {
             break;
+        }
     }
     quitting_ = true;
     DestroyWindow(hwnd_);
@@ -6677,7 +4173,9 @@ void MainWindow::quit_app_()
 void MainWindow::rebuild_tray_()
 {
     if (!tray_ || !tray_->is_available())
+    {
         return;
+    }
 
     auto items = build_tray_items_();
     tray_->rebuild_menu(std::move(items));
@@ -6688,19 +4186,23 @@ bool MainWindow::is_ctrl_held_() const
     return (GetKeyState(VK_CONTROL) & 0x8000) != 0;
 }
 
-void MainWindow::switch_active_account_(const std::string& user_id)
-{
-    switch_active_account(user_id);
-}
-
-void MainWindow::spawn_main_window_(
-    std::shared_ptr<tesseract::AccountSession> account)
+void MainWindow::spawn_main_window_(std::shared_ptr<tesseract::AccountSession> account)
 {
     auto* win = new win32::MainWindow(account_manager_, hInst_, taskbar_);
     win->set_initial_account(account);
     // Shared hand-off: re-point bridge at the new window, seed caches, pin, and
     // register dedicated — before the new window's deferred doLogin().
     hand_account_to_spawned_window_(win, account);
+    if (!win->create(SW_SHOW))
+    {
+        // No HWND: give the account back to this window and drop the object.
+        rebind_account_bridge_(*account, this);
+        account_manager_.clear_dedicated(account->user_id);
+        account_manager_.unregister_window(win);
+        delete win;
+        return;
+    }
+    win->delete_on_destroy_ = true;
     win->raise_and_activate_();
 }
 

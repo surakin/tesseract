@@ -68,12 +68,12 @@ public:
     //                          UIA flow via SettingsController::delete_device.
     //   on_uia_confirmed:     "I've confirmed" clicked — caller should call
     //                          SettingsController::confirm_device_deletion.
-    std::function<void(std::string device_id)>                       on_delete_requested;
-    std::function<void(std::string device_id, std::string session)>  on_uia_confirmed;
+    std::function<void(std::string device_id)> on_delete_requested;
+    std::function<void(std::string device_id, std::string session)> on_uia_confirmed;
     // Fired when the user clicks "Cancel" on a UIA-pending row. The owner
     // should call SettingsController::cancel_device_deletion(id) to release
     // the per-device in-flight slot.
-    std::function<void(std::string device_id)>                       on_uia_cancelled;
+    std::function<void(std::string device_id)> on_uia_cancelled;
 
 private:
     class DeviceRow; // defined in DevicesSection.cpp
@@ -83,10 +83,10 @@ private:
     std::string current_device_id_;
     std::vector<tesseract::Client::Device> devices_;
 
-    SettingsGroup*           group_         = nullptr;
-    tk::Label*               loading_label_ = nullptr;
-    tk::Label*               empty_label_   = nullptr;
-    std::vector<DeviceRow*>  rows_; // borrowed pointers; owned by group_
+    SettingsGroup* group_ = nullptr;
+    tk::Label* loading_label_ = nullptr;
+    tk::Label* empty_label_ = nullptr;
+    std::vector<DeviceRow*> rows_; // borrowed pointers; owned by group_
 };
 
 } // namespace tesseract::views

@@ -49,13 +49,18 @@ ThreadView::ThreadView()
     // kCloseSvg icon drawn in paint(), and the accessible name is set
     // explicitly since the raw × glyph isn't one.
     auto close = tk::create_widget<tk::Button>(this,
-        "\xC3\x97", // U+00D7 ×
-        std::function<void()>{}, tk::Button::Variant::Icon);
+                                               "\xC3\x97", // U+00D7 ×
+                                               std::function<void()>{}, tk::Button::Variant::Icon);
     close->set_accessible_name(tk::tr("Close"));
     close_btn_ = add_child(std::move(close));
-    close_btn_->set_on_click([this] {
-        if (on_close) on_close();
-    });
+    close_btn_->set_on_click(
+        [this]
+        {
+            if (on_close)
+            {
+                on_close();
+            }
+        });
 
     // Follow toggle (MSC4306): hidden until set_follow_state() reports the
     // server supports thread subscriptions. Draws its own icon like the
@@ -63,18 +68,25 @@ ThreadView::ThreadView()
     auto follow = tk::create_widget<tk::ToggleButton>(this, std::string{});
     follow_btn_ = add_child(std::move(follow));
     follow_btn_->set_visible(false);
-    follow_btn_->set_on_toggled([this](bool follow_now) {
-        if (on_follow_toggled) on_follow_toggled(follow_now);
-    });
+    follow_btn_->set_on_toggled(
+        [this](bool follow_now)
+        {
+            if (on_follow_toggled)
+            {
+                on_follow_toggled(follow_now);
+            }
+        });
     set_follow_state(false, false);
 }
 
 void ThreadView::set_follow_state(bool supported, bool following)
 {
     follow_supported_ = supported;
-    following_        = following;
+    following_ = following;
     if (!follow_btn_)
+    {
         return;
+    }
     follow_btn_->set_visible(supported);
     follow_btn_->set_checked(following);
     follow_btn_->set_icon(following ? std::span<const std::uint8_t>(kBellSvg)
@@ -87,7 +99,9 @@ void ThreadView::set_follow_state(bool supported, bool following)
 void ThreadView::reset_search()
 {
     if (search_bar_)
+    {
         search_bar_->clear_query();
+    }
 }
 
 namespace
@@ -96,17 +110,16 @@ namespace
 void strip_thread_fields(MessageRowData& r)
 {
     r.thread_root_id.clear();
-    r.is_thread_root              = false;
-    r.thread_reply_count          = 0;
+    r.is_thread_root = false;
+    r.thread_reply_count = 0;
     r.thread_latest_sender_name.clear();
     r.thread_latest_body.clear();
-    r.thread_latest_ts            = 0;
+    r.thread_latest_ts = 0;
 }
 
 } // namespace
 
-void ThreadView::set_messages(std::vector<MessageRowData> rows,
-                              bool room_switch)
+void ThreadView::set_messages(std::vector<MessageRowData> rows, bool room_switch)
 {
     for (auto& r : rows)
     {
@@ -147,17 +160,25 @@ void ThreadView::remove_message(std::size_t index)
 void ThreadView::append_messages(std::vector<MessageRowData> rows)
 {
     for (auto& r : rows)
+    {
         strip_thread_fields(r);
+    }
     if (message_list_)
+    {
         message_list_->append_messages(std::move(rows));
+    }
 }
 
 void ThreadView::prepend_messages(std::vector<MessageRowData> rows)
 {
     for (auto& r : rows)
+    {
         strip_thread_fields(r);
+    }
     if (message_list_)
+    {
         message_list_->prepend_messages(std::move(rows));
+    }
 }
 
 // ── layout ────────────────────────────────────────────────────────────────
@@ -193,15 +214,15 @@ void ThreadView::arrange(tk::LayoutCtx& lc, tk::Rect bounds)
         // paginate chrome is hidden (see the constructor), so its
         // right-aligned content (count/up-down) already flushes right
         // against this narrowed width instead of leaving a gap.
-        const float bar_w = std::max(
-            0.0f, bounds.w - kCloseSz - kCloseInset - kHeaderGap - follow_w);
+        const float bar_w =
+            std::max(0.0f, bounds.w - kCloseSz - kCloseInset - kHeaderGap - follow_w);
         search_bar_->arrange(lc, {bounds.x, bounds.y, bar_w, kHeaderH});
     }
     if (message_list_)
     {
         // Message list sits below the header row.
         const float list_top = bounds.y + kHeaderH;
-        const float list_h   = std::max(0.0f, bounds.bottom() - list_top);
+        const float list_h = std::max(0.0f, bounds.bottom() - list_top);
         message_list_->arrange(lc, {bounds.x, list_top, bounds.w, list_h});
     }
 }
@@ -222,9 +243,8 @@ void ThreadView::paint_before_children(tk::PaintCtx& ctx)
     // reading as a disconnected control instead of part of the same header.
     const tk::Rect header{bounds_.x, bounds_.y, bounds_.w, kHeaderH};
     ctx.canvas.fill_rect(header, ctx.theme.palette.chrome_bg);
-    ctx.canvas.fill_rect(
-        {bounds_.x, bounds_.y + kHeaderH - 1.0f, bounds_.w, 1.0f},
-        ctx.theme.palette.separator);
+    ctx.canvas.fill_rect({bounds_.x, bounds_.y + kHeaderH - 1.0f, bounds_.w, 1.0f},
+                         ctx.theme.palette.separator);
 }
 
 void ThreadView::paint_after_children(tk::PaintCtx& ctx)
@@ -235,11 +255,10 @@ void ThreadView::paint_after_children(tk::PaintCtx& ctx)
     if (close_btn_ && close_btn_->visible())
     {
         constexpr float kCloseIconPx = 18.0f;
-        const tk::Color tint = close_btn_->hovered()
-                                  ? ctx.theme.palette.text_primary
-                                  : ctx.theme.palette.text_secondary;
-        close_icon_.draw(ctx.canvas, ctx.factory, kCloseSvg, close_btn_->bounds(),
-                         kCloseIconPx, tint);
+        const tk::Color tint = close_btn_->hovered() ? ctx.theme.palette.text_primary
+                                                     : ctx.theme.palette.text_secondary;
+        close_icon_.draw(ctx.canvas, ctx.factory, kCloseSvg, close_btn_->bounds(), kCloseIconPx,
+                         tint);
     }
 }
 

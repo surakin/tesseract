@@ -19,10 +19,16 @@ namespace
 
 struct ComboStage
 {
-    PopupCapableStubHost host;
+    // Declared before host so it outlives it: the host can still hold images
+    // the surface's backend made, and on Win32 releasing them after that
+    // backend's CoUninitialize() crashes.
     std::unique_ptr<TestSurface> surface = TestSurface::create(400, 300);
+    PopupCapableStubHost host;
 
-    LayoutCtx lc() { return LayoutCtx{surface->factory(), Theme::light()}; }
+    LayoutCtx lc()
+    {
+        return LayoutCtx{surface->factory(), Theme::light()};
+    }
     PaintCtx pc()
     {
         return PaintCtx{surface->canvas(), surface->factory(), Theme::light()};
@@ -47,17 +53,14 @@ KeyEvent combo_key(Key k)
     return e;
 }
 
-const std::vector<ComboBox::Option> kBoxOpts = {
-    {"One", "1"}, {"Two", "2"}, {"Three", "3"}};
-const std::vector<ComboButton::Option> kBtnOpts = {
-    {"Room", "room"}, {"Space", "space"}};
+const std::vector<ComboBox::Option> kBoxOpts = {{"One", "1"}, {"Two", "2"}, {"Three", "3"}};
+const std::vector<ComboButton::Option> kBtnOpts = {{"Room", "room"}, {"Space", "space"}};
 
 } // namespace
 
 // ── ComboBox ───────────────────────────────────────────────────────────────
 
-TEST_CASE("ComboBox measures to the constraint width and a fixed height",
-          "[tk][combobox]")
+TEST_CASE("ComboBox measures to the constraint width and a fixed height", "[tk][combobox]")
 {
     ComboStage s;
     auto cb = create_root_widget<ComboBox>(&s.host);
@@ -68,8 +71,7 @@ TEST_CASE("ComboBox measures to the constraint width and a fixed height",
     CHECK(cb->measure(l, {0, 100}).w == 0);
 }
 
-TEST_CASE("ComboBox click opens the popup and a row commit fires on_changed",
-          "[tk][combobox]")
+TEST_CASE("ComboBox click opens the popup and a row commit fires on_changed", "[tk][combobox]")
 {
     ComboStage s;
     auto cb = create_root_widget<ComboBox>(&s.host);
@@ -79,7 +81,10 @@ TEST_CASE("ComboBox click opens the popup and a row commit fires on_changed",
     s.paint(*cb);
 
     std::string got;
-    cb->on_changed = [&](std::string v) { got = v; };
+    cb->on_changed = [&](std::string v)
+    {
+        got = v;
+    };
 
     CHECK(cb->access_name() == "Two");
     CHECK(cb->on_pointer_down({5, 5}));
@@ -100,15 +105,17 @@ TEST_CASE("ComboBox click opens the popup and a row commit fires on_changed",
     CHECK_FALSE(s.host.popups_created[0]->visible());
 }
 
-TEST_CASE("ComboBox second click collapses; Escape collapses without a change",
-          "[tk][combobox]")
+TEST_CASE("ComboBox second click collapses; Escape collapses without a change", "[tk][combobox]")
 {
     ComboStage s;
     auto cb = create_root_widget<ComboBox>(&s.host);
     cb->set_options(kBoxOpts);
     s.layout(*cb);
     int changes = 0;
-    cb->on_changed = [&](std::string) { ++changes; };
+    cb->on_changed = [&](std::string)
+    {
+        ++changes;
+    };
 
     cb->on_pointer_down({5, 5});
     cb->on_pointer_up({5, 5}, true);
@@ -134,7 +141,10 @@ TEST_CASE("ComboBox Enter with no hovered row just collapses; other keys are "
     cb->set_options(kBoxOpts);
     s.layout(*cb);
     int changes = 0;
-    cb->on_changed = [&](std::string) { ++changes; };
+    cb->on_changed = [&](std::string)
+    {
+        ++changes;
+    };
 
     cb->on_pointer_down({5, 5});
     cb->on_pointer_up({5, 5}, true); // no selected value => no hover
@@ -169,8 +179,7 @@ TEST_CASE("ComboBox closed keyboard opening requires focus", "[tk][combobox]")
     CHECK(cb->is_expanded());
 }
 
-TEST_CASE("ComboBox wheel over the closed button cycles the selection",
-          "[tk][combobox]")
+TEST_CASE("ComboBox wheel over the closed button cycles the selection", "[tk][combobox]")
 {
     ComboStage s;
     auto cb = create_root_widget<ComboBox>(&s.host);
@@ -178,13 +187,16 @@ TEST_CASE("ComboBox wheel over the closed button cycles the selection",
     cb->set_selected_value("1");
     s.layout(*cb);
     std::vector<std::string> seen;
-    cb->on_changed = [&](std::string v) { seen.push_back(v); };
+    cb->on_changed = [&](std::string v)
+    {
+        seen.push_back(v);
+    };
 
     CHECK_FALSE(cb->on_wheel({5, 5}, 0, 0));
-    CHECK_FALSE(cb->on_wheel({5, 5}, 0, -1)); // already first: clamped, no-op
+    CHECK(cb->on_wheel({5, 5}, 0, -1)); // already first: consumed, selection unchanged
     CHECK(cb->on_wheel({5, 5}, 0, 1));
     CHECK(cb->on_wheel({5, 5}, 0, 1));
-    CHECK_FALSE(cb->on_wheel({5, 5}, 0, 1)); // already last
+    CHECK(cb->on_wheel({5, 5}, 0, 1)); // already last: consumed, selection unchanged
     CHECK(seen == std::vector<std::string>{"2", "3"});
 
     // While expanded the wheel is not handled.
@@ -194,8 +206,7 @@ TEST_CASE("ComboBox wheel over the closed button cycles the selection",
     CHECK_FALSE(cb->on_wheel({5, 5}, 0, -1));
 }
 
-TEST_CASE("ComboBox disabled ignores input and collapses an open dropdown",
-          "[tk][combobox]")
+TEST_CASE("ComboBox disabled ignores input and collapses an open dropdown", "[tk][combobox]")
 {
     ComboStage s;
     auto cb = create_root_widget<ComboBox>(&s.host);
@@ -215,8 +226,7 @@ TEST_CASE("ComboBox disabled ignores input and collapses an open dropdown",
     CHECK_FALSE(cb->access_default_action());
 }
 
-TEST_CASE("ComboBox pointer move hover shows/hides its tooltip",
-          "[tk][combobox]")
+TEST_CASE("ComboBox pointer move hover shows/hides its tooltip", "[tk][combobox]")
 {
     ComboStage s;
     auto cb = create_root_widget<ComboBox>(&s.host);
@@ -256,8 +266,7 @@ TEST_CASE("ComboBox access default action toggles; popup dismiss collapses; "
     s.paint(*cb);
 }
 
-TEST_CASE("ComboBox dropdown rows are exposed and activatable",
-          "[tk][combobox][accessibility]")
+TEST_CASE("ComboBox dropdown rows are exposed and activatable", "[tk][combobox][accessibility]")
 {
     ComboStage s;
     auto cb = create_root_widget<ComboBox>(&s.host);
@@ -265,7 +274,10 @@ TEST_CASE("ComboBox dropdown rows are exposed and activatable",
     cb->set_selected_value("2");
     s.layout(*cb);
     std::string got;
-    cb->on_changed = [&](std::string v) { got = v; };
+    cb->on_changed = [&](std::string v)
+    {
+        got = v;
+    };
     cb->access_default_action();
     REQUIRE(s.host.popups_created.size() == 1);
     Widget* list = s.host.popups_created[0]->root();
@@ -308,8 +320,14 @@ TEST_CASE("ComboButton main click activates with the selected value, chevron "
     s.paint(*cb);
 
     std::string activated, changed;
-    cb->on_activate = [&](std::string v) { activated = v; };
-    cb->on_selection_changed = [&](std::string v) { changed = v; };
+    cb->on_activate = [&](std::string v)
+    {
+        activated = v;
+    };
+    cb->on_selection_changed = [&](std::string v)
+    {
+        changed = v;
+    };
 
     CHECK(cb->access_name() == "Space");
     CHECK(cb->on_pointer_down({10, 10}));
@@ -367,7 +385,10 @@ TEST_CASE("ComboButton keyboard: Enter activates, Down opens, Escape/Tab "
     cb->set_selected_value("room");
     s.layout(*cb);
     std::vector<std::string> acts;
-    cb->on_activate = [&](std::string v) { acts.push_back(v); };
+    cb->on_activate = [&](std::string v)
+    {
+        acts.push_back(v);
+    };
 
     CHECK_FALSE(cb->on_key_down(combo_key(Key::Enter))); // unfocused
     s.host.request_focus(cb.get());
@@ -396,8 +417,7 @@ TEST_CASE("ComboButton keyboard: Enter activates, Down opens, Escape/Tab "
     CHECK_FALSE(cb->is_expanded());
 }
 
-TEST_CASE("ComboButton disabled never activates and collapses",
-          "[tk][combo_button]")
+TEST_CASE("ComboButton disabled never activates and collapses", "[tk][combo_button]")
 {
     ComboStage s;
     auto cb = create_root_widget<ComboButton>(&s.host);
@@ -405,7 +425,10 @@ TEST_CASE("ComboButton disabled never activates and collapses",
     cb->set_variant(Button::Variant::Subtle);
     s.layout(*cb);
     int acts = 0;
-    cb->on_activate = [&](std::string) { ++acts; };
+    cb->on_activate = [&](std::string)
+    {
+        ++acts;
+    };
     CHECK(cb->access_default_action());
     CHECK(acts == 1);
 
@@ -423,8 +446,7 @@ TEST_CASE("ComboButton disabled never activates and collapses",
     s.paint(*cb);
 }
 
-TEST_CASE("ComboButton hover state tracks zones and clears on leave",
-          "[tk][combo_button]")
+TEST_CASE("ComboButton hover state tracks zones and clears on leave", "[tk][combo_button]")
 {
     ComboStage s;
     auto cb = create_root_widget<ComboButton>(&s.host);
@@ -470,7 +492,10 @@ TEST_CASE("ComboButton dropdown rows are exposed and activatable",
     cb->set_options(kBtnOpts);
     s.layout(*cb);
     std::string changed;
-    cb->on_selection_changed = [&](std::string v) { changed = v; };
+    cb->on_selection_changed = [&](std::string v)
+    {
+        changed = v;
+    };
     cb->on_pointer_down({195, 10});
     cb->on_pointer_up({195, 10}, true);
     REQUIRE(s.host.popups_created.size() == 1);
@@ -490,8 +515,7 @@ TEST_CASE("ComboButton dropdown rows are exposed and activatable",
     CHECK(changed == "space");
 }
 
-TEST_CASE("ComboBox without a host does not stay expanded when asked to open",
-          "[tk][combobox]")
+TEST_CASE("ComboBox without a host does not stay expanded when asked to open", "[tk][combobox]")
 {
     auto cb = create_root_widget<ComboBox>(nullptr);
     CHECK(cb->access_default_action());

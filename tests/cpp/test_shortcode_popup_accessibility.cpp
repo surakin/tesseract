@@ -14,9 +14,9 @@ using namespace tk;
 // real-view test pattern used for those.
 
 TEST_CASE("ShortcodePopup exposes its suggestions as accessible ListItems "
-         "named after their shortcode (no colons, matching the plain-token "
-         "convention settled on for the emoji/sticker grids)",
-         "[shortcode_popup][accessibility]")
+          "named after their shortcode (no colons, matching the plain-token "
+          "convention settled on for the emoji/sticker grids)",
+          "[shortcode_popup][accessibility]")
 {
     ShortcodePopup popup;
     ShortcodeSuggestion smile;
@@ -39,8 +39,8 @@ TEST_CASE("ShortcodePopup exposes its suggestions as accessible ListItems "
 }
 
 TEST_CASE("ShortcodePopup with no suggestions produces no accessible "
-         "children",
-         "[shortcode_popup][accessibility]")
+          "children",
+          "[shortcode_popup][accessibility]")
 {
     ShortcodePopup popup;
     AccessNode tree = build_access_tree(&popup);
@@ -48,8 +48,8 @@ TEST_CASE("ShortcodePopup with no suggestions produces no accessible "
 }
 
 TEST_CASE("invoking a ShortcodePopup row's default action fires "
-         "on_accepted with that row's suggestion, the same as a real click",
-         "[shortcode_popup][accessibility][action]")
+          "on_accepted with that row's suggestion, the same as a real click",
+          "[shortcode_popup][accessibility][action]")
 {
     ShortcodePopup popup;
     ShortcodeSuggestion smile;
@@ -61,7 +61,10 @@ TEST_CASE("invoking a ShortcodePopup row's default action fires "
     popup.set_suggestions({smile, wave});
 
     std::string accepted;
-    popup.on_accepted = [&](ShortcodeSuggestion s) { accepted = s.shortcode; };
+    popup.on_accepted = [&](ShortcodeSuggestion s)
+    {
+        accepted = s.shortcode;
+    };
 
     AccessNode tree = build_access_tree(&popup);
     REQUIRE(tree.children.size() == 2);

@@ -21,7 +21,7 @@ on:
         type: boolean
         default: true
       macos:
-        description: macOS arm64
+        description: macOS (arm64 + x86_64)
         type: boolean
         default: true
       linux:
@@ -58,7 +58,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> build/windows-release/cargo/build
-          cache-on-failure: true
 
       # resvg-py 0.3.2 only ships wheels up to cp312, so pin Python 3.12.
       # The id lets us hand the exact interpreter to CMake below — otherwise
@@ -104,16 +103,31 @@ jobs:
         # Force CMake to use the same Python interpreter we installed
         # resvg-py into; otherwise FindPython3 picks the newest version
         # available on the runner (3.14) regardless of PATH.
-        run: cmake --preset windows-release "-DPython3_EXECUTABLE=${{ steps.python.outputs.python-path }}" "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
+        run: cmake --preset windows-release "-DPython3_EXECUTABLE=${{ steps.python.outputs.python-path }}" "-DTESSERACT_GITHUB_REPO=${{ github.repository }}" -DTESSERACT_BUILD_TESTS=OFF
 
       - name: Build
         run: cmake --build build/windows-release
 
-  macos-arm64:
+  # One job definition for both macOS archs. Each arch runs on its own runner
+  # (fail-fast off, so one failing doesn't cancel the other). If this works out,
+  # package.yml's and build-platform.yml's macOS jobs can follow the same shape.
+  macos:
     if: ${{ inputs.macos }}
-    name: macOS arm64 (compile only)
+    name: macOS ${{ matrix.arch }} (compile only)
     runs-on: macos-latest
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            rust_target: aarch64-apple-darwin
+          - arch: x86_64
+            rust_target: x86_64-apple-darwin
+    # Matches CMAKE_OSX_DEPLOYMENT_TARGET (root CMakeLists.txt); also read by
+    # CMake, rustc and cc-built C dependencies.
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
 
     steps:
       - uses: actions/checkout@v4
@@ -133,17 +147,33 @@ jobs:
           echo "SDKROOT=$sdk"
 
       - name: Install build dependencies
-        run: brew install go resvg autoconf automake libtool opus
+        run: brew install go resvg autoconf automake libtool
 
-      - name: Expose opus to audiopus_sys
+      # Homebrew only ships an arm64 opus for the arm64 runner, which can't link
+      # into the x86_64 build; build it for the matrix arch and the deployment
+      # target instead (same as package.yml).
+      - name: Build opus from source
         run: |
-          echo "OPUS_LIB_DIR=$(brew --prefix opus)/lib" >> $GITHUB_ENV
-          echo "OPUS_INCLUDE_DIR=$(brew --prefix opus)/include" >> $GITHUB_ENV
+          git clone --depth 1 --branch v1.5.2 https://github.com/xiph/opus.git opus-src
+          cmake -S opus-src -B opus-build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }} \
+            -DCMAKE_OSX_SYSROOT="$SDKROOT" \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET" \
+            -DOPUS_BUILD_SHARED_LIBRARY=ON \
+            -DOPUS_BUILD_PROGRAMS=OFF \
+            -DOPUS_BUILD_TESTING=OFF
+          cmake --build opus-build
+          # Lay opus.pc where Corrosion's PKG_CONFIG_PATH (…/pkgconfig) will find it.
+          mkdir -p opus-build/pkgconfig
+          cp opus-build/opus.pc opus-build/pkgconfig/
+          echo "OPUS_LIB_DIR=$PWD/opus-build" >> $GITHUB_ENV
+          echo "OPUS_INCLUDE_DIR=$PWD/opus-src/include" >> $GITHUB_ENV
 
-      - name: Install Rust (stable, aarch64 target)
+      - name: Install Rust (stable, ${{ matrix.rust_target }})
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-darwin
+          targets: ${{ matrix.rust_target }}
           # rust-objcopy (used by rustc to strip release binaries on Apple
           # targets) dynamically links libLLVM.dylib, which only ships
           # alongside this component — without it, stripping silently fails
@@ -153,15 +183,16 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: . -> build/macos-appkit-arm64-release/cargo/build
-          key: xcode-26.4.1
-          cache-on-failure: true
+          workspaces: . -> build/macos-appkit-${{ matrix.arch }}-release/cargo/build
+          # Same key as prime-rust-cache.yml and the release workflows; the
+          # job id is the same for both archs, so key on the arch.
+          shared-key: macos-${{ matrix.arch }}-xcode-26.4.1
 
-      - name: Configure (Release, arm64)
-        run: cmake --preset macos-appkit-arm64-release "-DCMAKE_OSX_SYSROOT=$SDKROOT" "-DCMAKE_EXE_LINKER_FLAGS=-L$SDKROOT/usr/lib" "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
+      - name: Configure (Release, ${{ matrix.arch }})
+        run: cmake --preset macos-appkit-${{ matrix.arch }}-release "-DCMAKE_OSX_SYSROOT=$SDKROOT" "-DCMAKE_EXE_LINKER_FLAGS=-L$SDKROOT/usr/lib" "-DTESSERACT_GITHUB_REPO=${{ github.repository }}" -DTESSERACT_BUILD_TESTS=OFF
 
       - name: Build
-        run: cmake --build build/macos-appkit-arm64-release
+        run: cmake --build build/macos-appkit-${{ matrix.arch }}-release
 
   linux:
     if: ${{ inputs.linux }}
@@ -171,6 +202,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up clang (webrtc-sys needs clang 21 or later)
+        uses: ./.github/actions/setup-clang
 
       # TESSERACT_UI=linux builds both shells from one build dir, so the GTK4
       # and Qt6 backends share this single job (and one Rust/SDK build) rather
@@ -215,15 +249,10 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> build/linux-release/cargo/build
-          cache-on-failure: true
 
-      # Tests stay on. Under TESSERACT_UI=linux the test target picks the Qt6
-      # TestSurface (tests/CMakeLists.txt maps "linux" to "qt6"), so the GTK
-      # test surface — which cannot compile, as it includes cairo.h without
-      # tests/CMakeLists.txt ever running pkg_check_modules for it — is not
-      # compiled at all. That pre-existing gap needs no workaround here.
+      # Tests are built and run only by test.yml.
       - name: Configure (Release)
-        run: cmake --preset linux-release -DTESSERACT_UI=linux "-DTESSERACT_GITHUB_REPO=${{ github.repository }}"
+        run: cmake --preset linux-release -DTESSERACT_UI=linux "-DTESSERACT_GITHUB_REPO=${{ github.repository }}" -DTESSERACT_BUILD_TESTS=OFF
 
       - name: Build
         run: cmake --build build/linux-release
@@ -267,7 +296,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> build/windows-xwin-release/cargo/build
-          cache-on-failure: true
 
       # Keyed on the setup script so a change to it refreshes the sysroot.
       # Running the script accepts Microsoft's CRT/SDK license terms.

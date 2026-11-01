@@ -34,8 +34,8 @@ public:
 
 private:
     friend class FormLayout;
-    void  add(FormLayout* f);
-    void  remove(FormLayout* f);
+    void add(FormLayout* f);
+    void remove(FormLayout* f);
     float shared_label_width(LayoutCtx&) const;
 
     std::vector<FormLayout*> members_;
@@ -79,7 +79,7 @@ public:
     W* add_row(std::string label_text, std::unique_ptr<W> control)
     {
         Label* lbl_raw = add_child(create_widget<Label>(this, std::move(label_text)));
-        W* ctrl_raw    = add_child(std::move(control));
+        W* ctrl_raw = add_child(std::move(control));
         rows_.push_back({lbl_raw, ctrl_raw});
         return ctrl_raw;
     }
@@ -96,14 +96,14 @@ private:
 
     struct Row
     {
-        Label*  label;
+        Label* label;
         Widget* control;
     };
 
     std::vector<Row> rows_;
-    float            spacing_   = 4.0f;
-    float            label_gap_ = 8.0f;
-    Edges            padding_   = {};
+    float spacing_ = 4.0f;
+    float label_gap_ = 8.0f;
+    Edges padding_ = {};
     FormLayoutGroup* label_group_ = nullptr;
 };
 

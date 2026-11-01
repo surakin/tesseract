@@ -153,8 +153,8 @@ std::unique_ptr<T> create_root_widget(Host* host, Args&&... args);
 // forward to it, so that is what needs the friendship. Friendship is
 // per-class in standard C++ (befriending a base doesn't extend to derived
 // classes), hence the macro rather than a single blanket friend declaration.
-#define TK_WIDGET_FACTORY_FRIEND(ClassName)                                                     \
-    template <typename T, typename... Args>                                                     \
+#define TK_WIDGET_FACTORY_FRIEND(ClassName)                                                        \
+    template <typename T, typename... Args>                                                        \
     friend std::unique_ptr<T> tk::detail::create_impl(tk::Host*, Args&&...);
 
 struct PaintCtx
@@ -163,7 +163,7 @@ struct PaintCtx
     CanvasFactory& factory;
     const Theme& theme;
     AnimDamageSink* anim_damage = nullptr;
-    Host*           host        = nullptr;
+    Host* host = nullptr;
 };
 
 // Paints a localized "this is a valid drop target" highlight (translucent
@@ -212,10 +212,10 @@ struct KeyEvent
     // Populated when key == Character. Stored as UTF-8 so platform hosts do
     // not need to expose native string types to shared widgets.
     std::string text;
-    bool ctrl   = false;
-    bool shift  = false;
-    bool alt    = false;
-    bool meta   = false;
+    bool ctrl = false;
+    bool shift = false;
+    bool alt = false;
+    bool meta = false;
     bool repeat = false;
 };
 
@@ -226,8 +226,8 @@ struct KeyEvent
 struct FileDropPayload
 {
     std::vector<std::uint8_t> bytes;
-    std::string                mime;
-    std::string                filename;
+    std::string mime;
+    std::string filename;
 };
 
 // Semantic role exposed to assistive technology. Grows incrementally as
@@ -257,6 +257,7 @@ enum class Role
     MenuItem,
     Group,
     ProgressBar,
+    Slider,
 };
 
 // Dynamic accessible state, read fresh each time the tree is walked (see
@@ -266,10 +267,10 @@ enum class Role
 // widget (e.g. CheckButton overriding access_state() to report checked).
 struct AccessState
 {
-    bool checked  = false;
+    bool checked = false;
     bool expanded = false;
     bool selected = false;
-    bool busy     = false;
+    bool busy = false;
     // For synthesized nodes only (list rows, grid cells, widget rows,
     // subtree nodes), which have no Widget::enabled() of their own to
     // consult. A real widget node keeps reporting enabled() — bridges OR
@@ -277,14 +278,14 @@ struct AccessState
     bool disabled = false;
 };
 
-// Numeric value for range-shaped nodes (Role::ProgressBar). `present`
+// Numeric value for range-shaped nodes (Role::ProgressBar, Role::Slider). `present`
 // false means "no value" — the default for every other role.
 struct AccessValue
 {
-    bool   present = false;
-    double min     = 0.0;
-    double max     = 0.0;
-    double now     = 0.0;
+    bool present = false;
+    double min = 0.0;
+    double max = 0.0;
+    double now = 0.0;
 };
 
 // Mouse-cursor shapes a widget can ask the host for while it is the widget
@@ -389,7 +390,12 @@ public:
     virtual void paint_overlay(PaintCtx& ctx)
     {
         for (auto& ch : children())
-            if (ch->visible()) ch->paint_overlay(ctx);
+        {
+            if (ch->visible())
+            {
+                ch->paint_overlay(ctx);
+            }
+        }
     }
 
     // Called on this widget when the active tk::Theme changes. Override to
@@ -399,7 +405,9 @@ public:
     // this widget's own paint(), which is handed a fresh theme every frame
     // via PaintCtx, a native control caches its own render state and goes
     // stale until explicitly told otherwise. Default: no-op.
-    virtual void on_theme_changed(const Theme&) {}
+    virtual void on_theme_changed(const Theme&)
+    {
+    }
 
     // Push `theme` through this widget's on_theme_changed(), then recurse
     // into every child unconditionally — including invisible ones, since a
@@ -413,7 +421,9 @@ public:
     {
         on_theme_changed(theme);
         for (auto& ch : children())
+        {
             ch->apply_theme(theme);
+        }
     }
 
     // Called on this widget when the canvas's device-pixel scale factor
@@ -427,13 +437,17 @@ public:
     // rendered_image() capture happens outside the paint cycle (on
     // content/focus/selection/set_rect() signals) and so goes stale until
     // explicitly told otherwise. Default: no-op.
-    virtual void on_scale_changed(float scale_factor) {}
+    virtual void on_scale_changed(float scale_factor)
+    {
+    }
 
     // Called on this widget when the user's font configuration changes
     // (font_config.h). Override to re-apply fonts to any native control this
     // widget owns or to drop caches that don't self-invalidate through
     // CachedTextLayout. Default: no-op — a re-measure follows anyway.
-    virtual void on_fonts_changed() {}
+    virtual void on_fonts_changed()
+    {
+    }
 
     // Push a font change through this widget and every descendant,
     // including invisible ones (a hidden native field still needs the new
@@ -443,7 +457,9 @@ public:
     {
         on_fonts_changed();
         for (auto& ch : children())
+        {
             ch->apply_fonts();
+        }
     }
 
     // Push `scale_factor` through this widget's on_scale_changed(), then
@@ -454,12 +470,16 @@ public:
     {
         on_scale_changed(scale_factor);
         for (auto& ch : children())
+        {
             ch->apply_scale_change(scale_factor);
+        }
     }
 
     // Called by the host when a click lands outside an active popup widget.
     // ComboBox overrides this to collapse the dropdown.
-    virtual void on_popup_dismiss() {}
+    virtual void on_popup_dismiss()
+    {
+    }
 
     // Hit-test against this subtree. The input `Point` is in world (root-
     // surface) coordinates — the same space `bounds_` is stored in.
@@ -475,10 +495,22 @@ public:
     // `is_touchpad` is true for a continuous trackpad delta, false for a
     // discrete physical mouse-wheel notch — only the former ever arms
     // momentum/kinetic scrolling (see ScrollableBase::on_wheel_scroll).
-    virtual bool on_wheel(Point /*local*/, float /*dx*/, float /*dy*/,
-                          bool /*is_touchpad*/ = false)
+    virtual bool on_wheel(Point /*local*/, float /*dx*/, float /*dy*/, bool /*is_touchpad*/ = false)
     {
         return false;
+    }
+
+    // Wheel latching (see Host::dispatch_wheel): true while this widget is
+    // still coasting from a wheel gesture (kinetic fling), so the host keeps
+    // routing wheel events to it past the quiet gap and lets a press stop the
+    // motion instead of activating whatever slid under the pointer.
+    virtual bool wheel_motion_active() const
+    {
+        return false;
+    }
+    // Stops that coast immediately. Only called while wheel_motion_active().
+    virtual void stop_wheel_motion()
+    {
     }
 
     // Pointer-down. Return true to claim ownership of the subsequent
@@ -742,6 +774,13 @@ public:
     {
         return {};
     }
+    // Assistive-technology request to set this range-shaped widget's value
+    // (Role::Slider). Returns true if the value was applied; the default is
+    // read-only.
+    virtual bool access_set_value(double /*value*/)
+    {
+        return false;
+    }
     // True while this widget is a modal surface (an open dialog). When any
     // visible widget reports this, build_access_tree exposes only that
     // widget's subtree under the root, so an AT can't wander into the
@@ -769,7 +808,9 @@ public:
         const bool acts =
             clickable() && !pointer_only_ && enabled_ && hover_data_ && hover_data_->on_click;
         if (!acts)
+        {
             return false;
+        }
         click();
         return true;
     }
@@ -871,8 +912,12 @@ public:
     bool is_ancestor_of(const Widget* w) const
     {
         for (; w; w = w->parent())
+        {
             if (w == this)
+            {
                 return true;
+            }
+        }
         return false;
     }
     Rect bounds() const
@@ -901,11 +946,15 @@ public:
     void set_visible(bool v)
     {
         if (v == visible_)
+        {
             return;
+        }
         visible_ = v;
         const bool eff = visible();
         for (auto& ch : children_)
+        {
             ch->apply_parent_visible_(eff);
+        }
         mark_relayout_needed_();
         notify_host_input_state_changed_();
     }
@@ -940,8 +989,12 @@ public:
     std::optional<Color> background_color() const
     {
         for (const Widget* w = this; w; w = w->parent())
+        {
             if (w->background_color_.has_value())
+            {
                 return w->background_color_;
+            }
+        }
         return std::nullopt;
     }
     // A disabled widget is opaque to input: every tree-walking input
@@ -985,7 +1038,9 @@ public:
     {
         hoverable_ = on;
         if (on)
+        {
             hover_data_ensure_().style = style;
+        }
         return *this;
     }
     bool hoverable() const
@@ -1005,7 +1060,9 @@ public:
     Widget& set_on_click(std::function<void()> f)
     {
         if (f || hover_data_)
+        {
             hover_data_ensure_().on_click = std::move(f);
+        }
         return *this;
     }
     // Claim presses even with no on_click handler (Button: a handler may be
@@ -1037,15 +1094,21 @@ public:
     Widget& set_cursor(CursorShape c)
     {
         if (c != CursorShape::Default || hover_data_)
+        {
             hover_data_ensure_().cursor = c;
+        }
         return *this;
     }
     virtual CursorShape cursor() const
     {
         if (!enabled_)
+        {
             return CursorShape::Default;
+        }
         if (hover_data_ && hover_data_->cursor != CursorShape::Default)
+        {
             return hover_data_->cursor;
+        }
         return clickable() ? CursorShape::Pointer : CursorShape::Default;
     }
 
@@ -1072,13 +1135,17 @@ public:
     Widget& set_on_hover_enter(std::function<void()> f)
     {
         if (f || hover_data_)
+        {
             hover_data_ensure_().on_enter = std::move(f);
+        }
         return *this;
     }
     Widget& set_on_hover_leave(std::function<void()> f)
     {
         if (f || hover_data_)
+        {
             hover_data_ensure_().on_leave = std::move(f);
+        }
         return *this;
     }
 
@@ -1113,9 +1180,15 @@ public:
     }
     void set_z_order(int z)
     {
-        if (z_order_ == z) return;
+        if (z_order_ == z)
+        {
+            return;
+        }
         z_order_ = z;
-        if (parent_) parent_->resort_children_();
+        if (parent_)
+        {
+            parent_->resort_children_();
+        }
     }
 
     // Take ownership of a child. Returns a borrowed pointer for callers
@@ -1181,7 +1254,9 @@ protected:
     // native OS control they own: tk visibility is not painted for a hidden
     // subtree, but a native QLineEdit/GtkEntry has its own OS-level
     // visibility that nothing else would update.
-    virtual void on_effective_visibility_changed_(bool /*now_visible*/) {}
+    virtual void on_effective_visibility_changed_(bool /*now_visible*/)
+    {
+    }
 
     // Recompute parent_visible_ from `pv` (the direct parent's visible()) and,
     // if that flips this widget's effective visibility, notify it and recurse.
@@ -1192,10 +1267,14 @@ protected:
         parent_visible_ = pv;
         const bool now = visible();
         if (was == now)
+        {
             return;
+        }
         on_effective_visibility_changed_(now);
         for (auto& ch : children_)
+        {
             ch->apply_parent_visible_(now);
+        }
     }
 
 private:
@@ -1217,7 +1296,9 @@ private:
     detail::HoverData& hover_data_ensure_()
     {
         if (!hover_data_)
+        {
             hover_data_ = std::make_unique<detail::HoverData>();
+        }
         return *hover_data_;
     }
     // Tells the Host a widget's visibility/enabled state changed so it can
@@ -1242,7 +1323,9 @@ private:
     {
         std::stable_sort(children_.begin(), children_.end(),
                          [](const std::unique_ptr<Widget>& a, const std::unique_ptr<Widget>& b)
-                         { return a->z_order() < b->z_order(); });
+                         {
+                             return a->z_order() < b->z_order();
+                         });
     }
 
     // Out-of-line so widget.h doesn't need Host's complete type (host.h
@@ -1330,7 +1413,10 @@ std::unique_ptr<T> create_impl(Host* host, Args&&... args)
     struct PopGuard
     {
         std::vector<Host*>& s;
-        ~PopGuard() { s.pop_back(); }
+        ~PopGuard()
+        {
+            s.pop_back();
+        }
     } pop{stack};
 
     void* mem = ::operator new(sizeof(T));
@@ -1383,7 +1469,9 @@ template <typename T>
 std::weak_ptr<T> track(T* w)
 {
     if (!w)
+    {
         return {};
+    }
     return w->template weak_self<T>();
 }
 
@@ -1405,7 +1493,6 @@ Widget* next_focusable(Widget* root, Widget* current, bool forward);
 // and Tab order can never silently drift apart (see reading_order_less's
 // own doc comment in widget.cpp for the row/x-vs-y logic).
 bool reading_order_less(const Rect& a, const Rect& b);
-
 
 // Walks `w`'s ancestor chain, calling scroll_into_view() on every
 // tk::ScrollableBase found (keeps walking past the first match in case of

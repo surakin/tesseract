@@ -92,25 +92,64 @@ public:
 
     // Accessor used by tests to inspect the warning's visibility (mirrors
     // RoomSecuritySection::encryption_warning()).
-    tk::Widget* lockout_warning() const { return lockout_warning_; }
+    tk::Widget* lockout_warning() const
+    {
+        return lockout_warning_;
+    }
 
     // Accessor used by tests to inspect the other-admin warning's
     // visibility (mirrors lockout_warning()).
-    tk::Widget* other_admin_warning() const { return other_admin_warning_; }
+    tk::Widget* other_admin_warning() const
+    {
+        return other_admin_warning_;
+    }
 
     // Accessors used by tests to simulate user interaction and inspect
     // state (mirrors RoomSecuritySection's accessors).
-    tk::ComboBox* default_role_combo() const { return default_role_combo_; }
-    tk::ComboBox* send_messages_combo() const { return send_messages_combo_; }
-    tk::ComboBox* remove_messages_combo() const { return remove_messages_combo_; }
-    tk::ComboBox* invite_users_combo() const { return invite_users_combo_; }
-    tk::ComboBox* kick_users_combo() const { return kick_users_combo_; }
-    tk::ComboBox* ban_users_combo() const { return ban_users_combo_; }
-    tk::ComboBox* change_settings_combo() const { return change_settings_combo_; }
-    tk::ComboBox* change_permissions_combo() const { return change_permissions_combo_; }
-    tk::ComboBox* notify_everyone_combo() const { return notify_everyone_combo_; }
-    tk::ComboBox* start_calls_combo() const { return start_calls_combo_; }
-    tk::ComboBox* join_calls_combo() const { return join_calls_combo_; }
+    tk::ComboBox* default_role_combo() const
+    {
+        return default_role_combo_;
+    }
+    tk::ComboBox* send_messages_combo() const
+    {
+        return send_messages_combo_;
+    }
+    tk::ComboBox* remove_messages_combo() const
+    {
+        return remove_messages_combo_;
+    }
+    tk::ComboBox* invite_users_combo() const
+    {
+        return invite_users_combo_;
+    }
+    tk::ComboBox* kick_users_combo() const
+    {
+        return kick_users_combo_;
+    }
+    tk::ComboBox* ban_users_combo() const
+    {
+        return ban_users_combo_;
+    }
+    tk::ComboBox* change_settings_combo() const
+    {
+        return change_settings_combo_;
+    }
+    tk::ComboBox* change_permissions_combo() const
+    {
+        return change_permissions_combo_;
+    }
+    tk::ComboBox* notify_everyone_combo() const
+    {
+        return notify_everyone_combo_;
+    }
+    tk::ComboBox* start_calls_combo() const
+    {
+        return start_calls_combo_;
+    }
+    tk::ComboBox* join_calls_combo() const
+    {
+        return join_calls_combo_;
+    }
 
     // Accessor used by tests to inspect the Calls group's visibility.
     tk::Widget* calls_group() const;
@@ -124,19 +163,19 @@ private:
     // only its own rows.
     tk::FormLayoutGroup label_group_;
 
-    tk::Label*    lockout_warning_         = nullptr;
-    tk::Label*    other_admin_warning_     = nullptr;
-    tk::ComboBox* default_role_combo_       = nullptr;
-    tk::ComboBox* send_messages_combo_      = nullptr;
-    tk::ComboBox* remove_messages_combo_    = nullptr;
-    tk::ComboBox* invite_users_combo_       = nullptr;
-    tk::ComboBox* kick_users_combo_         = nullptr;
-    tk::ComboBox* ban_users_combo_          = nullptr;
-    tk::ComboBox* change_settings_combo_    = nullptr;
+    tk::Label* lockout_warning_ = nullptr;
+    tk::Label* other_admin_warning_ = nullptr;
+    tk::ComboBox* default_role_combo_ = nullptr;
+    tk::ComboBox* send_messages_combo_ = nullptr;
+    tk::ComboBox* remove_messages_combo_ = nullptr;
+    tk::ComboBox* invite_users_combo_ = nullptr;
+    tk::ComboBox* kick_users_combo_ = nullptr;
+    tk::ComboBox* ban_users_combo_ = nullptr;
+    tk::ComboBox* change_settings_combo_ = nullptr;
     tk::ComboBox* change_permissions_combo_ = nullptr;
-    tk::ComboBox* notify_everyone_combo_    = nullptr;
-    tk::ComboBox* start_calls_combo_        = nullptr;
-    tk::ComboBox* join_calls_combo_         = nullptr;
+    tk::ComboBox* notify_everyone_combo_ = nullptr;
+    tk::ComboBox* start_calls_combo_ = nullptr;
+    tk::ComboBox* join_calls_combo_ = nullptr;
 
     // Borrowed — owned via SettingsPage::content_'s add_child(). Kept (unlike
     // the other groups, which are only local variables in the constructor)
@@ -144,7 +183,7 @@ private:
     SettingsGroup* calls_group_ = nullptr;
 
     tesseract::RoomPermissions current_;
-    bool can_edit_   = false;
+    bool can_edit_ = false;
     bool committing_ = false;
 };
 

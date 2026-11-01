@@ -9,32 +9,34 @@ std::string CacheKey::to_string() const
 {
     switch (usage)
     {
-        case CacheUsage::Thumbnail:
-            return "t" + std::to_string(w) + "x" + std::to_string(h) + ":" + id;
-        case CacheUsage::Media:
-            return id;
-        case CacheUsage::VideoThumbnail:
-            // Disk-persisted under this exact format historically (the old
-            // in-memory-only sentinel used "thumb::" instead, but that key
-            // was never written to media_disk_cache_, so matching the disk
-            // format here is what keeps existing cached files valid).
-            return "video_thumb::" + id;
-        case CacheUsage::VideoFull:
-            return "video-full:" + id;
-        case CacheUsage::Blurhash:
-            return "blurhash::" + id;
-        case CacheUsage::Tile:
-            return "tile:" + id;
-        case CacheUsage::FullresViewer:
-            return "fullres:" + id;
-        case CacheUsage::GifSource:
-            return "gifsrc:" + id;
-        case CacheUsage::GifPreview:
-            return "gifpreview:" + id;
-        case CacheUsage::PillBitmap:
-            return "pill:" + id;
-        case CacheUsage::PickerSticker:
-            return "pickersticker" + std::to_string(w) + "x" + std::to_string(h) + ":" + id;
+    case CacheUsage::Thumbnail:
+        return "t" + std::to_string(w) + "x" + std::to_string(h) + ":" + id;
+    case CacheUsage::Media:
+        return id;
+    case CacheUsage::VideoThumbnail:
+        // Disk-persisted under this exact format historically (the old
+        // in-memory-only sentinel used "thumb::" instead, but that key
+        // was never written to media_disk_cache_, so matching the disk
+        // format here is what keeps existing cached files valid).
+        return "video_thumb::" + id;
+    case CacheUsage::VideoFull:
+        return "video-full:" + id;
+    case CacheUsage::Blurhash:
+        return "blurhash::" + id;
+    case CacheUsage::Tile:
+        return "tile:" + id;
+    case CacheUsage::FullresViewer:
+        return "fullres:" + id;
+    case CacheUsage::GifSource:
+        return "gifsrc:" + id;
+    case CacheUsage::GifPreview:
+        return "gifpreview:" + id;
+    case CacheUsage::PillBitmap:
+        return "pill:" + id;
+    case CacheUsage::PickerSticker:
+        return "pickersticker" + std::to_string(w) + "x" + std::to_string(h) + ":" + id;
+    case CacheUsage::ServerIcon:
+        return "servericon:" + id;
     }
     return id;
 }
@@ -66,8 +68,8 @@ CacheKey CacheKey::blurhash(std::string event_id)
 
 CacheKey CacheKey::tile(int z, int x, int y)
 {
-    return CacheKey{CacheUsage::Tile, std::to_string(z) + "/" + std::to_string(x) +
-                                           "/" + std::to_string(y)};
+    return CacheKey{CacheUsage::Tile,
+                    std::to_string(z) + "/" + std::to_string(x) + "/" + std::to_string(y)};
 }
 
 CacheKey CacheKey::fullres(std::string url)
@@ -88,6 +90,11 @@ CacheKey CacheKey::gif_preview(std::string url)
 CacheKey CacheKey::picker_sticker(std::string id, int w, int h)
 {
     return CacheKey{CacheUsage::PickerSticker, std::move(id), w, h};
+}
+
+CacheKey CacheKey::server_icon(std::string homepage_url)
+{
+    return CacheKey{CacheUsage::ServerIcon, std::move(homepage_url)};
 }
 
 CacheKey CacheKey::pill_bitmap(std::size_t hash)

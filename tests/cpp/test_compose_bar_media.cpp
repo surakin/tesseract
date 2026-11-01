@@ -5,6 +5,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 using tesseract::views::ComposeBar;
 using tesseract::views::MediaInfo;
@@ -27,8 +28,7 @@ struct ComposeBarMediaStage
     }
     tk::PaintCtx paint_ctx()
     {
-        return tk::PaintCtx{surface->canvas(), surface->factory(),
-                            tk::Theme::light()};
+        return tk::PaintCtx{surface->canvas(), surface->factory(), tk::Theme::light()};
     }
 };
 
@@ -36,17 +36,11 @@ struct ComposeBarMediaStage
 
 // 2-frame 1×1 GIF89a — 100 ms per frame.
 static constexpr std::uint8_t kMinAnimGif[] = {
-    0x47, 0x49, 0x46, 0x38, 0x39, 0x61,
-    0x01, 0x00, 0x01, 0x00, 0x80, 0x00, 0x00,
-    0xFF, 0x00, 0x00,  0x00, 0x00, 0xFF,
-    0x21, 0xF9, 0x04, 0x00, 0x0A, 0x00, 0x00, 0x00,
-    0x2C, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00,
-    0x02, 0x02, 0x44, 0x01, 0x00,
-    0x21, 0xF9, 0x04, 0x00, 0x0A, 0x00, 0x00, 0x00,
-    0x2C, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00,
-    0x02, 0x02, 0x4C, 0x01, 0x00,
-    0x3B
-};
+    0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00, 0x80, 0x00, 0x00, 0xFF,
+    0x00, 0x00, 0x00, 0x00, 0xFF, 0x21, 0xF9, 0x04, 0x00, 0x0A, 0x00, 0x00, 0x00, 0x2C,
+    0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x02, 0x02, 0x44, 0x01, 0x00,
+    0x21, 0xF9, 0x04, 0x00, 0x0A, 0x00, 0x00, 0x00, 0x2C, 0x00, 0x00, 0x00, 0x00, 0x01,
+    0x00, 0x01, 0x00, 0x00, 0x02, 0x02, 0x4C, 0x01, 0x00, 0x3B};
 
 TEST_CASE("ComposeBar add_pending_video sets Video kind and loading flag",
           "[tk][view][compose][media]")
@@ -66,8 +60,7 @@ TEST_CASE("ComposeBar add_pending_video sets Video kind and loading flag",
     CHECK(bar.has_pending());
 }
 
-TEST_CASE("ComposeBar update_pending_attachment fills video metadata",
-          "[tk][view][compose][media]")
+TEST_CASE("ComposeBar update_pending_attachment fills video metadata", "[tk][view][compose][media]")
 {
     ComposeBarMediaStage st;
     auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
@@ -111,8 +104,7 @@ TEST_CASE("ComposeBar add_pending_audio sets Audio kind and loading flag",
     CHECK(bar.has_pending());
 }
 
-TEST_CASE("ComposeBar update_pending_attachment fills audio duration",
-          "[tk][view][compose][media]")
+TEST_CASE("ComposeBar update_pending_attachment fills audio duration", "[tk][view][compose][media]")
 {
     ComposeBarMediaStage st;
     auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
@@ -145,8 +137,7 @@ TEST_CASE("ComposeBar add_pending_image with is_animated=true stores flag",
     CHECK(p->loading == false);
 }
 
-TEST_CASE("ComposeBar on_send_video fires with correct metadata",
-          "[tk][view][compose][media]")
+TEST_CASE("ComposeBar on_send_video fires with correct metadata", "[tk][view][compose][media]")
 {
     ComposeBarMediaStage st;
     auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
@@ -155,11 +146,9 @@ TEST_CASE("ComposeBar on_send_video fires with correct metadata",
     std::string sent_mime;
     std::uint32_t sent_w = 0, sent_th = 0;
     std::uint64_t sent_dur = 0;
-    bar.on_send_video = [&](std::vector<std::uint8_t>, std::string mime,
-                            std::string, std::string,
-                            std::uint32_t w, std::uint32_t /*h*/,
-                            std::vector<std::uint8_t>, std::uint32_t /*tw*/,
-                            std::uint32_t th, std::uint64_t dur, std::string)
+    bar.on_send_video = [&](std::vector<std::uint8_t>, std::string mime, std::string, std::string,
+                            std::uint32_t w, std::uint32_t /*h*/, std::vector<std::uint8_t>,
+                            std::uint32_t /*tw*/, std::uint32_t th, std::uint64_t dur, std::string)
     {
         sent_mime = std::move(mime);
         sent_w = w;
@@ -243,15 +232,18 @@ TEST_CASE("ComposeBar multi-attachment: add/remove/cap/gallery dispatch",
     std::vector<ComposeBar::PendingAttachment> gallery_items;
     std::string gallery_caption;
     int gallery_fires = 0, file_fires = 0;
-    bar.on_send_gallery = [&](std::vector<ComposeBar::PendingAttachment> items,
-                              std::string caption, std::string)
+    bar.on_send_gallery =
+        [&](std::vector<ComposeBar::PendingAttachment> items, std::string caption, std::string)
     {
         gallery_items = std::move(items);
         gallery_caption = std::move(caption);
         ++gallery_fires;
     };
-    bar.on_send_file = [&](std::vector<std::uint8_t>, std::string, std::string,
-                           std::string, std::string) { ++file_fires; };
+    bar.on_send_file =
+        [&](std::vector<std::uint8_t>, std::string, std::string, std::string, std::string)
+    {
+        ++file_fires;
+    };
     bar.set_current_text("vacation");
     bar.trigger_send();
 
@@ -264,8 +256,7 @@ TEST_CASE("ComposeBar multi-attachment: add/remove/cap/gallery dispatch",
     CHECK_FALSE(bar.has_pending());
 }
 
-TEST_CASE("ComposeBar caps attachments at kMaxAttachments",
-          "[tk][view][compose][media][gallery]")
+TEST_CASE("ComposeBar caps attachments at kMaxAttachments", "[tk][view][compose][media][gallery]")
 {
     ComposeBarMediaStage st;
     auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
@@ -300,7 +291,7 @@ TEST_CASE("ComposeBar multi-attachment chip remove works even though the "
     st.run(bar, bounds);
 
     const tk::Rect xr = bar.chip_remove_rect_for_test(0);
-    REQUIRE(xr.w > 0.0f); // arrange() populated it
+    REQUIRE(xr.w > 0.0f);     // arrange() populated it
     REQUIRE(xr.y < bounds.y); // confirms the chip floats above bounds_
 
     const tk::Point world_click{xr.x + xr.w * 0.5f, xr.y + xr.h * 0.5f};
@@ -313,8 +304,7 @@ TEST_CASE("ComposeBar multi-attachment chip remove works even though the "
     CHECK(bar.pending_for_test(0)->filename == "b.zip"); // the image was removed
 }
 
-TEST_CASE("ComposeBar on_send_audio fires with duration",
-          "[tk][view][compose][media]")
+TEST_CASE("ComposeBar on_send_audio fires with duration", "[tk][view][compose][media]")
 {
     ComposeBarMediaStage st;
     auto bar_owner = tk::create_root_widget<ComposeBar>(nullptr);
@@ -322,8 +312,7 @@ TEST_CASE("ComposeBar on_send_audio fires with duration",
 
     std::uint64_t sent_dur = 0;
     std::string sent_mime;
-    bar.on_send_audio = [&](std::vector<std::uint8_t>, std::string mime,
-                            std::string, std::string,
+    bar.on_send_audio = [&](std::vector<std::uint8_t>, std::string mime, std::string, std::string,
                             std::uint64_t dur, std::string)
     {
         sent_mime = std::move(mime);
@@ -343,15 +332,17 @@ TEST_CASE("ComposeBar on_send_audio fires with duration",
     CHECK(sent_dur == 30500);
 }
 
-TEST_CASE("AnimatedImage reports correct frame_count and dimensions",
-          "[tk][anim]")
+TEST_CASE("AnimatedImage reports correct frame_count and dimensions", "[tk][anim]")
 {
     ComposeBarMediaStage st;
-    const std::uint8_t px[4] = {255, 0, 0, 255};
-    auto f0 = st.surface->factory().create_image_rgba(px, 3, 5);
-    auto f1 = st.surface->factory().create_image_rgba(px, 3, 5);
+    // create_image_rgba reads w * h * 4 bytes.
+    const std::vector<std::uint8_t> px(3 * 5 * 4, 255);
+    auto f0 = st.surface->factory().create_image_rgba(px.data(), 3, 5);
+    auto f1 = st.surface->factory().create_image_rgba(px.data(), 3, 5);
     if (!f0 || !f1)
+    {
         return; // skip: backend does not implement create_image_rgba
+    }
 
     std::vector<std::unique_ptr<tk::Image>> frames;
     frames.push_back(std::move(f0));
@@ -367,12 +358,10 @@ TEST_CASE("AnimatedImage reports correct frame_count and dimensions",
     CHECK(f != nullptr);
 }
 
-TEST_CASE("CanvasFactory::decode_animated_image default returns nullptr",
-          "[tk][anim]")
+TEST_CASE("CanvasFactory::decode_animated_image default returns nullptr", "[tk][anim]")
 {
     ComposeBarMediaStage st;
-    auto anim = st.surface->factory().decode_animated_image(
-        std::span<const std::uint8_t>{}, 384);
+    auto anim = st.surface->factory().decode_animated_image(std::span<const std::uint8_t>{}, 384);
     CHECK(anim == nullptr);
 }
 
@@ -383,7 +372,9 @@ TEST_CASE("decode_animated_image returns 2-frame AnimatedImage for minimal GIF",
     const std::span<const std::uint8_t> gif_span{kMinAnimGif};
     auto anim = st.surface->factory().decode_animated_image(gif_span, 384);
     if (!anim)
+    {
         return; // skip: backend does not implement decode_animated_image
+    }
     CHECK(anim->frame_count() == 2);
     CHECK(anim->width() == 1);
     CHECK(anim->height() == 1);
@@ -391,8 +382,7 @@ TEST_CASE("decode_animated_image returns 2-frame AnimatedImage for minimal GIF",
     CHECK(anim->ms_until_next_frame() <= 200);
 }
 
-TEST_CASE("decode_animated_image returns nullptr for empty bytes",
-          "[tk][anim][decode]")
+TEST_CASE("decode_animated_image returns nullptr for empty bytes", "[tk][anim][decode]")
 {
     ComposeBarMediaStage st;
     auto anim = st.surface->factory().decode_animated_image({}, 384);
@@ -407,12 +397,14 @@ TEST_CASE("ComposeBar animated pending image sets anim_preview and fires repaint
     ComposeBar& bar = *bar_owner;
 
     int repaint_delay = -1;
-    bar.on_request_anim_repaint_ = [&](int d) { repaint_delay = d; };
+    bar.on_request_anim_repaint_ = [&](int d)
+    {
+        repaint_delay = d;
+    };
 
-    std::vector<std::uint8_t> gif_bytes(std::begin(kMinAnimGif),
-                                        std::end(kMinAnimGif));
+    std::vector<std::uint8_t> gif_bytes(std::begin(kMinAnimGif), std::end(kMinAnimGif));
     bar.add_pending_image(gif_bytes, "image/gif", "anim.gif",
-                         /*is_animated=*/true);
+                          /*is_animated=*/true);
 
     auto lc = st.layout_ctx();
     bar.measure(lc, {640.0f, 200.0f});
@@ -423,7 +415,9 @@ TEST_CASE("ComposeBar animated pending image sets anim_preview and fires repaint
     const auto* p = bar.pending_for_test();
     REQUIRE(p != nullptr);
     if (!p->anim_preview)
+    {
         return; // skip: backend does not implement decode_animated_image
+    }
     CHECK(repaint_delay > 0);
     CHECK(repaint_delay <= 200);
 }

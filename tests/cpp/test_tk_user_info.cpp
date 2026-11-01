@@ -37,8 +37,7 @@ struct TkUserInfoStage
 
 } // namespace
 
-TEST_CASE("UserInfo natural height shows the Matrix ID line by default",
-          "[tk][view][user_info]")
+TEST_CASE("UserInfo natural height shows the Matrix ID line by default", "[tk][view][user_info]")
 {
     TkUserInfoStage st;
     UserInfo info;
@@ -96,8 +95,7 @@ TEST_CASE("UserInfo paints without crashing when no image_provider is wired",
     SUCCEED();
 }
 
-TEST_CASE("UserInfo image_provider receives the avatar URL on paint",
-          "[tk][view][user_info]")
+TEST_CASE("UserInfo image_provider receives the avatar URL on paint", "[tk][view][user_info]")
 {
     TkUserInfoStage st;
     UserInfo info;
@@ -116,9 +114,8 @@ TEST_CASE("UserInfo image_provider receives the avatar URL on paint",
     CHECK(requested == "mxc://server/abc123");
 }
 
-TEST_CASE(
-    "UserInfo primary callback fires on a click that lands inside the row",
-    "[tk][view][user_info]")
+TEST_CASE("UserInfo primary callback fires on a click that lands inside the row",
+          "[tk][view][user_info]")
 {
     TkUserInfoStage st;
     UserInfo info;
@@ -146,9 +143,8 @@ TEST_CASE(
     CHECK(seen.y == 24.0f);
 }
 
-TEST_CASE(
-    "UserInfo primary callback does NOT fire on a release outside the row",
-    "[tk][view][user_info]")
+TEST_CASE("UserInfo primary callback does NOT fire on a release outside the row",
+          "[tk][view][user_info]")
 {
     TkUserInfoStage st;
     UserInfo info;
@@ -166,8 +162,7 @@ TEST_CASE(
     CHECK_FALSE(fired);
 }
 
-TEST_CASE("UserInfo::on_secondary is settable and survives paint cycles",
-          "[tk][view][user_info]")
+TEST_CASE("UserInfo::on_secondary is settable and survives paint cycles", "[tk][view][user_info]")
 {
     TkUserInfoStage st;
     UserInfo info;
@@ -188,8 +183,7 @@ TEST_CASE("UserInfo::on_secondary is settable and survives paint cycles",
     CHECK(fired);
 }
 
-TEST_CASE("UserInfo active_indicator toggles independently of content",
-          "[tk][view][user_info]")
+TEST_CASE("UserInfo active_indicator toggles independently of content", "[tk][view][user_info]")
 {
     TkUserInfoStage st;
     UserInfo info;
@@ -204,8 +198,7 @@ TEST_CASE("UserInfo active_indicator toggles independently of content",
 
 // ── MSC4426 status line (sidebar strip only) ───────────────────────────────
 
-TEST_CASE("UserInfo status line is inert until enabled",
-          "[tk][view][user_info]")
+TEST_CASE("UserInfo status line is inert until enabled", "[tk][view][user_info]")
 {
     TkUserInfoStage st;
     UserInfo info;
@@ -218,8 +211,7 @@ TEST_CASE("UserInfo status line is inert until enabled",
     CHECK(info.measure(lc, {320.0f, 0.0f}).h == without);
 }
 
-TEST_CASE("UserInfo status line grows the row when enabled",
-          "[tk][view][user_info]")
+TEST_CASE("UserInfo status line grows the row when enabled", "[tk][view][user_info]")
 {
     TkUserInfoStage st;
     UserInfo info;
@@ -244,8 +236,14 @@ TEST_CASE("UserInfo status-line click fires on_status_clicked, not on_primary",
 
     bool status_fired = false;
     bool primary_fired = false;
-    info.on_status_clicked = [&] { status_fired = true; };
-    info.on_primary = [&](tk::Point) { primary_fired = true; };
+    info.on_status_clicked = [&]
+    {
+        status_fired = true;
+    };
+    info.on_primary = [&](tk::Point)
+    {
+        primary_fired = true;
+    };
 
     st.run(info, {0, 0, 320, 80});
 
@@ -275,8 +273,14 @@ TEST_CASE("UserInfo non-editable status keeps height and routes clicks to "
 
     bool status_fired = false;
     bool primary_fired = false;
-    info.on_status_clicked = [&] { status_fired = true; };
-    info.on_primary = [&](tk::Point) { primary_fired = true; };
+    info.on_status_clicked = [&]
+    {
+        status_fired = true;
+    };
+    info.on_primary = [&](tk::Point)
+    {
+        primary_fired = true;
+    };
 
     st.run(info, {0, 0, 320, 80});
 
@@ -302,8 +306,14 @@ TEST_CASE("UserInfo avatar click still fires on_primary with status enabled",
 
     bool status_fired = false;
     bool primary_fired = false;
-    info.on_status_clicked = [&] { status_fired = true; };
-    info.on_primary = [&](tk::Point) { primary_fired = true; };
+    info.on_status_clicked = [&]
+    {
+        status_fired = true;
+    };
+    info.on_primary = [&](tk::Point)
+    {
+        primary_fired = true;
+    };
 
     st.run(info, {0, 0, 320, 80});
 
@@ -316,8 +326,7 @@ TEST_CASE("UserInfo avatar click still fires on_primary with status enabled",
     CHECK_FALSE(status_fired);
 }
 
-TEST_CASE("UserInfo placeholder status paints without crashing",
-          "[tk][view][user_info]")
+TEST_CASE("UserInfo placeholder status paints without crashing", "[tk][view][user_info]")
 {
     TkUserInfoStage st;
     UserInfo info;

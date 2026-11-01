@@ -5,13 +5,13 @@
 #include <functional>
 #include <string>
 
-namespace tesseract {
+namespace tesseract
+{
 
 // IUpdateChecker implementation that queries the GitHub Releases API.
 // Calls Client::check_for_update() (blocking) on a provided async executor,
 // then delivers the result on the UI thread via a provided post-to-UI executor.
-class GithubUpdateChecker : public IUpdateChecker,
-                            public tk::EnableWeakSelf<GithubUpdateChecker>
+class GithubUpdateChecker : public IUpdateChecker, public tk::EnableWeakSelf<GithubUpdateChecker>
 {
 public:
     using Executor = std::function<void(std::function<void()>)>;
@@ -21,11 +21,8 @@ public:
     // `post_to_ui`  — wraps ShellBase::post_to_ui_(); posts lambdas to the UI thread
     // `repo`        — GitHub "owner/repo" slug (e.g. "acme/tesseract")
     // `current_version` — running version string (e.g. tesseract::kVersion)
-    GithubUpdateChecker(tesseract::Client& client,
-                        Executor post_async,
-                        Executor post_to_ui,
-                        std::string repo,
-                        std::string current_version);
+    GithubUpdateChecker(tesseract::Client& client, Executor post_async, Executor post_to_ui,
+                        std::string repo, std::string current_version);
     ~GithubUpdateChecker() override;
 
     void check_async(Callback on_update) override;

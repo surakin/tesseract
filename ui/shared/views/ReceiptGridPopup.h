@@ -43,7 +43,10 @@ public:
 
     // A group of the readers (its grid cells), so an AT announces what the
     // popup is before reading names.
-    tk::Role access_role() const override { return tk::Role::Group; }
+    tk::Role access_role() const override
+    {
+        return tk::Role::Group;
+    }
     std::string access_name() const override;
 
     using ImageProvider = MessageListView::ImageProvider;
@@ -87,7 +90,10 @@ public:
     void on_popup_dismiss() override;
     // Holds a real focusable grid (and, for pickers, a search field), so
     // Tab/Shift-Tab cycles inside it rather than escaping and dismissing.
-    bool popup_scopes_focus() const override { return true; }
+    bool popup_scopes_focus() const override
+    {
+        return true;
+    }
 
 private:
     class GridAdapter;
@@ -104,11 +110,11 @@ private:
 
     // Matches MessageListView::kReceiptAvatarSize exactly — receipts should
     // look the same size here as they do in the timeline's disc cluster.
-    static constexpr float kCellSize       = MessageListView::kReceiptAvatarSize;
-    static constexpr float kCellGap        = 6.0f;
-    static constexpr float kPadding        = 8.0f;
-    static constexpr int   kCols           = 6;
-    static constexpr int   kMaxVisibleRows = 4; // caps popup height; extra rows scroll
+    static constexpr float kCellSize = MessageListView::kReceiptAvatarSize;
+    static constexpr float kCellGap = 6.0f;
+    static constexpr float kPadding = 8.0f;
+    static constexpr int kCols = 6;
+    static constexpr int kMaxVisibleRows = 4; // caps popup height; extra rows scroll
 };
 
 } // namespace tesseract::views

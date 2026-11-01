@@ -16,9 +16,8 @@ using tesseract::emoji::SkinTone;
 
 // kSkinTones order.
 constexpr const char* kToneNames[] = {
-    tk::N_("Default skin tone"),     tk::N_("Light skin tone"),
-    tk::N_("Medium-light skin tone"), tk::N_("Medium skin tone"),
-    tk::N_("Medium-dark skin tone"), tk::N_("Dark skin tone"),
+    tk::N_("Default skin tone"), tk::N_("Light skin tone"),       tk::N_("Medium-light skin tone"),
+    tk::N_("Medium skin tone"),  tk::N_("Medium-dark skin tone"), tk::N_("Dark skin tone"),
 };
 
 } // namespace
@@ -28,7 +27,9 @@ constexpr const char* kToneNames[] = {
 class SkinTonePopover::ToneButton : public tk::Button
 {
 protected:
-    ToneButton() : tk::Button({}, {}, tk::Button::Variant::Subtle) {}
+    ToneButton() : tk::Button({}, {}, tk::Button::Variant::Subtle)
+    {
+    }
     TK_WIDGET_FACTORY_FRIEND(ToneButton)
 
 public:
@@ -65,15 +66,14 @@ public:
         {
             // Centered by hand, as in EmojiPicker::paint_cell.
             tk::Size sz = layout_->measure();
-            ctx.canvas.draw_text(*layout_,
-                                 {bounds_.x + (bounds_.w - sz.w) * 0.5f,
-                                  bounds_.y + (bounds_.h - sz.h) * 0.5f},
-                                 ctx.theme.palette.text_primary);
+            ctx.canvas.draw_text(
+                *layout_,
+                {bounds_.x + (bounds_.w - sz.w) * 0.5f, bounds_.y + (bounds_.h - sz.h) * 0.5f},
+                ctx.theme.palette.text_primary);
         }
         if (current_)
         {
-            ctx.canvas.stroke_rounded_rect(bounds_, 4.0f, ctx.theme.palette.accent,
-                                           1.5f);
+            ctx.canvas.stroke_rounded_rect(bounds_, 4.0f, ctx.theme.palette.accent, 1.5f);
         }
     }
 
@@ -96,20 +96,23 @@ SkinTonePopover::SkinTonePopover()
         auto b = tk::create_widget<ToneButton>(this);
         b->set_min_size({kButtonSize, kButtonSize});
         b->set_accessible_name(tk::tr(kToneNames[i]));
-        b->set_on_click([this, i] { pick_(static_cast<int>(i)); });
+        b->set_on_click(
+            [this, i]
+            {
+                pick_(static_cast<int>(i));
+            });
         buttons_[i] = add_child(std::move(b));
     }
     set_visible(false);
 }
 
-void SkinTonePopover::open(std::string_view glyph, SkinTone current,
-                           tk::Rect anchor, tk::Rect limits)
+void SkinTonePopover::open(std::string_view glyph, SkinTone current, tk::Rect anchor,
+                           tk::Rect limits)
 {
     for (std::size_t i = 0; i < buttons_.size(); ++i)
     {
         const SkinTone tone = tesseract::emoji::kSkinTones[i];
-        buttons_[i]->set_glyph(
-            std::string(tesseract::emoji::with_skin_tone(glyph, tone)));
+        buttons_[i]->set_glyph(std::string(tesseract::emoji::with_skin_tone(glyph, tone)));
         buttons_[i]->set_current(tone == current);
     }
 
@@ -117,15 +120,16 @@ void SkinTonePopover::open(std::string_view glyph, SkinTone current,
     float x = anchor.x + (anchor.w - kWidth) * 0.5f;
     float y = anchor.y - kHeight - 4.0f;
     if (y < limits.y)
+    {
         y = anchor.y + anchor.h + 4.0f;
+    }
     x = std::clamp(x, limits.x, std::max(limits.x, limits.x + limits.w - kWidth));
     y = std::clamp(y, limits.y, std::max(limits.y, limits.y + limits.h - kHeight));
     bounds_ = {x, y, kWidth, kHeight};
     // Placed now, not at the next paint, so hit-testing is right immediately.
     for (std::size_t i = 0; i < buttons_.size(); ++i)
     {
-        buttons_[i]->place({bounds_.x + kPadding +
-                                static_cast<float>(i) * (kButtonSize + kGap),
+        buttons_[i]->place({bounds_.x + kPadding + static_cast<float>(i) * (kButtonSize + kGap),
                             bounds_.y + kPadding, kButtonSize, kButtonSize});
     }
 
@@ -153,7 +157,9 @@ bool SkinTonePopover::inside_owner_(const tk::Widget* w) const
     for (const tk::Widget* a = w; a; a = a->parent())
     {
         if (a == owner)
+        {
             return true;
+        }
     }
     return false;
 }
@@ -162,32 +168,41 @@ void SkinTonePopover::sync_focused_from_host_()
 {
     auto* h = host();
     if (!h)
+    {
         return;
+    }
     const auto it = std::find(buttons_.begin(), buttons_.end(), h->focused_widget());
     if (it != buttons_.end())
+    {
         focused_ = static_cast<int>(it - buttons_.begin());
+    }
 }
 
 void SkinTonePopover::close()
 {
     if (!open_)
+    {
         return;
+    }
     open_ = false;
     set_visible(false);
     if (auto* h = host())
     {
         const bool focus_in_menu =
-            std::find(buttons_.begin(), buttons_.end(), h->focused_widget()) !=
-            buttons_.end();
+            std::find(buttons_.begin(), buttons_.end(), h->focused_widget()) != buttons_.end();
         if (took_focus_ && focus_in_menu)
         {
             // Back to where the keyboard user was (the grid or the search
             // field), so typing / arrows keep working in the open picker.
             auto prev = prev_focus_.lock();
             if (prev && prev->visible_in_tree())
+            {
                 h->request_focus(prev.get());
+            }
             else
+            {
                 h->clear_focus();
+            }
         }
         h->request_repaint();
     }
@@ -198,7 +213,9 @@ void SkinTonePopover::close()
 bool SkinTonePopover::handle_key(const tk::KeyEvent& e)
 {
     if (!open_)
+    {
         return false;
+    }
     sync_focused_from_host_();
     switch (e.key)
     {
@@ -233,29 +250,38 @@ std::string SkinTonePopover::access_name() const
 void SkinTonePopover::paint(tk::PaintCtx& ctx)
 {
     if (!open_)
+    {
         return;
+    }
     ctx.canvas.fill_rounded_rect(bounds_, 8.0f, ctx.theme.palette.bg);
-    ctx.canvas.stroke_rounded_rect(bounds_, 8.0f, ctx.theme.palette.popup_border,
-                                   1.0f);
+    ctx.canvas.stroke_rounded_rect(bounds_, 8.0f, ctx.theme.palette.popup_border, 1.0f);
     paint_children(ctx);
 }
 
 void SkinTonePopover::pick_(int index)
 {
     if (index < 0 || index >= static_cast<int>(buttons_.size()))
+    {
         return;
+    }
     close();
     if (on_picked)
+    {
         on_picked(tesseract::emoji::kSkinTones[static_cast<std::size_t>(index)]);
+    }
 }
 
 void SkinTonePopover::focus_(int index)
 {
     focused_ = index;
     if (!took_focus_)
+    {
         return; // mouse-opened: leave focus where it is (see took_focus_)
+    }
     if (auto* h = host())
+    {
         h->request_focus(buttons_[static_cast<std::size_t>(index)]);
+    }
 }
 
 } // namespace tesseract::views

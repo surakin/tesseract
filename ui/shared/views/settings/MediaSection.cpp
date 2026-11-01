@@ -16,13 +16,14 @@ namespace
 {
 using MP = tesseract::Settings::MediaPreviews;
 
-std::vector<tk::ComboBox::Option> make_device_options(
-    const std::vector<tk::DeviceListing>& devices)
+std::vector<tk::ComboBox::Option> make_device_options(const std::vector<tk::DeviceListing>& devices)
 {
     std::vector<tk::ComboBox::Option> opts;
     opts.push_back({tk::tr("System default"), ""});
     for (const auto& d : devices)
+    {
         opts.push_back({d.display_name, d.id});
+    }
     return opts;
 }
 } // namespace
@@ -37,16 +38,16 @@ MediaSection::MediaSection(SettingBinder& binder)
 
     auto combo = tk::create_widget<tk::ComboBox>(this);
     combo->set_options({
-        {tk::tr("Always"),                "on"},
-        {tk::tr("In private rooms only"),  "private"},
-        {tk::tr("Never"),                 "off"},
+        {tk::tr("Always"), "on"},
+        {tk::tr("In private rooms only"), "private"},
+        {tk::tr("Never"), "off"},
     });
     previews_combo_ = previews_group->add_widget(std::move(combo));
     binder.bind<MP>(previews_combo_, &S::media_previews, SettingKey::MediaPreviews,
                     {{MP::On, "on"}, {MP::Private, "private"}, {MP::Off, "off"}});
 
-    auto invite_cb = tk::create_widget<tk::CheckButton>(
-        this, tk::tr("Show avatars in invites"), s.invite_avatars);
+    auto invite_cb = tk::create_widget<tk::CheckButton>(this, tk::tr("Show avatars in invites"),
+                                                        s.invite_avatars);
     invite_avatars_cb_ = previews_group->add_widget(std::move(invite_cb));
     binder.bind(invite_avatars_cb_, &S::invite_avatars, SettingKey::InviteAvatars);
 
@@ -72,7 +73,7 @@ MediaSection::MediaSection(SettingBinder& binder)
 
     // ── Capture devices ─────────────────────────────────────────────────────
     auto* dev_group = add_group(tk::tr("Capture devices"));
-    auto* dev_form  = dev_group->add_widget(tk::create_widget<tk::FormLayout>(this));
+    auto* dev_form = dev_group->add_widget(tk::create_widget<tk::FormLayout>(this));
     dev_form->set_label_gap(8.0f).set_spacing(8.0f);
 
     auto mic_combo = tk::create_widget<tk::ComboBox>(this);

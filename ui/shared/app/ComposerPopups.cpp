@@ -8,38 +8,48 @@
 namespace tesseract
 {
 
-ComposerPopups::ComposerPopups(tk::Host& host, tk::TextArea* text_area,
-                               RoomPane* pane, views::RoomView* room_view)
-    : text_area_(text_area),
-      pane_(pane),
-      room_view_(room_view)
+ComposerPopups::ComposerPopups(tk::Host& host, tk::TextArea* text_area, RoomPane* pane,
+                               views::RoomView* room_view)
+    : ComposerPopups(host, text_area, pane, room_view, Options())
+{
+}
+
+ComposerPopups::ComposerPopups(tk::Host& host, tk::TextArea* text_area, RoomPane* pane,
+                               views::RoomView* room_view, Options options)
+    : text_area_(text_area), pane_(pane), room_view_(room_view), options_(std::move(options))
 {
     // Compose text area -> popups, through the shared priority dispatch
     // (gif > slash > shortcode > mention).
     text_area_->set_on_changed(
         [this](const std::string& s)
         {
-            const bool typing = !s.empty();
-            if (typing != typing_active_)
+            if (options_.on_text_changed)
             {
-                typing_active_ = typing;
-                pane_->send_typing_notice_(typing);
+                options_.on_text_changed(s);
+            }
+            else
+            {
+                const bool typing = !s.empty();
+                if (typing != typing_active_)
+                {
+                    typing_active_ = typing;
+                    pane_->send_typing_notice_(typing);
+                }
             }
             if (room_view_)
             {
                 room_view_->set_current_text(s);
             }
             views::dispatch_compose_text_changed(
-                s, text_area_->cursor_byte_pos(), gif_controller_.get(),
-                slash_controller_.get(), shortcode_controller_.get(),
-                mention_controller_.get());
+                s, text_area_->cursor_byte_pos(), gif_controller_.get(), slash_controller_.get(),
+                shortcode_controller_.get(), mention_controller_.get());
         });
     text_area_->set_on_submit(
         [this]
         {
-            if (views::dispatch_compose_submit(
-                    gif_controller_.get(), slash_controller_.get(),
-                    shortcode_controller_.get(), mention_controller_.get()))
+            if (views::dispatch_compose_submit(gif_controller_.get(), slash_controller_.get(),
+                                               shortcode_controller_.get(),
+                                               mention_controller_.get()))
             {
                 return;
             }
@@ -53,9 +63,9 @@ ComposerPopups::ComposerPopups(tk::Host& host, tk::TextArea* text_area,
     text_area_->push_popup_nav(
         [this](tk::NavKey nk) -> bool
         {
-            return views::dispatch_compose_nav(
-                nk, gif_controller_.get(), slash_controller_.get(),
-                shortcode_controller_.get(), mention_controller_.get());
+            return views::dispatch_compose_nav(nk, gif_controller_.get(), slash_controller_.get(),
+                                               shortcode_controller_.get(),
+                                               mention_controller_.get());
         });
 
     // ── @mention autocomplete popup (eager, hidden until shown) ───────────
@@ -72,9 +82,9 @@ ComposerPopups::ComposerPopups(tk::Host& host, tk::TextArea* text_area,
         views::MentionController::Hooks hooks;
         hooks.show = [this](tk::Rect cursor, int rows)
         {
-            RoomPane::position_dropdown_popup_(
-                mention_popup_.get(), cursor, rows,
-                views::MentionPopup::kRowHeight, views::MentionPopup::kWidth);
+            RoomPane::position_dropdown_popup_(mention_popup_.get(), cursor, rows,
+                                               views::MentionPopup::kRowHeight,
+                                               views::MentionPopup::kWidth);
         };
         hooks.hide = [this]
         {
@@ -83,15 +93,17 @@ ComposerPopups::ComposerPopups(tk::Host& host, tk::TextArea* text_area,
                 mention_popup_->set_visible(false);
             }
         };
-        hooks.repaint = [this] { refresh_(mention_popup_.get()); };
+        hooks.repaint = [this]
+        {
+            refresh_(mention_popup_.get());
+        };
         hooks.repaint_selection = [this]
         {
             refresh_(mention_popup_.get(), /*layout=*/false);
         };
         pane_->wire_mention_hooks_(mention_popup_widget_, hooks);
         mention_controller_ = std::make_unique<views::MentionController>(
-            text_area_, pane_->shell_client_(), mention_popup_widget_,
-            std::move(hooks));
+            text_area_, pane_->shell_client_(), mention_popup_widget_, std::move(hooks));
     }
     if (mention_popup_)
     {
@@ -121,10 +133,9 @@ ComposerPopups::ComposerPopups(tk::Host& host, tk::TextArea* text_area,
         views::SlashCommandController::Hooks sh;
         sh.show = [this](tk::Rect cursor, int rows)
         {
-            RoomPane::position_dropdown_popup_(
-                slash_popup_.get(), cursor, rows,
-                views::SlashCommandPopup::kRowHeight,
-                views::SlashCommandPopup::kWidth);
+            RoomPane::position_dropdown_popup_(slash_popup_.get(), cursor, rows,
+                                               views::SlashCommandPopup::kRowHeight,
+                                               views::SlashCommandPopup::kWidth);
         };
         sh.hide = [this]
         {
@@ -133,12 +144,19 @@ ComposerPopups::ComposerPopups(tk::Host& host, tk::TextArea* text_area,
                 slash_popup_->set_visible(false);
             }
         };
-        sh.repaint = [this] { refresh_(slash_popup_.get()); };
+        sh.repaint = [this]
+        {
+            refresh_(slash_popup_.get());
+        };
         sh.repaint_selection = [this]
         {
             refresh_(slash_popup_.get(), /*layout=*/false);
         };
         pane_->wire_slash_hooks_(sh);
+        if (options_.extend_slash_hooks)
+        {
+            options_.extend_slash_hooks(sh);
+        }
         slash_controller_ = std::make_unique<views::SlashCommandController>(
             text_area_, slash_popup_widget_, std::move(sh));
     }
@@ -167,10 +185,9 @@ ComposerPopups::ComposerPopups(tk::Host& host, tk::TextArea* text_area,
         views::ShortcodeController::Hooks sh;
         sh.show = [this](tk::Rect cursor, int rows)
         {
-            RoomPane::position_dropdown_popup_(
-                shortcode_popup_.get(), cursor, rows,
-                views::ShortcodePopup::kRowHeight,
-                views::ShortcodePopup::kWidth);
+            RoomPane::position_dropdown_popup_(shortcode_popup_.get(), cursor, rows,
+                                               views::ShortcodePopup::kRowHeight,
+                                               views::ShortcodePopup::kWidth);
         };
         sh.hide = [this]
         {
@@ -179,7 +196,10 @@ ComposerPopups::ComposerPopups(tk::Host& host, tk::TextArea* text_area,
                 shortcode_popup_->set_visible(false);
             }
         };
-        sh.repaint = [this] { refresh_(shortcode_popup_.get()); };
+        sh.repaint = [this]
+        {
+            refresh_(shortcode_popup_.get());
+        };
         sh.repaint_selection = [this]
         {
             refresh_(shortcode_popup_.get(), /*layout=*/false);
@@ -187,7 +207,18 @@ ComposerPopups::ComposerPopups(tk::Host& host, tk::TextArea* text_area,
         // Custom-emoticon thumbnails: peek the shell media cache (populated by
         // the controller's fetch_image hook, wired below); Unicode emoji
         // render as glyphs.
-        pane_->wire_shortcode_hooks_(shortcode_popup_widget_, sh);
+        if (options_.shortcode_image_provider)
+        {
+            // The popup's own provider fetches on a miss, which is richer than
+            // the peek-only default wire_shortcode_hooks_ would install.
+            pane_->wire_shortcode_hooks_(nullptr, sh);
+            shortcode_popup_widget_->set_image_provider(options_.shortcode_image_provider);
+            sh.resolve_image = options_.shortcode_image_provider;
+        }
+        else
+        {
+            pane_->wire_shortcode_hooks_(shortcode_popup_widget_, sh);
+        }
         shortcode_controller_ = std::make_unique<views::ShortcodeController>(
             text_area_, shortcode_popup_widget_, std::move(sh));
     }
@@ -213,28 +244,46 @@ ComposerPopups::ComposerPopups(tk::Host& host, tk::TextArea* text_area,
         gif_popup_widget_->set_image_provider(
             [this](const GifResult& result) -> const tk::Image*
             {
-                return pane_->shell_gif_strip_image_(
-                    result,
-                    pane_->guarded(
-                        [this] { refresh_(gif_popup_.get(), /*layout=*/false); }));
+                return pane_->shell_gif_strip_image_(result, pane_->guarded(
+                                                                 [this]
+                                                                 {
+                                                                     refresh_(gif_popup_.get(),
+                                                                              /*layout=*/false);
+                                                                 }));
             });
         if (gif_popup_)
         {
             gif_popup_->set_root(std::move(w));
+            // With the shared animation cache the strip repaints only its
+            // animated cells' rects on each tick.
+            if (const auto* cache = pane_->shell_anim_cache_())
+            {
+                gif_popup_->set_anim_cache(cache);
+                anim_partial_repaint_ = true;
+            }
         }
     }
     {
         views::GifController::Hooks gh;
-        gh.show = [this] { show_gif_popup(); };
-        gh.hide = [this] { hide_gif_popup(); };
-        gh.repaint = [this] { refresh_(gif_popup_.get()); };
+        gh.show = [this]
+        {
+            show_gif_popup();
+        };
+        gh.hide = [this]
+        {
+            hide_gif_popup();
+        };
+        gh.repaint = [this]
+        {
+            refresh_(gif_popup_.get());
+        };
         gh.repaint_selection = [this]
         {
             refresh_(gif_popup_.get(), /*layout=*/false);
         };
         pane_->wire_gif_hooks_(gh);
-        gif_controller_ = std::make_unique<views::GifController>(
-            text_area_, gif_popup_widget_, std::move(gh));
+        gif_controller_ =
+            std::make_unique<views::GifController>(text_area_, gif_popup_widget_, std::move(gh));
     }
 }
 
@@ -283,8 +332,35 @@ void ComposerPopups::refresh_(tk::PopupSurfaceHandle* popup, bool layout)
 void ComposerPopups::hide_all()
 {
     views::hide_all_compose_popups(gif_controller_.get(), slash_controller_.get(),
-                                   shortcode_controller_.get(),
-                                   mention_controller_.get());
+                                   shortcode_controller_.get(), mention_controller_.get());
+}
+
+void ComposerPopups::on_bot_commands_changed()
+{
+    // Re-run the same text-changed path the popup already follows on every
+    // keystroke, so a bot posting, editing or retracting a command description
+    // while the user types is reflected without another keypress.
+    if (!slash_controller_ || !slash_controller_->visible() || !text_area_)
+    {
+        return;
+    }
+    slash_controller_->on_text_changed(text_area_->text(), text_area_->cursor_byte_pos());
+}
+
+void ComposerPopups::on_avatar_loaded()
+{
+    if (mention_popup_ && mention_popup_->visible())
+    {
+        mention_popup_->request_repaint();
+    }
+}
+
+void ComposerPopups::on_image_loaded()
+{
+    if (shortcode_popup_ && shortcode_popup_->visible())
+    {
+        shortcode_popup_->request_relayout();
+    }
 }
 
 void ComposerPopups::show_gif_popup()
@@ -314,8 +390,7 @@ void ComposerPopups::hide_gif_popup()
     }
 }
 
-void ComposerPopups::on_gif_results(std::uint64_t request_id,
-                                    std::vector<GifResult> results)
+void ComposerPopups::on_gif_results(std::uint64_t request_id, std::vector<GifResult> results)
 {
     if (gif_controller_)
     {
@@ -323,8 +398,7 @@ void ComposerPopups::on_gif_results(std::uint64_t request_id,
     }
 }
 
-void ComposerPopups::on_gif_search_failed(std::uint64_t request_id,
-                                          const std::string& message)
+void ComposerPopups::on_gif_search_failed(std::uint64_t request_id, const std::string& message)
 {
     if (gif_controller_)
     {
@@ -355,13 +429,18 @@ void ComposerPopups::apply_theme(const tk::Theme& theme)
 void ComposerPopups::repaint_anim_frame()
 {
     // Advance the /gif strip's animated cells (frames come from the shared
-    // anim cache; the shell's tick fires this for every window). No
-    // set_anim_cache is wired for a pop-out's popup (unlike MainWindow's), so
-    // a plain full repaint is used rather than update_anim_regions()'s
-    // partial-redraw path — it still picks up the shared cache's already-
-    // centrally-advanced current frame, just without the per-region
-    // optimization.
-    if (gif_popup_ && gif_popup_->visible())
+    // anim cache; the shell's tick fires this for every window). With the
+    // cache wired only the cells' rects are repainted; without one (a host
+    // that cannot track them) the whole popup is.
+    if (!gif_popup_ || !gif_popup_->visible())
+    {
+        return;
+    }
+    if (anim_partial_repaint_)
+    {
+        gif_popup_->update_anim_regions();
+    }
+    else
     {
         gif_popup_->request_repaint();
     }

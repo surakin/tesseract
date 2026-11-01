@@ -26,8 +26,7 @@ namespace tesseract::views
 //
 // Public selection API (selected_index/set_selected_index/visible_rows) is the
 // same surface the shell keyboard handlers drive, so it stays here unchanged.
-class ListPopupBase : public tk::ScrollableBase,
-                      public tk::WidgetRowAccessibility
+class ListPopupBase : public tk::ScrollableBase, public tk::WidgetRowAccessibility
 {
 public:
     // Number of rows to actually render (== rows clamped to max_visible_rows()).
@@ -86,7 +85,9 @@ public:
     bool access_activate_widget_row(std::size_t index) override
     {
         if (index >= total_rows())
+        {
             return false;
+        }
         on_row_activated(index);
         return true;
     }
@@ -96,9 +97,11 @@ public:
     tk::Rect access_rect_for_widget_row(std::size_t index) const override
     {
         if (index >= total_rows())
+        {
             return {};
-        return {bounds_.x, bounds_.y + float(index) * row_height() - scroll_y_,
-               width(), row_height()};
+        }
+        return {bounds_.x, bounds_.y + float(index) * row_height() - scroll_y_, width(),
+                row_height()};
     }
 
     // tk::Widget overrides — shared across all three popups.
@@ -121,8 +124,8 @@ protected:
     // Draw one item's content into `row_rect`. The base has already filled the
     // row background (selected/hovered) and will draw the separator/border; the
     // subclass only paints the item itself (text / icon / avatar).
-    virtual void paint_row(tk::PaintCtx& ctx, const tk::Rect& row_rect,
-                           size_t index, bool selected, bool hovered) = 0;
+    virtual void paint_row(tk::PaintCtx& ctx, const tk::Rect& row_rect, size_t index, bool selected,
+                           bool hovered) = 0;
 
     // Fire the typed on_accepted callback for the activated row.
     virtual void on_row_activated(size_t index) = 0;
@@ -168,8 +171,8 @@ protected:
     }
 
     int selected_index_ = -1;
-    int hovered_index_  = -1;
-    int pressed_index_  = -1;
+    int hovered_index_ = -1;
+    int pressed_index_ = -1;
 
     // Map a widget-local y (0-based; parent has translated the canvas) to a row
     // index, or -1 when outside the populated rows. Accounts for scroll_y_ so

@@ -168,10 +168,6 @@ msgstr "Añadir a stickers guardados"
 msgid "Not logged in"
 msgstr "Sin sesión iniciada"
 
-#: ui/linux-qt/src/MainWindow.cpp:2207
-msgid "Restoring sessions…"
-msgstr "Restaurando sesiones…"
-
 #: ui/linux-gtk/src/MainWindow.cpp:2888
 #: ui/shared/app/ShellBase_accounts.cpp:236 ui/windows/src/MainWindow.cpp:3553
 msgid "Restoring session…"
@@ -186,10 +182,6 @@ msgstr "Restaurando sesión…"
 #: ui/windows/src/MainWindow.cpp:5760 ui/windows/src/MainWindow.cpp:5876
 msgid "Connected"
 msgstr "Conectado"
-
-#: ui/linux-qt/src/MainWindow.cpp:2439
-msgid "Already signed in as %1"
-msgstr "Ya has iniciado sesión como %1"
 
 #: ui/shared/views/RoomHeader.cpp:102 ui/shared/views/RoomHeader.cpp:719
 msgid "Jump to Date"
@@ -252,9 +244,9 @@ msgstr "Añadir cuenta"
 msgid "Signed out"
 msgstr "Sesión cerrada"
 
-#: ui/linux-qt/src/MainWindow.cpp:4523
-msgid "Signed out of %1"
-msgstr "Sesión de %1 cerrada"
+#: ui/shared/app/ShellBase_accounts.cpp:1479
+msgid "Signed out of {0}"
+msgstr "Sesión de {0} cerrada"
 
 #: ui/shared/views/StickerPicker.cpp:44
 msgid "Search stickers"
@@ -631,8 +623,9 @@ msgid "?"
 msgstr "?"
 
 #: ui/shared/views/LoginView.cpp:116
-msgid "Your homeserver is where your account lives — similar to choosing an email provider. Not sure? matrix.org is a good default and works with anyone on Matrix."
-msgstr "Tu servidor es donde vive tu cuenta, algo similar a elegir un proveedor de correo electrónico. ¿No estás seguro? matrix.org es una buena opción por defecto y funciona con cualquier persona en Matrix."
+#: ui/shared/views/LoginView.cpp
+msgid "Your homeserver is where your account lives — similar to choosing an email provider. Not sure? Use \"Find a server\" to browse some. Any server works with anyone on Matrix."
+msgstr "Tu servidor doméstico es donde vive tu cuenta — algo parecido a elegir un proveedor de correo. ¿No lo tienes claro? Usa «Buscar un servidor» para explorar algunos. Cualquier servidor funciona con todo el mundo en Matrix."
 
 #: ui/shared/views/LoginView.cpp:340
 msgid "matrix.org"
@@ -3034,10 +3027,6 @@ msgstr "No hay usuarios baneados"
 msgid "Unban"
 msgstr "Desbanear"
 
-#: ui/shared/views/settings/RoomModerationSection.cpp:62
-msgid "Unban (you don't have permission to lift this ban)"
-msgstr "Desbanear (no tienes permiso para retirar este baneo)"
-
 #: ui/shared/views/settings/RoomModerationSection.cpp:51
 #, c++-format
 msgid "Banned by {0}"
@@ -3412,10 +3401,6 @@ msgstr "Haz clic en cualquier lugar para cerrar"
 msgid "Click anywhere to cancel"
 msgstr "Haz clic en cualquier lugar para cancelar"
 
-#: ui/linux-qt/src/MainWindow.cpp:2458
-msgid "Sign-in failed: %1"
-msgstr "Error al iniciar sesión: %1"
-
 msgid "Choose a folder for the exported history"
 msgstr "Elige una carpeta para el historial exportado"
 
@@ -3763,14 +3748,6 @@ msgstr "_Cancelar"
 #: ui/linux-gtk/src/MainWindow.cpp:3130
 msgid "_OK"
 msgstr "_Aceptar"
-
-#: ui/linux-gtk/src/MainWindow.cpp:3171
-msgid "Save message keys"
-msgstr "Guardar claves de mensajes"
-
-#: ui/linux-gtk/src/MainWindow.cpp:3200
-msgid "Open message keys"
-msgstr "Abrir claves de mensajes"
 
 #: ui/linux-gtk/src/MainWindow.cpp:3231 ui/linux-qt/src/SettingsWidget.cpp:176
 #: ui/macos/src/MainWindowController.mm:6748 ui/windows/src/MainWindow.cpp:6440
@@ -5236,10 +5213,6 @@ msgstr "{0} ({1})"
 msgid "{0}'s verified digital identity was reset."
 msgstr "Se restableció la identidad digital verificada de {0}."
 
-#: ui/shared/views/IdentityChangeBanner.cpp:61
-msgid "{0}'s digital identity was reset."
-msgstr "Se restableció la identidad digital de {0}."
-
 #: ui/shared/views/IdentityChangeBanner.cpp:71
 #: ui/shared/views/UserProfilePanel.cpp:203
 msgid "Withdraw verification"
@@ -5250,8 +5223,8 @@ msgid "Couldn't update the digital identity: {0}"
 msgstr "No se pudo actualizar la identidad digital: {0}"
 
 #: ui/shared/views/settings/PrivacySection.cpp:216
-msgid "Exclude unconfirmed devices (takes effect after restart)"
-msgstr "Excluir dispositivos sin confirmar (se aplica tras reiniciar)"
+msgid "Exclude unconfirmed devices"
+msgstr "Excluir dispositivos sin confirmar"
 
 #: ui/shared/views/settings/PrivacySection.cpp:226
 msgid "Only send encrypted messages to devices their owner has confirmed, and hide messages sent from devices that aren't. This device must be confirmed to send, and people whose clients don't confirm their devices won't see your messages."
@@ -5554,9 +5527,6 @@ msgstr "Usa las flechas para moverla"
 
 msgid "View avatar"
 msgstr "Ver avatar"
-
-msgid "View profile of {0}"
-msgstr "Ver el perfil de {0}"
 
 msgid "View room avatar"
 msgstr "Ver el avatar de la sala"
@@ -6906,3 +6876,278 @@ msgstr "Mostrar solo hilos seguidos"
 #: ui/shared/views/ThreadListView.cpp
 msgid "Show all threads"
 msgstr "Mostrar todos los hilos"
+
+#: ui/shared/views/UserProfilePanel.cpp
+msgid "Rooms in common"
+msgstr "Salas en común"
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Couldn't load the server list. Check your connection and try again."
+msgstr "No se pudo cargar la lista de servidores. Comprueba tu conexión e inténtalo de nuevo."
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Currently unreachable"
+msgstr "No disponible en este momento"
+
+#: ui/shared/views/LoginView.cpp
+msgid "Find a server"
+msgstr "Buscar un servidor"
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Invite or community only"
+msgstr "Solo con invitación o para la comunidad"
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Loading servers…"
+msgstr "Cargando servidores…"
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "No servers match your search."
+msgstr "Ningún servidor coincide con tu búsqueda."
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Open registration"
+msgstr "Registro abierto"
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Open registration only"
+msgstr "Solo registro abierto"
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Server list from {0}"
+msgstr "Lista de servidores de {0}"
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Rules"
+msgstr "Normas"
+
+#: ui/shared/views/LoginView.cpp
+msgid "Run by the Matrix.org Foundation. The largest public server."
+msgstr "Gestionado por la Matrix.org Foundation. El servidor público más grande."
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Search servers"
+msgstr "Buscar servidores"
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Search servers…"
+msgstr "Buscar servidores…"
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Sign up"
+msgstr "Registrarse"
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "Website"
+msgstr "Sitio web"
+
+#: ui/shared/views/ServerBrowserOverlay.cpp
+msgid "{0} · Established"
+msgstr "{0} · Consolidado"
+
+#: ui/shared/views/MediaTransportBar.cpp
+msgid "Seek"
+msgstr "Posición de reproducción"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "Timeline width"
+msgstr "Ancho de la conversación"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "Timeline position"
+msgstr "Posición de la conversación"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "Left"
+msgstr "Izquierda"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "Centered"
+msgstr "Centrada"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "{0}%"
+msgstr "{0} %"
+
+#: ui/shared/views/RoomHeader.cpp
+msgid "This room is connected to another chat app. Your messages are sent there too, and that app's own rules apply, not just Matrix's."
+msgstr "Esta sala está conectada con otra aplicación de chat. Tus mensajes también se envían allí, y se aplican las reglas propias de esa aplicación, no solo las de Matrix."
+
+#: ui/shared/views/RoomHeader.cpp
+msgid "This room is connected to {0}. Your messages are sent there too, and {0}'s own rules apply, not just Matrix's."
+msgstr "Esta sala está conectada con {0}. Tus mensajes también se envían allí, y se aplican las reglas propias de {0}, no solo las de Matrix."
+
+#: ui/shared/views/RoomListView.cpp
+msgid "Pin to sidebar"
+msgstr "Fijar en la barra lateral"
+
+#: ui/shared/views/SpacePickerView.cpp
+msgid "Unpin from sidebar"
+msgstr "Desfijar de la barra lateral"
+
+#: ui/shared/views/RoomListView.cpp
+msgid "Leave space"
+msgstr "Salir del espacio"
+
+#: ui/shared/views/SpacePickerView.cpp
+msgid "Home (all rooms)"
+msgstr "Inicio (todas las salas)"
+
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "Don't send to people with unconfirmed devices"
+msgstr "No enviar a personas con dispositivos sin confirmar"
+
+#: ui/shared/views/settings/PrivacySection.cpp
+msgid "Refuse to send a message while someone you confirmed has a device they haven't confirmed, or their digital identity has changed. Turn this off to send to every device regardless; you will no longer be warned about identity changes when sending."
+msgstr "Negarse a enviar un mensaje mientras alguien que confirmaste tenga un dispositivo sin confirmar o su identidad digital haya cambiado. Desactívalo para enviar a todos los dispositivos sin restricción; al enviar ya no se te avisará de cambios de identidad."
+
+#: ui/shared/views/send_block.cpp
+msgid "This device must be confirmed before it can send messages"
+msgstr "Este dispositivo debe confirmarse antes de poder enviar mensajes"
+
+#: ui/shared/views/send_block.cpp
+msgid "someone in this room"
+msgstr "alguien de esta sala"
+
+#: ui/shared/views/send_block.cpp
+#, c++-format
+msgid "{0} has a device that isn't confirmed by its owner"
+msgid_plural "{0} have devices that aren't confirmed by their owners"
+msgstr[0] "{0} tiene un dispositivo que su propietario no ha confirmado"
+msgstr[1] "{0} tienen dispositivos que sus propietarios no han confirmado"
+
+#: ui/shared/views/send_block.cpp
+#, c++-format
+msgid "{0}, so the message wasn't sent."
+msgstr "{0}, por lo que el mensaje no se envió."
+
+#: ui/shared/views/send_block.cpp
+#, c++-format
+msgid "{0}, so the message wasn't sent. It can be sent once they confirm or sign out that device. You can also discard the message, or turn off this check in Settings."
+msgstr "{0}, por lo que el mensaje no se envió. Se podrá enviar cuando confirmen o cierren la sesión de ese dispositivo. También puedes descartar el mensaje o desactivar esta comprobación en Ajustes."
+
+#: ui/shared/app/RoomPane.cpp
+msgid "The check that blocked this message is turned off, but the change takes effect after you restart Tesseract."
+msgstr "La comprobación que bloqueó este mensaje está desactivada, pero el cambio se aplica al reiniciar Tesseract."
+
+#: ui/shared/app/RoomPane.cpp
+msgid "Withdraw verification and send"
+msgstr "Retirar la verificación y enviar"
+
+#: ui/shared/views/send_block.cpp
+#, c++-format
+msgid "{0}'s digital identity was reset"
+msgid_plural "The digital identities of {0} were reset"
+msgstr[0] "La identidad digital de {0} se ha restablecido"
+msgstr[1] "Las identidades digitales de {0} se han restablecido"
+
+#: ui/shared/views/send_block.cpp
+#, c++-format
+msgid "{0}, so the message wasn't sent. You can withdraw your verification, which lets it go through; you can verify them again later from their profile."
+msgstr "{0}, por lo que el mensaje no se envió. Puedes retirar tu verificación para que se envíe; podrás volver a verificarlos más tarde desde su perfil."
+
+#: ui/shared/views/IdentityChangeBanner.cpp:61
+msgid "{0}'s digital identity was reset."
+msgstr "Se restableció la identidad digital de {0}."
+
+msgid "View profile of {0}"
+msgstr "Ver el perfil de {0}"
+
+msgid "Applying encryption settings…"
+msgstr "Aplicando la configuración de cifrado…"
+
+msgid "Your accounts are reconnecting. This takes a few seconds."
+msgstr "Tus cuentas se están reconectando. Esto tarda unos segundos."
+
+msgid "Encryption settings applied."
+msgstr "Configuración de cifrado aplicada."
+
+msgid "Encryption settings applied, but reloading failed: {0}"
+msgstr "Configuración de cifrado aplicada, pero la recarga falló: {0}"
+
+msgid "Encryption settings will apply once the call ends."
+msgstr "La configuración de cifrado se aplicará cuando termine la llamada."
+
+msgid "Encryption settings will apply once you finish confirming your device."
+msgstr "La configuración de cifrado se aplicará cuando termines de confirmar tu dispositivo."
+
+#: ui/shared/app/SettingsController.cpp
+msgid "The device is still signed in. Finish signing it out in the browser first."
+msgstr "El dispositivo sigue con la sesión iniciada. Termina primero de cerrar la sesión en el navegador."
+
+#: ui/shared/app/SettingsController.cpp
+msgid "The server does not provide an account-management page."
+msgstr "El servidor no ofrece una página de gestión de cuenta."
+
+#: ui/shared/views/MessageActions.cpp
+msgid "Report message"
+msgstr "Reportar mensaje"
+
+#: ui/shared/views/RoomView.cpp
+msgid "Report this message?"
+msgstr "¿Reportar este mensaje?"
+
+#: ui/shared/views/RoomView.cpp
+msgid "The report is sent to your homeserver's administrators, not to this room's moderators. The message stays visible."
+msgstr "El reporte se envía a los administradores de tu servidor, no a los moderadores de esta sala. El mensaje seguirá visible."
+
+#: ui/shared/views/RoomView.cpp
+msgid "Report"
+msgstr "Reportar"
+
+#: ui/shared/app/RoomPane.cpp
+msgid "Message reported"
+msgstr "Mensaje reportado"
+
+#: ui/shared/app/RoomPane.cpp
+msgid "Couldn't report message: {0}"
+msgstr "No se pudo reportar el mensaje: {0}"
+
+msgid "Detect automatically"
+msgstr "Detectar automáticamente"
+
+msgid "Show timezone difference next to names"
+msgstr "Mostrar la diferencia horaria junto a los nombres"
+
+msgid "{0} ({1} from you): {2}"
+msgstr "{0} ({1} respecto a ti): {2}"
+
+#: ui/shared/views/settings/AppearanceSection.cpp
+msgid "The theme follows your system's high contrast setting."
+msgstr "El tema sigue la configuración de alto contraste de tu sistema."
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Forwarded from {0}"
+msgstr "Reenviado de {0}"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Forwarded message"
+msgstr "Mensaje reenviado"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "forwarded from {0}"
+msgstr "reenviado de {0}"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "forwarded message"
+msgstr "mensaje reenviado"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "View original message"
+msgstr "Ver mensaje original"
+
+#: ui/shared/views/MessageListView.cpp
+msgid "Sender"
+msgstr "Remitente"
+
+msgid "Expand"
+msgstr "Expandir"
+
+msgid "Collapse"
+msgstr "Contraer"
+
+msgid "Expand code block"
+msgstr "Expandir bloque de código"
+
+msgid "Collapse code block"
+msgstr "Contraer bloque de código"

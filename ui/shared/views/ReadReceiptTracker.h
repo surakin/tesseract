@@ -30,7 +30,10 @@ public:
     }
 
     // Record `newest` as the most recently fired receipt target.
-    void mark(const std::string& newest) { last_event_id_ = newest; }
+    void mark(const std::string& newest)
+    {
+        last_event_id_ = newest;
+    }
 
 private:
     std::string last_event_id_;
