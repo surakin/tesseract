@@ -1,6 +1,6 @@
 # Tesseract — Implemented Features
 
-Snapshot of every feature that has landed on `main`. Last updated **2026-10-31**. 3813 C++ + 1572 Rust tests.
+Snapshot of every feature that has landed on `main`. Last updated **2026-11-01**. 3825 C++ + 1572 Rust tests.
 
 > **Forwarded messages, MSC4553 (2026-10-30).**
 > A forward carries the original message, its author, room and event in

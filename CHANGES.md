@@ -5,6 +5,10 @@ Tagged releases summarize all changes since the previous tag.
 
 ## Unreleased
 
+## v0.9.6 — 2026-11-01
+
+### Summary
+
 - build: a pre-commit hook and a Claude Code edit hook keep C++ and Rust formatted, so the style can't drift again. Linux
 - style: all C++ and Objective-C++ code is now formatted to the style guide, with no change in behaviour. Linux build, ctest 3824/3825 (uk.po catalog check fails already)
 - build: a ctest and a CI step now check C++ formatting against `.clang-format`; it fails until the C++ reformat lands. Linux, ctest cxx_format_check
