@@ -9,6 +9,7 @@ Tagged releases summarize all changes since the previous tag.
 
 ### Summary
 
+- feat(messages): media captions support Markdown and mentions, like messages, also when a caption is edited. Linux release build, ctest 3824/3824; user-verified
 - fix(messages): image, file and video captions show their formatting, links and mentions instead of plain text. Linux build, ctest 3825/3825; user-verified
 - build: a pre-commit hook and a Claude Code edit hook keep C++ and Rust formatted, so the style can't drift again. Linux
 - style: all C++ and Objective-C++ code is now formatted to the style guide, with no change in behaviour. Linux build, ctest 3824/3825 (uk.po catalog check fails already)

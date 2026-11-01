@@ -3134,6 +3134,8 @@ pub mod ffi {
         /// Non-blocking image send. Spawns the upload as a tokio task and
         /// delivers the result via `on_upload_complete`. `bytes` are cloned
         /// before returning; the caller need not keep them alive.
+        /// `formatted_caption` is the caption's HTML (empty for a plain
+        /// caption); user mentions in it become `m.mentions`.
         fn send_image_async(
             self: &ClientFfi,
             request_id: u64,
@@ -3142,6 +3144,7 @@ pub mod ffi {
             mime_type: &str,
             filename: &str,
             caption: &str,
+            formatted_caption: &str,
             width: u32,
             height: u32,
             is_animated: bool,
@@ -3150,7 +3153,8 @@ pub mod ffi {
         );
 
         /// Non-blocking file send. Spawns the upload as a tokio task and
-        /// delivers the result via `on_upload_complete`.
+        /// delivers the result via `on_upload_complete`. `formatted_caption`
+        /// is the caption's HTML, as for `send_image_async`.
         fn send_file_async(
             self: &ClientFfi,
             request_id: u64,
@@ -3159,12 +3163,14 @@ pub mod ffi {
             mime_type: &str,
             filename: &str,
             caption: &str,
+            formatted_caption: &str,
             reply_event_id: &str,
             thread_root: &str,
         );
 
         /// Non-blocking audio send. Spawns the upload as a tokio task and
-        /// delivers the result via `on_upload_complete`.
+        /// delivers the result via `on_upload_complete`. `formatted_caption`
+        /// is the caption's HTML, as for `send_image_async`.
         fn send_audio_async(
             self: &ClientFfi,
             request_id: u64,
@@ -3173,13 +3179,15 @@ pub mod ffi {
             mime_type: &str,
             filename: &str,
             caption: &str,
+            formatted_caption: &str,
             duration_ms: u64,
             reply_event_id: &str,
             thread_root: &str,
         );
 
         /// Non-blocking video send. Spawns the upload as a tokio task and
-        /// delivers the result via `on_upload_complete`.
+        /// delivers the result via `on_upload_complete`. `formatted_caption`
+        /// is the caption's HTML, as for `send_image_async`.
         fn send_video_async(
             self: &ClientFfi,
             request_id: u64,
@@ -3188,6 +3196,7 @@ pub mod ffi {
             mime_type: &str,
             filename: &str,
             caption: &str,
+            formatted_caption: &str,
             width: u32,
             height: u32,
             thumb_bytes: &[u8],
@@ -3205,13 +3214,15 @@ pub mod ffi {
         /// mirrors the enqueue-is-done semantics `send_edit` already uses,
         /// not per-item upload progress. Requires 2+ items; the composer
         /// sends a lone attachment via the scalar `send_*_async` calls
-        /// instead.
+        /// instead. `formatted_caption` is the caption's HTML, as for
+        /// `send_image_async`; ignored when `caption` is empty.
         fn send_gallery_async(
             self: &ClientFfi,
             request_id: u64,
             room_id: &str,
             items: Vec<GalleryItemOutFfi>,
             caption: &str,
+            formatted_caption: &str,
             reply_event_id: &str,
             thread_root: &str,
         );
@@ -3268,12 +3279,15 @@ pub mod ffi {
         /// `EditedContent::MediaCaption`, which preserves the original media
         /// content (url/info/msgtype) and only patches the caption. Only
         /// works on own media events. An empty `new_caption` removes the
-        /// caption entirely. Does not require `subscribe_room`.
+        /// caption entirely. `formatted_caption` is the new caption's HTML
+        /// (empty for a plain caption); user mentions in it become
+        /// `m.mentions`. Does not require `subscribe_room`.
         fn send_caption_edit(
             self: &ClientFfi,
             room_id: &str,
             event_id: &str,
             new_caption: &str,
+            formatted_caption: &str,
         ) -> OpResult;
 
         /// Forward `event_id` from `source_room_id` to `target_room_id`.

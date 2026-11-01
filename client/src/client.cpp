@@ -1027,7 +1027,8 @@ Result Client::send_file(const std::string& room_id, const std::vector<uint8_t>&
 void Client::send_image_async(std::uint64_t request_id, const std::string& room_id,
                               const std::vector<uint8_t>& bytes, const std::string& mime_type,
                               const std::string& filename, const std::string& caption,
-                              std::uint32_t width, std::uint32_t height, bool is_animated,
+                              const std::string& formatted_caption, std::uint32_t width,
+                              std::uint32_t height, bool is_animated,
                               const std::string& reply_event_id, const std::string& thread_root)
 {
     if (!impl_)
@@ -1037,16 +1038,18 @@ void Client::send_image_async(std::uint64_t request_id, const std::string& room_
     SH_FFI;
     rust::Slice<const std::uint8_t> slice{bytes.data(), bytes.size()};
     impl_->ffi->send_image_async(request_id, room_id, slice, mime_type, utf8_lossy(filename),
-                                 caption, width, height, is_animated, reply_event_id, thread_root);
+                                 caption, formatted_caption, width, height, is_animated,
+                                 reply_event_id, thread_root);
 }
 
 void Client::send_video_async(std::uint64_t request_id, const std::string& room_id,
                               const std::vector<uint8_t>& bytes, const std::string& mime_type,
                               const std::string& filename, const std::string& caption,
-                              std::uint32_t width, std::uint32_t height,
-                              const std::vector<uint8_t>& thumb_bytes, std::uint32_t thumb_width,
-                              std::uint32_t thumb_height, std::uint64_t duration_ms,
-                              const std::string& reply_event_id, const std::string& thread_root)
+                              const std::string& formatted_caption, std::uint32_t width,
+                              std::uint32_t height, const std::vector<uint8_t>& thumb_bytes,
+                              std::uint32_t thumb_width, std::uint32_t thumb_height,
+                              std::uint64_t duration_ms, const std::string& reply_event_id,
+                              const std::string& thread_root)
 {
     if (!impl_)
     {
@@ -1056,8 +1059,9 @@ void Client::send_video_async(std::uint64_t request_id, const std::string& room_
     rust::Slice<const std::uint8_t> slice{bytes.data(), bytes.size()};
     rust::Slice<const std::uint8_t> thumb_slice{thumb_bytes.data(), thumb_bytes.size()};
     impl_->ffi->send_video_async(request_id, room_id, slice, mime_type, utf8_lossy(filename),
-                                 caption, width, height, thumb_slice, thumb_width, thumb_height,
-                                 duration_ms, reply_event_id, thread_root);
+                                 caption, formatted_caption, width, height, thumb_slice,
+                                 thumb_width, thumb_height, duration_ms, reply_event_id,
+                                 thread_root);
 }
 
 namespace
@@ -1092,8 +1096,8 @@ rust::Vec<std::uint8_t> to_rust_vec(const std::vector<std::uint8_t>& bytes)
 
 void Client::send_gallery_async(std::uint64_t request_id, const std::string& room_id,
                                 const std::vector<GalleryItemOut>& items,
-                                const std::string& caption, const std::string& reply_event_id,
-                                const std::string& thread_root)
+                                const std::string& caption, const std::string& formatted_caption,
+                                const std::string& reply_event_id, const std::string& thread_root)
 {
     if (!impl_)
     {
@@ -1119,14 +1123,14 @@ void Client::send_gallery_async(std::uint64_t request_id, const std::string& roo
         });
     }
     impl_->ffi->send_gallery_async(request_id, room_id, std::move(ffi_items), caption,
-                                   reply_event_id, thread_root);
+                                   formatted_caption, reply_event_id, thread_root);
 }
 
 void Client::send_audio_async(std::uint64_t request_id, const std::string& room_id,
                               const std::vector<uint8_t>& bytes, const std::string& mime_type,
                               const std::string& filename, const std::string& caption,
-                              std::uint64_t duration_ms, const std::string& reply_event_id,
-                              const std::string& thread_root)
+                              const std::string& formatted_caption, std::uint64_t duration_ms,
+                              const std::string& reply_event_id, const std::string& thread_root)
 {
     if (!impl_)
     {
@@ -1135,12 +1139,14 @@ void Client::send_audio_async(std::uint64_t request_id, const std::string& room_
     SH_FFI;
     rust::Slice<const std::uint8_t> slice{bytes.data(), bytes.size()};
     impl_->ffi->send_audio_async(request_id, room_id, slice, mime_type, utf8_lossy(filename),
-                                 caption, duration_ms, reply_event_id, thread_root);
+                                 caption, formatted_caption, duration_ms, reply_event_id,
+                                 thread_root);
 }
 
 void Client::send_file_async(std::uint64_t request_id, const std::string& room_id,
                              const std::vector<uint8_t>& bytes, const std::string& mime_type,
                              const std::string& filename, const std::string& caption,
+                             const std::string& formatted_caption,
                              const std::string& reply_event_id, const std::string& thread_root)
 {
     if (!impl_)
@@ -1150,7 +1156,7 @@ void Client::send_file_async(std::uint64_t request_id, const std::string& room_i
     SH_FFI;
     rust::Slice<const std::uint8_t> slice{bytes.data(), bytes.size()};
     impl_->ffi->send_file_async(request_id, room_id, slice, mime_type, utf8_lossy(filename),
-                                caption, reply_event_id, thread_root);
+                                caption, formatted_caption, reply_event_id, thread_root);
 }
 
 Result Client::send_voice(const std::string& room_id, const std::uint8_t* pcm, std::size_t pcm_size,
@@ -1377,10 +1383,12 @@ Result Client::send_edit(const std::string& room_id, const std::string& event_id
 }
 
 Result Client::send_caption_edit(const std::string& room_id, const std::string& event_id,
-                                 const std::string& new_caption)
+                                 const std::string& new_caption,
+                                 const std::string& formatted_caption)
 {
     SH_FFI;
-    return from_ffi(impl_->ffi->send_caption_edit(room_id, event_id, new_caption));
+    return from_ffi(
+        impl_->ffi->send_caption_edit(room_id, event_id, new_caption, formatted_caption));
 }
 
 void Client::forward_event(std::uint64_t request_id, const std::string& source_room_id,

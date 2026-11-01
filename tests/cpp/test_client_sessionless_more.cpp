@@ -44,8 +44,8 @@ TEST_CASE("sessionless Client: async sends and exports are harmless", "[client][
     const std::uint8_t pcm[8] = {0};
     CHECK_NOTHROW(c.send_voice_async(1, kCmRoom, pcm, sizeof pcm, 500, {1}, "", ""));
     CHECK_NOTHROW(
-        c.send_image_async(2, kCmRoom, kCmBytes, "image/png", "a.png", "", 10, 10, false));
-    CHECK_NOTHROW(c.send_file_async(3, kCmRoom, kCmBytes, "text/plain", "a.txt", ""));
+        c.send_image_async(2, kCmRoom, kCmBytes, "image/png", "a.png", "", "", 10, 10, false));
+    CHECK_NOTHROW(c.send_file_async(3, kCmRoom, kCmBytes, "text/plain", "a.txt", "", ""));
     CHECK_NOTHROW(c.search_room_directory(4, "filter", "example.invalid"));
     CHECK_NOTHROW(c.start_room_export_async(5, kCmRoom, tesseract::RoomExportOptions{}));
     CHECK_NOTHROW(c.get_space_child_summary_async(6, "!space:x", kCmRoom));

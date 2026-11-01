@@ -744,11 +744,15 @@ public:
                       const std::string& thread_root = std::string{});
 
     /// Non-blocking image send. Spawns the upload as a tokio task; result
-    /// delivered via IEventHandler::on_upload_complete.
+    /// delivered via IEventHandler::on_upload_complete. `formatted_caption`
+    /// is the caption's HTML (empty for a plain caption, taken verbatim,
+    /// e.g. from build_mention_message()); user mentions in it become
+    /// `m.mentions`.
     void send_image_async(std::uint64_t request_id, const std::string& room_id,
                           const std::vector<uint8_t>& bytes, const std::string& mime_type,
                           const std::string& filename, const std::string& caption,
-                          std::uint32_t width, std::uint32_t height, bool is_animated,
+                          const std::string& formatted_caption, std::uint32_t width,
+                          std::uint32_t height, bool is_animated,
                           const std::string& reply_event_id = "",
                           const std::string& thread_root = std::string{});
 
@@ -771,14 +775,15 @@ public:
                       const std::string& thread_root = std::string{});
 
     /// Non-blocking video send. Spawns the upload as a tokio task; result
-    /// delivered via IEventHandler::on_upload_complete.
+    /// delivered via IEventHandler::on_upload_complete. `formatted_caption`
+    /// is the caption's HTML, as for send_image_async().
     void send_video_async(std::uint64_t request_id, const std::string& room_id,
                           const std::vector<uint8_t>& bytes, const std::string& mime_type,
                           const std::string& filename, const std::string& caption,
-                          std::uint32_t width, std::uint32_t height,
-                          const std::vector<uint8_t>& thumb_bytes, std::uint32_t thumb_width,
-                          std::uint32_t thumb_height, std::uint64_t duration_ms,
-                          const std::string& reply_event_id = "",
+                          const std::string& formatted_caption, std::uint32_t width,
+                          std::uint32_t height, const std::vector<uint8_t>& thumb_bytes,
+                          std::uint32_t thumb_width, std::uint32_t thumb_height,
+                          std::uint64_t duration_ms, const std::string& reply_event_id = "",
                           const std::string& thread_root = std::string{});
 
     /// Non-blocking gallery send (MSC4274 `m.gallery`). Uploads every item
@@ -788,9 +793,12 @@ public:
     /// enqueued (not once every item has finished uploading — see the Rust
     /// doc comment on ClientFfi::send_gallery_async for why). Requires 2+
     /// items; send a lone attachment via send_image_async/send_video_async/
-    /// send_audio_async/send_file_async instead.
+    /// send_audio_async/send_file_async instead. `formatted_caption` is the
+    /// caption's HTML, as for send_image_async(); ignored when `caption` is
+    /// empty (the synthesized fallback body is always plain).
     void send_gallery_async(std::uint64_t request_id, const std::string& room_id,
                             const std::vector<GalleryItemOut>& items, const std::string& caption,
+                            const std::string& formatted_caption,
                             const std::string& reply_event_id = "",
                             const std::string& thread_root = std::string{});
 
@@ -808,11 +816,13 @@ public:
                       const std::string& thread_root = std::string{});
 
     /// Non-blocking audio send. Spawns the upload as a tokio task; result
-    /// delivered via IEventHandler::on_upload_complete.
+    /// delivered via IEventHandler::on_upload_complete. `formatted_caption`
+    /// is the caption's HTML, as for send_image_async().
     void send_audio_async(std::uint64_t request_id, const std::string& room_id,
                           const std::vector<uint8_t>& bytes, const std::string& mime_type,
                           const std::string& filename, const std::string& caption,
-                          std::uint64_t duration_ms, const std::string& reply_event_id = "",
+                          const std::string& formatted_caption, std::uint64_t duration_ms,
+                          const std::string& reply_event_id = "",
                           const std::string& thread_root = std::string{});
 
     /// Send an arbitrary file to `room_id` as an `m.file` event. `bytes` is
@@ -829,10 +839,12 @@ public:
                      const std::string& thread_root = std::string{});
 
     /// Non-blocking file send. Spawns the upload as a tokio task; result
-    /// delivered via IEventHandler::on_upload_complete.
+    /// delivered via IEventHandler::on_upload_complete. `formatted_caption`
+    /// is the caption's HTML, as for send_image_async().
     void send_file_async(std::uint64_t request_id, const std::string& room_id,
                          const std::vector<uint8_t>& bytes, const std::string& mime_type,
                          const std::string& filename, const std::string& caption,
+                         const std::string& formatted_caption,
                          const std::string& reply_event_id = "",
                          const std::string& thread_root = std::string{});
 
@@ -1008,10 +1020,11 @@ public:
 
     /// Edit the caption of an image/file/video/audio/voice `event_id` in
     /// `room_id`. Preserves the original media content; only patches the
-    /// caption. Empty `new_caption` removes the caption. Does not require
-    /// `subscribe_room`.
+    /// caption. Empty `new_caption` removes the caption. `formatted_caption`
+    /// is the new caption's HTML (empty for plain), taken verbatim; user
+    /// mentions in it become `m.mentions`. Does not require `subscribe_room`.
     Result send_caption_edit(const std::string& room_id, const std::string& event_id,
-                             const std::string& new_caption);
+                             const std::string& new_caption, const std::string& formatted_caption);
 
     /// Forward `event_id` from `source_room_id` to `target_room_id`.
     /// Fetches the event (decrypting for E2EE rooms), strips `m.relates_to`,

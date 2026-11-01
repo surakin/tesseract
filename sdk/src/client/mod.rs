@@ -5229,14 +5229,14 @@ mod tests {
     #[test]
     fn send_caption_edit_not_logged_in() {
         let c = ClientFfi::new();
-        let r = c.send_caption_edit("!room:example.com", "$event:example.com", "new caption");
+        let r = c.send_caption_edit("!room:example.com", "$event:example.com", "new caption", "");
         assert!(!r.ok);
     }
 
     #[test]
     fn send_caption_edit_invalid_room_id() {
         let c = ClientFfi::new();
-        let r = c.send_caption_edit("not-a-room-id", "$event:example.com", "new caption");
+        let r = c.send_caption_edit("not-a-room-id", "$event:example.com", "new caption", "");
         assert!(!r.ok);
     }
 
@@ -5320,6 +5320,7 @@ mod tests {
             GifMedia::Plain("mxc://server/abc123".into()),
             "anim.gif",
             "", // no caption
+            "",
             "image/gif",
             320,
             240,
@@ -5353,6 +5354,7 @@ mod tests {
             GifMedia::Encrypted(enc.clone()),
             "anim.webp",
             "",
+            "",
             "image/webp",
             320,
             240,
@@ -5374,6 +5376,7 @@ mod tests {
             GifMedia::Plain("mxc://server/xyz".into()),
             "cat.gif",
             "Look at this",
+            "",
             "image/gif",
             0,
             0,
@@ -5390,10 +5393,53 @@ mod tests {
     }
 
     #[test]
+    fn animated_image_content_with_html_caption_carries_format_and_mentions() {
+        let html = r#"<a href="https://matrix.to/#/@alice:x.org">Alice</a> <em>hi</em>"#;
+        let val = build_animated_image_content(
+            GifMedia::Plain("mxc://server/xyz".into()),
+            "cat.gif",
+            "Alice *hi*",
+            html,
+            "image/gif",
+            0,
+            0,
+            512,
+            "",
+            "",
+        );
+        assert_eq!(val["body"], "Alice *hi*");
+        assert_eq!(val["filename"], "cat.gif");
+        assert_eq!(val["format"], "org.matrix.custom.html");
+        assert_eq!(val["formatted_body"], html);
+        assert_eq!(val["m.mentions"]["user_ids"][0], "@alice:x.org");
+    }
+
+    #[test]
+    fn animated_image_content_without_caption_ignores_html() {
+        let val = build_animated_image_content(
+            GifMedia::Plain("mxc://server/xyz".into()),
+            "cat.gif",
+            "",
+            "<b>x</b>",
+            "image/gif",
+            0,
+            0,
+            512,
+            "",
+            "",
+        );
+        assert_eq!(val["body"], "cat.gif");
+        assert!(val.get("formatted_body").is_none());
+        assert!(val.get("format").is_none());
+        assert!(val.get("m.mentions").is_none());
+    }
+
+    #[test]
     fn animated_image_content_threaded() {
         let val = build_animated_image_content(
             GifMedia::Plain("mxc://server/abc".into()),
             "a.gif",
+            "",
             "",
             "image/gif",
             1,
@@ -5416,6 +5462,7 @@ mod tests {
         let val = build_animated_image_content(
             GifMedia::Plain("mxc://server/abc".into()),
             "a.gif",
+            "",
             "",
             "image/gif",
             1,

@@ -220,11 +220,14 @@ pub(crate) enum GifMedia {
 /// mute and hide controls. The video source goes in `content.url` (plain) or
 /// `content.file` (encrypted); the poster thumbnail in `info.thumbnail_url` /
 /// `info.thumbnail_file`. A non-empty `thread_root` emits an MSC3440 thread
-/// relation, otherwise a non-empty `reply_event_id` emits a bare reply.
+/// relation, otherwise a non-empty `reply_event_id` emits a bare reply. A
+/// non-empty `body` with HTML in `formatted_body` also carries
+/// `format`/`formatted_body` and the derived `m.mentions`.
 pub(crate) fn build_gif_video_content(
     video: GifMedia,
     thumbnail: Option<GifMedia>,
     body: &str,
+    formatted_body: &str,
     mime_type: &str,
     width: u32,
     height: u32,
@@ -268,6 +271,7 @@ pub(crate) fn build_gif_video_content(
         GifMedia::Plain(url) => content["url"] = serde_json::json!(url),
         GifMedia::Encrypted(file) => content["file"] = file,
     }
+    super::send::apply_caption_html(&mut content, body, formatted_body);
 
     if !thread_root.is_empty() {
         let in_reply_to_id = if reply_event_id.is_empty() {
@@ -468,6 +472,7 @@ impl ClientFfi {
                 video_media,
                 thumb_media,
                 &body,
+                "",
                 &mime_str,
                 width,
                 height,
@@ -637,6 +642,7 @@ impl ClientFfi {
                         video_media,
                         thumb_media,
                         &body,
+                        "",
                         &image_mime,
                         width,
                         height,
@@ -674,7 +680,7 @@ impl ClientFfi {
                         GifMedia::Plain(mxc_uri)
                     };
                     let content = super::send::build_animated_image_content(
-                        media, &body, "", &image_mime, width, height, size,
+                        media, &body, "", "", &image_mime, width, height, size,
                         &reply, &thread,
                     );
                     room.send_raw("m.room.message", content)
@@ -902,6 +908,7 @@ mod tests {
             GifMedia::Plain("mxc://srv/vid".into()),
             Some(GifMedia::Plain("mxc://srv/poster".into())),
             "cat.mp4",
+            "",
             "video/mp4",
             498,
             280,
@@ -932,6 +939,7 @@ mod tests {
             GifMedia::Encrypted(enc.clone()),
             Some(GifMedia::Encrypted(thumb_enc.clone())),
             "cat.mp4",
+            "",
             "video/mp4",
             498,
             280,
@@ -952,11 +960,58 @@ mod tests {
     }
 
     #[test]
+    fn html_body_carries_format_and_mentions() {
+        let html = r#"<a href="https://matrix.to/#/@alice:x.org">Alice</a> hi"#;
+        let c = build_gif_video_content(
+            GifMedia::Plain("mxc://srv/vid".into()),
+            None,
+            "Alice hi",
+            html,
+            "video/mp4",
+            1,
+            1,
+            1,
+            0,
+            0,
+            0,
+            "",
+            "",
+        );
+        assert_eq!(c["body"], "Alice hi");
+        assert_eq!(c["format"], "org.matrix.custom.html");
+        assert_eq!(c["formatted_body"], html);
+        assert_eq!(c["m.mentions"]["user_ids"][0], "@alice:x.org");
+    }
+
+    #[test]
+    fn plain_body_has_no_format() {
+        let c = build_gif_video_content(
+            GifMedia::Plain("mxc://srv/vid".into()),
+            None,
+            "cat.mp4",
+            "",
+            "video/mp4",
+            1,
+            1,
+            1,
+            0,
+            0,
+            0,
+            "",
+            "",
+        );
+        assert!(c.get("formatted_body").is_none());
+        assert!(c.get("format").is_none());
+        assert!(c.get("m.mentions").is_none());
+    }
+
+    #[test]
     fn thread_root_emits_msc3440_relation() {
         let c = build_gif_video_content(
             GifMedia::Plain("mxc://srv/vid".into()),
             None,
             "cat.mp4",
+            "",
             "video/mp4",
             1,
             1,

@@ -500,6 +500,17 @@ public:
     void send_current_location_();
     void send_edit_(const std::string& event_id, const std::string& new_body,
                     bool is_caption = false);
+    // A media caption as the text path sends a message: the composer's mention
+    // draft run through build_mention_message(), so Markdown and mention pills
+    // reach the event as `formatted_body` + `m.mentions`.
+    struct ComposedCaption
+    {
+        std::string body;
+        std::string formatted; // HTML; empty for a plain caption
+    };
+    // Reads the compose text area, so call it before the composer is cleared.
+    // With no draft (or an empty one) the result is `fallback` and no HTML.
+    ComposedCaption composed_caption_(const std::string& fallback) const;
     void delete_event_(const std::string& event_id);
     void report_event_(const std::string& event_id, const std::string& reason);
     void toggle_reaction_(const std::string& event_id, const std::string& key,

@@ -118,6 +118,55 @@ pub(crate) fn strip_av_owned(bytes: Vec<u8>) -> Result<Vec<u8>, String> {
     }
 }
 
+/// Turn a media caption and its optional HTML into the caption content
+/// matrix-sdk attaches to a media event, plus the intentional `m.mentions`
+/// derived from the HTML (see [`derive_mentions`]). `None` when `caption` is
+/// empty: no caption is sent, whatever `formatted_caption` holds. An empty
+/// `formatted_caption` (or one that is empty once `derive_mentions` has run)
+/// gives a plain caption.
+pub(crate) fn build_caption(
+    caption: &str,
+    formatted_caption: &str,
+) -> Option<(
+    matrix_sdk::ruma::events::room::message::TextMessageEventContent,
+    Option<matrix_sdk::ruma::events::Mentions>,
+)> {
+    use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
+    if caption.is_empty() {
+        return None;
+    }
+    let (mentions, html) = derive_mentions(formatted_caption);
+    let content = if html.is_empty() {
+        TextMessageEventContent::plain(caption)
+    } else {
+        TextMessageEventContent::html(caption, html)
+    };
+    Some((content, mentions))
+}
+
+/// Add the HTML caption fields (`format`, `formatted_body`, `m.mentions`) to a
+/// hand-built media `content` object. Does nothing when `caption` is empty or
+/// `formatted_caption` has no HTML, so a plain caption stays `body` only.
+pub(crate) fn apply_caption_html(
+    content: &mut serde_json::Value,
+    caption: &str,
+    formatted_caption: &str,
+) {
+    let Some((caption_content, mentions)) = build_caption(caption, formatted_caption) else {
+        return;
+    };
+    let Some(formatted) = caption_content.formatted else {
+        return;
+    };
+    content["format"] = serde_json::json!("org.matrix.custom.html");
+    content["formatted_body"] = serde_json::json!(formatted.body);
+    if let Some(m) = mentions {
+        if let Ok(v) = serde_json::to_value(m) {
+            content["m.mentions"] = v;
+        }
+    }
+}
+
 /// Build the raw `m.room.message` content object for an animated image
 /// (GIF/WebP). Carries the MSC4230 `org.matrix.msc4230.is_animated` flag and
 /// the `fi.mau.gif` vendor hint so capable clients autoplay/loop the
@@ -127,11 +176,13 @@ pub(crate) fn strip_av_owned(bytes: Vec<u8>) -> Result<Vec<u8>, String> {
 /// of 0 are omitted from `info`. A non-empty `reply_event_id` adds an
 /// `m.in_reply_to` relation. When `thread_root` is non-empty the relation is
 /// emitted as a full MSC3440 `m.thread` block instead of a bare
-/// `m.in_reply_to`.
+/// `m.in_reply_to`. A non-empty `caption` with HTML in `formatted_caption`
+/// also carries `format`/`formatted_body` and the derived `m.mentions`.
 pub(crate) fn build_animated_image_content(
     media: super::gif::GifMedia,
     filename: &str,
     caption: &str,
+    formatted_caption: &str,
     mime_type: &str,
     width: u32,
     height: u32,
@@ -170,6 +221,7 @@ pub(crate) fn build_animated_image_content(
     }
     if !caption.is_empty() {
         content["filename"] = serde_json::json!(filename);
+        apply_caption_html(&mut content, caption, formatted_caption);
     }
     if !thread_root.is_empty() {
         // MSC3440 thread relation.
@@ -261,7 +313,8 @@ pub(super) fn build_media_reply(
 /// Build the `AttachmentConfig` shared by every `send_image`/`send_file`/
 /// `send_audio`/`send_video` path (and their `_async` twins). Wires the
 /// per-type `AttachmentInfo`, an optional video `Thumbnail`, the MSC2530
-/// caption (only when non-empty), and the `m.in_reply_to` / `m.thread`
+/// caption (only when non-empty, HTML and `m.mentions` from
+/// `formatted_caption` when given), and the `m.in_reply_to` / `m.thread`
 /// relation resolved by `build_media_reply`. The only per-type input is
 /// `info` (and `thumbnail`, video-only); everything else is identical across
 /// the eight methods.
@@ -270,18 +323,18 @@ pub(super) fn build_attachment_config(
     info: matrix_sdk::attachment::AttachmentInfo,
     thumbnail: Option<matrix_sdk::attachment::Thumbnail>,
     caption: &str,
+    formatted_caption: &str,
     reply_event_id: &str,
     thread_root: &str,
 ) -> Result<matrix_sdk::attachment::AttachmentConfig, String> {
     use matrix_sdk::attachment::AttachmentConfig;
-    use matrix_sdk::ruma::events::room::message::TextMessageEventContent;
 
     let mut config = AttachmentConfig::new().info(info);
     if let Some(thumb) = thumbnail {
         config = config.thumbnail(Some(thumb));
     }
-    if !caption.is_empty() {
-        config = config.caption(Some(TextMessageEventContent::plain(caption)));
+    if let Some((caption_content, mentions)) = build_caption(caption, formatted_caption) {
+        config = config.caption(Some(caption_content)).mentions(mentions);
     }
     if let Some(reply) = build_media_reply(reply_event_id, thread_root)? {
         config = config.reply(Some(reply));
@@ -1253,6 +1306,7 @@ impl ClientFfi {
                     media,
                     &filename,
                     &caption,
+                    "",
                     &mime_str,
                     width,
                     height,
@@ -1287,11 +1341,11 @@ impl ClientFfi {
             blurhash: None,
             is_animated: None,
         });
-        let config = match build_attachment_config(info, None, caption, reply_event_id, thread_root)
-        {
-            Ok(c) => c,
-            Err(e) => return err(e),
-        };
+        let config =
+            match build_attachment_config(info, None, caption, "", reply_event_id, thread_root) {
+                Ok(c) => c,
+                Err(e) => return err(e),
+            };
 
         let data = bytes.to_vec();
         let filename = filename.to_owned();
@@ -1359,11 +1413,11 @@ impl ClientFfi {
         let info = AttachmentInfo::File(BaseFileInfo {
             size: UInt::new(bytes.len() as u64),
         });
-        let config = match build_attachment_config(info, None, caption, reply_event_id, thread_root)
-        {
-            Ok(c) => c,
-            Err(e) => return err(e),
-        };
+        let config =
+            match build_attachment_config(info, None, caption, "", reply_event_id, thread_root) {
+                Ok(c) => c,
+                Err(e) => return err(e),
+            };
 
         let data = bytes.to_vec();
         let filename = filename.to_owned();
@@ -1439,11 +1493,11 @@ impl ClientFfi {
             size: UInt::new(bytes.len() as u64),
             waveform: None,
         });
-        let config = match build_attachment_config(info, None, caption, reply_event_id, thread_root)
-        {
-            Ok(c) => c,
-            Err(e) => return err(e),
-        };
+        let config =
+            match build_attachment_config(info, None, caption, "", reply_event_id, thread_root) {
+                Ok(c) => c,
+                Err(e) => return err(e),
+            };
 
         let data = bytes;
         let filename = filename.to_owned();
@@ -1536,11 +1590,17 @@ impl ClientFfi {
             width: UInt::new(thumb_width as u64).unwrap_or_default(),
             size: UInt::new(thumb_bytes.len() as u64).unwrap_or_default(),
         });
-        let config =
-            match build_attachment_config(info, thumbnail, caption, reply_event_id, thread_root) {
-                Ok(c) => c,
-                Err(e) => return err(e),
-            };
+        let config = match build_attachment_config(
+            info,
+            thumbnail,
+            caption,
+            "",
+            reply_event_id,
+            thread_root,
+        ) {
+            Ok(c) => c,
+            Err(e) => return err(e),
+        };
 
         let data = bytes;
         let filename = filename.to_owned();
@@ -1585,6 +1645,7 @@ impl ClientFfi {
         mime_type: &str,
         filename: &str,
         caption: &str,
+        formatted_caption: &str,
         width: u32,
         height: u32,
         is_animated: bool,
@@ -1619,6 +1680,7 @@ impl ClientFfi {
         let mime_type = mime_type.to_owned();
         let filename = filename.to_owned();
         let caption = caption.to_owned();
+        let formatted_caption = formatted_caption.to_owned();
         let reply_event_id = reply_event_id.to_owned();
         let thread_root = thread_root.to_owned();
 
@@ -1674,6 +1736,7 @@ impl ClientFfi {
                         media,
                         &filename,
                         &caption,
+                        &formatted_caption,
                         &mime_type,
                         width,
                         height,
@@ -1716,6 +1779,7 @@ impl ClientFfi {
                 info,
                 None,
                 &caption,
+                &formatted_caption,
                 &reply_event_id,
                 &thread_root,
             ) {
@@ -1751,6 +1815,7 @@ impl ClientFfi {
         _mime_type: &str,
         _filename: &str,
         _caption: &str,
+        _formatted_caption: &str,
         _width: u32,
         _height: u32,
         _is_animated: bool,
@@ -1768,6 +1833,7 @@ impl ClientFfi {
         mime_type: &str,
         filename: &str,
         caption: &str,
+        formatted_caption: &str,
         reply_event_id: &str,
         thread_root: &str,
     ) {
@@ -1799,6 +1865,7 @@ impl ClientFfi {
         let mime_type = mime_type.to_owned();
         let filename = filename.to_owned();
         let caption = caption.to_owned();
+        let formatted_caption = formatted_caption.to_owned();
         let reply_event_id = reply_event_id.to_owned();
         let thread_root = thread_root.to_owned();
 
@@ -1829,6 +1896,7 @@ impl ClientFfi {
                 info,
                 None,
                 &caption,
+                &formatted_caption,
                 &reply_event_id,
                 &thread_root,
             ) {
@@ -1864,6 +1932,7 @@ impl ClientFfi {
         _mime_type: &str,
         _filename: &str,
         _caption: &str,
+        _formatted_caption: &str,
         _reply_event_id: &str,
         _thread_root: &str,
     ) {
@@ -1878,6 +1947,7 @@ impl ClientFfi {
         mime_type: &str,
         filename: &str,
         caption: &str,
+        formatted_caption: &str,
         duration_ms: u64,
         reply_event_id: &str,
         thread_root: &str,
@@ -1911,6 +1981,7 @@ impl ClientFfi {
         let mime_type = mime_type.to_owned();
         let filename = filename.to_owned();
         let caption = caption.to_owned();
+        let formatted_caption = formatted_caption.to_owned();
         let reply_event_id = reply_event_id.to_owned();
         let thread_root = thread_root.to_owned();
 
@@ -1951,6 +2022,7 @@ impl ClientFfi {
                 info,
                 None,
                 &caption,
+                &formatted_caption,
                 &reply_event_id,
                 &thread_root,
             ) {
@@ -1986,6 +2058,7 @@ impl ClientFfi {
         _mime_type: &str,
         _filename: &str,
         _caption: &str,
+        _formatted_caption: &str,
         _duration_ms: u64,
         _reply_event_id: &str,
         _thread_root: &str,
@@ -2001,6 +2074,7 @@ impl ClientFfi {
         mime_type: &str,
         filename: &str,
         caption: &str,
+        formatted_caption: &str,
         width: u32,
         height: u32,
         thumb_bytes: &[u8],
@@ -2040,6 +2114,7 @@ impl ClientFfi {
         let mime_type = mime_type.to_owned();
         let filename = filename.to_owned();
         let caption = caption.to_owned();
+        let formatted_caption = formatted_caption.to_owned();
         let reply_event_id = reply_event_id.to_owned();
         let thread_root = thread_root.to_owned();
 
@@ -2094,6 +2169,7 @@ impl ClientFfi {
                 info,
                 thumbnail,
                 &caption,
+                &formatted_caption,
                 &reply_event_id,
                 &thread_root,
             ) {
@@ -2129,6 +2205,7 @@ impl ClientFfi {
         _mime_type: &str,
         _filename: &str,
         _caption: &str,
+        _formatted_caption: &str,
         _width: u32,
         _height: u32,
         _thumb_bytes: &[u8],
@@ -2169,6 +2246,7 @@ impl ClientFfi {
         room_id: &str,
         items: Vec<crate::ffi::GalleryItemOutFfi>,
         caption: &str,
+        formatted_caption: &str,
         reply_event_id: &str,
         thread_root: &str,
     ) {
@@ -2199,6 +2277,7 @@ impl ClientFfi {
 
         let room_id_str = room_id.to_owned();
         let caption = caption.to_owned();
+        let formatted_caption = formatted_caption.to_owned();
         let reply_event_id = reply_event_id.to_owned();
         let thread_root = thread_root.to_owned();
         let item_count = items.len();
@@ -2304,8 +2383,13 @@ impl ClientFfi {
             // GalleryConfig::caption feeds GalleryMessageEventContent.body
             // directly (required field) — must always be Some, or the
             // matrix-sdk send path defaults it to an empty string.
-            let body = gallery_fallback_body(&caption, item_count);
-            config = config.caption(Some(TextMessageEventContent::plain(body)));
+            // The synthesized fallback stays plain: no HTML, no mentions.
+            let (caption_content, mentions) = build_caption(&caption, &formatted_caption)
+                .unwrap_or_else(|| {
+                    let body = gallery_fallback_body(&caption, item_count);
+                    (TextMessageEventContent::plain(body), None)
+                });
+            config = config.caption(Some(caption_content)).mentions(mentions);
             match build_media_reply(&reply_event_id, &thread_root) {
                 Ok(Some(reply)) => config = config.reply(Some(reply)),
                 Ok(None) => {}
@@ -2329,6 +2413,7 @@ impl ClientFfi {
         _room_id: &str,
         _items: Vec<crate::ffi::GalleryItemOutFfi>,
         _caption: &str,
+        _formatted_caption: &str,
         _reply_event_id: &str,
         _thread_root: &str,
     ) {
@@ -3316,10 +3401,17 @@ impl ClientFfi {
     /// Edit the caption of an image/file/video/audio/voice event. Uses
     /// `EditedContent::MediaCaption`, which preserves the original media
     /// content (url/info/msgtype) and patches only `body`/`filename`/
-    /// `formatted`. An empty `new_caption` removes the caption. Does not
-    /// require `subscribe_room`.
+    /// `formatted`. An empty `new_caption` removes the caption. A non-empty
+    /// `formatted_caption` is sent as the HTML caption, with user mentions
+    /// derived from it. Does not require `subscribe_room`.
     #[cfg(not(test))]
-    pub fn send_caption_edit(&self, room_id: &str, event_id: &str, new_caption: &str) -> OpResult {
+    pub fn send_caption_edit(
+        &self,
+        room_id: &str,
+        event_id: &str,
+        new_caption: &str,
+        formatted_caption: &str,
+    ) -> OpResult {
         let _in_flight = self.in_flight_guard("edit");
         use matrix_sdk::room::edit::EditedContent;
 
@@ -3331,19 +3423,19 @@ impl ClientFfi {
             Ok(id) => id,
             Err(e) => return err(format!("invalid event id: {e}")),
         };
-        let caption = if new_caption.is_empty() {
-            None
-        } else {
-            Some(new_caption.to_owned())
-        };
+        let (caption, formatted_caption, mentions) =
+            match build_caption(new_caption, formatted_caption) {
+                Some((content, mentions)) => (Some(content.body), content.formatted, mentions),
+                None => (None, None, None),
+            };
         match self.block_on_cancellable(async move {
             let edit_event = room
                 .make_edit_event(
                     &event_id,
                     EditedContent::MediaCaption {
                         caption,
-                        formatted_caption: None,
-                        mentions: None,
+                        formatted_caption,
+                        mentions,
                     },
                 )
                 .await
@@ -3365,6 +3457,7 @@ impl ClientFfi {
         _room_id: &str,
         _event_id: &str,
         _new_caption: &str,
+        _formatted_caption: &str,
     ) -> OpResult {
         err("not logged in")
     }
@@ -4452,5 +4545,80 @@ mod forwardable_content_tests {
         assert_eq!(forwardable_content(&sticker).unwrap().0, "m.sticker");
         let poll = json!({ "type": "m.poll.start", "content": { "m.poll": {} } });
         assert_eq!(forwardable_content(&poll).unwrap().0, "m.poll.start");
+    }
+}
+
+#[cfg(test)]
+mod caption_tests {
+    use super::{apply_caption_html, build_caption};
+    use serde_json::json;
+
+    const ALICE: &str = r#"<a href="https://matrix.to/#/@alice:x.org">Alice</a>"#;
+
+    #[test]
+    fn empty_caption_has_no_caption() {
+        assert!(build_caption("", "").is_none());
+        assert!(build_caption("", "<b>x</b>").is_none());
+    }
+
+    #[test]
+    fn plain_caption_without_html() {
+        let (c, m) = build_caption("hello", "").unwrap();
+        assert_eq!(c.body, "hello");
+        assert!(c.formatted.is_none());
+        assert!(m.is_none());
+    }
+
+    #[test]
+    fn markdown_html_is_kept() {
+        let (c, m) = build_caption("**hi**", "<strong>hi</strong>").unwrap();
+        assert_eq!(c.body, "**hi**");
+        assert_eq!(c.formatted.unwrap().body, "<strong>hi</strong>");
+        assert!(m.is_none());
+    }
+
+    #[test]
+    fn user_mention_anchor_yields_mentions() {
+        let html = format!("{ALICE}: hi");
+        let (c, m) = build_caption("Alice: hi", &html).unwrap();
+        assert_eq!(c.formatted.unwrap().body, html);
+        let ids: Vec<String> = m.unwrap().user_ids.iter().map(|u| u.to_string()).collect();
+        assert_eq!(ids, ["@alice:x.org"]);
+    }
+
+    #[test]
+    fn room_mention_sets_room_and_strips_sentinel() {
+        let (c, m) = build_caption(
+            "@room hi",
+            r#"<a href="https://matrix.to/#/@room">@room</a> hi"#,
+        )
+        .unwrap();
+        assert!(m.unwrap().room);
+        assert_eq!(c.formatted.unwrap().body, "@room hi");
+    }
+
+    #[test]
+    fn apply_caption_html_adds_format_and_mentions() {
+        let mut content = json!({ "msgtype": "m.image", "body": "Alice: hi" });
+        apply_caption_html(&mut content, "Alice: hi", &format!("{ALICE}: hi"));
+        assert_eq!(content["format"], "org.matrix.custom.html");
+        assert_eq!(content["formatted_body"], format!("{ALICE}: hi"));
+        assert_eq!(content["m.mentions"]["user_ids"], json!(["@alice:x.org"]));
+    }
+
+    #[test]
+    fn apply_caption_html_without_mentions_omits_them() {
+        let mut content = json!({ "body": "**hi**" });
+        apply_caption_html(&mut content, "**hi**", "<strong>hi</strong>");
+        assert_eq!(content["formatted_body"], "<strong>hi</strong>");
+        assert!(content.get("m.mentions").is_none());
+    }
+
+    #[test]
+    fn apply_caption_html_is_a_no_op_for_plain_or_empty() {
+        let mut content = json!({ "body": "hi" });
+        apply_caption_html(&mut content, "hi", "");
+        apply_caption_html(&mut content, "", "<b>x</b>");
+        assert_eq!(content, json!({ "body": "hi" }));
     }
 }

@@ -1623,11 +1623,13 @@ void RoomPane::wire_room_view_()
             return;
         }
 
+        // Read the composer's mention draft before it is cleared.
+        const auto cap = composed_caption_(caption);
         clear_composer();
         const auto request_id = shell_->account_manager_.next_upload_request_id();
         shell_->remember_upload_draft_(request_id, draft);
         pane_client_()->send_image_async(request_id, room_id_, prepared.bytes, prepared.mime,
-                                         prepared.filename, caption, prepared.width,
+                                         prepared.filename, cap.body, cap.formatted, prepared.width,
                                          prepared.height, prepared.is_animated, reply_event_id,
                                          active_thread_root_for_send_());
     };
@@ -1655,15 +1657,16 @@ void RoomPane::wire_room_view_()
             refuse(draft);
             return;
         }
+        const auto cap = composed_caption_(caption);
         clear_composer();
         const auto request_id = shell_->account_manager_.next_upload_request_id();
         shell_->remember_upload_draft_(request_id, draft);
         // Sent from the draft's own bytes: no second copy of a large video.
         const auto& it = draft->items.front();
-        pane_client_()->send_video_async(request_id, room_id_, it.bytes, it.mime, it.filename,
-                                         caption, it.width, it.height, it.thumb_bytes_raw,
-                                         it.thumb_width, it.thumb_height, it.duration_ms,
-                                         reply_event_id, active_thread_root_for_send_());
+        pane_client_()->send_video_async(
+            request_id, room_id_, it.bytes, it.mime, it.filename, cap.body, cap.formatted, it.width,
+            it.height, it.thumb_bytes_raw, it.thumb_width, it.thumb_height, it.duration_ms,
+            reply_event_id, active_thread_root_for_send_());
     };
     rv->on_send_audio = [this, clear_composer, new_draft,
                          refuse](std::vector<std::uint8_t> bytes, std::string mime,
@@ -1683,12 +1686,13 @@ void RoomPane::wire_room_view_()
             refuse(draft);
             return;
         }
+        const auto cap = composed_caption_(caption);
         clear_composer();
         const auto request_id = shell_->account_manager_.next_upload_request_id();
         shell_->remember_upload_draft_(request_id, draft);
         const auto& it = draft->items.front();
         pane_client_()->send_audio_async(request_id, room_id_, it.bytes, it.mime, it.filename,
-                                         caption, it.duration_ms, reply_event_id,
+                                         cap.body, cap.formatted, it.duration_ms, reply_event_id,
                                          active_thread_root_for_send_());
     };
     rv->on_send_file = [this, clear_composer, new_draft, refuse](
@@ -1707,12 +1711,14 @@ void RoomPane::wire_room_view_()
             refuse(draft);
             return;
         }
+        const auto cap = composed_caption_(caption);
         clear_composer();
         const auto request_id = shell_->account_manager_.next_upload_request_id();
         shell_->remember_upload_draft_(request_id, draft);
         const auto& it = draft->items.front();
         pane_client_()->send_file_async(request_id, room_id_, it.bytes, it.mime, it.filename,
-                                        caption, reply_event_id, active_thread_root_for_send_());
+                                        cap.body, cap.formatted, reply_event_id,
+                                        active_thread_root_for_send_());
     };
     rv->on_send_gallery =
         [this, clear_composer, new_draft, refuse](std::vector<PendingAttachment> items,
@@ -1820,13 +1826,16 @@ void RoomPane::wire_room_view_()
             refuse(draft);
             return;
         }
+        const auto cap = composed_caption_(caption);
         clear_composer();
         const auto request_id = shell_->account_manager_.next_upload_request_id();
         shell_->remember_upload_draft_(request_id, draft);
+        // The synthesized "Sent N items" fallback stays plain (`cap.formatted`
+        // is empty whenever `cap.body` is).
         pane_client_()->send_gallery_async(
             request_id, room_id_, out_items,
-            shell_helpers::gallery_caption_or_fallback(caption, out_items.size()), reply_event_id,
-            active_thread_root_for_send_());
+            shell_helpers::gallery_caption_or_fallback(cap.body, out_items.size()), cap.formatted,
+            reply_event_id, active_thread_root_for_send_());
     };
 
     // ── Local media viewer ───────────────────────────────────────────────
@@ -3412,6 +3421,23 @@ void RoomPane::send_sticker_(const std::string& body, const std::string& image_u
     }
 }
 
+RoomPane::ComposedCaption RoomPane::composed_caption_(const std::string& fallback) const
+{
+    if (auto* ta = compose_text_area_())
+    {
+        const auto draft = ta->composer_draft();
+        if (!draft.empty())
+        {
+            auto msg = tesseract::build_mention_message(draft);
+            if (!msg.body.empty())
+            {
+                return {std::move(msg.body), std::move(msg.formatted_body)};
+            }
+        }
+    }
+    return {fallback, {}};
+}
+
 void RoomPane::send_edit_(const std::string& event_id, const std::string& new_body, bool is_caption)
 {
     if ((new_body.empty() && !is_caption) || room_id_.empty() || !pane_client_())
@@ -3422,11 +3448,20 @@ void RoomPane::send_edit_(const std::string& event_id, const std::string& new_bo
     auto rid = room_id_;
     auto eid = event_id;
     auto body_copy = new_body;
+    // A caption edit is built from the composer's mention draft, like a new
+    // caption; read it now, before the caller clears the composer.
+    std::string formatted_copy;
+    if (is_caption)
+    {
+        auto cap = composed_caption_(new_body);
+        body_copy = std::move(cap.body);
+        formatted_copy = std::move(cap.formatted);
+    }
     // Caption edits carry no text previews, so they skip the prepare step
     // (empty preview body) but still keep their place in the room's order.
     shell_->submit_room_send_(
         sess, rid, is_caption ? std::string{} : body_copy,
-        [this, sess, rid, eid, body_copy, is_caption,
+        [this, sess, rid, eid, body_copy, formatted_copy, is_caption,
          ui = ui_poster(shell_poster(shell_))](const std::string& previews) mutable
         {
             if (!ui.owner_alive()) // owner gone before the job started
@@ -3437,8 +3472,9 @@ void RoomPane::send_edit_(const std::string& event_id, const std::string& new_bo
             {
                 return;
             }
-            auto res = is_caption ? sess->client->send_caption_edit(rid, eid, body_copy)
-                                  : sess->client->send_edit(rid, eid, body_copy, "", previews);
+            auto res = is_caption
+                           ? sess->client->send_caption_edit(rid, eid, body_copy, formatted_copy)
+                           : sess->client->send_edit(rid, eid, body_copy, "", previews);
             if (res)
             {
                 return;
